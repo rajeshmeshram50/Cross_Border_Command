@@ -1972,7 +1972,11 @@ export const CEV_CSS = `
 .cev-ov-close:hover { background: rgba(255,255,255,.25); }
 /* Fixed height for ~5 rows so the popup size stays constant regardless of how
    many documents the selected shipment/page has (paginated at 5/page). */
-.cev-ov-body { overflow: auto; padding: 14px 18px 18px; min-height: 312px; }
+/* Top spacing is a non-scrolling BORDER, not padding: padding-top is inside
+   the scrollport, so a sticky (top:0) thead sticks below it and earlier rows
+   peek into the gap above the header. A border sits outside the scrollport and
+   clips the content, so the sticky header stays flush and nothing shows above it. */
+.cev-ov-body { overflow: auto; padding: 0 18px 18px; border-top: 14px solid #fff; min-height: 312px; max-height: 312px; }
 /* Overview pager (Standard docs, 5 per page) */
 .cev-ov-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 16px; flex-wrap: wrap; }
 .cev-ov-pager-info { font-size: 11px; font-weight: 600; color: #0891b2; }
@@ -2035,6 +2039,7 @@ export const CEV_CSS = `
 .cev-ov-dl:hover:not(:disabled) { background: #fff; border-color: #06b6d4; color: #0891b2; }
 .cev-ov-dl:disabled { opacity: .45; cursor: not-allowed; }
 [data-bs-theme="dark"] .cev-ov-card { background: #0a2630; }
+[data-bs-theme="dark"] .cev-ov-body { border-top-color: #0a2630; }
 [data-bs-theme="dark"] .cev-ov-table tbody td { border-bottom-color: rgba(8,145,178,.18); color: #cffafe; }
 [data-bs-theme="dark"] .cev-ov-name { color: #e6f7fb; }
 [data-bs-theme="dark"] .cev-ov-table tbody tr:hover td { background: rgba(8,145,178,.10); }
@@ -2251,13 +2256,16 @@ export const CEV_CSS = `
    body. Viewport-relative max-height so the table fills the
    available vertical space on any laptop screen while still
    leaving a hard ceiling that keeps the sticky band working. */
-/* Let the outer body handle vertical scrolling (it already has
- * overflow-y: auto). The inner div only handles horizontal overflow
- * for tables wider than the modal so on narrow screens the table can
- * scroll sideways without forcing the whole vault to widen. */
+/* Cap the table at ~5 rows and scroll inside it after that (instead of
+ * letting the whole vault grow). The sticky thead pins to the top of THIS
+ * scroll box, so the header stays visible while the extra rows scroll under
+ * it. max-height (not a fixed height) means 2-4 row buckets still shrink to
+ * their content with no empty space. overflow-x stays auto so wide tables
+ * (min-width 980px) can still scroll sideways on narrow screens. */
 .cev-table-scroll {
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: auto;
+  max-height: 300px;
   scrollbar-width: thin;
 }
 .cev-table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }

@@ -1,29 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import './product-management.css';
 import { useNavigate, useParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import AddProductModal from './AddProductModal';
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Product Detail view (route: /products/:id) — matches the shared design:
- *
- *   ┌─ rainbow accent bar ─────────────────────────────────────────────────┐
- *   │  thumbs │ main image    │  P-XXX | Name             Back   Edit     │
- *   │         │               │  [Sold N]  [Active]                       │
- *   │         │               │  Total: ₹X                                │
- *   │         │               │                                            │
- *   │         │               │  ┌─PRODUCT─┐  ┌─BOX MATRIX─┐  ┌─PRICING─┐ │
- *   │         │               │  │ ...     │  │ ...        │  │ ...     │ │
- *   │         │               │  └─────────┘  └────────────┘  └─────────┘ │
- *   │  Wishlist · Add to Cart                                              │
- *   └────────────────────────────────────────────────────────────────────────┘
- *   ┌─ Tabs (Description / Make / Confidential / QC) ─────┬─ Vendors table ┐
- *   └──────────────────────────────────────────────────────┴─────────────────┘
- * ──────────────────────────────────────────────────────────────────────── */
 
 type AnyRec = Record<string, unknown>;
+
+// Zero-pad the trailing number in a product code to 3 digits (e.g. P-1 -> P-001),
+// matching the list cards. Keeps any non-numeric code untouched.
+function formatProductCode(raw: string): string {
+  const m = raw.match(/^(.*?)(\d+)\s*$/);
+  if (!m) return raw;
+  const prefix = m[1] || 'P-';
+  return `${prefix}${m[2].padStart(3, '0')}`;
+}
+
+// A mapping's stored vendor_code can be stale (captured at map time). Resolve
+// the supplier code live from the linked vendor — same rule the supplier list
+// uses (vendor_code ?? S-<id>) — so renames/code changes always propagate.
+function resolveSupplierCode(v: Record<string, unknown>): string {
+  const vendor = v.vendor as { vendor_code?: string | null } | null | undefined;
+  const vendorId = v.vendor_id as number | null | undefined;
+  const raw =
+    (vendor?.vendor_code && String(vendor.vendor_code)) ||
+    (vendorId ? `S-${String(vendorId).padStart(3, '0')}` : '') ||
+    (v.vendor_code ? String(v.vendor_code) : '');
+  return raw ? formatProductCode(raw) : '—';
+}
 
 type ProductDto = {
   id: number;
@@ -66,16 +74,34 @@ type ProductDto = {
   updated_at?: string | null;
 };
 
-export default function ProductView() {
-  const { id } = useParams<{ id: string }>();
+export default function ProductView(props: { productId?: number; onClose?: () => void } = {}) {
+  // Dual-mode: as a route it reads the :id param and "Back" navigates to the
+  // list; as a popup (opened from a product card) it takes `productId` and
+  // `onClose`, so it renders over the list instead of full-screen.
+  const params = useParams<{ id: string }>();
+  const id = props.productId != null ? String(props.productId) : params.id;
   const navigate = useNavigate();
+  const goBack = () => { if (props.onClose) props.onClose(); else navigate('/products'); };
   const toast = useToast();
 
   const [product, setProduct] = useState<ProductDto | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'desc' | 'brand' | 'confidential' | 'qc'>('desc');
+  const [tab, setTab] = useState<'desc' | 'brand' | 'confidential' | 'qc' | 'suppliers'>('desc');
   const [activeImg, setActiveImg] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
+  // Qty stepper for the buy bar (presentation only — mirrors the prototype).
+  // Declared with the other hooks so it always runs before any early return.
+  const [qty, setQty] = useState(1);
+  // Mapped Suppliers popup (opened from the header button).
+  const [suppliersOpen, setSuppliersOpen] = useState(false);
+  // When true, the Edit modal opens straight into the Map Supplier form.
+  const [supplierMapMode, setSupplierMapMode] = useState(false);
+  // Inline price-edit for a single mapped-supplier row. Only the purchase
+  // price is editable; GST amount and total recompute live from the row's
+  // fixed GST %.
+  const [priceEditId, setPriceEditId] = useState<number | null>(null);
+  const [priceEditVal, setPriceEditVal] = useState('');
+  const [priceSaving, setPriceSaving] = useState(false);
 
   /* QC documents come from the same `segment_doc_uploads` table the Add
    * Product wizard writes to (category = 'qc'). Surfaced here so the
@@ -140,7 +166,7 @@ export default function ProductView() {
       }
     } catch {
       toast.error('Not Found', 'Product not available');
-      navigate('/products');
+      goBack();
     } finally {
       if (!silent) setLoading(false);
     }
@@ -167,7 +193,6 @@ export default function ProductView() {
     // immediately and the perceived load time drops sharply.
     return (
       <div className="pv2-root">
-        <style>{SCOPED_CSS}</style>
         <div className="pv2-shell">
           <div className="pv2-grid">
             <div className="pv2-gallery">
@@ -203,8 +228,12 @@ export default function ProductView() {
   }
   if (!product) return null;
 
-  const statusText = (product.status || 'draft').replace(/^./, c => c.toUpperCase());
-  const isActive = product.status === 'active';
+  // Active / Inactive mirrors the product list: a product is "Active" once it
+  // has at least one mapped supplier, "Inactive" otherwise. (Basing it on the
+  // raw `status` column drifted from the list, which shows every stale-status
+  // product as Active regardless of supplier mapping.)
+  const isActive = product.vendor_maps.length > 0;
+  const statusText = isActive ? 'Active' : 'Inactive';
   const isHaz = String(product.haz_type ?? '').toLowerCase() === 'haz';
 
   const segmentName    = (product.segment?.title as string) ?? '—';
@@ -215,31 +244,88 @@ export default function ProductView() {
   const packagingName  = (product.packaging_material?.title as string) ?? '—';
   const gstPct         = Number(product.gst_percentage?.percentage ?? 0);
 
-  const fmtNum = (v: string | number | null | undefined, unit = '') =>
-    v == null || v === '' ? '—' : `${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 3 })}${unit ? ' ' + unit : ''}`;
   const fmtMoney = (v: string | number | null | undefined) =>
     v == null || v === '' ? '—' : `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
-  // Mocked sold-count badge (no backend field yet). Replace with real value when available.
-  const soldCount = '35,000';
+  const gstAmtStr = fmtMoney(product.gst_amount);
+  const baseStr   = fmtMoney(product.base_price);
+  const totalStr  = fmtMoney(product.total_price);
+
+  const startPriceEdit = (mapId: number, current: string | number | null) => {
+    setPriceEditId(mapId);
+    setPriceEditVal(current == null || current === '' ? '' : String(Number(current)));
+  };
+  const cancelPriceEdit = () => { setPriceEditId(null); setPriceEditVal(''); };
+  const savePriceEdit = async (mapId: number) => {
+    const price = Number(priceEditVal);
+    if (priceEditVal.trim() === '' || !Number.isFinite(price) || price < 0) {
+      toast.error('Invalid price', 'Enter a purchase price of 0 or more.');
+      return;
+    }
+    setPriceSaving(true);
+    try {
+      const res = await api.patch(`/products/${product.id}/vendor-maps/${mapId}`, { purchase_price: price });
+      // The PATCH response only carries vendorMaps/qcRecords, not the
+      // display relations (segment, hsn, uom, …). Merge just the refreshed
+      // mappings so the rest of the loaded product stays intact.
+      const fresh = res.data as ProductDto;
+      setProduct(prev => (prev ? { ...prev, vendor_maps: fresh.vendor_maps ?? prev.vendor_maps } : prev));
+      cancelPriceEdit();
+      toast.success('Price updated', 'Purchase price, GST and total have been recalculated.');
+    } catch {
+      toast.error('Update failed', 'Could not update the purchase price. Please try again.');
+    } finally {
+      setPriceSaving(false);
+    }
+  };
 
   return (
-    <div className="pv2-root">
-      <style>{SCOPED_CSS}</style>
+    <div className="pv2-root pv2pd-root">
 
-      {/* ─── Top card ─── */}
-      <div className="pv2-card pv2-top">
-        <div className="pv2-top-grid">
-          {/* Left: gallery */}
-          <div className="pv2-gallery">
-            <div className="pv2-thumbs">
-              {images.length === 0 && (
-                <div className="pv2-thumb pv2-thumb-empty">{product.name?.charAt(0)?.toUpperCase() || 'P'}</div>
-              )}
+      {/* ─── HERO ─── */}
+      <div className="pv2pd-hero">
+        <div className="pv2pd-hero-row">
+          <div className="pv2pd-hero-main">
+            <h2 className="pv2pd-title">
+              <span className="pv2pd-code">{formatProductCode(product.product_code)}</span>
+              <span className="pv2pd-title-sep">|</span> {product.name}
+            </h2>
+          </div>
+          <div className="pv2pd-hero-btns">
+            <button className="pv2pd-hbtn pv2pd-hbtn--edit" onClick={() => setEditOpen(true)}>
+              <i className="ri-edit-box-line" /> Edit Product
+            </button>
+            <button className="pv2pd-hbtn pv2pd-hbtn--suppliers" onClick={() => setSuppliersOpen(true)}>
+              <i className="ri-team-line" /> Mapped Suppliers
+            </button>
+            <button className="pv2pd-hbtn pv2pd-hbtn--ghost" onClick={goBack}>
+              <i className="ri-arrow-left-s-line" /> Back to Product List
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ─── BODY ─── */}
+      <div className="pv2pd-body">
+        {/* LEFT: gallery + price card + buy bar */}
+        <div className="pv2pd-gallery">
+          <div className="pv2pd-main-img">
+            {images.length > 0 ? (
+              <img src={images[activeImg]} alt={product.name} />
+            ) : (
+              <span className="pv2pd-main-empty">{product.name?.charAt(0)?.toUpperCase() || 'P'}</span>
+            )}
+            <span className={`pv2pd-chip pv2pd-chip--onimg pv2pd-chip--${isActive ? 'active' : 'inactive'}`}>
+              <span className="pv2pd-chip-dot" />{statusText}
+            </span>
+          </div>
+
+          {images.length > 0 && (
+            <div className="pv2pd-thumbs">
               {images.map((src, i) => (
                 <button
                   key={i}
-                  className={`pv2-thumb ${i === activeImg ? 'on' : ''}`}
+                  className={`pv2pd-thumb ${i === activeImg ? 'is-active' : ''}`}
                   onClick={() => setActiveImg(i)}
                   aria-label={`Thumbnail ${i + 1}`}
                 >
@@ -247,233 +333,122 @@ export default function ProductView() {
                 </button>
               ))}
             </div>
-            <div className="pv2-main-image">
-              {images.length > 0 ? (
-                <img src={images[activeImg]} alt={product.name} />
-              ) : (
-                <div className="pv2-main-empty">{product.name?.charAt(0)?.toUpperCase() || 'P'}</div>
-              )}
-            </div>
-          </div>
-
-          {/* Right: header + 3 info columns */}
-          <div className="pv2-right">
-            <div className="pv2-head">
-              <div className="pv2-head-text">
-                <div className="pv2-title">
-                  <span className="pv2-code">{product.product_code}</span>
-                  <span className="pv2-sep">|</span>
-                  <span className="pv2-name">{product.name}</span>
-                </div>
-                <div className="pv2-meta-row">
-                  <span className="pv2-sold-chip">
-                    <i className="ri-price-tag-3-fill" /> {soldCount}
-                  </span>
-                  <span className="pv2-sold-text">This product sold out {soldCount} times</span>
-                </div>
-                <div className="pv2-price-row">
-                  <span className="pv2-price-label">Total Selling Price:</span>
-                  <span className="pv2-price-val">{fmtMoney(product.total_price)}</span>
-                  <span className={`pv2-status-text ${isActive ? 'is-active' : 'is-inactive'}`}>● {statusText}</span>
-                </div>
-              </div>
-              <div className="pv2-head-actions">
-                {/* Back-to-list pill — matches the master pages so the
-                    visual language is consistent across detail screens. */}
-                {/* Uses the .pv2-back class (which already defines a proper
-                    hover: bg + border + colour + lift, plus a dark-mode
-                    variant) instead of inline styles with a JS hover whose
-                    8%->14% colour-mix delta was imperceptible — QA reported
-                    "no hover effect". rounded-pill keeps the pill shape. */}
-                <button
-                  type="button"
-                  onClick={() => navigate('/products')}
-                  title="Back to Products"
-                  className="pv2-back rounded-pill"
-                >
-                  <i className="ri-arrow-left-line"></i>
-                  Back to Products
-                </button>
-                <button className="pv2-edit" onClick={() => setEditOpen(true)}>
-                  <i className="ri-edit-box-line" /> Edit Product
-                </button>
-              </div>
-            </div>
-
-            <div className="pv2-info-grid">
-              {/* Product Details */}
-              <div className="pv2-info-block">
-                <h6 className="pv2-info-heading">Product Details:</h6>
-                <div className="pv2-info-body">
-                  <Row k="Product Generic Name" v={product.generic_name || '—'} />
-                  <Row k="HSN / SAC"            v={hsnCode} />
-                  <Row k="Segment"              v={segmentName} />
-                  <Row k="Haz / Non-Haz"        v={product.haz_type || '—'} accent={isHaz ? 'danger' : 'success'} />
-                  <Row k="Haz Class"            v={isHaz ? hazClassName : '—'} />
-                  <Row k="Unit Of Measurement"  v={uomName} />
-                  <Row k="Condition"            v={conditionName} />
-                  <Row k="Packaging Material"   v={packagingName} />
-                  <Row k="Bottom / Non-Bottom"  v={product.mark_bottom || '—'} />
-                </div>
-              </div>
-
-              {/* Box Matrix + Inventory (stacked in one column) */}
-              <div className="pv2-info-block">
-                <h6 className="pv2-info-heading">Box Matrix Details:</h6>
-                <div className="pv2-info-body">
-                  <Row k="Per Box Net Weight"   v={fmtNum(product.net_weight, 'kg')} />
-                  <Row k="Per Box Gross Weight" v={fmtNum(product.gross_weight, 'kg')} />
-                  <Row k="Per Box Length"       v={fmtNum(product.length_cm, 'cm')} />
-                  <Row k="Per Box Width"        v={fmtNum(product.width_cm, 'cm')} />
-                  <Row k="Per Box Height"       v={fmtNum(product.height_cm, 'cm')} />
-                </div>
-
-                <h6 className="pv2-info-heading pv2-info-heading-sub">Inventory Details:</h6>
-                <div className="pv2-info-body">
-                  <Row k="Batch No"  v={product.batch_no  || '—'} />
-                  <Row k="Serial No" v={product.serial_no || '—'} />
-                  <Row k="Cat No"    v={product.cat_no    || '—'} />
-                  <Row k="Lot No"    v={product.lot_no    || '—'} />
-                </div>
-              </div>
-
-              {/* Pricing */}
-              <div className="pv2-info-block">
-                <h6 className="pv2-info-heading">Product Pricing Details:</h6>
-                <div className="pv2-info-body">
-                  <Row k="Product Base Price" v={fmtMoney(product.base_price)} />
-                  <Row k="GST %"              v={gstPct ? `${gstPct.toFixed(2)}%` : '—'} />
-                  <Row k="GST Amount"         v={fmtMoney(product.gst_amount)} />
-                  <div className="pv2-info-divider" />
-                  <div className="pv2-info-row pv2-total-line">
-                    <span className="pv2-info-key">Total Selling Price:</span>
-                    <span className="pv2-total-strong">{fmtMoney(product.total_price)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── Bottom row: tabs + vendors table ─── */}
-      <div className="pv2-bottom">
-        <div className="pv2-card pv2-tabs-card">
-          <div className="pv2-tabs">
-            <button className={`pv2-tab ${tab === 'desc' ? 'on' : ''}`}         onClick={() => setTab('desc')}>Product Description</button>
-            <button className={`pv2-tab ${tab === 'brand' ? 'on' : ''}`}        onClick={() => setTab('brand')}>Make / Brand / Specifications</button>
-            <button className={`pv2-tab ${tab === 'confidential' ? 'on' : ''}`} onClick={() => setTab('confidential')}>Confidential Info</button>
-            <button className={`pv2-tab ${tab === 'qc' ? 'on' : ''}`}           onClick={() => setTab('qc')}>QC &amp; Compliance</button>
-          </div>
-          <div className="pv2-tab-body">
-            {tab === 'desc' && (
-              <p className="pv2-tab-text">{product.description || <em className="pv2-muted">No description provided.</em>}</p>
-            )}
-            {tab === 'brand' && (
-              <p className="pv2-tab-text">{product.brand || <em className="pv2-muted">No brand / make / specifications recorded.</em>}</p>
-            )}
-            {tab === 'confidential' && (
-              <p className="pv2-tab-text">{product.confidential_info || <em className="pv2-muted">No confidential information.</em>}</p>
-            )}
-            {tab === 'qc' && (
-              qcUploads.length === 0 ? (
-                <p className="pv2-tab-text"><em className="pv2-muted">No QC documents uploaded yet.</em></p>
-              ) : (
-                <div className="table-responsive">
-                  <table className="table align-middle table-nowrap mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        <th>SR</th>
-                        <th>Auto Code</th>
-                        <th>QC Document Name</th>
-                        <th>Status</th>
-                        <th>File</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {qcUploads.map((q, i) => (
-                        <tr key={q.id}>
-                          <td>{String(i + 1).padStart(2, '0')}</td>
-                          <td><span className="pv2-qc-code">{q.doc_code}</span></td>
-                          <td><strong>{q.doc_name}</strong></td>
-                          <td>
-                            <span className={`badge ${q.requirement === 'M' ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}`}>
-                              {q.requirement === 'M' ? '✓ Mandatory' : 'Optional'}
-                            </span>
-                          </td>
-                          <td>
-                            {q.attachment_url
-                              ? <a href={q.attachment_url} target="_blank" rel="noreferrer" className="pv2-attach-link">{q.attachment_name || 'View attachment'}</a>
-                              : <span className="pv2-muted">Not uploaded</span>}
-                          </td>
-                          <td>
-                            <QcRowActions
-                              doc={q}
-                              productId={product.id}
-                              onReload={loadQcUploads}
-                              toast={toast}
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            )}
-          </div>
-        </div>
-
-        <div className="pv2-card pv2-vendors-card">
-          <div className="pv2-vendors-head">
-            <i className="ri-links-line" />
-            Product Suppliers
-            <span className="pv2-vendors-count">{product.vendor_maps.length}</span>
-          </div>
-          {product.vendor_maps.length === 0 ? (
-            <div className="pv2-vendors-empty">No suppliers mapped to this product.</div>
-          ) : (
-            <div className="pv2-vendor-table-wrap">
-              <table className="pv2-vendor-table">
-                <thead>
-                  <tr>
-                    <th className="pv2-vt-num">Sr No</th>
-                    <th>Supplier Code</th>
-                    <th>Supplier Company Name</th>
-                    <th>Contact Person Name</th>
-                    <th>Contact No</th>
-                    <th className="pv2-vt-num">Purchase Price</th>
-                    <th className="pv2-vt-num">GST %</th>
-                    <th className="pv2-vt-num">GST Amount</th>
-                    <th className="pv2-vt-num">Total Amount</th>
-                    <th>Map Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {product.vendor_maps.map((v, i) => {
-                    const mapDate = (v.map_date as string | null) ?? '';
-                    return (
-                      <tr key={String(v.id ?? i)}>
-                        <td className="pv2-vt-num">{i + 1}</td>
-                        <td><span className="pv2-vendor-code">{String(v.vendor_code ?? '—')}</span></td>
-                        <td className="pv2-vt-strong">{String(v.vendor_name ?? '—')}</td>
-                        <td>{String(v.contact_person ?? '—')}</td>
-                        <td>{String(v.contact_no ?? '—')}</td>
-                        <td className="pv2-vt-num">{fmtMoney(v.purchase_price as string | number | null)}</td>
-                        <td className="pv2-vt-num">{`${Number(v.gst_percentage ?? 0).toFixed(2)}%`}</td>
-                        <td className="pv2-vt-num">{fmtMoney(v.gst_amount as string | number | null)}</td>
-                        <td className="pv2-vt-num pv2-vt-total">{fmtMoney(v.total_amount as string | number | null)}</td>
-                        <td>{mapDate
-                          ? new Date(mapDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                          : '—'}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
           )}
+
+          {/* Dark purple price card */}
+          <div className="pv2pd-pricecard">
+            <div className="pv2pd-pc-top">
+              <div>
+                <div className="pv2pd-pc-label">Selling Price</div>
+                <div className="pv2pd-pc-price">{baseStr}<small>/-</small></div>
+                <div className="pv2pd-pc-uom">per {uomName}</div>
+              </div>
+              <div className="pv2pd-pc-break">
+                Base {baseStr}<br />GST {gstPct.toFixed(0)}% &nbsp;{gstAmtStr}
+              </div>
+            </div>
+            <div className="pv2pd-pc-total">
+              <span>Total incl. GST</span><b>{totalStr}/-</b>
+            </div>
+          </div>
+
+          {/* Buy bar (presentation only) */}
+          <div className="pv2pd-buybar">
+            <div className="pv2pd-qty">
+              <button onClick={() => setQty(q => Math.max(1, q - 1))} aria-label="Decrease">−</button>
+              <input value={qty} readOnly />
+              <button onClick={() => setQty(q => q + 1)} aria-label="Increase">+</button>
+            </div>
+            <button className="pv2pd-act pv2pd-act--wish" onClick={() => toast.info('Wishlist', `${product.name} added to wishlist`)}>
+              <i className="ri-heart-line" /> Add to Wishlist
+            </button>
+            <button className="pv2pd-act pv2pd-act--cart" onClick={() => toast.success('Cart', `${product.name} added to cart`)}>
+              <i className="ri-shopping-cart-2-line" /> Add to Cart
+            </button>
+          </div>
+        </div>
+
+        {/* RIGHT: Product Details highlights + tabs */}
+        <div className="pv2pd-infocol">
+          <div className="pv2pd-info">
+            {/* Product Details card */}
+            <div className="pv2pd-sec pv2pd-details">
+              <div className="pv2pd-sec__title">
+                <span className="pv2pd-sec__ico"><i className="ri-file-list-3-line" /></span>
+                Product Details
+              </div>
+              <div className="pv2pd-highlights">
+                <div className="pv2pd-hl pv2pd-hl--v">
+                  <span className="pv2pd-hl__ico"><i className="ri-price-tag-3-line" /></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">HSN Code</span><span className="pv2pd-hl__v" title={hsnCode}>{hsnCode}</span></span>
+                </div>
+                <div className="pv2pd-hl pv2pd-hl--g">
+                  <span className="pv2pd-hl__ico"><i className="ri-price-tag-line" /></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Segment</span><span className="pv2pd-hl__v" title={segmentName}>{segmentName}</span></span>
+                </div>
+                <div className={`pv2pd-hl ${isHaz ? 'pv2pd-hl--h' : 'pv2pd-hl--c'}`}>
+                  <span className="pv2pd-hl__ico"><i className={isHaz ? 'ri-alarm-warning-line' : 'ri-checkbox-circle-line'} /></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">{isHaz ? 'Hazardous' : 'Non-Hazardous'}</span><span className="pv2pd-hl__v" title={isHaz ? hazClassName : 'No'}>{isHaz ? (hazClassName !== '—' ? hazClassName : 'Yes') : 'No'}</span></span>
+                </div>
+                <div className="pv2pd-hl pv2pd-hl--c">
+                  <span className="pv2pd-hl__ico"><i className="ri-scales-3-line" /></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">UOM</span><span className="pv2pd-hl__v" title={uomName}>{uomName}</span></span>
+                </div>
+                <div className="pv2pd-hl pv2pd-hl--a">
+                  <span className="pv2pd-hl__ico"><i className="ri-shield-check-line" /></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Condition</span><span className="pv2pd-hl__v" title={conditionName}>{conditionName}</span></span>
+                </div>
+                <div className="pv2pd-hl pv2pd-hl--p">
+                  <span className="pv2pd-hl__ico"><i className="ri-archive-line" /></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Packaging Material</span><span className="pv2pd-hl__v" title={packagingName}>{packagingName}</span></span>
+                </div>
+              </div>
+            </div>
+
+            {/* Tabs card */}
+            <div className="pv2pd-sec pv2pd-sec--tabs">
+              <div className="pv2pd-tabs">
+                <button className={`pv2pd-tab ${tab === 'desc' ? 'is-active' : ''}`}         onClick={() => setTab('desc')}>Product Description</button>
+                <button className={`pv2pd-tab ${tab === 'brand' ? 'is-active' : ''}`}        onClick={() => setTab('brand')}>Make / Brand / Specifications</button>
+                <button className={`pv2pd-tab ${tab === 'confidential' ? 'is-active' : ''}`} onClick={() => setTab('confidential')}>Confidential Info</button>
+              </div>
+              <div className="pv2pd-tab-body">
+                {tab === 'desc' && (
+                  <p className="pv2pd-tab-text">{product.description || <em className="pv2pd-muted">No description provided.</em>}</p>
+                )}
+                {tab === 'brand' && (
+                  <div className="pv2pd-tab-rich">
+                    <h4 className="pv2pd-tab-h">Make / Brand</h4>
+                    <p className="pv2pd-tab-text">{product.brand || <em className="pv2pd-muted">No brand / make / specifications recorded.</em>}</p>
+                    <h4 className="pv2pd-tab-h">Specifications</h4>
+                    <div className="pv2pd-tab-rows">
+                      <SpecRow k="Generic Name"       v={product.generic_name || '—'} />
+                      <SpecRow k="Segment"            v={segmentName} />
+                      <SpecRow k="HSN Code"           v={hsnCode} />
+                      <SpecRow k="UOM"                v={uomName} />
+                      <SpecRow k="Condition"          v={conditionName} />
+                      <SpecRow k="Packaging Material" v={packagingName} />
+                      <SpecRow k="Hazard"             v={isHaz ? (hazClassName !== '—' ? hazClassName : 'Hazardous') : 'Non-Hazardous'} accent={isHaz ? 'amber' : 'green'} />
+                    </div>
+                  </div>
+                )}
+                {tab === 'confidential' && (
+                  <div className="pv2pd-tab-rich">
+                    <h4 className="pv2pd-tab-h">Restricted Information</h4>
+                    <p className="pv2pd-tab-text">{product.confidential_info || 'Confidential pricing, margin structure and preferred-supplier terms are restricted to authorised procurement users only.'}</p>
+                    <h4 className="pv2pd-tab-h">Commercials</h4>
+                    <div className="pv2pd-tab-rows">
+                      <SpecRow k="Base Price"       v={baseStr} />
+                      <SpecRow k="GST"              v={gstPct ? `${gstPct.toFixed(2)}%` : '—'} />
+                      <SpecRow k="Mapped Suppliers" v={String(product.vendor_maps.length)} />
+                    </div>
+                    <h4 className="pv2pd-tab-h">Notes</h4>
+                    <p className="pv2pd-tab-text">Negotiated rates, rebate slabs and exclusive supplier agreements are visible only to users with procurement-admin access. Do not share outside the authorised group.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -484,7 +459,8 @@ export default function ProductView() {
            * own /products/{id} refetch. Production network panel
            * showed that duplicate call costing ~2 sec. */
           initialProduct={product}
-          onClose={() => setEditOpen(false)}
+          openSupplierMap={supplierMapMode}
+          onClose={() => { setEditOpen(false); setSupplierMapMode(false); }}
           onSaved={(_pid, finalised) => {
             // Silent refresh — see load()'s note. We want the underlying
             // ProductView card to reflect the new data once the user
@@ -495,23 +471,194 @@ export default function ProductView() {
           }}
         />
       )}
+
+      {/* Mapped Suppliers popup — opened from the header "Mapped Suppliers"
+          button. Lists this product's vendor mappings (prototype design). */}
+      {suppliersOpen && createPortal((
+        <div className="pv2pd-sup-overlay" onClick={() => setSuppliersOpen(false)}>
+          <div className="pv2pd-sup-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="pv2pd-sup-head">
+              <div className="pv2pd-sup-head-ico"><i className="ri-team-line" /></div>
+              <div className="pv2pd-sup-head-txt">
+                <div className="pv2pd-sup-title">Mapped Suppliers</div>
+                <div className="pv2pd-sup-sub">Suppliers linked to this product with purchase price &amp; GST</div>
+              </div>
+              <button className="pv2pd-sup-close" onClick={() => setSuppliersOpen(false)} aria-label="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+            <div className="pv2pd-sup-body">
+              <div className="pv2pd-sup-bar">
+                <span className="pv2pd-sup-countpill">{product.vendor_maps.length} supplier{product.vendor_maps.length !== 1 ? 's' : ''} mapped</span>
+                <button className="pv2pd-sup-map" onClick={() => { setSuppliersOpen(false); setSupplierMapMode(true); setEditOpen(true); }}>
+                  <i className="ri-add-line" /> Map Supplier
+                </button>
+              </div>
+              {product.vendor_maps.length === 0 ? (
+                <div className="pv2pd-sup-empty">No suppliers mapped yet. Click "Map Supplier" to begin.</div>
+              ) : (
+                <div className="pv2pd-sup-tablewrap">
+                  <table className="pv2pd-sup-table">
+                    <thead>
+                      <tr>
+                        <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>State</th><th>Contact</th>
+                        <th>Price (₹)</th><th>GST %</th><th>GST (₹)</th><th>Total (₹)</th><th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {product.vendor_maps.map((v, i) => {
+                        const mapId = Number(v.id);
+                        const rowGstPct = Number(v.gst_percentage ?? 0);
+                        return (
+                        <tr key={String((v.id as number | string) ?? i)}>
+                          <td><span className="pv2pd-sup-sr">{String(i + 1).padStart(2, '0')}</span></td>
+                          <td className="pv2pd-sup-cname">{String(v.vendor_name ?? '—')}</td>
+                          <td><span className="pv2pd-sup-code">{resolveSupplierCode(v)}</span></td>
+                          <td>{String(v.vendor_type ?? v.type ?? '—')}</td>
+                          <td>{String(v.state ?? '—')}</td>
+                          <td className="pv2pd-sup-cperson">{String(v.contact_person ?? '—')}</td>
+                          <td>{fmtMoney(v.purchase_price as string | number | null)}</td>
+                          <td>{`${rowGstPct.toFixed(0)}%`}</td>
+                          <td>{fmtMoney(v.gst_amount as string | number | null)}</td>
+                          <td className="pv2pd-sup-ctotal">{fmtMoney(v.total_amount as string | number | null)}</td>
+                          <td>
+                            <button
+                              className="pv2pd-sup-edit"
+                              title="Edit purchase price"
+                              onClick={() => startPriceEdit(mapId, v.purchase_price as string | number | null)}
+                            >
+                              <i className="ri-pencil-line" /> Edit
+                            </button>
+                          </td>
+                        </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div className="pv2pd-sup-foot">
+              <button className="pv2pd-sup-closebtn" onClick={() => setSuppliersOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
+
+      {/* Edit Mapped Supplier — the same Map Supplier form (apm-mv design)
+          re-opened in edit mode. Everything is read-only except the purchase
+          price; GST amount and total recompute live from the row's fixed
+          GST %. Save posts only the price to the per-row PATCH endpoint so
+          the other columns can't be clobbered. Backdrop click does NOT close
+          (matches the Map Supplier form) — header ✕ / Cancel only. */}
+      {priceEditId != null && (() => {
+        const editRow = product.vendor_maps.find(v => Number(v.id) === priceEditId);
+        if (!editRow) return null;
+        const mapId = priceEditId;
+        const rowGstPct = Number(editRow.gst_percentage ?? 0);
+        const p = Number(priceEditVal);
+        const valid = priceEditVal.trim() !== '' && Number.isFinite(p) && p >= 0;
+        const gstAmt = valid ? (p * rowGstPct) / 100 : 0;
+        const total = valid ? p + gstAmt : 0;
+        return createPortal((
+          <div className="apm-mv-backdrop">
+            <div className="apm-mv-popup">
+              <div className="apm-mv-popup-head">
+                <div className="apm-mv-popup-title">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                  <div>
+                    <div className="apm-mv-popup-title-main">Edit Mapped Supplier</div>
+                    <div className="apm-mv-popup-title-sub">Update the purchase price — GST &amp; total recalculate automatically</div>
+                  </div>
+                </div>
+                <button className="apm-close apm-mv-close" onClick={cancelPriceEdit} aria-label="Close">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
+
+              <div className="apm-mv-popup-body">
+                <div className="apm-grid-3">
+                  <div className="apm-field">
+                    <span className="apm-field-label">Supplier Name</span>
+                    <input className="apm-input apm-readonly" value={String(editRow.vendor_name ?? '')} readOnly />
+                  </div>
+                  <div className="apm-field">
+                    <span className="apm-field-label">Supplier Code</span>
+                    <input className="apm-input apm-readonly" value={resolveSupplierCode(editRow)} readOnly placeholder="—" />
+                  </div>
+                  <div className="apm-field">
+                    <span className="apm-field-label">Supplier Type</span>
+                    <input className="apm-input apm-readonly" value={String(editRow.vendor_type ?? editRow.type ?? '—')} readOnly />
+                  </div>
+
+                  <div className="apm-field">
+                    <span className="apm-field-label">State</span>
+                    <input className="apm-input apm-readonly" value={String(editRow.state ?? '—')} readOnly />
+                  </div>
+                  <div className="apm-field">
+                    <span className="apm-field-label">Contact Person</span>
+                    <input className="apm-input apm-readonly" value={String(editRow.contact_person ?? '—')} readOnly />
+                  </div>
+                  <div className="apm-field">
+                    <span className="apm-field-label">Purchase Price (₹) <span className="apm-req">*</span></span>
+                    <div className="apm-input-icon">
+                      <span className="apm-input-icon-prefix">₹</span>
+                      <input
+                        className="apm-input has-prefix"
+                        type="number" min="0" step="0.01" autoFocus
+                        placeholder="Enter purchase price"
+                        value={priceEditVal}
+                        disabled={priceSaving}
+                        onChange={(e) => setPriceEditVal(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') savePriceEdit(mapId); if (e.key === 'Escape') cancelPriceEdit(); }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="apm-field">
+                    <span className="apm-field-label">GST %</span>
+                    <input className="apm-input apm-readonly" value={rowGstPct ? `${rowGstPct.toFixed(0)}%` : '—'} readOnly title="GST % comes from the product's Sales Config" />
+                  </div>
+                  <div className="apm-field">
+                    <span className="apm-field-label">GST Amount (₹)</span>
+                    <div className="apm-input-icon">
+                      <span className="apm-input-icon-prefix">₹</span>
+                      <input className="apm-input has-prefix apm-readonly" value={valid ? gstAmt.toFixed(2) : ''} readOnly placeholder="Auto-computed" />
+                    </div>
+                  </div>
+                  <div className="apm-field">
+                    <span className="apm-field-label">Total Amount (₹)</span>
+                    <div className="apm-input-icon">
+                      <span className="apm-input-icon-prefix">₹</span>
+                      <input className="apm-input has-prefix apm-readonly apm-total" value={valid ? total.toFixed(2) : ''} readOnly placeholder="Auto-computed" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="apm-mv-popup-foot">
+                <button className="apm-btn-ghost" onClick={cancelPriceEdit} disabled={priceSaving}>Cancel</button>
+                <button className="apm-btn-primary" onClick={() => savePriceEdit(mapId)} disabled={priceSaving || !valid}>
+                  {priceSaving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ), document.body);
+      })()}
     </div>
   );
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-function Row(props: { k: string; v: string; accent?: 'success' | 'danger' }) {
+/* Spec / commercial key-value row — matches the prototype's .pd-tab-row. */
+function SpecRow(props: { k: string; v: string; accent?: 'green' | 'amber' }) {
   const hasValue = props.v && props.v !== '—';
+  const val = <span className={`pv2pd-tab-row__v${props.accent ? ` pv2pd-tab-row__v--${props.accent}` : ''}`}>{props.v}</span>;
   return (
-    <div className="pv2-info-row">
-      <span className="pv2-info-key">{props.k}</span>
-      {hasValue ? (
-        <Tooltip label={props.v} position="top" maxWidth={320}>
-          <span className={`pv2-info-val${props.accent ? ` pv2-info-val-${props.accent}` : ''}`}>{props.v}</span>
-        </Tooltip>
-      ) : (
-        <span className={`pv2-info-val${props.accent ? ` pv2-info-val-${props.accent}` : ''}`}>{props.v}</span>
-      )}
+    <div className="pv2pd-tab-row">
+      <span className="pv2pd-tab-row__k">{props.k}</span>
+      {hasValue ? <Tooltip label={props.v} position="top" maxWidth={320}>{val}</Tooltip> : val}
     </div>
   );
 }
@@ -610,470 +757,3 @@ function QcRowActions({ doc, productId, onReload, toast }: {
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-const SCOPED_CSS = `
-.pv2-root {
-  font-family: var(--font-sans);
-  background: #f8fafc;
-  padding: 14px 18px 24px;
-  margin: -1rem -0.75rem;
-  min-height: calc(100vh - 70px);
-  color: #1e293b;
-  display: flex; flex-direction: column; gap: 14px;
-}
-.pv2-root *, .pv2-root *::before, .pv2-root *::after { box-sizing: border-box; }
-.pv2-loading { padding: 60px 20px; text-align: center; color: #6b7280; font-weight: 600; }
-
-/* Shimmer placeholder — animated gradient sweep that approximates the
-   loaded layout. Mirrors the .pv2-grid two-column structure. */
-@keyframes pv2-shimmer-sweep {
-  0%   { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-.pv2-shimmer {
-  background: linear-gradient(90deg, #f5f3ff 25%, #ede9fe 37%, #f5f3ff 63%);
-  background-size: 200% 100%;
-  animation: pv2-shimmer-sweep 1.4s ease-in-out infinite;
-  border-radius: 6px;
-}
-.pv2-main-shimmer { flex: 1; min-height: 280px; border-radius: 12px; }
-[data-bs-theme="dark"] .pv2-shimmer,
-[data-layout-mode="dark"] .pv2-shimmer {
-  background: linear-gradient(90deg, #1a1430 25%, #2a1d5c 37%, #1a1430 63%);
-  background-size: 200% 100%;
-}
-
-/* Surface card */
-.pv2-card {
-  background: #fff;
-  border: 1px solid var(--vz-border-color, #e9ebec);
-  border-radius: 14px;
-  box-shadow: 0 2px 12px rgba(0,0,0,.04);
-  position: relative;
-  overflow: hidden;
-}
-
-/* ── Top card ── */
-.pv2-top { padding: 0; }
-.pv2-top-grid {
-  /* Shared hero height — image (left) and info column (right) both pin to
-     this so they end at the same baseline. Tune here to change both. */
-  --pv2-hero-h: 400px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
-  gap: 24px;
-  padding: 18px 20px 20px;
-}
-
-/* Gallery */
-.pv2-gallery { display: grid; grid-template-columns: 110px 1fr; gap: 12px; min-width: 0; align-items: start; }
-.pv2-thumbs {
-  display: flex; flex-direction: column; gap: 10px;
-  width: 110px;
-  max-height: var(--pv2-hero-h, 400px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: #c4b5fd transparent;
-  scrollbar-gutter: stable;
-}
-.pv2-thumbs::-webkit-scrollbar { width: 6px; height: 0; }
-.pv2-thumbs::-webkit-scrollbar:horizontal { display: none; height: 0; }
-.pv2-thumbs::-webkit-scrollbar-track { background: transparent; }
-.pv2-thumbs::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #a78bfa, #7c3aed);
-  border-radius: 99px;
-}
-.pv2-thumbs::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #7c3aed, #5b21b6); }
-.pv2-thumb {
-  width: 110px; height: 90px; border-radius: 10px;
-  border: 1.5px solid #e2e8f0; background: #f8fafc;
-  cursor: pointer; padding: 0; overflow: hidden; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  transition: border-color .15s, transform .12s;
-}
-.pv2-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.pv2-thumb.on { border-color: #7c3aed; transform: scale(1.03); }
-.pv2-thumb:hover { border-color: #c4b5fd; }
-.pv2-thumb-empty { color: #94a3b8; font-size: 22px; font-weight: 800; }
-
-.pv2-main-image {
-  /* Fixed hero height — the right-side info column is pinned to this same
-     value (--pv2-hero-h) so the two columns end at the same baseline and
-     the product info is arranged within the image's height. */
-  height: var(--pv2-hero-h, 400px);
-  border-radius: 12px; overflow: hidden;
-  border: 1.5px solid #e2e8f0;
-  background: #f8fafc;
-  display: flex; align-items: center; justify-content: center;
-  min-width: 0;
-}
-.pv2-main-image img { width: 100%; height: 100%; object-fit: cover; }
-.pv2-main-empty { font-size: 80px; font-weight: 800; color: #c4b5fd; }
-
-/* Head row */
-.pv2-right {
-  display: flex; flex-direction: column; gap: 14px; min-width: 0;
-  /* Same height as the hero image so the info column ends at the same
-     baseline; the info-grid below flexes to fill the leftover space. */
-  height: var(--pv2-hero-h, 400px);
-  min-height: 0;
-}
-.pv2-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.pv2-head-text { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.pv2-title {
-  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
-  font-size: 17px; font-weight: 800; color: #1e293b;
-}
-.pv2-code { color: #5b21b6; }
-.pv2-sep  { color: #cbd5e1; }
-.pv2-name { color: #1e293b; }
-
-/* "Sold N — This product sold out N times" */
-.pv2-meta-row { display: inline-flex; align-items: center; gap: 8px; }
-.pv2-sold-chip {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 10px; border-radius: 99px;
-  background: linear-gradient(135deg, #22c55e, #15803d);
-  color: #fff;
-  font-size: 11px; font-weight: 700;
-}
-.pv2-sold-chip i { font-size: 11px; }
-.pv2-sold-text { font-size: 12px; color: #6b7280; }
-
-/* "Total Selling Price: ₹900  ● Active" */
-.pv2-price-row { display: inline-flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.pv2-price-label { font-size: 14px; font-weight: 800; color: #1e293b; }
-.pv2-price-val   { font-size: 16px; font-weight: 800; color: #5b21b6; }
-.pv2-status-text { font-size: 12px; font-weight: 700; }
-.pv2-status-text.is-active   { color: #16a34a; }
-.pv2-status-text.is-inactive { color: #b45309; }
-
-.pv2-head-actions { display: inline-flex; gap: 8px; flex-shrink: 0; }
-.pv2-back, .pv2-edit {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 38px; padding: 0 18px;
-  font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
-  border-radius: 8px;
-  transition: transform .15s, box-shadow .15s, background .15s, border-color .15s;
-}
-.pv2-back i, .pv2-edit i { font-size: 15px; }
-.pv2-back {
-  background: #fff;
-  border: 1.5px solid var(--vz-border-color, #e9ebec);
-  color: #475569;
-}
-.pv2-back:hover {
-  background: #f5f7fb;
-  border-color: #c0cffb;
-  color: #405189;
-  transform: translateY(-1px);
-}
-/* Edit Product — matches the rounded gradient "Add Product" button */
-.pv2-edit {
-  background: linear-gradient(120deg, #405189 0%, #6691e7 100%);
-  color: #fff; border: none;
-  border-radius: 99px;
-  box-shadow: 0 4px 12px rgba(64,81,137,.3);
-}
-.pv2-edit:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(64,81,137,.4);
-}
-.pv2-edit:active { transform: translateY(0); }
-
-/* Info grid — flat text-heading style (no coloured header strips).
-   Three side-by-side columns of key/value rows separated by light
-   dividers. Each column scrolls internally if rows overflow. */
-.pv2-info-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
-  padding-top: 12px;
-  border-top: 1px solid #e2e8f0;
-  /* Fill the space under the head block; no scrollbars — the rows are
-     spaced to fit the hero height naturally. */
-  flex: 1; min-height: 0;
-}
-.pv2-info-block {
-  display: flex; flex-direction: column;
-  min-height: 0; height: 100%;
-  min-width: 0;
-}
-.pv2-info-heading {
-  font-size: 14px; font-weight: 800; color: #5b21b6;
-  margin: 0 0 8px 0;
-  letter-spacing: -.01em;
-}
-.pv2-info-heading-sub { margin-top: 14px; }
-.pv2-info-body {
-  display: flex; flex-direction: column; gap: 0;
-  overflow: visible;
-}
-/* Each label : value pair sits on a row with a faint dotted separator so
-   values line up in a clean right-hand column and the eye can track
-   across long rows. */
-.pv2-info-row {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
-  font-size: 12.5px;
-  padding: 4px 0;
-  border-bottom: 1px dashed #eef2f7;
-}
-.pv2-info-row:last-child { border-bottom: none; }
-.pv2-info-key { color: #64748b; font-weight: 500; flex-shrink: 0; }
-.pv2-info-val {
-  color: #1e293b; font-weight: 700;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  max-width: 60%;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.pv2-info-val-success { color: #16a34a; font-weight: 700; }
-.pv2-info-val-danger  { color: #dc2626; font-weight: 700; }
-.pv2-info-divider { height: 1px; background: #e2e8f0; margin: 6px 0; }
-.pv2-total-line { border-bottom: none; }
-.pv2-total-line .pv2-info-key { font-weight: 800; color: #1e293b; }
-.pv2-total-strong { color: #5b21b6; font-size: 15px; font-weight: 800; text-align: right; }
-
-/* ── Bottom row ── */
-.pv2-bottom {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
-  gap: 14px;
-}
-.pv2-tabs-card, .pv2-vendors-card { padding: 14px 16px; }
-.pv2-tabs {
-  display: flex; gap: 4px; flex-wrap: wrap;
-  border-bottom: 1.5px solid #e2e8f0;
-  margin-bottom: 14px;
-}
-.pv2-tab {
-  background: none; border: none; padding: 8px 14px;
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
-  color: #94a3b8; cursor: pointer;
-  border-bottom: 2.5px solid transparent;
-  margin-bottom: -1.5px;
-  transition: color .15s, border-color .15s;
-}
-.pv2-tab:hover { color: #4f46e5; }
-.pv2-tab.on { color: #4f46e5; border-bottom-color: #4f46e5; }
-.pv2-tab-body { min-height: 80px; }
-.pv2-tab-text { font-size: 13px; color: #475569; line-height: 1.55; margin: 0; }
-.pv2-muted { color: #94a3b8; font-style: italic; }
-
-.pv2-vendors-head {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 14px; font-weight: 800; color: #1e293b;
-  margin-bottom: 12px;
-}
-.pv2-vendors-head i { color: #4f46e5; font-size: 18px; }
-.pv2-vendors-count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 22px; height: 22px; padding: 0 8px; border-radius: 99px;
-  background: #4f46e5; color: #fff;
-  font-size: 11px; font-weight: 800;
-}
-.pv2-vendors-empty {
-  padding: 22px; text-align: center; color: #94a3b8; font-size: 12.5px;
-  border: 1.5px dashed #e2e8f0; border-radius: 10px;
-}
-
-/* Vendor table — flat list of every mapped vendor (replaces the
-   per-vendor cards). Header gets the navy/indigo strip used on the
-   list pages for visual continuity. */
-.pv2-vendor-table-wrap {
-  border: 1px solid #e2e8f0; border-radius: 10px;
-  /* The Product Vendors table carries 10 columns (Sr · Code · Name ·
-     Contact Person · Contact No · Purchase Price · GST % · GST Amount ·
-     Total · Map Date) — on narrow card widths that overflows. Switch
-     the wrapper to a horizontal scroller and pin a min table width
-     so columns never crush into a single character each. */
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: #c7d2fe transparent;
-}
-.pv2-vendor-table-wrap::-webkit-scrollbar { height: 8px; }
-.pv2-vendor-table-wrap::-webkit-scrollbar-track { background: transparent; }
-.pv2-vendor-table-wrap::-webkit-scrollbar-thumb {
-  background: #c7d2fe; border-radius: 99px;
-}
-.pv2-vendor-table-wrap::-webkit-scrollbar-thumb:hover { background: #818cf8; }
-.pv2-vendor-table {
-  width: 100%; min-width: 980px;
-  border-collapse: separate; border-spacing: 0;
-  font-size: 12px;
-}
-.pv2-vendor-table thead th {
-  background: linear-gradient(180deg, #2b3a85 0%, #1e2a5f 100%);
-  color: #fff; font-weight: 700; letter-spacing: .02em;
-  padding: 8px 10px; text-align: left; white-space: nowrap;
-  border-bottom: 1px solid #1e2a5f;
-}
-.pv2-vendor-table tbody td { white-space: nowrap; }
-.pv2-vendor-table tbody td {
-  padding: 8px 10px; color: #1e293b; border-top: 1px solid #eef2ff;
-  background: #fff;
-}
-.pv2-vendor-table tbody tr:nth-child(even) td { background: #faf9ff; }
-.pv2-vendor-table tbody tr:hover td { background: #f5f3ff; }
-.pv2-vendor-table .pv2-vt-num { text-align: center; white-space: nowrap; }
-.pv2-vendor-table .pv2-vt-strong { font-weight: 700; color: #4338ca; }
-.pv2-vendor-table .pv2-vt-total  { font-weight: 800; color: #5b21b6; }
-.pv2-vendor-table .pv2-vendor-code {
-  color: #5b21b6; font-family: ui-monospace, monospace; font-weight: 700;
-}
-
-[data-bs-theme="dark"] .pv2-vendor-table-wrap { border-color: #1f2937; }
-[data-bs-theme="dark"] .pv2-vendor-table tbody td { background: #0f172a; color: #e5e7eb; border-top-color: #1f2937; }
-[data-bs-theme="dark"] .pv2-vendor-table tbody tr:nth-child(even) td { background: #111827; }
-[data-bs-theme="dark"] .pv2-vendor-table tbody tr:hover td { background: #1e293b; }
-[data-bs-theme="dark"] .pv2-vendor-table .pv2-vt-strong { color: #a5b4fc; }
-[data-bs-theme="dark"] .pv2-vendor-table .pv2-vt-total  { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2-vendor-table .pv2-vendor-code { color: #c4b5fd; }
-
-/* Vendor cards — show every mapped-vendor field */
-.pv2-vendor-cards {
-  display: flex; flex-direction: column; gap: 10px;
-  max-height: 500px; overflow-y: auto; padding-right: 4px;
-  scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent;
-}
-.pv2-vendor-cards::-webkit-scrollbar { width: 6px; }
-.pv2-vendor-cards::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
-.pv2-vendor-card {
-  border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px;
-  background: #fafbff;
-}
-.pv2-vendor-card-head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; margin-bottom: 8px;
-  padding-bottom: 8px; border-bottom: 1px dashed #e2e8f0;
-}
-.pv2-vendor-card-title {
-  display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
-  font-size: 13px; font-weight: 700;
-}
-.pv2-vendor-sr {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 26px; height: 22px; padding: 0 6px; border-radius: 99px;
-  background: #ede9fe; color: #5b21b6; font-size: 11px; font-weight: 800;
-}
-.pv2-vendor-code { color: #5b21b6; font-family: ui-monospace, monospace; font-size: 12.5px; }
-.pv2-vendor-name { color: #1e293b; }
-.pv2-vendor-card-total {
-  display: inline-flex; align-items: baseline; gap: 6px; flex-shrink: 0;
-}
-.pv2-vendor-grid {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px 14px;
-}
-.pv2-vendor-remarks {
-  margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e2e8f0;
-  font-size: 12px;
-}
-.pv2-vendor-remarks-text { color: #475569; margin-left: 6px; }
-.pv2-vendor-attach { margin-top: 8px; }
-
-/* Attachment link (QC + vendor) */
-.pv2-attach-link {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: 12px; font-weight: 700; color: #4f46e5;
-  text-decoration: none;
-}
-.pv2-attach-link:hover { color: #3730a3; text-decoration: underline; }
-
-/* QC Auto-Code badge — Bootstrap's bg-light/text-dark goes muddy on the
- * dark-theme card (light grey on near-black) and the code becomes hard
- * to read. Custom class so the dark-mode override below can give it
- * proper contrast. */
-.pv2-qc-code {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11.5px; font-weight: 700;
-  font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
-  letter-spacing: 0.02em;
-  background: #f3f4f6; color: #1f2937;
-  border: 1px solid #e5e7eb;
-}
-
-@media (max-width: 1200px) {
-  .pv2-top-grid { grid-template-columns: 1fr; }
-  .pv2-bottom   { grid-template-columns: 1fr; }
-  /* Stacked layout — drop the equal-height pin so the info column can grow
-     naturally below the image instead of being clipped/scrolled. */
-  .pv2-right     { height: auto; }
-  .pv2-info-grid { overflow: visible; flex: none; }
-  .pv2-info-block { height: auto; }
-}
-@media (max-width: 720px) {
-  .pv2-info-grid { grid-template-columns: 1fr; }
-  .pv2-gallery   { grid-template-columns: 56px 1fr; }
-  .pv2-thumb     { width: 56px; height: 56px; }
-}
-
-/* ════════════════════════════════════════════════════════════════════════
- * Dark mode
- * ════════════════════════════════════════════════════════════════════ */
-[data-bs-theme="dark"] .pv2-root { background: #161c24; color: #ced4da; }
-[data-bs-theme="dark"] .pv2-card { background: #1c2531; border-color: rgba(255,255,255,.08); box-shadow: 0 2px 12px rgba(0,0,0,.4); }
-[data-bs-theme="dark"] .pv2-thumb { background: #161c24; border-color: rgba(255,255,255,.1); }
-[data-bs-theme="dark"] .pv2-thumbs { scrollbar-color: #4c1d95 transparent; }
-[data-bs-theme="dark"] .pv2-thumbs::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #a78bfa, #6d28d9);
-}
-[data-bs-theme="dark"] .pv2-main-image { background: #161c24; border-color: rgba(255,255,255,.1); }
-[data-bs-theme="dark"] .pv2-name { color: #ede9fe; }
-[data-bs-theme="dark"] .pv2-code { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2-sep  { color: rgba(255,255,255,.2); }
-[data-bs-theme="dark"] .pv2-back { background: #1c2531; border-color: rgba(255,255,255,.1); color: #ced4da; }
-[data-bs-theme="dark"] .pv2-back:hover { background: #232c38; }
-[data-bs-theme="dark"] .pv2-sold-text { color: #adb5bd; }
-[data-bs-theme="dark"] .pv2-price-label { color: #ede9fe; }
-[data-bs-theme="dark"] .pv2-price-val   { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2-edit { box-shadow: 0 4px 12px rgba(64,81,137,.45); }
-[data-bs-theme="dark"] .pv2-edit:hover { box-shadow: 0 6px 18px rgba(64,81,137,.55); }
-/* Back-to-Products — the base rule is background:#fff, which rendered as a
-   bright/near-white pill in dark mode. Give it the violet-dark surface used
-   across the product pages, with a clearly visible hover. */
-[data-bs-theme="dark"] .pv2-back {
-  background: #1a1430;
-  border-color: #3b2a6b;
-  color: #c4b5fd;
-}
-[data-bs-theme="dark"] .pv2-back:hover {
-  background: #221852;
-  border-color: #4c1d95;
-  color: #ddd6fe;
-}
-[data-bs-theme="dark"] .pv2-info-grid { border-top-color: rgba(255,255,255,.08); }
-[data-bs-theme="dark"] .pv2-info-heading { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2-info-row { border-bottom-color: rgba(255,255,255,.06); }
-[data-bs-theme="dark"] .pv2-info-row .pv2-info-key { color: #94a3b8; font-weight: 500; }
-[data-bs-theme="dark"] .pv2-info-row .pv2-info-val { color: #f1f5f9; font-weight: 700; }
-[data-bs-theme="dark"] .pv2-info-divider { background: rgba(255,255,255,.08); }
-[data-bs-theme="dark"] .pv2-total-line .pv2-info-key { color: #ede9fe; }
-[data-bs-theme="dark"] .pv2-total-strong { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2-tabs { border-bottom-color: rgba(255,255,255,.08); }
-[data-bs-theme="dark"] .pv2-tab { color: #6b7280; }
-[data-bs-theme="dark"] .pv2-tab:hover { color: #a8b6e9; }
-[data-bs-theme="dark"] .pv2-tab.on { color: #a8b6e9; border-bottom-color: #6366f1; }
-[data-bs-theme="dark"] .pv2-tab-text { color: #ced4da; }
-[data-bs-theme="dark"] .pv2-vendors-head { color: #ede9fe; }
-[data-bs-theme="dark"] .pv2-vendors-empty { border-color: rgba(255,255,255,.08); color: #6b7280; }
-[data-bs-theme="dark"] .pv2-vendor-card { background: #161c24; border-color: rgba(255,255,255,.08); }
-[data-bs-theme="dark"] .pv2-vendor-card-head { border-bottom-color: rgba(255,255,255,.08); }
-[data-bs-theme="dark"] .pv2-vendor-sr { background: rgba(139,92,246,.15); color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2-vendor-code { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2-vendor-name { color: #ede9fe; }
-[data-bs-theme="dark"] .pv2-vendor-remarks { border-top-color: rgba(255,255,255,.08); }
-[data-bs-theme="dark"] .pv2-vendor-remarks-text { color: #ced4da; }
-[data-bs-theme="dark"] .pv2-attach-link { color: #a8b6e9; }
-[data-bs-theme="dark"] .pv2-attach-link:hover { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2-qc-code {
-  background: rgba(139, 92, 246, .18);
-  color: #ddd6fe;
-  border-color: rgba(167, 139, 250, .35);
-}
-[data-bs-theme="dark"] .pv2-status.is-active { background: rgba(34,197,94,.12); color: #4ade80; border-color: rgba(34,197,94,.3); }
-[data-bs-theme="dark"] .pv2-status.is-inactive { background: rgba(245,158,11,.12); color: #fcd34d; border-color: rgba(245,158,11,.3); }
-`;

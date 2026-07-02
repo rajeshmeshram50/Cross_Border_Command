@@ -872,11 +872,9 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
           : 'All Trade Documents & Agreements in one list';
         const docs: VaultDoc[] = isStd ? stdDocs : c2cDocs;
-        // 5 rows per page with a compact prev/next pager.
-        const OV_PER_PAGE = 5;
-        const ovTotalPages = Math.max(1, Math.ceil(docs.length / OV_PER_PAGE));
-        const ovPageSafe = Math.min(overviewPage, ovTotalPages);
-        const pageDocs = docs.slice((ovPageSafe - 1) * OV_PER_PAGE, (ovPageSafe - 1) * OV_PER_PAGE + OV_PER_PAGE);
+        // Full list — the body scrolls after ~5 rows (see .cev-ov-body
+        // min/max-height) instead of paginating.
+        void overviewPage;
         return (
           <div className="cev-ov-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
             <div className="cev-ov-card">
@@ -894,8 +892,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>
-                    ) : pageDocs.map((d, i) => {
-                      const absIdx = (ovPageSafe - 1) * OV_PER_PAGE + i;
+                    ) : docs.map((d, i) => {
+                      const absIdx = i;
                       const raw = d.attachment_url;
                       const url = raw ? resolveFileUrl(raw) : null;
                       const fname = d.attachment || `${d.name}.pdf`;
@@ -932,23 +930,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   </tbody>
                 </table>
               </div>
-              {/* Pager — 5 per page. */}
-              {docs.length > OV_PER_PAGE && (
+              {docs.length > 0 && (
                 <div className="cev-ov-pager">
                   <span className="cev-ov-pager-info">
-                    Showing <strong>{(ovPageSafe - 1) * OV_PER_PAGE + 1}–{Math.min(ovPageSafe * OV_PER_PAGE, docs.length)}</strong> of <strong>{docs.length}</strong>
+                    Showing all <strong>{docs.length}</strong> document{docs.length === 1 ? '' : 's'}
                   </span>
-                  <div className="cev-ov-pager-btns">
-                    <button type="button" className="cev-ov-pager-nav" disabled={ovPageSafe === 1} onClick={() => setOverviewPage((p) => Math.max(1, p - 1))} aria-label="Previous">
-                      <i className="ri-arrow-left-s-line" aria-hidden />
-                    </button>
-                    {[ovPageSafe, ovPageSafe + 1].filter((p) => p >= 1 && p <= ovTotalPages).map((p) => (
-                      <button type="button" key={p} className={`cev-ov-pager-num ${p === ovPageSafe ? 'is-active' : ''}`} onClick={() => setOverviewPage(p)}>{p}</button>
-                    ))}
-                    <button type="button" className="cev-ov-pager-nav" disabled={ovPageSafe === ovTotalPages} onClick={() => setOverviewPage((p) => Math.min(ovTotalPages, p + 1))} aria-label="Next">
-                      <i className="ri-arrow-right-s-line" aria-hidden />
-                    </button>
-                  </div>
                 </div>
               )}
             </div>
@@ -1096,6 +1082,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [reminding, setReminding] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const canViewOrDownload = !!doc.attachment_url;
   const canReupload = !!ownerId && !!doc.doc_code;
   // Signing lifecycle for Trade Document rows:
@@ -1120,7 +1107,14 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 
   // Blob download so it works on the deployed server too (a plain <a download>
   // is ignored cross-origin / for inline-served files → opens instead of saving).
-  const download = () => { void downloadFile(doc.attachment_url, doc.attachment); };
+  // Spinner while the file streams so the user sees the download is in flight.
+  const download = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try { await downloadFile(doc.attachment_url, doc.attachment ?? undefined); }
+    catch { toast.error('Download failed', 'Could not download the file. Please try again.'); }
+    finally { setDownloading(false); }
+  };
 
   const onPick = async (f: File | undefined) => {
     if (!f || !ownerId || !doc.doc_code) return;
@@ -1208,15 +1202,17 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         </a>
       </Tooltip>
-      <Tooltip label={canViewOrDownload ? `Download ${doc.attachment}` : 'No attachment yet'}>
+      <Tooltip label={!canViewOrDownload ? 'No attachment yet' : (downloading ? 'Downloading…' : `Download ${doc.attachment}`)}>
         <button
           type="button"
-          disabled={!canViewOrDownload}
+          disabled={!canViewOrDownload || downloading}
           onClick={download}
           className={`cev-row-act cev-row-act-download ${!canViewOrDownload ? 'is-disabled' : ''}`}
           aria-label="Download"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          {downloading
+            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 13 }} aria-hidden />
+            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
         </button>
       </Tooltip>
       {/* Upload / Re-upload is hidden on the Case-to-Case Trade Documents

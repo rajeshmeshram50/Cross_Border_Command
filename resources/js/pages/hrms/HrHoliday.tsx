@@ -298,14 +298,14 @@ export default function HrHoliday() {
                 color: #7c5cc4 !important;
                 background: transparent !important;
                 border-bottom: 1.5px solid #e4d9fb !important;
-                padding: 13px 14px;
+                padding: 13px 8px;
               }
               .holiday-page .rec-list-table thead th:first-child{ border-top-left-radius: 14px; }
               .holiday-page .rec-list-table thead th:last-child{ border-top-right-radius: 14px; }
 
               /* rows — breathing room, zebra, smooth violet hover with accent rail */
               .holiday-page .rec-list-table tbody td{
-                padding: 15px 14px;
+                padding: 15px 8px;
                 border-bottom: 1px solid #f4f0fc;
                 vertical-align: middle;
               }
@@ -461,7 +461,7 @@ export default function HrHoliday() {
                               />
                             </span>
                           </th>
-                          <th>Holiday Name</th>
+                          <th style={{ width: 300 }}>Holiday Name</th>
                           <th className="text-center" style={{ width: 160 }}>Group</th>
                           <th className="text-center" style={{ width: 125 }}>Date</th>
                           <th className="text-center" style={{ width: 100 }}>Day</th>
@@ -486,9 +486,9 @@ export default function HrHoliday() {
                               <td>
                                 <div className="fw-bold fs-13">{r.name}</div>
                                 {r.description && (
-                                  r.description.length > 100 ? (
+                                  r.description.length > 50 ? (
                                     <Tooltip label={r.description}>
-                                      <div className="text-muted" style={{ fontSize: 11.5, width: 'fit-content' }}>{r.description.slice(0, 100)}…</div>
+                                      <div className="text-muted" style={{ fontSize: 11.5, width: 'fit-content' }}>{r.description.slice(0, 50)}…</div>
                                     </Tooltip>
                                   ) : (
                                     <div className="text-muted" style={{ fontSize: 11.5 }}>{r.description}</div>

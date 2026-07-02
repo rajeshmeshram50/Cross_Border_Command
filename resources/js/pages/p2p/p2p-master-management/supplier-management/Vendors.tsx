@@ -145,10 +145,19 @@ export default function Vendors() {
   /* Segment "+N" popover — fixed-positioned card anchored to the clicked badge
      so the table's overflow can't clip it. */
   const [segPop, setSegPop] = useState<{ segments: string[]; x: number; y: number } | null>(null);
-  /* Contact Persons popup paginates 5 per page. Resets whenever it opens. */
-  const CONTACTS_PER_PAGE = 5;
-  const [contactsPage, setContactsPage] = useState(1);
-  useEffect(() => { setContactsPage(1); }, [contactsTarget]);
+
+  /* Scroll lock — while ANY overlay (Segments / Contact Persons) is open, freeze
+     the page behind it. Lock BOTH <html> and <body>; a body-only lock still lets
+     the html element scroll on some layouts. */
+  useEffect(() => {
+    const anyOpen = segPop !== null || contactsTarget !== null;
+    if (!anyOpen) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [segPop, contactsTarget]);
   const [loading, setLoading] = useState(true);
   /* "What We Are Doing Here" stepper — collapsible, open by default to
      mirror the Figma. Purely presentational. */
@@ -633,13 +642,27 @@ useEffect(() => {
       {/* Segment "+N" popover — small floating card listing every segment. */}
       {segPop && (
         <div className="sup-fig">
-          <div className="sl-seg-pop-ov" onClick={() => setSegPop(null)} />
-          <div className="sl-seg-pop" style={{ left: segPop.x, top: segPop.y }} role="dialog">
-            <div className="sl-seg-pop-head">Segments ({segPop.segments.length})</div>
-            <div className="sl-seg-pop-body">
-              {segPop.segments.map((s, idx) => (
-                <span key={`${s}-${idx}`} className="sl-seg-chip">{s}</span>
-              ))}
+          <div className="sc-ov" onClick={(e) => { if (e.target === e.currentTarget) setSegPop(null); }}>
+            <div className="sc-pop seg-modal" role="dialog" aria-modal="true">
+              <div className="sc-head">
+                <div className="sc-head-ico">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>
+                </div>
+                <div className="min-w-0">
+                  <div className="sc-title">Segments</div>
+                </div>
+                <span className="seg-count-badge">{segPop.segments.length} segment{segPop.segments.length !== 1 ? 's' : ''}</span>
+                <button type="button" className="sc-close" onClick={() => setSegPop(null)} aria-label="Close">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </div>
+              <div className="sc-body">
+                <div className="seg-modal-grid">
+                  {segPop.segments.map((s, idx) => (
+                    <span key={`${s}-${idx}`} className="seg-modal-chip" title={s}>{s}</span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -663,48 +686,25 @@ useEffect(() => {
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                 </button>
               </div>
-              {(() => {
-                const all = contactsTarget.contacts;
-                const totalPages = Math.max(1, Math.ceil(all.length / CONTACTS_PER_PAGE));
-                const page = Math.min(contactsPage, totalPages);
-                const start = (page - 1) * CONTACTS_PER_PAGE;
-                const slice = all.slice(start, start + CONTACTS_PER_PAGE);
-                return (
-                  <>
-                    <div className="sc-body">
-                      {slice.map((c, i) => (
-                        <div className="sc-row" key={start + i}>
-                          <div className="sc-avatar">{(c.name || '?').trim().charAt(0).toUpperCase()}</div>
-                          <div className="min-w-0" style={{ flex: 1 }}>
-                            <div className="sc-name">
-                              {c.name || '—'}
-                              <span className={`sc-role ${c.isPrimary ? 'is-primary' : 'is-other'}`}>{c.role}</span>
-                            </div>
-                            <div className="sc-meta">
-                              {c.phone && <span><i className="ri-phone-line" />{c.phone}</span>}
-                              {c.email && <span><i className="ri-mail-line" />{c.email}</span>}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    {all.length > CONTACTS_PER_PAGE && (
-                      <div className="sc-pager">
-                        <span className="sc-pg-info">Showing <b>{start + 1}–{Math.min(start + CONTACTS_PER_PAGE, all.length)}</b> of <b>{all.length}</b></span>
-                        <div className="sc-pg-ctrls">
-                          <button type="button" className="sc-pg-arrow" disabled={page === 1} onClick={() => setContactsPage(page - 1)} aria-label="Previous">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-                          </button>
-                          <span className="sc-pg-count">{page} / {totalPages}</span>
-                          <button type="button" className="sc-pg-arrow" disabled={page === totalPages} onClick={() => setContactsPage(page + 1)} aria-label="Next">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
-                          </button>
-                        </div>
+              {/* No pagination — list every contact and let the body scroll
+                  after ~5 rows (max-height below). */}
+              <div className="sc-body" style={{ maxHeight: 'min(60vh, 392px)' }}>
+                {contactsTarget.contacts.map((c, i) => (
+                  <div className="sc-row" key={i}>
+                    <div className="sc-avatar">{(c.name || '?').trim().charAt(0).toUpperCase()}</div>
+                    <div className="min-w-0" style={{ flex: 1 }}>
+                      <div className="sc-name">
+                        {c.name || '—'}
+                        <span className={`sc-role ${c.isPrimary ? 'is-primary' : 'is-other'}`}>{c.role}</span>
                       </div>
-                    )}
-                  </>
-                );
-              })()}
+                      <div className="sc-meta">
+                        {c.phone && <span><i className="ri-phone-line" />{c.phone}</span>}
+                        {c.email && <span><i className="ri-mail-line" />{c.email}</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

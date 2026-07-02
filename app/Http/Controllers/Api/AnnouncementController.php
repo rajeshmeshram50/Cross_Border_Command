@@ -491,8 +491,17 @@ class AnnouncementController extends Controller
 
         if ($audienceType === 'roles' && !empty($roleIds)) {
             $q->where(function ($w) use ($roleIds) {
+                // Primary role + the LEGACY single ancillary column (for rows
+                // not yet migrated to the multi-role array).
                 $w->whereIn('primary_role_id', $roleIds)
                   ->orWhereIn('ancillary_role_id', $roleIds);
+                // Modern multi-role storage lives in the `ancillary_role_ids`
+                // JSON array (added 2026-05-08). Match any target role held as
+                // an ancillary role there — otherwise multi-role employees are
+                // under-counted / never reached when targeting by role.
+                foreach ($roleIds as $rid) {
+                    $w->orWhereJsonContains('ancillary_role_ids', (int) $rid);
+                }
             });
         } elseif ($audienceType === 'designations' && !empty($designationIds)) {
             $q->whereIn('designation_id', $designationIds);
