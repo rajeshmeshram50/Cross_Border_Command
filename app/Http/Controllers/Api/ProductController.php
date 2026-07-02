@@ -299,8 +299,15 @@ class ProductController extends Controller
          * ──────────────────────────────────────────────────────────── */
         $hasKeptList   = $request->has('secondary_images');
         $hasNewFiles   = $request->hasFile('secondary_image_files');
-        if ($hasKeptList || $hasNewFiles) {
-            $kept = $hasKeptList ? (array) ($data['secondary_images'] ?? []) : (array) ($product->secondary_images ?? []);
+        // The client sets this whenever it is submitting the full secondary set
+        // (add or edit). It lets us tell "user removed the last image" (empty
+        // array → FormData omits the key) apart from "payload didn't mention
+        // secondary images at all", so a cleared gallery actually persists.
+        $forceReplace  = $request->boolean('secondary_images_replace');
+        if ($hasKeptList || $hasNewFiles || $forceReplace) {
+            $kept = ($hasKeptList || $forceReplace)
+                ? (array) ($data['secondary_images'] ?? [])
+                : (array) ($product->secondary_images ?? []);
             // Drop blanks and any `blob:` URLs that older clients might still
             // send — those don't resolve on the server.
             $kept = array_values(array_filter(
@@ -395,7 +402,15 @@ class ProductController extends Controller
         ]);
 
         $product->fill($data);
+        // The product form was simplified to two stages (Core → Sales); the
+        // Quality step that used to flip 'draft' → 'inactive' is gone, so Sales
+        // is now the final data step. Promote a fresh draft to 'inactive' here
+        // so a completed product surfaces as a ready (zero-supplier) row.
+        // Mapping a supplier later promotes it to 'active' (see storeVendors).
         $product->step_completed = max((int)$product->step_completed, 2);
+        if ($product->status === 'draft') {
+            $product->status = 'inactive';
+        }
         $product->save();
 
         return response()->json($product->fresh());

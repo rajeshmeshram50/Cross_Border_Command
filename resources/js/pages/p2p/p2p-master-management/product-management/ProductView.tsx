@@ -200,8 +200,12 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   }
   if (!product) return null;
 
-  const statusText = (product.status || 'draft').replace(/^./, c => c.toUpperCase());
-  const isActive = product.status === 'active';
+  // Active / Inactive mirrors the product list: a product is "Active" once it
+  // has at least one mapped supplier, "Inactive" otherwise. (Basing it on the
+  // raw `status` column drifted from the list, which shows every stale-status
+  // product as Active regardless of supplier mapping.)
+  const isActive = product.vendor_maps.length > 0;
+  const statusText = isActive ? 'Active' : 'Inactive';
   const isHaz = String(product.haz_type ?? '').toLowerCase() === 'haz';
 
   const segmentName    = (product.segment?.title as string) ?? '—';
@@ -1086,7 +1090,7 @@ const SCOPED_CSS = `
 .pv2pd-info { display: flex; flex-direction: column; }
 .pv2pd-gallery { display: flex; flex-direction: column; gap: 8px; }
 .pv2pd-main-img { position: relative; border-radius: 14px; overflow: hidden; background: #f1edfa; aspect-ratio: 1/.72; box-shadow: 0 10px 26px rgba(76,29,149,.15); display: flex; align-items: center; justify-content: center; }
-.pv2pd-main-img img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s cubic-bezier(.22,1,.36,1); }
+.pv2pd-main-img img { width: 100%; height: 100%; object-fit: fill; transition: transform .5s cubic-bezier(.22,1,.36,1); }
 .pv2pd-main-img:hover img { transform: scale(1.05); }
 .pv2pd-main-empty { font-size: 44px; font-weight: 800; color: #a78bfa; }
 .pv2pd-thumbs { display: flex; gap: 8px; }
@@ -1128,6 +1132,25 @@ const SCOPED_CSS = `
 .pv2pd-sec__ico { width: 23px; height: 23px; border-radius: 7px; background: linear-gradient(135deg,#8b5cf6,#7c3aed); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #fff; }
 .pv2pd-highlights { display: grid; grid-template-columns: repeat(3,1fr); gap: 9px; margin-bottom: 0; }
 @media (max-width: 560px) { .pv2pd-highlights { grid-template-columns: repeat(2,1fr); } }
+/* ─── Detail popup — tablet / mobile ─── */
+@media (max-width: 820px) {
+  .pv2pd-hero { padding: 12px 16px; }
+  .pv2pd-hero-row { flex-wrap: wrap; }
+  .pv2pd-title { font-size: 14px; }
+  .pv2pd-hero-btns { width: 100%; flex-wrap: wrap; }
+  .pv2pd-hbtn { flex: 1 1 auto; justify-content: center; }
+  .pv2pd-body { padding: 14px; gap: 14px; }
+}
+@media (max-width: 520px) {
+  .pv2pd-highlights { grid-template-columns: 1fr; }
+  .pv2pd-buybar { flex-direction: column; align-items: stretch; }
+  .pv2pd-qty { width: 100%; justify-content: center; }
+  .pv2pd-act { width: 100%; }
+  .pv2pd-tab { min-width: 0; padding: 7px 6px; font-size: 10px; }
+  .pv2pd-tab-body { height: 260px; }
+  .pv2pd-sup-modal { max-width: 100%; }
+  .pv2pd-sup-body { padding: 12px 14px; }
+}
 .pv2pd-hl { --acc: #7c3aed; --acc2: #8b5cf6; display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #efe9fb; border-radius: 13px; padding: 10px 12px 10px 13px; position: relative; overflow: hidden; box-shadow: 0 1px 2px rgba(76,29,149,.05),0 4px 12px rgba(76,29,149,.05); transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s, border-color .2s; }
 .pv2pd-hl::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(180deg,var(--acc2),var(--acc)); opacity: .9; }
 .pv2pd-hl:hover { transform: translateY(-2px); box-shadow: 0 2px 4px rgba(76,29,149,.06),0 10px 22px rgba(76,29,149,.14); }
@@ -1183,7 +1206,7 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .pv2pd-act--wish { background: rgba(124,58,237,.16); border-color: rgba(167,139,250,.3); color: #d6c9f5; }
 
 /* ═══ Mapped Suppliers popup ═══ */
-.pv2pd-sup-overlay { position: fixed; inset: 0; z-index: 1060; background: rgba(30,20,60,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; font-family: var(--font-sans); }
+.pv2pd-sup-overlay { position: fixed; inset: 0; z-index: 1060; background: rgba(66, 65, 71, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; font-family: var(--font-sans); }
 .pv2pd-sup-modal { width: 100%; max-width: 1060px; margin: auto; background: linear-gradient(180deg,#fbf9ff,#f5f1fe); border: 1px solid rgba(196,181,253,.6); border-radius: 18px; overflow: hidden; box-shadow: 0 30px 80px rgba(20,10,60,.45); animation: pv2pdSupPop .24s cubic-bezier(.22,1,.36,1); }
 @keyframes pv2pdSupPop { from { transform: translateY(16px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
 .pv2pd-sup-head { position: relative; display: flex; align-items: center; gap: 12px; padding: 15px 20px; background: linear-gradient(115deg,#4c1d95 0%,#6d28d9 50%,#8b5cf6 100%); color: #fff; }

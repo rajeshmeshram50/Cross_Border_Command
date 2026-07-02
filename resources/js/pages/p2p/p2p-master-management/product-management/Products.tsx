@@ -1504,8 +1504,8 @@ const SCOPED_CSS = `
 /* ═══ Product detail popup — renders ProductView over the list ═══ */
 .prd-detail-overlay {
   position: fixed; inset: 0; z-index: 1050;
-  background: radial-gradient(ellipse at 50% 0%, rgba(91,33,182,.5), rgba(20,12,40,.62));
-  backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+  background: rgba(66, 65, 71, 0.6);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 24px; overflow-y: auto;
 }
@@ -1559,6 +1559,24 @@ const SCOPED_CSS = `
 .prd-filter-btn.is-active { box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 -2px 6px rgba(76,29,149,.4) inset, 0 0 0 3px rgba(167,139,250,.5), 0 8px 24px rgba(124,58,237,.55); }
 .prd-filter-badge { position: relative; z-index: 3; display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: #fff; color: #7c3aed; font-size: 10px; font-weight: 800; }
 @media (max-width: 640px) { .prd-toolbar { flex-direction: column; align-items: stretch; } .prd-tabs { justify-content: center; flex-wrap: wrap; } }
+/* ─── Product list — tablet / mobile ─── */
+@media (max-width: 560px) {
+  .prd-root { padding: 10px 12px 20px; gap: 10px; }
+  .prd-hero { padding: 12px 14px; }
+  .prd-hero-sub { font-size: 10px; }
+  .prd-hero-btn { width: 100%; justify-content: center; }
+  .prd-bref-head-sub { display: none; }
+  .prd-tabs { width: 100%; }
+  .prd-tab { flex: 1; justify-content: center; }
+  .prd-tab-label { font-size: 11.5px; }
+  .prd-filter-btn { width: 100%; justify-content: center; }
+  .prd-detail-overlay { padding: 10px; }
+  .prd-pagination { justify-content: center; }
+}
+@media (max-width: 380px) {
+  .prd-tabs { flex-direction: column; }
+  .prd-tab { width: 100%; }
+}
 
 /* ═══ Product card (.pl-card ported from the P2P prototype) ═══ */
 .prd-pcard { position: relative; display: flex; flex-direction: column; background: #fff; border: 1px solid #e6e2f5; border-radius: 18px; overflow: hidden; box-shadow: 0 2px 6px rgba(15,23,42,.05), 0 8px 22px rgba(124,58,237,.07); transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s, border-color .2s; }
@@ -1566,13 +1584,13 @@ const SCOPED_CSS = `
 .prd-pcard-thumb { position: relative; height: 172px; display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--acc); background: linear-gradient(135deg, color-mix(in srgb, var(--acc) 16%, #fff), color-mix(in srgb, var(--acc) 6%, #f4f1fd)); border-bottom: 1px solid #efebfa; }
 .prd-pcard-thumb::before { content: ''; position: absolute; inset: 0; z-index: 0; background: radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--acc) 22%, transparent), transparent 60%); }
 .prd-pcard-thumb::after { content: ''; position: absolute; inset: 0; z-index: 0; opacity: .5; background-image: radial-gradient(color-mix(in srgb, var(--acc) 30%, transparent) 1px, transparent 1.4px); background-size: 16px 16px; -webkit-mask: radial-gradient(circle at 50% 42%, #000, transparent 70%); mask: radial-gradient(circle at 50% 42%, #000, transparent 70%); }
-.prd-pcard-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; transition: transform .35s cubic-bezier(.22,1,.36,1); }
+.prd-pcard-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; z-index: 1; transition: transform .35s cubic-bezier(.22,1,.36,1); }
 .prd-pcard:hover .prd-pcard-img { transform: scale(1.06); }
 .prd-pcard-thumb-ico { position: relative; z-index: 1; width: 66px; height: 66px; border-radius: 18px; display: flex; align-items: center; justify-content: center; color: var(--acc); background: rgba(255,255,255,.82); border: 1px solid color-mix(in srgb, var(--acc) 30%, #fff); box-shadow: 0 8px 22px color-mix(in srgb, var(--acc) 28%, transparent), 0 1px 0 rgba(255,255,255,.95) inset; transition: transform .3s cubic-bezier(.22,1,.36,1); }
 .prd-pcard:hover .prd-pcard-thumb-ico { transform: translateY(-3px) scale(1.04); }
 .prd-pcard-thumb-ico svg { width: 30px; height: 30px; }
 .prd-pcard-thumb-grad { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: linear-gradient(180deg,rgba(15,23,42,.04) 0%,transparent 32%,transparent 60%,rgba(15,23,42,.28) 100%); }
-.prd-pcard-thumb-seg { position: absolute; left: 10px; bottom: 9px; z-index: 3; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: color-mix(in srgb, var(--acc) 88%, #000); border-radius: 20px; padding: 3px 10px; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+.prd-pcard-thumb-seg { position: absolute; left: 10px; bottom: 9px; z-index: 3; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: #16a34a; border-radius: 20px; padding: 3px 10px; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
 .prd-pcard-status { position: absolute; right: 10px; top: 10px; z-index: 3; display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 800; border-radius: 20px; padding: 4px 9px; box-shadow: 0 2px 6px rgba(0,0,0,.12); }
 .prd-pcard-status-dot { width: 6px; height: 6px; border-radius: 50%; }
 .prd-pcard-status--active { color: #15803d; background: rgba(220,252,231,.96); border: 1px solid #86efac; }
@@ -1741,15 +1759,9 @@ const SCOPED_CSS = `
   box-shadow: 0 2px 8px rgba(124,58,237,.08);
   flex-wrap: wrap;
 }
-.prd-search {
-  flex: 1; min-width: 220px; position: relative;
-  display: flex; align-items: center;
-  background: #faf5ff; border: 1.5px solid #ddd6fe;
-  border-radius: 10px; padding: 0 12px 0 36px; height: 40px;
-}
-.prd-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); }
-.prd-search input { flex: 1; height: 100%; border: none; outline: none; background: transparent; font-family: inherit; font-size: 12.5px; color: #1e1b4b; }
-.prd-search input::placeholder { color: #94a3b8; }
+/* (Removed a stale duplicate .prd-search block whose absolute-positioned svg
+   rule forced the search icon and the clear button to the same spot,
+   overlapping them. The toolbar .prd-search rules above are the live ones.) */
 
 /* MasterSelect — sized to fit the 40px filter row, with the same violet
    accent as the other prd-* controls. Same chrome the master modal uses. */

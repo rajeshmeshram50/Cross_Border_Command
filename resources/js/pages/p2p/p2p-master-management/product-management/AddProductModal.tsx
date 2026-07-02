@@ -506,6 +506,13 @@ export default function AddProductModal(props: {
   /* The supplier-mapping UI now opens as a compact popup (from the header
      "Map Supplier" button) instead of a full wizard step. */
   const [supplierPopupOpen, setSupplierPopupOpen] = useState(false);
+  /* "Map GST (%)" popup (header GST button) — pick a rate from the master;
+     the "+" opens the "GST (%) Master" popup to add/remove rates. */
+  const [gstMapOpen, setGstMapOpen] = useState(false);
+  const [gstMapValue, setGstMapValue] = useState('');
+  const [gstMasterOpen, setGstMasterOpen] = useState(false);
+  const [newGstRate, setNewGstRate] = useState('');
+  const [gstBusy, setGstBusy] = useState(false);
   /* Vendors loaded from /api/vendors. Both Active and Inactive show
      up — the user may map either, since a draft vendor still needs
      its products linked before the vendor itself can flip to Active. */
@@ -848,6 +855,45 @@ export default function AddProductModal(props: {
   const closeSupplierPopup = () => {
     setSupplierPopupOpen(false);
     if (props.openSupplierMap) onClose();
+  };
+
+  /* ── GST (%) master — add / remove available rates from the popup ── */
+  const addGstRate = async () => {
+    const val = newGstRate.trim();
+    const num = Number(val);
+    if (!val || isNaN(num) || num < 0 || num > 100) {
+      toast.error('Invalid rate', 'Enter a GST % between 0 and 100');
+      return;
+    }
+    if (optGst.some(o => Number(o.extra?.percentage) === num)) {
+      toast.error('Duplicate rate', `${num}% already exists`);
+      return;
+    }
+    setGstBusy(true);
+    try {
+      const res = await api.post<Record<string, unknown>>('/master/gst_percentage', { percentage: num, status: 'Active' });
+      onMasterAdded('gst_percentage', res.data);
+      setNewGstRate('');
+      toast.success('Rate added', `${num}% added to the GST master`);
+    } catch (e: unknown) {
+      toast.error('Failed', extractError(e, 'Could not add the GST rate.'));
+    } finally {
+      setGstBusy(false);
+    }
+  };
+  const removeGstRate = async (id: string) => {
+    setGstBusy(true);
+    try {
+      await api.delete(`/master/gst_percentage/${id}`);
+      setOptGst(prev => prev.filter(o => o.value !== id));
+      if (gstId === id) setGstId('');
+      if (gstMapValue === id) setGstMapValue('');
+      toast.success('Rate removed', 'GST rate removed from the master');
+    } catch (e: unknown) {
+      toast.error('Failed', extractError(e, 'Could not remove the GST rate.'));
+    } finally {
+      setGstBusy(false);
+    }
   };
 
   const removeVendor = (id: string) =>
@@ -1297,6 +1343,12 @@ export default function AddProductModal(props: {
       if (primaryImageFile) fd.append('primary_image_file', primaryImageFile);
 
       // Secondary images: kept paths as a repeating field + new files.
+      // The frontend always sends the FULL intended secondary set, so tell the
+      // backend to replace the column even when the list is empty (removing the
+      // last secondary image sends no `secondary_images[]` at all — FormData
+      // omits empty arrays — which the backend would otherwise read as "no
+      // change" and keep the deleted images).
+      fd.append('secondary_images_replace', '1');
       secondaryImagePaths.forEach(p => fd.append('secondary_images[]', p));
       secondaryImageFiles.forEach(f => fd.append('secondary_image_files[]', f));
 
@@ -1609,8 +1661,8 @@ export default function AddProductModal(props: {
             <button
               type="button"
               className="apm-head-btn"
-              title="Add / manage GST %"
-              onClick={() => setQuickAdd('gst_percentage')}
+              title="Map / manage GST %"
+              onClick={() => { setGstMapValue(gstId); setGstMasterOpen(false); setGstMapOpen(true); }}
             >
               GST (%)
             </button>
@@ -2289,6 +2341,96 @@ export default function AddProductModal(props: {
           setVendorDeleteTarget(null);
         }}
       />
+
+      {/* ── Map GST (%) popup — pick a rate from the master ── */}
+      {gstMapOpen && createPortal((
+        <div className="apm-gst-overlay" onClick={() => setGstMapOpen(false)}>
+          <div className="apm-gst-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="apm-gst-head">
+              <div className="apm-gst-head-ico">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></svg>
+              </div>
+              <div className="apm-gst-head-txt">
+                <div className="apm-gst-title">Map GST (%)</div>
+                <div className="apm-gst-sub">Select the GST percentage you want to map for this product</div>
+              </div>
+              <button className="apm-gst-close" onClick={() => setGstMapOpen(false)} aria-label="Close">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+            <div className="apm-gst-body">
+              <div className="apm-gst-label-row">
+                <span className="apm-gst-label">How much GST % do you want to map for this product?</span>
+                <button className="apm-gst-plus" title="Add / manage GST % master" onClick={() => setGstMasterOpen(true)}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                </button>
+              </div>
+              <SelectInput value={gstMapValue} onChange={setGstMapValue} placeholder="Select GST %" options={optGst} />
+              <div className="apm-gst-hint">Need a different rate? Use the <b>+</b> button above to add it to the GST % master.</div>
+            </div>
+            <div className="apm-gst-foot">
+              <button className="apm-btn-ghost" onClick={() => setGstMapOpen(false)}>Cancel</button>
+              <button className="apm-btn-primary" disabled={!gstMapValue} onClick={() => { setGstId(gstMapValue); clearFieldError('gstId'); setGstMapOpen(false); }}>Map GST</button>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
+
+      {/* ── GST (%) Master popup — add / remove available rates ── */}
+      {gstMasterOpen && createPortal((
+        <div className="apm-gst-overlay apm-gst-overlay--master" onClick={() => setGstMasterOpen(false)}>
+          <div className="apm-gst-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="apm-gst-head">
+              <div className="apm-gst-head-ico">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></svg>
+              </div>
+              <div className="apm-gst-head-txt">
+                <div className="apm-gst-title">GST (%) Master</div>
+                <div className="apm-gst-sub">Manage the GST percentage values available across products</div>
+              </div>
+              <button className="apm-gst-close" onClick={() => setGstMasterOpen(false)} aria-label="Back to Map GST">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+            <div className="apm-gst-body">
+              <div className="apm-gst-bar">
+                <span className="apm-gst-count">{optGst.length} rate{optGst.length !== 1 ? 's' : ''} configured</span>
+                <div className="apm-gst-add-wrap">
+                  <input className="apm-input apm-gst-new" type="number" min="0" max="100" step="0.5" placeholder="e.g. 18" value={newGstRate} onChange={(e) => setNewGstRate(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addGstRate(); }} />
+                  <button className="apm-gst-addbtn" disabled={gstBusy} onClick={addGstRate}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                    Add Rate
+                  </button>
+                </div>
+              </div>
+              {optGst.length === 0 ? (
+                <div className="apm-gst-empty">No GST rates yet. Add one above.</div>
+              ) : (
+                <div className="apm-gst-tablewrap">
+                  <table className="apm-gst-table">
+                    <thead><tr><th>Sr No</th><th>GST Rate</th><th aria-label="Remove" /></tr></thead>
+                    <tbody>
+                      {optGst.map((o, i) => (
+                        <tr key={o.value}>
+                          <td><span className="apm-sup-sr">{String(i + 1).padStart(2, '0')}</span></td>
+                          <td className="apm-gst-rate">{o.label}</td>
+                          <td><button className="apm-sup-del" title="Remove rate" disabled={gstBusy} onClick={() => removeGstRate(o.value)}>×</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+            <div className="apm-gst-foot">
+              <button className="apm-btn-primary" onClick={() => setGstMasterOpen(false)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                Back to Map GST
+              </button>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
 
       {quickAdd === 'segments' ? (
         /* Segments quick-add now opens the full CLM segment form (name +
@@ -3098,8 +3240,9 @@ const SCOPED_CSS = `
   position: fixed; inset: 0;
   /* Above Velzon topbar (1002) and vertical-menu overlays (1003-1004). */
   z-index: 1090;
-  background: radial-gradient(ellipse at 50% 0%, rgba(91,33,182,.5), rgba(20,12,40,.62));
-  backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
+  background: rgba(66, 65, 71, 0.6);
+;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center;
   padding: 24px 20px;
   overflow-y: auto;
@@ -3110,7 +3253,7 @@ const SCOPED_CSS = `
      (both reduced from their original ~1440 cap to the same 1224
      value for visual consistency across the three onboarding
      forms). */
-  width: 100%; max-width: 1200px;
+  width: 100%; max-width: 1300px;
   max-height: calc(100vh - 48px);
   margin: auto;
   background:
@@ -3636,8 +3779,8 @@ const SCOPED_CSS = `
 /* ─── Map Vendor popup (Step 2) ─── */
 .apm-mv-backdrop {
   position: fixed; inset: 0; z-index: 1100;
-  background: rgba(15, 23, 42, .55);
-  backdrop-filter: blur(3px);
+  background: rgba(66, 65, 71, 0.6);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 24px 20px;
   overflow-y: auto;
@@ -3698,8 +3841,8 @@ const SCOPED_CSS = `
 /* ─── QC Add popup ─── */
 .apm-qc-backdrop {
   position: fixed; inset: 0; z-index: 1100;
-  background: rgba(15, 23, 42, .55);
-  backdrop-filter: blur(3px);
+  background: rgba(66, 65, 71, 0.6);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   display: flex; align-items: flex-start; justify-content: center;
   padding: 24px 20px;
   overflow-y: auto;
@@ -4043,11 +4186,31 @@ const SCOPED_CSS = `
   .apm-vendor-info { grid-template-columns: 1fr 1fr; }
   .apm-qc-row { grid-template-columns: 1fr 1fr; }
 }
+@media (max-width: 640px) {
+  .apm-backdrop { padding: 12px 10px; }
+  .apm-head { flex-wrap: wrap; padding: 12px 16px; }
+  .apm-head-actions { width: 100%; flex-wrap: wrap; }
+  .apm-head-btn { flex: 1; justify-content: center; }
+  .apm-sup-overlay { padding: 12px; }
+  .apm-sup-body { padding: 12px 14px; }
+  .apm-mv-popup-body { padding: 14px; }
+}
 @media (max-width: 540px) {
   .apm-grid-2, .apm-grid-3, .apm-grid-4, .apm-grid-5 { grid-template-columns: 1fr; }
   .apm-vendor-info { grid-template-columns: 1fr; }
-  .apm-stepper { padding: 12px; gap: 8px; }
-  .apm-step-text { display: none; }
+  /* Stack the two stepper cards vertically and keep their labels visible
+     (hiding the text left them looking empty). Drop the connector. */
+  .apm-stepper { flex-direction: column; align-items: stretch; padding: 12px; gap: 10px; }
+  .apm-step { padding: 12px 14px; }
+  .apm-step-icon { width: 40px; height: 40px; font-size: 19px; }
+  .apm-step-title { font-size: 13px; }
+  .apm-step-connector { display: none; }
+  /* Footer: primary actions on top (full-width), the required hint below. */
+  .apm-foot { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
+  .apm-foot-left { justify-content: center; }
+  .apm-foot-right { justify-content: stretch; }
+  .apm-foot-right .apm-btn-primary,
+  .apm-foot-right .apm-btn-outline { flex: 1; justify-content: center; }
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -4267,8 +4430,8 @@ const SCOPED_CSS = `
 /* ─── Master Quick-Add popup ─── */
 .apm-qa-backdrop {
   position: fixed; inset: 0; z-index: 1100;
-  background: rgba(15, 23, 42, .6);
-  backdrop-filter: blur(3px);
+  background: rgba(66, 65, 71, 0.6);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
   display: flex; align-items: center; justify-content: center;
   padding: 24px 20px;
   font-family: var(--font-sans);
@@ -4313,7 +4476,7 @@ const SCOPED_CSS = `
 .apm-backdrop-supplieronly { background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
 
 /* ═══ Mapped Suppliers list popup (compact, opened from "Map Supplier") ═══ */
-.apm-sup-overlay { position: fixed; inset: 0; z-index: 1095; background: rgba(30,20,60,.5); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: flex-start; justify-content: center; padding: 40px 24px; overflow-y: auto; font-family: var(--font-sans); }
+.apm-sup-overlay { position: fixed; inset: 0; z-index: 1095; background: rgba(66, 65, 71, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: flex-start; justify-content: center; padding: 40px 24px; overflow-y: auto; font-family: var(--font-sans); }
 .apm-sup-modal { width: 100%; max-width: 1080px; margin: auto; background: #fff; border: 1px solid rgba(196,181,253,.6); border-radius: 18px; overflow: hidden; box-shadow: 0 30px 80px rgba(20,10,60,.45); animation: apmSupPop .24s cubic-bezier(.22,1,.36,1); }
 @keyframes apmSupPop { from { transform: translateY(16px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
 .apm-sup-head { display: flex; align-items: center; gap: 12px; padding: 15px 20px; background: linear-gradient(115deg,#4c1d95 0%,#6d28d9 50%,#8b5cf6 100%); color: #fff; }
@@ -4351,4 +4514,54 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .apm-sup-modal { background: #1c1633; border-color: rgba(167,139,250,.28); }
 [data-bs-theme="dark"] .apm-sup-body { background: #1a1430; }
 [data-bs-theme="dark"] .apm-sup-foot { background: rgba(255,255,255,.03); border-top-color: rgba(167,139,250,.16); }
+
+/* ═══ Map GST (%) + GST (%) Master popups ═══ */
+.apm-gst-overlay { position: fixed; inset: 0; z-index: 1150; background: rgba(66, 65, 71, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; font-family: var(--font-sans); }
+.apm-gst-overlay--master { z-index: 1160; }
+.apm-gst-modal { width: 100%; max-width: 560px; margin: auto; background: #fff; border: 1px solid rgba(196,181,253,.6); border-radius: 18px; overflow: hidden; box-shadow: 0 30px 80px rgba(20,10,60,.45); animation: apmSupPop .24s cubic-bezier(.22,1,.36,1); }
+.apm-gst-head { display: flex; align-items: center; gap: 12px; padding: 15px 20px; background: linear-gradient(115deg,#5b21b6 0%,#7c3aed 55%,#8b5cf6 100%); color: #fff; }
+.apm-gst-head-ico { width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.25); display: flex; align-items: center; justify-content: center; }
+.apm-gst-head-txt { flex: 1; min-width: 0; }
+.apm-gst-title { font-size: 16px; font-weight: 800; }
+.apm-gst-sub { font-size: 11.5px; color: rgba(255,255,255,.82); margin-top: 1px; }
+.apm-gst-close { width: 32px; height: 32px; border-radius: 9px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.14); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s; }
+.apm-gst-close:hover { background: rgba(255,255,255,.26); }
+.apm-gst-body { padding: 18px 20px; background: #fff; }
+.apm-gst-label-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.apm-gst-label { font-size: 12.5px; font-weight: 700; color: #3b0764; }
+.apm-gst-plus { width: 24px; height: 24px; border-radius: 7px; border: none; background: linear-gradient(135deg,#8b5cf6,#7c3aed); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
+.apm-gst-plus:hover { filter: brightness(1.08); }
+.apm-gst-hint { margin-top: 9px; font-size: 11px; color: #7c6fa0; }
+.apm-gst-hint b { color: #7c3aed; }
+.apm-gst-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 20px; background: #faf8ff; border-top: 1px solid #efe9fb; }
+.apm-gst-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.apm-gst-count { font-size: 12px; font-weight: 700; color: #6d28d9; background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 20px; padding: 6px 14px; }
+.apm-gst-add-wrap { display: flex; align-items: center; gap: 8px; }
+.apm-gst-new { width: 120px; height: 36px; }
+.apm-gst-addbtn { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 12px; font-weight: 700; color: #fff; border: none; border-radius: 9px; padding: 8px 14px; cursor: pointer; background: linear-gradient(135deg,#8b5cf6,#7c3aed,#6d28d9); box-shadow: 0 4px 12px rgba(124,58,237,.35); }
+.apm-gst-addbtn:hover:not(:disabled) { filter: brightness(1.06); }
+.apm-gst-addbtn:disabled { opacity: .6; cursor: not-allowed; }
+.apm-gst-empty { text-align: center; color: #7c3aed; font-weight: 600; font-size: 13px; padding: 28px 16px; border: 1.5px dashed #d6cbf7; border-radius: 12px; background: #fbf9ff; }
+.apm-gst-tablewrap { border: 1px solid #efe9fb; border-radius: 12px; overflow-y: auto; max-height: 316px; }
+.apm-gst-tablewrap::-webkit-scrollbar { width: 7px; }
+.apm-gst-tablewrap::-webkit-scrollbar-thumb { background: #d8cef0; border-radius: 6px; }
+.apm-gst-tablewrap::-webkit-scrollbar-track { background: transparent; }
+.apm-gst-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.apm-gst-table thead th { text-align: left; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #94a3b8; padding: 10px 16px; border-bottom: 1px solid #efe9fb; position: sticky; top: 0; background: #fff; z-index: 1; }
+.apm-gst-table thead th:last-child { text-align: right; }
+.apm-gst-table tbody td { padding: 11px 16px; border-bottom: 1px solid #f4f0fc; color: #334155; font-weight: 600; }
+.apm-gst-table tbody tr:last-child td { border-bottom: none; }
+.apm-gst-table tbody tr:hover { background: #faf8ff; }
+.apm-gst-table tbody td:last-child { text-align: right; }
+.apm-gst-rate { font-weight: 800; color: #1e1b4b; font-size: 14px; }
+[data-bs-theme="dark"] .apm-gst-modal { background: #1c1633; border-color: rgba(167,139,250,.28); }
+[data-bs-theme="dark"] .apm-gst-body { background: #1a1430; }
+[data-bs-theme="dark"] .apm-gst-label { color: #f3e8ff; }
+[data-bs-theme="dark"] .apm-gst-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .apm-gst-table thead th { color: #9a93b3; border-bottom-color: rgba(167,139,250,.16); background: #1a1430; }
+[data-bs-theme="dark"] .apm-gst-tablewrap::-webkit-scrollbar-thumb { background: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .apm-gst-table tbody td { color: #cbd5e1; border-bottom-color: rgba(167,139,250,.1); }
+[data-bs-theme="dark"] .apm-gst-table tbody tr:hover { background: rgba(124,58,237,.12); }
+[data-bs-theme="dark"] .apm-gst-rate { color: #f1f5f9; }
+[data-bs-theme="dark"] .apm-gst-foot { background: rgba(255,255,255,.03); border-top-color: rgba(167,139,250,.16); }
 `;
