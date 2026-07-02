@@ -158,6 +158,14 @@
 /* Segments modal — reuses the Contact Persons popup shell (.sc-*); only the
    chip grid inside the body is bespoke. Narrower than the contacts modal. */
 .sup-fig .sc-pop.seg-modal{max-width:470px;}
+/* Slimmer header for the Segments modal (shorter than the Contact Persons one). */
+.sup-fig .sc-pop.seg-modal .sc-head{padding:11px 16px;gap:11px;}
+.sup-fig .sc-pop.seg-modal .sc-head-ico{width:34px;height:34px;border-radius:9px;}
+.sup-fig .sc-pop.seg-modal .sc-title{font-size:15px;}
+/* Count pill sits at the right, just left of the close button (so the title
+   stays clean and the segment count reads on one line). */
+.sup-fig .sc-pop.seg-modal .seg-count-badge{margin-left:auto;font-size:11px;font-weight:700;color:#fff;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.30);padding:4px 11px;border-radius:999px;white-space:nowrap;}
+.sup-fig .sc-pop.seg-modal .sc-close{margin-left:0;}
 /* Fixed 3-column grid so the chips line up in a tidy 3xN layout instead of
    an uneven wrap. Each chip fills its cell and centres its label; a long
    segment name truncates with an ellipsis (full text on hover via title). */

@@ -13,6 +13,7 @@ import { SegmentModal, nextSegmentCode, type SegmentForm } from '../../../clm/co
 import { CLM_CSS } from '../../../clm/shared/clmShared';
 import { SegmentTags } from '../../procurement-management/bulk-sourcing/SegmentTags';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
+import { downloadFile } from '../../../../utils/downloadFile';
 import {
   validateEmail, validatePincode, validateWebsite,
   validateGstin, validateIfsc, validateAccountNumber,
@@ -4120,7 +4121,6 @@ function FileChooser(props: {
   // so the user doesn't have to aim at the small 👁 button.
   return (
     <div className="avm-filechooser avm-filechooser-has-file">
-      <span className="avm-filechooser-icon"><i className="ri-attachment-line" /></span>
       {viewHref ? (
         <a
           href={viewHref}
@@ -4137,8 +4137,19 @@ function FileChooser(props: {
       )}
       <div className="avm-filechooser-actions">
         {/* View (eye) removed — the filename above is itself a link that opens
-            the attachment, so a separate view icon is redundant. Delete only,
-            and hidden when the chooser is locked (read-only). */}
+            the attachment. Replace swaps the file in place (re-upload without
+            deleting first); Delete clears it. Both hidden when read-only. */}
+        {!readOnly && (
+          <label
+            className="avm-fc-action avm-fc-replace"
+            data-tooltip="Replace file"
+            aria-label="Replace file"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <i className="ri-refresh-line" />
+            <input type="file" hidden accept={FILE_ACCEPT} onChange={onChange} />
+          </label>
+        )}
         {!readOnly && (
           <button
             type="button"
@@ -4196,6 +4207,17 @@ function SupplierSegmentRefTable(props: {
   /* Which reference row's upload popup is open (null = closed). The popup
    * collects the file + optional expiry before the row flips to Uploaded. */
   const [popupRow, setPopupRow] = useState<SegRefRow | null>(null);
+  /* refKey currently downloading — drives a spinner on that row's Download
+   * button so the user knows the fetch is in flight (server files stream
+   * through the backend, which takes a beat). */
+  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+  const doDownload = async (refKey: string, url: string, name: string) => {
+    if (downloadingKey) return;
+    setDownloadingKey(refKey);
+    try { await downloadFile(url, name); }
+    catch { toast.error('Download failed', 'Could not download the file. Please try again.'); }
+    finally { setDownloadingKey(null); }
+  };
   /* Show the blob URL immediately for instant feedback, then fire the
    * server upload — the persist callback swaps the blob URL for a
    * permanent attachment_url once the row lands in segment_doc_uploads. */
@@ -4276,7 +4298,16 @@ function SupplierSegmentRefTable(props: {
                       {uploaded ? (
                         <>
                           <a href={uploaded.url} target="_blank" rel="noreferrer" className="avm-kyc-act view" data-tooltip={`View ${uploaded.name}`} aria-label="View"><i className="ri-eye-line" /></a>
-                          <a href={uploaded.url} download={uploaded.name} className="avm-kyc-act down" data-tooltip={`Download ${uploaded.name}`} aria-label="Download"><i className="ri-download-2-line" /></a>
+                          <button
+                            type="button"
+                            className="avm-kyc-act down"
+                            data-tooltip={downloadingKey === refKey ? 'Downloading…' : `Download ${uploaded.name}`}
+                            aria-label="Download"
+                            disabled={downloadingKey === refKey}
+                            onClick={() => doDownload(refKey, uploaded.url, uploaded.name)}
+                          >
+                            <i className={downloadingKey === refKey ? 'ri-loader-4-line avm-spin' : 'ri-download-2-line'} />
+                          </button>
                           <button type="button" className="avm-kyc-act reup" data-tooltip="Re-upload" aria-label="Re-upload" onClick={() => setPopupRow(r)}>
                             <i className="ri-refresh-line" />
                           </button>
@@ -6452,6 +6483,12 @@ const SCOPED_CSS = `
   border-color: #7c3aed;
   color: #7c3aed;
 }
+.avm-fc-replace { position: relative; }
+.avm-fc-replace:hover {
+  background: rgba(124, 58, 237, .10);
+  border-color: #7c3aed;
+  color: #7c3aed;
+}
 .avm-fc-delete:hover {
   background: rgba(240, 101, 72, .10);
   border-color: #f06548;
@@ -6465,7 +6502,8 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-fc-action {
   background: #2a2150; border-color: #3b2a6b; color: #cbd5e1;
 }
-[data-bs-theme="dark"] .avm-fc-view:hover {
+[data-bs-theme="dark"] .avm-fc-view:hover,
+[data-bs-theme="dark"] .avm-fc-replace:hover {
   background: rgba(124, 58, 237, .18); border-color: #a78bfa; color: #ddd6fe;
 }
 [data-bs-theme="dark"] .avm-fc-delete:hover {
@@ -6721,6 +6759,9 @@ const SCOPED_CSS = `
   vertical-align: -2px;
 }
 @keyframes avm-spinner-spin { to { transform: rotate(360deg); } }
+/* Spin any icon in place — used on the row Download button while the file
+   streams through the backend, so the user sees it's working. */
+.avm-spin { animation: avm-spinner-spin .7s linear infinite; display: inline-block; }
 .avm-spinner-lg {
   width: 36px; height: 36px;
   border-width: 3px;
