@@ -147,7 +147,7 @@ class ProductController extends Controller
             ->with([
                 'segment', 'hazClass', 'uom', 'hsn', 'condition',
                 'packagingMaterial', 'gstPercentage',
-                'qcRecords', 'vendorMaps',
+                'qcRecords', 'vendorMaps', 'vendorMaps.vendor:id,vendor_code',
             ])
             ->findOrFail($id);
 
@@ -510,6 +510,54 @@ class ProductController extends Controller
             'data'   => $maps,
             'count'  => $maps->count(),
         ]);
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * PATCH /products/{id}/vendor-maps/{mapId}
+     * Inline-edit a single mapping's purchase price. GST amount and total
+     * are recomputed server-side from the row's existing GST %, and the
+     * change is mirrored onto vendor_product_mappings (the vendor side's
+     * source of truth). Kept separate from storeVendors — which replaces
+     * the whole list — so a price tweak can't wipe the other columns the
+     * detail-page DTO doesn't carry (website, email, remarks, …).
+     * ────────────────────────────────────────────────────────────── */
+    public function updateVendorMapPrice(Request $request, int $id, int $mapId)
+    {
+        $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $map = ProductVendorMap::where('product_id', $product->id)->findOrFail($mapId);
+
+        $data = $request->validate([
+            'purchase_price' => 'required|numeric|min:0',
+        ]);
+
+        $price = round((float) $data['purchase_price'], 2);
+        $gstPct = (float) ($map->gst_percentage ?? 0);
+        $gstAmt = round($price * $gstPct / 100, 2);
+        $total  = round($price + $gstAmt, 2);
+
+        DB::transaction(function () use ($map, $price, $gstAmt, $total) {
+            $map->purchase_price = $price;
+            $map->gst_amount     = $gstAmt;
+            $map->total_amount   = $total;
+            $map->save();
+
+            // Mirror onto the vendor side so both tables stay in sync.
+            if ($map->vendor_id) {
+                \App\Models\VendorProductMapping::where('vendor_id', $map->vendor_id)
+                    ->where('product_id', $map->product_id)
+                    ->update([
+                        'purchase_price' => $price,
+                        'gst_amount'     => $gstAmt,
+                        'total_amount'   => $total,
+                    ]);
+            }
+        });
+
+        return response()->json($product->fresh(['vendorMaps', 'vendorMaps.vendor:id,vendor_code', 'qcRecords']));
     }
 
     /* ──────────────────────────────────────────────────────────────────
