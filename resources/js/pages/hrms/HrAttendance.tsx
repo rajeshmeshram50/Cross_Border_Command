@@ -135,6 +135,14 @@ const STATUS_TONE: Record<DayStatus, { fg: string; bg: string; dot: string; labe
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e', '#a855f7'];
 const accent = (i: number) => ACCENTS[i % ACCENTS.length];
 const fmtMinutes = (m: number) => `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+// Human-readable late duration for the Logs table: "37 min" under an hour,
+// "1h 05m" once it crosses the hour mark.
+const fmtLateDuration = (m: number) => m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m} min`;
+// Grace window (minutes after shift start) before an arrival counts as late —
+// mirrors the server rule in AttendanceController (`minutesBetween > 10`). Below
+// this an arrival is on-time; at/above it we show the minutes-late measured from
+// the shift start time (e.g. 9:30 start, arrive 9:47 → 17 min late).
+const LATE_GRACE_MINUTES = 10;
 
 const renderTime = (t?: string | null, hour24 = false): ReactNode => {
   if (!t) return '—';
@@ -771,6 +779,16 @@ const VBAR_BANDS: Partial<Record<DayStatus, { label: string; fg: string; bg: str
   'Work From Home': { label: 'WFH',      fg: '#0d9488', bg: '#ccfbf1' },
 };
 
+// Decimal-hour (e.g. 9.55) → "09:33 AM" for per-session tooltips on the bar.
+function hourLabel(h: number): string {
+  let hh = Math.floor(h);
+  let mm = Math.round((h - hh) * 60);
+  if (mm === 60) { hh += 1; mm = 0; }
+  const ampm = hh >= 12 ? 'PM' : 'AM';
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+  return `${String(h12).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${ampm}`;
+}
+
 function AttendanceVisualBar({ segments, status }: { segments: Array<{ start: number; end: number }>; status?: DayStatus }) {
   const ticks = Array.from({ length: 24 }, (_, h) => h);
   const band = status && segments.length === 0 ? VBAR_BANDS[status] : undefined;
@@ -790,10 +808,14 @@ function AttendanceVisualBar({ segments, status }: { segments: Array<{ start: nu
             {band.label}
           </span>
         ) : segments.map((s, i) => (
+          // One pill per work session (each punch-in → punch-out pair). The
+          // empty track BETWEEN pills is the break/gap after a punch-out; the
+          // next pill is where the employee punched back in.
           <span
             key={i}
             className="att-vbar-block"
             style={{ left: `${(s.start / 24) * 100}%`, width: `${((s.end - s.start) / 24) * 100}%` }}
+            title={`Session ${i + 1}: ${hourLabel(s.start)} – ${hourLabel(s.end)}`}
           />
         ))}
       </div>
@@ -818,13 +840,13 @@ function TurtleIcon({ size = 24 }: { size?: number }) {
 }
 
 function ArrivalIcon({ lateMinutes, arrival }: { lateMinutes: number; arrival: ReactNode }) {
-  const late = lateMinutes > 0;
+  const late = lateMinutes > LATE_GRACE_MINUTES;
   return (
     <span className="att-arrival">
       <span className={`att-arrival-icon ${late ? 'att-arrival-icon--late' : 'att-arrival-icon--ok'}`}>
         {late ? <TurtleIcon size={20} /> : <i className="ri-check-line" />}
       </span>
-      <span className={`att-arrival-text ${late ? 'att-arrival-text--late' : ''}`}>
+      <span className="att-arrival-text">
         <span style={{ display: 'inline-block', minWidth: 62, textAlign: 'left' }}>{arrival || '—'}</span>
       </span>
     </span>
@@ -868,7 +890,7 @@ function LogsRequestsCard({
     for (let i = 0; i < 7; i++) {
       const d = new Date(t.getFullYear(), t.getMonth() - i, 1);
       const mk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-      out.push({ key: mk, label: i === 0 ? '30 DAYS' : MONTHS_SHORT[d.getMonth()].toUpperCase(), mk });
+      out.push({ key: mk, label: MONTHS_SHORT[d.getMonth()].toUpperCase(), mk });
     }
     return out;
   }, []);
@@ -946,6 +968,7 @@ function LogsRequestsCard({
                     <th scope="col">Effective Hours</th>
                     <th scope="col">Gross Hours</th>
                     <th scope="col">Arrival</th>
+                    <th scope="col">Late Duration</th>
                     <th scope="col" className="text-center pe-3">Log</th>
                   </tr>
                 </thead>
@@ -961,6 +984,13 @@ function LogsRequestsCard({
                     const isHolidayDay = l.status === 'Holiday';
                     const isOff   = l.status === 'Weekly Off' || isHolidayDay;
                     const isAbsent = l.status === 'Absent';
+                    // A day with no punches at all (synthesised Absent / no record)
+                    // should read as "No Time Entries Logged" rather than three
+                    // separate blank dashes, so it's clear no data exists vs. a
+                    // load failure.
+                    const noEntries = isAbsent
+                      && (!l.workSegments || l.workSegments.length === 0)
+                      && (!l.firstIn || l.firstIn === '—');
                     const tone = STATUS_TONE[l.status];
 
                     if (isOff) {
@@ -972,7 +1002,7 @@ function LogsRequestsCard({
                               {isHolidayDay ? 'HOLIDAY' : 'W-OFF'}
                             </span>
                           </td>
-                          <td colSpan={4} className="text-center att-log-woff-text">
+                          <td colSpan={5} className="text-center att-log-woff-text">
                             {isHolidayDay ? (l.holidayName ? `Holiday — ${l.holidayName}` : 'Holiday') : 'Full day Weekly-off'}
                           </td>
                           <td className="text-center">
@@ -990,20 +1020,36 @@ function LogsRequestsCard({
                         <td>
                           <AttendanceVisualBar segments={l.workSegments || []} status={l.status} />
                         </td>
-                        <td>
-                          {isAbsent ? <span className="text-muted">—</span> : (
-                            <div className="att-log-eff">
-                              <EffectiveDonut effective={l.effectiveMinutes || 0} expected={l.expectedMinutes || 9 * 60} />
-                              <span className="att-log-eff-text">{l.worked}{(l.effectiveMinutes || 0) > (l.expectedMinutes || 9 * 60) ? ' +' : ''}</span>
-                            </div>
-                          )}
-                        </td>
-                        <td className={isAbsent ? 'text-muted' : ''}>
-                          {isAbsent ? '—' : <>{l.worked}{(l.grossMinutes || 0) > (l.expectedMinutes || 9 * 60) ? ' +' : ''}</>}
-                        </td>
-                        <td>
-                          {isAbsent ? <span className="text-muted">—</span> : <ArrivalIcon lateMinutes={l.lateMinutes ?? 0} arrival={fmtClock(l.firstIn)} />}
-                        </td>
+                        {noEntries ? (
+                          <td colSpan={4} className="att-log-noentry-cell">
+                            <span className="att-log-noentry-text">
+                              <i className="ri-time-line" />
+                              No Time Entries Logged
+                            </span>
+                          </td>
+                        ) : (
+                          <>
+                            <td>
+                              {isAbsent ? <span className="text-muted">—</span> : (
+                                <div className="att-log-eff">
+                                  <EffectiveDonut effective={l.effectiveMinutes || 0} expected={l.expectedMinutes || 9 * 60} />
+                                  <span className="att-log-eff-text">{l.worked}{(l.effectiveMinutes || 0) > (l.expectedMinutes || 9 * 60) ? ' +' : ''}</span>
+                                </div>
+                              )}
+                            </td>
+                            <td className={isAbsent ? 'text-muted' : ''}>
+                              {isAbsent ? '—' : <>{l.worked}{(l.grossMinutes || 0) > (l.expectedMinutes || 9 * 60) ? ' +' : ''}</>}
+                            </td>
+                            <td>
+                              {isAbsent ? <span className="text-muted">—</span> : <ArrivalIcon lateMinutes={l.lateMinutes ?? 0} arrival={fmtClock(l.firstIn)} />}
+                            </td>
+                            <td>
+                              {!isAbsent && (l.lateMinutes ?? 0) > LATE_GRACE_MINUTES
+                                ? <span className="att-late-pill">{fmtLateDuration(l.lateMinutes ?? 0)} late</span>
+                                : <span className="text-muted">—</span>}
+                            </td>
+                          </>
+                        )}
                         <td className="text-center">
                           <button
                             type="button"
