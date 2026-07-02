@@ -108,10 +108,10 @@
 
 /* ═══ Container 3 — PANEL (.pl-panel: toolbar + card grid + pager in ONE box) ═══ */
 .prd-panel { display: flex; flex-direction: column; background: #fff; border: 1px solid #c4b5fd; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 0 rgba(255,255,255,.85) inset, 0 8px 28px rgba(139,92,246,.16), 0 2px 8px rgba(0,0,0,.05); }
-.prd-panel .prd-grid, .prd-panel .prd-list { padding: 16px; margin: 0; }
+.prd-panel .prd-grid, .prd-panel .prd-list { padding: 16px; margin: 0; min-height: 500px; align-content: start; }
 .prd-panel .prd-meta { padding: 10px 16px 0; }
 .prd-panel .prd-vendor-banner { margin: 12px 16px 0; }
-.prd-panel .prd-empty { margin: 16px; }
+.prd-panel .prd-empty { margin: 16px 16px 24px; }
 /* Toolbar — the panel's top strip (borderless, divider below) */
 .prd-toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #ece7f8; flex-wrap: wrap; }
 
@@ -804,8 +804,8 @@
 /* Empty */
 .prd-empty {
   background: #fff; border: 1.5px dashed #c4b5fd; border-radius: 14px;
-  padding: 36px 20px; text-align: center;
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 72px 20px; text-align: center; min-height: 460px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
 }
 .prd-empty-icon { width: 64px; height: 64px; border-radius: 16px; background: #ede9fe; display: flex; align-items: center; justify-content: center; }
 .prd-empty-title { font-size: 15px; font-weight: 800; color: #5b21b6; }
@@ -890,10 +890,11 @@
 .prd-filter-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 18px;
-  background: linear-gradient(110deg, #f5f3ff 0%, #ede9fe 100%);
+  /* Same purple gradient as the Add Product header. */
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
   border-bottom: 1px solid #ddd6fe;
 }
-.prd-filter-head-title { font-size: 16px; font-weight: 800; color: #3b0764; letter-spacing: -.3px; }
+.prd-filter-head-title { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -.3px; }
 .prd-filter-head-actions { display: inline-flex; gap: 6px; }
 .prd-filter-icon-btn {
   width: 32px; height: 32px; border-radius: 9px;
@@ -1397,10 +1398,10 @@
   box-shadow: 14px 0 36px rgba(0,0,0,.7);
 }
 [data-bs-theme="dark"] .prd-filter-head {
-  background: linear-gradient(110deg, #1c1438 0%, #2a1d5c 100%);
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
   border-bottom-color: #3b2a6b;
 }
-[data-bs-theme="dark"] .prd-filter-head-title { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-filter-head-title { color: #fff; }
 [data-bs-theme="dark"] .prd-filter-icon-btn {
   background: #1a1430;
   border-color: #3b2a6b;

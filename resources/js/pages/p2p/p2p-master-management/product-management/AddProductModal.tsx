@@ -2391,7 +2391,11 @@ export default function AddProductModal(props: {
             </div>
             <div className="apm-gst-foot">
               <button className="apm-btn-ghost" onClick={() => setGstMapOpen(false)}>Cancel</button>
-              <button className="apm-btn-primary" disabled={!gstMapValue} onClick={() => { setGstId(gstMapValue); clearFieldError('gstId'); setGstMapOpen(false); }}>Map GST</button>
+              <button className="apm-btn-primary" disabled={!gstMapValue} onClick={() => {
+                setGstId(gstMapValue); clearFieldError('gstId'); setGstMapOpen(false);
+                const rate = optGst.find(o => o.value === gstMapValue)?.label;
+                toast.success('GST mapped', rate ? `GST ${rate} is mapped to this product.` : 'GST is mapped to this product.');
+              }}>Map GST</button>
             </div>
           </div>
         </div>
