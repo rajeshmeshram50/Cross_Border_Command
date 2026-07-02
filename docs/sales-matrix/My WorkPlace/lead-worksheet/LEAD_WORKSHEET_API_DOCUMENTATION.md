@@ -65,7 +65,7 @@
 ## 4. CREATE / UPDATE / DELETE
 **POST `/sales/leads`** (create manual lead, txn, logs `generated`): `sender_name*`, `sender_mobile/email/company/address/city/state/pincode/sender_country_iso/sender_country_name`, `customer_id`/`consignee_id`, `query_message` (≤10 000), `product_quantity`, `query_product_name`. Defaults Qualified + Stage 1; `opp_code` row-locked. → `201 { data }`.
 
-**PUT `/sales/leads/{id}`** — update sender fields, `qualified`/`disqualified` (mutually exclusive → 422), `lead_stage_id` (1–6), `salesperson_id` (must exist, not soft-deleted), `key_opportunity`, `remark` (≤5 000), `price`, `lead_ack_reason_id` (must be active), `customer_id`/`consignee_id`, whatsapp fields. **Victory gate:** entering Stage 6 requires a non-cancelled, signed PI (else 422); `won_at` auto-set on entry, cleared on regression. → `200 { data }`.
+**PUT `/sales/leads/{id}`** — update sender fields, `qualified`/`disqualified` (mutually exclusive → 422), `lead_stage_id` (1–6), `salesperson_id` (must exist, not soft-deleted), `key_opportunity`, `remark` (≤5 000), `price`, `lead_ack_reason_id` (must be active), `customer_id`/`consignee_id`, whatsapp fields. **Victory gate:** entering Stage 6 requires a non-cancelled PI that has at least been **sent for signature (a signature request exists) or emailed** — not necessarily signed (else 422); `won_at` auto-set on entry, cleared on regression. **Segment guards on mapping:** setting `consignee_id` with mapped products is blocked when the segment forbids Buyer≠Consignee (422); setting `customer_id` requires every product's segment to match one of the customer's (422). → `200 { data }`.
 
 **DELETE `/sales/leads/{id}`** — soft-delete. → `200 { message }`.
 

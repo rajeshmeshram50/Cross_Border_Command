@@ -12,7 +12,7 @@ export default function PayrollTab() {
   const {
     employee, fmtRupee, fmtDate, empDetail, setEmpDetail, payrollTab, setPayrollTab,
     salaryStruct, realMonthlyGross, realAnnualCtc, realTimeline,
-    openLatestPayslip, setSalaryModalOpen, setBreakdownOpen, setBreakdownRowId,
+    openLatestPayslip, setBreakdownOpen, setBreakdownRowId,
   } = useEmployeeProfile();
   const toast = useToast();
 
@@ -398,20 +398,13 @@ export default function PayrollTab() {
                     </span>
                     <h6 className="mb-0 fw-bold pyt-section-title">Salary Timeline</h6>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setSalaryModalOpen(true)}
-                    className="d-inline-flex align-items-center gap-1 fw-semibold pyt-revise-btn"
-                  >
-                    <i className="ri-edit-line pyt-icon-13" /> Revise Salary
-                  </button>
                 </div>
                 <div className="px-3 py-2 position-relative">
                   {/* Vertical guide line connecting the timeline dots */}
                   <span className="pyt-timeline-guide" />
                   {realTimeline.length === 0 && (
                     <div className="text-muted text-center py-3 pyt-timeline-empty">
-                      No salary revisions recorded yet — use <strong>Revise Salary</strong> to set one.
+                      No salary revisions recorded yet.
                     </div>
                   )}
                   {realTimeline.map((row, idx) => (

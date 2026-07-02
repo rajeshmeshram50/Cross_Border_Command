@@ -219,7 +219,8 @@ Aggregates leads pivoted by `(salesperson_id, platform)`; header KPIs `total_lea
 | Not authenticated / inactive | 401 / 403 | sanctum / user.active |
 | Assign target out of hierarchy or Sales dept | 403 | `assign()` guards |
 | Lead not found / out of scope | 404 | binding + `applyScope` |
-| Victory without signed PI · both qualified+disqualified | 422 | `update()` gates |
+| Victory before PI sent-for-signature/emailed · both qualified+disqualified | 422 | `update()` gates |
+| Unmap product at `lead_stage_id ≥ 4` · segment Buyer≠Consignee / product-segment mismatch | 422 | `destroyLeadProduct()` · segment guards |
 | Validation failure | 422 | `$request->validate()` |
 
 `store`, `storeAcknowledgements`, `destroyLeadProduct` are transactional.

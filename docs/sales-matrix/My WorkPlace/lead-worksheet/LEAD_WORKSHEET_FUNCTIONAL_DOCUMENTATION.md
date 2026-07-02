@@ -93,7 +93,7 @@ Gated by the **`sales.workplace`** permission (super-admin bypasses).
 | 6 | **Quotation vs PI** | Proforma Invoice created + sent for signature |
 | 8 | **Victory** | Shipment order created; `won_at` auto-stamped on entering Victory |
 
-> Qualified/Disqualified are mutually exclusive; new leads default to **Qualified**. Entering Victory is **gated** (a non-cancelled, signed PI must exist).
+> Qualified/Disqualified are mutually exclusive; new leads default to **Qualified**. Entering Victory is **gated** — the opportunity must have a non-cancelled PI that has **at least been sent for signature** (a signature request exists) **or emailed** to the customer. The deal advances once the PI is *out for* e-signature; the system no longer waits for signing to complete.
 
 ---
 
@@ -166,7 +166,7 @@ Salespeople come from `GET /sales/leads/salespeople` (the tenant's Sales-departm
 |---|---|---|
 | 1 | Opportunity code | Auto `OPP-####` per client (row-locked, unique) |
 | 2 | Qualified vs Disqualified | Mutually exclusive; default Qualified; Stage-2 acknowledgement flips them |
-| 3 | Victory gate | Can't reach Stage 6 without a non-cancelled, signed PI |
+| 3 | Victory gate | Can't reach Stage 6 unless a non-cancelled PI has been **sent for signature or emailed** (not necessarily signed) |
 | 4 | `won_at` | Auto-set on entering Victory; cleared if the lead regresses below it |
 | 5 | Unassigned | `salesperson_id IS NULL` |
 | 6 | Assignment scope | Server enforces sales hierarchy + Sales-department membership; out-of-scope IDs are skipped |
@@ -185,7 +185,91 @@ Salespeople come from `GET /sales/leads/salespeople` (the tenant's Sales-departm
 
 ---
 
-## 7. KNOWN LIMITATIONS
+## 7. SMALL FEATURES & BEHAVIOURS (complete reference)
+
+Every "little" behaviour on the worksheet, so nothing is missed in QA.
+
+### 7.1 Worksheet list — micro-features
+| Feature | Detail |
+|---|---|
+| **Lead-type labels** | Server codes are prettified: `BUY`→*Buy Leads* · `P`→*PNS Calls* · `W`→*Direct Enquiries* · `BIZ`→*Catalog-View Leads* · `WA`→*WhatsApp-Enquiries* · `B`→*Buy-Leads* · null/unknown→*Manual* |
+| **WhatsApp status badge** | `connected`→**Connected** (green) · `not_connected`→**Not Connected** (red) · null/other→**Pending** (amber) |
+| **Key Opportunity star** | A ⭐ badge on the Opportunity ID (tooltip *"Key Opportunity"*) whenever `key_opportunity = true` |
+| **Auto-fit rows** | A ResizeObserver sizes rows-per-page to the viewport (`max(5, floor((height−40)/44))`); picking a value from the dropdown turns auto-fit off |
+| **Rows-per-page** | Dropdown = current value + {10, 25, 50}; changing it resets to page 1 |
+| **Search** | 250 ms debounce; matches *ID, name, phone, email, product, country* (server-side, ~25 columns + salesperson + customer); resets to page 1 |
+| **Tab counts** | `counts` refresh on tab/search/filter/rpp change but **not** on page-only paging; the status tab itself doesn't constrain the counts, but active filters (platform/country/date) do. Key Opportunity carries `key_in_progress` + `key_won` sub-counts |
+| **Sub-tab default** | Entering Key Opportunity always lands on **In Progress** first |
+| **Active-filter chips** | One chip per selected value (*Stage/Platform/Type/Country/Customer/Salesperson/Date*); `×` removes a single value (or the whole field for single facets); **Clear all** wipes them; the Filter button shows a live count badge |
+| **Return from Distribution** | `?sp=&sp_name=` auto-applies the salesperson filter, switches to the **All** tab, page 1, then strips the URL params |
+| **No-access card** | Without `can_view`: *"Ask your branch admin to grant can_view on Sales Matrix → Lead Worksheet."* |
+| **Empty / loading** | Skeleton shimmer rows while loading; *"No leads found"* when empty |
+
+### 7.2 Row actions & bulk bar
+| Action | Where | Notes |
+|---|---|---|
+| 👁 **View Lead Details** | row | Read-only card grid (`GET /sales/leads/{id}`) — see §7.6 |
+| 🕑 **Activity Tracker** | row | Generation/ownership timeline (`GET /sales/leads/{id}/activity`) — see §7.7 |
+| 👤 **Assign** | row | Single-lead assign modal (gated `can_edit` **and** `canDistribute`); pre-selects the current owner |
+| **CTQ** | row (Disqualified only) | Convert-to-Qualified — see §7.3 |
+| **Floating bulk bar** | appears when rows selected | *Assign Selected Leads* · *Convert to Qualified* (only on the Disqualified tab) · *Clear*. The header checkbox selects the whole page (indeterminate when partial) |
+
+### 7.3 CTQ — Convert to Qualified (the small feature you flagged)
+Two entry points: the per-row **CTQ** button (Disqualified rows only) and the floating bar's **Convert to Qualified** (Disqualified tab + selection).
+- A **confirmation modal** shows the lead's **OPP-###**, and a 4-cell grid: **Customer · Lead Source · Product · Lead Date**, with the note *"Lead {OPP-###} will be moved from Disqualified to Qualified. This action can be reversed."*
+- Confirm → `POST /sales/leads/convert-to-qualified { lead_ids[] }`. It sets `qualified=true`, `disqualified=false`, **and clears `lead_ack_reason_id` (null)** — the disqualification reason is removed so the lead is back in play. Response: `{ converted: N }`; toast *"{OPP-###} moved to Qualified"*; the list refetches.
+
+### 7.4 View hierarchy (who sees / can assign whom)
+Server-side, layered on top of `client_id`/`branch_id` tenant scope:
+| Tier | Sees (list) | Can assign to |
+|---|---|---|
+| **Sales employee / intern** | own-assigned + unassigned leads | self, their reporting manager, their direct reports |
+| **Sales manager (HOD)** | own + direct-reports' + unassigned | self + reporting chain (up/down) |
+| **Client/Branch admin, super-admin** | all in scope | anyone in scope (`assignableUserIds = null`) |
+
+Helpers: `SalesVisibility::applyToLeads()` (row narrowing), `assignableUserIds()` (self + manager + reports; null = admin), `salesDepartmentUserIds(user, branch)` (same-branch Sales-dept members), `canDistribute()` (admins + managers). **Assignment always additionally requires the target to be a Sales-department member in the same branch** (403 otherwise), and cross-tenant lead IDs are silently skipped (counted as `skipped_no_scope`).
+
+### 7.5 Which stage blocks what
+| Trigger | Rule | Result |
+|---|---|---|
+| **Advance to Stage 6 (Victory)** | Only on the forward move (currently `< 6`); needs a non-cancelled PI **sent for signature or emailed** | 422 with *"Create a Proforma Invoice…"* or *"Send the Proforma Invoice {code} for signature…"* |
+| **Enter Stage 6** | first time | `won_at` stamped `now()`; regressing below 6 clears `won_at` (re-advancing keeps the original) |
+| **Unmap a product** | `lead_stage_id ≥ 4` (Sourcing complete) | 422 — *"You can't unmap this product now — Product Sourcing (Stage 3) is already complete."* Must regress the lead first. **Cascade on allowed delete:** removes the product's shared-prices, sets `procurement_products.lead_product_id = null` (procurement survives, just delinks), then deletes the mapping |
+| **Map a consignee** (with products) | segment flagged *Buyer ≠ Consignee not allowed* + consignee ≠ customer | 422 |
+| **Map a customer** (with products) | every mapped product's segment must match one of the customer's segments | 422 |
+| **Qualified + Disqualified both true** | mutually exclusive | 422 |
+| **`lead_stage_id` out of range** | must be 1–6 (stages 7/8 aren't directly settable) | 422 |
+| **`lead_ack_reason_id`** | must reference an **active** reason | 422 |
+| **`salesperson_id`** | must not be a soft-deleted user | 422 |
+| **`remark`** | capped at 5000 chars | 422 |
+
+> **Signal-based stage filters (6 & 8):** the list treats **Stage 6 (Quotation vs PI)** as *"PI sent (signature request OR emailed) and not yet shipped"* and **Stage 8 (Victory)** as *"a shipment order exists"* — these don't map to the stored `lead_stage_id`.
+
+### 7.6 Documents & PDFs generated (complete list)
+| Output | Where | Format |
+|---|---|---|
+| **Shared-Price / Quotation PDF** | worksheet Stage-4 (`GET /sales/shared-prices/{id}/pdf?inline=`) | dompdf, **tenant-branded** (logo/address/GST/PAN/CIN/website), **Code-128 barcode `Q-#####`**, file `quotation_#{id}.pdf` |
+| **Excel export** | Export dropdown | **XLSX** (not PDF), 12 fixed columns: Lead Type, Lead Date, Lead Source, Assigned To, WhatsApp Status, Opportunity ID, Customer Name, Customer Number, Customer Email, Product Name, Company, Country. Paged **200/req** across the whole bucket; buckets = **All / Qualified / Disqualified / Key Opportunity** (each shows its live count); *"Nothing to export"* if empty. The dropdown is portalled to `<body>` so the banner never clips it |
+
+> The **Quotation PDF, Proforma-Invoice PDF, signed public links, and e-signature certificate** are produced inside **Stage 5** — documented in `../matrix-stages/` (not the worksheet).
+
+### 7.7 Add-New-Lead, Details & Activity modals
+- **Add New Lead** — a *"Take customer from existing sales database"* toggle: **off** = manual entry; **on** = pick a customer (`GET /customers?tab=all`) and auto-fill mobile/email/company/address/city/pincode/country/state (those fields lock; toggling back clears them). Required: Customer Name, **Mobile (6–15 digits)**, valid **Email**, City, Country, State. Country→State is a cascade (changing country resets state). Posts `sender_*` + `customer_id` to `POST /sales/leads`.
+- **Lead Details** — read-only card grid: OPP ID/Date, Lead Type (violet chip), Lead Source (green chip), Assign To, Customer, Mobile, **Email (mailto link)**, Company, Country (chip), **Product (amber-highlighted)**, plus optional **Address** and **Stage** cards. Stage labels expose the hidden ones too: `5 Pre-PI CLM`, `7 Post-PI CLM`.
+- **Activity Tracker** — newest-first timeline of **generated / assigned / reassigned** events with actor avatars, relative + exact timestamps, and (for reassignments) the old owner struck-through with an arrow to the new owner; *generated* rows show Source/Platform/OPP chips.
+
+### 7.8 Lead Distribution & KPI drill-downs
+- **4 KPI cards** — **Total Salespersons** (not clickable), **Total Leads**, **Assigned Leads**, **Unassigned Leads** (the last three are clickable → the KPI popup with filter `{}` / `{assigned:true}` / `{assigned:false}`).
+- **Roster table** shows only salespeople **with ≥1 assigned lead**, but the header "Total Salespersons" counts **all** active Sales members. Enriched from the employees table (department, designation, primary/ancillary role, reporting manager); sorted heaviest-load first.
+- **KPI / View-Leads tables** are 11-column and include **Shipment ID** and **PI Number** (from the latest non-cancelled PI's `bt_id` / `code`) — shown as *N/A* until a PI exists.
+- **Assign modal** has three modes — **single** (row), **selection** (checked rows), **filters** (account + date range; it re-queries matching leads at `per_page=1000` then assigns). If no Sales-dept employees exist it shows *"Add a person to the Sales department (HR → Employees) before assigning leads."* The response reports **new_assigned / reassigned / skipped_no_scope**.
+
+### 7.9 Opportunity-picker gates (list flags reused by Quotation/PI)
+The list endpoint accepts gates used by the Create-Quotation/PI pickers: `lead_ack_complete` (Stage 2 done — qualified + ≥1 acknowledgement), Stage-4 done (every mapped product has ≥1 shared price), and `exclude_with_pi` (hide leads that already carry a non-cancelled PI, so you can't start a new quotation once a PI exists).
+
+---
+
+## 8. KNOWN LIMITATIONS
 | Area | Limitation |
 |---|---|
 | India leads | IndiaMart sync intentionally excludes India (IN) — export-buyer focus |

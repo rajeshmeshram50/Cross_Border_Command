@@ -259,7 +259,16 @@ export default function IdimsHeader() {
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
 
-  const go = (path: string) => { setOpenDD(null); setMobileOpen(false); setMoreOpen(false); setMoreExpand(null); navigate(path); };
+  // Close every open header popover (mega-menu, branch, profile, search, more).
+  // Any in-header control that isn't the popover's own toggle should call this
+  // first — the outside-click handler doesn't fire for clicks INSIDE the
+  // header, so e.g. the profile panel would otherwise stay open when a nav item
+  // or action icon is clicked (bug #49).
+  const closeMenus = () => {
+    setOpenDD(null); setBranchOpen(false); setProfileOpen(false);
+    setSearchOpen(false); setMoreOpen(false); setMoreExpand(null);
+  };
+  const go = (path: string) => { closeMenus(); setMobileOpen(false); navigate(path); };
   const toggleFs = () => {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
     else document.exitFullscreen?.();
@@ -577,7 +586,7 @@ export default function IdimsHeader() {
           <div className="idims-nav-row idims-row-top">
             {/* Hamburger — only visible ≤1024px; toggles the mobile nav panel. */}
             <button type="button" className="idims-hamburger" aria-label="Menu"
-              onClick={() => setMobileOpen(o => !o)}>
+              onClick={() => { setProfileOpen(false); setSearchOpen(false); setMobileOpen(o => !o); }}>
               {mobileOpen ? IC.close : IC.menu}
             </button>
             <div className="idims-search">
@@ -618,14 +627,14 @@ export default function IdimsHeader() {
               <div className="idims-theme-switch" title="Switch brand theme">
                 <span className="idims-theme-switch-label">{tenantThemeEnabled ? 'Brand' : 'Default'}</span>
                 <button type="button" className="idims-theme-toggle" aria-label="Toggle brand theme"
-                  onClick={() => toggleTenantTheme?.()} />
+                  onClick={() => { closeMenus(); toggleTenantTheme?.(); }} />
               </div>
 
               <div className="idims-actions">
-                <button type="button" className="idims-action-btn" title="Toggle theme" onClick={() => toggleTheme()}>
+                <button type="button" className="idims-action-btn" title="Toggle theme" onClick={() => { closeMenus(); toggleTheme(); }}>
                   {theme === 'dark' ? IC.sun : IC.moon}
                 </button>
-                <button type="button" className="idims-action-btn idims-fs-btn" title="Fullscreen" onClick={toggleFs}>
+                <button type="button" className="idims-action-btn idims-fs-btn" title="Fullscreen" onClick={() => { closeMenus(); toggleFs(); }}>
                   {isFs ? IC.minimize : IC.maximize}
                 </button>
                 {isEmployee && (
@@ -644,7 +653,7 @@ export default function IdimsHeader() {
                   {IC.bell}
                   {!!user?.inbox_count && <span className="idims-action-badge" />}
                 </button>
-                <button type="button" className="idims-action-btn idims-logout-btn" title="Logout" onClick={() => setLogoutOpen(true)}>
+                <button type="button" className="idims-action-btn idims-logout-btn" title="Logout" onClick={() => { closeMenus(); setLogoutOpen(true); }}>
                   {IC.logout}
                 </button>
               </div>
