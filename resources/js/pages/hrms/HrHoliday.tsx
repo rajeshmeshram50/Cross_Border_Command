@@ -777,6 +777,12 @@ function ManageGroupsModal({
 
   const save = async () => {
     if (!name.trim()) { setNameErr('Group name is required'); return; }
+    // Group names are labels — allow letters, numbers, spaces and hyphens only.
+    // Blocks apostrophes and other special characters.
+    if (!/^[\p{L}\p{N} \-]+$/u.test(name.trim())) {
+      setNameErr('Group name can only contain letters, numbers, spaces and hyphens');
+      return;
+    }
     setSaving(true);
     try {
       const payload = { name: name.trim(), description: description.trim() || null, status };

@@ -675,7 +675,7 @@ function MasterPageInner({
       /* Length cap on text fields — backstop for cases where the
        * input's maxLength was bypassed (paste, browser quirks, …).
        * Default 50, overridable per field via `maxLen`. */
-      if (f.t === 'text') {
+      if (f.t === 'text' || (f.t === 'textarea' && typeof (f as any).maxLen === 'number')) {
         const cap = typeof (f as any).maxLen === 'number' ? (f as any).maxLen : 50;
         if (raw.length > cap) {
           errs[f.n] = `${f.l} must be ${cap} characters or fewer`;
@@ -4128,6 +4128,7 @@ export function renderField(
         name={f.n}
         rows={3}
         placeholder={f.p}
+        maxLength={typeof (f as any).maxLen === 'number' ? (f as any).maxLen : undefined}
         defaultValue={defaultVal}
         disabled={viewOnly}
         invalid={!!err}

@@ -147,7 +147,7 @@ class ProductController extends Controller
             ->with([
                 'segment', 'hazClass', 'uom', 'hsn', 'condition',
                 'packagingMaterial', 'gstPercentage',
-                'qcRecords', 'vendorMaps',
+                'qcRecords', 'vendorMaps', 'vendorMaps.vendor:id,vendor_code',
             ])
             ->findOrFail($id);
 
@@ -299,8 +299,15 @@ class ProductController extends Controller
          * ──────────────────────────────────────────────────────────── */
         $hasKeptList   = $request->has('secondary_images');
         $hasNewFiles   = $request->hasFile('secondary_image_files');
-        if ($hasKeptList || $hasNewFiles) {
-            $kept = $hasKeptList ? (array) ($data['secondary_images'] ?? []) : (array) ($product->secondary_images ?? []);
+        // The client sets this whenever it is submitting the full secondary set
+        // (add or edit). It lets us tell "user removed the last image" (empty
+        // array → FormData omits the key) apart from "payload didn't mention
+        // secondary images at all", so a cleared gallery actually persists.
+        $forceReplace  = $request->boolean('secondary_images_replace');
+        if ($hasKeptList || $hasNewFiles || $forceReplace) {
+            $kept = ($hasKeptList || $forceReplace)
+                ? (array) ($data['secondary_images'] ?? [])
+                : (array) ($product->secondary_images ?? []);
             // Drop blanks and any `blob:` URLs that older clients might still
             // send — those don't resolve on the server.
             $kept = array_values(array_filter(
@@ -395,7 +402,15 @@ class ProductController extends Controller
         ]);
 
         $product->fill($data);
+        // The product form was simplified to two stages (Core → Sales); the
+        // Quality step that used to flip 'draft' → 'inactive' is gone, so Sales
+        // is now the final data step. Promote a fresh draft to 'inactive' here
+        // so a completed product surfaces as a ready (zero-supplier) row.
+        // Mapping a supplier later promotes it to 'active' (see storeVendors).
         $product->step_completed = max((int)$product->step_completed, 2);
+        if ($product->status === 'draft') {
+            $product->status = 'inactive';
+        }
         $product->save();
 
         return response()->json($product->fresh());
@@ -495,6 +510,54 @@ class ProductController extends Controller
             'data'   => $maps,
             'count'  => $maps->count(),
         ]);
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
+     * PATCH /products/{id}/vendor-maps/{mapId}
+     * Inline-edit a single mapping's purchase price. GST amount and total
+     * are recomputed server-side from the row's existing GST %, and the
+     * change is mirrored onto vendor_product_mappings (the vendor side's
+     * source of truth). Kept separate from storeVendors — which replaces
+     * the whole list — so a price tweak can't wipe the other columns the
+     * detail-page DTO doesn't carry (website, email, remarks, …).
+     * ────────────────────────────────────────────────────────────── */
+    public function updateVendorMapPrice(Request $request, int $id, int $mapId)
+    {
+        $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
+        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $map = ProductVendorMap::where('product_id', $product->id)->findOrFail($mapId);
+
+        $data = $request->validate([
+            'purchase_price' => 'required|numeric|min:0',
+        ]);
+
+        $price = round((float) $data['purchase_price'], 2);
+        $gstPct = (float) ($map->gst_percentage ?? 0);
+        $gstAmt = round($price * $gstPct / 100, 2);
+        $total  = round($price + $gstAmt, 2);
+
+        DB::transaction(function () use ($map, $price, $gstAmt, $total) {
+            $map->purchase_price = $price;
+            $map->gst_amount     = $gstAmt;
+            $map->total_amount   = $total;
+            $map->save();
+
+            // Mirror onto the vendor side so both tables stay in sync.
+            if ($map->vendor_id) {
+                \App\Models\VendorProductMapping::where('vendor_id', $map->vendor_id)
+                    ->where('product_id', $map->product_id)
+                    ->update([
+                        'purchase_price' => $price,
+                        'gst_amount'     => $gstAmt,
+                        'total_amount'   => $total,
+                    ]);
+            }
+        });
+
+        return response()->json($product->fresh(['vendorMaps', 'vendorMaps.vendor:id,vendor_code', 'qcRecords']));
     }
 
     /* ──────────────────────────────────────────────────────────────────

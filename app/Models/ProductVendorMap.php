@@ -31,4 +31,9 @@ class ProductVendorMap extends Model
     {
         return $this->belongsTo(Product::class);
     }
+
+    public function vendor(): BelongsTo
+    {
+        return $this->belongsTo(Vendor::class);
+    }
 }
