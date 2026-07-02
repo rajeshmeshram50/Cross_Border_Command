@@ -70,12 +70,15 @@ POST /sales/proforma-invoices/from-quotation/12 → 201
 ```
 
 ## 6. PDF / EMAIL / SIGNED VIEW — `SalesPdfController`
+One shared Blade renders both docs (`pdf_title` = QUOTATION / PROFORMA INVOICE); every page carries a top-right **Code-128 barcode** (branch website / org name). The **`signature`** query bool (**default `true`**) toggles the authorised-signatory block (branch stamp + signature image) and picks the with-/without-signature cache variant.
 | Method · Path | Notes |
 |---|---|
-| `POST /sales/{quotations\|proforma-invoices}/{id}/preview-pdf?signature=1` | dompdf (cached), blob |
-| `POST …/{id}/email` | recipient resolved; **429** if >3/min; stamps `emailed_at` once; mail carries a 60-day signed link → `{ to, emailed_at, reminder_count }` |
-| `POST …/{id}/remind` | **422** if never emailed; fresh PDF + fresh link; bumps `reminder_count` |
-| `GET /sales/{quotations\|proforma-invoices}/{id}/view?expires=&signature=` | **public**, `signed` middleware, 60-day, inline PDF |
+| `POST /sales/{quotations\|proforma-invoices}/{id}/preview-pdf?signature=1` | dompdf, **disk-cached** by `md5(viewData + signature-flag)`, inline blob |
+| `POST …/{id}/email?signature=1` | recipient resolved (override → customer primary email); **429** if >3/min; stamps `emailed_at` once; attaches the **with-signature** PDF + a **60-day signed** link → `{ to, emailed_at, reminder_count }` |
+| `POST …/{id}/remind` | **422** if never emailed; fresh PDF + fresh 60-day link; bumps `reminder_count` |
+| `GET /sales/{quotations\|proforma-invoices}/{id}/view?expires=&signature=` | **public**, `signed` (HMAC) middleware, 60-day, inline with-signature PDF |
+
+> The **Stage-4 shared-price PDF** is a *separate* path — `GET /sales/shared-prices/{id}/pdf?inline=` (§3), rendered by `SalesLeadController` with its own **`Q-#####`** barcode.
 
 ## 7. PROCUREMENT & SHIPMENT
 **`POST /procurements`** — `{ lead_id, procurement_date, assign_id, status, products:[{ product_id, lead_product_id, qty>0, target_price>0, vendor_id? }] }`; sole-vendor auto-assign; `PROC-###`. `GET /procurements[/{id}]`, `GET /procurements/next-number`.
@@ -87,7 +90,7 @@ POST /sales/proforma-invoices/from-quotation/12 → 201
 - **Reminders/Meetings:** `/sales/reminders` + `/sales/meetings` (CRUD + `PATCH` status); meeting codes `M-###`/`P-###` via `/sales/meetings/next-code`.
 
 ## 9. ADVANCING STAGES
-Each stage advances by `PUT /sales/leads/{id}` with `lead_stage_id: n` (2→6). Victory (6) is gated on a **signed PI**; `won_at` is stamped on entry; the center goes read-only.
+Each stage advances by `PUT /sales/leads/{id}` with `lead_stage_id: n` (2→6). Victory (6) is gated on a non-cancelled PI that has been **sent for signature (a signature request exists) or emailed** — *not necessarily signed*; `won_at` is stamped on entry. A **completed** e-signature separately stamps `pi_signed_at`, which makes the center read-only.
 
 ---
 

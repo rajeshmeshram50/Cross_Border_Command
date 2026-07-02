@@ -12,7 +12,7 @@
 |---|---|---|---|
 | 1.0 | 2026-07-02 | System | Initial combined documentation |
 
-**Scope:** the master that defines the reusable **acknowledgement reasons** consumed by **Stage 2 (Lead Acknowledgement)** of the opportunity pipeline. This is a *list-level master* — it lives outside the stages; the stages only *consume* the reasons it defines. See `../lead-worksheet/` (worksheet) and `../matrix-stages/` (the 6 stages).
+**Scope:** the master that defines the reusable **acknowledgement reasons** consumed by **Stage 2 (Lead Acknowledgement)** of the opportunity pipeline. This is a *list-level master* — it lives outside the stages; the stages only *consume* the reasons it defines. See `../My WorkPlace/lead-worksheet/` (worksheet) and `../My WorkPlace/matrix-stages/` (the 6 stages).
 
 ---
 
@@ -235,4 +235,4 @@ In `Stage2LeadAcknowledgement.tsx`, clicking a status pill opens the reason pick
 
 ---
 
-*Related: `../lead-worksheet/` (worksheet + toolbar) · `../matrix-stages/` (the 6 stages that consume these reasons) · sibling combined docs `QUOTATION.md`, `PROFORMA_INVOICE.md`.*
+*Related: `../My WorkPlace/lead-worksheet/` (worksheet + toolbar) · `../My WorkPlace/matrix-stages/` (the 6 stages that consume these reasons) · sibling combined docs `QUOTATION.md`, `PROFORMA_INVOICE.md`.*

@@ -57,7 +57,7 @@ Reached from the worksheet (gated by `sales.workplace`). Within the stages, ever
 | 2 | **Lead Acknowledgement** | Pick acknowledgement reasons (Qualified / Clarity Pending / Disqualified±) | **Latest** acknowledgement must be *Qualified* |
 | 3 | **Product Sourcing** | Map products, set each **Sourcing Required / Not Required**, create procurements, **Mark as Done** | All products have a status; every *Required* one is procured |
 | 4 | **Price Shared** | Submit a **quoted price** per product (append-only) + view PDF | Customer mapped **and** ≥1 shared price |
-| 5 | **Quotation vs PI** | Create quotation, **Convert to PI**, send for e-signature, email/remind | A **signed PI** exists (+ mandatory KYC complete to create it) |
+| 5 | **Quotation vs PI** | Create quotation, **Convert to PI**, send for e-signature, email/remind | A non-cancelled PI has been **sent for signature or emailed** (+ mandatory KYC complete to create the PI) |
 | 6 | **Victory** | Celebrate; capture the **Shipment Order** (logistics) | — (terminal; `won_at` stamped) |
 
 > **PI-signed lock:** once the PI is e-signed, the center stage becomes **read-only** (Stages 3–5 can't be edited); Shipment capture in Stage 6 stays open. The stepper lets you revisit any completed stage, but not jump ahead of the furthest earned stage.
@@ -135,7 +135,7 @@ Each stage is detailed below: what's on screen, the inputs, the exact **Save & N
 
 **E-signature (Zoho, auto-syncs ~every 20s):** the PI status pill runs **Not Sent → Sent → Signed**. *Not Sent* exposes **Send for Signature**; *Sent* shows **View sent doc** + **Remind**; *Signed* exposes **View/Download signed PDF + Certificate** in the 3-dot menu. Signed / in-progress documents are **read-only** (no edit/delete). Per-row **Email** is rate-limited **3/min** (429 → cooldown).
 
-**Gate → Stage 6:** **a signed PI must exist**. No PI → *"Moving to Victory needs a Proforma Invoice — a quotation alone isn't enough."* PI present but unsigned → blocked server-side. On success it advances to Stage 6 and arms the Victory confetti.
+**Gate → Stage 6:** a non-cancelled PI must have been **sent for signature (a signature request exists) or emailed** — *not necessarily signed*. No PI → *"Moving to Victory needs a Proforma Invoice — a quotation alone isn't enough."* PI that was never sent/emailed → blocked server-side (`SalesLeadController::update()`). On success it advances to Stage 6 and arms the Victory confetti. *(A **completed** e-signature is a separate thing — it stamps `pi_signed_at`, which makes Stages 3–5 read-only.)*
 
 ---
 
@@ -145,7 +145,7 @@ Each stage is detailed below: what's on screen, the inputs, the exact **Save & N
 **Pre-shipment view:**
 - **Celebration panel** — bobbing trophy, *Congratulations!*, *"Won on {date}"*, and the **Create Shipment ID** CTA. Confetti fires **once per lead** (localStorage-gated) and re-fires on shipment creation.
 - **Deal Summary** — Opportunity ID · Customer · Won Date · Latest Quotation (code chip) · Latest PI (code chip) · Deal Value · Consignee · Status (● Won).
-- **KPI strip** — Products · Quotations · PI Issued · **Days** (opportunity-created → PI-signed).
+- **KPI strip** — Products · Quotations · PI Issued · **Days** (opportunity-created → PI signed, falling back to PI sent, else PI created; `—` until then).
 
 **Create Shipment modal** (auto-filled from the latest PI — opp/PI codes & dates, customer/consignee, inco term, ports, origin, freight from the PI's shipping cost): the user confirms **Shipping Liability, Cold Chain, Zip Code, Freight Cost, Shipping Mode, Remarks, Attachments** → `POST /sales/shipment-orders` (`SHP-###`, **one shipment per opportunity → 409 on a second**).
 
@@ -200,7 +200,7 @@ Product Directory · Product Sourcing (embed) · Vendor Mappings · Price Shared
 | 7 | Server-side totals | Line amount = qty × rate × (1 + tax%/100), recomputed server-side; client totals never trusted |
 | 8 | Signed PDF links | Customer view links are **signed + expire after 60 days** |
 | 9 | Email / reminder | Email is rate-limited (3/min); `emailed_at` stamped once; reminders require a prior email |
-| 10 | Victory gate | Stage 6 requires a **signed PI**; `won_at` is stamped on entry |
+| 10 | Victory gate | Stage 6 requires a PI **sent for signature or emailed** (not necessarily signed); `won_at` is stamped on entry. A *completed* signature (`pi_signed_at`) separately locks Stages 3–5 read-only |
 | 11 | One shipment per opportunity | `shipment_orders.lead_id` is unique (409 on a second) |
 | 12 | Documents are soft-cancelled | Quotations/PIs are cancelled (status), never hard-deleted — audit preserved |
 
