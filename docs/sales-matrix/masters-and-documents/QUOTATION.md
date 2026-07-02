@@ -1,6 +1,6 @@
 # QUOTATION — COMBINED DOCUMENTATION
 
-> Cross_Border_Command SaaS ERP · Sales Matrix → Stage 5 (Quotation vs PI) → **Quotation**
+> Cross_Border_Command SaaS ERP · Sales Matrix → **Quotation** (Stage 5 embedded + standalone `/sales/qpi`)
 > **Single-file KT** — Functional · Technical · API · Code-Walkthrough in one document.
 > Base URL: `{APP_URL}/api` · All endpoints require `Authorization: Bearer <sanctum_token>`
 
@@ -12,7 +12,7 @@
 |---|---|---|---|
 | 1.0 | 2026-07-02 | System | Initial combined documentation |
 
-**Scope:** the **Quotation** entity created in **Stage 5** of the opportunity pipeline. The Quotation is the priced offer sent to a customer; it can be **converted into a Proforma Invoice** (see sibling `PROFORMA_INVOICE.md`). The 6-stage shell that hosts it is documented in `../matrix-stages/`.
+**Scope:** the **Quotation** entity — the priced offer sent to a customer; it can be **converted into a Proforma Invoice** (see sibling `PROFORMA_INVOICE.md`). It is surfaced in **two UI places**: **inside Stage 5** of the opportunity pipeline (per-lead) and on the **standalone "Quotation Vs PI History" page** (`/sales/qpi`, tenant-wide) — both covered here (§A4, §B7). The 6-stage shell is documented in `../My WorkPlace/matrix-stages/`.
 
 ---
 
@@ -44,8 +44,15 @@ draft ──► sent ──► approved ──► converted_to_pi (terminal)
 - **Edit is blocked** once a quotation is `converted_to_pi` **or has been sent for e-signature** (409).
 - **Cancel (delete)** is blocked once `converted_to_pi` (409). Cancelling sets `status = cancelled` (soft) — the row is kept for audit and hidden from the default list.
 
-## A4. Where it lives in the UI
-Stage 5 of the Matrix Detail (`Stage5QuotationVsPI.tsx`) — the **Quotation** tab of the segmented toggle. The **Create Quotation** button greys out once a PI exists on the opportunity (you can't add new quotations against an existing PI). Rows show: Sr · Quotation No (→ edit) · Date · Doc Type · Currency · Value · Action (**Convert to PI**; terminal chips *Converted to PI* / *Cancelled*). The create wizard is pre-fed the lead's already-mapped customer & consignee.
+## A4. Where it lives in the UI — **two surfaces**
+The Quotation appears in **two places** that share the same create/edit form and row actions:
+
+1. **Inside Stage 5** of the Matrix Detail (`Stage5QuotationVsPI.tsx`) — scoped to **one opportunity** (`opp_id`). The **Quotation** tab of the segmented toggle; **Create Quotation** greys out once a PI exists; rows show Sr · Quotation No (→ edit) · Date · Doc Type · Currency · Value · Action (**Convert to PI**; terminal chips *Converted to PI* / *Cancelled*). The create wizard is pre-fed the lead's already-mapped customer & consignee. This surface also drives the pipeline (Save & Next).
+2. **The standalone "Quotation Vs PI History" page** (`/sales/qpi`, nav permission **`sales.quotation_vs_pi`**) — a **tenant-wide** list of **all** quotations across **every** lead (not scoped to one opportunity). Same create/convert/email/e-sign actions, but no stage progression. Detailed in §B7.2.
+
+> Both are the same `SalesQPI` module: the standalone page is its **default export**; the Stage-5 view imports its `CreateQuotationModal`/`CreatePIModal`.
+
+**Opportunity is optional.** Inside Stage 5 the opportunity is pre-selected and the Customer is locked; on the standalone page you can create a quotation **directly against a Customer with no opportunity** (`opp_id` = null), or pick an opportunity to auto-fill Customer + Consignee. All create conditions (the opp↔customer↔consignee cascade, required fields, locks) are in §B7.3.
 
 ## A5. Business rules
 | # | Rule | Behaviour |
@@ -94,6 +101,86 @@ Key columns: `id` · `client_id` (FK) · `branch_id` · **`code`** (unique `(cli
 
 ## B6. Access model
 `applyScope()` — super-admin sees all (optionally `?branch_id`); branch users are pinned to their branch; client admins see all branches (honoring the switcher `branch_id`); all non-super users are `client_id`-scoped; `SalesVisibility::applyToSalesDocs()` layers role tier. `assertScope()` guards single-row read/write (404 out of scope). `userCanModify()` produces the `can_modify` UI flag.
+
+## B7. Frontend architecture (SPA)
+The Quotation UI is a **full React 19 + TS** feature — a list view plus a 2-step create/edit form — not just a thin caller.
+
+**Component tree & responsibilities**
+```
+Stage5QuotationVsPI.tsx          Stage-5 list + orchestrator (per lead)
+  ├─ owns: quotations[], pis[], docType('quotation'|'pi'), sigByRow, emailCooldowns
+  ├─ fetchAll() → GET /sales/quotations & /sales/proforma-invoices (opp_id, per_page:200)
+  ├─ Quotation/PI segmented toggle (live counts) · Create Quotation button (gated)
+  ├─ table rows → Convert-to-PI · Email · Edit · Delete · MoreActions (Download/View/Certificate)
+  └─ hosts: CreateQuotationModal, CreatePIModal, ConvertToPiModal, SalesDocSendForSignatureModal, SigningTrackerModal
+
+SalesQPI.tsx                     the create/edit form (exports CreateQuotationModal / CreatePIModal)
+  ├─ 2-step wizard: Step 1 Basic (doc_type, customer/consignee/bank/currency, inco+ports | state_code)
+  │                 Step 2 Line items (product/qty/rate/tax grid + live totals + terms/shipping)
+  ├─ BasicFormState (labels + numeric FK ids) · ProductRow[] (id, productId, hsn, name, qty, rate, taxPct)
+  └─ useQpiMasters(open) → module-level qpiMastersCache (5-min TTL, in-flight de-dupe)
+```
+
+**State & caching.** Local state + refs; **no Redux** for business data. The **master dropdowns** (currencies/incoterms/ports/countries/customers/consignees/banks/opportunities/states/products) load through **`useQpiMasters`** off a module-level `qpiMastersCache` (5-min TTL, shared in-flight promise); `prewarmQpiMasters()` warms it before the modal opens. The next code shows via `GET /sales/quotations/preview-code` (advisory, no allocation).
+
+**Live totals (client-side preview).** `calcRow(p)` = `qty×rate` + `qty×rate×(tax%/100)`; `grandTotal = Σ rows + shipping`. This is **display only** — the server recomputes authoritatively on submit (Part B §B4), so the client math is never trusted.
+
+**Validation.** A **Step-1 gate** (`step1Errors` set) blocks Step 2 until doc-type-conditional fields are present (always customer/consignee/bank; International → inco term + 2 ports + destination + origin; Domestic → state code). Server 422s surface as toasts.
+
+**Edit hydration.** Edit fetches `GET /sales/quotations/{id}`, maps snake_case → form labels, resolves customer/consignee/opp/bank labels from the masters by db-id, and rebuilds `products[]` from `items`.
+
+**Submit.** `POST /sales/quotations` (create) or `PUT /sales/quotations/{id}` (edit) with `{ doc_type, opp_id, customer_id, consignee_id, bank_account_id, currency, exchange_rate, inco/ports|state_code, shipping, terms, items[] }`. On success the parent `fetchAll()`s and reloads the lead header.
+
+**Locked/read-only.** When the opportunity's PI is signed the parent passes `locked` → **Create Quotation is disabled**; a converted/cancelled quotation row is terminal (Edit/Delete no-op with a toast).
+
+### B7.1 Stage-5 view vs the standalone page — the difference
+| Aspect | Stage 5 (`Stage5QuotationVsPI`) | Standalone (`SalesQPI` default, `/sales/qpi`) |
+|---|---|---|
+| Scope | one opportunity (`opp_id`) | **all** quotations/PIs in the tenant (no `opp_id`) |
+| Reached from | opening a lead → Stage 5 | **nav → "Quotation Vs PI History"** (`sales.quotation_vs_pi`) |
+| Pipeline | drives **Save & Next** (advance to Victory) | **none** — history/management only |
+| E-sign poll | filtered by `lead_id` | **all** client quotations/PIs (no lead filter) |
+| Columns | compact (Sr · No · Date · Type · Currency · Value · Action) | fuller — adds **Sales Manager · Branch · Created By** |
+
+### B7.2 The standalone "Quotation Vs PI History" page (`SalesQPI` default export)
+Route **`/sales/qpi`** (aliases `sales.qpi` / `sales.quotation_vs_pi`; also feeds the **Sign Tracker** page which rides on the same permission).
+- **Tabs:** **Quotation** / **Proforma Invoice** (`tab`), and for PIs two sub-tabs **With Shipment / Without Shipment** (`piSub`, split by a real `SHP-###` shipment code — a legacy `bt_id` alone stays *Without*).
+- **Data:** `GET /sales/quotations?per_page=200` + `GET /sales/proforma-invoices?per_page=200` on mount — **no `opp_id`**, so it spans every lead. Rows map snake_case → the display shape (`qtNo`, `qtDate`, `oppId`, `customer`, `grandTotal`, `salesManager`, `branchName`, `createdBy`, `canModify`…).
+- **Search:** quotation → No/Opp/Customer/Consignee/Sales-Manager; PI → No/Opp/Customer/Consignee/Converted-From/Shipp-ID.
+- **Pagination:** its own footer (*Showing X–Y of Z* + numbered chips) with **auto-fit rows-per-page** (`tableHostRef`, grows on taller screens, spills to the next page); resets to page 1 on tab/sub-tab/search change.
+- **"Created By"** shows **"You"** for the current user's own rows.
+- **Actions (identical to Stage 5, minus stage progression):** Create Quotation / Create PI (same modals) · **Convert to PI** (preview-code → `ConvertToPiModal`, blocked modal if the lead already has a PI) · **Email** (per-row cooldown + 429) · **Reminder** (gated by `emailed_at`) · **Send for Signature / View Sent / Signed PDF / Certificate** with the **20 s** all-docs signature poll (`sync=1`) · Edit (PUT) · Delete (quotation).
+- **"What We Are Doing Here"** collapsible banner; custom fonts (DM Sans / Inter / JetBrains Mono).
+
+### B7.3 Create conditions — **opportunity is OPTIONAL** (the direct-customer path)
+The create form (both surfaces, Quotation **and** PI) works **with or without an opportunity** — this is the "outside flow vs inside flow" difference:
+
+**Two ways to start**
+| Start from | Behaviour | Where |
+|---|---|---|
+| **Pick an Opportunity** | auto-fills Customer + Consignee + currency from the lead (cascade below); `opp_id` sent | inside Stage 5 (opp pre-selected, Customer **locked**) |
+| **Pick a Customer directly** | fully **standalone** quotation/PI — **`opp_id` sent as `null`** | the nav page `/sales/qpi` (Customer **not** locked) |
+
+**Required to leave Step 1** (the gate): **Customer · Consignee · Bank Name** (always) + **International** → INCO Term, Port of Loading, Port of Discharge, Final Destination, Origin Country · **Domestic** → State Code. **Opportunity is NOT required.** Final save re-checks Customer + Consignee (bounces back to Step 1 if missing).
+
+**Cascade — when you pick an Opportunity** (`onOpportunityChange`)
+- Resolves the lead's **Customer** by FK (`customerDbId`), else by company-name match → fills Customer (+ its default currency).
+- **Currency follows the lead's products** (a lead is single-currency) and is **read-only**; the lead currency overrides the customer default.
+- **Consignee priority:** (a) the lead's mapped consignee → use it; (b) else the customer has **exactly one** consignee → auto-pick; (c) **multiple** → left blank to choose; (d) **none** → blank.
+- Also fills **Opportunity Date** + **Origin Country**; sets `oppId = lead id`. An unmatched opp value → `oppId = null`.
+
+**Cascade — when you pick a Customer** (`onCustomerChange`)
+- Applies the customer's currency.
+- **Clears the Opportunity** if the currently-selected opp doesn't belong to this customer (`oppId = null`).
+- **Filters the Consignee list to this customer:** exactly one → auto-pick; a now-invalid selection → cleared; otherwise kept.
+
+**Locks (inside vs outside).** `lockParty = openedFromLead ( || editing, for PI)` → the **Customer is locked** in Stage 5 / edit but **editable** in the standalone create. `lockConsignee = editing || the-lead-already-had-a-consignee`.
+
+**Opportunity picker filters.** The dropdown is **narrowed by the chosen `customer_id`** and **excludes leads that already have a PI** (`excludeWithPi`) — you can't quote (or standalone-PI) an opportunity that's already past PI.
+
+**Consignee back-fill side-effect.** If you create against an opportunity that had **no** consignee and you pick one, the save additionally does **`PUT /sales/leads/{oppId} { consignee_id }`** — writing your choice back onto the lead.
+
+> Execution-order flows for these components are in the **Proforma Invoice** doc's §B7 (shared form) and in `../My WorkPlace/matrix-stages/` (the Stage-5 shell). Part D below traces the **backend** (both surfaces hit the same controllers/routes in Part C).
 
 ---
 
@@ -157,9 +244,9 @@ Advisory next code — **no allocation, no lock**: `{ "status": true, "data": { 
 
 ---
 
-# PART D — CODE WALKTHROUGH
+# PART D — CODE WALKTHROUGH (backend)
 
-> Legend: `→` call · `⇒` return. Line numbers reference live source and may drift.
+> Legend: `→` call · `⇒` return. Line numbers reference live source and may drift. *(The SPA is documented in §B7 Frontend architecture.)*
 
 ## D1. Create — `store()` (99)
 `validatePayload()` (395, doc-type-conditional) → `segmentPartyBlockResponse()` (Buyer≠Consignee, 422 on violation) → **row-lock `clients`** + `nextCode($clientId)` (600) → `prepareItems()` (455, computes each `amount`) → `aggregateTotals()` (482, sums **unrounded** lines, rounds once → `sub_total`/`grand_total`) → `resolveCachedLabels()` (509, fills customer/consignee/opp/bank/manager names; injects lead salesperson as default manager) → `Quotation::create()` + one `QuotationItem::create()` per line (`line_no = i+1`) ⇒ **201** with `fresh(['items'])`.
@@ -198,4 +285,4 @@ Row-lock + `nextCode()` → `replicate()` (override code/status=draft/version=1/
 
 ---
 
-*Related: `PROFORMA_INVOICE.md` (the conversion target) · `LEAD_ACKNOWLEDGEMENT_MASTER.md` · `../matrix-stages/` (the Stage-5 shell) · `../lead-worksheet/`.*
+*Related: `PROFORMA_INVOICE.md` (the conversion target) · `LEAD_ACKNOWLEDGEMENT_MASTER.md` · `../My WorkPlace/matrix-stages/` (the Stage-5 shell) · `../My WorkPlace/lead-worksheet/`.*

@@ -152,18 +152,28 @@ Full detail in **MATRIX_STAGES_API_DOCUMENTATION.md**.
 1. **Stage 4** quotation created (`store`) — FY code, server totals, status draft.
 2. **Stage 5** convert (`fromQuotation`) — DCP + one-PI-per-opp gates pass → copies fields + items, sets `source_quotation_id`/`convert_from_code`, marks quotation `converted_to_pi`, allocates `PI/FY/SEQ` (+ `BT-####` if `with_shipment`).
 3. PI is emailed (signed 60-day link) and/or **sent for e-signature** (Zoho `ClmSignatureRequest`). Completion → `pi_signed_at`.
-4. **Victory gate:** a signed PI unlocks Stage 6; `won_at` stamped; the center becomes read-only.
+4. **Victory gate:** a PI **sent for signature or emailed** unlocks Stage 6 (`SalesLeadController::update()` — not "signed"); `won_at` stamped. A *completed* signature stamps `pi_signed_at`, which makes the center read-only.
 5. **Stage 6** `ShipmentOrder` created (`SHP-###`, unique `lead_id`) linking the PI + logistics.
 Procurements (`PROC-###`) are created in **Stage 3** to source *Required* products (vendor auto-assign when a product has one mapping).
 
 ---
 
 ## 8. PDF, EMAIL & SIGNED LINKS
-- **Render:** dompdf on a shared quotation/PI Blade; `renderSalesPdfCached()` keys on `md5(viewData + signature_flag)` → `pdf-cache/sales-*.pdf` (manual clear on template change). Buyer/company details use **live** master data (edits flow into historical PDFs).
-- **Email:** recipient resolved (override → customer primary email); **rate-limited 3/min**; `emailed_at` stamped once; the mail carries a **60-day signed view URL**.
-- **Reminder:** requires a prior email; re-renders a fresh PDF + a fresh 60-day link; bumps `reminder_count`.
-- **Public view:** `sales.quotation.view` / `sales.pi.view` under `signed` middleware — inline PDF, no login, dies after 60 days.
-- **Shared-price PDF** (Stage 4): tenant-branded, Code-128 barcode (`Q-#####`).
+
+### 8.1 Quotation / PI PDF — `SalesPdfController`
+- **One shared Blade template** renders **both** documents — only `pdf_title` differs (`QUOTATION` vs `PROFORMA INVOICE`). Endpoints: `previewQuotation` / `previewProformaInvoice` (`POST …/preview-pdf`), the email/remind pair, and the public `view` routes all funnel through it.
+- **With- / without-signature variant** — the **`signature`** flag (query bool, **default `true`**) toggles the **authorised-signatory block** at the bottom (branch stamp + signature image when on). Customer-facing copies (email, public view, e-sign) use the **with-signature** PDF; `renderSalesDocPdfToTemp()` reuses the exact same with-signature bytes for the Zoho send so the customer signs what they saw.
+- **Barcode:** every page carries a **top-right Code-128 barcode** of the **branch website** (falling back to the organisation name) with a readable caption — distinct from the Stage-4 `Q-#####` barcode.
+- **Branding:** logo, address, GST/PAN/CIN, ports, totals and the signatory come from **live** master/branch data (so edits flow into historical PDFs); `signature_data` uses the branch signature asset, else a bundled `test-signature.png`.
+- **Cache:** `renderSalesPdfCached()` keys on `pdf-cache/sales-{md5(viewData + '|' + ('s'|'u'))}.pdf` — i.e. content **plus** the signature flag. The key **does not** include the Blade version, so a template edit needs a manual clear of `storage/app/pdf-cache`. `Content-Disposition: inline`.
+
+### 8.2 Delivery
+- **Email:** recipient resolved (override → customer primary email); **rate-limited 3/min** (429); `emailed_at` stamped once; the mail carries a **60-day signed view URL** and attaches the with-signature PDF → `{ to, emailed_at, reminder_count }`.
+- **Reminder:** requires a prior email (**422** otherwise); re-renders a fresh PDF + a fresh 60-day link; bumps `reminder_count`.
+- **Public view:** `sales.quotation.view` / `sales.pi.view` under Laravel's `signed` middleware (HMAC-validated `?expires=&signature=`) — inline PDF, no login, dead after 60 days.
+
+### 8.3 Stage-4 shared-price PDF (separate path)
+`SalesLeadController::sharedPricePdf()` (**not** SalesPdfController) — a tenant-branded quotation PDF for a single shared-price row, with its own **Code-128 `Q-#####`** barcode; `?inline=` streams vs downloads.
 
 ---
 

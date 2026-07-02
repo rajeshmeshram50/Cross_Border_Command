@@ -90,12 +90,12 @@ export default function RegularizationApprovals() {
           {!loading && <span className="badge bg-light text-dark">{(rows ?? []).length}</span>}
         </div>
         <div className="d-flex align-items-center gap-2">
-          <div className="btn-group btn-group-sm" role="group">
+          <div className="att-logs-ranges att-seg-toggle" role="group">
             {STATUS_FILTERS.map(f => (
               <button
                 key={f.key}
                 type="button"
-                className={`btn btn-sm ${status === f.key ? 'btn-primary' : 'btn-light'}`}
+                className={`att-logs-range ${status === f.key ? 'is-active' : ''}`}
                 onClick={() => setStatus(f.key)}
               >
                 {f.label}

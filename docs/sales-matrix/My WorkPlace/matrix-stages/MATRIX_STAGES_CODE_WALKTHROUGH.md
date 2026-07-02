@@ -111,12 +111,12 @@ emailProformaInvoice(): resolve recipient → RateLimiter (3/min) → render PDF
   if (empty($pi->emailed_at)) $pi->emailed_at = now();     // idempotent anchor
 // remind*(): 422 if never emailed → fresh PDF + fresh 60-day link → reminder_count++
 ```
-`publicViewProformaInvoice()` (444) sits behind `signed` middleware — inline PDF, no login, dead after 60 days. `renderSalesPdfCached()` (982) keys on `md5(viewData + signature)` → disk cache.
+`publicViewProformaInvoice()` (444) sits behind `signed` middleware — inline PDF, no login, dead after 60 days. `renderSalesPdfCached()` (982) keys on `md5(viewData + signature)` → disk cache. **One shared Blade** renders quotation & PI (only `pdf_title` differs); the **`signature` flag** (default true) toggles the authorised-signatory block; every page carries a top-right **Code-128 barcode** (branch website/org). `renderSalesDocPdfToTemp()` reuses the same with-signature bytes for the Zoho send. *(This is the **Stage-5** doc PDF — the **Stage-4 shared-price** PDF with the `Q-#####` barcode is `SalesLeadController::sharedPricePdf()`, §5.)*
 
 ---
 
 ## 7. STAGE 6 — VICTORY
-Advance to Stage 6 requires a **signed PI**; `PUT lead_stage_id: 6` stamps `won_at`. The SPA fires confetti (RupeeRain — localStorage prevents repeat, sessionStorage forces one burst after Save & Next). **Create Shipment ID**:
+Advance to Stage 6 requires a non-cancelled PI **sent for signature or emailed** (not necessarily signed — `SalesLeadController::update()`); `PUT lead_stage_id: 6` stamps `won_at`. The SPA fires confetti (RupeeRain — localStorage prevents repeat, sessionStorage forces one burst after Save & Next). **Create Shipment ID**:
 ```php
 ShipmentOrderController::store() (16):
   // tenant-gate lead + PI · one-shipment-per-opp (unique lead_id → 409) · lockForUpdate('clients')
@@ -156,7 +156,7 @@ storeMeeting()  (200): allocateMeetingCode() (457, lockForUpdate withTrashed) �
 - **PDF cache** keys on content + signature flag; template edits need a manual clear.
 - **`convert-to-pi` on the quotation** only marks intent — the real copy is PI `from-quotation`.
 - **Currency lock** on from-quotation PIs prevents mixed-currency line/total mismatch.
-- **Victory** needs a signed PI (tracked on `ClmSignatureRequest` → `pi_signed_at`), then `won_at` is stamped.
+- **Victory** advances once the PI is **sent for signature or emailed** (not signed); a *completed* `ClmSignatureRequest` stamps `pi_signed_at` (the read-only lock). `won_at` is stamped on entering Stage 6.
 - **Documents are soft-cancelled** (status), never hard-deleted — the audit chain (`source_quotation_id`/`convert_from_code`/`proforma_invoice_id`) is preserved.
 
 ---
