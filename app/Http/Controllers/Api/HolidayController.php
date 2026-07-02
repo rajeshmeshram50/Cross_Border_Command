@@ -153,6 +153,9 @@ class HolidayController extends Controller
         $created = 0;
         $skipped = 0;
         $errors  = [];
+        // Today's date — one-time holidays must be in the future (mirrors the
+        // Add Holiday form's date picker, which blocks today + past).
+        $today = Carbon::now()->toDateString();
 
         // Each row can name its own Group (Excel "Group" column). Build a
         // case-insensitive name → id map of THIS tenant's groups so a row's
@@ -176,7 +179,7 @@ class HolidayController extends Controller
             ->mapWithKeys(fn ($h) => [(($h->holiday_group_id ?? 'null') . '|' . Carbon::parse($h->date)->toDateString()) => true])
             ->all();
 
-        DB::transaction(function () use ($payload, $clientId, $branchId, $groupId, $groupMap, $auth, &$created, &$skipped, &$errors, $existing) {
+        DB::transaction(function () use ($payload, $clientId, $branchId, $groupId, $groupMap, $auth, &$created, &$skipped, &$errors, $existing, $today) {
             $seenInBatch = [];
 
             foreach ($payload['rows'] as $i => $raw) {
@@ -192,6 +195,16 @@ class HolidayController extends Controller
                 $date = $this->parseImportDate($rawDate);
                 if (!$date) {
                     $errors[] = ['row' => $line, 'message' => "Invalid date \"{$rawDate}\" (use YYYY-MM-DD or DD-MM-YYYY)."];
+                    continue;
+                }
+
+                $recurring = filter_var($raw['is_recurring'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+                // Holiday date must be in the FUTURE — today + past are blocked,
+                // mirroring the Add Holiday form's date picker (minDate = tomorrow).
+                // Applies to recurring rows too, so a past anchor date is rejected.
+                if ($date <= $today) {
+                    $errors[] = ['row' => $line, 'message' => "Date \"{$rawDate}\" is today or in the past — a holiday must be a future date."];
                     continue;
                 }
 
@@ -225,8 +238,6 @@ class HolidayController extends Controller
 
                 $type = ucfirst(strtolower(trim((string) ($raw['type'] ?? 'Public'))));
                 if (!in_array($type, self::TYPES, true)) $type = 'Public';
-
-                $recurring = filter_var($raw['is_recurring'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
                 Holiday::create([
                     'client_id'        => $clientId,

@@ -17,6 +17,8 @@ import { SettingsProvider } from '../contexts/SettingsContext';
 import CookieBanner from './CookieBanner';
 import IdleTimeout from './IdleTimeout';
 import VelzonShell from '../velzon/VelzonShell';
+import AccessDenied from './AccessDenied';
+import { canAccessPath } from '../utils/routeAccess';
 import { FEATURE_FLAGS } from '../constants';
 import Login from '../pages/auth/Login';
 import ForgotPassword from '../pages/auth/ForgotPassword';
@@ -662,6 +664,13 @@ function DashboardRoutes({ user }: { user: any }) {
 
   const DefaultDashboard = DashboardMap[user.user_type] || BranchDashboard;
 
+  // Global permission guard — mirrors the sidebar/header visibility rules so a
+  // user who pastes a restricted URL (e.g. a Dashboard-only employee opening
+  // /hr/employees) is blocked with an explicit Access Denied instead of the
+  // page silently rendering in a passive view-only state. Runs on every
+  // navigation (location-driven re-render). See utils/routeAccess.
+  const routeAllowed = canAccessPath(location.pathname, user);
+
   return (
     <NavigateContext.Provider value={navigateContextValue}>
       <LayoutProvider>
@@ -673,6 +682,9 @@ function DashboardRoutes({ user }: { user: any }) {
                 Your onboarding isn&rsquo;t complete yet — sign your pending documents in the Inbox below. Full access unlocks once HR finishes your onboarding.
               </div>
             )}
+            {!routeAllowed ? (
+              <AccessDenied />
+            ) : (
             <Routes>
               <Route path="/dashboard" element={<DefaultDashboard />} />
               <Route path="/clients" element={<Clients onNavigate={navigateFn} />} />
@@ -833,6 +845,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/hr/employees/:id/profile" element={<EmployeeProfileWrapper />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
+            )}
           </VelzonShell>
         </BranchSwitcherProvider>
       </LayoutProvider>

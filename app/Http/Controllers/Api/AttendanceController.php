@@ -582,8 +582,11 @@ class AttendanceController extends Controller
         $rows = DB::table('holidays')
             ->whereIn('holiday_group_id', $groupIds)
             ->whereNull('deleted_at')
-            ->get(['holiday_group_id', 'date', 'is_recurring']);
+            ->get(['holiday_group_id', 'name', 'date', 'is_recurring']);
 
+        // Value is the holiday NAME (not just `true`) so the Attendance Log can
+        // label the day with which holiday it is. All readers use isset(), so a
+        // non-empty string is still truthy for the "is this a holiday?" checks.
         $map = [];
         foreach ($rows as $r) {
             if (!$r->date) continue;
@@ -592,7 +595,7 @@ class AttendanceController extends Controller
                 $d = \Carbon\Carbon::create($start->year, $d->month, $d->day);
             }
             if ($d->lt($start) || $d->gt($end)) continue;
-            $map[$r->holiday_group_id][$d->toDateString()] = true;
+            $map[$r->holiday_group_id][$d->toDateString()] = $r->name ?: 'Holiday';
         }
         return $map;
     }
@@ -807,8 +810,11 @@ class AttendanceController extends Controller
             // "Holiday" in the Attendance Log + Calendar, unless the day already
             // carries a productive status (the employee actually punched in on
             // it, e.g. worked a holiday — keep that).
+            $holidayName = null;
             if ($isHoliday && in_array(strtolower((string) $status), ['absent', 'weekly off'], true)) {
                 $status = 'Holiday';
+                // holidaySet value is the holiday's name (see holidayDatesForGroups).
+                $holidayName = is_string($holidaySet[$iso] ?? null) ? $holidaySet[$iso] : null;
             }
 
             // Signed deviation (sub-hour shortfalls were printing "+0h 30m"
@@ -832,6 +838,7 @@ class AttendanceController extends Controller
                 'date'             => $cursor->format('d M Y'),
                 'weekday'          => $cursor->format('D'),
                 'status'           => $status,
+                'holidayName'      => $holidayName,
                 'shift'            => $shift,
                 'firstIn'          => $firstIn,
                 'lastOut'          => $lastOut,

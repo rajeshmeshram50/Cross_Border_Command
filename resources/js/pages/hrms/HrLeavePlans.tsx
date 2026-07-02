@@ -882,18 +882,19 @@ export default function HrLeavePlans() {
             throw err; // keep the modal open + spinner off
           }
           // Reflect the saved setup in the Configuration table.
-          setPlans(prev => prev.map(p =>
-            p.id === activePlan.id
-              ? {
-                  ...p,
-                  leaveTypes: p.leaveTypes.map(t =>
-                    t.id === setupTypeId
-                      ? { ...t, configured: true, quotaLabel, endOfYearLabel: eoyLabel }
-                      : t
-                  ),
-                }
-              : p
-          ));
+          setPlans(prev => prev.map(p => {
+            if (p.id !== activePlan.id) return p;
+            const leaveTypes = p.leaveTypes.map(t =>
+              t.id === setupTypeId
+                ? { ...t, configured: true, quotaLabel, endOfYearLabel: eoyLabel }
+                : t
+            );
+            // Mirror the backend: when this save leaves every assigned type
+            // configured, a cloned plan's editable-draft override is cleared so
+            // the plan locks (Setup buttons → "Locked"). Bug #61.
+            const allConfigured = leaveTypes.length > 0 && leaveTypes.every(t => t.configured);
+            return { ...p, leaveTypes, unlocked: allConfigured ? false : p.unlocked };
+          }));
         }}
       />
 

@@ -160,6 +160,7 @@ type FilterState = {
   segment: string[];
   hsn: string[];
   hazType: string[];
+  hazClass: string[];
   uom: string[];
   condition: string[];
   vendor: string[];
@@ -172,7 +173,7 @@ type FilterState = {
 };
 
 const EMPTY_FILTERS: FilterState = {
-  gstRate: [], segment: [], hsn: [], hazType: [], uom: [], condition: [],
+  gstRate: [], segment: [], hsn: [], hazType: [], hazClass: [], uom: [], condition: [],
   vendor: [], scoreRange: [], topProducts: '', createdFrom: '', createdTo: '',
   productOwner: [], inwardCount: [],
 };
@@ -215,6 +216,7 @@ export default function Products() {
   const [hsnOpts,     setHsnOpts]       = useState<string[]>(HSN_CODES);
   const [uomOpts,     setUomOpts]       = useState<string[]>(UOMS);
   const [conditionOpts, setConditionOpts] = useState<string[]>(CONDITIONS);
+  const [hazClassOpts, setHazClassOpts] = useState<string[]>([]);
   const [vendorOpts,  setVendorOpts]    = useState<string[]>(VENDORS);
   const [gstRateOpts, setGstRateOpts]   = useState<string[]>(GST_RATES);
   /* Product Owner options — sourced from /products/owners. The endpoint
@@ -245,6 +247,7 @@ export default function Products() {
       hsn_codes: Array<IdRow & { hsn_code?: string | null }>;
       uom: Array<IdRow & { title?: string | null; short_code?: string | null }>;
       conditions: Array<IdRow & { title?: string | null }>;
+      haz_class: Array<IdRow & { name?: string | null }>;
       gst_percentage: Array<IdRow & { percentage?: number | string | null }>;
       vendors: Array<{ id: number | string; company_name?: string | null }>;
     };
@@ -272,6 +275,7 @@ export default function Products() {
       // "Kilogram" master row), so the filter has to do the same.
       const uom  = (b.uom       ?? []).map(r => r.short_code ?? r.title ?? '').filter(Boolean);
       const cond = (b.conditions ?? []).map(r => r.title ?? '').filter(Boolean);
+      const haz  = (b.haz_class ?? []).map(r => r.name ?? '').filter(Boolean);
       const gst  = (b.gst_percentage ?? [])
         .map(r => r.percentage != null ? `${r.percentage}%` : '')
         .filter(Boolean);
@@ -280,6 +284,7 @@ export default function Products() {
       if (hsn.length)  setHsnOpts(dedupe(hsn));
       if (uom.length)  setUomOpts(dedupe(uom));
       if (cond.length) setConditionOpts(dedupe(cond));
+      if (haz.length)  setHazClassOpts(dedupe(haz));
       if (gst.length)  setGstRateOpts(dedupe(gst));
       if (ven.length)  setVendorOpts(dedupe(ven));
     };
@@ -328,7 +333,14 @@ export default function Products() {
       if (e.key === 'Escape') setFilterOpen(false);
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Lock the page scroll while the filter drawer is open so the list
+    // behind it can't scroll under the overlay.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [filterOpen]);
 
   const togglePanel = (key: string) =>
@@ -435,6 +447,7 @@ export default function Products() {
     if (filters.segment.length)  src = src.filter(p => filters.segment.includes(p.segment));
     if (filters.hsn.length)      src = src.filter(p => filters.hsn.includes(p.hsn));
     if (filters.hazType.length)  src = src.filter(p => filters.hazType.includes(p.hazClass));
+    if (filters.hazClass.length) src = src.filter(p => filters.hazClass.includes(p.hazClassName));
     if (filters.uom.length)      src = src.filter(p => filters.uom.includes(p.uom));
     /* GST filter values arrive as strings ("5%", "18%"); the product's
        gstRate is a number. Normalize both sides so comparison is
@@ -935,7 +948,7 @@ export default function Products() {
         </div>
 
         <div className="prd-filter-body">
-          <FilterPanel label="GST Rate" panelKey="gstRate" open={expandedPanel === 'gstRate'} onToggle={togglePanel} count={filters.gstRate.length}>
+          <FilterPanel label="Product GST Rate" panelKey="gstRate" open={expandedPanel === 'gstRate'} onToggle={togglePanel} count={filters.gstRate.length}>
             {gstRateOpts.map(v => (
               <CheckRow key={v} label={v} checked={filters.gstRate.includes(v)} onChange={() => toggleMulti('gstRate', v)} />
             ))}
@@ -955,7 +968,7 @@ export default function Products() {
               behind the calendar. Moving the panel near the top means
               the popup has the full sidebar height below it to expand
               into without overlapping any unrelated controls. */}
-          <FilterPanel label="Created Date" panelKey="createdDate" open={expandedPanel === 'createdDate'} onToggle={togglePanel} count={(filters.createdFrom ? 1 : 0) + (filters.createdTo ? 1 : 0)}>
+          <FilterPanel label="Product Creation Date" panelKey="createdDate" open={expandedPanel === 'createdDate'} onToggle={togglePanel} count={(filters.createdFrom ? 1 : 0) + (filters.createdTo ? 1 : 0)}>
             <div className="prd-filter-date-grid">
               <label className="prd-filter-date-field">
                 <span>From</span>
@@ -982,7 +995,7 @@ export default function Products() {
             </div>
           </FilterPanel>
 
-          <FilterPanel label="HSN/SAC Code" panelKey="hsn" open={expandedPanel === 'hsn'} onToggle={togglePanel} count={filters.hsn.length}>
+          <FilterPanel label="Product HSN/SAC Code" panelKey="hsn" open={expandedPanel === 'hsn'} onToggle={togglePanel} count={filters.hsn.length}>
             {hsnOpts.map(v => (
               <CheckRow key={v} label={v} checked={filters.hsn.includes(v)} onChange={() => toggleMulti('hsn', v)} />
             ))}
@@ -995,7 +1008,7 @@ export default function Products() {
               stays a string[] for type consistency with the other
               multi-select filters, but it never holds more than one
               entry, so the include() match in filtered still works. */}
-          <FilterPanel label="Hazard Type" panelKey="hazType" open={expandedPanel === 'hazType'} onToggle={togglePanel} count={filters.hazType.length}>
+          <FilterPanel label="Product Hazard Type" panelKey="hazType" open={expandedPanel === 'hazType'} onToggle={togglePanel} count={filters.hazType.length}>
             {HAZ_TYPES.map(v => {
               const selected = filters.hazType[0] === v;
               return (
@@ -1021,25 +1034,36 @@ export default function Products() {
             )}
           </FilterPanel>
 
-          <FilterPanel label="Unit of Measurement" panelKey="uom" open={expandedPanel === 'uom'} onToggle={togglePanel} count={filters.uom.length}>
+          {/* Haz Classification — the master haz_class the product carries
+              (e.g. "Class 3 — Flammable Liquid"). Multi-select against the
+              product's hazClassName. Only HAZ products carry one. */}
+          <FilterPanel label="Product Haz Classification" panelKey="hazClass" open={expandedPanel === 'hazClass'} onToggle={togglePanel} count={filters.hazClass.length}>
+            {hazClassOpts.length === 0 ? (
+              <div className="prd-filter-empty">No haz classifications available</div>
+            ) : hazClassOpts.map(v => (
+              <CheckRow key={v} label={v} checked={filters.hazClass.includes(v)} onChange={() => toggleMulti('hazClass', v)} />
+            ))}
+          </FilterPanel>
+
+          <FilterPanel label="Product Unit of Measurement" panelKey="uom" open={expandedPanel === 'uom'} onToggle={togglePanel} count={filters.uom.length}>
             {uomOpts.map(v => (
               <CheckRow key={v} label={v} checked={filters.uom.includes(v)} onChange={() => toggleMulti('uom', v)} />
             ))}
           </FilterPanel>
 
-          <FilterPanel label="Condition" panelKey="condition" open={expandedPanel === 'condition'} onToggle={togglePanel} count={filters.condition.length}>
+          <FilterPanel label="Product Condition" panelKey="condition" open={expandedPanel === 'condition'} onToggle={togglePanel} count={filters.condition.length}>
             {conditionOpts.map(v => (
               <CheckRow key={v} label={v} checked={filters.condition.includes(v)} onChange={() => toggleMulti('condition', v)} />
             ))}
           </FilterPanel>
 
-          <FilterPanel label="Supplier" panelKey="vendor" open={expandedPanel === 'vendor'} onToggle={togglePanel} count={filters.vendor.length}>
+          <FilterPanel label="Product Supplier" panelKey="vendor" open={expandedPanel === 'vendor'} onToggle={togglePanel} count={filters.vendor.length}>
             {vendorOpts.map(v => (
               <CheckRow key={v} label={v} checked={filters.vendor.includes(v)} onChange={() => toggleMulti('vendor', v)} />
             ))}
           </FilterPanel>
 
-          <FilterPanel label="Score Range" panelKey="scoreRange" open={expandedPanel === 'scoreRange'} onToggle={togglePanel} count={filters.scoreRange.length}>
+          <FilterPanel label="Product Score Range" panelKey="scoreRange" open={expandedPanel === 'scoreRange'} onToggle={togglePanel} count={filters.scoreRange.length}>
             {SCORE_RANGES.map(v => (
               <CheckRow key={v} label={v} checked={filters.scoreRange.includes(v)} onChange={() => toggleMulti('scoreRange', v)} />
             ))}
@@ -1078,7 +1102,7 @@ export default function Products() {
             })}
           </FilterPanel>
 
-          <FilterPanel label="Inward Count" panelKey="inwardCount" open={expandedPanel === 'inwardCount'} onToggle={togglePanel} count={filters.inwardCount.length}>
+          <FilterPanel label="Product Inward Count" panelKey="inwardCount" open={expandedPanel === 'inwardCount'} onToggle={togglePanel} count={filters.inwardCount.length}>
             {INWARD_BUCKETS.map(v => (
               <CheckRow key={v} label={v} checked={filters.inwardCount.includes(v)} onChange={() => toggleMulti('inwardCount', v)} />
             ))}
