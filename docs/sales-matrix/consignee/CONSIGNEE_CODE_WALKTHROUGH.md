@@ -187,7 +187,105 @@ No `type`, no `gstScrutiny()`. `ConsigneeDocument` exposes `KIND_DD`/`KIND_TL` a
 
 ---
 
-## 9. CROSS-CUTTING PATTERNS
+## 9. FRONTEND CODE WALKTHROUGH (SPA)
+
+> The backend trace (§1–8) followed the API; this section follows the React side in execution order.
+> Files: `resources/js/pages/sales/core-masters/consignee/` — `SalesConsignee.tsx` (list) · `AddConsigneeModal.tsx` (wizard) · `ConsigneeEvidenceVaultModal.tsx` (vault). Line numbers drift; identifiers are stable.
+
+### 9.1 List page — `SalesConsignee.tsx`
+```tsx
+// permissions off the user grant
+const canView/canEdit/canAdd = perm('sales.consignee');   // no-access banner if !canView
+useEffect(() => { fetchRows(); }, []);                     // on mount
+const fetchRows = async () => {                            // GET /consignees
+  const r = await api.get('/consignees');
+  setRows(r.data.data.map(d => ({ id, company, customerId, segment, risk, same_as_customer, … })));
+};
+requestIdleCallback(() => api.get('/customers/master-bundle'));  // warm the wizard's dropdown cache
+```
+- **Columns:** Sr · **Consignee ID** · **Customer ID** (parent) · Company · **Segment** (comma-split → "+N more" popover) · **Risk** (Low/Med/High pill) · **Same as Customer** (Yes/No pill) · Contact/Email/Phone · Country · **Actions**.
+- **Search** — client-side `filtered` useMemo over company/id/customerId/contact/email/phone/segment/country/risk.
+- **Row actions:** **Edit** (`canEdit`) → `setEditing(row); setAddOpen(true)`; **Evidence Vault** → `setVaultTarget({db_id, company, risk, segment, country, contact, customerId})`.
+- **Delete** — confirm modal → `DELETE /consignees/{dbId}` → `fetchRows()`.
+- **Modals:** `<AddConsigneeModal consignee={editing} onSaved={fetchRows}/>` (null = create); `<ConsigneeEvidenceVaultModal consignee={vaultTarget}/>`. States: ShimmerTable while loading, *"No consignees found"* when empty.
+
+### 9.2 The wizard — `AddConsigneeModal.tsx`
+Two phases → **Phase A** pick-customer, **Phase B** a 2-stage wizard (`phase`, `stage`, `maxStage`).
+
+**Phase A — pick the customer**
+```tsx
+useEffect(() => { if (open) api.get('/customers?tab=all').then(map→customerOptions); }, [open]);
+// options carry hasSameAsCustomerConsignees + sameAsCustomerConsigneeCount (the one-mirror hint)
+// "Confirm & Continue" → setPhase('wizard'); setStage(1)
+```
+When opened via **Map Consignee**, `preselectedCustomerId` resolves `customer` up front so the mirror rule is known.
+
+**Stage 1 — Legal Identity** (`form1`, `locations[]`, `errors1`, `sameAsCustomer`)
+```tsx
+// master dropdowns (session-cached, else fetched)
+GET /customers/master-bundle → mSegments/mClassifications/mRiskLevels/mAddressTypes/mCountries/mStates/mDesignations/mDocumentTypes
+// segment inherited once from the parent (segPrefillCustomerRef guards against re-adding after edits)
+```
+*Same-as-Customer toggle* — copies the customer's company/legal/website/segment[]/classification/risk + address + contact into `form1`, then loads the parent's extra addresses **cache-first** (`bundledCustomerLocationsRef` from a prior `/consignees/{id}`) else `GET /customers/{db_id}`. Un-ticking on an **unsaved** consignee wipes `form1`+`locations`; on a **saved** one it keeps values and just unlocks the fields. Per-keystroke `validateField1`; duplicate email/phone across primary + locations is checked live.
+
+**Stage 1 → Stage 2 auto-persist** — `persistStage1()`:
+```tsx
+const payload = buildPayload();   // customer_id, company_name, legal_name, segment(csv), risk_level, website,
+                                  // status:'Active', same_as_customer, primary_address{}, locations[]
+const r = editId ? await api.put(`/consignees/${dbId}`, payload)          // PUT if known
+                 : await api.post('/consignees', payload);                // else POST → savedDbId
+if (sameAsCustomer && customer.db_id)
+  await api.post(`/consignees/${id}/clone-from-customer`, { customer_id }); // then refetchKyc(id)
+// 422 errors.same_as_customer → toggle off + surface; inFlightRef blocks double-submit; dirtySavedRef fires onSaved on early close
+```
+
+**Stage 2 — KYC / Due Diligence** (sub-tabs *Company DD → Owner KYC → Trade Licence*)
+```tsx
+// template: required/optional docs per segment + party
+segments.forEach(s => GET /clm/segment-rules/for-segment/{s});   // merge+dedupe by code, mandatory wins
+GET /clm/trade-doc-library/for-party/consignee;                  // → segmentDocs, segCodeMap, tdDocs
+// ad-hoc docs/owners:
+POST/DELETE /consignees/{dbId}/documents        // KycDocRow (dd/tl)
+POST/DELETE /consignees/{dbId}/owners           // KycOwnerRow (id/address/photo proofs)
+// segment-rule uploads (the vault store):
+POST /segment-uploads/consignee/{dbId}  { category:'dd'|'tl', doc_code, attachment }  // → attachment_url
+refetchKyc(id): GET /consignees/{id}/documents · /owners · GET /segment-uploads/consignee/{id}
+```
+
+**Final save** — `handleSave()` re-runs `validateStage1()`, then idempotent `PUT /consignees/{db_id ?? savedDbId}` (POST fallback) → toast → `onSaved()` → `onClose()`.
+
+**Edit hydration** — on open with `consignee.db_id`: `GET /consignees/{db_id}` returns the bundle (`data`, `locations`, `documents`, `owners`, `segment_uploads`, **`customer_locations`**) and replays it into `form1`/`locations`/`kycDocs`/`kycOwners`/`segmentRefUploads` + `sameAsCustomer`; `customer_locations` is stashed for the cache-first mirror preview.
+
+### 9.3 Evidence Vault — `ConsigneeEvidenceVaultModal.tsx`
+```tsx
+useEffect(() => { if (open && db_id && !data)                     // fetch once
+  api.get(`/segment-uploads/consignee/${db_id}/vault`)            // → counts + per-bucket docs + shipment matrix
+    .catch(() => setData(buildDemoVault(consignee)));             // demo scaffold only if the fetch fails
+}, [open]);
+api.get(`/clm/signature-requests?party_id=${db_id}&model_name=Consignee&sync=1`);  // Zoho overlay
+// signatureRequestsToVaultDocs() → mergeTradeDocuments() overlays Signed/Sent onto Trade Documents; KPIs recomputed
+```
+- **Tabs:** *Company Due Diligence · Owner KYC · Trade Licenses* (Standard/one-time) and *Trade Documents · Shipment Agreements* (Case-to-Case/per-shipment). **KPI strip:** Total / Verified-Signed / Pending.
+- **Row actions:** **View** (open `attachment_url`) · **Download** (`downloadFile`) · **Upload** (non-trade-docs → `POST /segment-uploads/consignee/{id}`, PDF/JPG/PNG only, reload vault) · **Send for Signature** (trade-docs → `SalesCustomerSendForSignatureModal`) · **Remind** (`POST /clm/signature-requests/{id}/remind`) · **Signing Tracker** · **Certificate** (if `certificate_url`).
+- **Shipment matrix** (`forceParty="consignee"` hides buyer columns) with per-shipment ratios; **Export All** → an XLSX workbook (Summary + 5 sheets).
+- **Same-as-Customer:** the parent's docs simply arrive in the vault payload (the backend `resolveOwner` swap of §7); a direct upload on a mirror returns **409**. **"Verified" is display-only.**
+
+### 9.4 Frontend ↔ backend call map
+| User action | Frontend | Backend (see §) |
+|---|---|---|
+| Open list | `GET /consignees` | §1.2 `index()` |
+| Pick customer | `GET /customers?tab=all` | Customer `index` |
+| Load dropdowns | `GET /customers/master-bundle` | Customer bundle |
+| Mirror preview | `GET /customers/{id}` | Customer `show` |
+| Save & Next (Stage 1) | `POST`/`PUT /consignees[/id]` | §3.2 `store()` / §5 `update()` |
+| Mirror clone | `POST /consignees/{id}/clone-from-customer` | §4.2 `cloneFromCustomer()` |
+| Stage-2 docs/owners | `POST/DELETE /consignees/{id}/documents\|owners` | §6 ad-hoc stores |
+| Segment upload | `POST /segment-uploads/consignee/{id}` | §6/§7 vault store |
+| Open vault | `GET …/vault` + `GET /clm/signature-requests?model_name=Consignee` | §7 vault + Zoho |
+
+---
+
+## 10. CROSS-CUTTING PATTERNS
 
 | Pattern | Where | Why |
 |---|---|---|
@@ -202,7 +300,7 @@ No `type`, no `gstScrutiny()`. `ConsigneeDocument` exposes `KIND_DD`/`KIND_TL` a
 
 ---
 
-## 10. NOTES & CAVEATS
+## 11. NOTES & CAVEATS
 
 - **Mirror is one-directional** (Customer → Consignee) and **replace-semantics** — a mirror is always an exact snapshot of the customer's KYC.
 - **`type` is intentionally skipped** in `syncCoreFromCustomer` because the consignee table has no `type` column.
@@ -210,6 +308,8 @@ No `type`, no `gstScrutiny()`. `ConsigneeDocument` exposes `KIND_DD`/`KIND_TL` a
 - **"Verified" is display-only** (segment upload exists) — no reviewer/approval step; "Signed" = completed Zoho request.
 - **Two doc stores** — `segment_doc_uploads` (vault) vs. `consignee_documents`/`consignee_owners` (ad-hoc / mirror clone target).
 - **DB is PostgreSQL** — `ilike` search; partial unique index `(client_id, consignee_code) WHERE deleted_at IS NULL`.
+- **Vault demo fallback** — `ConsigneeEvidenceVaultModal` renders a `buildDemoVault()` scaffold **only if** `GET …/vault` fails; real uploads come from `segment_doc_uploads`. Don't mistake the demo rows for live data in QA.
+- **Segment-rule uploads are manual** — ad-hoc KYC docs/owners auto-persist on save, but the segment-rule (vault) uploads are added by hand via the Evidence Vault / Stage-2 upload cells.
 
 ---
 

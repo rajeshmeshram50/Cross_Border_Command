@@ -149,8 +149,9 @@ Frontend `AssignedLeadsModal.tsx` renders the 4 KPI cards (clickable → `LeadsK
 ## 7. QUALIFICATION & STAGE TRANSITIONS — `update()` (573)
 ```php
 if ($request->boolean('qualified') && $request->boolean('disqualified')) abort(422);   // mutually exclusive
-// Victory gate: entering stage 6 needs a non-cancelled + signed PI
-if ($newStage == 6 && $lead->lead_stage_id < 6 && !$this->hasSignedPi($lead)) abort(422);
+// Victory gate: entering stage 6 needs a non-cancelled PI that has at least been
+// SENT for signature (a signature request exists) OR emailed — NOT necessarily signed.
+if ($newStage == 6 && $lead->lead_stage_id < 6 && !$this->hasPiSentForSignature($lead)) abort(422);
 $lead->update($data);
 if ($newStage == 6 && !$lead->won_at) $lead->update(['won_at'=>now()]);   // stamp on Victory
 if ($newStage < 6 && $lead->won_at)   $lead->update(['won_at'=>null]);    // clear on regression
@@ -193,7 +194,7 @@ Stage-2 `storeAcknowledgements()` (1725, txn) writes acknowledgement rows and fl
 ## 11. NOTES & CAVEATS
 - **DB is PostgreSQL** — LOWER-LIKE search; composite unique `(client_id, platform, unique_query_id)` for CRM dedupe.
 - **Stages 6 & 8 filters are computed** from PI/signature and shipment-order existence — not a plain `lead_stage_id` match.
-- **Victory is gated** — a lead can't reach Stage 6 without a signed PI; `won_at` auto-stamps/clears.
+- **Victory is gated** — a lead can't reach Stage 6 until its PI has been **sent for signature or emailed** (signing need not be complete); `won_at` auto-stamps/clears.
 - **India excluded** from IndiaMart sync (qualified = exportable country).
 - **`canDistribute` is currently open to all** — the real enforcement is the hierarchy + Sales-department guards inside `assign()`.
 - **Sender fields are denormalized** on the lead until a customer is linked.
