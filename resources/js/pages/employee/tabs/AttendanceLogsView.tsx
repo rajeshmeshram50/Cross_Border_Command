@@ -25,6 +25,7 @@ export interface AttLog {
   date: string;
   weekday: string;
   status: DayStatus;
+  holidayName?: string | null;
   shift: string;
   firstIn: string;
   lastOut: string;
@@ -256,18 +257,23 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                     const formattedDate = `${dateDay}-${dateMonth}-${dateYear}`;
                     const popId = `ep-att-log-info-${employee.id}-${pageStart + i}`;
                     const isOpen = popoverIdx === pageStart + i;
-                    const isOff   = l.status === 'Weekly Off' || l.status === 'Holiday';
+                    const isHolidayDay = l.status === 'Holiday';
+                    const isOff   = l.status === 'Weekly Off' || isHolidayDay;
                     const isAbsent = l.status === 'Absent';
                     const tone = STATUS_TONE[l.status];
 
                     if (isOff) {
                       return (
-                        <tr key={pageStart + i} className="att-log-row--off">
+                        <tr key={pageStart + i} className={`att-log-row--off${isHolidayDay ? ' att-log-row--holiday' : ''}`}>
                           <td className="att-log-datecell">
                             {formattedDate}
-                            <span className="att-log-woff-pill">W-OFF</span>
+                            <span className="att-log-woff-pill" style={isHolidayDay ? { color: '#0c63b0', background: '#dceefe' } : undefined}>
+                              {isHolidayDay ? 'HOLIDAY' : 'W-OFF'}
+                            </span>
                           </td>
-                          <td colSpan={4} className="text-center att-log-woff-text">Full day Weekly-off</td>
+                          <td colSpan={4} className="text-center att-log-woff-text">
+                            {isHolidayDay ? (l.holidayName ? `Holiday — ${l.holidayName}` : 'Holiday') : 'Full day Weekly-off'}
+                          </td>
                           <td className="text-center">
                             <button type="button" className="att-log-action-btn" disabled>
                               <i className="ri-more-2-fill" />
