@@ -4,22 +4,6 @@ import { MENU_ITEMS, HR_GROUPS, SALES_GROUPS, CLM_GROUPS, P2P_GROUPS } from "../
 import { isMenuOpen, toggleMenu, toggleTopMenu, toggleGroupMenu } from "./menuState";
 import { moduleVisible } from "../../utils/menuAccess";
 
-/**
- * Velzon's vertical Layout reads `navdata().props.children` — an array of
- * menu items. Items with `subItems` render as collapsible dropdowns; items
- * with `subItems[].isChildItem` + `childItems` render as nested 3-level
- * dropdowns (matching Velzon's stock support — see VerticalLayouts/index.tsx).
- *
- * Master shows up as a SINGLE flat link in the nav; the `/master` page itself
- * renders all 50 sub-masters as a card grid.
- *
- * HR has TWO views: a 3-level NESTED DROPDOWN in the sidebar (showing all 6
- * categories with their leaves, like the IDIMS mega-menu), AND a hub page at
- * `/hr` that shows the same content as a card grid (like /master). Clicking
- * "HR" itself in the sidebar navigates to /hr; clicking the chevron expands
- * the dropdown.
- */
-
 const iconMap: Record<string, string> = {
   LayoutGrid: "ri-dashboard-2-line ms-2",
   Building2: "ri-building-line",
