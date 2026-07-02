@@ -348,6 +348,16 @@ class LeavePlanController extends Controller
         $row->is_setup = true;
         $row->save();
 
+        // Once the save that just completed leaves the plan fully set up, a
+        // cloned plan's editable-draft override (`unlocked`) has done its job —
+        // clear it so the plan locks like any other completed plan. Without
+        // this a clone stays `unlocked = true` forever and its Setup buttons
+        // never turn into the "Locked" indicator (bug #61).
+        if ($plan->unlocked && $this->isPlanSetupComplete($plan->id)) {
+            $plan->unlocked = false;
+            $plan->save();
+        }
+
         return response()->json(['data' => $row]);
     }
 
@@ -941,8 +951,10 @@ class LeavePlanController extends Controller
      *
      * The `unlocked` override exempts cloned plans: a clone is born fully
      * configured, so without this it would be locked the instant it is created
-     * and could never be edited. Clones keep `unlocked = true` and stay
-     * editable.
+     * and could never be edited. A clone stays `unlocked = true` (editable)
+     * only until the next config save leaves it fully set up — at that point
+     * saveTypeConfig() clears the flag so the plan locks like any other
+     * completed plan (see bug #61).
      */
     private function assertPlanEditable(LeavePlans $plan): void
     {
