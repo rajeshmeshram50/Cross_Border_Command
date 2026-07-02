@@ -14,24 +14,8 @@ import {
   writeProductMasterBundle,
   bustProductMasterBundle,
 } from './productBundleCache';
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Add Product — 2-step wizard
- *
- * Step 1: Product Information — 3 inner tabs
- *           • Product Core Information  (identity, classification, media)
- *           • For Sales Department      (pricing + GST)
- *           • Quality & Compliance      (box matrix + QC list)
- * Step 2: Map Product Vendor — vendor selection + mapped vendor table
- *
- * Light + dark mode aware. Validation is light, the form stays local, and
- * `onSubmit` fires when the user clicks "Save Product" on step 2.
- * ──────────────────────────────────────────────────────────────────────── */
-
 export type VendorEntry = {
   id: string;
-  /** DB id of the vendor row. Carries through so storeVendors can
-   *  mirror the mapping into VendorProductMapping (vendor side). */
   vendorId: string;
   productCode: string;
   vendorCode: string;
