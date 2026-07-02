@@ -101,6 +101,50 @@ resources/js/pages/sales/core-masters/consignee/
 └── ConsigneeEvidenceVaultModal.tsx      # 5-tab vault (emerald theme)
 ```
 
+### 1.5 Frontend architecture (SPA)
+The consignee UI is a **full React 19 + TypeScript** feature — three components plus shared kit — and is a first-class half of this module, not just a thin caller.
+
+**Component tree & responsibilities**
+```
+SalesConsignee.tsx            list + orchestrator
+  ├─ owns: rows[], q(search), loading, addOpen, editing, vaultTarget
+  ├─ fetchRows() → GET /consignees ; requestIdleCallback → warm /customers/master-bundle
+  ├─ renders <AddConsigneeModal consignee={editing} onSaved={fetchRows}/>   (null = create)
+  └─ renders <ConsigneeEvidenceVaultModal consignee={vaultTarget}/>
+
+AddConsigneeModal.tsx         customer-picker + 2-stage wizard
+  ├─ phase: 'pick-customer' | 'wizard'   ·   stage / maxStage
+  ├─ Stage-1 state: form1{}, locations[], errors1{}, sameAsCustomer, savedDbId
+  ├─ Stage-2 state: kycDocs[], kycOwners[], segmentRefUploads{}   (+ template: segmentDocs, segCodeMap, tdDocs)
+  └─ sub-modals: LocationSubModal · KycDocSubModal · KycOwnerSubModal · SendForSignature · SigningTracker
+
+ConsigneeEvidenceVaultModal.tsx   read-only 5-tab archive
+  └─ state: data(vault), signatures, tab, group   ·   merges Zoho status into Trade Documents
+
+Shared kit: masterFormKit (MasterSelect / MultiSelect / MasterDatePicker), WorklistPager,
+            DeleteConfirmModal, customerBundleCache, resolveFileUrl, the Axios api client.
+```
+
+**State management.** Local React state + `useRef`, **no Redux** for business data (per the app-wide rule that Redux is theme-only). Four refs carry the tricky behaviours:
+| Ref | Purpose |
+|---|---|
+| `inFlightRef` | blocks double-submit while a persist is in flight |
+| `dirtySavedRef` | remembers a Stage-1 save so an early **X/Cancel** still fires `onSaved()` (list refresh) |
+| `segPrefillCustomerRef` | inherit the parent's segment **once**, so re-adding it after the user edits is suppressed |
+| `bundledCustomerLocationsRef` | the parent's `customer_locations` from a prior `GET /consignees/{id}`, used **cache-first** for the mirror preview |
+
+**Data flow.** All calls go through the shared **Axios `api`** client (injects `Authorization: Bearer` + `?branch_id`). The wizard is a **sequenced pipeline**: pick customer (`GET /customers?tab=all`) → dropdowns (`GET /customers/master-bundle`) → per-segment rules (`GET /clm/segment-rules/for-segment/{id}` × N + `…/trade-doc-library/for-party/consignee`) → **auto-persist** (`POST` then `PUT`) → optional `clone-from-customer` → `refetchKyc()` (documents + owners + segment-uploads in parallel).
+
+**Caching / round-trip avoidance.** The **master bundle** is warmed on list mount (`requestIdleCallback`) and reused from `customerBundleCache`/sessionStorage; the parent's **locations are bundled into the edit payload** (`customer_locations`) so the Same-as-Customer preview needs no extra fetch; blob preview URLs are `revokeObjectURL`-d on replace.
+
+**Validation.** Per-field rules (`stage1FieldRule`) run **per keystroke** (`validateField1`) and again on advance (`validateStage1`): regex for names/email/phone, 6-digit PIN, plus a **live duplicate email/phone check** across the primary + additional locations. Server **422** errors are mapped back onto the offending fields; a `422 errors.same_as_customer` additionally **toggles the mirror off** and surfaces the message.
+
+**Persistence pattern.** *POST-first-then-PUT* keyed by `savedDbId`; the final `handleSave()` is **idempotent** — `PUT /consignees/{db_id ?? savedDbId}` with a `POST` fallback — so partial progress is never lost.
+
+**Uploads & theming.** Files go up as **multipart FormData**; the client guards **mime + 2 MB** (PDF/JPG/PNG) before the segment-upload call returns an `attachment_url`. The whole surface uses the **emerald** palette with scoped CSS (distinguishing it from the customer module's violet).
+
+> A step-by-step execution trace of these same files lives in **CONSIGNEE_CODE_WALKTHROUGH.md §9**; this section is the architectural view.
+
 ---
 
 ## 2. TECHNOLOGY STACK
