@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Button, Input, Dropdown, DropdownToggle, DropdownMenu, DropdownItem, Spinner } from 'reactstrap';
 import * as XLSX from 'xlsx';
 import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
@@ -170,14 +170,22 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
 export default function HrPayroll() {
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // When we jump out of the "Payroll Execution Blocked" popup to fix an issue
+  // (Open Employee / Go to Attendance), tag the navigation with a return
+  // context. The destination's Back/Close reads `returnPage` and comes back
+  // here instead of the generic Active-Employees list (#38). `reopenRun` then
+  // re-surfaces the popup so the payroll-execution context is preserved.
+  const returnCtx = { returnPage: 'hr-payroll', returnData: { reopenRun: true } };
 
   const handleIssueAction = (action: { kind?: string }, issue: { empCode?: string; encryptedId?: string | null }) => {
     setRunOpen(false);
     if (action.kind === 'attendance') {
-      navigate('/hr/attendance');
+      navigate('/hr/attendance', { state: returnCtx });
     } else if (action.kind === 'employee' && (issue.encryptedId || issue.empCode)) {
       // Prefer the opaque encrypted token so the URL never exposes EMP-###.
-      navigate(`/hr/employees/${encodeURIComponent(issue.encryptedId || issue.empCode!)}/profile`);
+      navigate(`/hr/employees/${encodeURIComponent(issue.encryptedId || issue.empCode!)}/profile`, { state: returnCtx });
     }
   };
 
@@ -442,25 +450,40 @@ export default function HrPayroll() {
         const list = (res.data?.data ?? []) as CycleMonth[];
         if (Array.isArray(list) && list.length) {
           setRawCycles(list);
-          // Default to the CURRENT year, not the oldest cycle. The strip is a
-          // trailing 13-month window (oldest→newest) where every empty month
-          // reads "Not Started", so the previous `find(In Progress || Not
-          // Started)` matched the oldest month and snapped the year to the
-          // prior year (#37). Prefer: this year's active cycle → the current
-          // month → any active cycle → newest as a last resort.
+          // Always default the year dropdown to the CURRENT year (#37). The
+          // strip is a trailing 13-month window (oldest→newest) where every
+          // empty month reads "Not Started", so the old `find(In Progress ||
+          // Not Started)` matched the oldest month and snapped the year to the
+          // prior year. We now pin the year to `today` unconditionally so the
+          // dropdown never lands on a past year — even when the only active
+          // cycle belongs to a prior year (e.g. 2026 not yet started). Within
+          // the current year, snap the cycle to: this year's active cycle →
+          // the current month → this year's first month.
           const curY = today.getFullYear();
           const curM = today.getMonth() + 1;
-          const live =
+          setSelectedYear(curY);
+          const cur =
             list.find(c => c.status === 'In Progress' && c.year === curY)
-            ?? list.find(c => c.year === curY && c.month === curM)
-            ?? list.find(c => c.status === 'In Progress')
-            ?? list[list.length - 1];
-          if (live?.year)  setSelectedYear(live.year);
-          if (live?.month) setCycleKey(monthKey(live.year!, live.month - 1));
+            ?? list.find(c => c.year === curY && c.month === curM);
+          setCycleKey(monthKey(curY, (cur?.month ?? curM) - 1));
         }
       })
       .catch(() => {});
   }, []);
+
+  // Returning from Open Employee / Go to Attendance (#38): re-surface the
+  // "Payroll Execution Blocked" popup once the cycle's rows have loaded, so the
+  // user lands back where they left off instead of on Active Employees. Fires
+  // once, then strips the flag from history so a refresh/back won't reopen it.
+  const reopenHandled = useRef(false);
+  useEffect(() => {
+    if (reopenHandled.current) return;
+    if ((location.state as { reopenRun?: boolean } | null)?.reopenRun && rows.length) {
+      reopenHandled.current = true;
+      setRunOpen(true);
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.state, location.pathname, rows, navigate]);
 
   const reloadCycle = useMemo(() => () => {
     const c = cycleMonths.find(m => m.key === cycleKey);
