@@ -2699,18 +2699,21 @@ function apiToExitRow(e: any): EmployeeRow {
   const ex        = e?.exit ?? null;
   const noticeRaw = ex?.notice_date ? String(ex.notice_date).slice(0, 10) : '';
   const caseClosed   = (ex?.exit_case_status === 'Closed') || !!ex?.completed_at;
-  const statusExited = ['Resigned', 'Terminated'].includes(rawStatus);
+  // Inactive is grouped with Resigned/Terminated as a non-active status
+  // (deactivating an employee flips employees.status to 'Inactive' and kills
+  // the login — see EmployeeController). Such staff must NOT appear in the
+  // Active Employees list; they belong in the Exited bucket (bug #34).
+  const statusExited = ['Resigned', 'Terminated', 'Inactive'].includes(rawStatus);
   const statusNotice = rawStatus === 'Notice Period';
   const exitInitiated = !!ex && (
     !!ex.exit_type || !!ex.last_working_day || !!ex.notice_date || Number(ex.current_stage) >= 1
   );
 
   let status: ExitStatus;
-  // NOTE: a soft-disabled employee (deleted_at set via the Employee module
-  // toggle) is NOT an exit — only a completed/closed exit case or a
-  // Resigned/Terminated status counts as "Exited" here. This keeps a merely
-  // disabled employee visible & manageable in the hub instead of being
-  // silently moved to the Exited list.
+  // NOTE: "Exited" here means a completed/closed exit case OR a terminal
+  // employees.status (Resigned / Terminated / Inactive). An Inactive employee
+  // has been deactivated (login disabled) so they're no longer active staff —
+  // they show in the Exited tab, never the Active Employees list.
   if      (caseClosed || statusExited)                              status = 'Exited';
   else if (exitInitiated || statusNotice)                           status = 'Exit In Progress';
   else if (!e.email || !e.department_id || !e.designation_id)        status = 'Missing Details';

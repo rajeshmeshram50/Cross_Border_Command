@@ -90,6 +90,24 @@ const STEPS = [
   { key: 3, label: 'Preview & Generate', sub: 'Review and generate documents' },
 ];
 
+// Map a template's employee_category (IT / Non-IT / Legal) to an employee's
+// DEPARTMENT. Employees carry no category field of their own, so the scope is
+// keyed on the department name: IT → the IT department, Legal → the Legal
+// department, Non-IT → every other department. Used to keep Step 1 recipients
+// aligned with the tab the template was authored under (bug #5).
+function employeeMatchesCategory(deptName: string | null | undefined, category?: string): boolean {
+  if (!category) return true;
+  const d = (deptName || '').trim().toLowerCase();
+  const isIt    = d === 'it' || d === 'information technology';
+  const isLegal = d === 'legal' || d === 'legal & compliance' || d === 'legal and compliance';
+  switch (category) {
+    case 'IT':     return isIt;
+    case 'Legal':  return isLegal;
+    case 'Non-IT': return !isIt && !isLegal;
+    default:       return true; // unknown/legacy category → don't scope by department
+  }
+}
+
 export default function GenerateDocument() {
   const toast = useToast();
   const navigate = useNavigate();
@@ -162,20 +180,36 @@ export default function GenerateDocument() {
     [employees, selectedIds],
   );
 
-  // Recipients are scoped to the template's designation level: a template is
-  // built for a specific role tier (Director/CEO … Intern), and the matcher
-  // keys on designation.level === template.role_type. So Step 1 only offers
-  // employees at that level. Guard for legacy/un-seeded data: if NO employee
-  // carries a designation level at all, fall back to the full list rather than
-  // showing an empty picker (an empty result when levels ARE set is correct —
-  // it genuinely means no one holds this role tier).
+  // Recipients are scoped to (1) the template's DEPARTMENT category
+  // (IT/Non-IT/Legal → employee department) and (2) its designation level
+  // (a template is built for a specific role tier, keyed on
+  // designation.level === template.role_type). So Step 1 only offers employees
+  // in the right department AND at the right level.
+  //
+  // Guard for legacy/un-seeded data: if NO employee carries the relevant field
+  // at all, skip that filter rather than showing an empty picker. (An empty
+  // result when the field IS populated is correct — it genuinely means no one
+  // matches.)
   const eligibleEmployees = useMemo(() => {
+    let list = employees;
+
+    // (1) Department scope — the reported bug: an IT template must not surface
+    // Non-IT staff, and vice-versa.
+    const category = template?.employee_category;
+    if (category) {
+      const anyDept = employees.some(e => e.department?.name);
+      if (anyDept) list = list.filter(e => employeeMatchesCategory(e.department?.name, category));
+    }
+
+    // (2) Designation-level scope.
     const level = template?.role_type;
-    if (!level) return employees;
-    const anyLevels = employees.some(e => e.designation?.level);
-    if (!anyLevels) return employees;
-    return employees.filter(e => (e.designation?.level || '') === level);
-  }, [employees, template?.role_type]);
+    if (level) {
+      const anyLevels = list.some(e => e.designation?.level);
+      if (anyLevels) list = list.filter(e => (e.designation?.level || '') === level);
+    }
+
+    return list;
+  }, [employees, template?.role_type, template?.employee_category]);
 
   // ── Step transitions ─────────────────────────────────────────────────────
   const goNext = async () => {
@@ -600,11 +634,11 @@ function Step1(props: {
       {/* Scope hint — the list is filtered to the template's designation level
           (and IT/Non-IT/Legal category it was authored under) so only eligible
           recipients appear. */}
-      {props.roleType && (
+      {(props.roleType || props.category) && (
         <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 12 }} className="gd-scope-hint">
           <i className="ri-filter-3-line me-1" style={{ color: '#8b5cf6' }} />
-          Showing employees at the <strong style={{ color: '#4338ca' }}>{props.roleType}</strong> level
-          {props.category ? <> · <strong style={{ color: '#4338ca' }}>{props.category}</strong></> : null}.
+          Showing {props.category ? <><strong style={{ color: '#4338ca' }}>{props.category}</strong> employees</> : 'employees'}
+          {props.roleType ? <> at the <strong style={{ color: '#4338ca' }}>{props.roleType}</strong> level</> : null}.
         </div>
       )}
 
