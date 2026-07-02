@@ -1565,7 +1565,7 @@ const C: Record<string, MasterConfig> = {
     desc: 'Supplier information, addresses & document verification',
     cat: 'P2P Masters',
     fields: [
-      { n: 'vendor_company_name', l: 'Supplier Company Name', t: 'text', r: true, p: 'e.g. TechParts India Pvt Ltd' },
+      { n: 'vendor_company_name', l: 'Supplier Company Name', t: 'textarea', r: true, p: 'e.g. TechParts India Pvt Ltd', full: true, maxLen: 512 },
       { n: 'contact_person', l: 'Contact Person', t: 'text', r: true, p: 'Primary contact name' },
       { n: 'mobile_number', l: 'Mobile Number', t: 'text', r: true, p: '10-digit mobile' },
       { n: 'email_id', l: 'Email ID', t: 'email', r: true, p: 'supplier@company.com' },

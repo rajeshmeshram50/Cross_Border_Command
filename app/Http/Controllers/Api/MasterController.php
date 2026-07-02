@@ -160,7 +160,7 @@ class MasterController extends Controller
         // `uEach` — vendor company name, mobile, and email each must be
 // independently unique (case-insensitive on name + email). Prevents
 // "ABC Corp" / "abc corp" duplicates across the directory.
-'vendor_directory' => ['fields' => [['n' => 'vendor_company_name', 't' => 'text', 'r' => true], ['n' => 'contact_person', 't' => 'text', 'r' => true], ['n' => 'mobile_number', 't' => 'text', 'r' => true], ['n' => 'email_id', 't' => 'email', 'r' => true], ['n' => 'segment_id', 't' => 'select', 'r' => true, 'ref' => 'segments'], ['n' => 'address', 't' => 'text', 'r' => true], ['n' => 'country', 't' => 'select', 'r' => true, 'opts' => ['India', 'USA', 'UAE', 'UK', 'Germany', 'Australia', 'Singapore', 'Other']], ['n' => 'state', 't' => 'select', 'r' => true, 'ref' => 'states'], ['n' => 'city', 't' => 'text', 'r' => true], ['n' => 'mapping_mode', 't' => 'select', 'r' => true, 'opts' => ['Map from Vendor Master', 'Map New Vendor']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['vendor_company_name', 'mobile_number', 'email_id']],
+'vendor_directory' => ['fields' => [['n' => 'vendor_company_name', 't' => 'textarea', 'r' => true, 'maxLen' => 512], ['n' => 'contact_person', 't' => 'text', 'r' => true], ['n' => 'mobile_number', 't' => 'text', 'r' => true], ['n' => 'email_id', 't' => 'email', 'r' => true], ['n' => 'segment_id', 't' => 'select', 'r' => true, 'ref' => 'segments'], ['n' => 'address', 't' => 'text', 'r' => true], ['n' => 'country', 't' => 'select', 'r' => true, 'opts' => ['India', 'USA', 'UAE', 'UK', 'Germany', 'Australia', 'Singapore', 'Other']], ['n' => 'state', 't' => 'select', 'r' => true, 'ref' => 'states'], ['n' => 'city', 't' => 'text', 'r' => true], ['n' => 'mapping_mode', 't' => 'select', 'r' => true, 'opts' => ['Map from Vendor Master', 'Map New Vendor']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['vendor_company_name', 'mobile_number', 'email_id']],
         'warehouse_master' => ['fields' => [['n' => 'wh_id', 't' => 'text', 'r' => true], ['n' => 'wh_name', 't' => 'text', 'r' => true], ['n' => 'wh_type', 't' => 'select', 'r' => true, 'opts' => ['Own Warehouse', 'Third Party Warehouse']], ['n' => 'city', 't' => 'text', 'r' => true], ['n' => 'state', 't' => 'text'], ['n' => 'pincode', 't' => 'text'], ['n' => 'contact_person', 't' => 'text'], ['n' => 'contact_phone', 't' => 'text'], ['n' => 'area_sqft', 't' => 'number'], ['n' => 'address', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['wh_id', 'wh_name']],
         'zone_master' => ['fields' => [['n' => 'zone_id', 't' => 'text', 'r' => true], ['n' => 'zone_name', 't' => 'text', 'r' => true], ['n' => 'zone_type', 't' => 'select', 'r' => true, 'opts' => ['Storage Zone', 'Cold Chain Zone', 'Hazardous Zone', 'Dispatch Zone', 'Holding Zone', 'QC Hold Zone', 'Overflow Zone', 'Blocked Zone', 'Regulated Zone']], ['n' => 'warehouse', 't' => 'select', 'r' => true, 'ref' => 'warehouse_master'], ['n' => 'purpose', 't' => 'textarea'], ['n' => 'cold_chain', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'hazardous', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['zone_id', 'zone_name']],
         // `uEach` — code and name each independently unique (case-insensitive).
@@ -859,6 +859,12 @@ class MasterController extends Controller
                 $r[] = 'date';
             } elseif ($f['t'] === 'textarea') {
                 $r[] = 'string';
+                // Textareas are uncapped by default (descriptions/addresses can
+                // run long), but honour an explicit `maxLen` so fields backed by
+                // a fixed-width column can't overflow it (Postgres errors hard).
+                if (isset($f['maxLen'])) {
+                    $r[] = 'max:' . $f['maxLen'];
+                }
             } elseif (!empty($f['ref'])) {
                 // Reference IDs (foreign keys) can arrive as either strings (from
                 // <MasterSelect>'s hidden input) or integers (when echoing back a

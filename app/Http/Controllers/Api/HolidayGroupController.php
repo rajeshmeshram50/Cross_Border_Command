@@ -117,9 +117,13 @@ class HolidayGroupController extends Controller
     private function validatePayload(Request $request, ?int $id = null): array
     {
         $data = $request->validate([
-            'name'        => 'required|string|max:191',
+            // Group names are labels — letters, numbers, spaces and hyphens only
+            // (no apostrophes or other special characters). Mirrors the frontend.
+            'name'        => ['required', 'string', 'max:191', 'regex:/^[\pL\pN \-]+$/u'],
             'description' => 'nullable|string|max:1000',
             'status'      => ['nullable', Rule::in(['Active', 'Inactive'])],
+        ], [
+            'name.regex' => 'Group name can only contain letters, numbers, spaces and hyphens.',
         ]);
 
         // Block duplicate group names within the same tenant scope. Match is
