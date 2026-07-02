@@ -2195,11 +2195,15 @@
 .rec-list-table thead th:first-child { border-top-left-radius: 14px; }
 .rec-list-table thead th:last-child  { border-top-right-radius: 14px; }
 [data-bs-theme="dark"] .rec-list-table thead th {
+  /* Fallback colour is required because this table also renders inside a
+     reactstrap Modal, which portals to <body> — outside the app wrapper that
+     defines --vz-card-bg. Without the fallback the gradient resolves to
+     `transparent` and scrolled rows bleed THROUGH the sticky header. */
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--vz-card-bg) 88%, #ffffff) 0%,
-    var(--vz-card-bg) 100%);
+    color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
+    var(--vz-card-bg, #1a1d29) 100%);
   color: rgba(255,255,255,0.70);
-  border-bottom-color: var(--vz-border-color);
+  border-bottom-color: var(--vz-border-color, #2c3242);
 }
 
 /* Body cells — comfortable padding, subtle row dividers */
