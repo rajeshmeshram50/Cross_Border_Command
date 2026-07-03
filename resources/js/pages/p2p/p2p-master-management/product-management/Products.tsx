@@ -200,7 +200,7 @@ export default function Products() {
   /* Product detail opens as a popup over the list (not a full-screen route).
      Clicking a card sets this; the ProductView renders inside a modal. */
   const [detailId, setDetailId] = useState<number | null>(null);
-  const [brefOpen, setBrefOpen] = useState(true);
+  const [brefOpen, setBrefOpen] = useState(false);
 
   /* ─── Filter sidebar ─── */
   const [filterOpen, setFilterOpen] = useState(false);
