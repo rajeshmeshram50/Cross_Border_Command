@@ -554,26 +554,43 @@ export default function Products() {
     if (!el) return;
     const fit = () => {
       if (!autoFitRef.current) return;
-      const top = el.getBoundingClientRect().top;
-      // Leave a 70px tail for the pagination footer + page bottom gap.
-      const avail = Math.max(160, window.innerHeight - top - 70);
+      // Measure the grid/list region's OWN height — it's a fixed flex body
+      // inside the fixed-height panel (see .prd-panel CSS), exactly like the
+      // My Workplace worksheet measures its scroll wrap's clientHeight. This
+      // is more robust than viewport math: the pager is pinned below, so
+      // whatever height the container has, we fill it with rows that fit and
+      // the overflow rolls onto the next page.
+      const cs = getComputedStyle(el);
+      const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+      const avail = el.clientHeight - padY;
+      if (avail <= 0) return;
       if (view === 'list') {
         const rowH = (el.querySelector('.prd-row') as HTMLElement | null)?.offsetHeight || 84;
-        const rows = Math.max(4, Math.floor(avail / (rowH + 10)));
+        const rowGap = parseFloat(cs.rowGap) || 10;
+        const rows = Math.max(4, Math.floor(avail / (rowH + rowGap)));
         setPageSize(rows);
       } else {
-        // Show a fixed 2 ROWS of cards per page; the column count stays
-        // dynamic (CSS auto-fill produces N columns at the current width),
-        // so a page = cols × 2 and everything beyond rolls onto the next
-        // page via the dynamic pager.
-        const cols = Math.max(1, getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length || 4);
-        setPageSize(cols * 2);
+        // Fill the container with as many ROWS of cards as fit. Column count
+        // stays dynamic (CSS auto-fill produces N columns at the current
+        // width), so a page = cols × rows-that-fit. Floor conservatively (no
+        // +gap) so varying card heights never spill past the container and
+        // trigger a scrollbar.
+        const cols = Math.max(1, cs.gridTemplateColumns.split(' ').filter(Boolean).length || 4);
+        const cardH = (el.querySelector('.prd-pcard') as HTMLElement | null)?.offsetHeight || 300;
+        const rowGap = parseFloat(cs.rowGap) || 16;
+        const rows = Math.max(1, Math.floor(avail / (cardH + rowGap)));
+        setPageSize(cols * rows);
       }
     };
+    // ResizeObserver keeps the fit correct as the container resizes (window
+    // resize, brief-box collapse/expand, layout switch) without listening to
+    // window forever. The container height is fixed by flex, so setPageSize
+    // can't feed back into a resize loop.
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
     fit();
     const t = window.setTimeout(fit, 120);
-    window.addEventListener('resize', fit);
-    return () => { window.clearTimeout(t); window.removeEventListener('resize', fit); };
+    return () => { ro.disconnect(); window.clearTimeout(t); };
   }, [loading, view, filtered.length]);
 
   const setRowsPerPage = (n: number) => { autoFitRef.current = false; setPageSize(n); setPage(1); };

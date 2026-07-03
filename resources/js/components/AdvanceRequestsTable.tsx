@@ -3,21 +3,6 @@ import { createPortal } from 'react-dom';
 import { ShimmerTableRows } from './ui/Shimmer';
 import '../../css/recruitment.css';
 
-/**
- * Advance Requests table — sibling of ExpenseClaimsTable. Shares the same
- * two-stage approval surface (manager → HR/Finance) but with the advance
- * payload columns (type, recovery schedule, monthly EMI, reason).
- *
- * Rendering rules mirror ExpenseClaimsTable:
- *   - Status column = rolled-up status pill only (per-stage details live
- *     in the audit log popover).
- *   - Action column = 3-dot button → Created → Manager → HR/Finance audit.
- *   - When `mode === 'team'` AND the current user is the assigned manager
- *     for a pending row, inline Approve/Reject buttons appear.
- *   - When `mode === 'hr'` AND the user has HR permission AND the row's
- *     manager stage is approved but HR stage is still pending, inline
- *     HR Approve/Reject buttons appear.
- */
 
 export type AdvanceRequestRow = {
   id: number;
@@ -78,12 +63,6 @@ const RECOVERY_LABEL: Record<string, string> = {
   bimonthly:  'Bi-Monthly',
 };
 
-/* Dark-mode badge tints. The Adv ID / Advance Type / Recovery / Status pills
-   set light pastel backgrounds via inline styles (fine in light mode), which
-   washed out to bright chips on the dark table — the values under those
-   columns looked "stuck in light theme". These rules override only in dark
-   mode (!important beats the inline light colours); light mode is untouched.
-   Mirrors the BADGE_DARK_CSS block already shipping in ExpenseClaimsTable. */
 const BADGE_DARK_CSS = `
 [data-bs-theme="dark"] .adv-id-badge       { background: #11324d !important; color: #7cc4f8 !important; }
 [data-bs-theme="dark"] .adv-type-badge     { background: #2a1d5c !important; color: #c4b5fd !important; }
@@ -634,9 +613,6 @@ function AdvanceConfirmModal({
   onClose: () => void;
   onConfirm: () => void | Promise<void>;
 }) {
-  // Tracks the in-flight confirm so the button can show a spinner + disable
-  // itself (and the Cancel button) — stops repeated clicks firing the action
-  // more than once. Declared before the early return to respect hook rules.
   const [submitting, setSubmitting] = useState(false);
   if (!target) return null;
   const { row, action } = target;
@@ -644,8 +620,6 @@ function AdvanceConfirmModal({
   const stageLabel = action.stage === 'manager' ? 'Manager' : 'HR / Finance';
   const tone = STATUS_TONE[row.status];
 
-  // Mirrors ExpenseConfirmModal's layout exactly (shared cand-confirm-* classes)
-  // so the Advance and Expense approval popups read as one design.
   const handleConfirm = async () => {
     if (submitting) return;
     setSubmitting(true);
