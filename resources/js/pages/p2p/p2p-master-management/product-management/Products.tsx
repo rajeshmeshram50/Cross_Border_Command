@@ -77,6 +77,34 @@ const THUMB_GRADIENTS = [
    Palette mirrors the agriculture greens/ambers of the P2P prototype. */
 const PRODUCT_ACCENTS = ['#16a34a', '#ca8a04', '#eab308', '#f59e0b', '#65a30d', '#d97706', '#84cc16', '#dc2626', '#22c55e', '#a16207', '#0891b2', '#7c3aed'];
 
+/* Sample a loaded image's average colour so the segment badge can tint to
+   match the product photo. Returns null if the canvas is tainted (cross-origin
+   image without CORS headers) or the read fails — caller falls back to --acc. */
+function averageImageColor(img: HTMLImageElement): string | null {
+  try {
+    const w = 12, h = 12;
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    const { data } = ctx.getImageData(0, 0, w, h);
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 125) continue; // skip transparent pixels
+      r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+    }
+    if (!n) return null;
+    r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n);
+    // Darken very light averages so the white badge text stays legible.
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (lum > 160) { const f = 160 / lum; r = Math.round(r * f); g = Math.round(g * f); b = Math.round(b * f); }
+    return `rgb(${r}, ${g}, ${b})`;
+  } catch {
+    return null;
+  }
+}
+
 /* Normalize a product code so the trailing number is always 3 digits
    (P-1 → P-001, P-03 → P-003, P-119 stays P-119). Codes without a trailing
    number are shown untouched. */
@@ -749,7 +777,7 @@ export default function Products() {
             className={`prd-tab ${statusTab === 'inactive' ? 'is-active' : ''}`}
             onClick={() => setStatusTab('inactive')}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /><line x1="3.5" y1="20.5" x2="20.5" y2="3.5" /></svg>
             <span>Zero Supplier Products</span>
             <span className="prd-tab-badge prd-tab-badge--inactive"><span className="prd-tab-badge-dot" />Inactive<span className="prd-tab-badge-count">{stats.inactive}</span></span>
           </button>
@@ -1246,6 +1274,8 @@ function ProductCard(props: {
   const { product, onAction } = props;
   // Show the primary image; drop to the tinted-icon fallback if it 404s.
   const [imgOk, setImgOk] = useState(true);
+  // Segment badge colour sampled from the product image (falls back to --acc).
+  const [segColor, setSegColor] = useState<string | null>(null);
   const accent = PRODUCT_ACCENTS[product.apiId % PRODUCT_ACCENTS.length];
   const img = product.images[0] || '';
   const isActive = product.vendorCount > 0;
@@ -1256,14 +1286,14 @@ function ProductCard(props: {
     <div className="prd-pcard" style={{ '--acc': accent } as CSSProperties}>
       <div className="prd-pcard-thumb" onClick={() => onAction('View')} style={{ cursor: 'pointer' }}>
         {showImg ? (
-          <img className="prd-pcard-img" src={img} alt={product.name} loading="lazy" onError={() => setImgOk(false)} />
+          <img className="prd-pcard-img" src={img} alt={product.name} loading="lazy" onError={() => setImgOk(false)} onLoad={(e) => setSegColor(averageImageColor(e.currentTarget))} />
         ) : (
           <span className="prd-pcard-thumb-ico">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
           </span>
         )}
         <span className="prd-pcard-thumb-grad" />
-        <span className="prd-pcard-thumb-seg">{product.segment}</span>
+        <span className="prd-pcard-thumb-seg" style={segColor ? { background: segColor } : undefined}>{product.segment}</span>
         <span className={`prd-pcard-status prd-pcard-status--${isActive ? 'active' : 'inactive'}`}>
           <span className="prd-pcard-status-dot" />{isActive ? 'Active' : 'Inactive'}
         </span>

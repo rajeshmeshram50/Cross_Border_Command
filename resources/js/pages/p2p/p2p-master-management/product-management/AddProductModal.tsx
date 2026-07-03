@@ -740,7 +740,7 @@ export default function AddProductModal(props: {
     return undefined;
   };
 
-  const saveVendorDraft = () => {
+  const saveVendorDraft = async () => {
     const missing: string[] = [];
     if (!vendorSelected)        missing.push('Vendor');
     if (!vendorPp || vendorPp <= 0) missing.push('Purchase Price');
@@ -761,7 +761,7 @@ export default function AddProductModal(props: {
      * a duplicate "added" row. Map date is preserved from the original
      * row in edit mode (the row was already mapped at that date). */
     if (vendorEditingId) {
-      setVendors(prev => prev.map(row =>
+      const newList = vendors.map(row =>
         row.id !== vendorEditingId ? row : {
           ...row,
           vendorId:      vendorSelected.id,
@@ -778,13 +778,15 @@ export default function AddProductModal(props: {
           totalAmt:      vendorTota,
           remarks:       vendorRemarks,
         }
-      ));
+      );
+      setVendors(newList);
       setVendorDraftOpen(false);
       setVendorEditingId(null);
       setVendorSelectedCode('');
       setVendorPurchasePrice('');
       setVendorGstPct('');
       setVendorRemarks('');
+      if (props.openSupplierMap) await autoPersistVendors(newList);
       toast.success('Supplier updated', `${vendorSelected.name} mapping updated`);
       return;
     }
@@ -810,12 +812,14 @@ export default function AddProductModal(props: {
       mapDate: today(),
       remarks: vendorRemarks,
     };
-    setVendors(prev => [...prev, entry]);
+    const newList = [...vendors, entry];
+    setVendors(newList);
     setVendorDraftOpen(false);
     setVendorSelectedCode('');
     setVendorPurchasePrice('');
     setVendorGstPct('');
     setVendorRemarks('');
+    if (props.openSupplierMap) await autoPersistVendors(newList);
     toast.success('Supplier mapped', `${entry.vendorName} added to this product`);
   };
 
@@ -889,8 +893,11 @@ export default function AddProductModal(props: {
     }
   };
 
-  const removeVendor = (id: string) =>
-    setVendors(prev => prev.filter(v => v.id !== id));
+  const removeVendor = async (id: string) => {
+    const newList = vendors.filter(v => v.id !== id);
+    setVendors(newList);
+    if (props.openSupplierMap) await autoPersistVendors(newList);
+  };
 
   // Lock the page scroll so the modal feels like a true overlay rather
   // than a panel that floats above scrollable content.
@@ -1556,19 +1563,16 @@ export default function AddProductModal(props: {
     }
   };
 
-  const saveVendorsAndFinish = async () => {
-    if (!productId) {
-      toast.error('Step blocked', 'Save Core information first.'); return;
-    }
-    if (vendors.length === 0) {
-      toast.error('No vendors mapped', 'Map at least one vendor before saving the product.');
-      return;
-    }
-    setFieldErrors({});
-    setSaving(true);
+  /* Persist a vendor list to the product (full replace on the server).
+     Shared by the add-wizard "Save Product" button and — when the popup is
+     opened from an existing product ("Mapped Suppliers") — by the direct
+     auto-save on each map / edit / remove, so no separate save click is
+     needed there. Returns whether the write succeeded. */
+  const persistVendors = async (list: VendorEntry[]): Promise<boolean> => {
+    if (!productId) return false;
     try {
       await api.put(`/products/${productId}/step/vendors`, {
-        vendors: vendors.map(v => ({
+        vendors: list.map(v => ({
           vendor_id: v.vendorId ? Number(v.vendorId) : null,
           vendor_code: v.vendorCode,
           vendor_name: v.vendorName,
@@ -1585,14 +1589,40 @@ export default function AddProductModal(props: {
           remarks: v.remarks,
         })),
       });
+      return true;
+    } catch (e: unknown) {
+      toast.error('Save failed', extractError(e, 'Failed to save suppliers.'));
+      return false;
+    }
+  };
+
+  /* Auto-save the vendor list to the product and silently refresh the parent
+     (openSupplierMap = managing an existing product's suppliers). */
+  const autoPersistVendors = async (list: VendorEntry[]): Promise<boolean> => {
+    if (!productId) return false;
+    setSaving(true);
+    const ok = await persistVendors(list);
+    if (ok) onSaved(productId, false); // silent refresh, keep the popup open
+    setSaving(false);
+    return ok;
+  };
+
+  const saveVendorsAndFinish = async () => {
+    if (!productId) {
+      toast.error('Step blocked', 'Save Core information first.'); return;
+    }
+    if (vendors.length === 0) {
+      toast.error('No vendors mapped', 'Map at least one vendor before saving the product.');
+      return;
+    }
+    setFieldErrors({});
+    setSaving(true);
+    const ok = await persistVendors(vendors);
+    if (ok) {
       onSaved(productId, true);
       toast.success('Product saved', 'Suppliers mapped — product is now Active');
-    } catch (e: unknown) {
-      const msg = extractError(e, 'Failed to save suppliers.');
-      toast.error('Save failed', msg);
-    } finally {
-      setSaving(false);
     }
+    setSaving(false);
   };
 
   /* One-shot: when opened via ProductView's "Map Supplier" action, jump to
@@ -1919,8 +1949,11 @@ export default function AddProductModal(props: {
                         <input className="apm-input has-prefix" placeholder="Enter base price" type="number" value={basePrice} onChange={e => { setBasePrice(e.target.value); clearFieldError('basePrice'); }} />
                       </div>
                     </Field>
-                    <Field label="GST %" required addNew onAdd={() => setQuickAdd('gst_percentage')} error={fieldErrors.gstId}>
-                      <SelectInput value={gstId} onChange={(v) => { setGstId(v); clearFieldError('gstId'); }} placeholder="Select" options={optGst} />
+                    {/* GST % is view-only here — it can only be mapped via the
+                        header "GST (%)" button (setGstMapOpen), which keeps the
+                        supplier GST calculation driven by a single source. */}
+                    <Field label="GST %" required error={fieldErrors.gstId}>
+                      <SelectInput value={gstId} onChange={() => {}} placeholder='Map from the "GST (%)" button above' options={optGst} disabled />
                     </Field>
                   </div>
                   <div className="apm-grid-2">
@@ -2108,7 +2141,7 @@ export default function AddProductModal(props: {
               <div className="apm-sup-modal" onClick={(e) => e.stopPropagation()}>
                 <div className="apm-sup-head">
                   <div className="apm-sup-head-ico">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><line x1="20" y1="8" x2="20" y2="14" /><line x1="23" y1="11" x2="17" y2="11" /></svg>
                   </div>
                   <div className="apm-sup-head-txt">
                     <div className="apm-sup-title">Mapped Suppliers</div>
@@ -2232,7 +2265,13 @@ export default function AddProductModal(props: {
                           <td>₹{v.gstAmt.toFixed(2)}</td>
                           <td className="apm-sup-ctotal">₹{v.totalAmt.toLocaleString()}</td>
                           <td>
-                            <button type="button" className="apm-sup-del" title="Remove supplier" onClick={() => setVendorDeleteTarget(v)}>×</button>
+                            <div className="apm-sup-actions">
+                              <button type="button" className="apm-sup-edit" title="Edit supplier" onClick={() => openVendorEdit(v)}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+                                Edit
+                              </button>
+                              <button type="button" className="apm-sup-del" title="Remove supplier" onClick={() => setVendorDeleteTarget(v)}>×</button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2243,9 +2282,14 @@ export default function AddProductModal(props: {
                 </div>
                 <div className="apm-sup-foot">
                   <button className="apm-btn-ghost" onClick={closeSupplierPopup}>Close</button>
-                  <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving || vendors.length === 0}>
-                    {saving ? 'Saving…' : 'Save Product'}
-                  </button>
+                  {/* Managing an existing product's suppliers auto-saves each
+                      map/edit/remove, so no separate "Save Product" is needed —
+                      only the add-wizard flow shows it. */}
+                  {!props.openSupplierMap && (
+                    <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving || vendors.length === 0}>
+                      {saving ? 'Saving…' : 'Save Product'}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -2338,7 +2382,9 @@ export default function AddProductModal(props: {
         open={vendorDeleteTarget !== null}
         itemName={vendorDeleteTarget?.vendorName}
         title="Remove Mapped Supplier"
-        subMessage="This unmaps the supplier from the product on this form. The product must be saved (Save Product) for the change to persist on the server."
+        subMessage={props.openSupplierMap
+          ? 'This unmaps the supplier from the product and saves immediately.'
+          : 'This unmaps the supplier from the product on this form. The product must be saved (Save Product) for the change to persist on the server.'}
         onClose={() => setVendorDeleteTarget(null)}
         onConfirm={() => {
           if (vendorDeleteTarget) removeVendor(vendorDeleteTarget.id);
