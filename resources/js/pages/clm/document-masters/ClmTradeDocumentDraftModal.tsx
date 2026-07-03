@@ -995,7 +995,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
             isEdit={false}
             initial=""
             onClose={() => setQuickAddOpen(false)}
-            onSave={(newName) => void onAddNewName(newName)}
+            onSave={(newName) => onAddNewName(newName)}
           />
         )}
 

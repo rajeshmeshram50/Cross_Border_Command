@@ -23,6 +23,17 @@ class ClmSegmentController extends Controller
                 ->get()
             : collect();
 
+        // Per-segment "in use" flags so the UI can disable + explain the delete
+        // action for referenced segments. Computed with ONE query per
+        // referencing table (not per row) so the list stays fast. Mirrors the
+        // same reference checks performed in destroy().
+        $usage = $this->usageLabels($rows);
+        $rows->each(function ($r) use ($usage) {
+            $labels = $usage[$r->id] ?? [];
+            $r->in_use  = !empty($labels);
+            $r->used_in = array_values($labels);
+        });
+
         return response()->json([
             'status' => true,
             'data'   => $rows,
@@ -32,6 +43,78 @@ class ClmSegmentController extends Controller
                 'less'   => $rows->where('regulatory_status', ClmSegment::REG_LESS)->count(),
             ],
         ]);
+    }
+
+    /**
+     * Build a [segment_id => [labels...]] map of where each segment is
+     * referenced across the project. Batched (one query per referencing
+     * table) so the index endpoint doesn't run N×tables queries. The label
+     * set mirrors the checks in destroy() so the UI's disabled state and the
+     * server's 409 stay in sync.
+     */
+    private function usageLabels($rows): array
+    {
+        if ($rows->isEmpty()) return [];
+        $ids    = $rows->pluck('id')->all();
+        $names  = $rows->pluck('name')->all();
+        $idByName = [];
+        foreach ($rows as $r) { $idByName[$r->name] = $r->id; }
+
+        $map = [];
+        $addById = function ($segId, $label) use (&$map, $ids) {
+            $segId = (int) $segId;
+            if (!in_array($segId, $ids, true)) return;
+            if (!isset($map[$segId])) $map[$segId] = [];
+            if (!in_array($label, $map[$segId], true)) $map[$segId][] = $label;
+        };
+        $addByName = function ($name, $label) use (&$map, $idByName) {
+            if (!isset($idByName[$name])) return;
+            $segId = $idByName[$name];
+            if (!isset($map[$segId])) $map[$segId] = [];
+            if (!in_array($label, $map[$segId], true)) $map[$segId][] = $label;
+        };
+
+        // ── id-based reference tables ──
+        if (Schema::hasTable('clm_segment_rules')) {
+            foreach (DB::table('clm_segment_rules')->whereIn('segment_id', $ids)->distinct()->pluck('segment_id') as $sid) {
+                $addById($sid, 'Segment Rules');
+            }
+        }
+        foreach ([['vendors', 'Vendors'], ['products', 'Products'], ['customers', 'Customers']] as [$table, $label]) {
+            if (Schema::hasTable($table) && Schema::hasColumn($table, 'segment_id')) {
+                foreach (DB::table($table)->whereIn('segment_id', $ids)->distinct()->pluck('segment_id') as $sid) {
+                    $addById($sid, $label);
+                }
+            }
+        }
+        // master_vendor_directory stores segment as a string id OR the name.
+        if (Schema::hasTable('master_vendor_directory') && Schema::hasColumn('master_vendor_directory', 'segment_id')) {
+            $strIds = array_map('strval', $ids);
+            $vals = DB::table('master_vendor_directory')
+                ->where(function ($q) use ($strIds, $names) {
+                    $q->whereIn('segment_id', $strIds)->orWhereIn('segment_id', $names);
+                })->distinct()->pluck('segment_id');
+            foreach ($vals as $v) {
+                if (in_array((string) $v, $strIds, true)) $addById((int) $v, 'Vendor Directory');
+                else $addByName($v, 'Vendor Directory');
+            }
+        }
+
+        // ── name-based reference tables (store the segment NAME) ──
+        foreach ([
+            ['customers', 'segment', 'Customers'],
+            ['consignees', 'segment', 'Consignees'],
+            ['clm_tnc_library', 'segment', 'T&C Library'],
+            ['clm_agreement_library', 'segment', 'Agreement Library'],
+        ] as [$table, $col, $label]) {
+            if (Schema::hasTable($table) && Schema::hasColumn($table, $col)) {
+                foreach (DB::table($table)->whereIn($col, $names)->distinct()->pluck($col) as $nm) {
+                    $addByName($nm, $label);
+                }
+            }
+        }
+
+        return $map;
     }
 
     /**

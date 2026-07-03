@@ -654,7 +654,7 @@ export default function ClmTradeDocumentDraftPage() {
           isEdit={false}
           initial=""
           onClose={() => setQuickAddOpen(false)}
-          onSave={(newName) => void onAddNewName(newName)}
+          onSave={(newName) => onAddNewName(newName)}
         />
       )}
 

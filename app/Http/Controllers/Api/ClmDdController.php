@@ -26,6 +26,14 @@ class ClmDdController extends Controller
         $map = ClmAuthority::idNameMap($user->client_id);
         $rows->each(fn ($r) => $r->authority_names = ClmAuthority::displayNames($r->authority, $map));
 
+        // Per-row "in use" flags so the UI can disable + explain the delete
+        // action for referenced documents (mirrors the checks in destroy()).
+        $rows->each(function ($r) {
+            $labels = $this->usageCheck($r->code);
+            $r->in_use  = !empty($labels);
+            $r->used_in = array_values($labels);
+        });
+
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 

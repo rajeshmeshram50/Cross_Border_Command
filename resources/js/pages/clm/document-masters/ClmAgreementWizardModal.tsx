@@ -832,7 +832,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
             initialName=""
             initialDesc=""
             onClose={() => setQuickAddTypeOpen(false)}
-            onSave={(f) => void onAddNewType(f)}
+            onSave={(f) => onAddNewType(f)}
           />
         )}
 

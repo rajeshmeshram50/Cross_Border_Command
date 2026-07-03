@@ -773,9 +773,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         const sub = isStd
           ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
           : 'Consignee Trade Documents & Agreements — pick a shipment';
-        const OV_PER_PAGE = 5;
-        const ovTotalPages = Math.max(1, Math.ceil(docs.length / OV_PER_PAGE));
-        const ovPageSafe = Math.min(overviewPage, ovTotalPages);
+        // No pagination — the full list scrolls inside the fixed-height body
+        // after ~5 rows (see .cnev-ov-body max-height + sticky header).
         return (
           <div className="cnev-ov-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
             <div className="cnev-ov-card">
@@ -809,8 +808,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cnev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
-                    ) : docs.slice((ovPageSafe - 1) * OV_PER_PAGE, (ovPageSafe - 1) * OV_PER_PAGE + OV_PER_PAGE).map((d, i) => {
-                      const absIdx = (ovPageSafe - 1) * OV_PER_PAGE + i;
+                    ) : docs.map((d, i) => {
+                      const absIdx = i;
                       const raw = isStd ? (d as VaultDoc).attachment_url : (d as VaultShipmentDoc).signed_url;
                       const url = raw ? resolveFileUrl(raw) : null;
                       const fname = isStd ? ((d as VaultDoc).attachment || `${d.name}.pdf`) : `${d.name}.pdf`;
@@ -847,24 +846,6 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                   </tbody>
                 </table>
               </div>
-              {docs.length > OV_PER_PAGE && (
-                <div className="cnev-ov-pager">
-                  <span className="cnev-ov-pager-info">
-                    Showing <strong>{(ovPageSafe - 1) * OV_PER_PAGE + 1}–{Math.min(ovPageSafe * OV_PER_PAGE, docs.length)}</strong> of <strong>{docs.length}</strong>
-                  </span>
-                  <div className="cnev-ov-pager-btns">
-                    <button type="button" className="cnev-ov-pager-nav" disabled={ovPageSafe === 1} onClick={() => setOverviewPage((p) => Math.max(1, p - 1))} aria-label="Previous">
-                      <i className="ri-arrow-left-s-line" aria-hidden />
-                    </button>
-                    {[ovPageSafe, ovPageSafe + 1].filter((p) => p >= 1 && p <= ovTotalPages).map((p) => (
-                      <button type="button" key={p} className={`cnev-ov-pager-num ${p === ovPageSafe ? 'is-active' : ''}`} onClick={() => setOverviewPage(p)}>{p}</button>
-                    ))}
-                    <button type="button" className="cnev-ov-pager-nav" disabled={ovPageSafe === ovTotalPages} onClick={() => setOverviewPage((p) => Math.min(ovTotalPages, p + 1))} aria-label="Next">
-                      <i className="ri-arrow-right-s-line" aria-hidden />
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         );
@@ -1638,7 +1619,7 @@ const CNEV_CSS = `
 .cnev-ov-close:hover { background: rgba(255,255,255,.25); }
 /* Fixed height for ~5 rows so the popup size stays constant regardless of how
    many documents the selected shipment/page has (paginated at 5/page). */
-.cnev-ov-body { overflow: auto; padding: 14px 18px 18px; min-height: 312px; }
+.cnev-ov-body { overflow: auto; padding: 14px 18px 18px; min-height: 312px; max-height: 312px; }
 .cnev-ov-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 16px; flex-wrap: wrap; }
 .cnev-ov-pager-info { font-size: 11px; font-weight: 600; color: #0891b2; }
 .cnev-ov-pager-btns { display: flex; align-items: center; gap: 5px; }
