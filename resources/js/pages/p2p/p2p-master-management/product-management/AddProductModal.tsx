@@ -1622,9 +1622,8 @@ export default function AddProductModal(props: {
           <div className="apm-head-left">
             <div className="apm-head-icon">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-                <line x1="12" y1="22.08" x2="12" y2="12" />
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+                <line x1="7" y1="7" x2="7.01" y2="7" />
               </svg>
             </div>
             <div>
@@ -2660,6 +2659,16 @@ function UploadDropzone(props: {
      beside the previews would pop the OS file picker. Mirrors the same
      fix used on the Field component above. The `<label>` is now scoped
      to just the dashed dropzone so only that region triggers picking. */
+
+  /* When many images are attached, cap the inline thumbnails and roll the
+     overflow into a "+N more" tile that opens a popup with the full set.
+     Keeps the form compact instead of wrapping into several rows. */
+  const MAX_VISIBLE = 6;
+  const [showAll, setShowAll] = useState(false);
+  const total = props.preview.length;
+  const overflow = total > MAX_VISIBLE;
+  const visible = overflow ? props.preview.slice(0, MAX_VISIBLE - 1) : props.preview;
+
   return (
     <div className="apm-field apm-upload-field">
       <span className="apm-field-label">
@@ -2680,9 +2689,9 @@ function UploadDropzone(props: {
         </svg>
         <span>{props.hint}</span>
       </label>
-      {props.preview.length > 0 && (
+      {total > 0 && (
         <div className="apm-upload-preview">
-          {props.preview.map((src, i) => (
+          {visible.map((src, i) => (
             <div key={i} className="apm-upload-chip">
               <img src={src} alt="" />
               <button type="button" onClick={(e) => { e.preventDefault(); props.onRemove(i); }} aria-label="Remove">
@@ -2690,6 +2699,40 @@ function UploadDropzone(props: {
               </button>
             </div>
           ))}
+          {overflow && (
+            <button
+              type="button"
+              className="apm-upload-chip apm-upload-more"
+              onClick={(e) => { e.preventDefault(); setShowAll(true); }}
+              aria-label={`Show all ${total} images`}
+            >
+              <img src={props.preview[MAX_VISIBLE - 1]} alt="" />
+              <span className="apm-upload-more-badge">+{total - (MAX_VISIBLE - 1)} more</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {showAll && (
+        <div className="apm-imgmodal-backdrop" onClick={() => setShowAll(false)}>
+          <div className="apm-imgmodal" onClick={(e) => e.stopPropagation()}>
+            <div className="apm-imgmodal-head">
+              <span>{props.label} <em className="apm-imgmodal-count">({total})</em></span>
+              <button type="button" className="apm-imgmodal-close" onClick={() => setShowAll(false)} aria-label="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+            <div className="apm-imgmodal-grid">
+              {props.preview.map((src, i) => (
+                <div key={i} className="apm-imgmodal-chip">
+                  <img src={src} alt="" />
+                  <button type="button" onClick={(e) => { e.preventDefault(); props.onRemove(i); }} aria-label="Remove">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>

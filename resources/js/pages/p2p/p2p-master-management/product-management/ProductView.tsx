@@ -293,10 +293,12 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
           </div>
           <div className="pv2pd-hero-btns">
             <button className="pv2pd-hbtn pv2pd-hbtn--edit" onClick={() => setEditOpen(true)}>
-              <i className="ri-edit-box-line" /> Edit Product
+              {/* Exact prototype icon (Feather "edit" — pen-to-square). */}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg> Edit Product
             </button>
             <button className="pv2pd-hbtn pv2pd-hbtn--suppliers" onClick={() => setSuppliersOpen(true)}>
-              <i className="ri-team-line" /> Mapped Suppliers
+              {/* Exact prototype icon (Feather "users" — two people). */}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> Mapped Suppliers
             </button>
             <button className="pv2pd-hbtn pv2pd-hbtn--ghost" onClick={goBack}>
               <i className="ri-arrow-left-s-line" /> Back to Product List
@@ -374,32 +376,37 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
             {/* Product Details card */}
             <div className="pv2pd-sec pv2pd-details">
               <div className="pv2pd-sec__title">
-                <span className="pv2pd-sec__ico"><i className="ri-file-list-3-line" /></span>
+                <span className="pv2pd-sec__ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></span>
                 Product Details
               </div>
               <div className="pv2pd-highlights">
+                {/* Tile icons are the EXACT Feather SVGs from the P2P Figma
+                  prototype (.pd-hl__ico): briefcase / tag / check-circle
+                  (or alert-triangle when hazardous) / box / tag / package. */}
                 <div className="pv2pd-hl pv2pd-hl--v">
-                  <span className="pv2pd-hl__ico"><i className="ri-price-tag-3-line" /></span>
+                  <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg></span>
                   <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">HSN Code</span><span className="pv2pd-hl__v" title={hsnCode}>{hsnCode}</span></span>
                 </div>
                 <div className="pv2pd-hl pv2pd-hl--g">
-                  <span className="pv2pd-hl__ico"><i className="ri-price-tag-line" /></span>
+                  <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg></span>
                   <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Segment</span><span className="pv2pd-hl__v" title={segmentName}>{segmentName}</span></span>
                 </div>
                 <div className={`pv2pd-hl ${isHaz ? 'pv2pd-hl--h' : 'pv2pd-hl--c'}`}>
-                  <span className="pv2pd-hl__ico"><i className={isHaz ? 'ri-alarm-warning-line' : 'ri-checkbox-circle-line'} /></span>
+                  <span className="pv2pd-hl__ico">{isHaz
+                    ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                    : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>}</span>
                   <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">{isHaz ? 'Hazardous' : 'Non-Hazardous'}</span><span className="pv2pd-hl__v" title={isHaz ? hazClassName : 'No'}>{isHaz ? (hazClassName !== '—' ? hazClassName : 'Yes') : 'No'}</span></span>
                 </div>
                 <div className="pv2pd-hl pv2pd-hl--c">
-                  <span className="pv2pd-hl__ico"><i className="ri-scales-3-line" /></span>
+                  <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg></span>
                   <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">UOM</span><span className="pv2pd-hl__v" title={uomName}>{uomName}</span></span>
                 </div>
                 <div className="pv2pd-hl pv2pd-hl--a">
-                  <span className="pv2pd-hl__ico"><i className="ri-shield-check-line" /></span>
+                  <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg></span>
                   <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Condition</span><span className="pv2pd-hl__v" title={conditionName}>{conditionName}</span></span>
                 </div>
                 <div className="pv2pd-hl pv2pd-hl--p">
-                  <span className="pv2pd-hl__ico"><i className="ri-archive-line" /></span>
+                  <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 4.27 9 5.15" /><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg></span>
                   <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Packaging Material</span><span className="pv2pd-hl__v" title={packagingName}>{packagingName}</span></span>
                 </div>
               </div>
