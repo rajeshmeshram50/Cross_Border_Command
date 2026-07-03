@@ -308,9 +308,12 @@ class MasterDataSeeder extends Seeder
                 // `level` mirrors `name` here — these six rows ARE the canonical
                 // designation levels, and the HR document-template matcher keys
                 // on designation.level (not name), so it must be populated.
+                // NOTE: 'Director / CEO' is intentionally NOT a designation — the
+                // branch's Director/CEO is the Branch User (branch_user) account,
+                // not an employee designation. Removing it here makes the seeder
+                // prune any stray 'Director / CEO' row on the next run.
                 return [
-                    ['name' => 'Director / CEO',            'level' => 'Director / CEO',            'description' => 'Top of the org hierarchy',                       'status' => 'Active'],
-                    ['name' => 'Head of Department (HOD)',  'level' => 'Head of Department (HOD)',  'description' => 'Department head, reports to Director / CEO',     'status' => 'Active'],
+                    ['name' => 'Head of Department (HOD)',  'level' => 'Head of Department (HOD)',  'description' => 'Department head, reports to the Branch Director (Branch User)', 'status' => 'Active'],
                     ['name' => 'Team Leader',               'level' => 'Team Leader',               'description' => 'Leads a team, reports to the HOD',               'status' => 'Active'],
                     ['name' => 'Executive',                 'level' => 'Executive',                 'description' => 'Individual contributor, reports to Team Leader', 'status' => 'Active'],
                     ['name' => 'Employee',                  'level' => 'Employee',                  'description' => 'Standard employee',                             'status' => 'Active'],

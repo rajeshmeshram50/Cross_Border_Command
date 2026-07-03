@@ -32,6 +32,10 @@ export default function Permissions() {
   const [modules, setModules] = useState<PermModule[]>([]);
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string>('');
+  // Employee vs Department granting mode.
+  const [mode, setMode] = useState<'employee' | 'department'>('employee');
+  const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
+  const [selectedDeptId, setSelectedDeptId] = useState<string>('');
   const [matrix, setMatrix] = useState<Record<number, Record<PermKey, boolean>>>({});
   const [myPerms, setMyPerms] = useState<Record<string, Record<PermKey, boolean>> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -88,6 +92,14 @@ export default function Permissions() {
         setMyPerms(p);
       });
     }
+
+    // Department-wise granting is available to the branch's director
+    // (branch_user) and the client admin — load the department list for the tab.
+    if (isBranchUser || isClientAdmin) {
+      api.get('/master/departments')
+        .then(r => setDepartments((Array.isArray(r.data) ? r.data : []).map((d: any) => ({ id: d.id, name: d.name }))))
+        .catch(() => setDepartments([]));
+    }
   }, []);
 
   const loadUserPermissions = (userId: string) => {
@@ -111,12 +123,41 @@ export default function Permissions() {
       .finally(() => setLoadingPerms(false));
   };
 
+  const loadDepartmentPermissions = (deptId: string) => {
+    if (!deptId || modules.length === 0) { setMatrix({}); return; }
+    setLoadingPerms(true);
+    const freshMatrix: Record<number, Record<PermKey, boolean>> = {};
+    modules.forEach(mod => { freshMatrix[mod.id] = emptyPerms(); });
+
+    api.get(`/permissions/department/${deptId}`).then(res => {
+      (res.data.permissions || []).forEach((p: any) => {
+        if (freshMatrix[p.module_id]) {
+          freshMatrix[p.module_id] = {
+            can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
+            can_delete: !!p.can_delete, can_export: !!p.can_export,
+            can_import: !!p.can_import, can_approve: !!p.can_approve,
+          };
+        }
+      });
+      setMatrix({ ...freshMatrix });
+    }).catch(() => setMatrix({ ...freshMatrix }))
+      .finally(() => setLoadingPerms(false));
+  };
+
   useEffect(() => {
-    if (selectedUserId && modules.length > 0) loadUserPermissions(selectedUserId);
-  }, [selectedUserId, modules.length]);
+    if (mode === 'employee' && selectedUserId && modules.length > 0) loadUserPermissions(selectedUserId);
+    if (mode === 'department' && selectedDeptId && modules.length > 0) loadDepartmentPermissions(selectedDeptId);
+    if (mode === 'employee' && !selectedUserId) setMatrix({});
+    if (mode === 'department' && !selectedDeptId) setMatrix({});
+  }, [mode, selectedUserId, selectedDeptId, modules.length]);
 
   const handleSave = async () => {
-    if (!selectedUserId) { toast.warning('Select User', 'Please select a user first'); return; }
+    const isDept = mode === 'department';
+    const targetId = isDept ? selectedDeptId : selectedUserId;
+    if (!targetId) {
+      toast.warning(isDept ? 'Select Department' : 'Select User', `Please select a ${isDept ? 'department' : 'user'} first`);
+      return;
+    }
     setSaving(true);
     try {
       // Strip flags the auth user cannot grant. Orphan perms (left over from a
@@ -142,13 +183,18 @@ export default function Permissions() {
               can_approve: p.can_approve && !!grantable.can_approve,
             };
           });
-      const res = await api.post(`/permissions/user/${selectedUserId}`, { permissions });
+      const url = isDept ? `/permissions/department/${targetId}` : `/permissions/user/${targetId}`;
+      const res = await api.post(url, { permissions });
       toast.success('Permissions Saved', `${res.data.saved_count} module permissions saved successfully`);
-      loadUserPermissions(selectedUserId);
-      // Refetch the manageable users list too — branch/status may have changed
-      // since the page mounted, and the picker would otherwise show stale data
-      // (e.g. a branch user whose branch was just deactivated).
-      api.get('/permissions/users').then(r => setUsers(r.data || [])).catch(() => {});
+      if (isDept) {
+        loadDepartmentPermissions(targetId);
+      } else {
+        loadUserPermissions(targetId);
+        // Refetch the manageable users list too — branch/status may have changed
+        // since the page mounted, and the picker would otherwise show stale data
+        // (e.g. a branch user whose branch was just deactivated).
+        api.get('/permissions/users').then(r => setUsers(r.data || [])).catch(() => {});
+      }
     } catch (err: any) {
       toast.error('Save Failed', err.response?.data?.message || 'Failed to save permissions');
     } finally {
@@ -163,6 +209,12 @@ export default function Permissions() {
     : users;
 
   const selectedUser = visibleUsers.find(u => u.id === Number(selectedUserId));
+  const selectedDept = departments.find(d => String(d.id) === String(selectedDeptId));
+  // The active selection for the current mode — gates the matrix, save button
+  // and empty state uniformly.
+  const activeId = mode === 'department' ? selectedDeptId : selectedUserId;
+  const showDeptTab = isBranchUser || isClientAdmin;
+  const departmentOptions = departments.map(d => ({ value: String(d.id), raw: d }));
 
   // Options for the searchable Select. Keep the original user record on `raw`
   // so the custom Option / SingleValue components can render rich rows.
@@ -259,7 +311,20 @@ export default function Permissions() {
         <Col xs={12}>
           <Card className="shadow-sm">
             <CardHeader className="bg-light-subtle border-bottom">
+              {showDeptTab && (
+                <div className="d-inline-flex mb-3 p-1 rounded-pill" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.20)' }}>
+                  {(['employee', 'department'] as const).map(m => (
+                    <button key={m} type="button" onClick={() => setMode(m)}
+                      className="btn btn-sm rounded-pill px-3 fw-semibold border-0"
+                      style={{ background: mode === m ? 'linear-gradient(135deg,#8b5cf6,#7c3aed)' : 'transparent', color: mode === m ? '#fff' : '#6d28d9' }}>
+                      <i className={`${m === 'employee' ? 'ri-user-3-line' : 'ri-building-line'} me-1`} />
+                      {m === 'employee' ? 'Employee' : 'Department'}
+                    </button>
+                  ))}
+                </div>
+              )}
               <Row className="align-items-center gy-3">
+                {mode === 'employee' && (
                 <Col md={7}>
                   <label className="form-label text-muted fs-11 fw-bold text-uppercase mb-1">
                     <i className="ri-user-settings-line me-1"></i>
@@ -386,11 +451,41 @@ export default function Permissions() {
                     }}
                   />
                 </Col>
+                )}
+                {mode === 'department' && (
+                <Col md={7}>
+                  <label className="form-label text-muted fs-11 fw-bold text-uppercase mb-1">
+                    <i className="ri-building-line me-1"></i>
+                    Department
+                  </label>
+                  <SearchableSelect
+                    value={selectedDeptId || null}
+                    onChange={v => setSelectedDeptId(v || '')}
+                    options={departmentOptions}
+                    placeholder="Select department..."
+                    searchPlaceholder="Search department..."
+                    emptyLabel="No match — try a different search"
+                    getSearchText={(d: any) => d.name}
+                    renderTrigger={(d: any) => (
+                      <span className="d-inline-flex align-items-center gap-2 text-truncate">
+                        <i className="ri-building-line text-primary" />
+                        <span className="fw-bold" style={{ fontSize: 13 }}>{d.name}</span>
+                      </span>
+                    )}
+                    renderOption={(d: any) => (
+                      <span className="d-inline-flex align-items-center gap-2">
+                        <i className="ri-building-line text-primary" />
+                        <span className="fw-semibold" style={{ fontSize: 13 }}>{d.name}</span>
+                      </span>
+                    )}
+                  />
+                </Col>
+                )}
                 <Col md={5} className="text-md-end">
                   <Button
                     color="primary"
                     className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
-                    disabled={saving || !selectedUserId}
+                    disabled={saving || !activeId}
                     onClick={handleSave}
                     style={{
                       background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
@@ -416,7 +511,7 @@ export default function Permissions() {
               </Row>
             </CardHeader>
 
-            {visibleUsers.length === 0 && (
+            {mode === 'employee' && visibleUsers.length === 0 && (
               <CardBody>
                 <Alert color="warning" className="mb-0">
                   <i className="ri-alert-line me-1"></i>
@@ -437,7 +532,7 @@ export default function Permissions() {
             )}
 
             {/* ── Animated empty state when no user is selected ── */}
-            {!selectedUserId && visibleUsers.length > 0 && (
+            {!activeId && (mode === 'department' || visibleUsers.length > 0) && (
               <CardBody className="py-5 text-center position-relative" style={{ overflow: 'hidden' }}>
                 <style>{`
                   @keyframes perm-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
@@ -482,10 +577,10 @@ export default function Permissions() {
                     backgroundClip: 'text',
                     display: 'inline-block',
                   }}>
-                    Select a {isSuperAdmin ? 'Client Admin' : 'Branch User'} to Begin
+                    Select a {mode === 'department' ? 'Department' : (isSuperAdmin ? 'Client Admin' : 'Branch User')} to Begin
                   </h4>
                   <p style={{ color: '#6b7280', fontSize: 13.5, maxWidth: 480, margin: '0 auto 24px', lineHeight: 1.6 }}>
-                    Choose a user from the dropdown above to view and configure which modules they can access — from viewing records to approving workflows.
+                    Choose a {mode === 'department' ? 'department' : 'user'} from the dropdown above to view and configure which modules {mode === 'department' ? 'that department' : 'they'} can access — from viewing records to approving workflows.
                   </p>
                 </div>
 
@@ -532,7 +627,7 @@ export default function Permissions() {
               </CardBody>
             )}
 
-            {selectedUserId && (
+            {activeId && (
               <>
                 <PermissionMatrix
                   modules={modules}
@@ -545,7 +640,15 @@ export default function Permissions() {
 
                 <CardBody className="border-top bg-light-subtle d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3">
                   <span className="text-muted fs-13">
-                    {selectedUser ? (
+                    {mode === 'department' ? (
+                      selectedDept ? (
+                        <>
+                          <i className="ri-edit-box-line me-1 text-primary"></i>
+                          Editing department: <strong className="text-dark">{selectedDept.name}</strong>
+                          <Badge color="info-subtle" className="text-info ms-2 text-uppercase fs-10 rounded-pill">Department</Badge>
+                        </>
+                      ) : 'Select a department to configure permissions'
+                    ) : selectedUser ? (
                       <>
                         <i className="ri-edit-box-line me-1 text-primary"></i>
                         Editing: <strong className="text-dark">{selectedUser.name}</strong>
@@ -558,7 +661,7 @@ export default function Permissions() {
                   <Button
                     color="primary"
                     className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
-                    disabled={saving || !selectedUserId}
+                    disabled={saving || !activeId}
                     onClick={handleSave}
                     style={{
                       background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',

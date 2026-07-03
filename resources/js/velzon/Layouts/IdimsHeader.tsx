@@ -678,6 +678,9 @@ export default function IdimsHeader() {
                     <div className="idims-profile-head-info">
                       <div className="idims-profile-head-name">{user?.name || 'User'}</div>
                       <span className="idims-profile-head-badge">{IC.shield}{ROLE_LABEL[user?.user_type || ''] || 'User'}</span>
+                      {user?.user_type === 'branch_user' && (
+                        <span className="idims-profile-head-badge ceo">Director / CEO</span>
+                      )}
                       <div className="idims-profile-head-branch">{IC.building}<span>{branchName}</span></div>
                     </div>
                   </div>
@@ -1106,6 +1109,7 @@ const IDIMS_CSS = `
 .idims-profile-head-name { font-size: 15px; font-weight: 800; color: #fff; line-height: 1.2; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-profile-head-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: #E9D5FF; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 3px 9px 3px 7px; }
 .idims-profile-head-badge svg { width: 11px; height: 11px; }
+.idims-profile-head-badge.ceo { color: #FDE68A; background: rgba(253,230,138,.16); border-color: rgba(253,230,138,.30); margin-left: 6px; }
 .idims-profile-head-branch { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 11px; font-weight: 400; color: rgba(255,255,255,.85); max-width: 165px; }
 .idims-profile-head-branch svg { width: 12px; height: 12px; flex-shrink: 0; opacity: .85; }
 .idims-profile-head-branch span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

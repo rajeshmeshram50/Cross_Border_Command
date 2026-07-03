@@ -107,12 +107,9 @@ class PermissionController extends Controller
 
             $users = $query->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
         } elseif ($authUser->isBranchUser()) {
-            // Branch user — picker is restricted to employees in their own
-            // branch (no other branch_users, no employees from sibling
-            // branches, no client_admin). Same active-row shape as the
-            // client-admin path so the SPA can render the list identically.
+            // Branch user — picker shows every active employee across ALL
+            // branches in their client (not limited to their own branch).
             $users = User::where('client_id', $authUser->client_id)
-                ->where('branch_id', $authUser->branch_id)
                 ->where('id', '!=', $authUser->id)
                 ->where('user_type', 'employee')
                 ->where('status', 'active')
@@ -404,5 +401,92 @@ class PermissionController extends Controller
             }
         }
         return $affected;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────
+     *  DEPARTMENT-WISE PERMISSIONS
+     *  Branch users (and client admins) can set module access for a whole
+     *  department — the department's baseline access, keyed per
+     *  (client, department, module). GET returns the saved grid; POST saves it.
+     * ───────────────────────────────────────────────────────────────── */
+
+    public function getDepartmentPermissions(Request $request, $departmentId)
+    {
+        $authUser = $request->user();
+        if (!$authUser) abort(401);
+
+        $perms = \App\Models\DepartmentPermission::query()
+            ->where('client_id', $authUser->client_id)
+            ->where('department_id', (int) $departmentId)
+            ->with('module:id,slug,name')
+            ->get();
+
+        return response()->json(['permissions' => $perms]);
+    }
+
+    public function saveDepartmentPermissions(Request $request, $departmentId)
+    {
+        $authUser = $request->user();
+        if (!$authUser) abort(401);
+
+        // Only the branch's director (branch_user), the client admin, or a
+        // super admin may configure department permissions.
+        if (!($authUser->isBranchUser() || $authUser->isClientAdmin() || $authUser->isSuperAdmin())) {
+            return response()->json(['message' => 'You are not allowed to set department permissions.'], 403);
+        }
+
+        $data = $request->validate([
+            'permissions' => 'required|array',
+            'permissions.*.module_id' => 'required|integer|exists:modules,id',
+            'permissions.*.can_view'    => 'boolean',
+            'permissions.*.can_add'     => 'boolean',
+            'permissions.*.can_edit'    => 'boolean',
+            'permissions.*.can_delete'  => 'boolean',
+            'permissions.*.can_export'  => 'boolean',
+            'permissions.*.can_import'  => 'boolean',
+            'permissions.*.can_approve' => 'boolean',
+        ]);
+
+        $clientId  = $authUser->client_id;
+        $deptId    = (int) $departmentId;
+        $flags     = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
+        $saved     = 0;
+
+        DB::transaction(function () use ($data, $clientId, $deptId, $flags, $authUser, &$saved) {
+            foreach ($data['permissions'] as $p) {
+                $values = [];
+                $anyOn = false;
+                foreach ($flags as $f) {
+                    $values[$f] = (bool) ($p[$f] ?? false);
+                    $anyOn = $anyOn || $values[$f];
+                }
+
+                $keys = ['client_id' => $clientId, 'department_id' => $deptId, 'module_id' => (int) $p['module_id']];
+
+                if (!$anyOn) {
+                    // No flags → remove the row (keeps the table clean, mirrors
+                    // the per-user "all-false = delete" behaviour).
+                    \App\Models\DepartmentPermission::where($keys)->delete();
+                    continue;
+                }
+
+                \App\Models\DepartmentPermission::updateOrCreate(
+                    $keys,
+                    $values + ['granted_by' => $authUser->id],
+                );
+                $saved++;
+            }
+        });
+
+        // Auto-propagate to the department's HOD(s): the HOD automatically
+        // receives exactly these department permissions (overwriting only these
+        // modules — direct grants on other modules are preserved).
+        $hodApplied = \App\Support\DepartmentPermissionSync::applyToAllHods($clientId, $deptId, $authUser->id);
+
+        return response()->json([
+            'message'        => 'Department permissions saved successfully',
+            'saved_count'    => $saved,
+            'hod_modules_applied' => $hodApplied,
+        ]);
     }
 }

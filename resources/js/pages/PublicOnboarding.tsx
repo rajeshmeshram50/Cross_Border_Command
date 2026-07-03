@@ -239,7 +239,10 @@ export default function PublicOnboarding() {
 
   const countryOpts     = countries.map(c => ({ value: String(c.id), label: c.name }));
   const departmentOpts  = departments.map(d => ({ value: String(d.id), label: d.name }));
-  const designationOpts = designations.map(d => ({ value: String(d.id), label: d.name }));
+  // 'Director / CEO' is the Branch User's role, not an assignable designation.
+  const designationOpts = designations
+    .filter(d => d?.name !== 'Director / CEO')
+    .map(d => ({ value: String(d.id), label: d.name }));
   const roleOpts        = roles.map(r => ({ value: String(r.id), label: r.name }));
   const legalEntityOpts = legalEntities.map(l => ({ value: String(l.id), label: l.entity_name }));
   // Backend enum is (Male, Female, Other) — keep options aligned so the
