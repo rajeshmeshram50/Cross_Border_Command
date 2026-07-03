@@ -646,7 +646,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
             isEdit={false}
             initial=""
             onClose={() => setQuickAddCatOpen(false)}
-            onSave={(newName) => void onAddNewCategory(newName)}
+            onSave={(newName) => onAddNewCategory(newName)}
           />
         )}
         {quickAddSegmentOpen && (

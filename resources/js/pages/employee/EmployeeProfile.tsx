@@ -187,24 +187,21 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   })();
   useEffect(() => {
     let cancelled = false;
-    const empCode = String(employeeId || '').trim();
-    if (!empCode) { setEmpDetailLoading(false); return; }
-    // The route uses emp_code (e.g. EMP-001) but the API show endpoint
-    // expects the numeric id. Resolve via the search index first, then
-    // fetch the full record.
+    const ident = String(employeeId || '').trim();
+    if (!ident) { setEmpDetailLoading(false); return; }
+    // Fetch the full record DIRECTLY by the URL identifier. The backend's
+    // resolveIdParam accepts an encrypted id, a numeric id, or an EMP-###
+    // code, and show() lets an employee read their OWN record without the
+    // master.employees grant. The old two-step (GET /employees?search=… then
+    // /employees/{id}) routed through the permission-gated index, so an
+    // ordinary employee (no module grant) got a 403 there — empDetail never
+    // loaded, the Payment card showed dashes and the bank-details Edit modal
+    // had nothing to prefill and no id to save (#35 reopen).
     setEmpDetailLoading(true);
     (async () => {
       try {
-        let dbId: number | undefined = profileEmpIdNum ?? undefined;
-        if (!dbId) {
-          const list = await api.get('/employees', { params: { search: empCode } });
-          const rows = Array.isArray(list.data) ? list.data : [];
-          const match = rows.find((r: any) => String(r.emp_code || r.id) === empCode) || rows[0];
-          dbId = match?.id;
-        }
-        if (!dbId) return;
-        const r = await api.get(`/employees/${dbId}`);
-        if (!cancelled) setEmpDetail(r.data || null);
+        const r = await api.get(`/employees/${encodeURIComponent(ident)}`);
+        if (!cancelled) setEmpDetail(r.data?.employee || r.data || null);
       } catch {
         // Non-fatal — the page still renders the props-passed lightweight row.
       } finally {

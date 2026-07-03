@@ -26,6 +26,14 @@ class ClmQcController extends Controller
         $map = ClmAuthority::idNameMap($user->client_id);
         $rows->each(fn ($r) => $r->issued_by_names = ClmAuthority::displayNames($r->issued_by, $map));
 
+        // Per-row "in use" flags so the UI can disable + explain the delete
+        // action for referenced documents (mirrors the checks in destroy()).
+        $rows->each(function ($r) use ($user) {
+            $labels = $this->usageCheck($user->client_id, $r->code, $r->name);
+            $r->in_use  = !empty($labels);
+            $r->used_in = array_values($labels);
+        });
+
         return response()->json([
             'status' => true,
             'data'   => $rows,
@@ -48,8 +56,8 @@ class ClmQcController extends Controller
             'purpose'      => 'required|string|max:500',
             'issued_by'    => 'required|string|max:255',
             'doc_type'     => ['nullable', Rule::in(ClmQcDocument::TYPES)],
-            'qa_params'    => 'nullable|string',
-            'min_criteria' => 'nullable|string',
+            'qa_params'    => 'nullable|string|max:256',
+            'min_criteria' => 'nullable|string|max:256',
             'status'       => ['nullable', Rule::in(ClmQcDocument::STATUSES)],
         ]);
 
@@ -99,8 +107,8 @@ class ClmQcController extends Controller
             'purpose'      => 'sometimes|required|string|max:500',
             'issued_by'    => 'sometimes|required|string|max:255',
             'doc_type'     => ['nullable', Rule::in(ClmQcDocument::TYPES)],
-            'qa_params'    => 'nullable|string',
-            'min_criteria' => 'nullable|string',
+            'qa_params'    => 'nullable|string|max:256',
+            'min_criteria' => 'nullable|string|max:256',
             'status'       => ['nullable', Rule::in(ClmQcDocument::STATUSES)],
         ]);
 

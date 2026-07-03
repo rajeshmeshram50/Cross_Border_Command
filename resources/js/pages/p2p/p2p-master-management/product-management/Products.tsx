@@ -77,6 +77,34 @@ const THUMB_GRADIENTS = [
    Palette mirrors the agriculture greens/ambers of the P2P prototype. */
 const PRODUCT_ACCENTS = ['#16a34a', '#ca8a04', '#eab308', '#f59e0b', '#65a30d', '#d97706', '#84cc16', '#dc2626', '#22c55e', '#a16207', '#0891b2', '#7c3aed'];
 
+/* Sample a loaded image's average colour so the segment badge can tint to
+   match the product photo. Returns null if the canvas is tainted (cross-origin
+   image without CORS headers) or the read fails — caller falls back to --acc. */
+function averageImageColor(img: HTMLImageElement): string | null {
+  try {
+    const w = 12, h = 12;
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return null;
+    ctx.drawImage(img, 0, 0, w, h);
+    const { data } = ctx.getImageData(0, 0, w, h);
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i + 3] < 125) continue; // skip transparent pixels
+      r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+    }
+    if (!n) return null;
+    r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n);
+    // Darken very light averages so the white badge text stays legible.
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (lum > 160) { const f = 160 / lum; r = Math.round(r * f); g = Math.round(g * f); b = Math.round(b * f); }
+    return `rgb(${r}, ${g}, ${b})`;
+  } catch {
+    return null;
+  }
+}
+
 /* Normalize a product code so the trailing number is always 3 digits
    (P-1 → P-001, P-03 → P-003, P-119 stays P-119). Codes without a trailing
    number are shown untouched. */
@@ -200,7 +228,7 @@ export default function Products() {
   /* Product detail opens as a popup over the list (not a full-screen route).
      Clicking a card sets this; the ProductView renders inside a modal. */
   const [detailId, setDetailId] = useState<number | null>(null);
-  const [brefOpen, setBrefOpen] = useState(true);
+  const [brefOpen, setBrefOpen] = useState(false);
 
   /* ─── Filter sidebar ─── */
   const [filterOpen, setFilterOpen] = useState(false);
@@ -554,26 +582,43 @@ export default function Products() {
     if (!el) return;
     const fit = () => {
       if (!autoFitRef.current) return;
-      const top = el.getBoundingClientRect().top;
-      // Leave a 70px tail for the pagination footer + page bottom gap.
-      const avail = Math.max(160, window.innerHeight - top - 70);
+      // Measure the grid/list region's OWN height — it's a fixed flex body
+      // inside the fixed-height panel (see .prd-panel CSS), exactly like the
+      // My Workplace worksheet measures its scroll wrap's clientHeight. This
+      // is more robust than viewport math: the pager is pinned below, so
+      // whatever height the container has, we fill it with rows that fit and
+      // the overflow rolls onto the next page.
+      const cs = getComputedStyle(el);
+      const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+      const avail = el.clientHeight - padY;
+      if (avail <= 0) return;
       if (view === 'list') {
         const rowH = (el.querySelector('.prd-row') as HTMLElement | null)?.offsetHeight || 84;
-        const rows = Math.max(4, Math.floor(avail / (rowH + 10)));
+        const rowGap = parseFloat(cs.rowGap) || 10;
+        const rows = Math.max(4, Math.floor(avail / (rowH + rowGap)));
         setPageSize(rows);
       } else {
-        // Show a fixed 2 ROWS of cards per page; the column count stays
-        // dynamic (CSS auto-fill produces N columns at the current width),
-        // so a page = cols × 2 and everything beyond rolls onto the next
-        // page via the dynamic pager.
-        const cols = Math.max(1, getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length || 4);
-        setPageSize(cols * 2);
+        // Fill the container with as many ROWS of cards as fit. Column count
+        // stays dynamic (CSS auto-fill produces N columns at the current
+        // width), so a page = cols × rows-that-fit. Floor conservatively (no
+        // +gap) so varying card heights never spill past the container and
+        // trigger a scrollbar.
+        const cols = Math.max(1, cs.gridTemplateColumns.split(' ').filter(Boolean).length || 4);
+        const cardH = (el.querySelector('.prd-pcard') as HTMLElement | null)?.offsetHeight || 300;
+        const rowGap = parseFloat(cs.rowGap) || 16;
+        const rows = Math.max(1, Math.floor(avail / (cardH + rowGap)));
+        setPageSize(cols * rows);
       }
     };
+    // ResizeObserver keeps the fit correct as the container resizes (window
+    // resize, brief-box collapse/expand, layout switch) without listening to
+    // window forever. The container height is fixed by flex, so setPageSize
+    // can't feed back into a resize loop.
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
     fit();
     const t = window.setTimeout(fit, 120);
-    window.addEventListener('resize', fit);
-    return () => { window.clearTimeout(t); window.removeEventListener('resize', fit); };
+    return () => { ro.disconnect(); window.clearTimeout(t); };
   }, [loading, view, filtered.length]);
 
   const setRowsPerPage = (n: number) => { autoFitRef.current = false; setPageSize(n); setPage(1); };
@@ -732,7 +777,7 @@ export default function Products() {
             className={`prd-tab ${statusTab === 'inactive' ? 'is-active' : ''}`}
             onClick={() => setStatusTab('inactive')}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /><line x1="3.5" y1="20.5" x2="20.5" y2="3.5" /></svg>
             <span>Zero Supplier Products</span>
             <span className="prd-tab-badge prd-tab-badge--inactive"><span className="prd-tab-badge-dot" />Inactive<span className="prd-tab-badge-count">{stats.inactive}</span></span>
           </button>
@@ -1229,6 +1274,8 @@ function ProductCard(props: {
   const { product, onAction } = props;
   // Show the primary image; drop to the tinted-icon fallback if it 404s.
   const [imgOk, setImgOk] = useState(true);
+  // Segment badge colour sampled from the product image (falls back to --acc).
+  const [segColor, setSegColor] = useState<string | null>(null);
   const accent = PRODUCT_ACCENTS[product.apiId % PRODUCT_ACCENTS.length];
   const img = product.images[0] || '';
   const isActive = product.vendorCount > 0;
@@ -1239,14 +1286,14 @@ function ProductCard(props: {
     <div className="prd-pcard" style={{ '--acc': accent } as CSSProperties}>
       <div className="prd-pcard-thumb" onClick={() => onAction('View')} style={{ cursor: 'pointer' }}>
         {showImg ? (
-          <img className="prd-pcard-img" src={img} alt={product.name} loading="lazy" onError={() => setImgOk(false)} />
+          <img className="prd-pcard-img" src={img} alt={product.name} loading="lazy" onError={() => setImgOk(false)} onLoad={(e) => setSegColor(averageImageColor(e.currentTarget))} />
         ) : (
           <span className="prd-pcard-thumb-ico">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
           </span>
         )}
         <span className="prd-pcard-thumb-grad" />
-        <span className="prd-pcard-thumb-seg">{product.segment}</span>
+        <span className="prd-pcard-thumb-seg" style={segColor ? { background: segColor } : undefined}>{product.segment}</span>
         <span className={`prd-pcard-status prd-pcard-status--${isActive ? 'active' : 'inactive'}`}>
           <span className="prd-pcard-status-dot" />{isActive ? 'Active' : 'Inactive'}
         </span>

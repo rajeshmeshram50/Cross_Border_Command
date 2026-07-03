@@ -364,6 +364,11 @@ function EmployeeProfileWrapper() {
   const location = useLocation();
   const navigateFn = useNavigateContext().navigate;
   const stateEmp = (location.state as any)?.employee;
+  // A caller (e.g. the Payroll Execution Blocked popup, #38) can tag the
+  // navigation with a return context so Back/Close comes back to where it was
+  // opened from instead of the default Active-Employees list.
+  const returnPage = (location.state as any)?.returnPage as string | undefined;
+  const returnData = (location.state as any)?.returnData;
 
   // The URL param can be: (a) an encrypted token (preferred path,
   // surfaced by Employee::encrypted_id), (b) a plain numeric DB id, or
@@ -430,7 +435,7 @@ function EmployeeProfileWrapper() {
       </div>
     );
   }
-  return <EmployeeProfile employeeId={empCode} employee={resolvedEmp} onBack={() => navigateFn('hr-employees')} />;
+  return <EmployeeProfile employeeId={empCode} employee={resolvedEmp} onBack={() => navigateFn(returnPage || 'hr-employees', returnData)} />;
 }
 
 /**
