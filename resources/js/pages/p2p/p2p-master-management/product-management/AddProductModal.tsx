@@ -1691,7 +1691,7 @@ export default function AddProductModal(props: {
                 setGstMapValue(gstId); setGstMasterOpen(false); setGstMapOpen(true);
               }}
             >
-              GST (%)
+              {gstId && gstPctNum ? `GST ${gstPctNum}%` : 'GST (%)'}
             </button>
             <button
               type="button"
