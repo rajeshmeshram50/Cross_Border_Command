@@ -2648,6 +2648,11 @@ class ClmSignatureController extends Controller
             'state'           => e($stateStr),
             'city'            => $cityValue,
             'address'         => e($addressLine),
+            'zip_code'        => e($pinStr),
+            // Delivery address = the party's full address line (a consignee IS
+            // the delivery destination); kept as an explicit token so agreements
+            // can reference it distinctly (CBC-438).
+            'delivery_address' => e($addressLine),
             'gst'             => '',
             'pan'             => '',
             'iec'             => '',

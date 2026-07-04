@@ -10,11 +10,20 @@ function useBodyScrollLock() {
   useEffect(() => {
     const prevBody = document.body.style.overflow;
     const prevHtml = document.documentElement.style.overflow;
+    const prevSelect = document.body.style.userSelect;
+    const prevWebkitSelect = document.body.style.webkitUserSelect;
     document.body.style.overflow = 'hidden';
     document.documentElement.style.overflow = 'hidden';
+    // Block Ctrl+A / drag-select from grabbing (and copying) the background
+    // behind the modal. The modal re-enables selection for its own content via
+    // `.clm-modal-bd { user-select: text }` (CBC-438).
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
     return () => {
       document.body.style.overflow = prevBody;
       document.documentElement.style.overflow = prevHtml;
+      document.body.style.userSelect = prevSelect;
+      document.body.style.webkitUserSelect = prevWebkitSelect;
     };
   }, []);
 }
@@ -27,11 +36,19 @@ export function useScrollLock(active: boolean) {
     if (!active) return;
     const prevBody = document.body.style.overflow;
     const prevHtml = document.documentElement.style.overflow;
+    const prevSelect = document.body.style.userSelect;
+    const prevWebkitSelect = document.body.style.webkitUserSelect;
     document.body.style.overflow = 'hidden';
     document.documentElement.style.overflow = 'hidden';
+    // Also block Ctrl+A / drag-select of the background; the page's own modal
+    // re-enables selection via `.clm-modal-bd { user-select: text }` (CBC-438).
+    document.body.style.userSelect = 'none';
+    document.body.style.webkitUserSelect = 'none';
     return () => {
       document.body.style.overflow = prevBody;
       document.documentElement.style.overflow = prevHtml;
+      document.body.style.userSelect = prevSelect;
+      document.body.style.webkitUserSelect = prevWebkitSelect;
     };
   }, [active]);
 }

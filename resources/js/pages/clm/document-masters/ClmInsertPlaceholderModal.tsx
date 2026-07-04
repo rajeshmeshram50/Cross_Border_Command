@@ -32,10 +32,12 @@ const PARTY_FIELDS: { label: string; key: string }[] = [
   { label: 'PAN',            key: 'pan' },
   { label: 'IEC',            key: 'iec' },
   { label: 'Bank Account',   key: 'bank_account' },
-  { label: 'Country',        key: 'country' },
-  { label: 'State',          key: 'state' },
-  { label: 'City',           key: 'city' },
-  { label: 'Address',        key: 'address' },
+  { label: 'Country',          key: 'country' },
+  { label: 'State',            key: 'state' },
+  { label: 'City',             key: 'city' },
+  { label: 'Address',          key: 'address' },
+  { label: 'Zip Code',         key: 'zip_code' },
+  { label: 'Delivery Address', key: 'delivery_address' },
 ];
 const partyFields = (group: 'customer' | 'consignee' | 'supplier', nameLabel: string): Field[] =>
   PARTY_FIELDS.map(f => ({
