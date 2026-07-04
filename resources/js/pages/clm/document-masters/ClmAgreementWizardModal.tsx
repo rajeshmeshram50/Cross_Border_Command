@@ -275,20 +275,27 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     }
   };
   const uploadDocx = async (file: File) => {
-    if (!editingId) {
-      toast.error('Save first', 'Save the agreement before uploading a revised DOCX.');
-      return;
-    }
     const fd = new FormData();
     fd.append('docx', file);
     try {
-      const { data } = await api.post(`/clm/agreement-library/${editingId}/upload-docx`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      const row = data?.data;
-      if (row?.content) {
-        setContent(row.content);
-        if (editorRef.current) editorRef.current.innerHTML = row.content;
+      let html: string | undefined;
+      if (editingId) {
+        // Saved agreement — persist the DOCX and reflect its HTML in the editor.
+        const { data } = await api.post(`/clm/agreement-library/${editingId}/upload-docx`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        html = data?.data?.content;
+      } else {
+        // Brand-new (unsaved) draft — convert the DOCX to HTML statelessly so the
+        // editor reflects it immediately (CBC-437). The content persists on Save.
+        const { data } = await api.post('/clm/docx-to-html', fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        html = data?.html;
+      }
+      if (html) {
+        setContent(html);
+        if (editorRef.current) editorRef.current.innerHTML = html;
       }
       toast.success('Uploaded', file.name);
     } catch (e: any) {
@@ -947,7 +954,7 @@ function AgrEditor({
               Download DOCX
             </button>
           </Tooltip>
-          <Tooltip label={editingId ? 'Upload a revised Word file' : 'Save the agreement first'}>
+          <Tooltip label={editingId ? 'Upload a revised Word file' : 'Upload a Word file to draft from'}>
             <button type="button" className="agw-editor-btn" onClick={() => docxRef.current?.click()}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
               Upload Word Doc
@@ -1601,13 +1608,13 @@ const AGW_CSS = `
 .agw-editor-btn.is-on { background: linear-gradient(135deg,#06b6d4,#0e7490); border-color: transparent; color: #fff; }
 [data-bs-theme="dark"] .agw-editor-shell-full,
 [data-layout-mode="dark"] .agw-editor-shell-full { background: #0f172a; }
-.agw-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: linear-gradient(110deg, #0891b2, #0e7490); padding: 7px 14px; color: #fff; flex-shrink: 0; }
+.agw-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: nowrap; background: linear-gradient(110deg, #0891b2, #0e7490); padding: 7px 14px; color: #fff; flex-shrink: 0; }
 /* Scrollable page-shell region — sits between the pinned toolbar and the
  * pinned footer; grows/scrolls as the agreement content does. */
 .agw-editor-scroll { flex: 1; min-height: 0; overflow-y: auto; background: #fff; }
-.agw-editor-title { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
-.agw-editor-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
-.agw-editor-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 7px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.24); color: #fff; font-size: 11px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
+.agw-editor-title { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; flex-shrink: 0; }
+.agw-editor-actions { display: inline-flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; }
+.agw-editor-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 7px; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.24); color: #fff; font-size: 11px; font-weight: 700; white-space: nowrap; flex-shrink: 0; cursor: pointer; transition: background .15s ease; }
 .agw-editor-btn svg { width: 12px; height: 12px; }
 .agw-editor-btn:hover { background: rgba(255,255,255,.26); }
 /* Single-row toolbar — never wraps; scrolls horizontally if it overflows. */

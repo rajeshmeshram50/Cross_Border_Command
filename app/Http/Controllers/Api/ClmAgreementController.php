@@ -38,9 +38,23 @@ class ClmAgreementController extends Controller
     public function typesIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $rows = $user->client_id
-            ? ClmAgreementType::where('client_id', $user->client_id)->orderBy('id')->get()
-            : collect();
+        if (!$user->client_id) {
+            return response()->json(['status' => true, 'data' => [], 'count' => 0]);
+        }
+        $rows = ClmAgreementType::where('client_id', $user->client_id)->orderBy('id')->get();
+
+        // Flag each type with how many Agreement Library rows reference it
+        // (matched by name, case-insensitive) so the UI can lock the edit action
+        // for types already in use — only fresh types stay editable (CBC-438).
+        $usedCounts = ClmAgreementLibrary::where('client_id', $user->client_id)
+            ->selectRaw('LOWER(agreement_type) as t, COUNT(*) as c')
+            ->groupBy('t')
+            ->pluck('c', 't');
+        $rows->transform(function ($row) use ($usedCounts) {
+            $row->in_use = (int) ($usedCounts[mb_strtolower($row->name)] ?? 0);
+            return $row;
+        });
+
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 
@@ -86,6 +100,20 @@ class ClmAgreementController extends Controller
     {
         $user = $request->user(); if (!$user) abort(401);
         $row  = ClmAgreementType::where('client_id', $user->client_id)->findOrFail($id);
+
+        // Lock editing once the type is referenced by an Agreement Library row —
+        // the library matches by name, so a rename would orphan those agreements.
+        // Only fresh (unused) types may be edited (CBC-438).
+        $inUse = ClmAgreementLibrary::where('client_id', $user->client_id)
+            ->whereRaw('LOWER(agreement_type) = ?', [mb_strtolower($row->name)])
+            ->count();
+        if ($inUse > 0) {
+            return response()->json([
+                'status'  => false,
+                'message' => "This agreement type is used by {$inUse} agreement" . ($inUse === 1 ? '' : 's') . " in the Agreement Library and can no longer be edited.",
+            ], 409);
+        }
+
         $data = $request->validate([
             'name'        => 'sometimes|required|string|max:255',
             'description' => 'sometimes|required|string|max:500',

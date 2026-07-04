@@ -243,6 +243,7 @@ export default function ClmDcpPage() {
     });
   }, [rows, tab, search, boot, bcFilter]); // eslint-disable-line react-hooks/exhaustive-deps
   const [rpp, setRpp]     = useState(PER_PAGE);
+  const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
@@ -258,7 +259,7 @@ export default function ClmDcpPage() {
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
@@ -478,7 +479,7 @@ export default function ClmDcpPage() {
                 </tbody>
               </table>
               {!loading && filtered.length > 0 && (
-                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
           )}
@@ -586,7 +587,14 @@ function SegmentRuleModal(props: {
     }
   }, [matchedRule, existing, isMulti]);
 
-  const segments = useMemo(() => reg ? boot.segments.filter(s => s.regulatory_status === reg) : [], [reg, boot.segments]);
+  /* Segments that already have a saved rule — hidden from the "Select Segment"
+     dropdown so a segment can't be configured twice (CBC-453). The rule being
+     edited is excluded from this set so its own segment stays selectable. */
+  const ruledCodes = useMemo(
+    () => new Set(existingRules.filter(r => r.id !== existing?.id).map(r => r.segment_code)),
+    [existingRules, existing?.id]
+  );
+  const segments = useMemo(() => reg ? boot.segments.filter(s => s.regulatory_status === reg && !ruledCodes.has(s.code)) : [], [reg, boot.segments, ruledCodes]);
   const selSeg   = useMemo(() => segCodes.length === 1 ? (boot.segments.find(s => s.code === segCodes[0]) ?? null) : null, [segCodes, boot.segments]);
 
   const selectAllSegments = () => setSegCodes(segments.map(s => s.code));
@@ -762,13 +770,14 @@ function SegmentRuleModal(props: {
                       ) : (
                         // Multi-select dropdown (mirrors the Agreement form's
                         // less-regulatory segment picker). Segments that already
-                        // have a rule are flagged "• has rule" in the option label.
+                        // have a saved rule are excluded from `segments` (CBC-453),
+                        // so only un-configured segments appear here.
                         <MasterMultiSelect
                           value={segCodes}
                           placeholder="— Select Segments —"
                           options={segments.map(s => ({
                             value: s.code,
-                            label: `${s.name} (${s.code})${existingRules.some(r => r.segment_code === s.code) ? ' • has rule' : ''}`,
+                            label: `${s.name} (${s.code})`,
                           }))}
                           onChange={(vs) => setSegCodes(vs)}
                         />

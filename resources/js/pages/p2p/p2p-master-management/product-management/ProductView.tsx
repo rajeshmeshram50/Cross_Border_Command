@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useAuth } from '../../../../contexts/AuthContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import AddProductModal from './AddProductModal';
 
@@ -83,6 +84,12 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   const navigate = useNavigate();
   const goBack = () => { if (props.onClose) props.onClose(); else navigate('/products'); };
   const toast = useToast();
+  // Department-based gating: Sales can't manage suppliers; Purchase can't see
+  // the selling price. Super-admins / admins (no department) see everything.
+  const { user } = useAuth();
+  const dept = (user?.department || '').trim().toLowerCase();
+  const isSalesDept    = dept === 'sales';
+  const isPurchaseDept = dept === 'purchase';
 
   const [product, setProduct] = useState<ProductDto | null>(null);
   const [loading, setLoading] = useState(true);
@@ -328,10 +335,14 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
               {/* Exact prototype icon (Feather "edit" — pen-to-square). */}
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg> Edit Product
             </button>
-            <button className="pv2pd-hbtn pv2pd-hbtn--suppliers" onClick={() => setSuppliersOpen(true)}>
-              {/* Exact prototype icon (Feather "users" — two people). */}
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> Mapped Suppliers
-            </button>
+            {/* Sales can't manage suppliers — the button is hidden entirely
+                (not just disabled) so there's no dead control / denial toast. */}
+            {!isSalesDept && (
+              <button className="pv2pd-hbtn pv2pd-hbtn--suppliers" onClick={() => setSuppliersOpen(true)}>
+                {/* Exact prototype icon (Feather "users" — two people). */}
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> Mapped Suppliers
+              </button>
+            )}
             <button className="pv2pd-hbtn pv2pd-hbtn--ghost" onClick={goBack}>
               <i className="ri-arrow-left-s-line" /> Back to Product List
             </button>
@@ -388,22 +399,37 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
             </>
           )}
 
-          {/* Dark purple price card */}
-          <div className="pv2pd-pricecard">
-            <div className="pv2pd-pc-top">
-              <div>
-                <div className="pv2pd-pc-label">Selling Price</div>
-                <div className="pv2pd-pc-price">{baseStr}<small>/-</small></div>
-                <div className="pv2pd-pc-uom">per {uomName}</div>
-              </div>
-              <div className="pv2pd-pc-break">
-                Base {baseStr}<br />GST {gstPct.toFixed(0)}% &nbsp;{gstAmtStr}
+          {/* Dark purple price card — the Purchase department can't see the
+              selling price, so it's replaced with a locked placeholder. */}
+          {isPurchaseDept ? (
+            <div
+              className="pv2pd-pricecard"
+              onClick={() => toast.warning('Access denied', "You don't have permission for this.")}
+              title="You don't have permission for this"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 128, cursor: 'pointer' }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: '#d6c8ff' }}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: '.2px' }}>Tap to view price</span>
               </div>
             </div>
-            <div className="pv2pd-pc-total">
-              <span>Total incl. GST</span><b>{totalStr}/-</b>
+          ) : (
+            <div className="pv2pd-pricecard">
+              <div className="pv2pd-pc-top">
+                <div>
+                  <div className="pv2pd-pc-label">Selling Price</div>
+                  <div className="pv2pd-pc-price">{baseStr}<small>/-</small></div>
+                  <div className="pv2pd-pc-uom">per {uomName}</div>
+                </div>
+                <div className="pv2pd-pc-break">
+                  Base {baseStr}<br />GST {gstPct.toFixed(0)}% &nbsp;{gstAmtStr}
+                </div>
+              </div>
+              <div className="pv2pd-pc-total">
+                <span>Total incl. GST</span><b>{totalStr}/-</b>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Buy bar (presentation only) */}
           <div className="pv2pd-buybar">

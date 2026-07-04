@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl, viewFile, downloadFile } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useAuth } from '../../../../contexts/AuthContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -181,6 +182,12 @@ export default function AddProductModal(props: {
 }) {
   const { productId: initialId, initialProduct, onClose, onSaved } = props;
   const toast = useToast();
+  // Department gating: Sales can't map suppliers; Purchase has no Sales (Step 2)
+  // stage. Admins / branch users (no department) get the full flow.
+  const { user } = useAuth();
+  const dept = (user?.department || '').trim().toLowerCase();
+  const isSalesDept    = dept === 'sales';
+  const isPurchaseDept = dept === 'purchase';
 
   /* ─── Wizard nav ─── */
   const [step, setStep] = useState<1 | 2>(1);
@@ -1377,6 +1384,13 @@ export default function AddProductModal(props: {
       setSecondaryImageUrls(res.data.secondary_images_url ?? (res.data.secondary_images ?? []).map(s => resolveFileUrl(s)));
       setSecondaryImageFiles([]);
 
+      // Purchase has no "For Sales Department" step — saving Core finalises the
+      // product and closes the popup (no advance to Step 2).
+      if (isPurchaseDept) {
+        onSaved(res.data.id, true);
+        toast.success('Product saved', 'Product created successfully');
+        return;
+      }
       onSaved(res.data.id, false);
       toast.success('Core saved', 'Product Core Information saved');
       markTabReached('sales');
@@ -1693,25 +1707,29 @@ export default function AddProductModal(props: {
             >
               {gstId && gstPctNum ? `GST ${gstPctNum}%` : 'GST (%)'}
             </button>
-            <button
-              type="button"
-              className="apm-head-btn"
-              title="Map a supplier to this product"
-              onClick={() => {
-                if (!productId) {
-                  toast.error('Complete Core Information first', 'Save Product Core Information (Save & Next) before mapping suppliers.');
-                  return;
-                }
-                if (!gstId) {
-                  toast.error('Map GST % first', 'Map a GST % to this product before mapping suppliers (it drives the supplier GST calculation).');
-                  return;
-                }
-                setSupplierPopupOpen(true);
-              }}
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
-              Map Supplier
-            </button>
+            {/* Sales can't map suppliers — hide the button entirely (no dead
+                control / denial toast). */}
+            {!isSalesDept && (
+              <button
+                type="button"
+                className="apm-head-btn"
+                title="Map a supplier to this product"
+                onClick={() => {
+                  if (!productId) {
+                    toast.error('Complete Core Information first', 'Save Product Core Information (Save & Next) before mapping suppliers.');
+                    return;
+                  }
+                  if (!gstId) {
+                    toast.error('Map GST % first', 'Map a GST % to this product before mapping suppliers (it drives the supplier GST calculation).');
+                    return;
+                  }
+                  setSupplierPopupOpen(true);
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
+                Map Supplier
+              </button>
+            )}
             <button className="apm-close" onClick={onClose} aria-label="Close">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>
@@ -1719,7 +1737,7 @@ export default function AddProductModal(props: {
         </div>
 
         {/* ─── Step strip — the prototype's two stages: Core → Sales ─── */}
-        <div className="apm-stepper">
+        <div className={`apm-stepper${isPurchaseDept ? ' apm-stepper--solo' : ''}`}>
           <StepperItem
             n={1}
             title="Product Core Information"
@@ -1727,14 +1745,20 @@ export default function AddProductModal(props: {
             current={tab === 'core' ? 1 : 2}
             icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>}
           />
-          <div className={`apm-step-connector${tab !== 'core' ? ' done' : ''}`} />
-          <StepperItem
-            n={2}
-            title="For Sales Department"
-            sub="Pricing, GST & sales details"
-            current={tab === 'core' ? 1 : 2}
-            icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>}
-          />
+          {/* "For Sales Department" (Step 2) is hidden for the Purchase
+              department — they finish at Core (Save & Close). */}
+          {!isPurchaseDept && (
+            <>
+              <div className={`apm-step-connector${tab !== 'core' ? ' done' : ''}`} />
+              <StepperItem
+                n={2}
+                title="For Sales Department"
+                sub="Pricing, GST & sales details"
+                current={tab === 'core' ? 1 : 2}
+                icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>}
+              />
+            </>
+          )}
         </div>
 
         {/* ─── Body ─── */}
@@ -2339,7 +2363,7 @@ export default function AddProductModal(props: {
                 }}
               >
                 {saving ? <span className="apm-spinner" /> : null}
-                {saving ? 'Saving…' : (tab === 'core' ? <>Save &amp; Next →</> : <>Submit Product</>)}
+                {saving ? 'Saving…' : (tab === 'core' ? (isPurchaseDept ? <>Save &amp; Close</> : <>Save &amp; Next →</>) : <>Submit Product</>)}
               </button>
             )}
           </div>

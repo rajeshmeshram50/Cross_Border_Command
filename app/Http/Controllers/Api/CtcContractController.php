@@ -624,6 +624,8 @@ class CtcContractController extends Controller
             'state'          => $state,
             'city'           => $scalar($addr?->city ?? null),
             'address'        => trim(implode(', ', array_filter([$addr?->address_line, $addr?->city, $state, $country, $pin]))),
+            'zip_code'       => $pin,
+            'delivery_address' => trim(implode(', ', array_filter([$addr?->address_line, $addr?->city, $state, $country, $pin]))),
         ];
         return response()->json(['status' => true, 'data' => $values]);
     }
