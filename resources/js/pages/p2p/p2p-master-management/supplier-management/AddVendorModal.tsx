@@ -6986,6 +6986,24 @@ const SCOPED_CSS = `
 @media (max-width: 540px) {
   .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr; }
   .avm-bank-grid { grid-template-columns: 1fr; }
+
+  /* Header — was cramped: the long title wrapped and the Map Product + close
+     buttons overlapped it. Tighten padding, shrink the title, drop the long
+     descriptive subtitle, and make the action buttons compact so they sit
+     cleanly beside the title. */
+  .avm-head { padding: 12px 14px; gap: 8px; align-items: flex-start; }
+  .avm-head-left { gap: 9px; }
+  .avm-title { font-size: 15px; line-height: 1.25; }
+  .avm-sub { display: none; }
+  .avm-head-right { flex-shrink: 0; gap: 6px; }
+  .avm-map-btn { padding: 6px 9px; font-size: 11px; }
+  .avm-map-btn i { font-size: 12px; }
+
+  /* Footer — the "Fields required" note and the Update/Prev buttons were
+     squished side by side. Stack them: note on top, full-width buttons below. */
+  .avm-foot { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px; }
+  .avm-foot-right { width: 100%; }
+  .avm-foot-right button { flex: 1 1 auto; justify-content: center; }
 }
 
 /* ════════════════════════════════════════════════════════════════════════

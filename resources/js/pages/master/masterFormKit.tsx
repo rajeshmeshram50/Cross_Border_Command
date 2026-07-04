@@ -90,8 +90,17 @@ export function MasterMultiSelect({
       setDropDir(spaceBelow < ESTIMATED_HEIGHT && spaceAbove > spaceBelow ? 'up' : 'down');
     };
     update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
+    // Resize (maximize/minimize/zoom) reflows the whole layout; the portalled
+    // fixed-position menu would otherwise strand away from its trigger. Close
+    // it on resize so it never shows mispositioned — the user reopens it
+    // cleanly at the new size. Keep it attached on scroll of any ancestor.
+    const closeOnResize = () => setOpen(false);
+    window.addEventListener('resize', closeOnResize);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', closeOnResize);
+      window.removeEventListener('scroll', update, true);
+    };
   }, [open]);
 
   const selectedSet = new Set(value);
@@ -225,6 +234,13 @@ export function MasterMultiSelect({
           className="master-select-menu"
           container="body"
           strategy="fixed"
+          /* Pin the portalled menu to the viewport so it can never drift
+             off-screen or strand away from its trigger on resize/zoom. */
+          modifiers={[
+            { name: 'preventOverflow', options: { boundary: 'viewport', padding: 8, altAxis: true } },
+            { name: 'flip', options: { boundary: 'viewport', fallbackPlacements: ['top', 'bottom'] } },
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ] as any}
           style={menuWidth ? { width: menuWidth, minWidth: menuWidth } : undefined}
         >
           {showSearch && (

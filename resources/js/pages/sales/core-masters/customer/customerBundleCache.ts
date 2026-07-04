@@ -26,7 +26,10 @@
 // leaky payload until the 5-min TTL expired.
 // v3 bump — segments now include `code` (shown as "S-001: Name" in the
 // segment dropdown); older cached bundles lack it, so discard them.
-const KEY = 'customer:master-bundle:v3';
+// v4 bump — the bundle now returns ONLY segments that have at least one
+// document configured in their DCP rule; older cached bundles still list
+// every segment, so discard them.
+const KEY = 'customer:master-bundle:v4';
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 type Envelope<T> = { v: 1; ts: number; data: T };

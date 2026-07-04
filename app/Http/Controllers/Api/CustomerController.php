@@ -223,7 +223,7 @@ class CustomerController extends Controller
         $user = $request->user();
         [$clientId, $branchId] = $this->resolveOwnership($user);
 
-        $data = $this->validatePayload($request, null, $clientId);
+        $data = $this->validatePayload($request, null, $clientId, $branchId);
 
         $row = DB::transaction(function () use ($data, $user, $clientId, $branchId) {
             $primary = $data['primary_address'];
@@ -287,7 +287,7 @@ class CustomerController extends Controller
             return response()->json(['message' => $denial], 403);
         }
 
-        $data = $this->validatePayload($request, (int) $customer->id, $customer->client_id);
+        $data = $this->validatePayload($request, (int) $customer->id, $customer->client_id, $customer->branch_id);
 
         // Segment-document protection: a segment that already has uploaded
         // documents cannot be removed from the customer (its evidence would be
@@ -571,7 +571,7 @@ class CustomerController extends Controller
      * the same client scope; super_admin globals (client_id null) live
      * in their own bucket.
      */
-    private function validatePayload(Request $request, ?int $customerId, $clientId): array
+    private function validatePayload(Request $request, ?int $customerId, $clientId, $branchId = null): array
     {
         $data = $request->validate([
             'company_name'   => 'required|string|max:255',
@@ -615,27 +615,28 @@ class CustomerController extends Controller
             'primary_address.pin'            => ['nullable', 'string', 'regex:/^\d{6}$/'],
             'primary_address.cp_name'        => 'required|string|max:255',
             'primary_address.cp_designation' => 'nullable|string|max:128',
-            /* Primary phone must be unique within the tenant. Closure
-             * rule because the column lives on `customer_addresses`
-             * (not the customers table) and we only want to block
-             * duplicates among the *primary* address row per customer.
-             * Mirrors the email check below but without a dedicated
-             * denormalised column. */
+            /* Primary phone must be unique within the SAME BRANCH (not the whole
+             * client) — two branches of one client are independent, so the same
+             * contact phone is allowed to appear once under each branch. Closure
+             * rule because the column lives on `customer_addresses` (not the
+             * customers table) and we only want to block duplicates among the
+             * *primary* address row per customer. */
             'primary_address.cp_contact'     => [
                 'required', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/',
-                function ($attribute, $value, $fail) use ($clientId, $customerId) {
+                function ($attribute, $value, $fail) use ($clientId, $customerId, $branchId) {
                     if (!trim((string) $value)) return;
                     $exists = \App\Models\CustomerAddress::query()
                         ->where('cp_contact', $value)
                         ->where('is_primary', true)
-                        ->whereHas('customer', function ($q) use ($clientId, $customerId) {
+                        ->whereHas('customer', function ($q) use ($clientId, $customerId, $branchId) {
                             $q->whereNull('deleted_at');
                             $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                            $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
                             if ($customerId) $q->where('id', '!=', $customerId);
                         })
                         ->exists();
                     if ($exists) {
-                        $fail('This phone number is already used by another customer.');
+                        $fail('This phone number is already used by another customer in this branch.');
                     }
                 },
             ],
@@ -646,10 +647,13 @@ class CustomerController extends Controller
             'primary_address.cp_email'       => [
                 'required', 'email', 'max:255',
                 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/',
+                // Unique within the SAME BRANCH (not the whole client) — mirrors
+                // the phone rule so the same contact can exist once per branch.
                 Rule::unique('customers', 'primary_email')
-                    ->where(function ($q) use ($clientId) {
+                    ->where(function ($q) use ($clientId, $branchId) {
                         $q->whereNull('deleted_at');
                         $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
                     })
                     ->ignore($customerId),
             ],
@@ -794,9 +798,26 @@ class CustomerController extends Controller
                     ->get($cols);
             };
 
+            // Only offer segments that have at least one document configured in
+            // their DCP rule (mandatory or optional) — a segment with no docs
+            // attached has nothing to drive the customer's KYC/DD/TL/QC stage,
+            // so it must not appear in the Customer Segment picker.
+            $segmentIdsWithDocs = DB::table('clm_segment_rules')
+                ->when($user, fn ($q) => $q->where('client_id', $user->client_id))
+                ->whereRaw('(COALESCE(mandatory_count, 0) + COALESCE(optional_count, 0)) > 0')
+                ->distinct()
+                ->pluck('segment_id')
+                ->all();
+            $segments = Segments::query()
+                ->whereRaw('LOWER(status) = ?', ['active'])
+                ->tap($scope)
+                ->whereIn('id', $segmentIdsWithDocs ?: [0])
+                ->orderBy('id')
+                ->get(['id', 'name', 'code']);
+
             return [
                 'customer_types'           => $active(CustomerTypes::class,           ['id', 'name']),
-                'segments'                 => $active(Segments::class,                ['id', 'name', 'code']),
+                'segments'                 => $segments,
                 'customer_classifications' => $active(CustomerClassifications::class, ['id', 'name']),
                 'risk_levels'              => $active(RiskLevels::class,              ['id', 'name']),
                 'address_types'            => $active(AddressTypes::class,            ['id', 'name']),

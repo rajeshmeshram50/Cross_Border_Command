@@ -56,6 +56,26 @@ export default function SalesConsignee() {
   const [q, setQ] = useState('');
   const [wdhOpen, setWdhOpen] = useState(false);
   const [segOpen, setSegOpen] = useState<{ id: string | number; names: string[]; x: number; y: number } | null>(null);
+  // The segments popover is pinned to fixed x/y captured on click; a resize
+  // (maximize/minimize/zoom) or scroll makes those coords stale and the popover
+  // drifts away from its badge. Close it on either so it never shows stranded.
+  useEffect(() => {
+    if (!segOpen) return;
+    const close = () => setSegOpen(null);
+    // Close on a PAGE/table scroll (coords go stale), but NOT when the user is
+    // scrolling the long list INSIDE the popover itself.
+    const onScroll = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t && typeof t.closest === 'function' && t.closest('.smcg-seg-pop')) return;
+      setSegOpen(null);
+    };
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [segOpen]);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ConsigneeRow | null>(null);
   const [rows, setRows] = useState<ConsigneeRow[]>([]);
@@ -66,6 +86,9 @@ export default function SalesConsignee() {
 
   const tableCardRef = useRef<HTMLDivElement>(null);
   const [pageSize, setPageSize] = useState(ROWS_PER_PAGE);
+  // Once the user picks a Rows-per-page value, stop the viewport auto-fit from
+  // overriding it so the manual choice sticks.
+  const [manualSize, setManualSize] = useState(false);
   useEffect(() => {
     const el = tableCardRef.current;
     if (!el) return;
@@ -82,7 +105,7 @@ export default function SalesConsignee() {
       const rowH     = (el.querySelector('.smcg-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 40;
       const avail = h - toolbarH - theadH - footerH - 26;
       const rowsFit = Math.floor(avail / rowH);
-      setPageSize(Math.max(ROWS_PER_PAGE, rowsFit));
+      if (!manualSize) setPageSize(Math.max(ROWS_PER_PAGE, rowsFit));
     };
     fit();
     const t = window.setTimeout(fit, 120);
@@ -98,7 +121,7 @@ export default function SalesConsignee() {
       window.removeEventListener('resize', fit);
       ro?.disconnect();
     };
-  }, [wdhOpen, loading]);
+  }, [wdhOpen, loading, manualSize]);
 
   const fetchRows = useCallback(async () => {
     if (!canView) return;
@@ -475,7 +498,9 @@ export default function SalesConsignee() {
               theadClass="table-light"
               divClass="table-responsive table-card border rounded"
               SearchPlaceholder="Search consignees..."
-              pageOfTotalPagination
+              worklistPagination
+              pageSizeOptions={[5, 10, 15, 25, 50]}
+              onPageSizeChange={(n) => { setManualSize(true); setPageSize(n); }}
             />
           )}
           {!loading && filtered.length === 0 && (
