@@ -461,11 +461,11 @@
 /* ─── Grid ─── */
 .prd-grid {
   display: grid;
-  /* Fluidly responsive: the column count grows/shrinks with the grid's own
-     width. ~300px min → about 5 cards on a full-width desktop, dropping to
-     4/3/2/1 automatically as the window narrows. auto-fit fills the row. */
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 12px;
+  /* Dynamic fill: each card is at least 280px, but the columns stretch (1fr)
+     to occupy the full container width, and the column count adjusts to the
+     available width as you zoom / resize. No fixed left/right gap. */
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
 }
 /* ─── Product card surface — ported from the Plans pricing card system
    so the two grids feel like the same component family. Layers:
