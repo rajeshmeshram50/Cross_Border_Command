@@ -2,11 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
-import { useSelectionLock } from '../../../hooks/useSelectionLock';
 import { useAuth } from '../../../contexts/AuthContext';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../master/masterFormKit';
-import { SimpleNameModal } from '../shared/clmCommon';
+import { SimpleNameModal, useScrollLock } from '../shared/clmCommon';
 import ClmInsertPlaceholderModal from './ClmInsertPlaceholderModal';
 import ClmInsertTableModal from './ClmInsertTableModal';
 import ClmInsertHrModal from './ClmInsertHrModal';
@@ -99,7 +98,7 @@ interface Props {
 
 export default function ClmTradeDocumentDraftModal({ open, existing, names: initialNames, nextCode, knownSegments = [], onClose, onSaved }: Props) {
   const toast = useToast();
-  useSelectionLock(open);   // block selecting/copying the background while open
+  useScrollLock(open);   // lock the background scroll + selection while open
   const editingId = existing?.id ?? null;
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -903,10 +902,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     >&nbsp;</button>
                   ))}
                   <span className="tdw-toolbar-sep" />
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyLeft')}    title="Align left">≡</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyCenter')}  title="Align center">≡</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyRight')}   title="Align right">≡</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyFull')}    title="Justify">≡</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyLeft')}    title="Align left"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg></button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyCenter')}  title="Align center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="5" y1="18" x2="19" y2="18"/></svg></button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyRight')}   title="Align right"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg></button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyFull')}    title="Justify"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
                   <span className="tdw-toolbar-sep" />
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('insertUnorderedList')} title="Bullet list">•≡</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('insertOrderedList')}   title="Numbered list">1≡</button>
@@ -1362,6 +1361,7 @@ const TDW_CSS = `
 .tdw-toolbar::-webkit-scrollbar { height: 6px; }
 .tdw-toolbar::-webkit-scrollbar-thumb { background: rgba(6,182,212,.30); border-radius: 999px; }
 .tdw-toolbar-sel, .tdw-toolbar-btn {
+  box-sizing: border-box; line-height: 1; vertical-align: middle;
   height: 26px; min-width: 26px; padding: 0 6px; flex-shrink: 0;
   border: 1px solid #e2e8f0; border-radius: 6px;
   background: #fff; color: #475569;
@@ -1369,6 +1369,11 @@ const TDW_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
   transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
+.tdw-toolbar-btn svg { display: block; }
+/* Colour-picker labels (T / highlight): pin them to the same 26px box and
+   clip the native <input type="color"> so it can't poke the button out of row. */
+.tdw-toolbar-color { position: relative; top: 4px; width: 26px; padding: 0; overflow: hidden; font-weight: 800; }
+.tdw-toolbar-color input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: none; padding: 0; margin: 0; }
 .tdw-toolbar-sel { min-width: auto; }
 .tdw-toolbar-btn:hover { background: #f0fdff; border-color: #67e8f9; color: #0891b2; }
 .tdw-toolbar-sep { width: 1px; height: 18px; flex-shrink: 0; background: #cbd5e1; }
@@ -1379,6 +1384,14 @@ const TDW_CSS = `
   outline: none;
   font-size: 13.5px; line-height: 1.6; color: #0c4a6e;
 }
+/* Restore list markers inside the editor — the app's global CSS reset strips
+   list-style/padding off ul/ol, so insertUnorderedList / insertOrderedList
+   produced lists with no bullets or numbers. */
+.tdw-editor ul { list-style: disc outside; padding-left: 1.6em; margin: .4em 0; }
+.tdw-editor ol { list-style: decimal outside; padding-left: 1.6em; margin: .4em 0; }
+.tdw-editor ul ul { list-style: circle outside; }
+.tdw-editor ol ol { list-style: lower-alpha outside; }
+.tdw-editor li { margin: .15em 0; }
 .tdw-editor-foot {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 18px;
