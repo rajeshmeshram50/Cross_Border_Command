@@ -32,6 +32,7 @@ export default function ClmQcPage() {
   const [page, setPage]         = useState(1);
   // Dynamic pagination: rows-per-page auto-fits the visible table height.
   const [rpp, setRpp]           = useState(PER_PAGE);
+  const autoFitRef              = useRef(true);
   const [fillH, setFillH]       = useState<number | undefined>(undefined);
   const scrollRef               = useRef<HTMLDivElement | null>(null);
   const rootRef                 = useRef<HTMLDivElement | null>(null);
@@ -72,7 +73,7 @@ export default function ClmQcPage() {
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
@@ -189,7 +190,7 @@ export default function ClmQcPage() {
                 </tbody>
               </table>
               {!loading && filtered.length > 0 && (
-                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
           )}
