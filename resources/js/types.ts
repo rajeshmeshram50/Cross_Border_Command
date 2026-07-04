@@ -52,6 +52,7 @@ export interface AuthUser {
   inbox_count?: number;
   status: string;
   designation?: string;
+  department?: string;   // employee's department name (for department-based UI gating)
   phone?: string;
   avatar?: string;
   permissions: Record<string, ModulePermission>;

@@ -634,12 +634,16 @@ class AuthController extends Controller
         // frontend can detect "is this my own profile?" regardless of which
         // form the URL slug carries — without an extra round-trip.
         $linkedEmployee = \App\Models\Employee::where('user_id', $user->id)
-            ->select(['id', 'emp_code', 'onboarding_stage_completed'])
-            ->with('photoDocument:id,employee_id,document_key,file_path')
+            ->select(['id', 'emp_code', 'onboarding_stage_completed', 'department_id'])
+            ->with(['photoDocument:id,employee_id,document_key,file_path', 'department:id,name'])
             ->first();
         $linkedEmployeeId = $linkedEmployee?->id;
         $linkedEmployeeCode = $linkedEmployee?->emp_code;
         $linkedEmployeePhoto = $linkedEmployee?->photo_url;
+        // Department name of the logged-in employee — used by the SPA for
+        // department-based UI gating (e.g. Product view: Sales hides Mapped
+        // Suppliers, Purchase locks the selling price).
+        $linkedEmployeeDepartment = $linkedEmployee?->department?->name;
 
         // Onboarding gate. An employee whose onboarding isn't fully complete
         // (onboarding_stage_completed < 6) CAN log in, but the SPA restricts
@@ -736,6 +740,7 @@ class AuthController extends Controller
             'onboarding_stage'     => $onboardingStage,
             'status' => $user->status,
             'designation' => $user->designation,
+            'department' => $linkedEmployeeDepartment,
             'phone' => $user->phone,
             'avatar' => $user->avatar,
             'permissions' => $permissions,

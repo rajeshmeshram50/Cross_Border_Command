@@ -86,6 +86,37 @@ class ProductController extends Controller
         ];
     }
 
+    /**
+     * Edit/delete denial for a product. An HOD manages the WHOLE branch catalog
+     * (like the Director / branch user), so the peer/hierarchy denial is skipped
+     * for them — they can edit/delete any product in their branch, not just the
+     * ones they created. Everyone else falls through to the standard rule.
+     */
+    private function editDenial($user, $product, string $action = 'edit'): ?string
+    {
+        if ($this->isBranchHod($user, $product)) {
+            return null;
+        }
+        return MasterVisibility::hierarchicalDenial($user, $product, $action);
+    }
+
+    /** True when $user is an HOD employee in the same client + branch as $product. */
+    private function isBranchHod($user, $product): bool
+    {
+        if (!$user || ($user->user_type ?? null) !== 'employee') {
+            return false;
+        }
+        if ((int) $user->client_id !== (int) $product->client_id) {
+            return false;
+        }
+        if ($product->branch_id && (int) $user->branch_id !== (int) $product->branch_id) {
+            return false;
+        }
+        return \App\Models\Employee::where('user_id', $user->id)
+            ->whereIn('designation_id', \App\Support\DepartmentPermissionSync::hodDesignationIds())
+            ->exists();
+    }
+
     private function nextProductCode(?int $clientId): string
     {
         // Scan every code this client owns and pick the true numeric
@@ -272,7 +303,7 @@ class ProductController extends Controller
             ? $this->applyScope(Product::query(), $request)->findOrFail($data['id'])
             : new Product();
         if ($product->exists) {
-            $denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit');
+            $denial = $this->editDenial($request->user(), $product, 'edit');
             if ($denial) return response()->json(['message' => $denial], 403);
         }
         $ownership = $this->ownershipFor($request);
@@ -421,7 +452,7 @@ class ProductController extends Controller
     public function storeSales(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
-        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+        if ($denial = $this->editDenial($request->user(), $product, 'edit')) {
             return response()->json(['message' => $denial], 403);
         }
 
@@ -455,7 +486,7 @@ class ProductController extends Controller
     public function storeQuality(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
-        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+        if ($denial = $this->editDenial($request->user(), $product, 'edit')) {
             return response()->json(['message' => $denial], 403);
         }
 
@@ -556,7 +587,7 @@ class ProductController extends Controller
     public function updateVendorMapPrice(Request $request, int $id, int $mapId)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
-        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+        if ($denial = $this->editDenial($request->user(), $product, 'edit')) {
             return response()->json(['message' => $denial], 403);
         }
 
@@ -599,7 +630,7 @@ class ProductController extends Controller
     public function storeVendors(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
-        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+        if ($denial = $this->editDenial($request->user(), $product, 'edit')) {
             return response()->json(['message' => $denial], 403);
         }
 
@@ -692,7 +723,7 @@ class ProductController extends Controller
     public function destroy(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
-        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'delete')) {
+        if ($denial = $this->editDenial($request->user(), $product, 'delete')) {
             return response()->json(['message' => $denial], 403);
         }
         $product->delete();
