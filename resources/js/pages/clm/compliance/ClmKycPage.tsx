@@ -199,7 +199,7 @@ export default function ClmKycPage() {
         subMessage="This KYC document will be permanently removed. The action cannot be undone."
         loading={deleting}
         onClose={() => setPendingDelete(null)}
-        onConfirm={() => void onDelete()}
+        onConfirm={onDelete}
       />
     </div>
   );

@@ -205,7 +205,7 @@ export default function ClmQcPage() {
         subMessage="This QC document will be permanently removed. The action cannot be undone."
         loading={deleting}
         onClose={() => setPendingDelete(null)}
-        onConfirm={() => void onDelete()}
+        onConfirm={onDelete}
       />
     </div>
   );

@@ -217,7 +217,7 @@ export default function ClmTradeLicensesPage() {
         subMessage="This trade licence will be permanently removed. The action cannot be undone."
         loading={deleting}
         onClose={() => setPendingDelete(null)}
-        onConfirm={() => void onDelete()}
+        onConfirm={onDelete}
       />
 
       {/* All-authorities popover (opened from the +N badge in the ISSUING AUTHORITY column) */}

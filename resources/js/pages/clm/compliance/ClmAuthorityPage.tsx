@@ -258,7 +258,7 @@ export default function ClmAuthorityPage() {
         subMessage="This authority will be permanently removed. The action cannot be undone."
         loading={deleting}
         onClose={() => setPendingDelete(null)}
-        onConfirm={() => void onDelete()}
+        onConfirm={onDelete}
       />
     </div>
   );

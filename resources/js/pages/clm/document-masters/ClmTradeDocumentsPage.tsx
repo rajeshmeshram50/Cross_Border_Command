@@ -430,7 +430,7 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
         )}
       </div>
 
-      {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+      {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
 
       {/* All-segments popover (opened from the +N badge in the SEGMENT column) */}
       {segOpen && createPortal(

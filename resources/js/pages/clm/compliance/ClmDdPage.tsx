@@ -212,7 +212,7 @@ export default function ClmDdPage() {
         subMessage="This Due Diligence document will be permanently removed. The action cannot be undone."
         loading={deleting}
         onClose={() => setPendingDelete(null)}
-        onConfirm={() => void onDelete()}
+        onConfirm={onDelete}
       />
     </div>
   );
