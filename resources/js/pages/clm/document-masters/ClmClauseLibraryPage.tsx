@@ -167,7 +167,12 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
       toast.success(id ? 'Updated' : 'Added', form.name);
       setModalOpen(false); setEditing(null); reload();
     } catch (e: any) {
-      toast.error('Save failed', e?.response?.data?.errors?.name?.[0] ?? e?.response?.data?.message ?? 'Could not save');
+      // The Clause Type modal surfaces field-level messages (duplicate name,
+      // 422) inline below the input. Only fall back to a toast when there's no
+      // such message to show there, so validation errors aren't shown twice
+      // (CBC-446).
+      const inlineMsg = e?.response?.data?.errors?.name?.[0] ?? e?.response?.data?.message;
+      if (!inlineMsg) toast.error('Save failed', 'Could not save');
       throw e;   // let the modal surface field-level (422) errors below the field
     }
   };
@@ -600,7 +605,10 @@ function ClauseLibModal(props: {
             setErrors(p => ({ ...p, type: '' }));
             setShowTypeAdd(false);
           } catch (e: any) {
-            toast.error('Save failed', e?.response?.data?.errors?.name?.[0] ?? e?.response?.data?.message ?? 'Could not save clause type');
+            // Only toast when there's no field-level message; the Clause Type
+            // modal shows those inline below the input (CBC-446 — no duplicate).
+            const inlineMsg = e?.response?.data?.errors?.name?.[0] ?? e?.response?.data?.message;
+            if (!inlineMsg) toast.error('Save failed', 'Could not save clause type');
             throw e;   // let the Clause Type modal surface the error below its field
           }
         }}
