@@ -598,15 +598,12 @@ export default function Products() {
         const rows = Math.max(4, Math.floor(avail / (rowH + rowGap)));
         setPageSize(rows);
       } else {
-        // Fill the container with as many ROWS of cards as fit. Column count
-        // stays dynamic (CSS auto-fill produces N columns at the current
-        // width), so a page = cols × rows-that-fit. Floor conservatively (no
-        // +gap) so varying card heights never spill past the container and
-        // trigger a scrollbar.
+        // Show exactly TWO rows of cards. The column count stays dynamic (CSS
+        // auto-fit produces N columns at the current width), so the page size =
+        // cols × 2 and the number of products adjusts automatically as the grid
+        // re-flows on zoom / resize.
         const cols = Math.max(1, cs.gridTemplateColumns.split(' ').filter(Boolean).length || 4);
-        const cardH = (el.querySelector('.prd-pcard') as HTMLElement | null)?.offsetHeight || 300;
-        const rowGap = parseFloat(cs.rowGap) || 16;
-        const rows = Math.max(1, Math.floor(avail / (cardH + rowGap)));
+        const rows = 2;
         setPageSize(cols * rows);
       }
     };

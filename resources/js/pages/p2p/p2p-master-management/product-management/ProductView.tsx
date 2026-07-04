@@ -195,6 +195,29 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
     return () => clearInterval(t);
   }, [images.length, galleryPaused]);
 
+  // Thumbnail strip scroll indicator — dots (one per scrollable page) replace
+  // the native horizontal scrollbar. Track scroll position to light the dot.
+  const thumbsRef = useRef<HTMLDivElement>(null);
+  const [thumbPages, setThumbPages] = useState(0);
+  const [thumbPage, setThumbPage] = useState(0);
+  useEffect(() => {
+    const el = thumbsRef.current;
+    if (!el) return;
+    const recalc = () => {
+      const pages = el.clientWidth > 0 ? Math.ceil((el.scrollWidth - 1) / el.clientWidth) : 0;
+      setThumbPages(pages);
+      setThumbPage(Math.round(el.scrollLeft / el.clientWidth));
+    };
+    recalc();
+    el.addEventListener('scroll', recalc, { passive: true });
+    window.addEventListener('resize', recalc);
+    return () => { el.removeEventListener('scroll', recalc); window.removeEventListener('resize', recalc); };
+  }, [images.length]);
+  const scrollThumbsToPage = (p: number) => {
+    const el = thumbsRef.current;
+    if (el) el.scrollTo({ left: p * el.clientWidth, behavior: 'smooth' });
+  };
+
   if (loading) {
     // Shimmer placeholder that mirrors the actual layout: image strip
     // on the left, header + info blocks on the right. Beats a single
@@ -333,21 +356,36 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
             <span className={`pv2pd-chip pv2pd-chip--onimg pv2pd-chip--${isActive ? 'active' : 'inactive'}`}>
               <span className="pv2pd-chip-dot" />{statusText}
             </span>
+            {thumbPages > 1 && (
+              <div className="pv2pd-thumb-dots pv2pd-thumb-dots--onimg">
+                {Array.from({ length: thumbPages }).map((_, p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={`pv2pd-thumb-dot ${p === thumbPage ? 'is-active' : ''}`}
+                    onClick={() => scrollThumbsToPage(p)}
+                    aria-label={`Thumbnail page ${p + 1}`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {images.length > 0 && (
-            <div className="pv2pd-thumbs">
-              {images.map((src, i) => (
-                <button
-                  key={i}
-                  className={`pv2pd-thumb ${i === activeImg ? 'is-active' : ''}`}
-                  onClick={() => setActiveImg(i)}
-                  aria-label={`Thumbnail ${i + 1}`}
-                >
-                  <img src={src} alt="" />
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="pv2pd-thumbs" ref={thumbsRef}>
+                {images.map((src, i) => (
+                  <button
+                    key={i}
+                    className={`pv2pd-thumb ${i === activeImg ? 'is-active' : ''}`}
+                    onClick={() => setActiveImg(i)}
+                    aria-label={`Thumbnail ${i + 1}`}
+                  >
+                    <img src={src} alt="" />
+                  </button>
+                ))}
+              </div>
+            </>
           )}
 
           {/* Dark purple price card */}
