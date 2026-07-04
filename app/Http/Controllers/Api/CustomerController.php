@@ -239,7 +239,7 @@ class CustomerController extends Controller
             if ($clientId !== null) {
                 DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
             }
-            $code = $this->nextCustomerCode($clientId);
+            $code = $this->nextCustomerCode($clientId, $branchId);
 
             $customer = Customer::create([
                 'client_id'      => $clientId,
@@ -731,13 +731,19 @@ class CustomerController extends Controller
      * soft-deleted customer's number is never reused — keeping codes a
      * stable per-tenant audit trail.
      */
-    private function nextCustomerCode($clientId): string
+    private function nextCustomerCode($clientId, $branchId = null): string
     {
+        // Per-branch sequence: each branch owns its own C-001, C-002 … run.
         $codes = Customer::withTrashed()
             ->when(
                 $clientId === null,
                 fn ($q) => $q->whereNull('client_id'),
                 fn ($q) => $q->where('client_id', $clientId)
+            )
+            ->when(
+                $branchId === null,
+                fn ($q) => $q->whereNull('branch_id'),
+                fn ($q) => $q->where('branch_id', $branchId)
             )
             ->pluck('customer_code');
 

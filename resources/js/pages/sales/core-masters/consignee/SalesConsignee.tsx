@@ -11,6 +11,7 @@ import { type ConsigneeVaultTarget } from './ConsigneeEvidenceVaultModal';
 import { ShimmerTable } from '../../../../components/ui/Shimmer';
 import api from '../../../../api';
 import TableContainer from '../../../../velzon/Components/Common/TableContainerReactTable';
+import { MasterSelect } from '../../../../components/ui/MasterSelect';
 
 // The two heavy consignee modals are code-split — their chunks download only
 // when first opened, not on the list's first paint. (DeleteConfirmModal stays
@@ -54,6 +55,8 @@ export default function SalesConsignee() {
   const canEdit = isSuperAdmin || !!perm?.can_edit;
 
   const [q, setQ] = useState('');
+  // "Same as Customer" filter (Yes / No / All).
+  const [sacFilter, setSacFilter] = useState<'all'|'yes'|'no'>('all');
   const [wdhOpen, setWdhOpen] = useState(false);
   const [segOpen, setSegOpen] = useState<{ id: string | number; names: string[]; x: number; y: number } | null>(null);
   // The segments popover is pinned to fixed x/y captured on click; a resize
@@ -187,10 +190,12 @@ export default function SalesConsignee() {
   };
 
   const filtered = useMemo(() => {
+    let base = rows;
+    if (sacFilter !== 'all') base = base.filter(c => sacFilter === 'yes' ? !!c.same_as_customer : !c.same_as_customer);
     const lo = q.trim().toLowerCase();
-    if (!lo) return rows;
+    if (!lo) return base;
     const m = (v: unknown) => String(v ?? '').toLowerCase();
-    return rows.filter(c =>
+    return base.filter(c =>
       m(c.company).includes(lo)        ||
       m(c.id).includes(lo)             ||
       m(c.customerId).includes(lo)     ||
@@ -202,7 +207,7 @@ export default function SalesConsignee() {
       m(c.countryDetail).includes(lo)  ||
       m(c.risk).includes(lo),
     );
-  }, [q, rows]);
+  }, [q, rows, sacFilter]);
 
   const onSearch = (v: string) => { setQ(v); };
   const soon = (label: string) => toast.info(label, 'Coming in next phase');
@@ -470,6 +475,18 @@ export default function SalesConsignee() {
               placeholder="Search by consignee ID, customer, company, country, risk..."
               value={q}
               onChange={(e) => onSearch(e.target.value)}
+            />
+          </div>
+          <div className="smcg-sac-filter" style={{ width: 210, flexShrink: 0 }}>
+            <MasterSelect
+              value={sacFilter}
+              placeholder="Same as Customer"
+              options={[
+                { value: 'all', label: 'Same as Customer: All' },
+                { value: 'yes', label: 'Yes' },
+                { value: 'no',  label: 'No' },
+              ]}
+              onChange={(v) => setSacFilter((v || 'all') as 'all'|'yes'|'no')}
             />
           </div>
           {false && canAdd && (

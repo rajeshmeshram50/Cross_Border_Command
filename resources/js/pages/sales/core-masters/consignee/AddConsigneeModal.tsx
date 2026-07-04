@@ -2246,8 +2246,14 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                    * fields for editing instead of wiping their work. */
                   const notYetSaved = !consignee?.db_id && !savedDbId;
                   if (notYetSaved) {
+                    /* Segment is INHERITED from the linked customer (it's not
+                     * part of the "same as customer" copy — it comes from the
+                     * customer regardless). So on untick, clear the mirrored
+                     * fields but KEEP the customer's segment instead of wiping
+                     * it to []. */
+                    const inheritedSegs = String(customer?.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
                     setForm1({
-                      companyName: '', legalName: '', website: '', segment: [] as string[], classification: '', risk: '',
+                      companyName: '', legalName: '', website: '', segment: inheritedSegs, classification: '', risk: '',
                       addressType: 'Registered Office', address: '', country: '', state: '', city: '', pin: '',
                       contactName: '', designation: '', contactNo: '', email: '', whatsapp: 'Yes',
                     });

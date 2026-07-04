@@ -171,7 +171,7 @@ class ConsigneeController extends Controller
         $user = $request->user();
         [$clientId, $branchId] = $this->resolveOwnership($user);
 
-        $data = $this->validatePayload($request, null, $clientId);
+        $data = $this->validatePayload($request, null, $clientId, $branchId);
         $this->assertCustomerInScope($user, (int) $data['customer_id']);
         $this->assertSingleMirrorPerCustomer((int) $data['customer_id'], !empty($data['same_as_customer']), null);
 
@@ -187,7 +187,7 @@ class ConsigneeController extends Controller
             if ($clientId !== null) {
                 DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
             }
-            $code = $this->nextConsigneeCode($clientId);
+            $code = $this->nextConsigneeCode($clientId, $branchId);
 
             $consignee = Consignee::create([
                 'client_id'      => $clientId,
@@ -233,7 +233,7 @@ class ConsigneeController extends Controller
             return response()->json(['message' => $denial], 403);
         }
 
-        $data = $this->validatePayload($request, (int) $consignee->id, $consignee->client_id);
+        $data = $this->validatePayload($request, (int) $consignee->id, $consignee->client_id, $consignee->branch_id);
         $this->assertCustomerInScope($user, (int) $data['customer_id']);
         // Carry the previous value forward if the payload omits the
         // key so the guard reads the user's *current* intent.
@@ -508,7 +508,7 @@ class ConsigneeController extends Controller
      * the customer's contact details onto the consignee — a unique
      * rule would block that intended flow.
      */
-    private function validatePayload(Request $request, ?int $consigneeId = null, $clientId = null): array
+    private function validatePayload(Request $request, ?int $consigneeId = null, $clientId = null, $branchId = null): array
     {
         $sameAsCustomer = (bool) $request->input('same_as_customer', false);
 
@@ -589,28 +589,32 @@ class ConsigneeController extends Controller
             $rules['primary_address.cp_email'] = [
                 'required', 'email', 'max:255',
                 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/',
+                // Unique within the SAME BRANCH (not the whole client) — the
+                // same contact can exist once per branch.
                 Rule::unique('consignees', 'primary_email')
-                    ->where(function ($q) use ($clientId) {
+                    ->where(function ($q) use ($clientId, $branchId) {
                         $q->whereNull('deleted_at');
                         $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
                     })
                     ->ignore($consigneeId),
             ];
             $rules['primary_address.cp_contact'] = [
                 'required', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/',
-                function ($attribute, $value, $fail) use ($clientId, $consigneeId) {
+                function ($attribute, $value, $fail) use ($clientId, $consigneeId, $branchId) {
                     if (!trim((string) $value)) return;
                     $exists = ConsigneeAddress::query()
                         ->where('cp_contact', $value)
                         ->where('is_primary', true)
-                        ->whereHas('consignee', function ($q) use ($clientId, $consigneeId) {
+                        ->whereHas('consignee', function ($q) use ($clientId, $consigneeId, $branchId) {
                             $q->whereNull('deleted_at');
                             $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                            $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
                             if ($consigneeId) $q->where('id', '!=', $consigneeId);
                         })
                         ->exists();
                     if ($exists) {
-                        $fail('This phone number is already used by another consignee.');
+                        $fail('This phone number is already used by another consignee in this branch.');
                     }
                 },
             ];
@@ -729,13 +733,19 @@ class ConsigneeController extends Controller
      * concurrent allocations. Scans `withTrashed` so a soft-deleted
      * consignee's number is never reused.
      */
-    private function nextConsigneeCode($clientId): string
+    private function nextConsigneeCode($clientId, $branchId = null): string
     {
+        // Per-branch sequence: each branch owns its own CN-001, CN-002 … run.
         $codes = Consignee::withTrashed()
             ->when(
                 $clientId === null,
                 fn ($q) => $q->whereNull('client_id'),
                 fn ($q) => $q->where('client_id', $clientId)
+            )
+            ->when(
+                $branchId === null,
+                fn ($q) => $q->whereNull('branch_id'),
+                fn ($q) => $q->where('branch_id', $branchId)
             )
             ->pluck('consignee_code');
 
