@@ -186,6 +186,38 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
       .filter((s): s is string => Boolean(s));
   }, [product]);
 
+  // Auto-advance the hero gallery every 4s, looping through all images.
+  // Pauses while the user hovers the main image so they can inspect it.
+  const [galleryPaused, setGalleryPaused] = useState(false);
+  useEffect(() => {
+    if (images.length < 2 || galleryPaused) return;
+    const t = setInterval(() => setActiveImg(i => (i + 1) % images.length), 4000);
+    return () => clearInterval(t);
+  }, [images.length, galleryPaused]);
+
+  // Thumbnail strip scroll indicator — dots (one per scrollable page) replace
+  // the native horizontal scrollbar. Track scroll position to light the dot.
+  const thumbsRef = useRef<HTMLDivElement>(null);
+  const [thumbPages, setThumbPages] = useState(0);
+  const [thumbPage, setThumbPage] = useState(0);
+  useEffect(() => {
+    const el = thumbsRef.current;
+    if (!el) return;
+    const recalc = () => {
+      const pages = el.clientWidth > 0 ? Math.ceil((el.scrollWidth - 1) / el.clientWidth) : 0;
+      setThumbPages(pages);
+      setThumbPage(Math.round(el.scrollLeft / el.clientWidth));
+    };
+    recalc();
+    el.addEventListener('scroll', recalc, { passive: true });
+    window.addEventListener('resize', recalc);
+    return () => { el.removeEventListener('scroll', recalc); window.removeEventListener('resize', recalc); };
+  }, [images.length]);
+  const scrollThumbsToPage = (p: number) => {
+    const el = thumbsRef.current;
+    if (el) el.scrollTo({ left: p * el.clientWidth, behavior: 'smooth' });
+  };
+
   if (loading) {
     // Shimmer placeholder that mirrors the actual layout: image strip
     // on the left, header + info blocks on the right. Beats a single
@@ -311,7 +343,11 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
       <div className="pv2pd-body">
         {/* LEFT: gallery + price card + buy bar */}
         <div className="pv2pd-gallery">
-          <div className="pv2pd-main-img">
+          <div
+            className="pv2pd-main-img"
+            onMouseEnter={() => setGalleryPaused(true)}
+            onMouseLeave={() => setGalleryPaused(false)}
+          >
             {images.length > 0 ? (
               <img src={images[activeImg]} alt={product.name} />
             ) : (
@@ -320,21 +356,36 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
             <span className={`pv2pd-chip pv2pd-chip--onimg pv2pd-chip--${isActive ? 'active' : 'inactive'}`}>
               <span className="pv2pd-chip-dot" />{statusText}
             </span>
+            {thumbPages > 1 && (
+              <div className="pv2pd-thumb-dots pv2pd-thumb-dots--onimg">
+                {Array.from({ length: thumbPages }).map((_, p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className={`pv2pd-thumb-dot ${p === thumbPage ? 'is-active' : ''}`}
+                    onClick={() => scrollThumbsToPage(p)}
+                    aria-label={`Thumbnail page ${p + 1}`}
+                  />
+                ))}
+              </div>
+            )}
           </div>
 
           {images.length > 0 && (
-            <div className="pv2pd-thumbs">
-              {images.map((src, i) => (
-                <button
-                  key={i}
-                  className={`pv2pd-thumb ${i === activeImg ? 'is-active' : ''}`}
-                  onClick={() => setActiveImg(i)}
-                  aria-label={`Thumbnail ${i + 1}`}
-                >
-                  <img src={src} alt="" />
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="pv2pd-thumbs" ref={thumbsRef}>
+                {images.map((src, i) => (
+                  <button
+                    key={i}
+                    className={`pv2pd-thumb ${i === activeImg ? 'is-active' : ''}`}
+                    onClick={() => setActiveImg(i)}
+                    aria-label={`Thumbnail ${i + 1}`}
+                  >
+                    <img src={src} alt="" />
+                  </button>
+                ))}
+              </div>
+            </>
           )}
 
           {/* Dark purple price card */}
@@ -425,32 +476,12 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
                 )}
                 {tab === 'brand' && (
                   <div className="pv2pd-tab-rich">
-                    <h4 className="pv2pd-tab-h">Make / Brand</h4>
-                    <p className="pv2pd-tab-text">{product.brand || <em className="pv2pd-muted">No brand / make / specifications recorded.</em>}</p>
-                    <h4 className="pv2pd-tab-h">Specifications</h4>
-                    <div className="pv2pd-tab-rows">
-                      <SpecRow k="Generic Name"       v={product.generic_name || '—'} />
-                      <SpecRow k="Segment"            v={segmentName} />
-                      <SpecRow k="HSN Code"           v={hsnCode} />
-                      <SpecRow k="UOM"                v={uomName} />
-                      <SpecRow k="Condition"          v={conditionName} />
-                      <SpecRow k="Packaging Material" v={packagingName} />
-                      <SpecRow k="Hazard"             v={isHaz ? (hazClassName !== '—' ? hazClassName : 'Hazardous') : 'Non-Hazardous'} accent={isHaz ? 'amber' : 'green'} />
-                    </div>
+                    <p className="pv2pd-tab-text">{product.brand || <em className="pv2pd-muted">No make / brand / specifications recorded.</em>}</p>
                   </div>
                 )}
                 {tab === 'confidential' && (
                   <div className="pv2pd-tab-rich">
-                    <h4 className="pv2pd-tab-h">Restricted Information</h4>
-                    <p className="pv2pd-tab-text">{product.confidential_info || 'Confidential pricing, margin structure and preferred-supplier terms are restricted to authorised procurement users only.'}</p>
-                    <h4 className="pv2pd-tab-h">Commercials</h4>
-                    <div className="pv2pd-tab-rows">
-                      <SpecRow k="Base Price"       v={baseStr} />
-                      <SpecRow k="GST"              v={gstPct ? `${gstPct.toFixed(2)}%` : '—'} />
-                      <SpecRow k="Mapped Suppliers" v={String(product.vendor_maps.length)} />
-                    </div>
-                    <h4 className="pv2pd-tab-h">Notes</h4>
-                    <p className="pv2pd-tab-text">Negotiated rates, rebate slabs and exclusive supplier agreements are visible only to users with procurement-admin access. Do not share outside the authorised group.</p>
+                    <p className="pv2pd-tab-text">{product.confidential_info || <em className="pv2pd-muted">No confidential info recorded.</em>}</p>
                   </div>
                 )}
               </div>
@@ -653,19 +684,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
           </div>
         ), document.body);
       })()}
-    </div>
-  );
-}
-
-/* ────────────────────────────────────────────────────────────────────────── */
-/* Spec / commercial key-value row — matches the prototype's .pd-tab-row. */
-function SpecRow(props: { k: string; v: string; accent?: 'green' | 'amber' }) {
-  const hasValue = props.v && props.v !== '—';
-  const val = <span className={`pv2pd-tab-row__v${props.accent ? ` pv2pd-tab-row__v--${props.accent}` : ''}`}>{props.v}</span>;
-  return (
-    <div className="pv2pd-tab-row">
-      <span className="pv2pd-tab-row__k">{props.k}</span>
-      {hasValue ? <Tooltip label={props.v} position="top" maxWidth={320}>{val}</Tooltip> : val}
     </div>
   );
 }

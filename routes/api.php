@@ -783,6 +783,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/permissions/users', [PermissionController::class, 'manageableUsers']);
     Route::get('/permissions/user/{userId}', [PermissionController::class, 'getUserPermissions']);
     Route::post('/permissions/user/{userId}', [PermissionController::class, 'savePermissions']);
+    Route::get('/permissions/department/{departmentId}', [PermissionController::class, 'getDepartmentPermissions']);
+    Route::post('/permissions/department/{departmentId}', [PermissionController::class, 'saveDepartmentPermissions']);
 
    
     Route::get ('/settings',                          [SettingsController::class, 'index']);

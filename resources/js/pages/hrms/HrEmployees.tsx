@@ -321,8 +321,22 @@ export default function HrEmployees() {
     () => mDepts.map(d => ({ value: String(d.id), label: d.name })),
     [mDepts],
   );
+  // 'Director / CEO' is embodied by the Branch User (branch director) — it is
+  // no longer an assignable employee designation, so drop it (and any Inactive
+  // designation) from the picker.
   const designationOptions = useMemo(
-    () => mDesignations.map(d => ({ value: String(d.id), label: d.name })),
+    () => mDesignations
+      .filter(d => d?.name !== 'Director / CEO' && d?.status !== 'Inactive')
+      .map(d => ({ value: String(d.id), label: d.name })),
+    [mDesignations],
+  );
+  // Id of the "Head of Department (HOD)" designation — drives the
+  // HOD ⇄ Reporting-Manager rule (an HOD must report to a Branch User).
+  const hodDesignationId = useMemo(
+    () => {
+      const h = mDesignations.find(d => d?.name === 'Head of Department (HOD)');
+      return h ? String(h.id) : '';
+    },
     [mDesignations],
   );
   const primaryRoleOptions = useMemo(
@@ -1533,6 +1547,9 @@ export default function HrEmployees() {
     if (!eWorkType)        e.work_type         = 'Work type is required';
     if (!eLegalEntity)     e.legal_entity_id   = 'Legal entity is required';
     if (!eReportingMgr)    e.reporting_manager_id = 'Reporting manager is required';
+    else if (hodDesignationId && String(eDesignation) === hodDesignationId
+             && !String(eReportingMgr).startsWith('branch_user:'))
+                           e.reporting_manager_id = 'An HOD must report to a Branch User (Director / CEO).';
     if (!eProbationPolicy) e.probation_policy  = 'Probation policy is required';
     if (eProbationPolicy === CUSTOM_PROBATION_VALUE) {
       const n = parseInt(eCustomProbation, 10);
@@ -1545,7 +1562,7 @@ export default function HrEmployees() {
     }
     return e;
   }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eWorkType, eLegalEntity, eReportingMgr,
-      eProbationPolicy, eCustomProbation, eNoticePeriod, eCustomNotice]);
+      hodDesignationId, eProbationPolicy, eCustomProbation, eNoticePeriod, eCustomNotice]);
 
   const validateStep3 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
@@ -2017,15 +2034,23 @@ export default function HrEmployees() {
   useEffect(() => { reloadManagers(); }, [reloadManagers]);
   const reportingManagerOptions = useMemo(
     () => {
+      // An HOD reports to the branch's Director/CEO — i.e. a Branch User. When
+      // HOD is the chosen designation, restrict the manager list to branch users
+      // (there can be several); otherwise show the full manager pool.
+      const isHod = !!hodDesignationId && String(eDesignation) === hodDesignationId;
       const base = managerCandidates
         .filter(m => !(editingDbId && m.kind === 'employee' && m.id === editingDbId))
+        .filter(m => !isHod || m.kind === 'branch_user')
         .map(m => ({ value: `${m.kind}:${m.id}`, label: m.label }));
       if (savedMgrOption && !base.some(o => o.value === savedMgrOption.value)) {
-        return [savedMgrOption, ...base];
+        // keep the previously-saved manager only if it still satisfies the HOD rule
+        if (!isHod || String(savedMgrOption.value).startsWith('branch_user:')) {
+          return [savedMgrOption, ...base];
+        }
       }
       return base;
     },
-    [managerCandidates, editingDbId, savedMgrOption]
+    [managerCandidates, editingDbId, savedMgrOption, hodDesignationId, eDesignation]
   );
 
   const filtered = useMemo(() => {
@@ -3444,7 +3469,20 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Designation<span className="req">*</span></label>
-                      <MasterSelect value={eDesignation} onChange={(v) => { setEDesignation(v); clearEErr('designation_id'); }} placeholder="Select designation" options={designationOptions} invalid={!!eErrors.designation_id} />
+                      <MasterSelect value={eDesignation} onChange={(v) => {
+                        setEDesignation(v);
+                        clearEErr('designation_id');
+                        // A Branch User as reporting manager is valid ONLY for an HOD.
+                        // Clear the manager whenever the designation ↔ manager pairing
+                        // breaks that rule — HOD needs a Branch User; any other
+                        // designation must NOT keep a Branch User manager.
+                        const nowHod = !!hodDesignationId && String(v) === hodDesignationId;
+                        const rmIsBranchUser = String(eReportingMgr || '').startsWith('branch_user:');
+                        if (eReportingMgr && (nowHod ? !rmIsBranchUser : rmIsBranchUser)) {
+                          setEReportingMgr('');
+                          clearEErr('reporting_manager_id');
+                        }
+                      }} placeholder="Select designation" options={designationOptions} invalid={!!eErrors.designation_id} />
                       {eErrors.designation_id && <small className="emp-err">{eErrors.designation_id}</small>}
                     </Col>
                     <Col md={4}>

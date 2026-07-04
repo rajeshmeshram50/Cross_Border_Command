@@ -618,6 +618,10 @@ class EmployeeController extends Controller
                 // Catch those before the row is written.
                 $this->guardDuplicate($data, $clientId, null);
 
+                // Only one Head of Department (HOD) is allowed per department
+                // (within a branch) — the branch's single sales/ops head.
+                $this->assertSingleHodPerDepartment($data, $clientId, $branchId, null);
+
                 // Enforce the per-branch user cap before we provision a
                 // new User row. Every employee gets a login account
                 // (User::create below) so each new hire consumes one
@@ -706,6 +710,10 @@ class EmployeeController extends Controller
                 // Admin can grant additional modules from the UI later.
                 $this->grantSelfServicePermissions($loginUser, $clientId, $branchId, $auth?->id);
 
+                // If this hire is a department HOD, re-parent the department's
+                // employees to them and auto-grant the department permissions.
+                $this->applyHodOnboarding($employee, $auth?->id);
+
                 $employee->load(self::WITH);
 
                 /* Welcome email is intentionally NOT sent here. Step 1
@@ -774,6 +782,10 @@ class EmployeeController extends Controller
         // as its own duplicate.
         $this->guardDuplicate($data, $row->client_id, $row->id);
 
+        // One HOD per department (branch-scoped). Fall back to the row's own
+        // department/branch when a partial wizard PUT omits them.
+        $this->assertSingleHodPerDepartment($data, $row->client_id, $row->branch_id, $row->id, $row);
+
         // Track wizard progress as a high-watermark — never decrease it.
         // The frontend posts the step number it just completed; we keep
         // the maximum so a user editing an already-finished employee
@@ -810,6 +822,10 @@ class EmployeeController extends Controller
                 'wizard_step_completed'       => $newStep,
                 'onboarding_stage_completed'  => $newMacro,
             ]));
+
+            // Re-run HOD wiring in case this save made the employee an HOD
+            // (or changed their department) — idempotent when already applied.
+            $this->applyHodOnboarding($row->refresh(), $authId);
 
             // Keep the leave_plan_employees pivot in sync whenever the
             // Step 3 PUT carries a leave_plan value. A partial PATCH
@@ -1275,6 +1291,112 @@ class EmployeeController extends Controller
         $creator = User::find($row->created_by);
         if ($creator && $rank($creator->user_type) > $rank($user->user_type)) {
             abort(403, "You cannot {$verb} this employee — created by a higher-privileged user.");
+        }
+    }
+
+    /**
+     * Enforce a single Head of Department (HOD) per department, scoped to the
+     * branch. Only fires when the employee being saved is itself an HOD; the
+     * reporting-manager columns are irrelevant here (an HOD reports to a
+     * branch_user, which is validated separately on the form). Throws a 422 on
+     * `designation_id` when another HOD already exists in the same
+     * (client, branch, department).
+     *
+     * @param  array  $data       validated payload
+     * @param  object|null  $existing  the row being updated (for fallbacks)
+     */
+    private function assertSingleHodPerDepartment(array $data, ?int $clientId, ?int $branchId, ?int $excludeEmployeeId, $existing = null): void
+    {
+        $designationId = $data['designation_id'] ?? ($existing->designation_id ?? null);
+        $departmentId  = $data['department_id']  ?? ($existing->department_id  ?? null);
+        $branchScope   = $data['branch_id']      ?? $branchId ?? ($existing->branch_id ?? null);
+        if (!$designationId || !$departmentId) {
+            return;   // can't be an HOD-in-a-department without both
+        }
+
+        // Is the chosen designation the HOD designation? (match by name/level)
+        $hodName = \App\Support\SalesVisibility::DESIGNATION_MANAGER; // 'Head of Department (HOD)'
+        $chosen = \App\Models\Masters\Designations::find($designationId);
+        $isHod = $chosen && (
+            strcasecmp((string) $chosen->name,  $hodName) === 0 ||
+            strcasecmp((string) $chosen->level, $hodName) === 0
+        );
+        if (!$isHod) {
+            return;
+        }
+
+        // All designation ids that mean HOD (covers any client-scoped copies).
+        $hodIds = \App\Models\Masters\Designations::query()
+            ->where(function ($q) use ($hodName) {
+                $q->whereRaw('LOWER(name) = ?',  [strtolower($hodName)])
+                  ->orWhereRaw('LOWER(level) = ?', [strtolower($hodName)]);
+            })
+            ->pluck('id')
+            ->all();
+
+        $dupe = \App\Models\Employee::query()
+            ->where('client_id', $clientId)
+            ->where('department_id', $departmentId)
+            ->when($branchScope, fn ($q) => $q->where('branch_id', $branchScope))
+            ->whereIn('designation_id', $hodIds)
+            ->when($excludeEmployeeId, fn ($q) => $q->where('id', '!=', $excludeEmployeeId))
+            ->exists();
+
+        if ($dupe) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'designation_id' => ['This department already has a Head of Department (HOD). Only one HOD is allowed per department.'],
+            ]);
+        }
+    }
+
+    /**
+     * When an employee is (or becomes) the HOD of a department, wire up the
+     * department around them:
+     *   (a) Re-parent — employees in the same (client, branch, department) that
+     *       currently report to a Branch User (or have no manager) are re-pointed
+     *       to this HOD. Employees already reporting to someone else are left as-is.
+     *   (b) Auto-grant — the HOD's module permissions are overwritten from the
+     *       department's saved department_permissions (only those modules).
+     * No-op when the employee isn't an HOD. Idempotent, so it's safe to call on
+     * every save.
+     */
+    private function applyHodOnboarding(Employee $employee, ?int $actingUserId): void
+    {
+        $designationId = $employee->designation_id;
+        $departmentId  = $employee->department_id;
+        if (!$designationId || !$departmentId || !$employee->user_id) {
+            return;
+        }
+        if (!in_array((int) $designationId, \App\Support\DepartmentPermissionSync::hodDesignationIds(), true)) {
+            return; // not an HOD
+        }
+
+        // (a) Re-parent employees under a Branch User (or with no manager).
+        $branchUserIds = User::where('client_id', $employee->client_id)
+            ->where('user_type', 'branch_user')
+            ->pluck('id')->all();
+
+        Employee::query()
+            ->where('client_id', $employee->client_id)
+            ->where('branch_id', $employee->branch_id)
+            ->where('department_id', $departmentId)
+            ->where('id', '!=', $employee->id)
+            ->where(function ($q) use ($branchUserIds) {
+                $q->whereIn('reporting_manager_user_id', $branchUserIds ?: [0])
+                  ->orWhere(function ($qq) {
+                      $qq->whereNull('reporting_manager_id')
+                         ->whereNull('reporting_manager_user_id');
+                  });
+            })
+            ->update([
+                'reporting_manager_id'      => $employee->id,
+                'reporting_manager_user_id' => null,
+            ]);
+
+        // (b) Auto-grant the department permissions onto the HOD.
+        $hodUser = User::find($employee->user_id);
+        if ($hodUser) {
+            \App\Support\DepartmentPermissionSync::applyToHodUser($hodUser, (int) $departmentId, $actingUserId);
         }
     }
 

@@ -412,7 +412,7 @@ export default function IdimsHeader() {
       if (item.dd) {
         colsFor(item.dd).flat().forEach(g => {
           g.children.forEach(leaf => {
-            const visible = item.dd === 'p2p' || isSuperAdmin || !!perms[leaf.id]?.can_view;
+            const visible = isSuperAdmin || !!perms[leaf.id]?.can_view;
             if (!visible) return;
             out.push({ id: leaf.id, label: leaf.label, parent: item.label, path: leafPath(leaf.id, item.dd!), icon: item.icon });
           });
@@ -445,8 +445,10 @@ export default function IdimsHeader() {
     const leafVisible = leaf.id === 'sales.sign_tracker'
       ? !!perms['sales.quotation_vs_pi']?.can_view
       : !!perms[leaf.id]?.can_view;
-    // P2P leaves carry no per-leaf permission — module-level can('p2p') gates them.
-    if (kind !== 'p2p' && !(isSuperAdmin || leafVisible)) return null;
+    // Every leaf — including P2P (p2p.product, p2p.supplier, …), which ARE real
+    // permission slugs — is filtered by its own can_view. Column headers stay
+    // (renderCol keeps them); only non-permitted leaves are hidden.
+    if (!(isSuperAdmin || leafVisible)) return null;
     const path = leafPath(leaf.id, kind);
     const Icon = getLucide(leaf.icon);
     return (
@@ -678,6 +680,9 @@ export default function IdimsHeader() {
                     <div className="idims-profile-head-info">
                       <div className="idims-profile-head-name">{user?.name || 'User'}</div>
                       <span className="idims-profile-head-badge">{IC.shield}{ROLE_LABEL[user?.user_type || ''] || 'User'}</span>
+                      {user?.user_type === 'branch_user' && (
+                        <span className="idims-profile-head-badge ceo">Director / CEO</span>
+                      )}
                       <div className="idims-profile-head-branch">{IC.building}<span>{branchName}</span></div>
                     </div>
                   </div>
@@ -774,9 +779,7 @@ export default function IdimsHeader() {
                             {moreExpand === item.dd && (
                               <div className="idims-more-sub">
                                 {colsFor(item.dd).flat().map(g => {
-                                  const leaves = item.dd === 'p2p'
-                                    ? g.children
-                                    : g.children.filter(l => isSuperAdmin || perms[l.id]?.can_view);
+                                  const leaves = g.children.filter(l => isSuperAdmin || perms[l.id]?.can_view);
                                   if (!leaves.length) return null;
                                   return (
                                     <div key={g.id} className="idims-more-subgroup">
@@ -829,9 +832,7 @@ export default function IdimsHeader() {
                   {mobileExpand === item.dd && (
                     <div className="idims-mob-sub">
                       {colsFor(item.dd).flat().map(g => {
-                        const leaves = item.dd === 'p2p'
-                          ? g.children
-                          : g.children.filter(l => isSuperAdmin || perms[l.id]?.can_view);
+                        const leaves = g.children.filter(l => isSuperAdmin || perms[l.id]?.can_view);
                         if (!leaves.length) return null;
                         return (
                           <div key={g.id} className="idims-mob-subgroup">
@@ -1106,6 +1107,7 @@ const IDIMS_CSS = `
 .idims-profile-head-name { font-size: 15px; font-weight: 800; color: #fff; line-height: 1.2; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .idims-profile-head-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; color: #E9D5FF; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 3px 9px 3px 7px; }
 .idims-profile-head-badge svg { width: 11px; height: 11px; }
+.idims-profile-head-badge.ceo { color: #FDE68A; background: rgba(253,230,138,.16); border-color: rgba(253,230,138,.30); margin-left: 6px; }
 .idims-profile-head-branch { display: flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 11px; font-weight: 400; color: rgba(255,255,255,.85); max-width: 165px; }
 .idims-profile-head-branch svg { width: 12px; height: 12px; flex-shrink: 0; opacity: .85; }
 .idims-profile-head-branch span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -145,7 +145,7 @@ Each stage is detailed below: what's on screen, the inputs, the exact **Save & N
 **Pre-shipment view:**
 - **Celebration panel** — bobbing trophy, *Congratulations!*, *"Won on {date}"*, and the **Create Shipment ID** CTA. Confetti fires **once per lead** (localStorage-gated) and re-fires on shipment creation.
 - **Deal Summary** — Opportunity ID · Customer · Won Date · Latest Quotation (code chip) · Latest PI (code chip) · Deal Value · Consignee · Status (● Won).
-- **KPI strip** — Products · Quotations · PI Issued · **Days** (opportunity-created → PI signed, falling back to PI sent, else PI created; `—` until then).
+- **KPI strip** — Products · Quotations · PI Issued · **Days** (opportunity-created → PI-signed).
 
 **Create Shipment modal** (auto-filled from the latest PI — opp/PI codes & dates, customer/consignee, inco term, ports, origin, freight from the PI's shipping cost): the user confirms **Shipping Liability, Cold Chain, Zip Code, Freight Cost, Shipping Mode, Remarks, Attachments** → `POST /sales/shipment-orders` (`SHP-###`, **one shipment per opportunity → 409 on a second**).
 
@@ -200,7 +200,7 @@ Product Directory · Product Sourcing (embed) · Vendor Mappings · Price Shared
 | 7 | Server-side totals | Line amount = qty × rate × (1 + tax%/100), recomputed server-side; client totals never trusted |
 | 8 | Signed PDF links | Customer view links are **signed + expire after 60 days** |
 | 9 | Email / reminder | Email is rate-limited (3/min); `emailed_at` stamped once; reminders require a prior email |
-| 10 | Victory gate | Stage 6 requires a PI **sent for signature or emailed** (not necessarily signed); `won_at` is stamped on entry. A *completed* signature (`pi_signed_at`) separately locks Stages 3–5 read-only |
+| 10 | Victory gate | Stage 6 requires a **signed PI**; `won_at` is stamped on entry |
 | 11 | One shipment per opportunity | `shipment_orders.lead_id` is unique (409 on a second) |
 | 12 | Documents are soft-cancelled | Quotations/PIs are cancelled (status), never hard-deleted — audit preserved |
 
