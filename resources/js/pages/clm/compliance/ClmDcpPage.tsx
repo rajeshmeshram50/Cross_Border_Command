@@ -5,6 +5,7 @@ import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { useSelectionLock } from '../../../hooks/useSelectionLock';
+import { useScrollLock } from '../../../hooks/useScrollLock';
 import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -112,6 +113,16 @@ const DCP_TABS_CSS = `
   box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
 }
 [data-bs-theme="dark"] .dcp-pills { background: linear-gradient(110deg, rgba(8,145,178,.18), rgba(8,145,178,.10)); border-color: rgba(34,211,238,.30); box-shadow: 0 2px 10px rgba(0,0,0,.25) inset; }
+/* Right-aligned toolbar: Regulatory + Customer≠Consignee filters + a compact search. */
+.dcp-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dcp-filter-ms { flex: 0 0 auto; }
+.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 0 auto; width: 260px; max-width: 100%; }
+@media (max-width: 1100px) { .dcp-pre-table .dcp-toolbar .clm-search { width: 200px; } }
+@media (max-width: 760px) {
+  .dcp-toolbar { width: 100%; }
+  .dcp-pre-table .dcp-toolbar .clm-search { width: 100%; }
+  .dcp-filter-ms { flex: 1 1 auto; }
+}
 [data-bs-theme="dark"] .dcp-pill { color: #67e8f9; }
 [data-bs-theme="dark"] .dcp-pill:hover { background: rgba(8,145,178,.22); color: #a5f3fc; }
 [data-bs-theme="dark"] .dcp-pill.active { background: linear-gradient(135deg, #0891b2, #155e75); color: #fff; }
@@ -125,6 +136,8 @@ export default function ClmDcpPage() {
   const [tab, setTab]         = useState<'all'|'highly'|'less'>('all');
   const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
+  // Customer ≠ Consignee filter (independent of the regulatory tab/dropdown).
+  const [bcFilter, setBcFilter] = useState<'all'|'allowed'|'not'>('all');
 
   const [boot, setBoot]       = useState<Bootstrap | null>(null);
   const [editing, setEditing] = useState<SegRule | null>(null);
@@ -165,6 +178,7 @@ export default function ClmDcpPage() {
   // the source of truth so the list never shows a stale tier the rule was
   // saved with (bug: Rice showed "High" though it's a less-regulated segment).
   const regOf = (r: SegRule) => boot?.segments.find(seg => seg.code === r.segment_code)?.regulatory_status ?? r.regulatory_status;
+  const bcOf = (r: SegRule) => boot?.segments.find(seg => seg.code === r.segment_code)?.buyer_consignee;
 
   // Real-time authorities for the AUTHORITIES column. The column must reflect
   // the authorities of the documents actually selected in each rule (KYC / DD /
@@ -215,7 +229,8 @@ export default function ClmDcpPage() {
   }), [rows, boot]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
-    const base = tab === 'all' ? rows : rows.filter(r => regOf(r) === tab);
+    let base = tab === 'all' ? rows : rows.filter(r => regOf(r) === tab);
+    if (bcFilter !== 'all') base = base.filter(r => bcFilter === 'allowed' ? bcOf(r) === 'allowed' : bcOf(r) !== 'allowed');
     if (!search.trim()) return base;
     const s = search.toLowerCase();
     return base.filter(r => {
@@ -226,8 +241,9 @@ export default function ClmDcpPage() {
         || segName.toLowerCase().includes(s)
         || regLabel.includes(s);
     });
-  }, [rows, tab, search, boot]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, tab, search, boot, bcFilter]); // eslint-disable-line react-hooks/exhaustive-deps
   const [rpp, setRpp]     = useState(PER_PAGE);
+  const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
@@ -243,7 +259,7 @@ export default function ClmDcpPage() {
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
@@ -332,9 +348,35 @@ export default function ClmDcpPage() {
               Less Regulated ({tierCounts.less})
             </div>
           </div>
-          <div className="clm-search">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <input type="text" placeholder="Search segment rules…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <div className="dcp-toolbar">
+            <div className="dcp-filter-ms" style={{ width: 172 }}>
+              <MasterSelect
+                value={tab}
+                placeholder="Regulatory"
+                options={[
+                  { value: 'all',    label: 'Regulatory: All' },
+                  { value: 'highly', label: 'Highly Regulated' },
+                  { value: 'less',   label: 'Less Regulated' },
+                ]}
+                onChange={(v) => { setTab((v || 'all') as 'all'|'highly'|'less'); setPage(1); }}
+              />
+            </div>
+            <div className="dcp-filter-ms" style={{ width: 216 }}>
+              <MasterSelect
+                value={bcFilter}
+                placeholder="Customer ≠ Consignee"
+                options={[
+                  { value: 'all',     label: 'Customer ≠ Consignee: All' },
+                  { value: 'allowed', label: 'Allowed' },
+                  { value: 'not',     label: 'Not Allowed' },
+                ]}
+                onChange={(v) => { setBcFilter((v || 'all') as 'all'|'allowed'|'not'); setPage(1); }}
+              />
+            </div>
+            <div className="clm-search">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <input type="text" placeholder="Search segment rules…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            </div>
           </div>
         </div>
 
@@ -437,7 +479,7 @@ export default function ClmDcpPage() {
                 </tbody>
               </table>
               {!loading && filtered.length > 0 && (
-                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
           )}
@@ -545,7 +587,14 @@ function SegmentRuleModal(props: {
     }
   }, [matchedRule, existing, isMulti]);
 
-  const segments = useMemo(() => reg ? boot.segments.filter(s => s.regulatory_status === reg) : [], [reg, boot.segments]);
+  /* Segments that already have a saved rule — hidden from the "Select Segment"
+     dropdown so a segment can't be configured twice (CBC-453). The rule being
+     edited is excluded from this set so its own segment stays selectable. */
+  const ruledCodes = useMemo(
+    () => new Set(existingRules.filter(r => r.id !== existing?.id).map(r => r.segment_code)),
+    [existingRules, existing?.id]
+  );
+  const segments = useMemo(() => reg ? boot.segments.filter(s => s.regulatory_status === reg && !ruledCodes.has(s.code)) : [], [reg, boot.segments, ruledCodes]);
   const selSeg   = useMemo(() => segCodes.length === 1 ? (boot.segments.find(s => s.code === segCodes[0]) ?? null) : null, [segCodes, boot.segments]);
 
   const selectAllSegments = () => setSegCodes(segments.map(s => s.code));
@@ -721,13 +770,14 @@ function SegmentRuleModal(props: {
                       ) : (
                         // Multi-select dropdown (mirrors the Agreement form's
                         // less-regulatory segment picker). Segments that already
-                        // have a rule are flagged "• has rule" in the option label.
+                        // have a saved rule are excluded from `segments` (CBC-453),
+                        // so only un-configured segments appear here.
                         <MasterMultiSelect
                           value={segCodes}
                           placeholder="— Select Segments —"
                           options={segments.map(s => ({
                             value: s.code,
-                            label: `${s.name} (${s.code})${existingRules.some(r => r.segment_code === s.code) ? ' • has rule' : ''}`,
+                            label: `${s.name} (${s.code})`,
                           }))}
                           onChange={(vs) => setSegCodes(vs)}
                         />
@@ -1017,6 +1067,7 @@ function DocListPopup(props: {
   onClose: () => void;
 }) {
   const { rule, cat, boot, onClose } = props;
+  useScrollLock(); // freeze background scroll while this doc-list popup is open
   const isAll = cat === 'all';
 
   const seg = boot.segments.find(s => s.code === rule.segment_code);

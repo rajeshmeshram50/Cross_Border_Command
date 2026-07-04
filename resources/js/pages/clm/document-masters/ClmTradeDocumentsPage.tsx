@@ -99,6 +99,9 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
+  // Auto-fit rows to the viewport by default; once the user picks a value from
+  // the "Rows per page" dropdown we respect their choice.
+  const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
@@ -113,7 +116,7 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
@@ -203,7 +206,7 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
         )}
@@ -262,6 +265,9 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
     return rows.filter(r => r.title.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.doc_type.toLowerCase().includes(s) || r.name.toLowerCase().includes(s) || (r.segment ?? '').toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
+  // Auto-fit rows to the viewport by default; once the user picks a value from
+  // the "Rows per page" dropdown we respect their choice.
+  const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
@@ -276,7 +282,7 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
@@ -418,13 +424,13 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
         )}
       </div>
 
-      {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+      {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
 
       {/* All-segments popover (opened from the +N badge in the SEGMENT column) */}
       {segOpen && createPortal(
