@@ -10,6 +10,7 @@ use App\Models\ClmQcDocument;
 use App\Models\ClmSegment;
 use App\Models\ClmSegmentRule;
 use App\Models\ClmTradeLicense;
+use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -20,9 +21,14 @@ class ClmSegmentRuleController extends Controller
     public function index(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $rows = $user->client_id
-            ? ClmSegmentRule::where('client_id', $user->client_id)->orderBy('id')->get()
-            : collect();
+        if (!$user->client_id) {
+            return response()->json(['status' => true, 'data' => [], 'counts' => ['all' => 0, 'highly' => 0, 'less' => 0]]);
+        }
+        // Branch-scoped read: a branch sees globals + client-level rules + its
+        // own branch's rules; sibling branches stay hidden.
+        $query = ClmSegmentRule::query()->orderBy('id');
+        MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
+        $rows = $query->get();
         return response()->json([
             'status' => true,
             'data'   => $rows,
@@ -103,9 +109,11 @@ class ClmSegmentRuleController extends Controller
         // a duplicate. The composite (client_id, segment_code) is the only
         // guard — no DB-level UNIQUE because pre-existing duplicate data
         // would block the migration; application-layer is sufficient.
-        $existing = ClmSegmentRule::where('client_id', $user->client_id)
-            ->where('segment_code', $data['segment_code'])
-            ->first();
+        // Scoped to the creator's branch so each branch can have its own rule
+        // for a segment without colliding with another branch's rule.
+        $existingQuery = ClmSegmentRule::query()->where('segment_code', $data['segment_code']);
+        MasterVisibility::applyReadScope($existingQuery, $user, $user->branch_id ?: null);
+        $existing = $existingQuery->first();
         if ($existing) {
             return response()->json([
                 'status'   => false,
@@ -125,6 +133,7 @@ class ClmSegmentRuleController extends Controller
 
             return ClmSegmentRule::create([
                 'client_id'         => $user->client_id,
+                'branch_id'         => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'segment_id'        => $segment?->id,
                 'segment_code'      => $data['segment_code'],
                 'rule_code'         => $code,
@@ -144,7 +153,12 @@ class ClmSegmentRuleController extends Controller
     public function update(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmSegmentRule::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmSegmentRule::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
         $data = $this->validatePayload($request);
 
         [$mand, $opt] = $this->countSelections($data['doc_selections']);
@@ -166,7 +180,12 @@ class ClmSegmentRuleController extends Controller
     public function destroy(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmSegmentRule::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmSegmentRule::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }

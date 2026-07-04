@@ -100,11 +100,14 @@ export default function ClmInsertTableModal({ open, onClose, onInsert }: Props) 
       return `<tr${rowStyle}>${cells}</tr>`;
     }).join('');
 
+    // Wrap in an overflow-x:auto container so a wide table (more columns than
+    // the editor width) gets a horizontal scrollbar instead of overflowing.
     return (
-      `<table style="width:100%;border-collapse:collapse;margin:8px 0">`
+      `<div style="overflow-x:auto;max-width:100%;margin:8px 0">`
+      + `<table style="width:100%;border-collapse:collapse;font-size:13px">`
       + headerRow
       + `<tbody>${bodyRows}</tbody>`
-      + `</table><p><br></p>`
+      + `</table></div><p><br></p>`
     );
   };
 

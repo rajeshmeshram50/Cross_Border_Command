@@ -445,6 +445,13 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
 /* Single-line truncation with ellipsis — keeps long Purpose text on one
  * line so the row height stays compact; full text shows in the native
  * title tooltip on hover. */
+/* Truncating cell: the ellipsis lives on an inner block <div> (text-overflow
+   doesn't work on a display:table-cell), while the cell caps its own width so
+   long Purpose text truncates instead of wrapping and expanding the row. */
+.clm-td-trunc-cell { max-width: 260px; }
+/* Single-line ellipsis for the (bold) Trade Document Title — keeps its
+   .clm-td-name weight/colour but stops long titles wrapping like Purpose. */
+.clm-td-name-trunc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clm-td-trunc { font-size: 12px; color: #475569; text-transform: capitalize; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clm-td-trunc::first-letter { text-transform: uppercase; }
 
