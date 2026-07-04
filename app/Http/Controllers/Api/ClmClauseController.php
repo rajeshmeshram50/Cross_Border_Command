@@ -5,9 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClmClauseLibrary;
 use App\Models\ClmClauseType;
+use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
 
 
 class ClmClauseController extends Controller
@@ -20,12 +20,21 @@ class ClmClauseController extends Controller
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
-        $rows = ClmClauseType::where('client_id', $user->client_id)->orderBy('id')->get();
+        // Branch-scoped read: branch users see globals + client-level rows +
+        // their own branch's rows; sibling branches stay hidden.
+        $branchFilter = $request->integer('branch_id') ?: null;
+        $typeQuery = ClmClauseType::query()->orderBy('id');
+        MasterVisibility::applyReadScope($typeQuery, $user, $branchFilter);
+        $rows = $typeQuery->get();
 
         /* Usage map: how many Clause Library entries reference each type. The
          * library links to a type by NAME (no FK), so we match case-insensitively.
-         * Drives the "can't edit an in-use type" guard on the client. */
-        $usage = ClmClauseLibrary::where('client_id', $user->client_id)
+         * Drives the "can't edit an in-use type" guard on the client. Scope the
+         * usage count the same way so a branch only counts library rows it can
+         * actually see. */
+        $usageQuery = ClmClauseLibrary::query();
+        MasterVisibility::applyReadScope($usageQuery, $user, $branchFilter);
+        $usage = $usageQuery
             ->selectRaw('LOWER(clause_type) as t, COUNT(*) as c')
             ->groupBy(DB::raw('LOWER(clause_type)'))
             ->pluck('c', 't');
@@ -46,15 +55,25 @@ class ClmClauseController extends Controller
          * still work; new ones can send empty string or omit. */
         $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
-            'name'        => ['required', 'string', 'max:255', Rule::unique('clm_clause_types', 'name')->where(fn ($q) => $q->where('client_id', $user->client_id))],
+            'name'        => ['required', 'string', 'max:255'],
             'description' => 'nullable|string|max:500',
-        ], [
-            'name.unique' => 'A clause type with this name already exists.',
         ]);
+
+        // Reject duplicate clause-type names within the creator's own scope
+        // (case-insensitive). Scoped via MasterVisibility so the same name can
+        // exist in different branches — matches the branch-scoped master rule.
+        $name = trim($data['name']);
+        $dupQuery = ClmClauseType::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+        MasterVisibility::applyReadScope($dupQuery, $user, $user->branch_id ?: null);
+        if ($dupQuery->exists()) {
+            return response()->json(['status' => false, 'message' => 'A clause type with this name already exists.'], 409);
+        }
+
         $row = DB::transaction(function () use ($user, $data) {
             $code = $this->nextCode(ClmClauseType::class, $user->client_id, 'CLT');
             return ClmClauseType::create([
                 'client_id'   => $user->client_id,
+                'branch_id'   => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'        => $code,
                 'name'        => trim($data['name']),
                 'description' => trim($data['description'] ?? ''),
@@ -68,7 +87,13 @@ class ClmClauseController extends Controller
     public function typesUpdate(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmClauseType::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmClauseType::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        // A branch user can VIEW shared client-level types but not manage them.
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         /* Block editing while the Clause Library still references this type — the
          * library links to it by NAME, so renaming would orphan those clauses.
@@ -85,13 +110,24 @@ class ClmClauseController extends Controller
 
         if ($request->has('name')) $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
-            'name'        => ['sometimes', 'required', 'string', 'max:255', Rule::unique('clm_clause_types', 'name')->ignore($row->id)->where(fn ($q) => $q->where('client_id', $user->client_id))],
+            'name'        => ['sometimes', 'required', 'string', 'max:255'],
             'description' => 'sometimes|nullable|string|max:500',
-        ], [
-            'name.unique' => 'A clause type with this name already exists.',
         ]);
         if (isset($data['name']))        $data['name']        = trim($data['name']);
         if (array_key_exists('description', $data)) $data['description'] = trim((string) $data['description']);
+
+        // Reject rename to a duplicate name within the tenant (case-insensitive,
+        // excluding self).
+        if (isset($data['name'])) {
+            $clash = ClmClauseType::where('client_id', $user->client_id)
+                ->where('id', '!=', $row->id)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
+                ->exists();
+            if ($clash) {
+                return response()->json(['status' => false, 'message' => 'A clause type with this name already exists.'], 409);
+            }
+        }
+
         $data['updated_by'] = $user->id;
         $row->update($data);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
@@ -100,7 +136,12 @@ class ClmClauseController extends Controller
     public function typesDestroy(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmClauseType::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmClauseType::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
@@ -110,9 +151,13 @@ class ClmClauseController extends Controller
     public function libraryIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $rows = $user->client_id
-            ? ClmClauseLibrary::where('client_id', $user->client_id)->orderBy('id')->get()
-            : collect();
+        if (!$user->client_id) {
+            return response()->json(['status' => true, 'data' => [], 'count' => 0]);
+        }
+        // Branch-scoped read (globals + client-level + own branch; siblings hidden).
+        $query = ClmClauseLibrary::query()->orderBy('id');
+        MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
+        $rows = $query->get();
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 
@@ -127,18 +172,27 @@ class ClmClauseController extends Controller
         $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
             'clause_type'   => 'required|string|max:255',
-            'name'          => ['required', 'string', 'max:255', Rule::unique('clm_clause_library', 'name')->where(fn ($q) => $q->where('client_id', $user->client_id))],
+            'name'          => ['required', 'string', 'max:255'],
             'party'         => 'nullable|string|max:255',
             'clause_status' => 'nullable|string|max:32',
             'content'       => 'nullable|string',
-        ], [
-            'name.unique' => 'A clause with this name already exists.',
         ]);
+
+        // Reject duplicate clause names within the creator's own scope
+        // (case-insensitive). Scoped via MasterVisibility so the same name can
+        // exist in different branches — matches the branch-scoped master rule.
+        $name = trim($data['name']);
+        $dupQuery = ClmClauseLibrary::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+        MasterVisibility::applyReadScope($dupQuery, $user, $user->branch_id ?: null);
+        if ($dupQuery->exists()) {
+            return response()->json(['status' => false, 'message' => 'A clause with this name already exists.'], 409);
+        }
 
         $row = DB::transaction(function () use ($user, $data) {
             $code = $this->nextCode(ClmClauseLibrary::class, $user->client_id, 'CL');
             return ClmClauseLibrary::create([
                 'client_id'     => $user->client_id,
+                'branch_id'     => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'          => $code,
                 'clause_type'   => trim($data['clause_type']),
                 'name'          => trim($data['name']),
@@ -155,17 +209,35 @@ class ClmClauseController extends Controller
     public function libraryUpdate(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmClauseLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmClauseLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        // Branch users may view shared client-level clauses but not edit them.
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
+
         if ($request->has('name')) $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
             'clause_type'   => 'sometimes|required|string|max:255',
-            'name'          => ['sometimes', 'required', 'string', 'max:255', Rule::unique('clm_clause_library', 'name')->ignore($row->id)->where(fn ($q) => $q->where('client_id', $user->client_id))],
+            'name'          => ['sometimes', 'required', 'string', 'max:255'],
             'party'         => 'sometimes|nullable|string|max:255',
             'clause_status' => 'nullable|string|max:32',
             'content'       => 'nullable|string',
-        ], [
-            'name.unique' => 'A clause with this name already exists.',
         ]);
+
+        // Reject rename to a duplicate name within the tenant (case-insensitive,
+        // excluding self).
+        if (isset($data['name'])) {
+            $clash = ClmClauseLibrary::where('client_id', $user->client_id)
+                ->where('id', '!=', $row->id)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower(trim($data['name']))])
+                ->exists();
+            if ($clash) {
+                return response()->json(['status' => false, 'message' => 'A clause with this name already exists.'], 409);
+            }
+        }
+
         if (array_key_exists('party', $data)) $data['party'] = trim((string) $data['party']);
         $data['updated_by'] = $user->id;
         $row->update($data);
@@ -175,7 +247,12 @@ class ClmClauseController extends Controller
     public function libraryDestroy(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmClauseLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmClauseLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }

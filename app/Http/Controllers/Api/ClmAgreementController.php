@@ -16,6 +16,7 @@ use App\Models\ProformaInvoice;
 use App\Models\Quotation;
 use App\Models\Product;
 use App\Models\SegmentDocUpload;
+use App\Support\MasterVisibility;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -41,12 +42,21 @@ class ClmAgreementController extends Controller
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
-        $rows = ClmAgreementType::where('client_id', $user->client_id)->orderBy('id')->get();
+        // Branch-scoped read: branch users see globals + client-level rows +
+        // their own branch's rows; sibling branches stay hidden.
+        $branchFilter = $request->integer('branch_id') ?: null;
+        $typeQuery = ClmAgreementType::query()->orderBy('id');
+        MasterVisibility::applyReadScope($typeQuery, $user, $branchFilter);
+        $rows = $typeQuery->get();
 
         // Flag each type with how many Agreement Library rows reference it
         // (matched by name, case-insensitive) so the UI can lock the edit action
         // for types already in use — only fresh types stay editable (CBC-438).
-        $usedCounts = ClmAgreementLibrary::where('client_id', $user->client_id)
+        // Scope the usage count the same way so a branch only counts library
+        // rows it can actually see.
+        $usageQuery = ClmAgreementLibrary::query();
+        MasterVisibility::applyReadScope($usageQuery, $user, $branchFilter);
+        $usedCounts = $usageQuery
             ->selectRaw('LOWER(agreement_type) as t, COUNT(*) as c')
             ->groupBy('t')
             ->pluck('c', 't');
@@ -68,13 +78,13 @@ class ClmAgreementController extends Controller
             'description' => 'required|string|max:500',
         ]);
 
-        // Reject duplicate agreement-type names per client (case-insensitive).
-        // Mirrors ClmSegmentController / ClmAuthorityController.
+        // Reject duplicate agreement-type names within the creator's own scope
+        // (case-insensitive). Scoped via MasterVisibility so the same name can
+        // exist in different branches — matches the branch-scoped master rule.
         $name = trim($data['name']);
-        $exists = ClmAgreementType::where('client_id', $user->client_id)
-            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
-            ->exists();
-        if ($exists) {
+        $dupQuery = ClmAgreementType::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+        MasterVisibility::applyReadScope($dupQuery, $user, $user->branch_id ?: null);
+        if ($dupQuery->exists()) {
             return response()->json([
                 'status'  => false,
                 'message' => "An agreement type named \"{$name}\" already exists. Pick a different name.",
@@ -86,6 +96,7 @@ class ClmAgreementController extends Controller
             $code = $this->nextCode(ClmAgreementType::class, $user->client_id, 'AT-');
             return ClmAgreementType::create([
                 'client_id'   => $user->client_id,
+                'branch_id'   => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'        => $code,
                 'name'        => $name,
                 'description' => trim($data['description']),
@@ -99,7 +110,13 @@ class ClmAgreementController extends Controller
     public function typesUpdate(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmAgreementType::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmAgreementType::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        // A branch user can VIEW shared client-level types but not manage them.
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         // Lock editing once the type is referenced by an Agreement Library row —
         // the library matches by name, so a rename would orphan those agreements.
@@ -143,7 +160,12 @@ class ClmAgreementController extends Controller
     public function typesDestroy(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmAgreementType::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmAgreementType::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         // Block deletion while drafts in the Agreement Library still use this
         // type — the library references the type by name. The user must delete
@@ -200,9 +222,14 @@ class ClmAgreementController extends Controller
     public function libraryIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $rows = $user->client_id
-            ? ClmAgreementLibrary::where('client_id', $user->client_id)->orderBy('id')->get()
-            : collect();
+        if (!$user->client_id) {
+            return response()->json(['status' => true, 'data' => [], 'count' => 0]);
+        }
+        // Branch-scoped read (globals + client-level + own branch; siblings hidden).
+        $branchFilter = $request->integer('branch_id') ?: null;
+        $libQuery = ClmAgreementLibrary::query()->orderBy('id');
+        MasterVisibility::applyReadScope($libQuery, $user, $branchFilter);
+        $rows = $libQuery->get();
 
         // Flag agreements that have a signed (completed) signature request so
         // the frontend can lock Edit / Delete on them. Batch lookup avoids an
@@ -237,6 +264,7 @@ class ClmAgreementController extends Controller
             $code = $this->nextCode(ClmAgreementLibrary::class, $user->client_id, 'A-');
             return ClmAgreementLibrary::create([
                 'client_id'      => $user->client_id,
+                'branch_id'      => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'           => $code,
                 'agreement_type' => trim($data['agreement_type']),
                 'title'          => trim($data['title']),
@@ -259,7 +287,13 @@ class ClmAgreementController extends Controller
     public function libraryUpdate(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmAgreementLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        // Branch users may view shared client-level agreements but not edit them.
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         // Lock once the agreement has been sent and signed. An agreement that
         // has come back signed via Zoho (a `completed` signature request) is a
@@ -318,7 +352,12 @@ class ClmAgreementController extends Controller
     public function libraryDestroy(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmAgreementLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         // Same lock as libraryUpdate — a signed agreement must stay on record,
         // so block the delete once a `completed` signature request references
@@ -740,7 +779,9 @@ class ClmAgreementController extends Controller
     public function downloadDocx(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmAgreementLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
 
         // DOCX generation (PhpWord HTML reader + Word2007 writer) is memory-
         // and time-heavy for table-rich documents. The web SAPI's default
@@ -822,7 +863,9 @@ class ClmAgreementController extends Controller
     public function downloadPdf(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmAgreementLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
 
         $html = trim((string) $row->content);
         if ($html === '') $html = '<p><em>No content saved for this agreement yet.</em></p>';
@@ -861,7 +904,12 @@ class ClmAgreementController extends Controller
     public function uploadDocx(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmAgreementLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmAgreementLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         $request->validate(['docx' => 'required|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB]);
 

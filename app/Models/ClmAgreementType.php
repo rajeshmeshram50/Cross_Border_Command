@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ClmAgreementType extends Model
 {
     protected $fillable = [
-        'client_id', 'code', 'name', 'description', 'status',
+        'client_id', 'branch_id', 'code', 'name', 'description', 'status',
         'created_by', 'updated_by',
     ];
 

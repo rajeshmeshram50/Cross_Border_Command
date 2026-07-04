@@ -253,7 +253,12 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
   /* Download a library row as PDF (full page-shell: branded header + content
    * + footer) or DOCX. The list exposes only the PDF preview. Errors arrive
    * as a Blob, so read them back for the message. */
+  // Row id currently generating a download, so its button can show a spinner
+  // and disable to prevent duplicate clicks while the PDF/DOCX renders.
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const download = async (row: TdLib, fmt: 'pdf' | 'docx') => {
+    if (downloadingId) return;
+    setDownloadingId(row.id);
     try {
       const url = fmt === 'pdf'
         ? `/clm/trade-doc-library/${row.id}/download-pdf`
@@ -273,6 +278,8 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
         else if (typeof e?.response?.data?.message === 'string') msg = e.response.data.message;
       } catch { /* keep default */ }
       toast.error('Download failed', msg);
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -445,9 +452,18 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                           (branded header + content + footer), to see how the
                           finished trade document looks. */}
                       <Tooltip label="Download the complete draft as PDF">
-                        <button type="button" className="tdl-dl-btn" onClick={() => void download(r, 'pdf')}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                          Download Draft PDF
+                        <button type="button" className="tdl-dl-btn" disabled={downloadingId === r.id} onClick={() => void download(r, 'pdf')}>
+                          {downloadingId === r.id ? (
+                            <>
+                              <svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                              Preparing…
+                            </>
+                          ) : (
+                            <>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                              Download Draft PDF
+                            </>
+                          )}
                         </button>
                       </Tooltip>
                     </td>
