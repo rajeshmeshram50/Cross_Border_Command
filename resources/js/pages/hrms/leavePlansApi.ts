@@ -95,8 +95,12 @@ export const leavePlansApi = {
   removeType: (id: number, typeId: number) =>
     api.delete(`/leave-plans/${id}/types/${typeId}`),
 
-  saveTypeConfig: (id: number, typeId: number, config: Record<string, any>, quota_summary?: string, eoy_summary?: string) =>
-    api.put(`/leave-plans/${id}/types/${typeId}/config`, { config, quota_summary, eoy_summary }),
+  // `finalize` flips the type's is_setup flag (marks setup finished). The
+  // setup wizard sends it true only on the last section (Save & Close); the
+  // intermediate "Save & Next" saves pass false so the plan doesn't lock
+  // mid-wizard (bug #63). Defaults true for any non-wizard caller.
+  saveTypeConfig: (id: number, typeId: number, config: Record<string, any>, quota_summary?: string, eoy_summary?: string, finalize: boolean = true) =>
+    api.put(`/leave-plans/${id}/types/${typeId}/config`, { config, quota_summary, eoy_summary, finalize }),
 
   assignEmployees: (id: number, employee_ids: number[]) =>
     api.post(`/leave-plans/${id}/employees`, { employee_ids }),

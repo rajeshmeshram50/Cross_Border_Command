@@ -850,6 +850,7 @@ export default function HrLeavePlans() {
 
       <LeaveTypeSetupModal
         isOpen={!!setupTypeId}
+        readOnly={activePlanLocked}
         leaveType={activePlan?.leaveTypes.find(t => t.id === setupTypeId) ?? null}
         config={
           setupTypeId && activePlan
@@ -867,26 +868,54 @@ export default function HrLeavePlans() {
             [`${activePlan.id}::${setupTypeId}`]: next,
           }));
         }}
-        onSave={async () => {
+        onSave={async (finalize) => {
           if (!setupTypeId || !activePlan) return;
           const next = typeConfigs[`${activePlan.id}::${setupTypeId}`] ?? defaultLeaveTypeConfig();
+          // Reject out-of-range quota / carry-forward before hitting the server
+          // (bug #64) — days within a year, so 0..365. Throwing keeps the modal
+          // open with the spinner off (goNext catches it).
+          if (!next.accrual.unlimited) {
+            const q = Number(next.accrual.yearlyQuota);
+            if (!Number.isFinite(q) || q < 0 || q > 365) {
+              toast.error('Invalid leave quota', 'Yearly quota must be between 0 and 365 days.');
+              throw new Error('invalid-quota');
+            }
+            // Attendance-based accrual threshold — "for every X days worked in
+            // a month" must be 1..31 (bug #65). Only checked when that mode is
+            // selected, since the field is hidden/irrelevant otherwise.
+            if (next.accrual.mode === 'attendance') {
+              const d = Number(next.accrual.attendanceDaysWorked);
+              if (!Number.isFinite(d) || d < 1 || d > 31) {
+                toast.error('Invalid attendance threshold', 'Days worked in a month must be between 1 and 31.');
+                throw new Error('invalid-attendance-days');
+              }
+            }
+          }
+          const cap = Number(next.yearEnd.carryForwardCap);
+          if (Number.isFinite(cap) && (cap < 0 || cap > 365)) {
+            toast.error('Invalid carry-forward cap', 'Carry-forward cap must be between 0 and 365 days.');
+            throw new Error('invalid-carryforward');
+          }
           const quotaLabel = next.accrual.unlimited ? 'Unlimited' : `${next.accrual.yearlyQuota} ${next.accrual.unit}/year`;
           const eoyLabel =
             next.yearEnd.carryForward === 'reset'   ? 'Reset to zero'
             : next.yearEnd.carryForward === 'carry_all' ? 'Carry all forward'
             : `Carry up to ${next.yearEnd.carryForwardCap || 0}`;
           try {
-            await leavePlansApi.saveTypeConfig(Number(activePlan.id), Number(setupTypeId), next as any, quotaLabel, eoyLabel);
+            await leavePlansApi.saveTypeConfig(Number(activePlan.id), Number(setupTypeId), next as any, quotaLabel, eoyLabel, finalize);
           } catch (err: any) {
             toast.error('Could not save configuration', err?.response?.data?.message || err?.message || 'Please try again.');
             throw err; // keep the modal open + spinner off
           }
-          // Reflect the saved setup in the Configuration table.
+          // Reflect the saved setup in the Configuration table. The type only
+          // counts as "configured" once the wizard is finalized (Save & Close) —
+          // matching the backend is_setup flag — so intermediate section saves
+          // just refresh the labels without flipping the status / locking (#63).
           setPlans(prev => prev.map(p => {
             if (p.id !== activePlan.id) return p;
             const leaveTypes = p.leaveTypes.map(t =>
               t.id === setupTypeId
-                ? { ...t, configured: true, quotaLabel, endOfYearLabel: eoyLabel }
+                ? { ...t, configured: finalize ? true : t.configured, quotaLabel, endOfYearLabel: eoyLabel }
                 : t
             );
             // Mirror the backend: when this save leaves every assigned type
@@ -995,7 +1024,16 @@ function ConfigurationTab({
                 </td>
                 <td style={{ textAlign: 'right' }}>
                   {locked
-                    ? <span className="text-muted fs-13 d-inline-flex align-items-center gap-1"><i className="ri-lock-2-line" /> Locked</span>
+                    ? (
+                      <span className="d-inline-flex align-items-center gap-2">
+                        <span className="text-muted fs-13 d-inline-flex align-items-center gap-1"><i className="ri-lock-2-line" /> Locked</span>
+                        {/* Locked plans are view-only, but users must still be
+                            able to review the saved configuration (bug #67). */}
+                        <button type="button" className="lp-setup-btn" onClick={() => onSetupType(t.id)}>
+                          <i className="ri-eye-line" /> View
+                        </button>
+                      </span>
+                    )
                     : canEdit
                       ? <button type="button" className="lp-setup-btn" onClick={() => onSetupType(t.id)}>Setup</button>
                       : <span className="text-muted fs-13">—</span>}
@@ -1787,6 +1825,11 @@ function AddLeaveTypeModal({
   const handleSave = async () => {
     const errs: Record<string, string> = {};
     if (!name.trim()) errs.name = 'Leave type name is required';
+    // Reject names made of / containing special characters — must hold at least
+    // one letter and stay within a conservative name charset. Mirrors the
+    // backend `leave_type.name` pattern so the two layers agree.
+    else if (!/^(?=.*[A-Za-z])[A-Za-z0-9 .,\-&()'/]+$/.test(name.trim()))
+      errs.name = "Leave Type Name cannot contain special characters (only letters, numbers, spaces and . , - & ( ) / ' are allowed)";
     if (!code.trim()) errs.short_code = 'Code is required';
     else if (!/^[A-Z0-9]+$/.test(code.trim().toUpperCase())) errs.short_code = 'Only letters and numbers are allowed (no spaces or special characters)';
     if (Object.keys(errs).length) { setErrors(errs); return; }
@@ -2201,16 +2244,23 @@ const SETUP_SECTIONS: { key: SetupSection; label: string; icon: string; tone: st
 ];
 
 function LeaveTypeSetupModal({
-  isOpen, leaveType, config, onClose, onChange, onSave,
+  isOpen, leaveType, config, onClose, onChange, onSave, readOnly,
 }: {
   isOpen: boolean;
   leaveType: LeaveTypeRow | null;
   config: LeaveTypeConfig;
   onClose: () => void;
   onChange: (next: LeaveTypeConfig) => void;
-  /** Persist the current config. Resolves on success; rejects on failure so
-   *  the modal keeps the spinner off and stays open. */
-  onSave?: () => Promise<void>;
+  /** Persist the current config. `finalize` is true only for the wizard's last
+   *  section (Save & Close) so is_setup is flipped once, not on every section.
+   *  Resolves on success; rejects on failure so the modal keeps the spinner off
+   *  and stays open. */
+  onSave?: (finalize: boolean) => Promise<void>;
+  /** View-only mode for locked plans — every input is disabled and the Save
+   *  actions are replaced by a Close button, so users can review a locked
+   *  plan's configuration without editing it (bug #67). Section navigation
+   *  still works. */
+  readOnly?: boolean;
 }) {
   const [active, setActive] = useState<SetupSection>('accrual');
   const [saving, setSaving] = useState(false);
@@ -2231,17 +2281,18 @@ function LeaveTypeSetupModal({
     // Persist the current config before advancing / closing. The button shows
     // a spinner and is disabled meanwhile so a double-click can't fire two
     // submissions. If the save fails the modal stays open (no navigation).
+    const isLastSection = sectionIndex >= SETUP_SECTIONS.length - 1;
     if (onSave) {
       setSaving(true);
       try {
-        await onSave();
+        await onSave(isLastSection);
       } catch {
         setSaving(false);
         return;
       }
       setSaving(false);
     }
-    if (sectionIndex < SETUP_SECTIONS.length - 1) {
+    if (!isLastSection) {
       setActive(SETUP_SECTIONS[sectionIndex + 1].key);
     } else {
       onClose();
@@ -2266,7 +2317,10 @@ function LeaveTypeSetupModal({
               </span>
               <div className="min-w-0">
                 <div className="fw-bold" style={{ fontSize: 14 }}>{leaveType.name}</div>
-                <div className="text-muted" style={{ fontSize: 11 }}>Leave Type Configuration</div>
+                <div className="text-muted d-flex align-items-center gap-1" style={{ fontSize: 11 }}>
+                  {readOnly && <i className="ri-lock-2-line" />}
+                  Leave Type Configuration{readOnly ? ' · Read-only' : ''}
+                </div>
               </div>
             </div>
             <div className="ms-auto d-flex align-items-center gap-2">
@@ -2299,12 +2353,22 @@ function LeaveTypeSetupModal({
             </aside>
 
             <main className="lts-main">
+              {/* In read-only mode a disabled <fieldset> neutralises every
+                  native control inside, and pointer-events:none covers any
+                  custom (non-native) widgets — so a locked plan can be reviewed
+                  but not edited (bug #67). Section navigation lives in the
+                  sidebar, outside this fieldset, so browsing still works. */}
+              <fieldset
+                disabled={readOnly}
+                style={{ border: 0, padding: 0, margin: 0, minInlineSize: 'auto', ...(readOnly ? { pointerEvents: 'none' } : {}) }}
+              >
               {active === 'accrual'      && <AccrualSectionView      cfg={config.accrual}      update={updateAccrual} />}
-              {active === 'leaveApp'     && <LeaveAppSectionView     cfg={config.leaveApp}     update={updateLeaveApp} />}
+              {active === 'leaveApp'     && <LeaveAppSectionView     cfg={config.leaveApp}     update={updateLeaveApp} accrualMode={config.accrual.mode} />}
               {active === 'approval'     && <ApprovalSectionView     cfg={config.approval}     update={updateApproval} />}
               {active === 'yearEnd'      && <YearEndSectionView      cfg={config.yearEnd}      update={updateYearEnd} />}
               {active === 'probation'    && <ProbationSectionView    cfg={config.probation}    update={updateProbation} />}
               {active === 'noticePeriod' && <NoticePeriodSectionView cfg={config.noticePeriod} update={updateNoticePeriod} />}
+              </fieldset>
             </main>
           </div>
 
@@ -2315,14 +2379,20 @@ function LeaveTypeSetupModal({
               {sectionMeta.label}
             </span>
             <div className="d-flex gap-2">
-              <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-              <button type="button" className="rec-btn-primary" onClick={goNext} disabled={saving}>
-                {saving ? (
-                  <><i className="ri-loader-4-line" style={{ animation: 'spin 1s linear infinite' }} /> Saving…</>
-                ) : (
-                  sectionIndex === SETUP_SECTIONS.length - 1 ? 'Save & Close' : 'Save & Next'
-                )}
-              </button>
+              {readOnly ? (
+                <button type="button" className="rec-btn-primary" onClick={onClose}>Close</button>
+              ) : (
+                <>
+                  <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+                  <button type="button" className="rec-btn-primary" onClick={goNext} disabled={saving}>
+                    {saving ? (
+                      <><i className="ri-loader-4-line" style={{ animation: 'spin 1s linear infinite' }} /> Saving…</>
+                    ) : (
+                      sectionIndex === SETUP_SECTIONS.length - 1 ? 'Save & Close' : 'Save & Next'
+                    )}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -2350,22 +2420,26 @@ function SectionCard({
 }
 
 function CheckRow({
-  checked, onChange, label, sub, children, locked,
+  checked, onChange, label, sub, children, locked, disabled,
 }: {
   checked: boolean; onChange: (v: boolean) => void;
   label: React.ReactNode; sub?: React.ReactNode; children?: React.ReactNode;
   /** When true the checkbox is forced checked and disabled (mandatory). */
   locked?: boolean;
+  /** When true the row is greyed out and non-interactive (not applicable in the
+   *  current configuration). Unlike `locked`, it does NOT force the box on. */
+  disabled?: boolean;
 }) {
+  const inert = locked || disabled;
   return (
-    <div className="lts-check-row">
-      <label className="d-flex align-items-start gap-2 mb-0" style={{ cursor: locked ? 'default' : 'pointer' }}>
+    <div className="lts-check-row" style={disabled ? { opacity: 0.55 } : undefined}>
+      <label className="d-flex align-items-start gap-2 mb-0" style={{ cursor: inert ? 'default' : 'pointer' }}>
         <input
           type="checkbox"
           className="form-check-input mt-1"
           checked={locked ? true : checked}
-          disabled={locked}
-          onChange={e => { if (!locked) onChange(e.target.checked); }}
+          disabled={inert}
+          onChange={e => { if (!inert) onChange(e.target.checked); }}
           style={{ accentColor: '#7c5cfc' }}
         />
         <div className="flex-grow-1 min-w-0">
@@ -2426,6 +2500,8 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
               type="number"
               className="lts-input"
               style={{ width: 70 }}
+              min={0}
+              max={365}
               value={cfg.yearlyQuota}
               onChange={e => update({ yearlyQuota: Number(e.target.value) || 0, unlimited: false })}
               disabled={cfg.unlimited}
@@ -2443,6 +2519,11 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
             <span style={{ fontSize: 13 }}>Unlimited</span>
           </label>
         </div>
+        {!cfg.unlimited && (cfg.yearlyQuota < 0 || cfg.yearlyQuota > 365) && (
+          <div className="text-danger mt-2 d-flex align-items-center gap-1" style={{ fontSize: 12 }}>
+            <i className="ri-error-warning-line" /> Yearly quota must be between 0 and 365 days.
+          </div>
+        )}
       </SectionCard>
 
       {/* Unlimited quota makes accrual rate, restrictions and extra-leave rules
@@ -2487,6 +2568,8 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
                 className="lts-input"
                 style={{ width: 80 }}
                 placeholder="Ex: 8"
+                min={1}
+                max={31}
                 value={cfg.attendanceDaysWorked || ''}
                 onChange={e => update({ attendanceDaysWorked: Number(e.target.value) || 0 })}
               />
@@ -2494,6 +2577,11 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
                 days worked in a month, accrue <strong>{Number((cfg.yearlyQuota / 12).toFixed(2))}</strong> day(s) of leave for that month
               </span>
             </div>
+            {(cfg.attendanceDaysWorked < 0 || cfg.attendanceDaysWorked > 31) && (
+              <div className="text-danger mt-2 d-flex align-items-center gap-1" style={{ fontSize: 12 }}>
+                <i className="ri-error-warning-line" /> Days worked in a month must be between 1 and 31.
+              </div>
+            )}
             <div className="text-muted" style={{ fontSize: 11.5, marginTop: 4 }}>
               <i className="ri-information-line me-1" />
               The monthly credit is the yearly quota ÷ 12 ({cfg.yearlyQuota} ÷ 12), applied when the worked-days target is met that month.
@@ -2534,7 +2622,11 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
   );
 }
 
-function LeaveAppSectionView({ cfg, update }: { cfg: LeaveAppConfig; update: (p: Partial<LeaveAppConfig>) => void }) {
+function LeaveAppSectionView({ cfg, update, accrualMode }: { cfg: LeaveAppConfig; update: (p: Partial<LeaveAppConfig>) => void; accrualMode: AccrualConfig['mode'] }) {
+  // Periodic accrual already governs the monthly allocation, so the manual
+  // "at most N days per calendar month" cap doesn't apply and must be locked
+  // (bug #66). Disable both the toggle and the number input in that mode.
+  const perMonthLocked = accrualMode === 'periodic';
   return (
     <>
       <h5 className="fw-bold mb-3">Leave Application</h5>
@@ -2544,6 +2636,8 @@ function LeaveAppSectionView({ cfg, update }: { cfg: LeaveAppConfig; update: (p:
         <CheckRow
           checked={cfg.maxPerMonth.enabled}
           onChange={v => update({ maxPerMonth: { ...cfg.maxPerMonth, enabled: v } })}
+          disabled={perMonthLocked}
+          sub={perMonthLocked ? 'Not applicable — periodic accrual controls the monthly allocation.' : undefined}
           label={
             <span className="d-inline-flex align-items-center gap-2 flex-wrap">
               Allow at most
@@ -2554,7 +2648,7 @@ function LeaveAppSectionView({ cfg, update }: { cfg: LeaveAppConfig; update: (p:
                 style={{ width: 70 }}
                 value={cfg.maxPerMonth.days}
                 onChange={e => update({ maxPerMonth: { ...cfg.maxPerMonth, days: Number(e.target.value) || 0 } })}
-                disabled={!cfg.maxPerMonth.enabled}
+                disabled={!cfg.maxPerMonth.enabled || perMonthLocked}
               />
               day(s) of this leave type per calendar month
             </span>

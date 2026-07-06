@@ -981,8 +981,22 @@ class LeaveRequestController extends Controller
                 && $resolvedEmpId
                 && !$resolvedExists
             ) {
-                $shouldSkip = true;
-                $skipReason = "Auto-skipped — approver employee #{$resolvedEmpId} no longer exists";
+                if ($kind === 'reporting_manager') {
+                    // The reporting manager was removed / soft-deleted. Do NOT
+                    // skip this level: on the default sole-RM chain, skipping the
+                    // only level makes firstActionableLevel run past the end and
+                    // the request auto-approves with no human review (bug #68).
+                    // Keep it Pending — an inactive/disabled/missing RM is treated
+                    // as unavailable by isReportingManagerUnavailable(), so HR can
+                    // step in (Bug 55) and the request is actually reviewed
+                    // instead of silently granted.
+                    $skipReason = 'Reporting manager unavailable — awaiting HR review';
+                } else {
+                    // A non-RM explicit approver that no longer exists → skip to
+                    // the next level so the chain doesn't stall on a dead entry.
+                    $shouldSkip = true;
+                    $skipReason = "Auto-skipped — approver employee #{$resolvedEmpId} no longer exists";
+                }
             }
 
             $chain[] = [
