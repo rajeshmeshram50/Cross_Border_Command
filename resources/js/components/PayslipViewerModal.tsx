@@ -114,6 +114,13 @@ export default function PayslipViewerModal({
   const fileLabel = `${employee.name.replace(/\s+/g, '_')}_${month}_${year}`;
   const blockProvisional = () => toast.error('Payslip not final', 'This payslip is provisional — approve the payroll run first.');
 
+  // Label ("Mon YYYY") of the payslip CURRENTLY on screen, used to highlight the
+  // matching Recent Payslips entry. Previously the highlight followed each
+  // entry's `now` flag (the real current month), so the current month stayed
+  // highlighted even while a different period's payslip was open.
+  const activeAbbr = Object.keys(MONTH_ABBR_TO_FULL).find(k => MONTH_ABBR_TO_FULL[k] === month) || month.slice(0, 3);
+  const activeLabel = `${activeAbbr} ${year}`;
+
   const fetchPdfBlob = async () => {
     const res = await api.get(`/payroll/payslip/${payslipId}/pdf`, { responseType: 'blob' });
     return new Blob([res.data], { type: 'application/pdf' });
@@ -295,7 +302,7 @@ export default function PayslipViewerModal({
                   <button
                     key={p.label}
                     type="button"
-                    className={`ep-pay-recent${p.now ? ' is-current' : ''}`}
+                    className={`ep-pay-recent${p.label === activeLabel ? ' is-current' : ''}`}
                     onClick={() => {
                       const [m, y] = p.label.split(' ');
                       setMonth(MONTH_ABBR_TO_FULL[m] || m);
