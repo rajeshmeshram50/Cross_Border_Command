@@ -153,6 +153,9 @@ export type ConsigneeRow = {
   db_id?: number;
   customerId: string;
   customer_db_id?: number;
+  /** All customers this consignee is mapped to (many-to-many). The
+   *  `customerId` above stays the primary for backward compatibility. */
+  customers?: { id: number; code: string | null; name: string | null }[];
   company: string;
   segment: string;
   /* Free-text master value coming back from /master/risk_levels.
@@ -287,6 +290,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * create grows it as the user advances via Save & Next. */
   const [maxStage, setMaxStage] = useState<Stage>(1);
   const [customer, setCustomer] = useState<CustomerOption | null>(null);
+  /* Additional customers this consignee is ALSO mapped to (many-to-many),
+   * beyond the primary `customer` above. Stored as customer DB ids. The
+   * payload sends [primary, ...these]. "Same as Customer" is disabled while
+   * any extras are selected (the KYC mirror is intrinsically 1:1). */
+  const [extraCustomerIds, setExtraCustomerIds] = useState<number[]>([]);
+  const [extraSearch, setExtraSearch] = useState('');
   const [search, setSearch]     = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   /* Linked-customer panel starts COLLAPSED — when the user picks a
@@ -623,6 +632,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setLinkedHidden(true);
     setErrors1({});
     setSameAsCustomer(false);
+    setExtraCustomerIds([]);
+    setExtraSearch('');
     setEvSub('dd');
     setLocations([]);
     /* Reset Stage 1 form to empty defaults — CREATE mode only. In edit
@@ -921,6 +932,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           // user can click the bar to expand it on demand. (Previous
           // behavior auto-expanded for same-as-customer rows, but
           // the summary section is noisy on first open.)
+        }
+        // Hydrate the extra customer mappings (everything except the primary).
+        if (Array.isArray(d.customer_ids)) {
+          const primaryId = Number(d.customer_id);
+          setExtraCustomerIds(
+            d.customer_ids.map((x: any) => Number(x)).filter((x: number) => x && x !== primaryId),
+          );
         }
         const extra: any[] = Array.isArray(d.locations) ? d.locations : [];
         setLocations(extra.map((a: any) => ({
@@ -1341,9 +1359,38 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     onClose();
   };
 
+  /* Multi-select on the picker. The FIRST customer picked becomes the
+   * "primary" (`customer`); every additional one goes into
+   * `extraCustomerIds`. Un-ticking the primary promotes the next extra. */
+  const isCustomerPicked = (opt: CustomerOption): boolean =>
+    (!!opt.db_id && customer?.db_id === opt.db_id) || (!!opt.db_id && extraCustomerIds.includes(opt.db_id));
+
+  const togglePickCustomer = (opt: CustomerOption) => {
+    const id = opt.db_id;
+    if (!id) return;
+    if (customer?.db_id === id) {
+      // Un-ticking the primary → promote the first extra (if any).
+      if (extraCustomerIds.length > 0) {
+        const nextId = extraCustomerIds[0];
+        setCustomer(customerOptions.find(c => c.db_id === nextId) ?? null);
+        setExtraCustomerIds(prev => prev.filter(x => x !== nextId));
+      } else {
+        setCustomer(null);
+      }
+    } else if (extraCustomerIds.includes(id)) {
+      setExtraCustomerIds(prev => prev.filter(x => x !== id));
+    } else if (!customer) {
+      setCustomer(opt);            // first pick = primary
+    } else {
+      setExtraCustomerIds(prev => [...prev, id]);
+    }
+  };
+
+  const pickedCount = (customer ? 1 : 0) + extraCustomerIds.length;
+
   const confirmCustomer = () => {
     if (!customer) {
-      toast.warning('Pick a customer', 'Select the customer this consignee will be linked to.');
+      toast.warning('Pick a customer', 'Select at least one customer this consignee will be linked to.');
       return;
     }
     setPhase('wizard');
@@ -1783,8 +1830,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     const s = String(v ?? '').trim();
     return /^\d{6}$/.test(s) ? s : null;
   };
-  const buildPayload = () => ({
-    customer_id:      customer?.db_id ?? (Number(customer?.id?.replace(/[^0-9]/g, '')) || null),
+  const buildPayload = () => {
+    const primaryId = customer?.db_id ?? (Number(customer?.id?.replace(/[^0-9]/g, '')) || null);
+    // Full many-to-many mapping = primary + any additionally-checked customers.
+    const customerIds = Array.from(new Set(
+      [primaryId, ...extraCustomerIds].filter((x): x is number => typeof x === 'number' && !!x),
+    ));
+    return {
+    customer_id:      primaryId,
+    customer_ids:     customerIds,
     company_name:     form1.companyName,
     legal_name:       form1.legalName || null,
     /* Multi-segment is comma-joined for the legacy scalar column. The
@@ -1826,7 +1880,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       cp_email:       l.cpEmail,
       cp_whatsapp:    l.cpWhatsapp,
     })),
-  });
+    };
+  };
 
   const handleSave = async () => {
     // Synchronous re-entry lock — see comment on inFlightRef. The
@@ -1928,7 +1983,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             <button className="acm-close" onClick={handleClose} aria-label="Close"><IconClose /></button>
             <div className="acm-pick-icon"><IconTruck size={28} /></div>
             <div className="acm-pick-title">Add New Consignee</div>
-            <div className="acm-pick-sub">Select the customer account to which this consignee will be linked for shipment and export execution.</div>
+            <div className="acm-pick-sub">Select one or more customer accounts this consignee will be linked to. The first pick is the primary customer.</div>
           </div>
           <div className="acm-pick-body">
             <label className="acm-label">
@@ -1939,7 +1994,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               <IconSearch />
               <input
                 type="text"
-                placeholder={customer ? 'Customer selected' : 'Search by name, ID, or segment...'}
+                placeholder={pickedCount > 0 ? `${pickedCount} customer${pickedCount > 1 ? 's' : ''} selected — search to add more` : 'Search by name, ID, or segment...'}
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setSearchOpen(true); }}
                 onFocus={() => setSearchOpen(true)}
@@ -1958,32 +2013,64 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 {!customersLoading && customerOptions.length > 0 && filteredCustomers.length === 0 && (
                   <div className="acm-picker-empty">No customers match — try a different search</div>
                 )}
-                {filteredCustomers.map(c => (
+                {filteredCustomers.map(c => {
+                  const picked = isCustomerPicked(c);
+                  const isPrimary = !!c.db_id && customer?.db_id === c.db_id;
+                  return (
                   <button
                     key={c.id}
-                    className="acm-picker-option"
-                    onClick={() => { setCustomer(c); setSearch(''); setSearchOpen(false); }}
+                    className={`acm-picker-option ${picked ? 'is-picked' : ''}`}
+                    onClick={() => togglePickCustomer(c)}
                   >
+                    <input
+                      type="checkbox"
+                      checked={picked}
+                      readOnly
+                      style={{ marginRight: 4, width: 15, height: 15, flex: '0 0 auto' }}
+                    />
                     <div className="acm-pop-avatar">{c.initials}</div>
                     <div className="acm-pop-info">
-                      <div className="acm-pop-name">{c.name}</div>
+                      <div className="acm-pop-name">
+                        {c.name}
+                        {isPrimary && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>}
+                      </div>
                       <div className="acm-pop-meta">{c.id} • {c.segment} • {c.country}</div>
                     </div>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             )}
             </div>
 
             {customer && (
-              <div className="acm-picked">
-                <div className="acm-picked-avatar">{customer.initials}</div>
-                <div className="acm-picked-info">
-                  <div className="acm-picked-name">{customer.name}</div>
-                  <div className="acm-picked-meta">{customer.id} • {customer.segment} • {customer.country}</div>
+              <>
+                <div className="acm-picked">
+                  <div className="acm-picked-avatar">{customer.initials}</div>
+                  <div className="acm-picked-info">
+                    <div className="acm-picked-name">
+                      {customer.name}
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>
+                    </div>
+                    <div className="acm-picked-meta">{customer.id} • {customer.segment} • {customer.country}</div>
+                  </div>
+                  <button className="acm-picked-clear" onClick={() => togglePickCustomer(customer)} aria-label="Clear selection"><IconClose size={14} /></button>
                 </div>
-                <button className="acm-picked-clear" onClick={() => setCustomer(null)} aria-label="Clear selection"><IconClose size={14} /></button>
-              </div>
+                {extraCustomerIds.length > 0 && (
+                  <div className="d-flex flex-wrap" style={{ gap: 6, marginTop: 8 }}>
+                    {extraCustomerIds.map(eid => {
+                      const o = customerOptions.find(c => c.db_id === eid);
+                      if (!o) return null;
+                      return (
+                        <span key={eid} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#0c63b0', background: '#dceefe', borderRadius: 20, padding: '3px 10px' }}>
+                          {o.id} · {o.name}
+                          <span role="button" onClick={() => togglePickCustomer(o)} style={{ cursor: 'pointer', display: 'inline-flex' }} aria-label={`Remove ${o.name}`}><IconClose size={12} /></span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
 
             <div className="acm-info">
@@ -2000,7 +2087,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               onClick={confirmCustomer}
               disabled={!customer}
             >
-              <IconCheck /> Confirm &amp; Continue
+              <IconCheck /> Confirm &amp; Continue{pickedCount > 1 ? ` (${pickedCount})` : ''}
             </button>
           </div>
         </div>
@@ -2044,6 +2131,21 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                     <span className="acg-linked-tag">LINKED CUSTOMER</span>
                     <span className="acg-linked-id">{customer.id}</span>
                     <span className="acg-linked-name">{customer.name}</span>
+                    {/* Additionally-mapped customers selected via the checkbox
+                        list below — surfaced here as chips so the header shows
+                        every customer this consignee links to. */}
+                    {extraCustomerIds.length > 0 && (
+                      <span className="d-inline-flex align-items-center flex-wrap" style={{ gap: 4, marginLeft: 4 }}>
+                        {extraCustomerIds.map(eid => {
+                          const o = customerOptions.find(c => c.db_id === eid);
+                          return (
+                            <span key={eid} style={{ fontSize: 11, fontWeight: 700, color: '#0c63b0', background: '#dceefe', borderRadius: 20, padding: '1px 8px' }}>
+                              +{o?.id ?? eid}
+                            </span>
+                          );
+                        })}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="acg-linked-actions">
@@ -2084,6 +2186,33 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                     </div>
                   </div>
 
+                  {/* Data of the ADDITIONALLY-mapped customers (checkbox list
+                      selections). Read-only recap so the user can confirm which
+                      other customers this consignee links to. */}
+                  {extraCustomerIds.length > 0 && (
+                    <div className="acg-hs-mirror" style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 11.5, fontWeight: 700, color: '#0c63b0', letterSpacing: 0.3, marginBottom: 6 }}>
+                        ALSO MAPPED CUSTOMERS ({extraCustomerIds.length})
+                      </div>
+                      {extraCustomerIds.map(eid => {
+                        const o = customerOptions.find(c => c.db_id === eid);
+                        if (!o) return null;
+                        return (
+                          <div key={eid} className="acg-hs-grid" style={{ marginBottom: 6 }}>
+                            <ReadInlineG label="Customer ID"         value={o.id} />
+                            <ReadInlineG label="Company Name"        value={o.name} />
+                            <ReadInlineG label="Segment"             value={segDisplay(o.segment, mSegmentIds)} />
+                            <ReadInlineG label="Contact Person"      value={o.contactPerson} />
+                            <ReadInlineG label="Contact No"          value={o.phone} />
+                            <ReadInlineG label="Email"               value={o.email} />
+                            <ReadInlineG label="City"                value={o.city} />
+                            <ReadInlineG label="Country"             value={o.country} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {/* Stage 2 KYC stat cards — merged into the Linked
                       Customer panel when Same as Customer is on so the
                       user sees ONE consolidated read-only block instead
@@ -2114,6 +2243,68 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               )}
             </div>
           )}
+
+        {/* ── Also map to other customers (many-to-many) ─────────────────
+            A single consignee can be linked to multiple customers. The
+            primary (Linked Customer above) is always included; tick more
+            here to map them too. Disabled while "Same as Customer" is on
+            (that KYC mirror is strictly 1:1). */}
+        {customer && (
+          <div className="acm-map-customers" style={{ margin: '10px 0 4px', border: '1px solid #e5e7eb', borderRadius: 10, padding: '12px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: '#334155', letterSpacing: 0.2 }}>
+                ALSO MAP TO OTHER CUSTOMERS
+                {extraCustomerIds.length > 0 && (
+                  <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#0c63b0', background: '#dceefe', borderRadius: 20, padding: '1px 8px' }}>
+                    {extraCustomerIds.length} selected
+                  </span>
+                )}
+              </div>
+            </div>
+            {sameAsCustomer ? (
+              <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                Not available while “Same as Customer” is on — that mirror links exactly one customer.
+              </div>
+            ) : (
+              <>
+                <input
+                  className="acm-inp"
+                  value={extraSearch}
+                  onChange={e => setExtraSearch(e.target.value)}
+                  placeholder="Search customers to map…"
+                  style={{ width: '100%', marginBottom: 8, padding: '7px 10px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13 }}
+                />
+                <div style={{ maxHeight: 168, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {customerOptions
+                    .filter(o => o.db_id && o.db_id !== customer.db_id)
+                    .filter(o => {
+                      const n = extraSearch.trim().toLowerCase();
+                      return !n || o.name.toLowerCase().includes(n) || o.id.toLowerCase().includes(n);
+                    })
+                    .map(o => {
+                      const checked = extraCustomerIds.includes(o.db_id as number);
+                      return (
+                        <label key={o.db_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderRadius: 8, cursor: 'pointer', background: checked ? '#f0f9ff' : 'transparent' }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => setExtraCustomerIds(prev =>
+                              checked ? prev.filter(x => x !== o.db_id) : [...prev, o.db_id as number],
+                            )}
+                          />
+                          <span style={{ fontSize: 12.5, fontWeight: 600, color: '#475569', minWidth: 58 }}>{o.id}</span>
+                          <span style={{ fontSize: 12.5, color: '#334155' }}>{o.name}</span>
+                        </label>
+                      );
+                    })}
+                  {customerOptions.filter(o => o.db_id && o.db_id !== customer.db_id).length === 0 && (
+                    <div style={{ fontSize: 12, color: '#94a3b8', padding: '6px 2px' }}>No other customers available.</div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Pinned top — stepper + Linked Customer summary stay
             visible while the rest of the body scrolls below them.
@@ -2209,6 +2400,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                   mirrorCount > 0 && !(consignee?.same_as_customer === true);
                 if (v && alreadyMirrored) {
                   toast.error('Only one Same-as-Customer allowed', 'This customer already has one.');
+                  return;
+                }
+                // Same-as-Customer is 1:1 — not allowed when the consignee is
+                // mapped to additional customers.
+                if (v && extraCustomerIds.length > 0) {
+                  toast.error('Not available with multiple customers', 'Remove the extra mapped customers to use “Same as Customer”.');
                   return;
                 }
 

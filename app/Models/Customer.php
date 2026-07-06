@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -77,10 +78,13 @@ class Customer extends Model
     }
 
     /** Consignees mapped to this customer (Sales Matrix → Consignee).
+     *  Many-to-many now — a consignee can be mapped to several customers.
      *  Eager-counted on the list endpoint via withCount('consignees'). */
-    public function consignees(): HasMany
+    public function consignees(): BelongsToMany
     {
-        return $this->hasMany(Consignee::class)->orderByDesc('id');
+        return $this->belongsToMany(Consignee::class, 'consignee_customer')
+            ->withTimestamps()
+            ->orderByDesc('consignees.id');
     }
 
     /**

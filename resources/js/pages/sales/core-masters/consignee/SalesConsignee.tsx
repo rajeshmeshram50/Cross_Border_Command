@@ -111,6 +111,7 @@ export default function SalesConsignee() {
         db_id:          typeof d.db_id === 'number' ? d.db_id : undefined,
         customerId:     String(d.customer_code ?? d.customer_id ?? ''),
         customer_db_id: typeof d.customer_id === 'number' ? d.customer_id : undefined,
+        customers:      Array.isArray(d.customers) ? d.customers : [],
         company:        d.company ?? '',
         segment:        d.segment ?? '',
         risk:           d.riskLevel ?? '',
@@ -231,7 +232,19 @@ export default function SalesConsignee() {
       header: 'Customer ID',
       accessorKey: 'customerId',
       meta: { align: 'center' },
-      cell: (info: any) => <span className="smcg-cust-chip">{info.getValue()}</span>,
+      cell: (info: any) => {
+        const row = info.row.original as ConsigneeRow;
+        const list = (row.customers ?? []).map(c => c.code || `C-${c.id}`);
+        // Fall back to the single primary code for rows loaded before the
+        // many-to-many payload existed.
+        const chips = list.length > 0 ? list : [String(info.getValue() ?? '')].filter(Boolean);
+        if (chips.length === 0) return <span className="text-muted">—</span>;
+        return (
+          <span className="d-inline-flex align-items-center flex-wrap" style={{ gap: 4, justifyContent: 'center' }}>
+            {chips.map((code, i) => <span key={i} className="smcg-cust-chip">{code}</span>)}
+          </span>
+        );
+      },
     },
     {
       header: 'Company Name',

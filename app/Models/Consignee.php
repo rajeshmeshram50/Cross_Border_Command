@@ -48,9 +48,19 @@ class Consignee extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    /** The "primary" customer — drives the Same-as-Customer KYC mirror and
+     *  downstream party resolution. Also present in the customers() pivot. */
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /** All customers this consignee is mapped to (many-to-many, incl. primary). */
+    public function customers(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Customer::class, 'consignee_customer')
+            ->withTimestamps()
+            ->orderBy('customers.id');
     }
 
     public function addresses(): HasMany

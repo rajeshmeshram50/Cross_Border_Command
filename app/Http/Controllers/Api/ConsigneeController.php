@@ -25,7 +25,7 @@ class ConsigneeController extends Controller
         $q = Consignee::query()
             // Honour the BranchSwitcher (see CustomerController::index).
             ->forUser($user, $request->integer('branch_id') ?: null)
-            ->with(['primaryAddress', 'addresses', 'customer'])
+            ->with(['primaryAddress', 'addresses', 'customer', 'customers'])
             ->orderByDesc('id');
 
         if ($search = trim((string) $request->query('q', ''))) {
@@ -38,8 +38,10 @@ class ConsigneeController extends Controller
             });
         }
 
+        // Customer → Consignees view: show every consignee MAPPED to this
+        // customer (via the pivot), not just those it "owns" as primary.
         if ($customerId = $request->query('customer_id')) {
-            $q->where('customer_id', (int) $customerId);
+            $q->whereHas('customers', fn ($w) => $w->whereKey((int) $customerId));
         }
 
         $rows = $q->get()->map(fn ($c) => $this->shape($c))->all();
@@ -55,7 +57,7 @@ class ConsigneeController extends Controller
         $user = $request->user();
         $row = Consignee::query()
             ->forUser($user)
-            ->with(['primaryAddress', 'addresses', 'customer'])
+            ->with(['primaryAddress', 'addresses', 'customer', 'customers'])
             ->findOrFail($id);
 
         /* Stage 2 + Stage 3 data embedded inline — mirrors the
@@ -172,7 +174,9 @@ class ConsigneeController extends Controller
         [$clientId, $branchId] = $this->resolveOwnership($user);
 
         $data = $this->validatePayload($request, null, $clientId);
-        $this->assertCustomerInScope($user, (int) $data['customer_id']);
+        foreach ($data['customer_ids'] as $cid) {
+            $this->assertCustomerInScope($user, (int) $cid);
+        }
         $this->assertSingleMirrorPerCustomer((int) $data['customer_id'], !empty($data['same_as_customer']), null);
 
         $row = DB::transaction(function () use ($data, $user, $clientId, $branchId) {
@@ -218,7 +222,10 @@ class ConsigneeController extends Controller
                 ]));
             }
 
-            return $consignee->load(['primaryAddress', 'addresses', 'customer']);
+            // Mirror the full customer mapping into the pivot (includes primary).
+            $consignee->customers()->sync($data['customer_ids']);
+
+            return $consignee->load(['primaryAddress', 'addresses', 'customer', 'customers']);
         });
 
         return response()->json(['data' => $this->shape($row)], 201);
@@ -234,7 +241,9 @@ class ConsigneeController extends Controller
         }
 
         $data = $this->validatePayload($request, (int) $consignee->id, $consignee->client_id);
-        $this->assertCustomerInScope($user, (int) $data['customer_id']);
+        foreach ($data['customer_ids'] as $cid) {
+            $this->assertCustomerInScope($user, (int) $cid);
+        }
         // Carry the previous value forward if the payload omits the
         // key so the guard reads the user's *current* intent.
         $intendsMirror = array_key_exists('same_as_customer', $data)
@@ -292,7 +301,10 @@ class ConsigneeController extends Controller
                 ]));
             }
 
-            return $consignee->load(['primaryAddress', 'addresses', 'customer']);
+            // Re-sync the customer mapping (adds new, removes unchecked).
+            $consignee->customers()->sync($data['customer_ids']);
+
+            return $consignee->load(['primaryAddress', 'addresses', 'customer', 'customers']);
         });
 
         return response()->json(['data' => $this->shape($row)]);
@@ -444,12 +456,23 @@ class ConsigneeController extends Controller
     private function shape(Consignee $c): array
     {
         $primary = $c->primaryAddress;
+        // All mapped customers (many-to-many). `customer_*` singular fields stay
+        // for backward compat = the primary customer.
+        $mapped = $c->relationLoaded('customers')
+            ? $c->customers->map(fn ($m) => [
+                'id'   => $m->id,
+                'code' => $m->customer_code,
+                'name' => $m->company_name,
+            ])->values()->all()
+            : [];
         return [
             'id'              => $c->consignee_code ?: ('CN-' . str_pad((string) $c->id, 3, '0', STR_PAD_LEFT)),
             'db_id'           => $c->id,
             'customer_id'     => $c->customer_id,
             'customer_code'   => $c->customer?->customer_code,
             'customer_name'   => $c->customer?->company_name,
+            'customer_ids'    => array_map(fn ($m) => $m['id'], $mapped),
+            'customers'       => $mapped,
             'company'         => $c->company_name,
             'legalName'       => $c->legal_name,
             'segment'         => $c->segment,
@@ -512,8 +535,17 @@ class ConsigneeController extends Controller
     {
         $sameAsCustomer = (bool) $request->input('same_as_customer', false);
 
+        // A consignee can now be mapped to MANY customers (checkbox multi-select
+        // on the modal). Accept the new `customer_ids[]` payload, but stay
+        // backward-compatible with the old scalar `customer_id` by wrapping it.
+        $incomingIds = $request->input('customer_ids');
+        if ((!is_array($incomingIds) || count($incomingIds) === 0) && $request->filled('customer_id')) {
+            $request->merge(['customer_ids' => [$request->input('customer_id')]]);
+        }
+
         $rules = [
-            'customer_id'      => 'required|integer|exists:customers,id',
+            'customer_ids'     => 'required|array|min:1',
+            'customer_ids.*'   => 'integer|exists:customers,id',
             'company_name'     => 'required|string|max:255',
             /* Legal (registered entity) name: base format rules only. The
              * per-tenant UNIQUENESS check is added below — but ONLY when this
@@ -622,6 +654,20 @@ class ConsigneeController extends Controller
         }
 
         $data = $request->validate($rules);
+
+        // De-dupe + normalise the mapped customers; the FIRST id is the
+        // "primary" customer (drives the Same-as-Customer mirror + downstream
+        // party resolution) and is what the rest of store()/update() reads.
+        $data['customer_ids'] = array_values(array_unique(array_map('intval', $data['customer_ids'])));
+        $data['customer_id']  = $data['customer_ids'][0];
+
+        // Same-as-Customer is intrinsically 1:1 — only allowed when the
+        // consignee is mapped to exactly one customer.
+        if ($sameAsCustomer && count($data['customer_ids']) > 1) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'same_as_customer' => ['“Same as Customer” can only be used when the consignee is mapped to a single customer.'],
+            ]);
+        }
 
         /* Cross-row uniqueness within the payload. A single consignee
          * can't have two addresses sharing the same primary contact
