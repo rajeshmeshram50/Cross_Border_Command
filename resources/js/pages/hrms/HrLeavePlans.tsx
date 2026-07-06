@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, useCallback, useRef, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
@@ -367,6 +367,11 @@ export default function HrLeavePlans() {
   const [showAssignTypes, setShowAssignTypes] = useState(false);
   const [setupTypeId, setSetupTypeId] = useState<string | null>(null);
   const [typeConfigs, setTypeConfigs] = useState<Record<string, LeaveTypeConfig>>({});
+  // Key (`planId::typeId`) of the Setup modal currently open. A background
+  // loadPlans() re-seeds typeConfigs from the server; without preserving this
+  // entry it would wipe the config the user is mid-way through editing, causing
+  // an intermittent "glitch" where the setup form reset itself (bug #71).
+  const activeSetupKeyRef = useRef<string | null>(null);
   const [planMenuOpen, setPlanMenuOpen] = useState(false);
   const [showAddType, setShowAddType] = useState(false);
   const [editingTypeId, setEditingTypeId] = useState<string | null>(null);
@@ -395,7 +400,12 @@ export default function HrLeavePlans() {
           }
         });
       });
-      setTypeConfigs(seeded);
+      // Preserve the config the user is actively editing in an open Setup modal
+      // so this (often background) reload doesn't reset the form mid-edit (#71).
+      setTypeConfigs(prev => {
+        const key = activeSetupKeyRef.current;
+        return key && prev[key] ? { ...seeded, [key]: prev[key] } : seeded;
+      });
       setActivePlanId(curr => curr || mapped[0]?.id || '');
     } catch (err) {
       console.warn('[HrLeavePlans] failed to load plans', err);
@@ -576,7 +586,13 @@ export default function HrLeavePlans() {
 
   const activePlan = plans.find(p => p.id === activePlanId) ?? plans[0];
 
-  
+  // Keep the "currently editing" key in sync with the open Setup modal so a
+  // background reload can preserve that entry (bug #71). Uses the same key the
+  // modal reads its config from.
+  useEffect(() => {
+    activeSetupKeyRef.current = setupTypeId && activePlan ? `${activePlan.id}::${setupTypeId}` : null;
+  }, [setupTypeId, activePlan]);
+
   const isPlanLocked = (p?: LeavePlan | null): boolean =>
     !!p && !p.unlocked && p.leaveTypes.length > 0 && p.leaveTypes.every(t => t.configured);
   const activePlanLocked = isPlanLocked(activePlan);
@@ -888,6 +904,15 @@ export default function HrLeavePlans() {
               if (!Number.isFinite(d) || d < 1 || d > 31) {
                 toast.error('Invalid attendance threshold', 'Days worked in a month must be between 1 and 31.');
                 throw new Error('invalid-attendance-days');
+              }
+            }
+            // Extra leave (overdraft) — days beyond balance an employee may take,
+            // 1..365 (bug #72). Only enforced when the option is enabled.
+            if (next.accrual.employeeOverdraft?.enabled) {
+              const od = Number(next.accrual.employeeOverdraft.days);
+              if (!Number.isFinite(od) || od < 1 || od > 365) {
+                toast.error('Invalid extra leave', 'Extra leave must be between 1 and 365 days.');
+                throw new Error('invalid-overdraft');
               }
             }
           }
@@ -2532,9 +2557,11 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
       {!cfg.unlimited && (
         <>
       <SectionCard icon="ri-pulse-line" iconBg="#dbeafe" title="Allocation & Accrual Rate">
+        {/* Reset the attendance-only field when leaving attendance mode so a
+            stale invalid value doesn't block the save (bug #73). */}
         <RadioRow
           selected={cfg.mode === 'periodic'}
-          onSelect={() => update({ mode: 'periodic' })}
+          onSelect={() => update({ mode: 'periodic', attendanceDaysWorked: 0 })}
           label="Leave accrued periodically"
         />
         {cfg.mode === 'periodic' && (
@@ -2590,7 +2617,7 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
         )}
         <RadioRow
           selected={cfg.mode === 'immediate'}
-          onSelect={() => update({ mode: 'immediate' })}
+          onSelect={() => update({ mode: 'immediate', attendanceDaysWorked: 0 })}
           label="Leave quota available immediately"
         />
       </SectionCard>
@@ -2606,6 +2633,8 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
                 type="number"
                 className="lts-input"
                 style={{ width: 70 }}
+                min={1}
+                max={365}
                 value={cfg.employeeOverdraft.days}
                 onChange={e => update({ employeeOverdraft: { ...cfg.employeeOverdraft, days: Number(e.target.value) || 0 } })}
                 onClick={e => e.preventDefault()}
@@ -2615,6 +2644,11 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
             </span>
           }
         />
+        {cfg.employeeOverdraft.enabled && (cfg.employeeOverdraft.days < 1 || cfg.employeeOverdraft.days > 365) && (
+          <div className="text-danger mt-2 d-flex align-items-center gap-1" style={{ fontSize: 12 }}>
+            <i className="ri-error-warning-line" /> Extra leave must be between 1 and 365 days.
+          </div>
+        )}
       </SectionCard>
         </>
       )}

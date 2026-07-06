@@ -475,7 +475,10 @@ class HiringRequestController extends Controller
             'daily_responsibilities' => 'nullable|string',
             'required_skills'        => [$req(), 'string', 'max:255'],
             'required_experience'    => [$req(), 'string', 'max:30'],
-            'required_qualification' => 'nullable|string|max:100',
+            // Must hold at least one letter and only qualification-safe chars —
+            // rejects special-character junk (bug #32). Matches the candidate
+            // qualification validator.
+            'required_qualification' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9 .,\/&()+\-]*$/', 'regex:/[A-Za-z]/'],
             'preferred_profile'      => 'nullable|string|max:191',
 
             // Section 4 — Business Justification was removed from the

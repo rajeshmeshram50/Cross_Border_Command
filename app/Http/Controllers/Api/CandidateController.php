@@ -356,19 +356,23 @@ class CandidateController extends Controller
             'status_notes'     => 'nullable|string',
         ]);
 
-        // Hard cap: can't select more candidates than the recruitment has
-        // openings. Skips the check when the row is *already* Selected
-        // (re-saving an existing selection) so editing notes on a selected
-        // candidate doesn't trip the guard.
-        if ($data['status'] === 'Selected' && $row->status !== 'Selected') {
+        // Hard cap: can't fill more positions than the recruitment has
+        // openings. Both 'Selected' and 'Offered' occupy an opening (a Selected
+        // candidate who then gets an offer still holds the seat), so the guard
+        // counts BOTH — otherwise moving selections to Offered freed up the
+        // count and let more candidates be selected than openings (bug #31).
+        // Only fires when a candidate NEWLY enters an occupying status; a
+        // Selected→Offered move (already occupying) doesn't consume a new seat.
+        $occupying = ['Selected', 'Offered'];
+        if (in_array($data['status'], $occupying, true) && !in_array($row->status, $occupying, true)) {
             $rec = Recruitment::find($row->recruitment_id);
             if ($rec) {
-                $alreadySelected = Candidate::query()
+                $filled = Candidate::query()
                     ->where('recruitment_id', $row->recruitment_id)
-                    ->where('status', 'Selected')
+                    ->whereIn('status', $occupying)
                     ->where('id', '!=', $row->id)
                     ->count();
-                if ($alreadySelected >= (int) $rec->openings) {
+                if ($filled >= (int) $rec->openings) {
                     throw ValidationException::withMessages([
                         'status' => [sprintf(
                             'All %d opening(s) for %s are already filled — cannot select more candidates. Reject one of the existing selections first.',
@@ -548,6 +552,19 @@ class CandidateController extends Controller
         $errors  = [];
         $auth    = $request->user();
 
+        // Openings cap (bug #30) — the import must never create more SELECTED
+        // candidates than the recruitment has openings. Track the running count
+        // of Selected candidates (existing + created during this import); a
+        // final 'Selected' consumes an opening, 'Final Interview' does not,
+        // mirroring the manual status-change guard.
+        // 'Selected' and 'Offered' both occupy an opening (matches the manual
+        // status guard), so count both toward the filled total.
+        $openings      = (int) $parent->openings;
+        $selectedCount = Candidate::query()
+            ->where('recruitment_id', $parent->id)
+            ->whereIn('status', ['Selected', 'Offered'])
+            ->count();
+
         foreach ($dataRows as $i => $row) {
             $rowNum = $i + 2; // +1 for 0-index, +1 for header
             // Drop completely-empty rows silently — Excel often leaves them
@@ -561,7 +578,10 @@ class CandidateController extends Controller
             // Per-row validation — kept loose (only Name is hard-required)
             // so a partially-filled spreadsheet still produces useful rows.
             $validator = \Illuminate\Support\Facades\Validator::make($payload, [
-                'name'                => 'required|string|max:150',
+                // Name must hold at least one letter and start with one, using
+                // only name-safe characters — rejects blank/whitespace-only and
+                // special-character junk like "@#$%" (bug #29).
+                'name'                => ['required', 'string', 'max:150', "regex:/^[A-Za-z][A-Za-z .'\\-]*$/"],
                 'email'               => 'nullable|email|max:191',
                 'mobile'              => 'nullable|string|max:30',
                 'experience_years'    => 'nullable|numeric|min:0|max:99.99',
@@ -569,6 +589,9 @@ class CandidateController extends Controller
                 'expected_salary_lpa' => 'nullable|numeric|min:0|max:9999.99',
                 'notice_period'       => ['nullable', Rule::in(self::NOTICE_PERIODS)],
                 'source'              => ['nullable', Rule::in(self::SOURCES)],
+            ], [
+                'name.required' => 'Name is required.',
+                'name.regex'    => "Name may only contain letters, spaces and . ' - (no special characters or blank names).",
             ]);
             if ($validator->fails()) {
                 $skipped++;
@@ -604,6 +627,17 @@ class CandidateController extends Controller
                 }
             }
 
+            // Openings cap (bug #30) — refuse a Selected row once every opening
+            // is filled, so the import can't over-fill the recruitment.
+            if ($mappedStatus === 'Selected' && $selectedCount >= $openings) {
+                $skipped++;
+                $errors[] = ['row' => $rowNum, 'message' => sprintf(
+                    'All %d opening(s) are already filled — this Selected candidate was not imported.',
+                    $openings,
+                )];
+                continue;
+            }
+
             Candidate::create(array_merge($payload, [
                 'client_id'      => $parent->client_id,
                 'branch_id'      => $parent->branch_id,
@@ -613,6 +647,7 @@ class CandidateController extends Controller
                 // ('Final Interview' or 'Selected') from the status gate above.
             ]));
             $created++;
+            if ($mappedStatus === 'Selected') $selectedCount++;
         }
 
         return response()->json([
@@ -1124,7 +1159,10 @@ class CandidateController extends Controller
         return $request->validate([
             'recruitment_id'      => [$isUpdate ? 'sometimes' : 'required', 'integer', 'exists:recruitments,id'],
 
-            'name'                => [$isUpdate ? 'sometimes' : 'required', 'string', 'max:150'],
+            // Name must hold at least one letter and start with one, using only
+            // name-safe characters — rejects special-character / blank names,
+            // matching the import validator (bug #29).
+            'name'                => [$isUpdate ? 'sometimes' : 'required', 'string', 'max:150', "regex:/^[A-Za-z][A-Za-z .'\\-]*$/"],
             'email'               => 'nullable|email|max:191',
             // Mobile: allow optional + / spaces / dashes; the digit count
             // must land between 7 and 15. Matches the frontend validator
