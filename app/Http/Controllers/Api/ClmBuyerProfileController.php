@@ -193,12 +193,17 @@ class ClmBuyerProfileController extends Controller
 
         // Shipments: which leads have one + per-customer count.
         $shipLeadIds = [];
+        $shipCodeByLead = [];
         $shipByCustomer = [];
         $leadCustomerById = [];
         foreach ($leads as $l) $leadCustomerById[(int) $l->id] = (int) $l->customer_id;
-        foreach (ShipmentOrder::where('client_id', $cid)->get(['id', 'lead_id']) as $so) {
+        foreach (ShipmentOrder::where('client_id', $cid)->orderBy('id')->get(['id', 'lead_id', 'shipment_code']) as $so) {
             $lid = (int) $so->lead_id;
             $shipLeadIds[$lid] = true;
+            // Real shipment_orders.shipment_code (e.g. "SHP-001"), so the txn
+            // tables show the same id as the Evidence Vault. Latest row wins;
+            // legacy rows with a NULL code fall back to the synthetic id below.
+            if ($so->shipment_code) $shipCodeByLead[$lid] = $so->shipment_code;
             $cust = $leadCustomerById[$lid] ?? null;
             if ($cust) $shipByCustomer[$cust] = ($shipByCustomer[$cust] ?? 0) + 1;
         }
@@ -327,7 +332,7 @@ class ClmBuyerProfileController extends Controller
                 'td'       => $cp ? $cp['td']  : ['d' => 0, 't' => 0],
                 'agr'      => $agr,
             ];
-            if ($hasShip) $base['shp'] = 'SHP-' . str_pad((string) $lid, 3, '0', STR_PAD_LEFT);
+            if ($hasShip) $base['shp'] = $shipCodeByLead[$lid] ?? ('SHP-' . str_pad((string) $lid, 3, '0', STR_PAD_LEFT));
             if ($separateConsignee) {
                 $base['consignee'] = $cons->company_name;
                 $base['consId'] = (int) $cons->id;
