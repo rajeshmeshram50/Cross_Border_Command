@@ -201,6 +201,28 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     document.execCommand(cmd, false, value);
     syncContent();
   };
+  /* "Clear formatting" needs more than execCommand('removeFormat'): that only
+   * strips INLINE marks (bold/italic/underline/colour/font/size) and no-ops on
+   * a collapsed caret, so headings, block formats and alignment survived and it
+   * read as "not working". Expand a bare caret to the whole document, strip the
+   * inline marks, then reset the block(s) to a normal paragraph and drop any
+   * alignment so the selection returns to truly plain text. */
+  const clearFormatting = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const sel = window.getSelection();
+    if (sel && sel.isCollapsed) {
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    document.execCommand('removeFormat');            // inline marks
+    document.execCommand('formatBlock', false, '<div>'); // headings/quotes → normal
+    document.execCommand('justifyLeft');             // clear centre/right/justify
+    syncContent();
+  };
   const applyFontSize = (px: string) => {
     // Restore the selection stashed before the <select> stole focus, so the
     // size applies to the text the user had highlighted (a bare focus() would
@@ -295,6 +317,9 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
    * fly); upload replaces the editor body with the parsed DOCX. Both
    * require the row to have been saved at least once so we have an id. */
   const docxRef = useRef<HTMLInputElement | null>(null);
+  // DOCX import can be slow for large (50+ page) files, so surface a loader on
+  // the "Upload Word Doc" button and block repeat clicks until it resolves.
+  const [docxUploading, setDocxUploading] = useState(false);
   const downloadDocx = async () => {
     if (!editingId) {
       toast.error('Save first', 'Save the trade document before downloading as DOCX.');
@@ -352,6 +377,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     }
   };
   const uploadDocx = async (file: File) => {
+    if (docxUploading) return;               // ignore repeat clicks mid-upload
+    setDocxUploading(true);
     const fd = new FormData();
     fd.append('docx', file);
     try {
@@ -384,6 +411,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       toast.success('Uploaded', file.name);
     } catch (e: any) {
       toast.error('Upload failed', e?.response?.data?.message ?? 'Please try again.');
+    } finally {
+      setDocxUploading(false);
     }
   };
 
@@ -494,10 +523,13 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     else if (purpose.trim().length < PURPOSE_MIN) next.purpose = `Purpose must be at least ${PURPOSE_MIN} characters`;
     else if (purpose.trim().length > PURPOSE_MAX) next.purpose = `Purpose must not exceed ${PURPOSE_MAX} characters`;
     if (parties.size === 0) next.party = 'Select at least one applicable party';
-    // High-regulatory trade docs target exactly one regulated segment;
-    // less-regulatory may apply to many (or none → all standard segments).
+    // Segment is mandatory: high-regulatory trade docs target exactly one
+    // regulated segment; less-regulatory may apply to several — but at least
+    // one must be chosen.
     if (regulatory === 'highly' && segments.length !== 1) {
       next.segment = 'High-regulatory documents need exactly one segment';
+    } else if (segments.length === 0) {
+      next.segment = 'Select at least one segment';
     }
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -708,7 +740,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                 </div>
                 <div className="tdw-field" style={{ marginTop: 12 }}>
                   <label className="tdw-label">
-                    {regulatory === 'highly' ? <>Segment <span className="tdw-req">*</span></> : 'Segments (select one or more)'}
+                    {regulatory === 'highly' ? <>Segment <span className="tdw-req">*</span></> : <>Segments (select one or more) <span className="tdw-req">*</span></>}
                   </label>
                   {regulatory === 'highly' ? (
                     <MasterSelect
@@ -812,9 +844,18 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                       Download DOCX
                     </button>
-                    <button type="button" className="tdw-editor-btn" onClick={() => docxRef.current?.click()} title={editingId ? 'Upload a revised Word file' : 'Import content from a Word file'}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                      Upload Word Doc
+                    <button type="button" className="tdw-editor-btn" disabled={docxUploading} onClick={() => docxRef.current?.click()} title={docxUploading ? 'Importing your Word file…' : (editingId ? 'Upload a revised Word file' : 'Import content from a Word file')}>
+                      {docxUploading ? (
+                        <>
+                          <svg className="tdw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                          Uploading…
+                        </>
+                      ) : (
+                        <>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                          Upload Word Doc
+                        </>
+                      )}
                     </button>
                     <button type="button" className="tdw-editor-btn" onMouseDown={e => { e.preventDefault(); stashSelection(); }} onClick={() => setPickerOpen(true)}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>
@@ -920,7 +961,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                   >—</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('undo')} title="Undo">↶</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('redo')} title="Redo">↷</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('removeFormat')} title="Clear formatting">🅣</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={clearFormatting} title="Clear formatting">🅣</button>
                 </div>
                 {/* Scrollable region — the editor head + toolbar above stay
                    pinned; only this page-shell preview scrolls when the
@@ -1056,6 +1097,9 @@ const TDW_CSS = `
   animation: tdwSlideUp .24s cubic-bezier(.22,1,.36,1) both;
 }
 @keyframes tdwSlideUp { from { opacity: 0; transform: translateY(20px) scale(.97) } to { opacity: 1; transform: none } }
+@keyframes tdwSpin { to { transform: rotate(360deg); } }
+.tdw-spin { animation: tdwSpin .7s linear infinite; transform-origin: center; }
+.tdw-editor-btn:disabled { opacity: .6; cursor: wait; }
 
 /* ── Header strip ── */
 .tdw-head {

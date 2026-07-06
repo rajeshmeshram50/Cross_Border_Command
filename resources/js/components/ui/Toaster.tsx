@@ -166,6 +166,15 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
           font-weight: 700;
           line-height: 1.25;
           color: var(--cbc-toast-title-light);
+          /* Break long unbroken strings (tokens, URLs) instead of overflowing
+             the card, and cap the title at 2 lines with an ellipsis so it can
+             never blow up the toast height (reported: long text broke the UI). */
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 2;
+          overflow: hidden;
         }
         [data-bs-theme="dark"] .cbc-toast-title {
           color: var(--cbc-toast-title-dark);
@@ -175,6 +184,15 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
           color: #475569;
           margin-top: 4px;
           line-height: 1.5;
+          /* Same treatment as the title: break long strings and clamp to 5
+             lines with an ellipsis so a long message wraps cleanly and can't
+             overflow or stretch the toast off-screen. */
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          -webkit-line-clamp: 5;
+          overflow: hidden;
         }
         [data-bs-theme="dark"] .cbc-toast-msg {
           color: rgba(226,232,240,0.80);

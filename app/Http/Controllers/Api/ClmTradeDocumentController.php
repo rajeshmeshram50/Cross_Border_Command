@@ -68,20 +68,42 @@ class ClmTradeDocumentController extends Controller
         $user = $request->user(); if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
         $data = $request->validate(['name' => 'required|string|max:255']);
+        $name = trim($data['name']);
 
-        $row = DB::transaction(function () use ($user, $data) {
+        // Reject a duplicate type name (case-insensitive, whitespace-trimmed).
+        // The dedupe + insert both run under the per-client lock so two
+        // concurrent "Add" requests can't slip a duplicate past the check.
+        // Scoped to the caller's visibility (globals + client-level + own
+        // branch) so a sibling branch that can't see this row may still reuse
+        // the name — consistent with the branch-scoped master rule.
+        $result = DB::transaction(function () use ($user, $name) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
+
+            $dupe = ClmTradeDocName::query()
+                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)]);
+            MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
+            if ($dupe->exists()) {
+                return ['dupe' => true];
+            }
+
             $code = $this->nextCode(ClmTradeDocName::class, $user->client_id, 'TDN-');
-            return ClmTradeDocName::create([
+            return ['row' => ClmTradeDocName::create([
                 'client_id'  => $user->client_id,
                 'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'       => $code,
-                'name'       => trim($data['name']),
+                'name'       => $name,
                 'created_by' => $user->id,
                 'updated_by' => $user->id,
-            ]);
+            ])];
         });
-        return response()->json(['status' => true, 'data' => $row], 201);
+
+        if (!empty($result['dupe'])) {
+            return response()->json([
+                'status'  => false,
+                'message' => "A trade document type named \"{$name}\" already exists. Pick a different name.",
+            ], 422);
+        }
+        return response()->json(['status' => true, 'data' => $result['row']], 201);
     }
 
     public function namesUpdate(Request $request, $id)
@@ -110,7 +132,22 @@ class ClmTradeDocumentController extends Controller
         }
 
         $data = $request->validate(['name' => 'required|string|max:255']);
-        $row->update(['name' => trim($data['name']), 'updated_by' => $user->id]);
+        $name = trim($data['name']);
+
+        // Reject a rename that collides with another visible type
+        // (case-insensitive, excluding this row itself).
+        $dupe = ClmTradeDocName::query()
+            ->whereKeyNot($row->id)
+            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)]);
+        MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
+        if ($dupe->exists()) {
+            return response()->json([
+                'status'  => false,
+                'message' => "Another trade document type named \"{$name}\" already exists. Pick a different name.",
+            ], 422);
+        }
+
+        $row->update(['name' => $name, 'updated_by' => $user->id]);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 
@@ -179,8 +216,10 @@ class ClmTradeDocumentController extends Controller
             'purpose'   => 'required|string|max:500',
             'party'     => 'required|string|max:255',
             // Regulatory tier + segment scope — mirrors clm_agreement_library.
+            // Segment is mandatory (at least one) — the frontend enforces the
+            // same rule in validateStep1.
             'regulatory' => 'nullable|string|in:highly,less',
-            'segment'    => 'nullable|string|max:500',
+            'segment'    => 'required|string|max:500',
             'file_path' => 'nullable|string|max:500',
             'content'   => 'nullable|string',
             // Stage 2 page-shell config — same JSON shape as
@@ -233,7 +272,7 @@ class ClmTradeDocumentController extends Controller
             'purpose'   => 'sometimes|required|string|max:500',
             'party'     => 'sometimes|required|string|max:255',
             'regulatory' => 'sometimes|nullable|string|in:highly,less',
-            'segment'    => 'sometimes|nullable|string|max:500',
+            'segment'    => 'sometimes|required|string|max:500',
             'file_path' => 'nullable|string|max:500',
             'content'   => 'nullable|string',
             // Same Stage 2 page-shell config as libraryStore. Re-validated

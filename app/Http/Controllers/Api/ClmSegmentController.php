@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClmSegment;
+use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -17,11 +18,10 @@ class ClmSegmentController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $rows = $user->client_id
-            ? ClmSegment::where('client_id', $user->client_id)
-                ->orderBy('id')
-                ->get()
-            : collect();
+        // Branch-scoped read: own rows + client-level (shared); siblings hidden (CBC-430).
+        $q = ClmSegment::query()->orderBy('id');
+        MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
+        $rows = $q->get();
 
         // Per-segment "in use" flags so the UI can disable + explain the delete
         // action for referenced segments. Computed with ONE query per
@@ -135,12 +135,12 @@ class ClmSegmentController extends Controller
             'status'            => ['nullable', Rule::in(ClmSegment::STATUSES)],
         ]);
 
-        // Reject duplicate segment name per client (case-insensitive).
+        // Reject duplicate segment name within the caller's branch scope
+        // (case-insensitive). Sibling branches may reuse the name.
         $name = trim($data['name']);
-        $exists = ClmSegment::where('client_id', $user->client_id)
-            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
-            ->exists();
-        if ($exists) {
+        $dupe = ClmSegment::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+        MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
+        if ($dupe->exists()) {
             return response()->json([
                 'status'  => false,
                 'message' => "A segment named \"{$name}\" already exists. Pick a different name.",
@@ -150,6 +150,7 @@ class ClmSegmentController extends Controller
         $row = DB::transaction(function () use ($user, $data) {
             return ClmSegment::create([
                 'client_id'         => $user->client_id,
+                'branch_id'         => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'              => $this->nextCode($user->client_id),
                 'name'              => trim($data['name']),
                 'regulatory_status' => $data['regulatory_status'],
@@ -175,7 +176,12 @@ class ClmSegmentController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $row  = ClmSegment::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmSegment::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         $data = $request->validate([
             'name'              => 'sometimes|required|string|max:255',
@@ -199,12 +205,13 @@ class ClmSegmentController extends Controller
             ], 422);
         }
 
-        // Reject rename to a duplicate (case-insensitive, excluding self).
+        // Reject rename to a duplicate within the caller's branch scope
+        // (case-insensitive, excluding self).
         if (isset($data['name'])) {
-            $clash = ClmSegment::where('client_id', $user->client_id)
-                ->where('id', '!=', $row->id)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
-                ->exists();
+            $clashQ = ClmSegment::query()->where('id', '!=', $row->id)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])]);
+            MasterVisibility::applyReadScope($clashQ, $user, $user->branch_id ?: null);
+            $clash = $clashQ->exists();
             if ($clash) {
                 return response()->json([
                     'status'  => false,
@@ -226,7 +233,12 @@ class ClmSegmentController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $row  = ClmSegment::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmSegment::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         // Block delete if this segment is referenced anywhere else in the
         // project. Each check is guarded by Schema::hasTable so the endpoint
