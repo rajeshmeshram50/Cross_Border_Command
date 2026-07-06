@@ -83,6 +83,8 @@ function hourLabel(h: number): string {
 // Human-readable late duration for the Logs table: "37 min" under an hour,
 // "1h 05m" once it crosses the hour mark.
 const fmtLateDuration = (m: number) => m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m} min`;
+// Break Taken = time inside the work window that wasn't worked (gross − effective).
+const fmtDurHm = (m: number) => m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m} min`;
 // Grace window (minutes after shift start) before an arrival counts as late —
 // mirrors the server rule in AttendanceController (`minutesBetween > 10`). Below
 // this an arrival is on-time; at/above it we show the minutes-late measured from
@@ -267,6 +269,7 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                     <th scope="col" style={{ minWidth: 280 }}>Attendance Visual</th>
                     <th scope="col">Effective Hours</th>
                     <th scope="col">Gross Hours</th>
+                    <th scope="col">Break Taken</th>
                     <th scope="col">Arrival</th>
                     <th scope="col">Late Duration</th>
                     <th scope="col" className="text-center pe-3">Log</th>
@@ -302,7 +305,7 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                               {isHolidayDay ? 'HOLIDAY' : 'W-OFF'}
                             </span>
                           </td>
-                          <td colSpan={5} className="text-center att-log-woff-text">
+                          <td colSpan={6} className="text-center att-log-woff-text">
                             {isHolidayDay ? (l.holidayName ? `Holiday — ${l.holidayName}` : 'Holiday') : 'Full day Weekly-off'}
                           </td>
                           <td className="text-center">
@@ -317,11 +320,11 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                     return (
                       <tr key={pageStart + i} className={isOpen ? 'is-open' : ''}>
                         <td className="att-log-datecell">{formattedDate}</td>
-                        <td>
-                          <AttendanceVisualBar segments={l.workSegments || []} status={l.status} />
-                        </td>
                         {noEntries ? (
-                          <td colSpan={4} className="att-log-noentry-cell">
+                          /* No punches → hide the Attendance Visual bar entirely
+                             and let the "No Time Entries Logged" note span the
+                             visual + data columns (bug #14). */
+                          <td colSpan={6} className="att-log-noentry-cell">
                             <span className="att-log-noentry-text">
                               <i className="ri-time-line" />
                               No Time Entries Logged
@@ -329,6 +332,9 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                           </td>
                         ) : (
                           <>
+                            <td>
+                              <AttendanceVisualBar segments={l.workSegments || []} status={l.status} />
+                            </td>
                             <td>
                               {isAbsent ? <span className="text-muted">—</span> : (
                                 <div className="att-log-eff">
@@ -339,6 +345,18 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                             </td>
                             <td className={isAbsent ? 'text-muted' : ''}>
                               {isAbsent ? '—' : <>{l.worked}{(l.grossMinutes || 0) > (l.expectedMinutes || 9 * 60) ? ' +' : ''}</>}
+                            </td>
+                            <td className={isAbsent ? 'text-muted' : ''}>
+                              {/* Break Taken = gross − effective (idle time inside the
+                                  work window). Absent days show a dash (bug #22). */}
+                              {isAbsent
+                                ? '—'
+                                : (() => {
+                                    const brk = Math.max(0, (l.grossMinutes || 0) - (l.effectiveMinutes || 0));
+                                    return brk > 0
+                                      ? <span className="text-muted">{fmtDurHm(brk)}</span>
+                                      : <span className="text-muted">—</span>;
+                                  })()}
                             </td>
                             <td>
                               {isAbsent ? <span className="text-muted">—</span> : <ArrivalIcon lateMinutes={l.lateMinutes ?? 0} arrival={fmtClock(l.firstIn)} />}
@@ -433,7 +451,7 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                     );
                   })}
                   {visibleLogs.length === 0 && (
-                    <tr><td colSpan={7} className="text-center text-muted py-4">No attendance records for this period.</td></tr>
+                    <tr><td colSpan={8} className="text-center text-muted py-4">No attendance records for this period.</td></tr>
                   )}
                 </tbody>
               </table>
