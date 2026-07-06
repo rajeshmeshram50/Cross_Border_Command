@@ -225,6 +225,15 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   // All-segments popover — opened from the +N badge in the SEGMENT column.
   const [segOpen, setSegOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
   const [partyOpen, setPartyOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  // Close the fixed-positioned badge popovers on scroll/resize so they can't
+  // drift out of the table (capture:true catches ancestor + table scrolls).
+  useEffect(() => {
+    if (!segOpen && !partyOpen) return;
+    const close = () => { setSegOpen(null); setPartyOpen(null); };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [segOpen, partyOpen]);
   // Blocked-action popup state — set when the user clicks Edit/Delete on an
   // agreement that has already been signed.
   const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: AgrLib } | null>(null);

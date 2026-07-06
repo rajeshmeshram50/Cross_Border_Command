@@ -67,10 +67,14 @@ class ClmQcController extends Controller
         $dupe = ClmQcDocument::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
         if ($dupe->exists()) {
+            $msg = "A QC document named \"{$name}\" already exists. Pick a different name.";
+            // 422 + errors.name so the modal shows it inline under QC CERTIFICATE
+            // NAME (not a global toast) — same shape Laravel's `unique` rule returns.
             return response()->json([
                 'status'  => false,
-                'message' => "A QC document named \"{$name}\" already exists. Pick a different name.",
-            ], 409);
+                'message' => $msg,
+                'errors'  => ['name' => [$msg]],
+            ], 422);
         }
 
         // Store issuing authority by id (resolve names → ids).
@@ -133,10 +137,12 @@ class ClmQcController extends Controller
                 ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])]);
             MasterVisibility::applyReadScope($clash, $user, $user->branch_id ?: null);
             if ($clash->exists()) {
+                $msg = "Another QC document named \"{$data['name']}\" already exists. Pick a different name.";
                 return response()->json([
                     'status'  => false,
-                    'message' => "Another QC document named \"{$data['name']}\" already exists. Pick a different name.",
-                ], 409);
+                    'message' => $msg,
+                    'errors'  => ['name' => [$msg]],
+                ], 422);
             }
         }
 

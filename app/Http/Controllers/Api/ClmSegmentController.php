@@ -141,10 +141,14 @@ class ClmSegmentController extends Controller
         $dupe = ClmSegment::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
         MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
         if ($dupe->exists()) {
+            $msg = "A segment named \"{$name}\" already exists. Pick a different name.";
+            // 422 + errors.name so the modal shows it inline under the name field
+            // (not a global toast) — same shape Laravel's `unique` rule returns.
             return response()->json([
                 'status'  => false,
-                'message' => "A segment named \"{$name}\" already exists. Pick a different name.",
-            ], 409);
+                'message' => $msg,
+                'errors'  => ['name' => [$msg]],
+            ], 422);
         }
 
         $row = DB::transaction(function () use ($user, $data) {
@@ -213,10 +217,12 @@ class ClmSegmentController extends Controller
             MasterVisibility::applyReadScope($clashQ, $user, $user->branch_id ?: null);
             $clash = $clashQ->exists();
             if ($clash) {
+                $msg = "Another segment named \"{$data['name']}\" already exists. Pick a different name.";
                 return response()->json([
                     'status'  => false,
-                    'message' => "Another segment named \"{$data['name']}\" already exists. Pick a different name.",
-                ], 409);
+                    'message' => $msg,
+                    'errors'  => ['name' => [$msg]],
+                ], 422);
             }
         }
 

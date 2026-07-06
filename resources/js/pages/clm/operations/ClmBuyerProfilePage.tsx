@@ -682,6 +682,15 @@ export default function ClmBuyerProfilePage() {
   // Segment "+N" popover — lists all segments for a row when the count badge
   // is clicked (mirrors the DCP authorities badge popover).
   const [segOpen, setSegOpen] = useState<{ key: string; names: string[]; x: number; y: number; flipUp: boolean } | null>(null);
+  // Close the fixed-positioned segment popover on scroll/resize so it can't
+  // drift away from its badge (capture:true catches ancestor + table scrolls).
+  useEffect(() => {
+    if (!segOpen) return;
+    const close = () => setSegOpen(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [segOpen]);
   // "Consignees for this buyer" popup — opened from the CONSIGNEES count cell.
   const [consListBuyer, setConsListBuyer] = useState<BuyerRow | null>(null);
 
