@@ -29,7 +29,12 @@ class LeadAckReasonController extends Controller
             ]);
         }
 
+        // Branch isolation: each branch owns its own reasons. GET requests
+        // carry ?branch_id from the Axios interceptor (active branch); fall back
+        // to the user's own branch.
+        $branchId = $this->effectiveBranchId($request, $user);
         $rows = LeadAckReason::where('client_id', $user->client_id)
+            ->where(fn ($q) => $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId))
             ->orderBy('id')
             ->get();
 
@@ -67,6 +72,7 @@ class LeadAckReasonController extends Controller
 
         $row = LeadAckReason::create([
             'client_id'        => $user->client_id,
+            'branch_id'        => $this->effectiveBranchId($request, $user),
             'opportunity_type' => $data['opportunity_type'],
             'reason'           => trim($data['reason']),
             'status'           => $data['status'] ?? LeadAckReason::STATUS_ACTIVE,
@@ -89,7 +95,12 @@ class LeadAckReasonController extends Controller
     public function update(Request $request, $id)
     {
         $user = $request->user();
-        $row  = LeadAckReason::where('client_id', $user->client_id)->findOrFail($id);
+        // Scope by branch too so a branch can only touch its OWN reason row —
+        // a reason id belongs to exactly one branch after isolation.
+        $branchId = $this->effectiveBranchId($request, $user);
+        $row  = LeadAckReason::where('client_id', $user->client_id)
+            ->where(fn ($q) => $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId))
+            ->findOrFail($id);
 
         $data = $request->validate([
             'reason'    => ['nullable', 'string', 'max:500'],
@@ -133,9 +144,29 @@ class LeadAckReasonController extends Controller
     public function destroy(Request $request, $id)
     {
         $user = $request->user();
-        $row  = LeadAckReason::where('client_id', $user->client_id)->findOrFail($id);
+        // Scope by branch too so a branch can only touch its OWN reason row —
+        // a reason id belongs to exactly one branch after isolation.
+        $branchId = $this->effectiveBranchId($request, $user);
+        $row  = LeadAckReason::where('client_id', $user->client_id)
+            ->where(fn ($q) => $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId))
+            ->findOrFail($id);
         $row->delete();
 
         return response()->json(['message' => 'Deleted']);
+    }
+
+    /**
+     * Resolve the active branch for this request. GETs carry ?branch_id from the
+     * Axios interceptor (active branch in the switcher); writes pass it
+     * explicitly from the Lead-Ack page. `input()` covers both query + body.
+     * Falls back to the user's own branch; null when neither is set.
+     */
+    private function effectiveBranchId(Request $request, $user): ?int
+    {
+        $b = $request->input('branch_id');
+        if ($b !== null && $b !== '') {
+            return (int) $b;
+        }
+        return $user->branch_id !== null ? (int) $user->branch_id : null;
     }
 }

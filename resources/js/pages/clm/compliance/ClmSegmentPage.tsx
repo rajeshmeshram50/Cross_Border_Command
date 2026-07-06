@@ -241,18 +241,9 @@ export default function ClmSegmentPage() {
               Less Regulated Segments <span className="clm-tab-count">{counts.less}</span>
             </button>
               <div className="seg-toolbar">
-                <div className="seg-filter-ms" style={{ width: 172 }}>
-                  <MasterSelect
-                    value={tab}
-                    placeholder="Regulatory"
-                    options={[
-                      { value: 'all',    label: 'Regulatory: All' },
-                      { value: 'highly', label: 'Highly Regulated' },
-                      { value: 'less',   label: 'Less Regulated' },
-                    ]}
-                    onChange={(v) => { setTab((v || 'all') as 'all'|'highly'|'less'); setPage(1); }}
-                  />
-                </div>
+                {/* Regulatory-status dropdown removed — it duplicated the
+                    All / Highly / Less Regulated tabs above (both drove the
+                    same `tab` state). CBC-431. */}
                 <div className="seg-filter-ms" style={{ width: 216 }}>
                   <MasterSelect
                     value={bcFilter}
@@ -300,7 +291,7 @@ export default function ClmSegmentPage() {
                       <tr key={r.id}>
                         <td className="clm-td-num">{start + i + 1}</td>
                         <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                        <td className="clm-td-name">{r.name}</td>
+                        <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
                         <td style={{ textAlign: 'center' }}>
                           <span className={`clm-badge ${r.regulatory_status === 'highly' ? 'clm-badge-red' : 'clm-badge-emerald'}`}>
                             <span className="clm-badge-dot" />
