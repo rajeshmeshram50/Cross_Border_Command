@@ -4186,7 +4186,7 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
                                     color: locked ? '#475569' : '#fff',
                                     fontFamily: "'Geist Mono', ui-monospace, monospace",
                                     fontSize: 9.5, fontWeight: 800, letterSpacing: '.02em', lineHeight: 1,
-                                  }}>× {remCount}</span>
+                                  }}>{remCount}</span>
                                 )}
                               </button>
                             );
@@ -4411,7 +4411,7 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                             <td style={{ fontWeight: 700 }}>
                               {d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}
                             </td>
-                            <td>{d.authority || '—'}</td>
+                            <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
                             {/* Requirement — is this doc required or optional. */}
                             <td>
                               {d.requirement === 'M'

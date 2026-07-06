@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../../../../../api';
+import { formatProductCode } from '../../../../../utils/formatProductCode';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 
@@ -82,9 +83,10 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
   const [loading, setLoading] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [submittingId, setSubmittingId] = useState<number | null>(null);
-  /* Which shared-price entry's PDF is being opened/downloaded — disables its
-   * buttons + shows a spinner so a double-click can't fire two requests. */
-  const [pdfBusy, setPdfBusy] = useState<number | null>(null);
+  /* Which shared-price entry's PDF is being opened/downloaded, and via which
+   * action — drives the per-button spinner (so the user sees the exact View /
+   * Download they clicked is working) and blocks a double-click firing twice. */
+  const [pdfBusy, setPdfBusy] = useState<{ id: number; action: 'view' | 'download' } | null>(null);
 
   const [products, setProducts]     = useState<LeadProductRow[]>([]);
   const [sharedRows, setSharedRows] = useState<SharedRow[]>([]);
@@ -209,7 +211,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
 
   const onViewPdf = async (entryId: number) => {
     if (pdfBusy !== null) return;                 // a PDF is already loading — ignore the click
-    setPdfBusy(entryId);
+    setPdfBusy({ id: entryId, action: 'view' });
     toast.info('Opening PDF…', 'Generating the quotation PDF');
     try {
       const blob = await fetchPdfBlob(entryId);
@@ -225,7 +227,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
 
   const onDownloadPdf = async (entryId: number) => {
     if (pdfBusy !== null) return;                 // a PDF is already loading — ignore the click
-    setPdfBusy(entryId);
+    setPdfBusy({ id: entryId, action: 'download' });
     toast.info('Preparing download…', 'Generating the quotation PDF');
     try {
       const blob = await fetchPdfBlob(entryId);
@@ -325,7 +327,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
               {/* Left: product name + id (no "Price History" title, no count). */}
               <div className="s4-card-head-titlewrap">
                 <div className="s4-card-title s4-history-titlerow">
-                  <span className="s4-history-code">{historyHeader?.product_code ?? '—'}</span>
+                  <span className="s4-history-code">{formatProductCode(historyHeader?.product_code) || '—'}</span>
                   <span>{historyHeader?.product_name ?? '—'}</span>
                 </div>
               </div>
@@ -371,9 +373,9 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                   {!historyLoading && historyRows.map((h, idx) => {
                     const { date, time } = formatDateTime(h.shared_at);
                     return (
-                      <tr key={h.id} className={pdfBusy === h.id ? 's4-row-busy' : undefined}>
+                      <tr key={h.id} className={pdfBusy?.id === h.id ? 's4-row-busy' : undefined}>
                         <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
-                        <td><span className="s4-code s4-code-navy">{historyHeader?.product_code ?? '—'}</span></td>
+                        <td><span className="s4-code s4-code-navy">{formatProductCode(historyHeader?.product_code) || '—'}</span></td>
                         <td><div className="s4-prod-name">{historyHeader?.product_name ?? '—'}</div></td>
                         <td><span className="s4-dt">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
@@ -392,16 +394,20 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                         </td>
                         <td>
                           <div className="s4-pdf-actions">
-                            {/* Whole row shows the loader (s4-row-busy) — buttons just disable. */}
+                            {/* Each button shows its own spinner while that exact action loads. */}
                             <button type="button" className="s4-icon-btn" title="View PDF" onClick={() => void onViewPdf(h.id)} disabled={pdfBusy !== null}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                              </svg>
+                              {pdfBusy?.id === h.id && pdfBusy.action === 'view'
+                                ? <span className="s4-spin" />
+                                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                                  </svg>}
                             </button>
                             <button type="button" className="s4-icon-btn" title="Download PDF" onClick={() => void onDownloadPdf(h.id)} disabled={pdfBusy !== null}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                              </svg>
+                              {pdfBusy?.id === h.id && pdfBusy.action === 'download'
+                                ? <span className="s4-spin" />
+                                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                                  </svg>}
                             </button>
                           </div>
                         </td>
@@ -491,7 +497,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                         return (
                           <tr key={r.id} className={blocked ? 's4-row-blocked' : ''}>
                             <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
-                            <td><span className="s4-code s4-code-navy">{r.product_code ?? `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
+                            <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                             <td>
                               <div className="s4-prod-name">{r.product_name ?? '—'}</div>
                               {r.product_category && <span className="s4-cat-badge">{r.product_category.toUpperCase()}</span>}
@@ -541,7 +547,9 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                                   title={locked ? 'PI is signed — read-only' : undefined}
                                   onClick={() => { if (locked) { toast.warning('PI is signed', 'This opportunity is read-only — prices cannot be shared.'); return; } void onSubmitQuoted(r); }}
                                 >
-                                  {isSubmitting ? 'Submitting…' : 'Submit'}
+                                  {isSubmitting
+                                    ? <span className="s4-submit-loading"><span className="s4-spin-w" />Submitting…</span>
+                                    : 'Submit'}
                                 </button>
                                 <button
                                   type="button"
@@ -608,9 +616,9 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                       {!loading && filteredShared.map((r, idx) => {
                         const { date, time } = formatDateTime(r.shared_at);
                         return (
-                          <tr key={r.id} className={pdfBusy === r.id ? 's4-row-busy' : undefined}>
+                          <tr key={r.id} className={pdfBusy?.id === r.id ? 's4-row-busy' : undefined}>
                             <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
-                            <td><span className="s4-code s4-code-navy">{r.product_code ?? `P-${String(r.product_id ?? 0).padStart(3,'0')}`}</span></td>
+                            <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id ?? 0).padStart(3,'0')}`}</span></td>
                             <td>
                               <div className="s4-prod-name">{r.product_name ?? '—'}</div>
                               {r.product_category && <span className="s4-cat-badge">{r.product_category.toUpperCase()}</span>}
@@ -632,16 +640,20 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             </td>
                             <td>
                               <div className="s4-pdf-actions">
-                                {/* Whole row shows the loader (s4-row-busy) — buttons just disable. */}
+                                {/* Each button shows its own spinner while that exact action loads. */}
                                 <button type="button" className="s4-icon-btn" title="View PDF" onClick={() => void onViewPdf(r.id)} disabled={pdfBusy !== null}>
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                                  </svg>
+                                  {pdfBusy?.id === r.id && pdfBusy.action === 'view'
+                                    ? <span className="s4-spin" />
+                                    : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                                      </svg>}
                                 </button>
                                 <button type="button" className="s4-icon-btn" title="Download PDF" onClick={() => void onDownloadPdf(r.id)} disabled={pdfBusy !== null}>
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                                  </svg>
+                                  {pdfBusy?.id === r.id && pdfBusy.action === 'download'
+                                    ? <span className="s4-spin" />
+                                    : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                                      </svg>}
                                 </button>
                               </div>
                             </td>
@@ -923,6 +935,7 @@ const STAGE4_CSS = `
 .s4-row-actions { display: flex; align-items: center; gap: 8px; }
 .s4-submit-btn {
   padding: 6px 14px; border: none; cursor: pointer;
+  min-width: 108px; text-align: center;   /* stable width so "Submit" → "Submitting…" doesn't jump */
   background: linear-gradient(135deg, #5b21b6, #7c3aed);
   color: #fff;
   font-family: inherit; font-size: 11.5px; font-weight: 700;
@@ -932,6 +945,14 @@ const STAGE4_CSS = `
 }
 .s4-submit-btn:hover:not(:disabled) { background: linear-gradient(135deg, #7c3aed, #8b5cf6); transform: translateY(-1px); }
 .s4-submit-btn:disabled { opacity: .55; cursor: not-allowed; }
+/* While submitting, keep the button bright so the white spinner reads clearly. */
+.s4-submit-btn:disabled:has(.s4-submit-loading) { opacity: 1; cursor: progress; }
+.s4-submit-loading { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.s4-spin-w {
+  width: 12px; height: 12px; box-sizing: border-box; display: inline-block;
+  border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
+  border-radius: 50%; animation: s4-spin-rot .6s linear infinite;
+}
 .s4-submit-disabled {
   background: linear-gradient(135deg, #94a3b8, #64748b);
 }
@@ -984,6 +1005,10 @@ const STAGE4_CSS = `
   background: #f5f3ff; border-color: #7c3aed;
 }
 .s4-icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+/* The action actually loading stays bright + shows its spinner, even though the
+   row-busy shimmer dims the rest of the row. */
+.s4-row-busy td > .s4-pdf-actions { opacity: 1; }
+.s4-icon-btn:disabled:has(.s4-spin) { opacity: 1; cursor: progress; }
 .s4-pdf-actions { display: flex; gap: 6px; }
 
 /* Dark mode */

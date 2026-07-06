@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, ModalBody, Input } from 'reactstrap';
+import { Modal, ModalBody } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
 import { regularizationApi, type ApiRegularization } from './regularizationApi';
+import { MasterTimePicker } from '../../components/ui/MasterTimePicker';
 // The keka modal styling (att-reg-keka-*) lives in recruitment.css. Import it
 // here so the modal is styled wherever it's used — notably inside the Employee
 // Profile overlay, which does NOT otherwise load recruitment.css.
@@ -215,19 +216,28 @@ export default function RegularizationModal({
                     return (
                       <div key={realIdx} className="att-reg-keka-row">
                         <i className="ri-arrow-left-down-line att-reg-keka-arrow att-reg-keka-arrow--in" />
-                        <Input
-                          type="time"
-                          className="att-reg-keka-time"
-                          value={e.newIn}
-                          onChange={ev => updateEdit(realIdx, { newIn: ev.target.value })}
-                        />
+                        {/* Custom HH:MM picker (minute-by-minute) replaces the
+                            native <input type="time"> whose browser dropdown
+                            rendered minutes with uneven spacing and couldn't be
+                            styled (bug #16). showNow=false — regularization is
+                            always for a past day, so "Now" is meaningless. */}
+                        <div className="att-reg-keka-time-wrap">
+                          <MasterTimePicker
+                            minuteStep={1}
+                            showNow={false}
+                            value={e.newIn}
+                            onChange={v => updateEdit(realIdx, { newIn: v })}
+                          />
+                        </div>
                         <i className="ri-arrow-right-up-line att-reg-keka-arrow att-reg-keka-arrow--out" />
-                        <Input
-                          type="time"
-                          className="att-reg-keka-time"
-                          value={e.newOut}
-                          onChange={ev => updateEdit(realIdx, { newOut: ev.target.value })}
-                        />
+                        <div className="att-reg-keka-time-wrap">
+                          <MasterTimePicker
+                            minuteStep={1}
+                            showNow={false}
+                            value={e.newOut}
+                            onChange={v => updateEdit(realIdx, { newOut: v })}
+                          />
+                        </div>
                         <button type="button" className="att-reg-keka-rm" onClick={() => removeEdit(realIdx)} title="Remove">
                           <i className="ri-subtract-line" />
                         </button>

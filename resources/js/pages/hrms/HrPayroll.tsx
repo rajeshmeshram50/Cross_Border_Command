@@ -900,8 +900,11 @@ export default function HrPayroll() {
               opacity: (busy || isFutureCycle) ? 0.6 : 1,
             }}
           >
-            <i className={`me-2 ${busy ? 'ri-loader-4-line' : 'ri-play-circle-line'}`} style={{ fontSize: 16 }} />
-            {busy ? 'Processing…' : 'Run Payroll'}
+            {/* Animated spinner while processing (the static loader icon read as
+                "no loader"). Matches the Export button's Spinner pattern. */}
+            {busy
+              ? <><Spinner size="sm" className="me-2" /> Processing…</>
+              : <><i className="ri-play-circle-line me-2" style={{ fontSize: 16 }} /> Run Payroll</>}
           </Button>
           <Dropdown isOpen={exportOpen} toggle={() => { if (!downloading) setExportOpen(v => !v); }}>
             <DropdownToggle

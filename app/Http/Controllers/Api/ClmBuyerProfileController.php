@@ -7,6 +7,7 @@ use App\Models\ClmAgreementLibrary;
 use App\Models\ClmSegment;
 use App\Models\ClmSegmentRule;
 use App\Models\ClmSignatureRequest;
+use App\Models\ClmTradeDocLibrary;
 use App\Models\Consignee;
 use App\Models\Customer;
 use App\Models\Lead;
@@ -56,8 +57,10 @@ class ClmBuyerProfileController extends Controller
         /* ── 4. Active agreements + applicability per segment id. ── */
         $agreements = ClmAgreementLibrary::where('client_id', $cid)
             ->where('agr_status', 'Active')
-            ->get(['id', 'segment', 'regulatory']);
-        $agrIdsBySeg = [];   // segment_id → [agreement_id, …]
+            ->get(['id', 'segment', 'regulatory', 'party']);
+        $agrPartyById = [];   // agreement_id → party CSV ("buyer"/"consignee")
+        $agrIdsBySeg = [];    // segment_id → [agreement_id, …]
+        foreach ($agreements as $a) $agrPartyById[(int) $a->id] = (string) $a->party;
         foreach ($segments as $s) {
             $sid = (int) $s->id;
             $list = [];
@@ -71,18 +74,59 @@ class ClmBuyerProfileController extends Controller
             $agrIdsBySeg[$sid] = $list;
         }
 
+        // Active trade-document library matched to each segment the same way, so
+        // a shipment's Trade Docs count (its Proforma Invoice + applicable trade
+        // docs) mirrors the Evidence Vault instead of the empty customer bucket.
+        $tradeDocs = ClmTradeDocLibrary::where('client_id', $cid)
+            ->where('status', 'active')
+            ->get(['id', 'segment', 'regulatory', 'party']);
+        $tdPartyById = [];    // trade_doc_id → party CSV
+        $tdIdsBySeg = [];     // segment_id → [trade_doc_id, …]
+        foreach ($tradeDocs as $m) $tdPartyById[(int) $m->id] = (string) $m->party;
+        foreach ($segments as $s) {
+            $sid = (int) $s->id;
+            $list = [];
+            foreach ($tradeDocs as $m) {
+                if ((string) $m->regulatory !== (string) $s->regulatory_status) continue;
+                if ($this->csvHasToken((string) $m->segment, (string) $s->name)
+                    || $this->csvHasToken((string) $m->segment, (string) $s->code)) {
+                    $list[] = (int) $m->id;
+                }
+            }
+            $tdIdsBySeg[$sid] = $list;
+        }
+
         /* ── 5. Completed agreement signature requests, keyed by party + lead. ── */
-        $sigByParty = [];   // "Model#id" → set of completed agreement ids
-        $sigByLead  = [];   // lead_id    → set of completed agreement ids
+        $sigByParty   = [];   // "Model#id" → set of completed agreement ids (party-wise list)
+        $agrSigByLead = [];   // lead_id    → ['Customer'|'Consignee' → set of agreement ids]
         foreach (ClmSignatureRequest::where('client_id', $cid)
             ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
             ->where('status', 'completed')
             ->get(['model_name', 'party_id', 'lead_id', 'trade_doc_ids']) as $sr) {
             $ids = is_array($sr->trade_doc_ids) ? $sr->trade_doc_ids : [];
+            $party = $sr->model_name === 'Consignee' ? 'Consignee' : 'Customer';
             foreach ($ids as $aid) {
                 $aid = (int) $aid;
                 if ($sr->party_id) $sigByParty[$sr->model_name . '#' . $sr->party_id][$aid] = true;
-                if ($sr->lead_id)  $sigByLead[(int) $sr->lead_id][$aid] = true;
+                if ($sr->lead_id) {
+                    $agrSigByLead[(int) $sr->lead_id][$party][$aid] = true;
+                }
+            }
+        }
+
+        // Completed trade-document signatures, per lead + party, keyed by the
+        // trade-doc-library id (legacy scalar or the multi-doc JSON array).
+        $tdSigByLead = [];   // lead_id → ['Customer'|'Consignee' → set of trade_doc ids]
+        foreach (ClmSignatureRequest::where('client_id', $cid)
+            ->where('document_type', ClmSignatureRequest::DOC_TRADE)
+            ->where('status', 'completed')
+            ->get(['model_name', 'lead_id', 'trade_doc_ids', 'trade_doc_id']) as $sr) {
+            if (!$sr->lead_id) continue;
+            $party = $sr->model_name === 'Consignee' ? 'Consignee' : 'Customer';
+            $ids = is_array($sr->trade_doc_ids) && $sr->trade_doc_ids ? $sr->trade_doc_ids : [$sr->trade_doc_id];
+            foreach ((array) $ids as $mid) {
+                $mid = (int) $mid;
+                if ($mid) $tdSigByLead[(int) $sr->lead_id][$party][$mid] = true;
             }
         }
 
@@ -118,10 +162,15 @@ class ClmBuyerProfileController extends Controller
             }
             return $out;
         };
-        // Applicable agreement ids for a set of segment ids.
+        // Applicable agreement / trade-doc ids for a set of segment ids.
         $agrIdsForSegments = function (array $segIds) use ($agrIdsBySeg): array {
             $set = [];
             foreach ($segIds as $sid) foreach ($agrIdsBySeg[$sid] ?? [] as $aid) $set[$aid] = true;
+            return array_keys($set);
+        };
+        $tdIdsForSegments = function (array $segIds) use ($tdIdsBySeg): array {
+            $set = [];
+            foreach ($segIds as $sid) foreach ($tdIdsBySeg[$sid] ?? [] as $mid) $set[$mid] = true;
             return array_keys($set);
         };
         // agr progress = applicable agreements vs completed (from a "signed set").
@@ -129,6 +178,28 @@ class ClmBuyerProfileController extends Controller
             $t = count($applicableIds);
             $d = 0;
             foreach ($applicableIds as $aid) if (isset($signedSet[$aid])) $d++;
+            return ['d' => $d, 't' => $t];
+        };
+        // Party membership from a doc's party CSV (buyer / consignee), matching
+        // the Evidence Vault's partyFlags. Empty ⇒ applies to both parties.
+        $partyFlags = function (?string $party): array {
+            $tokens = array_filter(array_map(fn ($t) => strtolower(trim($t)), explode(',', (string) $party)));
+            $fb = in_array('buyer', $tokens, true);
+            $fc = in_array('consignee', $tokens, true);
+            if (!$fb && !$fc) { $fb = true; $fc = true; }
+            return [$fb, $fc];
+        };
+        // Per-party applicable-doc progress: count the applicable library ids
+        // whose party covers $side ('buyer'|'consignee'); a doc is "done" when a
+        // completed signature for that side exists. Mirrors the vault ratios.
+        $docProgress = function (array $applicableIds, array $partyById, array $signedForSide, string $side) use ($partyFlags): array {
+            $t = 0; $d = 0;
+            foreach ($applicableIds as $id) {
+                [$fb, $fc] = $partyFlags($partyById[$id] ?? null);
+                if (!($side === 'buyer' ? $fb : $fc)) continue;
+                $t++;
+                if (isset($signedForSide[$id])) $d++;
+            }
             return ['d' => $d, 't' => $t];
         };
         // Regulatory tier label from a set of segment ids.
@@ -159,6 +230,21 @@ class ClmBuyerProfileController extends Controller
                 ->orderBy('id')
                 ->get(['id', 'opp_id', 'code']) as $pi) {
                 $piByLead[(int) $pi->opp_id] = $pi;   // later id wins = latest
+            }
+        }
+
+        // Which PIs have a COMPLETED e-signature — the PI is a shipment's first
+        // (buyer-side) Trade Document, so a signed PI counts as a signed trade
+        // doc (same source of truth the Q/PI list + Evidence Vault use).
+        $piSignedIds = [];
+        $piIdsForSig = collect($piByLead)->pluck('id')->all();
+        if (!empty($piIdsForSig)) {
+            foreach (ClmSignatureRequest::where('client_id', $cid)
+                ->where('document_type', ClmSignatureRequest::DOC_PROFORMA_INVOICE)
+                ->whereIn('trade_doc_id', $piIdsForSig)
+                ->where('status', 'completed')
+                ->get(['trade_doc_id']) as $sr) {
+                $piSignedIds[(int) $sr->trade_doc_id] = true;
             }
         }
 
@@ -193,12 +279,17 @@ class ClmBuyerProfileController extends Controller
 
         // Shipments: which leads have one + per-customer count.
         $shipLeadIds = [];
+        $shipCodeByLead = [];
         $shipByCustomer = [];
         $leadCustomerById = [];
         foreach ($leads as $l) $leadCustomerById[(int) $l->id] = (int) $l->customer_id;
-        foreach (ShipmentOrder::where('client_id', $cid)->get(['id', 'lead_id']) as $so) {
+        foreach (ShipmentOrder::where('client_id', $cid)->orderBy('id')->get(['id', 'lead_id', 'shipment_code']) as $so) {
             $lid = (int) $so->lead_id;
             $shipLeadIds[$lid] = true;
+            // Real shipment_orders.shipment_code (e.g. "SHP-001"), so the txn
+            // tables show the same id as the Evidence Vault. Latest row wins;
+            // legacy rows with a NULL code fall back to the synthetic id below.
+            if ($so->shipment_code) $shipCodeByLead[$lid] = $so->shipment_code;
             $cust = $leadCustomerById[$lid] ?? null;
             if ($cust) $shipByCustomer[$cust] = ($shipByCustomer[$cust] ?? 0) + 1;
         }
@@ -308,10 +399,19 @@ class ClmBuyerProfileController extends Controller
 
             $segIds = $leadSegIds[$lid] ?? $segIdsFromNames($cust->segment);
             $cp     = $custProgById[(int) $cust->id] ?? null;
-            $applic = $agrIdsForSegments($segIds);
-            $agr    = $agrProgress($applic, $sigByLead[$lid] ?? []);
             $pi     = $piByLead[$lid] ?? null;
             $hasShip = isset($shipLeadIds[$lid]);
+
+            // Per-shipment Trade Docs + Agreements, party-aware, mirroring the
+            // Evidence Vault: the buyer columns (td/agr) count the customer-side
+            // docs, the c_* columns the consignee side. The PI is the buyer's
+            // first Trade Document, so it adds 1 to the buyer Trade-Docs total
+            // (and 1 signed once the PI is e-signed).
+            $applicAgr = $agrIdsForSegments($segIds);
+            $applicTd  = $tdIdsForSegments($segIds);
+            $agrBuyer  = $docProgress($applicAgr, $agrPartyById, $agrSigByLead[$lid]['Customer'] ?? [], 'buyer');
+            $tdBuyer   = $docProgress($applicTd,  $tdPartyById,  $tdSigByLead[$lid]['Customer']  ?? [], 'buyer');
+            if ($pi) { $tdBuyer['t'] += 1; if (isset($piSignedIds[(int) $pi->id])) $tdBuyer['d'] += 1; }
 
             $base = [
                 'opp'      => $l->opp_code ?: ('OPP-' . $lid),
@@ -324,10 +424,10 @@ class ClmBuyerProfileController extends Controller
                 'kyc'      => $cp ? $cp['kyc'] : ['d' => 0, 't' => 0],
                 'dd'       => $cp ? $cp['dd']  : ['d' => 0, 't' => 0],
                 'tl'       => $cp ? $cp['tl']  : ['d' => 0, 't' => 0],
-                'td'       => $cp ? $cp['td']  : ['d' => 0, 't' => 0],
-                'agr'      => $agr,
+                'td'       => $tdBuyer,
+                'agr'      => $agrBuyer,
             ];
-            if ($hasShip) $base['shp'] = 'SHP-' . str_pad((string) $lid, 3, '0', STR_PAD_LEFT);
+            if ($hasShip) $base['shp'] = $shipCodeByLead[$lid] ?? ('SHP-' . str_pad((string) $lid, 3, '0', STR_PAD_LEFT));
             if ($separateConsignee) {
                 $base['consignee'] = $cons->company_name;
                 $base['consId'] = (int) $cons->id;
@@ -336,8 +436,8 @@ class ClmBuyerProfileController extends Controller
                 $base['c_kyc'] = $cp2 ? $cp2['kyc'] : ['d' => 0, 't' => 0];
                 $base['c_dd']  = $cp2 ? $cp2['dd']  : ['d' => 0, 't' => 0];
                 $base['c_tl']  = $cp2 ? $cp2['tl']  : ['d' => 0, 't' => 0];
-                $base['c_td']  = $cp2 ? $cp2['td']  : ['d' => 0, 't' => 0];
-                $base['c_agr'] = $cp2 ? $cp2['agr'] : ['d' => 0, 't' => 0];
+                $base['c_td']  = $docProgress($applicTd,  $tdPartyById,  $tdSigByLead[$lid]['Consignee']  ?? [], 'consignee');
+                $base['c_agr'] = $docProgress($applicAgr, $agrPartyById, $agrSigByLead[$lid]['Consignee'] ?? [], 'consignee');
             }
 
             if ($hasShip && $separateConsignee)        { $base['sr'] = ++$n['wsNeq'];  $wsNeq[]  = $base; }

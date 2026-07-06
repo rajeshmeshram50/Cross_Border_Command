@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { formatDmy } from '../../../utils/formatDmy';
 import { useLocation } from 'react-router-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
@@ -80,7 +81,7 @@ const prettyLeadType = (t: string | null | undefined): string =>
 
 const mapServerToLead = (r: ServerLead): Lead => {
   const dateSrc = r.query_time ?? r.created_at;
-  const date = dateSrc ? new Date(dateSrc).toLocaleDateString('en-GB') : 'N/A';
+  const date = dateSrc ? formatDmy(dateSrc) : 'N/A';
   return {
     id:       r.id,
     type:     prettyLeadType(nullable(r.query_type) === 'N/A' ? null : r.query_type),

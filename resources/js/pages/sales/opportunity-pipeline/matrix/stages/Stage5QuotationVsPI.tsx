@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { formatDmy } from '../../../../../utils/formatDmy';
+import { formatProductCode } from '../../../../../utils/formatProductCode';
 import { createPortal } from 'react-dom';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -68,7 +70,7 @@ type PIRow = {
 const fmtDate = (s: string | null): string => {
   if (!s) return '—';
   const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB');
+  return Number.isNaN(d.getTime()) ? '—' : formatDmy(d);
 };
 
 const fmtNum = (v: number | string | null): string => {
@@ -126,6 +128,9 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   /* The open More-Actions menu — tracks the row + a screen anchor rect so
    * the menu can be portalled to <body> (escaping the table's overflow). */
   const [moreMenu, setMoreMenu] = useState<{ kind: DocType; id: number; anchor: DOMRect } | null>(null);
+  // Which More-Actions item is mid-flight — drives the in-menu spinner so the
+  // user sees the View/Download is working (and can't fire it twice).
+  const [menuBusy, setMenuBusy] = useState<{ action: 'download' | 'view' | 'certificate'; signature: boolean } | null>(null);
 
   /* Send-for-Signature modal target + live signature status per row, keyed
    * by `${docType}:${docId}`. The status drives the action-cell control
@@ -797,13 +802,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             if (st === 'inprogress') {
                               return (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                  {/* Sent → indigo "Sent" pill (locked) + View the
-                                      sent document + Remind the signer. */}
-                                  <button type="button" className="s5-convert2" title="Already sent — awaiting signature" disabled
-                                    style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)', boxShadow: '0 2px 8px rgba(99,102,241,.3)', opacity: 1, cursor: 'not-allowed' }}>
-                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
-                                    Sent
-                                  </button>
+                                  {/* Already sent → the STATUS column already shows the
+                                      "Sent" badge, so we DON'T repeat a locked "Sent"
+                                      button here (it read as "click to send again").
+                                      Only the useful actions remain: View the sent
+                                      document + Remind the signer. */}
                                   <Tooltip label="View sent document">
                                     <button type="button" className="s5-icn" onClick={() => void onViewPdf(docType, r.id, true)} disabled={anyActing}>
                                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -942,20 +945,36 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       {moreMenu && (
         <MoreActionsMenu
           anchor={moreMenu.anchor}
+          kind={moreMenu.kind}
           signed={sigByRow[`${moreMenu.kind}:${moreMenu.id}`]?.status === 'completed'}
-          onClose={() => setMoreMenu(null)}
-          onPick={(action, signature) => {
+          busy={menuBusy}
+          // Don't let an outside-click / scroll close the menu while an action
+          // is still loading — the spinner must stay visible until it finishes.
+          onClose={() => { if (!menuBusy) setMoreMenu(null); }}
+          onPick={async (action, signature) => {
+            if (menuBusy) return;
             const id = moreMenu.id, kind = moreMenu.kind;
             const code = (kind === 'quotation' ? quotations : pis).find(x => x.id === id)?.code ?? null;
-            setMoreMenu(null);
-            if (action === 'download') void onDownloadPdf(kind, id, code, signature);
-            else                        void onViewPdf(kind, id, signature);
+            setMenuBusy({ action, signature });
+            try {
+              if (action === 'download') await onDownloadPdf(kind, id, code, signature);
+              else                        await onViewPdf(kind, id, signature);
+            } finally {
+              setMenuBusy(null);
+              setMoreMenu(null);
+            }
           }}
-          onCertificate={() => {
+          onCertificate={async () => {
+            if (menuBusy) return;
             const id = moreMenu.id, kind = moreMenu.kind;
             const code = (kind === 'quotation' ? quotations : pis).find(x => x.id === id)?.code ?? null;
-            setMoreMenu(null);
-            void onDownloadCertificate(kind, id, code);
+            setMenuBusy({ action: 'certificate', signature: false });
+            try {
+              await onDownloadCertificate(kind, id, code);
+            } finally {
+              setMenuBusy(null);
+              setMoreMenu(null);
+            }
           }}
         />
       )}
@@ -1035,7 +1054,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         open={!!convertTarget}
         fromQuotation={convertTarget?.code ?? ''}
         newPiCode={convertPreviewCode}
-        piDate={new Date().toLocaleDateString('en-GB')}
+        piDate={formatDmy(new Date())}
         quotationValue={convertTarget ? `${ccyCode(convertTarget.currency)} ${fmtNum(convertTarget.grand_total)}` : '—'}
         converting={!!convertTarget?.id && actingId === convertTarget.id}
         onCancel={() => { if (actingId === null) setConvertTarget(null); }}
@@ -1062,12 +1081,14 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
 /* ─── More Actions menu — fixed-position portal anchored to the 3-dot
  *      button. Download / View, each With / Without Signature. */
-function MoreActionsMenu({ anchor, onClose, onPick, signed, onCertificate }: {
+function MoreActionsMenu({ anchor, onClose, onPick, signed, onCertificate, busy, kind }: {
   anchor: DOMRect;
   onClose: () => void;
   onPick: (action: 'download' | 'view', signature: boolean) => void;
   signed: boolean;
   onCertificate: () => void;
+  busy: { action: 'download' | 'view' | 'certificate'; signature: boolean } | null;
+  kind: DocType;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: anchor.bottom + 6, left: anchor.right - 210 });
@@ -1099,31 +1120,51 @@ function MoreActionsMenu({ anchor, onClose, onPick, signed, onCertificate }: {
   const dl = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
   const eye = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
   const cert = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>;
+  const spin = <span className="s5-menu-spin" />;
+
+  const anyBusy = !!busy;
+  const isBusy = (action: 'download' | 'view' | 'certificate', signature: boolean) =>
+    !!busy && busy.action === action && busy.signature === signature;
 
   return createPortal(
-    <div ref={ref} className="s5-menu" style={{ top: pos.top, left: pos.left }} onClick={e => e.stopPropagation()}>
+    <div ref={ref} className={`s5-menu${anyBusy ? ' is-busy' : ''}`} style={{ top: pos.top, left: pos.left }} onClick={e => e.stopPropagation()}>
       <div className="s5-menu-head">
         <div className="s5-menu-head-left">
           <span className="s5-menu-head-ico"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><circle cx="12" cy="5" r="1" fill="#fff"/><circle cx="12" cy="12" r="1" fill="#fff"/><circle cx="12" cy="19" r="1" fill="#fff"/></svg></span>
           More Actions
         </div>
-        <button type="button" className="s5-menu-x" onClick={onClose} aria-label="Close">✕</button>
+        <button type="button" className="s5-menu-x" onClick={onClose} aria-label="Close" disabled={anyBusy}>✕</button>
       </div>
       <div className="s5-menu-body">
-        <div className="s5-menu-sec s5-menu-sec-dl">⬇ Download</div>
-        <button type="button" className="s5-menu-item s5-mi-dl" onClick={() => onPick('download', true)}><span className="s5-mi-ico">{dl}</span>With Signature</button>
-        <button type="button" className="s5-menu-item s5-mi-dl" onClick={() => onPick('download', false)}><span className="s5-mi-ico">{dl}</span>Without Signature</button>
-        <div className="s5-menu-div" />
-        <div className="s5-menu-sec s5-menu-sec-vw">👁 View</div>
-        <button type="button" className="s5-menu-item s5-mi-vw" onClick={() => onPick('view', true)}><span className="s5-mi-ico">{eye}</span>With Signature</button>
-        <button type="button" className="s5-menu-item s5-mi-vw" onClick={() => onPick('view', false)}><span className="s5-mi-ico">{eye}</span>Without Signature</button>
+        {/* Quotations are never e-signed through Zoho here, so the With/Without
+            Signature split is meaningless for them — show a single plain
+            Download + View. The signature variants stay for PIs only. */}
+        {kind === 'quotation' ? (
+          <>
+            <div className="s5-menu-sec s5-menu-sec-dl">⬇ Download</div>
+            <button type="button" className="s5-menu-item s5-mi-dl" disabled={anyBusy} onClick={() => onPick('download', false)}><span className="s5-mi-ico">{isBusy('download', false) ? spin : dl}</span>Download</button>
+            <div className="s5-menu-div" />
+            <div className="s5-menu-sec s5-menu-sec-vw">👁 View</div>
+            <button type="button" className="s5-menu-item s5-mi-vw" disabled={anyBusy} onClick={() => onPick('view', false)}><span className="s5-mi-ico">{isBusy('view', false) ? spin : eye}</span>View</button>
+          </>
+        ) : (
+          <>
+            <div className="s5-menu-sec s5-menu-sec-dl">⬇ Download</div>
+            <button type="button" className="s5-menu-item s5-mi-dl" disabled={anyBusy} onClick={() => onPick('download', true)}><span className="s5-mi-ico">{isBusy('download', true) ? spin : dl}</span>With Signature</button>
+            <button type="button" className="s5-menu-item s5-mi-dl" disabled={anyBusy} onClick={() => onPick('download', false)}><span className="s5-mi-ico">{isBusy('download', false) ? spin : dl}</span>Without Signature</button>
+            <div className="s5-menu-div" />
+            <div className="s5-menu-sec s5-menu-sec-vw">👁 View</div>
+            <button type="button" className="s5-menu-item s5-mi-vw" disabled={anyBusy} onClick={() => onPick('view', true)}><span className="s5-mi-ico">{isBusy('view', true) ? spin : eye}</span>With Signature</button>
+            <button type="button" className="s5-menu-item s5-mi-vw" disabled={anyBusy} onClick={() => onPick('view', false)}><span className="s5-mi-ico">{isBusy('view', false) ? spin : eye}</span>Without Signature</button>
+          </>
+        )}
         {/* Certificate — the Zoho Sign completion/audit certificate, shown
             only once the document has been signed (status = completed). */}
         {signed && (
           <>
             <div className="s5-menu-div" />
             <div className="s5-menu-sec s5-menu-sec-ct">🏅 Certificate</div>
-            <button type="button" className="s5-menu-item s5-mi-ct" onClick={onCertificate}><span className="s5-mi-ico">{cert}</span>Download Signed Certificate</button>
+            <button type="button" className="s5-menu-item s5-mi-ct" disabled={anyBusy} onClick={onCertificate}><span className="s5-mi-ico">{isBusy('certificate', false) ? spin : cert}</span>Download Signed Certificate</button>
           </>
         )}
       </div>
@@ -1159,6 +1200,9 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<SharedRow[]>([]);
   const [actingId, setActingId] = useState<number | null>(null);
+  // Which row+action (view vs download) is mid-flight — drives the per-button
+  // spinner so the user can see the PDF is opening / downloading.
+  const [pdfBusy, setPdfBusy] = useState<{ id: number; download: boolean } | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -1215,10 +1259,11 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
   const varBgClass      = variance > 0 ? 's5-ps-stat-red' : variance < 0 ? 's5-ps-stat-grn' : 's5-ps-stat-neu';
 
   const today = new Date();
-  const asOf = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+  const asOf = formatDmy(today);
 
   const pdf = async (entryId: number, download: boolean) => {
     setActingId(entryId);
+    setPdfBusy({ id: entryId, download });
     try {
       const res = await api.get(`/sales/shared-prices/${entryId}/pdf`, { responseType: 'blob' });
       const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
@@ -1235,6 +1280,7 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
       toast.error(download ? 'Download failed' : 'Open failed', 'Could not open the quoted price PDF.');
     } finally {
       setActingId(null);
+      setPdfBusy(null);
     }
   };
 
@@ -1242,7 +1288,7 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
     const d = new Date(s);
     if (Number.isNaN(d.getTime())) return { date: '—', time: '' };
     return {
-      date: d.toLocaleDateString('en-GB'),
+      date: formatDmy(d),
       time: d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toLowerCase(),
     };
   };
@@ -1259,7 +1305,7 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
         const { date, time } = fmtRowDate(r.shared_at);
         return {
           'Sr No': i + 1,
-          'Product Code': r.product_code ?? `P-${String(r.product_id ?? 0).padStart(3, '0')}`,
+          'Product Code': formatProductCode(r.product_code) || `P-${String(r.product_id ?? 0).padStart(3, '0')}`,
           'Product Name': r.product_name ?? '',
           'Date': date,
           'Time': time,
@@ -1357,7 +1403,7 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
                 return (
                   <tr key={r.id}>
                     <td className="ta-c"><span className="s5-ps-sr">{i + 1}</span></td>
-                    <td><code className="s5-ps-code">{r.product_code ?? `P-${String(r.product_id ?? 0).padStart(3, '0')}`}</code></td>
+                    <td><code className="s5-ps-code">{formatProductCode(r.product_code) || `P-${String(r.product_id ?? 0).padStart(3, '0')}`}</code></td>
                     <td>
                       <Tooltip label={r.product_name ?? ''}>
                         <div className="s5-ps-name">{r.product_name ?? '—'}</div>
@@ -1375,10 +1421,14 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
                     <td className="ta-c">
                       <div className="s5-ps-acts">
                         <button type="button" className="s5-ps-act" title="View" disabled={actingId !== null} onClick={() => void pdf(r.id, false)}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          {pdfBusy && pdfBusy.id === r.id && !pdfBusy.download
+                            ? <span className="s5-ps-spin" />
+                            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
                         </button>
                         <button type="button" className="s5-ps-act s5-ps-act-dl" title="Download" disabled={actingId !== null} onClick={() => void pdf(r.id, true)}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          {pdfBusy && pdfBusy.id === r.id && pdfBusy.download
+                            ? <span className="s5-ps-spin" />
+                            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
                         </button>
                       </div>
                     </td>
@@ -1608,6 +1658,18 @@ const STAGE5_CSS = `
 .s5-mi-vw:hover { background: rgba(124,58,237,.1); color: #7c3aed; padding-left: 16px; }
 .s5-mi-ct:hover { background: rgba(21,128,61,.1); color: #15803d; padding-left: 16px; }
 .s5-menu-div { height: 1px; background: linear-gradient(90deg, rgba(124,58,237,.15), rgba(124,58,237,.05), transparent); margin: 5px 8px; }
+/* In-menu action spinner — inherits the item's icon colour (currentColor). */
+.s5-menu-spin {
+  width: 13px; height: 13px; display: inline-block; box-sizing: border-box;
+  border: 2px solid currentColor; border-top-color: transparent;
+  border-radius: 50%; animation: s5-sig-spin-rot .6s linear infinite;
+}
+/* While one action is loading: dim the idle items, keep the busy row bright,
+   and freeze the hover padding-shift so nothing jumps. */
+.s5-menu.is-busy .s5-menu-item { opacity: .45; }
+.s5-menu.is-busy .s5-menu-item:has(.s5-menu-spin) { opacity: 1; }
+.s5-menu-item:disabled { cursor: progress; }
+.s5-menu-item:disabled:hover { padding-left: 13px; background: none; }
 
 /* ─── Latest Quoted Price Summary popup (figma) ─── */
 .s5-ps-backdrop { position: fixed; inset: 0; z-index: 2900; background: rgba(8,30,60,.58); backdrop-filter: blur(5px); display: flex; align-items: center; justify-content: center; padding: 14px; }
@@ -1679,6 +1741,9 @@ const STAGE5_CSS = `
 .s5-ps-act:hover:not(:disabled) { background: #0891b2; color: #fff; border-color: transparent; transform: translateY(-1px); }
 .s5-ps-act-dl:hover:not(:disabled) { background: #0c4a6e; }
 .s5-ps-act:disabled { opacity: .5; cursor: not-allowed; }
+/* The row action that's actually loading keeps full opacity + shows a spinner. */
+.s5-ps-act:disabled:has(.s5-ps-spin) { opacity: 1; cursor: progress; }
+.s5-ps-spin { width: 13px; height: 13px; box-sizing: border-box; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: s5-sig-spin-rot .6s linear infinite; }
 
 /* Footer */
 .s5-ps-foot { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px; border-top: 1.5px solid #e2e8f0; background: linear-gradient(90deg, #f8fafc, #f0f9ff); }

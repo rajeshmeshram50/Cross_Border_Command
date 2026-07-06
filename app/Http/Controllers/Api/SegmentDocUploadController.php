@@ -362,10 +362,6 @@ class SegmentDocUploadController extends Controller
         $trade_licenses  = $buildBucket('tl');
         $trade_documents = $buildBucket('td');
 
-        $allRows = array_merge($company_dd, $owner_kyc, $trade_licenses, $trade_documents);
-        $verified = collect($allRows)->where('status', 'Verified')->count();
-        $pending  = collect($allRows)->where('status', 'Pending')->count();
-
         // CORE tally = Company DD + Owner KYC + Trade Licences, MANDATORY docs
         // only (the Sales-Matrix CLM card's "X of Y documents" counter). The
         // card tracks required-doc completion, so OPTIONAL docs are excluded —
@@ -384,6 +380,53 @@ class SegmentDocUploadController extends Controller
         // Customer above, so $owner->id can't be trusted for the lead filter.
         $shipments = $this->buildShipmentAgreements($owner, $type, $cid, $company_dd, $owner_kyc, $trade_licenses, $id);
 
+        // ── Header KPIs ─────────────────────────────────────────────────────
+        // Customer/Consignee vaults have two document families:
+        //   • Standard  = Company DD + Owner KYC + Trade Licences (one-time docs)
+        //   • Case-to-Case = per-shipment Trade Documents + Agreements (per deal)
+        // Both feed Total Documents / Verified / Pending, and each Case-to-Case
+        // family gets its own KPI (Trade Documents, Total Agreements). Trade
+        // Documents are a per-deal doc here, so the standard 'td' bucket is NOT a
+        // KPI. Case-to-Case tallies come from each shipment's ratio, which
+        // already reflects the displayed set (buyer-only when Customer =
+        // Consignee).
+        //
+        // Supplier/vendor vaults model their per-deal docs differently (vendor
+        // deals, not $shipments) and DO use the standard 'td' bucket, so they
+        // keep the original all-inclusive standard tally.
+        if (in_array($type, ['customer', 'consignee'], true)) {
+            $c2c = function (string $key) use ($shipments) {
+                $signed = 0; $total = 0;
+                foreach ($shipments as $s) {
+                    $parts   = explode('/', $s[$key]['ratio'] ?? '0/0');
+                    $signed += (int) ($parts[0] ?? 0);
+                    $total  += (int) ($parts[1] ?? 0);
+                }
+                return ['signed' => $signed, 'total' => $total];
+            };
+            $c2cTd  = $c2c('trade_docs');
+            $c2cAgr = $c2c('agreement');
+
+            $stdRows             = array_merge($company_dd, $owner_kyc, $trade_licenses);
+            $stdVerified         = collect($stdRows)->where('status', 'Verified')->count();
+            $stdPending          = count($stdRows) - $stdVerified;
+
+            $totalDocuments      = count($stdRows) + $c2cTd['total'] + $c2cAgr['total'];
+            $verifiedSigned      = $stdVerified + $c2cTd['signed'] + $c2cAgr['signed'];
+            $pending             = $stdPending
+                + ($c2cTd['total']  - $c2cTd['signed'])
+                + ($c2cAgr['total'] - $c2cAgr['signed']);
+            $tradeDocumentsCount = $c2cTd['total'];
+            $agreementsCount     = $c2cAgr['total'];
+        } else {
+            $allRows             = array_merge($company_dd, $owner_kyc, $trade_licenses, $trade_documents);
+            $totalDocuments      = count($allRows);
+            $verifiedSigned      = collect($allRows)->where('status', 'Verified')->count();
+            $pending             = collect($allRows)->where('status', 'Pending')->count();
+            $tradeDocumentsCount = count($trade_documents);
+            $agreementsCount     = 0;
+        }
+
         // Supplier Case-to-Case deals — split the vendor's procurements by
         // whether their lead carries a shipment (With / Without Shipment ID).
         $vendorDeals = in_array($type, ['supplier', 'vendor'], true) && $cid
@@ -396,15 +439,16 @@ class SegmentDocUploadController extends Controller
                 'vendor_with_shipment'    => $vendorDeals['with_shipment'],
                 'vendor_without_shipment' => $vendorDeals['without_shipment'],
                 'vendor_deal_ratios'      => $vendorDeals['ratios'],
-                'total_documents'        => count($allRows),
-                'verified_signed'        => $verified,
+                'total_documents'        => $totalDocuments,
+                'verified_signed'        => $verifiedSigned,
                 'core_total_documents'   => $coreMandatory->count(),
                 'core_verified_signed'   => $coreVerified,
                 'pending'                => $pending,
                 'company_dd_count'       => count($company_dd),
                 'owner_kyc_count'        => count($owner_kyc),
                 'trade_license_count'    => count($trade_licenses),
-                'trade_documents_count'  => count($trade_documents),
+                'trade_documents_count'  => $tradeDocumentsCount,
+                'agreements_count'       => $agreementsCount,
                 'total_shipments'        => count($shipments),
                 'company_dd'             => $company_dd,
                 'owner_kyc'              => $owner_kyc,
@@ -656,6 +700,21 @@ class SegmentDocUploadController extends Controller
                 });
         }
 
+        // A document whose party covers BOTH buyer and consignee is emitted into
+        // both lists; when merging the two sides for the ratio it must be counted
+        // once (else "0/3" when only 2 distinct agreements exist). Dedupe by
+        // library id (+ doc type), falling back to the name.
+        $dedupe = function (array $rows): array {
+            $seen = []; $out = [];
+            foreach ($rows as $r) {
+                $key = !empty($r['db_id']) ? (($r['doc_type'] ?? '') . '#' . $r['db_id']) : ('n#' . ($r['name'] ?? ''));
+                if (isset($seen[$key])) continue;
+                $seen[$key] = true;
+                $out[] = $r;
+            }
+            return $out;
+        };
+
         $rows = [];
         $sr = 0;
         foreach ($leads as $lead) {
@@ -673,10 +732,11 @@ class SegmentDocUploadController extends Controller
             $agrBuyer   = $applicable['agreements_buyer'];
             $agrCons    = $applicable['agreements_consignee'];
 
-            // Prepend this shipment's Proforma Invoice(s) as the first Trade
-            // Documents on the Buyer side. They count toward the Trade-Docs
-            // ratio. A finalised PI (sent/approved/converted) reads as Signed;
-            // a draft is still Pending. sig_req_id is 0 → no Zoho Remind action.
+            // Prepend this shipment's Proforma Invoice(s) as the FIRST Trade
+            // Document, then the other trade docs. It leads the side the current
+            // vault displays — the buyer side for the customer vault, the
+            // consignee side for the consignee vault (which uses forceParty). A
+            // finalised PI reads Signed; a draft Pending. sig_req_id 0 → no Remind.
             foreach (($piByLead->get($lid) ?? collect()) as $pi) {
                 $sigReq   = $piSigReq[(int) $pi->id] ?? null;
                 $piSigned = (bool) $sigReq;
@@ -691,7 +751,7 @@ class SegmentDocUploadController extends Controller
                         $signedUrl = Storage::disk('public')->url($sigReq->signed_document_path);
                     }
                 }
-                array_unshift($tradeBuyer, [
+                $piRow = [
                     'sig_req_id'  => $sigReq ? (int) $sigReq->id : 0,
                     'name'        => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
                     'required'    => 'REQ',
@@ -700,15 +760,27 @@ class SegmentDocUploadController extends Controller
                     'uploaded_on' => $piSigned && $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d/m/Y') : '—',
                     'valid_upto'  => '—',
                     'signed_url'  => $signedUrl,
-                ]);
+                ];
+                if ($type === 'consignee') array_unshift($tradeCons, $piRow);
+                else                       array_unshift($tradeBuyer, $piRow);
             }
-
-            $tradeAll = array_merge($tradeBuyer, $tradeCons);
-            $agrAll   = array_merge($agrBuyer, $agrCons);
-            $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
 
             $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;
             $buyerIsConsignee = !$cons || (bool) ($cons->same_as_customer ?? false);
+
+            // The ratio must count exactly what the expanded panel displays:
+            //   • Consignee vault → always the consignee side (forceParty).
+            //   • Customer vault, Customer = Consignee → buyer only (the
+            //     Consignee/Both tabs are hidden); otherwise buyer + consignee
+            //     ("Both" view). Counting the wrong set gave "2/5" when 4 showed.
+            if ($type === 'consignee') {
+                $tradeAll = $tradeCons;
+                $agrAll   = $agrCons;
+            } else {
+                $tradeAll = $buyerIsConsignee ? $tradeBuyer : $dedupe(array_merge($tradeBuyer, $tradeCons));
+                $agrAll   = $buyerIsConsignee ? $agrBuyer   : $dedupe(array_merge($agrBuyer, $agrCons));
+            }
+            $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
 
             $sr++;
             $rows[] = [
@@ -850,7 +922,6 @@ class SegmentDocUploadController extends Controller
 
         $tdBuyer = []; $tdCons = []; $agrBuyer = []; $agrCons = [];
         $seen = ['td' => ['Customer' => [], 'Consignee' => []], 'agr' => ['Customer' => [], 'Consignee' => []]];
-        $attached = [];   // sig-request ids consumed by an applicable row
 
         foreach ($segments as $seg) {
             // Agreements applicable to this segment.
@@ -862,13 +933,11 @@ class SegmentDocUploadController extends Controller
                 if ($forBuyer && !isset($seen['agr']['Customer'][$a->id])) {
                     $seen['agr']['Customer'][$a->id] = true;
                     $sig = $sigIndex[ClmSignatureRequest::DOC_AGREEMENT]['Customer'][$a->id] ?? null;
-                    if ($sig) $attached[$sig->id] = true;
                     $agrBuyer[] = $this->shipmentDocRow($name, $req, $sig, $a->id, ClmSignatureRequest::DOC_AGREEMENT);
                 }
                 if ($forCons && !isset($seen['agr']['Consignee'][$a->id])) {
                     $seen['agr']['Consignee'][$a->id] = true;
                     $sig = $sigIndex[ClmSignatureRequest::DOC_AGREEMENT]['Consignee'][$a->id] ?? null;
-                    if ($sig) $attached[$sig->id] = true;
                     $agrCons[] = $this->shipmentDocRow($name, $req, $sig, $a->id, ClmSignatureRequest::DOC_AGREEMENT);
                 }
             }
@@ -882,29 +951,27 @@ class SegmentDocUploadController extends Controller
                 if ($forBuyer && !isset($seen['td']['Customer'][$m->id])) {
                     $seen['td']['Customer'][$m->id] = true;
                     $sig = $sigIndex[ClmSignatureRequest::DOC_TRADE]['Customer'][$m->id] ?? null;
-                    if ($sig) $attached[$sig->id] = true;
                     $tdBuyer[] = $this->shipmentDocRow($name, $req, $sig, $m->id, ClmSignatureRequest::DOC_TRADE);
                 }
                 if ($forCons && !isset($seen['td']['Consignee'][$m->id])) {
                     $seen['td']['Consignee'][$m->id] = true;
                     $sig = $sigIndex[ClmSignatureRequest::DOC_TRADE]['Consignee'][$m->id] ?? null;
-                    if ($sig) $attached[$sig->id] = true;
                     $tdCons[] = $this->shipmentDocRow($name, $req, $sig, $m->id, ClmSignatureRequest::DOC_TRADE);
                 }
             }
         }
 
-        // Append already-sent docs not covered above (orphaned sends) so a
-        // signed/sent document never disappears from the archive.
-        $orphan = fn (string $docType, string $party) => collect($this->sigDocs($reqs, $docType, $party))
-            ->reject(fn ($row) => isset($attached[$row['sig_req_id']]))
-            ->values()->all();
-
+        // Only the documents the lead's segments actually make applicable are
+        // shown — matching the canonical Sales-Matrix resolver
+        // (ClmAgreementController::applicableForLead). We intentionally do NOT
+        // append "orphan" sends (agreements/trade-docs sent under a different or
+        // earlier segment context): those surfaced as wrong/additional rows that
+        // don't belong to this shipment's segment.
         return [
-            'trade_docs_buyer'      => array_merge($tdBuyer,  $orphan(ClmSignatureRequest::DOC_TRADE, 'Customer')),
-            'trade_docs_consignee'  => array_merge($tdCons,   $orphan(ClmSignatureRequest::DOC_TRADE, 'Consignee')),
-            'agreements_buyer'      => array_merge($agrBuyer, $orphan(ClmSignatureRequest::DOC_AGREEMENT, 'Customer')),
-            'agreements_consignee'  => array_merge($agrCons,  $orphan(ClmSignatureRequest::DOC_AGREEMENT, 'Consignee')),
+            'trade_docs_buyer'      => $tdBuyer,
+            'trade_docs_consignee'  => $tdCons,
+            'agreements_buyer'      => $agrBuyer,
+            'agreements_consignee'  => $agrCons,
         ];
     }
 

@@ -75,6 +75,22 @@ const TODAY_STR = (() => {
   return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 })();
 
+/* Current wall-clock time as "HH:MM" — used to floor the meeting time pickers
+ * so a meeting scheduled for TODAY can't be given a start/end in the past. */
+const hmNow = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+};
+
+/* Add `mins` minutes to an "HH:MM" string, clamped to 23:59 so it never wraps
+ * past midnight. Used to enforce the 15-min minimum meeting duration on the
+ * End-Time picker floor. */
+const addHm = (hm: string, mins: number): string => {
+  const [h, m] = hm.split(':').map(Number);
+  const total = Math.min(h * 60 + m + mins, 23 * 60 + 59);
+  return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
+};
+
 /* Convert API rows (snake_case + ISO dates) into the page's display shape
  * (camelCase + dd/mm/yyyy). Keeps the rendering code untouched even though
  * the data now flows from /api/sales/reminders. */
@@ -263,6 +279,10 @@ export default function SalesTodo() {
   // once (QA: "multiple validation errors should be shown at a time") instead
   // of the old one-error-at-a-time behaviour.
   const [formErrors, setFormErrors] = useState<string[]>([]);
+  // Per-field inline validation errors for the MEETING form — rendered right
+  // under each input (red highlight) instead of one lumped box at the bottom.
+  const [mtgErr, setMtgErr] = useState<Record<string, string>>({});
+  const clearMtgErr = (k: string) => setMtgErr(p => (p[k] ? { ...p, [k]: '' } : p));
   // Read-only "view" modal for reminders — opened from the Actions column so
   // the user can inspect details + the attachment without entering edit mode.
   const [viewReminder, setViewReminder] = useState<Reminder | null>(null);
@@ -277,17 +297,18 @@ export default function SalesTodo() {
   const [calMonth, setCalMonth] = useState(todayDate.m);
   const [popover, setPopover]   = useState<{ dateKey: string; x: number; y: number } | null>(null);
 
-  // Scroll lock — while the Add/Edit form or the Reminder Details modal is
-  // open, lock BOTH <html> and <body> so the page behind can't scroll.
+  // Scroll lock — while the Add/Edit form, the Reminder Details modal, or the
+  // calendar day-detail popover is open, lock BOTH <html> and <body> so the
+  // page behind can't scroll.
   useEffect(() => {
-    const anyOpen = modalOpen || viewReminder !== null;
+    const anyOpen = modalOpen || viewReminder !== null || popover !== null;
     if (!anyOpen) return;
     const b = document.body.style.overflow;
     const h = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
     document.documentElement.style.overflow = 'hidden';
     return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
-  }, [modalOpen, viewReminder]);
+  }, [modalOpen, viewReminder, popover]);
 
   // Inject Google Fonts (DM Sans + Inter) once on mount.
   useEffect(() => {
@@ -522,8 +543,9 @@ export default function SalesTodo() {
       // platform left empty intentionally — pre-filling "Zoom" silently
       // satisfied the required validation, so the user could save without
       // ever opening the dropdown. Forcing an active selection.
-      : { editId: null, code:'', oppId:'', customer:'', email:'', contact:'', countryCode:'+91', platform:'', platformOther:'', date: TODAY_STR, startTime:'10:00', endTime:'11:00', link:'', venue:'', agenda:'', status:'In Progress', type: meetingSub });
+      : { editId: null, code:'', oppId:'', customer:'', email:'', contact:'', countryCode:'+91', platform:'', platformOther:'', date: TODAY_STR, startTime:'', endTime:'', link:'', venue:'', agenda:'', status:'In Progress', type: meetingSub });
     setFormErrors([]);
+    setMtgErr({});
     setModalOpen(true);
   };
 
@@ -555,10 +577,11 @@ export default function SalesTodo() {
       setForm({ ...record, editId: record.id });
     }
     setFormErrors([]);
+    setMtgErr({});
     setModalOpen(true);
   };
 
-  const close = () => { setModalOpen(false); setForm({}); setFormErrors([]); };
+  const close = () => { setModalOpen(false); setForm({}); setFormErrors([]); setMtgErr({}); };
 
   const setMark = async (record: Reminder | Meeting, status: string) => {
     if (savingRef.current) return;
@@ -718,34 +741,46 @@ export default function SalesTodo() {
         setSaving(false);
       }
     } else {
-      // Accumulate every validation failure so they're all shown together.
-      const errs: string[] = [];
+      // Per-field validation — each message is keyed to its field so it renders
+      // inline under that input (red highlight), not in a lumped bottom box.
+      const fe: Record<string, string> = {};
+      const set = (k: string, msg: string) => { if (!fe[k]) fe[k] = msg; };
       const cust = (form.customer || '').trim();
       // Customer name: must contain at least one letter (rejects "!!!", "123",
       // "@@@" etc.) and stay within a sensible length / safe character set.
-      if (!cust) errs.push('Person Name is required.');
+      if (!cust) set('customer', 'Person Name is required.');
       else {
-        if (!/[A-Za-z]/.test(cust))                            errs.push('Person Name must contain letters.');
-        if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) errs.push('Person Name has invalid characters or length.');
+        if (!/[A-Za-z]/.test(cust))                            set('customer', 'Person Name must contain letters.');
+        if (!/^[A-Za-z][A-Za-z0-9 .,'&()\-]{1,99}$/.test(cust)) set('customer', 'Person Name has invalid characters or length.');
       }
 
-      // Customer Email — optional, but if given it's trimmed + format-checked
-      // so leading/trailing spaces don't trip the backend (QA: trim spaces).
+      // Person Email — REQUIRED, trimmed + format-checked so leading/trailing
+      // spaces don't trip the backend (QA: trim spaces).
       const emailRaw = (form.email || '').trim();
-      if (emailRaw) {
-        if (emailRaw.length > 191)                              errs.push('Customer Email cannot exceed 191 characters.');
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw))       errs.push('Customer Email is not a valid email address.');
+      if (!emailRaw) {
+        set('email', 'Person Email is required.');
+      } else {
+        if (emailRaw.length > 191)                              set('email', 'Person Email cannot exceed 191 characters.');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw))       set('email', 'Person Email is not a valid email address.');
       }
 
       if (!form.date) {
-        errs.push('Meeting Date is required.');
+        set('date', 'Meeting Date is required.');
       } else if (!form.editId && displayToIso(form.date) < displayToIso(TODAY_STR)) {
         // Block past meeting dates on new meetings — mirrors the reminder rule.
         // Existing meetings are exempt so a historic row can still be edited/saved.
-        errs.push('Meeting date cannot be in the past.');
+        set('date', 'Meeting date cannot be in the past.');
       }
-      if (!form.startTime) errs.push('Start Time is required.');
-      if (!form.endTime)   errs.push('End Time is required.');
+      if (!form.startTime) set('startTime', 'Start Time is required.');
+      if (!form.endTime)   set('endTime', 'End Time is required.');
+      // Minimum meeting duration = 15 minutes (a 2–3 min slot is almost always
+      // a mis-click). End must be at least 15 min after start.
+      if (form.startTime && form.endTime) {
+        const toMin = (hm: string) => { const [h, m] = hm.split(':').map(Number); return h * 60 + m; };
+        if (toMin(form.endTime) - toMin(form.startTime) < 15) {
+          set('endTime', 'Meeting must be at least 15 minutes long (End ≥ Start + 15 min).');
+        }
+      }
 
       // Contact number — REQUIRED. Combine the selected country code with the
       // local number, then enforce 10–15 total digits (10 covers India's
@@ -754,12 +789,12 @@ export default function SalesTodo() {
       const ccode     = (form.countryCode || '+91').trim();
       const contactRaw = localNum ? `${ccode} ${localNum}`.trim() : '';
       if (!localNum) {
-        errs.push('Contact Number is required.');
+        set('contact', 'Contact Number is required.');
       } else {
         const digits = contactRaw.replace(/\D/g, '');
-        if (digits.length < 10)  errs.push('Contact Number must be at least 10 digits.');
-        if (digits.length > 15)  errs.push('Contact Number cannot be more than 15 digits.');
-        if (!/^\+?[\d\s\-]+$/.test(contactRaw)) errs.push('Contact Number can only contain digits, spaces, dashes and a leading +.');
+        if (digits.length < 10)  set('contact', 'Contact Number must be at least 10 digits.');
+        if (digits.length > 15)  set('contact', 'Contact Number cannot be more than 15 digits.');
+        if (!/^\+?[\d\s\-]+$/.test(contactRaw)) set('contact', 'Contact Number can only contain digits, spaces, dashes and a leading +.');
       }
 
       // Resolve the platform/type, honouring the free-text "Other" choice.
@@ -767,9 +802,9 @@ export default function SalesTodo() {
         ? (form.platformOther || '').trim()
         : (form.platform || '');
       if (!form.platform) {
-        errs.push(meetingSub === 'physical' ? 'Meeting Type is required.' : 'Platform is required.');
+        set('platform', meetingSub === 'physical' ? 'Meeting Type is required.' : 'Platform is required.');
       } else if (form.platform === 'Other' && !platformVal) {
-        errs.push(meetingSub === 'physical' ? 'Please specify the meeting type.' : 'Please specify the platform.');
+        set('platform', meetingSub === 'physical' ? 'Please specify the meeting type.' : 'Please specify the platform.');
       }
 
       const isVirtual = ((form.type as MeetingSub) || meetingSub) === 'virtual';
@@ -779,31 +814,31 @@ export default function SalesTodo() {
       if (isVirtual) {
         // Virtual meeting link — REQUIRED, must be a valid http(s) URL.
         if (!linkRaw) {
-          errs.push('Meeting Link is required.');
+          set('link', 'Meeting Link is required.');
         } else {
           let ok = false;
           try { const u = new URL(linkRaw); ok = /^https?:$/.test(u.protocol); } catch { ok = false; }
-          if (!ok) errs.push('Meeting Link must be a valid http(s) URL (e.g. https://meet.google.com/abc-def-ghi).');
+          if (!ok) set('link', 'Meeting Link must be a valid http(s) URL (e.g. https://meet.google.com/abc-def-ghi).');
         }
       } else {
         // Physical meeting — venue is REQUIRED and must look like a real
         // place name (at least one letter, sensible length, safe punctuation).
         if (!venueRaw) {
-          errs.push('Place / Venue is required.');
+          set('venue', 'Place / Venue is required.');
         } else {
-          if (!/[A-Za-z]/.test(venueRaw))                            errs.push('Venue must contain letters, not just symbols or digits.');
-          if (venueRaw.length < 3 || venueRaw.length > 200)          errs.push('Venue must be between 3 and 200 characters.');
-          if (!/^[A-Za-z0-9 .,'&()#\/\-\n\r]+$/.test(venueRaw))      errs.push('Venue contains invalid characters.');
+          if (!/[A-Za-z]/.test(venueRaw))                            set('venue', 'Venue must contain letters, not just symbols or digits.');
+          if (venueRaw.length < 3 || venueRaw.length > 200)          set('venue', 'Venue must be between 3 and 200 characters.');
+          if (!/^[A-Za-z0-9 .,'&()#\/\-\n\r]+$/.test(venueRaw))      set('venue', 'Venue contains invalid characters.');
         }
       }
 
       // Meeting agenda — REQUIRED for both meeting types.
       const agendaRaw = (form.agenda || '').trim();
-      if (!agendaRaw)                   errs.push('Meeting Agenda is required.');
-      else if (agendaRaw.length < 2)    errs.push('Meeting Agenda must be at least 2 characters.');
-      else if (agendaRaw.length > 1000) errs.push('Meeting Agenda cannot exceed 1000 characters.');
+      if (!agendaRaw)                   set('agenda', 'Meeting Agenda is required.');
+      else if (agendaRaw.length < 2)    set('agenda', 'Meeting Agenda must be at least 2 characters.');
+      else if (agendaRaw.length > 1000) set('agenda', 'Meeting Agenda cannot exceed 1000 characters.');
 
-      if (errs.length) { setFormErrors(errs); return; }
+      if (Object.keys(fe).length) { setMtgErr(fe); return; }
 
       const payload = {
         type: ((form.type as 'virtual' | 'physical') || meetingSub),
@@ -1478,14 +1513,14 @@ export default function SalesTodo() {
                     <button
                       type="button"
                       className={`td-mtg-toggle-btn ${meetingSub === 'virtual' ? 'active' : ''}`}
-                      onClick={() => { setMeetingSub('virtual'); setForm(p => ({ ...p, type: 'virtual', platform: '', platformOther: '' })); }}
+                      onClick={() => { setMeetingSub('virtual'); setForm(p => ({ ...p, type: 'virtual', platform: '', platformOther: '' })); setMtgErr({}); }}
                     >
                       <IconCam /> 💻 Virtual Meeting
                     </button>
                     <button
                       type="button"
                       className={`td-mtg-toggle-btn ${meetingSub === 'physical' ? 'active' : ''}`}
-                      onClick={() => { setMeetingSub('physical'); setForm(p => ({ ...p, type: 'physical', platform: '', platformOther: '' })); }}
+                      onClick={() => { setMeetingSub('physical'); setForm(p => ({ ...p, type: 'physical', platform: '', platformOther: '' })); setMtgErr({}); }}
                     >
                       <IconPin /> 🏢 Physical Meeting
                     </button>
@@ -1516,22 +1551,22 @@ export default function SalesTodo() {
                   </div>
 
                   <div className="td-form-row">
-                    <Field label="Person Name" required>
-                      <input className="td-inp" value={form.customer || ''} onChange={e => setForm(p => ({ ...p, customer: e.target.value }))} placeholder="Person name" />
+                    <Field label="Person Name" required error={mtgErr.customer}>
+                      <input className={`td-inp ${mtgErr.customer ? 'td-inp-err' : ''}`} value={form.customer || ''} onChange={e => { setForm(p => ({ ...p, customer: e.target.value })); clearMtgErr('customer'); }} placeholder="Person name" />
                     </Field>
-                    <Field label="Person Email">
+                    <Field label="Person Email" required error={mtgErr.email}>
                       <input
-                        className="td-inp"
+                        className={`td-inp ${mtgErr.email ? 'td-inp-err' : ''}`}
                         type="email"
                         maxLength={191}
                         value={form.email || ''}
-                        onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                        onChange={e => { setForm(p => ({ ...p, email: e.target.value })); clearMtgErr('email'); }}
                         placeholder="Email address"
                       />
                     </Field>
                   </div>
                   <div className="td-form-row">
-                    <Field label="Contact No" required>
+                    <Field label="Contact No" required error={mtgErr.contact}>
                       {/* Country code dropdown + local number. The two combine
                           into a single stored contact on save (QA bug 34). */}
                       <div className="td-contact-row">
@@ -1544,7 +1579,7 @@ export default function SalesTodo() {
                           {COUNTRY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                         <input
-                          className="td-inp"
+                          className={`td-inp ${mtgErr.contact ? 'td-inp-err' : ''}`}
                           type="tel"
                           inputMode="tel"
                           maxLength={15}
@@ -1554,68 +1589,86 @@ export default function SalesTodo() {
                             // The country code lives in the dropdown beside it.
                             const cleaned = e.target.value.replace(/[^\d\s\-]/g, '');
                             setForm(p => ({ ...p, contact: cleaned }));
+                            clearMtgErr('contact');
                           }}
                           placeholder="e.g. 98765 43210"
                         />
                       </div>
                     </Field>
-                    <Field label={meetingSub === 'physical' ? 'Meeting Type / Format' : 'Platform'} required>
+                    <Field label={meetingSub === 'physical' ? 'Meeting Type / Format' : 'Platform'} required error={mtgErr.platform}>
                       <MasterSelect
                         value={form.platform || ''}
                         placeholder={meetingSub === 'physical' ? 'Select type' : 'Select platform'}
                         options={(meetingSub === 'physical' ? PHYSICAL_PLATFORMS : VIRTUAL_PLATFORMS).map(p => ({ value: p, label: p }))}
-                        onChange={v => setForm(p => ({ ...p, platform: v, platformOther: v === 'Other' ? p.platformOther : '' }))}
+                        invalid={!!mtgErr.platform}
+                        onChange={v => { setForm(p => ({ ...p, platform: v, platformOther: v === 'Other' ? p.platformOther : '' })); clearMtgErr('platform'); }}
                       />
                       {/* Free-text capture when "Other" is picked (QA bug 34). */}
                       {form.platform === 'Other' && (
                         <input
-                          className="td-inp"
+                          className={`td-inp ${mtgErr.platform ? 'td-inp-err' : ''}`}
                           style={{ marginTop: 6 }}
                           value={form.platformOther || ''}
                           maxLength={100}
-                          onChange={e => setForm(p => ({ ...p, platformOther: e.target.value }))}
+                          onChange={e => { setForm(p => ({ ...p, platformOther: e.target.value })); clearMtgErr('platform'); }}
                           placeholder={meetingSub === 'physical' ? 'Specify meeting type…' : 'Specify platform…'}
                         />
                       )}
                     </Field>
                   </div>
                   {meetingSub === 'virtual' ? (
-                    <Field label="Meeting Link" required colSpan={2}>
-                      <input className="td-inp" value={form.link || ''} onChange={e => setForm(p => ({ ...p, link: e.target.value }))} placeholder="https://..." />
+                    <Field label="Meeting Link" required colSpan={2} error={mtgErr.link}>
+                      <input className={`td-inp ${mtgErr.link ? 'td-inp-err' : ''}`} value={form.link || ''} onChange={e => { setForm(p => ({ ...p, link: e.target.value })); clearMtgErr('link'); }} placeholder="https://..." />
                     </Field>
                   ) : (
-                    <Field label="Place / Venue" required colSpan={2}>
-                      <input className="td-inp" value={form.venue || ''} onChange={e => setForm(p => ({ ...p, venue: e.target.value }))} placeholder="e.g. Mumbai Head Office, BKC" />
+                    <Field label="Place / Venue" required colSpan={2} error={mtgErr.venue}>
+                      <input className={`td-inp ${mtgErr.venue ? 'td-inp-err' : ''}`} value={form.venue || ''} onChange={e => { setForm(p => ({ ...p, venue: e.target.value })); clearMtgErr('venue'); }} placeholder="e.g. Mumbai Head Office, BKC" />
                     </Field>
                   )}
                   <div className="td-form-row td-form-row-3">
-                    <Field label="Meeting Date" required>
+                    <Field label="Meeting Date" required error={mtgErr.date}>
                       <MasterDatePicker
                         value={toInputDate(form.date)}
-                        onChange={iso => setForm(p => ({ ...p, date: fromInputDate(iso) }))}
+                        onChange={iso => { setForm(p => ({ ...p, date: fromInputDate(iso) })); clearMtgErr('date'); }}
                         placeholder="dd-mm-yyyy"
+                        invalid={!!mtgErr.date}
                         // Meetings can't be scheduled in the past — applies to both
                         // add AND edit, so editing a row also can't pick an old date.
                         minDate={toInputDate(TODAY_STR)}
                       />
                     </Field>
-                    <Field label="Start Time" required>
+                    <Field label="Start Time" required error={mtgErr.startTime}>
                       <MasterTimePicker
                         value={form.startTime || ''}
-                        onChange={v => setForm(p => ({ ...p, startTime: v }))}
+                        onChange={v => { setForm(p => ({ ...p, startTime: v })); clearMtgErr('startTime'); clearMtgErr('endTime'); }}
                         placeholder="--:--"
+                        invalid={!!mtgErr.startTime}
+                        accent="teal"
+                        // Today → can't start before now.
+                        minTime={form.date === TODAY_STR ? hmNow() : undefined}
                       />
                     </Field>
-                    <Field label="End Time" required>
+                    <Field label="End Time" required error={mtgErr.endTime}>
                       <MasterTimePicker
                         value={form.endTime || ''}
-                        onChange={v => setForm(p => ({ ...p, endTime: v }))}
+                        onChange={v => { setForm(p => ({ ...p, endTime: v })); clearMtgErr('endTime'); }}
                         placeholder="--:--"
+                        invalid={!!mtgErr.endTime}
+                        accent="teal"
+                        // End must be ≥ Start + 15 min (min meeting length), and
+                        // also ≥ now when the meeting is today.
+                        minTime={(() => {
+                          const floors = [
+                            form.startTime ? addHm(form.startTime, 15) : '',
+                            form.date === TODAY_STR ? hmNow() : '',
+                          ].filter(Boolean) as string[];
+                          return floors.length ? floors.sort().slice(-1)[0] : undefined;
+                        })()}
                       />
                     </Field>
                   </div>
-                  <Field label="Meeting Agenda" required colSpan={2}>
-                    <textarea className="td-inp" rows={2} value={form.agenda || ''} onChange={e => setForm(p => ({ ...p, agenda: e.target.value }))} placeholder="Meeting agenda..." style={{ resize: 'none', minHeight: 52 }} />
+                  <Field label="Meeting Agenda" required colSpan={2} error={mtgErr.agenda}>
+                    <textarea className={`td-inp ${mtgErr.agenda ? 'td-inp-err' : ''}`} rows={2} value={form.agenda || ''} onChange={e => { setForm(p => ({ ...p, agenda: e.target.value })); clearMtgErr('agenda'); }} placeholder="Meeting agenda..." style={{ resize: 'none', minHeight: 52 }} />
                   </Field>
                 </>
               )}
@@ -2018,11 +2071,12 @@ function CalendarSection(props: {
 }
 
 /* ── Form field helper ── */
-function Field({ label, required, colSpan, children }: { label: string; required?: boolean; colSpan?: 1 | 2; children: React.ReactNode }) {
+function Field({ label, required, colSpan, error, children }: { label: string; required?: boolean; colSpan?: 1 | 2; error?: string; children: React.ReactNode }) {
   return (
     <div className="td-field" style={colSpan === 2 ? { gridColumn: 'span 2' } : undefined}>
       <label className="td-label">{label} {required && <span className="td-req">*</span>}</label>
       {children}
+      {error && <div className="td-field-err">{error}</div>}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { formatDmy } from '../../../../../utils/formatDmy';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -56,7 +57,7 @@ function formatDate(s: string | null | undefined): string {
   if (!s) return '—';
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString('en-GB');
+  return formatDmy(d);
 }
 
 export default function ProcurementDetailsModal({ open, procurementId, onClose }: Props) {

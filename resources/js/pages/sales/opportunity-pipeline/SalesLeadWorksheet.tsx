@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { formatDmy } from '../../../utils/formatDmy';
 import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx';
@@ -183,7 +184,7 @@ const renderFilterChips = (
 const mapServerToLead = (r: ServerLead): Lead => {
   const dateSrc = r.query_time ?? r.created_at;
   const date = dateSrc
-    ? new Date(dateSrc).toLocaleDateString('en-GB') // DD/MM/YYYY
+    ? formatDmy(dateSrc)
     : '—';
   return {
     id:       r.id,

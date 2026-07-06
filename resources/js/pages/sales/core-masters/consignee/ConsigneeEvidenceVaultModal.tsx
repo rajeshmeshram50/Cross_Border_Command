@@ -95,6 +95,7 @@ export interface VaultData {
   owner_kyc_count:        number;
   trade_license_count:    number;
   trade_documents_count:  number;
+  agreements_count:       number;
   total_shipments:        number;
   company_dd:             VaultDoc[];
   owner_kyc:              VaultDoc[];
@@ -160,6 +161,7 @@ function buildDemoVault(consignee: ConsigneeVaultTarget): VaultData {
     owner_kyc_count:       5,
     trade_license_count:   4,
     trade_documents_count: 3,
+    agreements_count:      5,
     total_shipments:       4,
     company_dd: [
       { id: 1, name: 'Company PAN',          reference: 'AABCT1234F',      authority: 'Income Tax Dept', issue_date: '01/01/2023', expiry: '01/01/2028', attachment: 'CompanyPAN.pdf',     status: 'Verified' },
@@ -228,7 +230,6 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   const [ovShip, setOvShip] = useState<number | null>(null);
   // Row currently downloading in the Document Overview — drives a per-row spinner.
   const [ovDownloadingKey, setOvDownloadingKey] = useState<string | null>(null);
-  const [shipmentFilter, setShipmentFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
 
   /* Switch the active group and jump to its first sub-tab. */
   const selectGroup = (g: GroupKey) => {
@@ -272,7 +273,6 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     const startTab = initialTab ?? 'company-dd';
     setTab(startTab);
     setGroup(groupOfTab(startTab));
-    setShipmentFilter('buyer-eq-consignee');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, consignee?.db_id, initialTab]);
 
@@ -381,19 +381,14 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     const sigRows            = signatureRequestsToVaultDocs(signatureRows);
     const baseSegmentTd      = (base.trade_documents ?? []) as VaultDoc[];
     const mergedTd           = mergeTradeDocuments(baseSegmentTd as any, sigRows, 'consignee') as unknown as VaultDoc[];
-    const baseSegmentSigned  = baseSegmentTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
-    const baseSegmentPending = baseSegmentTd.filter(r => r.status === 'Pending').length;
-    const mergedSigned       = mergedTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
-    const mergedPending      = mergedTd.filter(r => r.status === 'Pending').length;
     return {
       ...base,
+      // The header KPIs (Total Documents / Verified / Pending / Trade Documents /
+      // Total Agreements) are computed authoritatively by the backend from the
+      // Standard + Case-to-Case document families, so they pass through
+      // unchanged. We still merge the segment-rule TD bucket with live
+      // signatures for the Export workbook's Trade Documents sheet.
       trade_documents: mergedTd as typeof base.trade_documents,
-      trade_documents_count: mergedTd.length,
-      // KPI roll-ups: swap the raw segment-rule TD contribution for the
-      // merged (party-filtered + signature-aware) numbers.
-      verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + mergedSigned,
-      pending:         Math.max(0, (base.pending ?? 0)         - baseSegmentPending) + mergedPending,
-      total_documents: Math.max(0, (base.total_documents ?? 0) - baseSegmentTd.length) + mergedTd.length,
     };
   }, [consignee, data, vaultLive, signatureRows]);
 
@@ -438,7 +433,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         { Field: 'Consignee ID',          Value: consignee.id },
         { Field: 'Company',               Value: consignee.company },
         { Field: 'Linked Customer',       Value: consignee.customerId || '' },
-        { Field: 'Risk',                  Value: consignee.risk || '' },
+        { Field: 'Risk',                  Value: consignee.risk ?? 'Low' },
         { Field: 'Segment',               Value: consignee.segment || '' },
         { Field: 'Country',               Value: consignee.country || '' },
         { Field: 'Total Documents',       Value: vault.total_documents },
@@ -621,6 +616,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
             <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        accent="#0e7490" />
             <KpiTile label="Trade License"          value={vault.trade_license_count}    accent="#0891b2" />
             <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  accent="#0d9488" />
+            <KpiTile label="Total Agreements"       value={vault.agreements_count}       accent="#0891b2" />
             <KpiTile label="Total Shipments"        value={vault.total_shipments}        accent="#0c4a6e" />
           </div>
         </div>
@@ -697,7 +693,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </div>
 
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
-            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'} filter={shipmentFilter} setFilter={setShipmentFilter}
+            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'}
                              onSend={(leadId, doc, party) => setShipSend({ leadId, doc, party })} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
@@ -804,7 +800,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
               )}
               <div className="cnev-ov-body">
                 <table className="cnev-ov-table">
-                  <thead><tr><th style={{ width: 48 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+                  <thead><tr><th style={{ width: 64 }}>Sr. No.</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cnev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
@@ -941,7 +937,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               <td>{i + 1}</td>
               <td className="cnev-doc-name">{d.name}</td>
               <td className="cnev-mono">{d.reference || '—'}</td>
-              <td>{d.authority || '—'}</td>
+              <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
               <td>
                 {d.attachment ? (
                   d.attachment_url ? (
@@ -1197,11 +1193,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
+function ShipmentTable({ rows, kind, onSend }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement';
-  filter: 'buyer-eq-consignee' | 'buyer-neq-consignee';
-  setFilter: (f: 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
   /** Launches Send-for-Signature for one shipment doc (lead + doc + party). */
   onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
 }) {
@@ -1213,12 +1207,8 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
   const COLS = isAgreement ? 11 : 10;
   return (
     <>
-      {/* Trade Documents uses compact pills; Agreements uses the full-width
-          segmented bar with ✓ / ✕ markers — matches the figma per tab. */}
-      <div className={`cnev-ship-filter ${isAgreement ? '' : 'cnev-ship-filter-2'}`}>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✓</span>}Customer = Consignee</button>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✕</span>}Customer &ne; Consignee</button>
-      </div>
+      {/* No Customer = / ≠ Consignee tabs in the consignee vault — it always
+          shows this consignee's shipments and its own documents directly. */}
       <div className="cnev-table-wrap">
         <div className="cnev-table-scroll">
         <table className="cnev-table">

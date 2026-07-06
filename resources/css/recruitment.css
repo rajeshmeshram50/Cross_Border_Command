@@ -9159,11 +9159,13 @@
 .att-reg-keka-close:hover { background: rgba(255,255,255,0.28); transform: rotate(90deg); }
 .att-reg-keka-close i { font-size: 18px; }
 
-/* Body — compact, fits without scrolling at typical desktop heights */
+/* Body — always cap the height and scroll internally so the modal stays fixed
+   and centred: the header (title) and footer (Cancel / Request) remain in view
+   while only the form body scrolls. A previous `@media (min-height: 800px)`
+   override removed this cap on tall screens, so a long form (several punch rows
+   + note) grew past the viewport and the whole modal scrolled with the page
+   instead of staying put (bug #21). */
 .att-reg-keka-body { padding: 14px 22px 12px; max-height: 78vh; overflow-y: auto; }
-@media (min-height: 800px) {
-  .att-reg-keka-body { max-height: none; overflow: visible; }
-}
 
 .att-reg-keka-field { margin-bottom: 12px; }
 .att-reg-keka-label {
@@ -9282,6 +9284,12 @@
 .att-reg-keka-arrow--in  { color: #16a34a; }
 .att-reg-keka-arrow--out { color: #ef4444; }
 
+/* Wrapper that lets the custom MasterTimePicker fill the row like the old
+   native time input did (bug #16 replaced <input type="time">). */
+.att-reg-keka-time-wrap {
+  flex: 1 1 0;
+  min-width: 0;
+}
 .att-reg-keka-time {
   flex: 1 1 0;
   height: 36px !important;

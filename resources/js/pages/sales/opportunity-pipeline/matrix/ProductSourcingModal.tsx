@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
+import { formatProductCode } from '../../../../utils/formatProductCode';
 import { useToast } from '../../../../contexts/ToastContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import VendorMappingsModal from './stages/VendorMappingsModal';
@@ -287,7 +288,7 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                               <rect x="4" y="4" width="16" height="16" rx="2.5" />
                             </svg>
-                            {r.product_code ?? '—'}
+                            {formatProductCode(r.product_code) || '—'}
                           </span>
                         </td>
                         <td>

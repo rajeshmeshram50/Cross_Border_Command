@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { formatDmy } from '../../../../../utils/formatDmy';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
@@ -64,7 +65,7 @@ export default function Stage1InquiryReceived({ header, onNext, reloadLead }: St
     ? formatINR(Number(tm.order_value))
     : '—';
   const buyingPlanDate = tm?.buying_plan
-    ? new Date(tm.buying_plan).toLocaleDateString('en-GB')
+    ? formatDmy(tm.buying_plan)
     : '—';
 
   const dmName   = tm?.name      ?? '—';
