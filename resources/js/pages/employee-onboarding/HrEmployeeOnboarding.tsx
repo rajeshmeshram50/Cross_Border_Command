@@ -3947,7 +3947,16 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       pf_deduction:        String(x.pf_type ?? '').toLowerCase() === 'standard' ? 'Standard' : 'Statutory', // repurposed: holds PF Type
       esi_applicable:      String(x.esi_applicable      ?? 'No'),
       gratuity_nominee_name: String(x.gratuity_nominee_name ?? ''),
-      agreed_ctc_lpa:      x.agreed_ctc_lpa != null ? String(x.agreed_ctc_lpa) : '',
+      // Agreed CTC mirrors the Stage 1 annual salary (read-only). Derive it
+      // straight from the saved annual_salary here so it shows IMMEDIATELY on
+      // open — seeding from the (often-null) saved agreed_ctc_lpa left it blank
+      // until the salary was edited/re-saved, and this init re-running on an
+      // emp.raw refresh clobbered the mirror effect's value (bug #42).
+      agreed_ctc_lpa:      (() => {
+        const annual = Number(x.annual_salary);
+        if (annual > 0) return String(+(annual / 100000).toFixed(2));
+        return x.agreed_ctc_lpa != null ? String(x.agreed_ctc_lpa) : '';
+      })(),
     });
   }, [isOpen, emp?.id, emp?.raw]);
 

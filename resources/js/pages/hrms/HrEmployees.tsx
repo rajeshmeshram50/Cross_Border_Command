@@ -4363,9 +4363,24 @@ export default function HrEmployees() {
               <Button onClick={closeAssign} className="master-modal-cancel d-inline-flex align-items-center gap-1">
                 <i className="ri-close-line" style={{ fontSize: 15 }} /> Cancel
               </Button>
-              <button type="button" onClick={handleSaveAssign} className="assign-save-btn">
-                <i className="ri-save-line" style={{ fontSize: 16 }} />
-                Save Assets
+              <button
+                type="button"
+                onClick={handleSaveAssign}
+                disabled={aSaving}
+                className="assign-save-btn"
+                style={aSaving ? { opacity: 0.7, cursor: 'not-allowed' } : undefined}
+              >
+                {aSaving ? (
+                  <>
+                    <i className="ri-loader-4-line" style={{ fontSize: 16, animation: 'spin 1s linear infinite' }} />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <i className="ri-save-line" style={{ fontSize: 16 }} />
+                    Save Assets
+                  </>
+                )}
               </button>
             </div>
           </div>
