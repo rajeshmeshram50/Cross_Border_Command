@@ -246,6 +246,20 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
   const [segOpen, setSegOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
   // All-parties popover — opened from the +N badge in the APPLICABLE PARTY column.
   const [partyOpen, setPartyOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  // These popovers are portalled with fixed positioning off the badge's rect, so
+  // a page/table scroll leaves them behind (they drift out of the table and look
+  // mispositioned). Close them on any scroll (capture:true catches ancestor +
+  // table scrolls) or resize — same behaviour as the master dropdowns.
+  useEffect(() => {
+    if (!segOpen && !partyOpen) return;
+    const close = () => { setSegOpen(null); setPartyOpen(null); };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [segOpen, partyOpen]);
   // Blocked-action popup state — set when the user clicks Edit/Delete on a
   // draft that has already been signed.
   const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: TdLib } | null>(null);

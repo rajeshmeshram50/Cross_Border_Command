@@ -371,9 +371,17 @@ class ClmTradeDocumentController extends Controller
         // Word round-trip — preserves header/footer/styling we can't fully
         // reproduce from HTML alone).
         if ($row->docx_path && Storage::disk('public')->exists($row->docx_path)) {
-            $abs  = Storage::disk('public')->path($row->docx_path);
             $name = $row->docx_original_name ?: ($row->code ?: 'trade-document') . '.docx';
-            return response()->download($abs, $name);
+            try {
+                // Stream via the Storage disk — works for both local and cloud
+                // disks (Azure Blob). response()->download() needs a real local
+                // path and 500s with "The file does not exist" (leaking the path)
+                // when the file lives on a cloud disk. On any read failure we fall
+                // through and regenerate the DOCX from the row's content below.
+                return Storage::disk('public')->download($row->docx_path, $name);
+            } catch (\Throwable $e) {
+                // fall through to regeneration
+            }
         }
 
         // Generate a fresh DOCX from the row's HTML content. Title goes on

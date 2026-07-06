@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useSelectionLock } from '../../../hooks/useSelectionLock';
 
 /* Locks scroll while a modal is mounted so the page behind the overlay can't
  * scroll-chain. Locks BOTH <html> and <body> — the viewport scroll is owned by
@@ -176,6 +177,7 @@ export function SimpleNameModal(props: {
 }) {
   const { title, placeholder, code, isEdit, initial, headIconSvg, onClose, onSave, existingRows, editingId } = props;
   useBodyScrollLock();
+  useSelectionLock();   // block Ctrl+A / drag-select of the page behind the modal
   const [name, setName]     = useState(initial);
   const [error, setError]   = useState('');
   const [saving, setSaving] = useState(false);
@@ -262,6 +264,7 @@ export function SimpleDescModal(props: {
 }) {
   const { title, namePlaceholder, descPlaceholder, code, isEdit, initialName, initialDesc, headIconSvg, onClose, onSave, existingRows, editingId } = props;
   useBodyScrollLock();
+  useSelectionLock();   // block Ctrl+A / drag-select of the page behind the modal
   const [name, setName] = useState(initialName);
   const [desc, setDesc] = useState(initialDesc);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -359,6 +362,7 @@ export function ShortCodeNameModal(props: {
 }) {
   const { title, code, isEdit, initialShortCode, onClose, onSave } = props;
   useBodyScrollLock();
+  useSelectionLock();   // block Ctrl+A / drag-select of the page behind the modal
   const [name, setName]     = useState(props.initialName);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -434,6 +438,7 @@ export function ShortCodeNameModal(props: {
 export function LockedConf(props: { title: string; sub: string; onClose: () => void }) {
   const { title, sub, onClose } = props;
   useBodyScrollLock();
+  useSelectionLock();   // block Ctrl+A / drag-select of the page behind the modal
   // Inline styles can't be reached by the [data-bs-theme="dark"] CSS rules, so
   // resolve the theme-dependent colours here. The red header band + Cancel
   // button stay red in both themes; only the card surface, body text and
@@ -492,6 +497,7 @@ export function LockedConf(props: { title: string; sub: string; onClose: () => v
 export function DeleteConf(props: { title: string; sub: string; onCancel: () => void; onConfirm: () => void | Promise<void> }) {
   const { title, sub, onCancel, onConfirm } = props;
   useBodyScrollLock();
+  useSelectionLock();   // block Ctrl+A / drag-select of the page behind the modal
   /* Local in-flight guard — prevents duplicate API calls when the
    * user double-clicks Delete (which was causing 404/409 backend
    * errors). Awaits onConfirm so the state stays true until the
