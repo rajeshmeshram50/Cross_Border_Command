@@ -140,7 +140,7 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
               <table className="rlm-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 50 }}>#</th>
+                    <th style={{ width: 64 }}>SR NO</th>
                     <th>SUBJECT</th>
                     <th style={{ width: 120 }}>SET DATE</th>
                     <th style={{ width: 100 }}>TAT</th>

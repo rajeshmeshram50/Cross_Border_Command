@@ -255,6 +255,20 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
       toast.warning('Map a customer first', 'Add a customer from the toolbar above before advancing to Stage 5.');
       return;
     }
+    /* EVERY priceable (active) product must have at least one quoted price
+     * before advancing — you can't move to Stage 5 with some products still
+     * unpriced. Draft/inactive products can't be quoted (input is disabled),
+     * so they're excluded from the requirement. */
+    const activeProducts = products.filter(p => (p.product_status ?? '').toLowerCase() === 'active');
+    const unpriced = activeProducts.filter(p => (submitCountByProduct[p.id] ?? 0) === 0);
+    if (unpriced.length > 0) {
+      toast.warning(
+        'Price all products first',
+        `Share a quoted price for every active product before advancing — ${unpriced.length} of ${activeProducts.length} still pending.`,
+      );
+      setTab('to_share');
+      return;
+    }
     if (sharedRows.length === 0) {
       toast.warning('Share a price first', 'Submit at least one quoted price before advancing to Stage 5.');
       setTab('to_share');
