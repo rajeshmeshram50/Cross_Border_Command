@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useTheme } from '../../../../contexts/ThemeContext';
 import api from '../../../../api';
 import { MasterSelect, MasterDatePicker } from '../../../master/masterFormKit';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -8,7 +9,6 @@ import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import SalesCustomerSendForSignatureModal from '../customer/SalesCustomerSendForSignatureModal';
-import { MasterMultiSelect } from '../../../master/masterFormKit';
 import {
   readCustomerMasterBundle,
   writeCustomerMasterBundle,
@@ -153,6 +153,13 @@ export type ConsigneeRow = {
   db_id?: number;
   customerId: string;
   customer_db_id?: number;
+  /** All customers this consignee is mapped to (many-to-many). The
+   *  `customerId` above stays the primary for backward compatibility. */
+  customers?: {
+    id: number; code: string | null; name: string | null;
+    segment?: string | null; type?: string | null; risk?: string | null; status?: string | null;
+    country?: string | null; city?: string | null; contact?: string | null; email?: string | null; phone?: string | null;
+  }[];
   company: string;
   segment: string;
   /* Free-text master value coming back from /master/risk_levels.
@@ -268,6 +275,8 @@ const consigneeStageMemory = new Map<number, ConsigneeStageMemoryEntry>();
 
 export default function AddConsigneeModal({ open, consignee, onClose, onSaved, preselectedCustomerId, preselectedCustomerDbId, existingMirrorCount, initialStage }: Props) {
   const toast = useToast();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
   // Scroll lock — lock BOTH <html> and <body> so the page behind can't scroll.
   useEffect(() => {
@@ -287,8 +296,35 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * create grows it as the user advances via Save & Next. */
   const [maxStage, setMaxStage] = useState<Stage>(1);
   const [customer, setCustomer] = useState<CustomerOption | null>(null);
+  /* Additional customers this consignee is ALSO mapped to (many-to-many),
+   * beyond the primary `customer` above. Stored as customer DB ids. The
+   * payload sends [primary, ...these]. "Same as Customer" is disabled while
+   * any extras are selected (the KYC mirror is intrinsically 1:1). */
+  const [extraCustomerIds, setExtraCustomerIds] = useState<number[]>([]);
+  const [extraSearch, setExtraSearch] = useState('');
+  /* Which mapped customer's details the LINKED CUSTOMER "Show" panel displays.
+   * null = the primary. Set by clicking a chip in the linked-customer row. */
+  const [activeLinkedId, setActiveLinkedId] = useState<number | null>(null);
   const [search, setSearch]     = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  /* Customer-context (Map Consignee) only: show the "Same as Customer? Yes/No"
+   * question before the customer list. Skipped when the customer already has a
+   * mirror (can't create a second one). */
+  const [mirrorStep, setMirrorStep] = useState(false);
+  const pickerWrapRef = useRef<HTMLDivElement | null>(null);
+  /* Close the multi-select customer dropdown when the user clicks anywhere
+   * outside it (the list stays open across ticks so several customers can be
+   * chosen in one go). */
+  useEffect(() => {
+    if (!searchOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (pickerWrapRef.current && !pickerWrapRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [searchOpen]);
   /* Linked-customer panel starts COLLAPSED — when the user picks a
    * customer they only see the bar with the customer's id + name,
    * not the full address/contact details. Detail block expands when
@@ -580,17 +616,17 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       setCustomer(null);
       setPhase('wizard');
     } else if (preselectedCustomerId || preselectedCustomerDbId) {
-      // Map-Consignee flow — caller already knows which customer this
-      // consignee belongs to. Skip the picker. `customer` is resolved
-      // by the customer-list fetch effect below as soon as it lands.
-      // Reset to null first so a stale `sameAsCustomerConsigneeCount`
-      // from a previous open of this same modal doesn't briefly
-      // flash an enabled toggle before the fresh fetch lands.
+      // Map-Consignee flow — the caller's customer is the LOCKED primary.
+      // If it has no same-as-customer consignee yet, ask "Same as Customer?"
+      // first; otherwise go straight to the multi-select list. `customer` is
+      // resolved (as the locked primary) by the fetch effect below.
       setCustomer(null);
-      setPhase('wizard');
+      setPhase('pick-customer');
+      setMirrorStep((existingMirrorCount ?? 0) === 0);
     } else {
       setCustomer(null);
       setPhase('pick-customer');
+      setMirrorStep(false);
     }
     /* Both create and edit modes always land on Stage 1 so the user
      * reviews identity first before stepping forward. The sub-tab
@@ -623,6 +659,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     setLinkedHidden(true);
     setErrors1({});
     setSameAsCustomer(false);
+    setExtraCustomerIds([]);
+    setExtraSearch('');
+    setActiveLinkedId(null);
     setEvSub('dd');
     setLocations([]);
     /* Reset Stage 1 form to empty defaults — CREATE mode only. In edit
@@ -756,12 +795,25 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     if (consignee?.db_id) return;          // edit mode — keep saved segment
     if (sameAsCustomer) return;            // full-copy effect owns segment here
     if (!customer) return;
-    const cid = customer.id || '';
-    if (segPrefillCustomerRef.current === cid) return;  // already inherited for this customer
-    segPrefillCustomerRef.current = cid;
-    const segs = String(customer.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
+    // Union of EVERY mapped customer's segments (primary + extras),
+    // de-duplicated (case-insensitive). Re-runs only when the selected-customer
+    // SET changes, so re-renders don't clobber the user's own edits.
+    const allSelected = [customer, ...extraCustomerIds
+      .map(id => customerOptions.find(c => c.db_id === id))
+      .filter((c): c is CustomerOption => !!c)];
+    const key = allSelected.map(c => c.db_id ?? c.id).join(',');
+    if (segPrefillCustomerRef.current === key) return;
+    segPrefillCustomerRef.current = key;
+    const seen = new Set<string>();
+    const segs: string[] = [];
+    for (const c of allSelected) {
+      for (const s of String(c.segment ?? '').split(',').map(x => x.trim()).filter(Boolean)) {
+        const k = s.toLowerCase();
+        if (!seen.has(k)) { seen.add(k); segs.push(s); }
+      }
+    }
     setForm1(prev => ({ ...prev, segment: segs }));
-  }, [open, customer, sameAsCustomer, consignee?.db_id]);
+  }, [open, customer, extraCustomerIds, customerOptions, sameAsCustomer, consignee?.db_id]);
 
   /* "Same as Customer" copy effect. When the toggle flips on (or the
    * linked customer changes while it's on), mirror every Stage 1
@@ -921,6 +973,21 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           // user can click the bar to expand it on demand. (Previous
           // behavior auto-expanded for same-as-customer rows, but
           // the summary section is noisy on first open.)
+        }
+        // Hydrate the extra customer mappings (everything except the primary).
+        if (Array.isArray(d.customer_ids)) {
+          const primaryId = Number(d.customer_id);
+          setExtraCustomerIds(
+            d.customer_ids.map((x: any) => Number(x)).filter((x: number) => x && x !== primaryId),
+          );
+          // Warn once when editing a consignee shared by MULTIPLE customers —
+          // whatever the user changes here reflects for all of them.
+          if (d.customer_ids.length > 1) {
+            toast.info(
+              'Shared by multiple customers',
+              `This consignee is mapped to ${d.customer_ids.length} customers. Any change you save here will apply to all of them.`,
+            );
+          }
         }
         const extra: any[] = Array.isArray(d.locations) ? d.locations : [];
         setLocations(extra.map((a: any) => ({
@@ -1341,9 +1408,58 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     onClose();
   };
 
+  /* When the modal is opened from a specific customer's "Map Consignee"
+   * flow (preselected), that customer is the LOCKED primary — the user is
+   * already inside that customer's context, so it can't be removed. They can
+   * still add more customers via the picker. Not applicable in edit mode. */
+  const primaryLocked = !consignee && (!!preselectedCustomerId || !!preselectedCustomerDbId);
+
+  /* Multi-select on the picker. The FIRST customer picked becomes the
+   * "primary" (`customer`); every additional one goes into
+   * `extraCustomerIds`. Un-ticking the primary promotes the next extra. */
+  const isCustomerPicked = (opt: CustomerOption): boolean =>
+    (!!opt.db_id && customer?.db_id === opt.db_id) || (!!opt.db_id && extraCustomerIds.includes(opt.db_id));
+
+  const togglePickCustomer = (opt: CustomerOption) => {
+    const id = opt.db_id;
+    if (!id) return;
+    if (customer?.db_id === id) {
+      // The locked primary (customer-context flow) can't be un-picked.
+      if (primaryLocked) return;
+      // Un-ticking the primary → promote the first extra (if any).
+      if (extraCustomerIds.length > 0) {
+        const nextId = extraCustomerIds[0];
+        setCustomer(customerOptions.find(c => c.db_id === nextId) ?? null);
+        setExtraCustomerIds(prev => prev.filter(x => x !== nextId));
+      } else {
+        setCustomer(null);
+      }
+    } else if (extraCustomerIds.includes(id)) {
+      setExtraCustomerIds(prev => prev.filter(x => x !== id));
+    } else if (!customer) {
+      setCustomer(opt);            // first pick = primary
+    } else {
+      setExtraCustomerIds(prev => [...prev, id]);
+    }
+  };
+
+  const pickedCount = (customer ? 1 : 0) + extraCustomerIds.length;
+  /* All selected customers (primary first) resolved to options — drives the
+   * uniform grid shown once more than one customer is picked. */
+  const selectedCustomerOptions: CustomerOption[] = customer
+    ? [customer, ...extraCustomerIds
+        .map(id => customerOptions.find(c => c.db_id === id))
+        .filter((c): c is CustomerOption => !!c)]
+    : [];
+  /* Customer whose details show in the LINKED CUSTOMER "Show" panel — the one
+   * whose chip was clicked (null → primary). Falls back to primary. */
+  const activeLinkedCust = (activeLinkedId != null
+    ? customerOptions.find(c => c.db_id === activeLinkedId)
+    : null) ?? customer;
+
   const confirmCustomer = () => {
     if (!customer) {
-      toast.warning('Pick a customer', 'Select the customer this consignee will be linked to.');
+      toast.warning('Pick a customer', 'Select at least one customer this consignee will be linked to.');
       return;
     }
     setPhase('wizard');
@@ -1783,8 +1899,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     const s = String(v ?? '').trim();
     return /^\d{6}$/.test(s) ? s : null;
   };
-  const buildPayload = () => ({
-    customer_id:      customer?.db_id ?? (Number(customer?.id?.replace(/[^0-9]/g, '')) || null),
+  const buildPayload = () => {
+    const primaryId = customer?.db_id ?? (Number(customer?.id?.replace(/[^0-9]/g, '')) || null);
+    // Full many-to-many mapping = primary + any additionally-checked customers.
+    const customerIds = Array.from(new Set(
+      [primaryId, ...extraCustomerIds].filter((x): x is number => typeof x === 'number' && !!x),
+    ));
+    return {
+    customer_id:      primaryId,
+    customer_ids:     customerIds,
     company_name:     form1.companyName,
     legal_name:       form1.legalName || null,
     /* Multi-segment is comma-joined for the legacy scalar column. The
@@ -1826,7 +1949,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       cp_email:       l.cpEmail,
       cp_whatsapp:    l.cpWhatsapp,
     })),
-  });
+    };
+  };
 
   const handleSave = async () => {
     // Synchronous re-entry lock — see comment on inFlightRef. The
@@ -1913,13 +2037,67 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     }
   };
 
+  /* ─── Render: phase A0 — "Same as Customer?" question (customer-context) ───
+     When opened from a customer's Map-Consignee button and that customer has
+     no mirror yet, ask up-front. Yes → straight to the form as a mirror;
+     No → fall through to the customer list so the user can map more. */
+  const customerHasMirror = (existingMirrorCount ?? customer?.sameAsCustomerConsigneeCount ?? 0) > 0;
+  if (phase === 'pick-customer' && !consignee && mirrorStep && primaryLocked && !customerHasMirror) {
+    return (
+      <div className="acm-overlay">
+        <style>{SCOPED_CSS}</style>
+        {/* Height auto so the short question doesn't leave a big empty gap. */}
+        <div className="acm-pick" style={{ height: 'auto' }} onMouseDown={e => e.stopPropagation()}>
+          <div className="acm-pick-header">
+            <button className="acm-close" onClick={handleClose} aria-label="Close"><IconClose /></button>
+            <div className="acm-pick-icon"><IconTruck size={28} /></div>
+            <div className="acm-pick-title">Add New Consignee</div>
+            <div className="acm-pick-sub">Is this consignee the same entity as the customer?</div>
+          </div>
+          <div className="acm-pick-body">
+            <div className="acm-picked">
+              {customer ? (
+                <>
+                  <div className="acm-picked-avatar">{customer.initials}</div>
+                  <div className="acm-picked-info">
+                    <div className="acm-picked-name">
+                      {customer.name}
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>CUSTOMER</span>
+                    </div>
+                    <div className="acm-picked-meta">{customer.id} • {customer.segment} • {customer.country}</div>
+                  </div>
+                </>
+              ) : (
+                <div className="acm-picked-info"><div className="acm-picked-name" style={{ color: '#64748b' }}>Loading customer…</div></div>
+              )}
+            </div>
+            <div className="acm-info">
+              <div className="acm-info-icon"><IconInfo /></div>
+              <div>
+                <strong>Same as Customer</strong> copies this customer's KYC (documents &amp; owners) onto the consignee — use it when the consignee <strong>is</strong> the customer. Choose <strong>No</strong> to enter a different consignee and optionally map more customers.
+              </div>
+            </div>
+          </div>
+          <div className="acm-pick-footer" style={{ gap: 10 }}>
+            <button className="acm-btn acm-btn-light" style={{ flex: 1, justifyContent: 'center' }} onClick={() => { setSameAsCustomer(false); setMirrorStep(false); }} disabled={!customer}>
+              <IconClose size={14} /> No
+            </button>
+            <button className="acm-btn acm-btn-primary" style={{ flex: 1, minWidth: 0, justifyContent: 'center' }} onClick={() => { setSameAsCustomer(true); setMirrorStep(false); setPhase('wizard'); setStage(1); }} disabled={!customer}>
+              <IconCheck size={15} /> Yes, Same as Customer
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   /* ─── Render: phase A — customer picker ─── */
   /* Never show the picker in edit mode (or the Map-Consignee preselect flow):
      `phase` initialises to 'pick-customer' and only flips to 'wizard' in a
      post-render effect, which briefly flashed the picker before the wizard.
      Guarding the render here goes straight to the wizard (its hydration
      shimmer covers the moment before the customer resolves). */
-  if (phase === 'pick-customer' && !consignee && !preselectedCustomerId && !preselectedCustomerDbId) {
+  if (phase === 'pick-customer' && !consignee) {
     return (
       <div className="acm-overlay">
         <style>{SCOPED_CSS}</style>
@@ -1928,23 +2106,23 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             <button className="acm-close" onClick={handleClose} aria-label="Close"><IconClose /></button>
             <div className="acm-pick-icon"><IconTruck size={28} /></div>
             <div className="acm-pick-title">Add New Consignee</div>
-            <div className="acm-pick-sub">Select the customer account to which this consignee will be linked for shipment and export execution.</div>
+            <div className="acm-pick-sub">Select one or more customer accounts this consignee will be linked to. The first pick is the primary customer.</div>
           </div>
           <div className="acm-pick-body">
             <label className="acm-label">
               <IconUser /> CUSTOMER ACCOUNT <span className="acm-req">*</span>
             </label>
-            <div className="acm-picker-wrap">
+            <div className="acm-picker-wrap" ref={pickerWrapRef}>
             <div className="acm-picker" onClick={() => setSearchOpen(true)}>
               <IconSearch />
               <input
                 type="text"
-                placeholder={customer ? 'Customer selected' : 'Search by name, ID, or segment...'}
+                placeholder={pickedCount > 0 ? `${pickedCount} customer${pickedCount > 1 ? 's' : ''} selected — search to add more` : 'Search by name, ID, or segment...'}
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setSearchOpen(true); }}
                 onFocus={() => setSearchOpen(true)}
               />
-              <IconChevronDown />
+              <span role="button" onClick={(e) => { e.stopPropagation(); setSearchOpen(o => !o); }} style={{ cursor: 'pointer', display: 'inline-flex' }}><IconChevronDown /></span>
             </div>
 
             {searchOpen && (
@@ -1958,31 +2136,91 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                 {!customersLoading && customerOptions.length > 0 && filteredCustomers.length === 0 && (
                   <div className="acm-picker-empty">No customers match — try a different search</div>
                 )}
-                {filteredCustomers.map(c => (
+                {filteredCustomers.map(c => {
+                  const picked = isCustomerPicked(c);
+                  const isPrimary = !!c.db_id && customer?.db_id === c.db_id;
+                  return (
                   <button
-                    key={c.id}
-                    className="acm-picker-option"
-                    onClick={() => { setCustomer(c); setSearch(''); setSearchOpen(false); }}
+                    key={c.db_id ?? c.id}
+                    className={`acm-picker-option ${picked ? 'is-picked' : ''}`}
+                    onClick={() => togglePickCustomer(c)}
                   >
+                    <input
+                      type="checkbox"
+                      checked={picked}
+                      readOnly
+                      style={{ marginRight: 4, width: 16, height: 16, flex: '0 0 auto', accentColor: '#0d9488', cursor: 'pointer' }}
+                    />
                     <div className="acm-pop-avatar">{c.initials}</div>
                     <div className="acm-pop-info">
-                      <div className="acm-pop-name">{c.name}</div>
+                      <div className="acm-pop-name">
+                        {c.name}
+                        {isPrimary && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>}
+                      </div>
                       <div className="acm-pop-meta">{c.id} • {c.segment} • {c.country}</div>
                     </div>
                   </button>
-                ))}
+                  );
+                })}
+                {/* Explicit close for the multi-select list (click-outside also
+                    closes it). */}
+                <div className="acm-picker-donewrap">
+                  <button
+                    type="button"
+                    className="acm-picker-done"
+                    onClick={() => setSearchOpen(false)}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: '10px 12px', border: 'none', borderRadius: 10, background: 'linear-gradient(135deg,#0d9488,#065f46)', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', boxShadow: '0 3px 10px rgba(5,150,105,.28)' }}
+                  >
+                    <IconCheck size={14} /> Done{pickedCount > 0 ? ` · ${pickedCount} selected` : ''}
+                  </button>
+                </div>
               </div>
             )}
             </div>
 
-            {customer && (
+            {/* Single selection → the detailed green card. */}
+            {customer && pickedCount === 1 && (
               <div className="acm-picked">
                 <div className="acm-picked-avatar">{customer.initials}</div>
                 <div className="acm-picked-info">
-                  <div className="acm-picked-name">{customer.name}</div>
+                  <div className="acm-picked-name">
+                    {customer.name}
+                    <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>
+                  </div>
                   <div className="acm-picked-meta">{customer.id} • {customer.segment} • {customer.country}</div>
                 </div>
-                <button className="acm-picked-clear" onClick={() => setCustomer(null)} aria-label="Clear selection"><IconClose size={14} /></button>
+                {primaryLocked ? (
+                  <span title="Locked — you're mapping under this customer" style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                    <i className="ri-lock-2-line" /> LOCKED
+                  </span>
+                ) : (
+                  <button className="acm-picked-clear" onClick={() => togglePickCustomer(customer)} aria-label="Clear selection"><IconClose size={14} /></button>
+                )}
+              </div>
+            )}
+
+            {/* Multiple selections → uniform 2-column grid (≈3 rows visible,
+                the rest scroll). No oversized primary card. */}
+            {pickedCount > 1 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, maxHeight: 320, overflowY: 'auto', paddingRight: 2 }}>
+                {selectedCustomerOptions.map((o, idx) => {
+                  const isPrimary = idx === 0;
+                  const canRemove = !(isPrimary && primaryLocked);
+                  return (
+                    <div key={o.db_id ?? o.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '11px 11px', minHeight: 54, border: `1px solid ${isPrimary ? (isDark ? 'rgba(20,184,166,.45)' : '#99f6e4') : (isDark ? 'rgba(148,163,184,.20)' : '#dbeafe')}`, borderRadius: 10, background: isPrimary ? (isDark ? 'rgba(20,184,166,.14)' : '#f0fdfa') : (isDark ? 'rgba(148,163,184,.08)' : '#f8fafc'), minWidth: 0 }}>
+                      <div className="acm-pop-avatar" style={{ width: 30, height: 30, fontSize: 11, flex: '0 0 auto' }}>{o.initials}</div>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: isDark ? '#e2e8f0' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.4 }}>{o.name}</div>
+                        <div style={{ fontSize: 11, color: isDark ? '#94a3b8' : '#64748b', marginTop: 1 }}>{o.id}{isPrimary ? ' · PRIMARY' : ''}</div>
+                      </div>
+                      {canRemove ? (
+                        <span role="button" onClick={() => togglePickCustomer(o)} style={{ cursor: 'pointer', display: 'inline-flex', color: '#94a3b8', flex: '0 0 auto' }} aria-label={`Remove ${o.name}`}><IconClose size={13} /></span>
+                      ) : (
+                        <i className="ri-lock-2-line" title="Locked" style={{ fontSize: 12, color: '#94a3b8', flex: '0 0 auto' }} />
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -2000,7 +2238,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               onClick={confirmCustomer}
               disabled={!customer}
             >
-              <IconCheck /> Confirm &amp; Continue
+              <IconCheck /> Confirm &amp; Continue{pickedCount > 1 ? ` (${pickedCount})` : ''}
             </button>
           </div>
         </div>
@@ -2042,8 +2280,42 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                   <div className="acg-linked-icon"><IconUser /></div>
                   <div className="acg-linked-title">
                     <span className="acg-linked-tag">LINKED CUSTOMER</span>
-                    <span className="acg-linked-id">{customer.id}</span>
+                    {/* Click a chip to show that customer's details in the panel
+                        below. The primary chip (id + name) is one option; each
+                        extra mapped customer is another. */}
+                    <span
+                      role="button"
+                      onClick={(e) => { e.stopPropagation(); setActiveLinkedId(null); setLinkedHidden(false); }}
+                      className="acg-linked-id"
+                      style={{ cursor: 'pointer', boxShadow: activeLinkedId == null ? '0 0 0 2px #0d9488' : 'none' }}
+                      title="Show this customer's details"
+                    >{customer.id}</span>
                     <span className="acg-linked-name">{customer.name}</span>
+                    {extraCustomerIds.length > 0 && (
+                      <span className="d-inline-flex align-items-center flex-wrap" style={{ gap: 5, marginLeft: 6 }}>
+                        {extraCustomerIds.map(eid => {
+                          const o = customerOptions.find(c => c.db_id === eid);
+                          const active = activeLinkedId === eid;
+                          return (
+                            <span
+                              key={eid}
+                              role="button"
+                              onClick={(e) => { e.stopPropagation(); setActiveLinkedId(eid); setLinkedHidden(false); }}
+                              title={o?.name ? `Show ${o.name}'s details` : undefined}
+                              style={{
+                                cursor: 'pointer', fontSize: 11, fontWeight: 700, letterSpacing: .2,
+                                lineHeight: 1.6, borderRadius: 20, padding: '2px 10px',
+                                color: active ? '#fff' : (isDark ? '#6ee7b7' : '#0f766e'),
+                                background: active ? '#0d9488' : (isDark ? 'rgba(16,185,129,.18)' : '#ecfdf5'),
+                                border: `1px solid ${active ? '#0d9488' : (isDark ? 'rgba(16,185,129,.30)' : '#a7f3d0')}`,
+                              }}
+                            >
+                              {o?.id ?? `+${eid}`}
+                            </span>
+                          );
+                        })}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="acg-linked-actions">
@@ -2058,29 +2330,31 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               {!linkedHidden && (
                 <>
                   <div className="acg-hs-mirror">
+                    {/* Shows the details of whichever customer chip is active
+                        (primary by default) — one customer at a time. */}
                     <div className="acg-hs-grid">
-                      <ReadInlineG label="Customer ID"          value={customer.id} />
-                      <ReadInlineG label="Company Name"         value={customer.name} />
-                      <ReadInlineG label="Company Legal Name"    value={customer.legalName} />
-                      <ReadInlineG label="Customer Type"        value={customer.type} />
+                      <ReadInlineG label="Customer ID"          value={activeLinkedCust?.id} />
+                      <ReadInlineG label="Company Name"         value={activeLinkedCust?.name} />
+                      <ReadInlineG label="Company Legal Name"    value={activeLinkedCust?.legalName} />
+                      <ReadInlineG label="Customer Type"        value={activeLinkedCust?.type} />
 
-                      <ReadInlineG label="Customer Segment"     value={segDisplay(customer.segment, mSegmentIds)} />
-                      <ReadInlineG label="Classification"       value={customer.classification} />
-                      <ReadInlineG label="Risk Level"           value={customer.risk} />
-                      <ReadInlineG label="Company Website"      value={customer.website} />
+                      <ReadInlineG label="Customer Segment"     value={segDisplay(activeLinkedCust?.segment, mSegmentIds)} />
+                      <ReadInlineG label="Classification"       value={activeLinkedCust?.classification} />
+                      <ReadInlineG label="Risk Level"           value={activeLinkedCust?.risk} />
+                      <ReadInlineG label="Company Website"      value={activeLinkedCust?.website} />
 
-                      <ReadInlineG label="Registered Office Address" value={customer.address} span={2} />
-                      <ReadInlineG label="Country"              value={customer.country} />
-                      <ReadInlineG label="State"                value={customer.state} />
+                      <ReadInlineG label="Registered Office Address" value={activeLinkedCust?.address} span={2} />
+                      <ReadInlineG label="Country"              value={activeLinkedCust?.country} />
+                      <ReadInlineG label="State"                value={activeLinkedCust?.state} />
 
-                      <ReadInlineG label="City"                 value={customer.city} />
-                      <ReadInlineG label="PIN / Postal Code"    value={customer.pin} />
-                      <ReadInlineG label="Contact Person Name"  value={customer.contactPerson} />
-                      <ReadInlineG label="Designation"          value={customer.designation} />
+                      <ReadInlineG label="City"                 value={activeLinkedCust?.city} />
+                      <ReadInlineG label="PIN / Postal Code"    value={activeLinkedCust?.pin} />
+                      <ReadInlineG label="Contact Person Name"  value={activeLinkedCust?.contactPerson} />
+                      <ReadInlineG label="Designation"          value={activeLinkedCust?.designation} />
 
-                      <ReadInlineG label="Contact No"           value={customer.phone} />
-                      <ReadInlineG label="Email"                value={customer.email} />
-                      <ReadInlineG label="WhatsApp Enabled"     value={customer.whatsapp} />
+                      <ReadInlineG label="Contact No"           value={activeLinkedCust?.phone} />
+                      <ReadInlineG label="Email"                value={activeLinkedCust?.email} />
+                      <ReadInlineG label="WhatsApp Enabled"     value={activeLinkedCust?.whatsapp} />
                     </div>
                   </div>
 
@@ -2114,6 +2388,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               )}
             </div>
           )}
+
+        {/* "Also map to other customers" removed — customer selection happens
+            in the multi-select picker (create) or the Mapped Customers popup's
+            "Map Customer" action (from the Consignee list). */}
 
         {/* Pinned top — stepper + Linked Customer summary stay
             visible while the rest of the body scrolls below them.
@@ -2209,6 +2487,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                   mirrorCount > 0 && !(consignee?.same_as_customer === true);
                 if (v && alreadyMirrored) {
                   toast.error('Only one Same-as-Customer allowed', 'This customer already has one.');
+                  return;
+                }
+                // Same-as-Customer is 1:1 — not allowed when the consignee is
+                // mapped to additional customers.
+                if (v && extraCustomerIds.length > 0) {
+                  toast.error('Not available with multiple customers', 'Remove the extra mapped customers to use “Same as Customer”.');
                   return;
                 }
 
@@ -2826,6 +3110,7 @@ const Stage1 = ({
      linked `customer` object may not be re-resolved yet. (Earlier the
      `&& !!customer` guard let a saved mirror's fields stay editable on edit.) */
   const lock = sameAsCustomer;
+  const [segPopOpen, setSegPopOpen] = useState(false);
   const set = (k: string, v: any) => {
     const nextForm = { ...form, [k]: v };
     setForm(nextForm);
@@ -2938,15 +3223,40 @@ const Stage1 = ({
                   editable here — a consignee must not pick its own segment.
                   The field is locked (read-only chips) and a hint points the
                   user to the customer to change it. */}
-              <MasterMultiSelect
-                value={Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : [])}
-                options={masters.segments.map(o => ({ value: o.value, label: o.label }))}
-                placeholder="Inherited from customer"
-                invalid={!!errors.segment}
-                disabled
-                onChange={() => { /* locked — segment is managed on the customer */ }}
-                maxChips={2}
-              />
+              {/* Read-only inherited-segment box: shows just the FIRST segment
+                  chip, then a "View all N" pill inline right after it. Clicking
+                  the pill opens the full segment popover. */}
+              {(() => {
+                const segVals = Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : []);
+                const labels = segVals.map(v => masters.segments.find(s => s.value === v)?.label ?? v);
+                return (
+                  <div className={`acm-seg-box ${errors.segment ? 'acm-input-error' : ''}`}>
+                    {labels.length === 0 ? (
+                      <span style={{ color: '#94a3b8', fontSize: 13 }}>Inherited from customer</span>
+                    ) : (
+                      <>
+                        <span className="acm-seg-firstchip">{labels[0]}</span>
+                        {labels.length > 1 && (
+                          <span role="button" onClick={() => setSegPopOpen(o => !o)} className="acm-seg-morebtn">
+                            {segPopOpen ? 'Hide' : `View all ${labels.length} segments`}
+                          </span>
+                        )}
+                      </>
+                    )}
+                    {segPopOpen && labels.length > 1 && (
+                      <>
+                        <div onClick={() => setSegPopOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 55 }} />
+                        <div className="acm-seg-pop">
+                          <div className="acm-seg-pop-title">SEGMENTS ({labels.length})</div>
+                          {labels.map((l, i) => (
+                            <div key={i} className="acm-seg-pop-row"><span className="acm-seg-dot" />{l}</div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
               <div style={{ marginTop: 5, fontSize: 11, fontWeight: 600, color: '#64748b', display: 'flex', alignItems: 'center', gap: 5 }}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                 Comes from the customer — change it there.
@@ -5669,7 +5979,7 @@ const SCOPED_CSS = `
   /* Locked height so the picker doesn't grow / shrink when the search
      dropdown opens or the customer list lands. The body scrolls
      internally — header + footer stay anchored at top / bottom. */
-  height: min(560px, calc(100vh - 32px));
+  height: min(660px, calc(100vh - 32px));
   background: #fff; border-radius: 18px; overflow: hidden;
   box-shadow: 0 30px 80px rgba(0,0,0,.30);
   display: flex; flex-direction: column;
@@ -5756,6 +6066,59 @@ const SCOPED_CSS = `
   background: #fff;
   box-shadow: 0 14px 36px rgba(13,148,136,.22), 0 4px 12px rgba(0,0,0,.08);
 }
+/* Sticky "Done" bar at the bottom of the multi-select list. */
+.acm-picker-donewrap {
+  position: sticky; bottom: 0; padding: 8px;
+  border-top: 1px solid #d1fae5; background: #fff;
+}
+[data-bs-theme="dark"] .acm-picker-donewrap {
+  background: #103129; border-top-color: rgba(16,185,129,.30);
+}
+/* Read-only inherited-segment box (looks like an input): first chip + an
+   inline "View all N" pill. */
+.acm-seg-box {
+  position: relative;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  min-height: 40px; padding: 5px 12px;
+  border: 1.5px solid #e2e8f0; border-radius: 10px; background: #fff;
+}
+[data-bs-theme="dark"] .acm-seg-box { background: #0f1a17; border-color: rgba(148,163,184,.22); }
+.acm-seg-firstchip {
+  display: inline-flex; align-items: center;
+  font-size: 12.5px; font-weight: 600; color: #0f766e;
+  background: #ecfdf5; border: 1px solid #a7f3d0;
+  border-radius: 12px; padding: 2px 10px;
+}
+[data-bs-theme="dark"] .acm-seg-firstchip { color: #6ee7b7; background: rgba(16,185,129,.16); border-color: rgba(16,185,129,.30); }
+/* "View all N segments" trigger — inline, right after the first chip. */
+.acm-seg-morebtn {
+  display: inline-block; cursor: pointer;
+  font-size: 11px; font-weight: 700; letter-spacing: .2px;
+  color: #0f766e; background: #ecfdf5; border: 1px solid #a7f3d0;
+  border-radius: 20px; padding: 2px 10px;
+}
+.acm-seg-morebtn:hover { background: #d1fae5; }
+[data-bs-theme="dark"] .acm-seg-morebtn { color: #6ee7b7; background: rgba(16,185,129,.16); border-color: rgba(16,185,129,.30); }
+/* Popover listing every inherited segment (teal-dotted pills). */
+.acm-seg-pop {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+  min-width: 190px; max-width: 260px; max-height: 260px; overflow-y: auto;
+  background: #fff; border: 1px solid #d1fae5; border-radius: 12px;
+  box-shadow: 0 14px 34px rgba(13,148,136,.18), 0 4px 12px rgba(0,0,0,.08);
+  padding: 10px;
+}
+.acm-seg-pop-title { font-size: 10.5px; font-weight: 800; letter-spacing: .5px; color: #0f766e; margin-bottom: 8px; }
+.acm-seg-pop-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; font-weight: 600; color: #134e4a;
+  background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 20px;
+  padding: 5px 12px; margin-bottom: 6px;
+}
+.acm-seg-pop-row:last-child { margin-bottom: 0; }
+.acm-seg-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; flex: 0 0 auto; }
+[data-bs-theme="dark"] .acm-seg-pop { background: #103129; border-color: rgba(16,185,129,.30); box-shadow: 0 14px 34px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .acm-seg-pop-title { color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-seg-pop-row { color: #d1fae5; background: rgba(16,185,129,.14); border-color: rgba(16,185,129,.28); }
 .acm-picker-option {
   display: flex; align-items: center; gap: 10px;
   width: 100%; padding: 10px 14px;

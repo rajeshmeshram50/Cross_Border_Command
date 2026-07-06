@@ -366,7 +366,24 @@ class CustomerController extends Controller
             return response()->json(['message' => $denial], 403);
         }
 
-        $customer->delete();
+        \Illuminate\Support\Facades\DB::transaction(function () use ($customer) {
+            // Many-to-many unlink: a consignee mapped to this customer stays
+            // alive if it's still mapped to others (primary reassigned when the
+            // deleted customer was its primary); a consignee left with NO
+            // customers is soft-deleted.
+            foreach ($customer->consignees()->get() as $consignee) {
+                $consignee->customers()->detach($customer->id);
+                $remaining = $consignee->customers()->pluck('customers.id')->all();
+                if (empty($remaining)) {
+                    $consignee->delete();
+                } elseif ((int) $consignee->customer_id === (int) $customer->id) {
+                    $consignee->update(['customer_id' => $remaining[0]]);
+                }
+            }
+
+            $customer->delete();
+        });
+
         return response()->json(['id' => $customer->id, 'deleted' => true]);
     }
 

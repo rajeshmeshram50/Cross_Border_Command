@@ -547,7 +547,9 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                                   title={locked ? 'PI is signed — read-only' : undefined}
                                   onClick={() => { if (locked) { toast.warning('PI is signed', 'This opportunity is read-only — prices cannot be shared.'); return; } void onSubmitQuoted(r); }}
                                 >
-                                  {isSubmitting ? 'Submitting…' : 'Submit'}
+                                  {isSubmitting
+                                    ? <span className="s4-submit-loading"><span className="s4-spin-w" />Submitting…</span>
+                                    : 'Submit'}
                                 </button>
                                 <button
                                   type="button"
@@ -933,6 +935,7 @@ const STAGE4_CSS = `
 .s4-row-actions { display: flex; align-items: center; gap: 8px; }
 .s4-submit-btn {
   padding: 6px 14px; border: none; cursor: pointer;
+  min-width: 108px; text-align: center;   /* stable width so "Submit" → "Submitting…" doesn't jump */
   background: linear-gradient(135deg, #5b21b6, #7c3aed);
   color: #fff;
   font-family: inherit; font-size: 11.5px; font-weight: 700;
@@ -942,6 +945,14 @@ const STAGE4_CSS = `
 }
 .s4-submit-btn:hover:not(:disabled) { background: linear-gradient(135deg, #7c3aed, #8b5cf6); transform: translateY(-1px); }
 .s4-submit-btn:disabled { opacity: .55; cursor: not-allowed; }
+/* While submitting, keep the button bright so the white spinner reads clearly. */
+.s4-submit-btn:disabled:has(.s4-submit-loading) { opacity: 1; cursor: progress; }
+.s4-submit-loading { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.s4-spin-w {
+  width: 12px; height: 12px; box-sizing: border-box; display: inline-block;
+  border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
+  border-radius: 50%; animation: s4-spin-rot .6s linear infinite;
+}
 .s4-submit-disabled {
   background: linear-gradient(135deg, #94a3b8, #64748b);
 }

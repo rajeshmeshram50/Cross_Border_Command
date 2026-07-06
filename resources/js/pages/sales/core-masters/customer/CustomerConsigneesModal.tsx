@@ -4,6 +4,8 @@ import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
 import AddConsigneeModal, { type ConsigneeRow } from '../consignee/AddConsigneeModal';
+import { MasterSelect } from '../../../../components/ui/MasterSelect';
+import { useTheme } from '../../../../contexts/ThemeContext';
 
 /* ────────────────────────────────────────────────────────────────────────────
  * CustomerConsigneesModal — the "Map Consignee" popup.
@@ -41,11 +43,33 @@ const ROWS_PER_PAGE = 5;
 
 export default function CustomerConsigneesModal({ open, customer, onClose, title = 'Consignees' }: Props) {
   const toast = useToast();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  // Theme-aware palette for the chooser + map popups (portaled → inline styles).
+  const pk = {
+    card:          isDark ? '#0f1420' : '#ffffff',
+    text:          isDark ? '#e2e8f0' : '#334155',
+    textMuted:     isDark ? '#94a3b8' : '#6b7280',
+    border:        isDark ? 'rgba(148,163,184,.20)' : '#e5e7eb',
+    addBg:         isDark ? 'rgba(124,58,237,.14)' : '#faf5ff',
+    addBorder:     isDark ? 'rgba(124,58,237,.35)' : '#ede9fe',
+    mapBg:         isDark ? 'rgba(13,148,136,.14)' : '#f0fdfa',
+    mapBorder:     isDark ? 'rgba(13,148,136,.35)' : '#ccfbf1',
+    btnBg:         isDark ? '#1b2233' : '#ffffff',
+    label:         isDark ? '#cbd5e1' : '#334155',
+  };
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<ConsigneeRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ConsigneeRow | null>(null);
+  /* "Add Or Map Consignee" flow: a chooser (create new vs map existing), then
+   * a consignee dropdown for the map path. */
+  const [chooseOpen, setChooseOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [allConsignees, setAllConsignees] = useState<any[]>([]);
+  const [mapSelectId, setMapSelectId] = useState('');
+  const [mapping, setMapping] = useState(false);
   /* Client-side pagination — 5 rows per page. Reset to page 1 whenever
    * the search term or underlying row set changes so the user never
    * lands on an empty page beyond the new last page. */
@@ -92,8 +116,38 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
 
   useEffect(() => {
     if (open) fetchRows();
-    else { setQ(''); setRows([]); }
+    else { setQ(''); setRows([]); setChooseOpen(false); setMapOpen(false); }
   }, [open, fetchRows]);
+
+  // Existing consignees NOT already mapped to this customer AND not
+  // "same as customer" mirrors (a mirror belongs to one customer only).
+  const mappableConsignees = useMemo(
+    () => allConsignees.filter(c => !c.same_as_customer && !rows.some(r => r.db_id === c.db_id)),
+    [allConsignees, rows],
+  );
+
+  const openMapFlow = async () => {
+    setChooseOpen(false);
+    setMapSelectId('');
+    setMapOpen(true);
+    try {
+      const r = await api.get('/consignees');
+      setAllConsignees(Array.isArray(r.data?.data) ? r.data.data : []);
+    } catch { setAllConsignees([]); }
+  };
+
+  const doMap = async () => {
+    if (!mapSelectId || !customer?.db_id) return;
+    setMapping(true);
+    try {
+      await api.post(`/consignees/${mapSelectId}/map-customer`, { customer_id: customer.db_id });
+      toast.success('Consignee mapped', 'The consignee is now linked to this customer.');
+      setMapOpen(false);
+      fetchRows();
+    } catch (e: any) {
+      toast.error('Map failed', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setMapping(false); }
+  };
 
   // Filter client-side so the search feels instant — the server-side
   // result is already scoped to the customer, so the list stays small.
@@ -185,10 +239,10 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
               <button
                 type="button"
                 className="ccm-add-btn"
-                onClick={() => { setEditing(null); setAddOpen(true); }}
+                onClick={() => setChooseOpen(true)}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                Add Consignee
+                Add Or Map Consignee
               </button>
             </div>
           </div>
@@ -338,6 +392,67 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
         onClose={() => { setAddOpen(false); setEditing(null); }}
         onSaved={() => fetchRows()}
       />
+
+      {/* Add-or-Map chooser */}
+      {chooseOpen && createPortal(
+        <div onMouseDown={() => setChooseOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1096, background: 'rgba(46,16,101,.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, background: pk.card, borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 60px rgba(0,0,0,.4)' }}>
+            <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg,#6d28d9,#7c3aed)', color: '#fff' }}>
+              <div style={{ fontSize: 16, fontWeight: 800 }}>Add or Map Consignee</div>
+              <div style={{ fontSize: 12.5, opacity: .9, marginTop: 2 }}>Create a brand-new consignee, or map an existing one to <strong>{customer.id}</strong>.</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 18 }}>
+              <button type="button" onClick={() => { setChooseOpen(false); setEditing(null); setAddOpen(true); }} style={{ textAlign: 'left', border: `1.5px solid ${pk.addBorder}`, borderRadius: 12, padding: 14, background: pk.addBg, cursor: 'pointer' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg,#7c3aed,#6d28d9)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 8px rgba(124,58,237,.35)' }}>
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                </div>
+                <div style={{ fontWeight: 800, color: isDark ? '#c4b5fd' : '#5b21b6', marginTop: 8 }}>Add New</div>
+                <div style={{ fontSize: 11.5, color: pk.textMuted, marginTop: 2 }}>Create a new consignee under this customer.</div>
+              </button>
+              <button type="button" onClick={openMapFlow} style={{ textAlign: 'left', border: `1.5px solid ${pk.mapBorder}`, borderRadius: 12, padding: 14, background: pk.mapBg, cursor: 'pointer' }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'linear-gradient(135deg,#0d9488,#0f766e)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 8px rgba(13,148,136,.35)' }}>
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+                </div>
+                <div style={{ fontWeight: 800, color: isDark ? '#5eead4' : '#0f766e', marginTop: 8 }}>Map Existing</div>
+                <div style={{ fontSize: 11.5, color: pk.textMuted, marginTop: 2 }}>Link an existing consignee to this customer.</div>
+              </button>
+            </div>
+            <div style={{ padding: '0 18px 16px', textAlign: 'right' }}>
+              <button type="button" onClick={() => setChooseOpen(false)} style={{ border: `1px solid ${pk.border}`, background: pk.btnBg, color: pk.text, borderRadius: 9, padding: '8px 16px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* Map existing consignee → pick from dropdown */}
+      {mapOpen && createPortal(
+        <div onMouseDown={() => !mapping && setMapOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1096, background: 'rgba(46,16,101,.45)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 460, background: pk.card, borderRadius: 16, overflow: 'visible', boxShadow: '0 24px 60px rgba(0,0,0,.4)' }}>
+            <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg,#0e9f86,#14b8a6)', color: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 }}>
+              <div style={{ fontSize: 16, fontWeight: 800 }}>Map Existing Consignee</div>
+              <div style={{ fontSize: 12.5, opacity: .92, marginTop: 2 }}>Link a consignee to <strong>{customer.company}</strong> ({customer.id}). Its segments update with this customer's.</div>
+            </div>
+            <div style={{ padding: 18 }}>
+              <label style={{ fontSize: 11.5, fontWeight: 700, color: pk.label, textTransform: 'uppercase', letterSpacing: .4, display: 'block', marginBottom: 6 }}>Consignee</label>
+              <MasterSelect
+                value={mapSelectId}
+                onChange={(v) => setMapSelectId(v)}
+                placeholder="Select a consignee to map…"
+                options={mappableConsignees.map(c => ({ value: String(c.db_id), label: `${c.id} — ${c.company}` }))}
+              />
+              {mappableConsignees.length === 0 && (
+                <div style={{ fontSize: 12, color: pk.textMuted, marginTop: 8 }}>No other consignees available to map.</div>
+              )}
+            </div>
+            <div style={{ padding: '0 18px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" onClick={() => setMapOpen(false)} disabled={mapping} style={{ border: `1px solid ${pk.border}`, background: pk.btnBg, color: pk.text, borderRadius: 9, padding: '8px 16px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button type="button" onClick={doMap} disabled={!mapSelectId || mapping} style={{ border: 'none', background: mapSelectId && !mapping ? 'linear-gradient(135deg,#0d9488,#065f46)' : (isDark ? 'rgba(13,148,136,.28)' : '#cdeee8'), color: mapSelectId && !mapping ? '#fff' : (isDark ? '#5eead4' : '#0f766e'), borderRadius: 9, padding: '8px 18px', fontWeight: 700, cursor: mapSelectId && !mapping ? 'pointer' : 'not-allowed' }}>{mapping ? 'Mapping…' : 'Map Consignee'}</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {segOpen && createPortal(
         <>

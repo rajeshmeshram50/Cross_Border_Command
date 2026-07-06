@@ -512,7 +512,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
       const summary = [
         { Field: 'Customer ID',           Value: customer.id },
         { Field: 'Company',               Value: customer.company },
-        { Field: 'Risk',                  Value: customer.risk || '' },
+        { Field: 'Risk',                  Value: customer.risk ?? 'Low' },
         { Field: 'Type',                  Value: customer.type || '' },
         { Field: 'Segment',               Value: customer.segment || '' },
         { Field: 'Country',               Value: customer.country || '' },
@@ -914,7 +914,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               )}
               <div className="cev-ov-body">
                 <table className="cev-ov-table">
-                  <thead><tr><th style={{ width: 48 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+                  <thead><tr><th style={{ width: 64 }}>Sr. No.</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
@@ -2411,9 +2411,9 @@ export const CEV_CSS = `
 }
 .cev-ship-filter-2 .cev-ship-fbtn {
   flex: 0 0 auto; min-width: 0;
-  padding: 8px 18px; border: none; background: transparent; border-radius: 9px;
+  padding: 8px 18px; border: 1px solid rgba(8,145,178,.22); background: #fff; border-radius: 9px;
 }
-.cev-ship-filter-2 .cev-ship-fbtn:not(.is-active):hover { background: rgba(8,145,178,.08); color: #0891b2; }
+.cev-ship-filter-2 .cev-ship-fbtn:not(.is-active):hover { background: #f0fdff; border-color: rgba(8,145,178,.40); color: #0891b2; }
 .cev-ship-fbtn {
   flex: 1; min-width: 160px;
   padding: 10px 18px;
@@ -2540,7 +2540,7 @@ export const CEV_CSS = `
 [data-bs-theme="dark"] .cev-ship-fbtn { background: #0a2a33; color: #94a3b8; border-color: rgba(8,145,178,.28); }
 [data-bs-theme="dark"] .cev-ship-fbtn:hover { color: #67e8f9; background: rgba(8,145,178,.10); }
 [data-bs-theme="dark"] .cev-ship-filter-2 { background: rgba(8,145,178,.12); }
-[data-bs-theme="dark"] .cev-ship-filter-2 .cev-ship-fbtn:not(.is-active) { background: transparent; border-color: transparent; }
+[data-bs-theme="dark"] .cev-ship-filter-2 .cev-ship-fbtn:not(.is-active) { background: #0a2a33; border-color: rgba(8,145,178,.28); }
 [data-bs-theme="dark"] .cev-ship-fbtn.is-active { background: linear-gradient(135deg,#0891b2,#22d3ee); color: #06283a; border-color: transparent; box-shadow: 0 4px 14px rgba(34,211,238,.4); }
 /* All badges — translucent colour fills on dark (match the segment chips). */
 [data-bs-theme="dark"] .cev-req-m { background: rgba(16,185,129,.18) !important; color: #6ee7b7 !important; border-color: rgba(16,185,129,.4) !important; }

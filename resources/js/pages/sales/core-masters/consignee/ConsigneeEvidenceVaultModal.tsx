@@ -433,7 +433,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         { Field: 'Consignee ID',          Value: consignee.id },
         { Field: 'Company',               Value: consignee.company },
         { Field: 'Linked Customer',       Value: consignee.customerId || '' },
-        { Field: 'Risk',                  Value: consignee.risk || '' },
+        { Field: 'Risk',                  Value: consignee.risk ?? 'Low' },
         { Field: 'Segment',               Value: consignee.segment || '' },
         { Field: 'Country',               Value: consignee.country || '' },
         { Field: 'Total Documents',       Value: vault.total_documents },
@@ -800,7 +800,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
               )}
               <div className="cnev-ov-body">
                 <table className="cnev-ov-table">
-                  <thead><tr><th style={{ width: 48 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+                  <thead><tr><th style={{ width: 64 }}>Sr. No.</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cnev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
