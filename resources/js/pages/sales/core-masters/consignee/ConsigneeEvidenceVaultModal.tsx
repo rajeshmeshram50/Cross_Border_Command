@@ -230,7 +230,6 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   const [ovShip, setOvShip] = useState<number | null>(null);
   // Row currently downloading in the Document Overview — drives a per-row spinner.
   const [ovDownloadingKey, setOvDownloadingKey] = useState<string | null>(null);
-  const [shipmentFilter, setShipmentFilter] = useState<'buyer-eq-consignee' | 'buyer-neq-consignee'>('buyer-eq-consignee');
 
   /* Switch the active group and jump to its first sub-tab. */
   const selectGroup = (g: GroupKey) => {
@@ -274,7 +273,6 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     const startTab = initialTab ?? 'company-dd';
     setTab(startTab);
     setGroup(groupOfTab(startTab));
-    setShipmentFilter('buyer-eq-consignee');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, consignee?.db_id, initialTab]);
 
@@ -695,7 +693,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           </div>
 
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
-            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'} filter={shipmentFilter} setFilter={setShipmentFilter}
+            ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'}
                              onSend={(leadId, doc, party) => setShipSend({ leadId, doc, party })} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
@@ -1195,11 +1193,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
+function ShipmentTable({ rows, kind, onSend }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement';
-  filter: 'buyer-eq-consignee' | 'buyer-neq-consignee';
-  setFilter: (f: 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
   /** Launches Send-for-Signature for one shipment doc (lead + doc + party). */
   onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
 }) {
@@ -1211,12 +1207,8 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
   const COLS = isAgreement ? 11 : 10;
   return (
     <>
-      {/* Trade Documents uses compact pills; Agreements uses the full-width
-          segmented bar with ✓ / ✕ markers — matches the figma per tab. */}
-      <div className={`cnev-ship-filter ${isAgreement ? '' : 'cnev-ship-filter-2'}`}>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✓</span>}Customer = Consignee</button>
-        <button type="button" className={`cnev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✕</span>}Customer &ne; Consignee</button>
-      </div>
+      {/* No Customer = / ≠ Consignee tabs in the consignee vault — it always
+          shows this consignee's shipments and its own documents directly. */}
       <div className="cnev-table-wrap">
         <div className="cnev-table-scroll">
         <table className="cnev-table">
