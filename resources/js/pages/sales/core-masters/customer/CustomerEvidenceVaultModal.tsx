@@ -129,6 +129,7 @@ export interface VaultData {
   owner_kyc_count:        number;
   trade_license_count:    number;
   trade_documents_count:  number;
+  agreements_count:       number;
   total_shipments:        number;
   company_dd:             VaultDoc[];
   owner_kyc:              VaultDoc[];
@@ -203,6 +204,7 @@ function buildDemoVault(customer: CustomerVaultTarget): VaultData {
     owner_kyc_count:       5,
     trade_license_count:   4,
     trade_documents_count: 3,
+    agreements_count:      5,
     total_shipments:       4,
     company_dd: [
       { id: 1, name: 'Company PAN',          reference: 'AABCT1234F',     authority: 'Income Tax Dept', issue_date: '01/01/2023', expiry: '01/01/2028', attachment: 'CompanyPAN.pdf',     status: 'Verified' },
@@ -458,19 +460,14 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     const sigRows            = signatureRequestsToVaultDocs(signatureRows);
     const baseSegmentTd      = (base.trade_documents ?? []) as VaultDoc[];
     const mergedTd           = mergeTradeDocuments(baseSegmentTd as any, sigRows, 'buyer') as unknown as VaultDoc[];
-    const baseSegmentSigned  = baseSegmentTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
-    const baseSegmentPending = baseSegmentTd.filter(r => r.status === 'Pending').length;
-    const mergedSigned       = mergedTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
-    const mergedPending      = mergedTd.filter(r => r.status === 'Pending').length;
     return {
       ...base,
+      // The header KPIs (Total Documents / Verified / Pending / Trade Documents /
+      // Total Agreements) are computed authoritatively by the backend from the
+      // Standard + Case-to-Case document families, so they pass through
+      // unchanged. We still merge the segment-rule TD bucket with live
+      // signatures for the Export workbook's Trade Documents sheet.
       trade_documents: mergedTd as typeof base.trade_documents,
-      trade_documents_count: mergedTd.length,
-      // KPI roll-ups: swap the raw segment-rule TD contribution for the
-      // merged (party-filtered + signature-aware) numbers.
-      verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + mergedSigned,
-      pending:         Math.max(0, (base.pending ?? 0)         - baseSegmentPending) + mergedPending,
-      total_documents: Math.max(0, (base.total_documents ?? 0) - baseSegmentTd.length) + mergedTd.length,
     };
   }, [customer, data, vaultLive, signatureRows]);
 
@@ -708,6 +705,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
             <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        accent="#0e7490" />
             <KpiTile label="Trade License"          value={vault.trade_license_count}    accent="#0891b2" />
             <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  accent="#0d9488" />
+            <KpiTile label="Total Agreements"       value={vault.agreements_count}       accent="#0891b2" />
             <KpiTile label="Total Shipments"        value={vault.total_shipments}        accent="#0c4a6e" />
           </div>
         </div>
@@ -850,12 +848,21 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           Overview" button on each group card. */}
       {overview && (() => {
         const isStd = overview === 'standard';
-        const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => [
-          ...(r.trade_docs_buyer ?? []),
-          ...(r.trade_docs_consignee ?? []),
-          ...(r.agreements_buyer ?? []),
-          ...(r.agreements_consignee ?? []),
-        ];
+        // Match the inline panel: when Customer = Consignee only the buyer set
+        // applies (the Consignee/Both tabs are hidden), so the overview must not
+        // list the consignee-side docs — otherwise they appear as extra rows
+        // that don't belong to the shipment.
+        const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => r.buyer_is_consignee
+          ? [
+              ...(r.trade_docs_buyer ?? []),
+              ...(r.agreements_buyer ?? []),
+            ]
+          : [
+              ...(r.trade_docs_buyer ?? []),
+              ...(r.trade_docs_consignee ?? []),
+              ...(r.agreements_buyer ?? []),
+              ...(r.agreements_consignee ?? []),
+            ];
         const shipments = isStd ? [] : vault.shipment_agreements;
         // Case-to-Case: shipments are shown as horizontal tabs; the active
         // shipment's Trade Documents + Agreements are listed below (paginated
@@ -1437,18 +1444,18 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
 
   return (
     <div className="cev-sdp" style={{ padding: '12px 16px 16px' }}>
-      {!forceParty && (
+      {/* When Customer = Consignee there's only one party, so the tab bar and the
+          party-name label are redundant — render the documents table directly. */}
+      {!forceParty && !buyerIsConsignee && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
           <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Customer Documents <b>{buyer.length}</b></button>
-          {!buyerIsConsignee && (
-            <>
-              <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
-              <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{buyer.length + consignee.length}</b></button>
-            </>
-          )}
+          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
+          <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{buyer.length + consignee.length}</b></button>
         </div>
       )}
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{forceParty === 'consignee' ? consigneeName : party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
+      {(forceParty || !buyerIsConsignee) && (
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{forceParty === 'consignee' ? consigneeName : party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
+      )}
       {docs.length === 0 ? (
         <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {party === 'both' ? '' : party === 'buyer' ? 'buyer ' : 'consignee '}documents on this shipment.</div>
       ) : (
@@ -2252,7 +2259,7 @@ export const CEV_CSS = `
 .cev-table-scroll {
   overflow-x: auto;
   overflow-y: auto;
-  max-height: 300px;
+  max-height: 550px;
   scrollbar-width: thin;
 }
 .cev-table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }

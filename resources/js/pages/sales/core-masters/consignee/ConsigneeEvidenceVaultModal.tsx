@@ -95,6 +95,7 @@ export interface VaultData {
   owner_kyc_count:        number;
   trade_license_count:    number;
   trade_documents_count:  number;
+  agreements_count:       number;
   total_shipments:        number;
   company_dd:             VaultDoc[];
   owner_kyc:              VaultDoc[];
@@ -160,6 +161,7 @@ function buildDemoVault(consignee: ConsigneeVaultTarget): VaultData {
     owner_kyc_count:       5,
     trade_license_count:   4,
     trade_documents_count: 3,
+    agreements_count:      5,
     total_shipments:       4,
     company_dd: [
       { id: 1, name: 'Company PAN',          reference: 'AABCT1234F',      authority: 'Income Tax Dept', issue_date: '01/01/2023', expiry: '01/01/2028', attachment: 'CompanyPAN.pdf',     status: 'Verified' },
@@ -381,19 +383,14 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     const sigRows            = signatureRequestsToVaultDocs(signatureRows);
     const baseSegmentTd      = (base.trade_documents ?? []) as VaultDoc[];
     const mergedTd           = mergeTradeDocuments(baseSegmentTd as any, sigRows, 'consignee') as unknown as VaultDoc[];
-    const baseSegmentSigned  = baseSegmentTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
-    const baseSegmentPending = baseSegmentTd.filter(r => r.status === 'Pending').length;
-    const mergedSigned       = mergedTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
-    const mergedPending      = mergedTd.filter(r => r.status === 'Pending').length;
     return {
       ...base,
+      // The header KPIs (Total Documents / Verified / Pending / Trade Documents /
+      // Total Agreements) are computed authoritatively by the backend from the
+      // Standard + Case-to-Case document families, so they pass through
+      // unchanged. We still merge the segment-rule TD bucket with live
+      // signatures for the Export workbook's Trade Documents sheet.
       trade_documents: mergedTd as typeof base.trade_documents,
-      trade_documents_count: mergedTd.length,
-      // KPI roll-ups: swap the raw segment-rule TD contribution for the
-      // merged (party-filtered + signature-aware) numbers.
-      verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + mergedSigned,
-      pending:         Math.max(0, (base.pending ?? 0)         - baseSegmentPending) + mergedPending,
-      total_documents: Math.max(0, (base.total_documents ?? 0) - baseSegmentTd.length) + mergedTd.length,
     };
   }, [consignee, data, vaultLive, signatureRows]);
 
@@ -621,6 +618,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
             <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        accent="#0e7490" />
             <KpiTile label="Trade License"          value={vault.trade_license_count}    accent="#0891b2" />
             <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  accent="#0d9488" />
+            <KpiTile label="Total Agreements"       value={vault.agreements_count}       accent="#0891b2" />
             <KpiTile label="Total Shipments"        value={vault.total_shipments}        accent="#0c4a6e" />
           </div>
         </div>
