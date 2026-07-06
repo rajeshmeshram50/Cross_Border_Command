@@ -83,9 +83,10 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
   const [loading, setLoading] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [submittingId, setSubmittingId] = useState<number | null>(null);
-  /* Which shared-price entry's PDF is being opened/downloaded — disables its
-   * buttons + shows a spinner so a double-click can't fire two requests. */
-  const [pdfBusy, setPdfBusy] = useState<number | null>(null);
+  /* Which shared-price entry's PDF is being opened/downloaded, and via which
+   * action — drives the per-button spinner (so the user sees the exact View /
+   * Download they clicked is working) and blocks a double-click firing twice. */
+  const [pdfBusy, setPdfBusy] = useState<{ id: number; action: 'view' | 'download' } | null>(null);
 
   const [products, setProducts]     = useState<LeadProductRow[]>([]);
   const [sharedRows, setSharedRows] = useState<SharedRow[]>([]);
@@ -210,7 +211,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
 
   const onViewPdf = async (entryId: number) => {
     if (pdfBusy !== null) return;                 // a PDF is already loading — ignore the click
-    setPdfBusy(entryId);
+    setPdfBusy({ id: entryId, action: 'view' });
     toast.info('Opening PDF…', 'Generating the quotation PDF');
     try {
       const blob = await fetchPdfBlob(entryId);
@@ -226,7 +227,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
 
   const onDownloadPdf = async (entryId: number) => {
     if (pdfBusy !== null) return;                 // a PDF is already loading — ignore the click
-    setPdfBusy(entryId);
+    setPdfBusy({ id: entryId, action: 'download' });
     toast.info('Preparing download…', 'Generating the quotation PDF');
     try {
       const blob = await fetchPdfBlob(entryId);
@@ -372,7 +373,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                   {!historyLoading && historyRows.map((h, idx) => {
                     const { date, time } = formatDateTime(h.shared_at);
                     return (
-                      <tr key={h.id} className={pdfBusy === h.id ? 's4-row-busy' : undefined}>
+                      <tr key={h.id} className={pdfBusy?.id === h.id ? 's4-row-busy' : undefined}>
                         <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
                         <td><span className="s4-code s4-code-navy">{formatProductCode(historyHeader?.product_code) || '—'}</span></td>
                         <td><div className="s4-prod-name">{historyHeader?.product_name ?? '—'}</div></td>
@@ -393,16 +394,20 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                         </td>
                         <td>
                           <div className="s4-pdf-actions">
-                            {/* Whole row shows the loader (s4-row-busy) — buttons just disable. */}
+                            {/* Each button shows its own spinner while that exact action loads. */}
                             <button type="button" className="s4-icon-btn" title="View PDF" onClick={() => void onViewPdf(h.id)} disabled={pdfBusy !== null}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                              </svg>
+                              {pdfBusy?.id === h.id && pdfBusy.action === 'view'
+                                ? <span className="s4-spin" />
+                                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                                  </svg>}
                             </button>
                             <button type="button" className="s4-icon-btn" title="Download PDF" onClick={() => void onDownloadPdf(h.id)} disabled={pdfBusy !== null}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                              </svg>
+                              {pdfBusy?.id === h.id && pdfBusy.action === 'download'
+                                ? <span className="s4-spin" />
+                                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                                  </svg>}
                             </button>
                           </div>
                         </td>
@@ -609,7 +614,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                       {!loading && filteredShared.map((r, idx) => {
                         const { date, time } = formatDateTime(r.shared_at);
                         return (
-                          <tr key={r.id} className={pdfBusy === r.id ? 's4-row-busy' : undefined}>
+                          <tr key={r.id} className={pdfBusy?.id === r.id ? 's4-row-busy' : undefined}>
                             <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
                             <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id ?? 0).padStart(3,'0')}`}</span></td>
                             <td>
@@ -633,16 +638,20 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             </td>
                             <td>
                               <div className="s4-pdf-actions">
-                                {/* Whole row shows the loader (s4-row-busy) — buttons just disable. */}
+                                {/* Each button shows its own spinner while that exact action loads. */}
                                 <button type="button" className="s4-icon-btn" title="View PDF" onClick={() => void onViewPdf(r.id)} disabled={pdfBusy !== null}>
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-                                  </svg>
+                                  {pdfBusy?.id === r.id && pdfBusy.action === 'view'
+                                    ? <span className="s4-spin" />
+                                    : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
+                                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                                      </svg>}
                                 </button>
                                 <button type="button" className="s4-icon-btn" title="Download PDF" onClick={() => void onDownloadPdf(r.id)} disabled={pdfBusy !== null}>
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                                  </svg>
+                                  {pdfBusy?.id === r.id && pdfBusy.action === 'download'
+                                    ? <span className="s4-spin" />
+                                    : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                                      </svg>}
                                 </button>
                               </div>
                             </td>
@@ -985,6 +994,10 @@ const STAGE4_CSS = `
   background: #f5f3ff; border-color: #7c3aed;
 }
 .s4-icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+/* The action actually loading stays bright + shows its spinner, even though the
+   row-busy shimmer dims the rest of the row. */
+.s4-row-busy td > .s4-pdf-actions { opacity: 1; }
+.s4-icon-btn:disabled:has(.s4-spin) { opacity: 1; cursor: progress; }
 .s4-pdf-actions { display: flex; gap: 6px; }
 
 /* Dark mode */

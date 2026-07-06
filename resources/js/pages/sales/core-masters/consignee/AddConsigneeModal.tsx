@@ -3876,7 +3876,7 @@ function ConsigneeTradeDocsTable({ docs, onToggle, onToggleAll, onSend, onSendSe
                                     color: locked ? '#475569' : '#fff',
                                     fontFamily: "'Geist Mono', ui-monospace, monospace",
                                     fontSize: 9.5, fontWeight: 800, letterSpacing: '.02em', lineHeight: 1,
-                                  }}>× {remCount}</span>
+                                  }}>{remCount}</span>
                                 )}
                               </button>
                             );

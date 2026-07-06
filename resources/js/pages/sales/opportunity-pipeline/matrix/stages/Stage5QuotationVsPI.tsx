@@ -1200,6 +1200,9 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<SharedRow[]>([]);
   const [actingId, setActingId] = useState<number | null>(null);
+  // Which row+action (view vs download) is mid-flight — drives the per-button
+  // spinner so the user can see the PDF is opening / downloading.
+  const [pdfBusy, setPdfBusy] = useState<{ id: number; download: boolean } | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -1260,6 +1263,7 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
 
   const pdf = async (entryId: number, download: boolean) => {
     setActingId(entryId);
+    setPdfBusy({ id: entryId, download });
     try {
       const res = await api.get(`/sales/shared-prices/${entryId}/pdf`, { responseType: 'blob' });
       const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
@@ -1276,6 +1280,7 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
       toast.error(download ? 'Download failed' : 'Open failed', 'Could not open the quoted price PDF.');
     } finally {
       setActingId(null);
+      setPdfBusy(null);
     }
   };
 
@@ -1416,10 +1421,14 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
                     <td className="ta-c">
                       <div className="s5-ps-acts">
                         <button type="button" className="s5-ps-act" title="View" disabled={actingId !== null} onClick={() => void pdf(r.id, false)}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                          {pdfBusy && pdfBusy.id === r.id && !pdfBusy.download
+                            ? <span className="s5-ps-spin" />
+                            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
                         </button>
                         <button type="button" className="s5-ps-act s5-ps-act-dl" title="Download" disabled={actingId !== null} onClick={() => void pdf(r.id, true)}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          {pdfBusy && pdfBusy.id === r.id && pdfBusy.download
+                            ? <span className="s5-ps-spin" />
+                            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
                         </button>
                       </div>
                     </td>
@@ -1732,6 +1741,9 @@ const STAGE5_CSS = `
 .s5-ps-act:hover:not(:disabled) { background: #0891b2; color: #fff; border-color: transparent; transform: translateY(-1px); }
 .s5-ps-act-dl:hover:not(:disabled) { background: #0c4a6e; }
 .s5-ps-act:disabled { opacity: .5; cursor: not-allowed; }
+/* The row action that's actually loading keeps full opacity + shows a spinner. */
+.s5-ps-act:disabled:has(.s5-ps-spin) { opacity: 1; cursor: progress; }
+.s5-ps-spin { width: 13px; height: 13px; box-sizing: border-box; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: s5-sig-spin-rot .6s linear infinite; }
 
 /* Footer */
 .s5-ps-foot { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px; border-top: 1.5px solid #e2e8f0; background: linear-gradient(90deg, #f8fafc, #f0f9ff); }
