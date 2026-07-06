@@ -700,6 +700,21 @@ class SegmentDocUploadController extends Controller
                 });
         }
 
+        // A document whose party covers BOTH buyer and consignee is emitted into
+        // both lists; when merging the two sides for the ratio it must be counted
+        // once (else "0/3" when only 2 distinct agreements exist). Dedupe by
+        // library id (+ doc type), falling back to the name.
+        $dedupe = function (array $rows): array {
+            $seen = []; $out = [];
+            foreach ($rows as $r) {
+                $key = !empty($r['db_id']) ? (($r['doc_type'] ?? '') . '#' . $r['db_id']) : ('n#' . ($r['name'] ?? ''));
+                if (isset($seen[$key])) continue;
+                $seen[$key] = true;
+                $out[] = $r;
+            }
+            return $out;
+        };
+
         $rows = [];
         $sr = 0;
         foreach ($leads as $lead) {
@@ -717,10 +732,11 @@ class SegmentDocUploadController extends Controller
             $agrBuyer   = $applicable['agreements_buyer'];
             $agrCons    = $applicable['agreements_consignee'];
 
-            // Prepend this shipment's Proforma Invoice(s) as the first Trade
-            // Documents on the Buyer side. They count toward the Trade-Docs
-            // ratio. A finalised PI (sent/approved/converted) reads as Signed;
-            // a draft is still Pending. sig_req_id is 0 → no Zoho Remind action.
+            // Prepend this shipment's Proforma Invoice(s) as the FIRST Trade
+            // Document, then the other trade docs. It leads the side the current
+            // vault displays — the buyer side for the customer vault, the
+            // consignee side for the consignee vault (which uses forceParty). A
+            // finalised PI reads Signed; a draft Pending. sig_req_id 0 → no Remind.
             foreach (($piByLead->get($lid) ?? collect()) as $pi) {
                 $sigReq   = $piSigReq[(int) $pi->id] ?? null;
                 $piSigned = (bool) $sigReq;
@@ -735,7 +751,7 @@ class SegmentDocUploadController extends Controller
                         $signedUrl = Storage::disk('public')->url($sigReq->signed_document_path);
                     }
                 }
-                array_unshift($tradeBuyer, [
+                $piRow = [
                     'sig_req_id'  => $sigReq ? (int) $sigReq->id : 0,
                     'name'        => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
                     'required'    => 'REQ',
@@ -744,20 +760,26 @@ class SegmentDocUploadController extends Controller
                     'uploaded_on' => $piSigned && $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d/m/Y') : '—',
                     'valid_upto'  => '—',
                     'signed_url'  => $signedUrl,
-                ]);
+                ];
+                if ($type === 'consignee') array_unshift($tradeCons, $piRow);
+                else                       array_unshift($tradeBuyer, $piRow);
             }
 
             $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;
             $buyerIsConsignee = !$cons || (bool) ($cons->same_as_customer ?? false);
 
-            // When Customer = Consignee the expanded panel shows ONLY the buyer
-            // documents (the Consignee/Both tabs are hidden), so the ratio must
-            // count that same set — otherwise the denominator includes
-            // consignee-side docs that are never displayed (e.g. "2/5" when only
-            // 4 buyer rows exist). When they differ, the "Both" view is shown, so
-            // count buyer + consignee.
-            $tradeAll = $buyerIsConsignee ? $tradeBuyer : array_merge($tradeBuyer, $tradeCons);
-            $agrAll   = $buyerIsConsignee ? $agrBuyer   : array_merge($agrBuyer, $agrCons);
+            // The ratio must count exactly what the expanded panel displays:
+            //   • Consignee vault → always the consignee side (forceParty).
+            //   • Customer vault, Customer = Consignee → buyer only (the
+            //     Consignee/Both tabs are hidden); otherwise buyer + consignee
+            //     ("Both" view). Counting the wrong set gave "2/5" when 4 showed.
+            if ($type === 'consignee') {
+                $tradeAll = $tradeCons;
+                $agrAll   = $agrCons;
+            } else {
+                $tradeAll = $buyerIsConsignee ? $tradeBuyer : $dedupe(array_merge($tradeBuyer, $tradeCons));
+                $agrAll   = $buyerIsConsignee ? $agrBuyer   : $dedupe(array_merge($agrBuyer, $agrCons));
+            }
             $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
 
             $sr++;

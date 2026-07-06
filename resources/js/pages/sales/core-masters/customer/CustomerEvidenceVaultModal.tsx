@@ -851,18 +851,24 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
         // Match the inline panel: when Customer = Consignee only the buyer set
         // applies (the Consignee/Both tabs are hidden), so the overview must not
         // list the consignee-side docs — otherwise they appear as extra rows
-        // that don't belong to the shipment.
+        // that don't belong to the shipment. A both-party doc is returned in both
+        // lists, so de-dupe the union (else it shows twice).
+        const ovKey = (d: VaultShipmentDoc) => (d.db_id != null ? `${d.doc_type ?? ''}#${d.db_id}` : `n#${d.name}#${d.sig_req_id}`);
+        const dedupeDocs = (list: VaultShipmentDoc[]): VaultShipmentDoc[] => {
+          const seen = new Set<string>();
+          return list.filter((d) => { const k = ovKey(d); if (seen.has(k)) return false; seen.add(k); return true; });
+        };
         const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => r.buyer_is_consignee
           ? [
               ...(r.trade_docs_buyer ?? []),
               ...(r.agreements_buyer ?? []),
             ]
-          : [
+          : dedupeDocs([
               ...(r.trade_docs_buyer ?? []),
               ...(r.trade_docs_consignee ?? []),
               ...(r.agreements_buyer ?? []),
               ...(r.agreements_consignee ?? []),
-            ];
+            ]);
         const shipments = isStd ? [] : vault.shipment_agreements;
         // Case-to-Case: shipments are shown as horizontal tabs; the active
         // shipment's Trade Documents + Agreements are listed below (paginated
@@ -1426,9 +1432,22 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
   const toast = useToast();
   const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>(forceParty ?? 'buyer');
   const [busy, setBusy] = useState<number | null>(null);
+  // A document whose party is "both" (buyer AND consignee) is returned in BOTH
+  // lists. Split the three views by membership:
+  //   • Customer Documents  → docs only the buyer has (buyer-exclusive)
+  //   • Consignee Documents → docs only the consignee has (consignee-exclusive)
+  //   • Both                → the COMMON docs shared by both parties (intersection)
+  // (When Customer = Consignee the tabs are hidden and we show all buyer docs.)
+  const docKey = (d: VaultShipmentDoc) => (d.db_id != null ? `${d.doc_type ?? ''}#${d.db_id}` : `n#${d.name}#${d.sig_req_id}`);
+  const buyerKeys = new Set(buyer.map(docKey));
+  const consKeys = new Set(consignee.map(docKey));
+  const buyerOnly = buyer.filter(d => !consKeys.has(docKey(d)));
+  const consOnly = consignee.filter(d => !buyerKeys.has(docKey(d)));
+  const bothDocs = buyer.filter(d => consKeys.has(docKey(d)));
   const docs = forceParty
     ? (forceParty === 'consignee' ? consignee : buyer)
-    : party === 'both' ? [...buyer, ...consignee] : party === 'buyer' ? buyer : consignee;
+    : buyerIsConsignee ? buyer
+    : party === 'both' ? bothDocs : party === 'buyer' ? buyerOnly : consOnly;
 
   const remind = async (d: VaultShipmentDoc) => {
     setBusy(d.sig_req_id);
@@ -1448,9 +1467,9 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
           party-name label are redundant — render the documents table directly. */}
       {!forceParty && !buyerIsConsignee && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Customer Documents <b>{buyer.length}</b></button>
-          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
-          <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{buyer.length + consignee.length}</b></button>
+          <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Customer Documents <b>{buyerOnly.length}</b></button>
+          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consOnly.length}</b></button>
+          <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{bothDocs.length}</b></button>
         </div>
       )}
       {(forceParty || !buyerIsConsignee) && (
