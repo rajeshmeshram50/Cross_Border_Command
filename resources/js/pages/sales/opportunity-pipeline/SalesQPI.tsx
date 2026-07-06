@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 import { createPortal } from 'react-dom';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import api from '../../../api';
+import { formatDmy } from '../../../utils/formatDmy';
 import { SigningTrackerModal } from './SigningTrackerModal';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
@@ -620,11 +621,11 @@ export default function SalesQPI() {
         const rows: Quotation[] = (data?.data ?? []).map((r: any) => ({
           id:           r.id,
           qtNo:         r.code,
-          qtDate:       r.created_at ? new Date(r.created_at).toLocaleDateString('en-GB') : '',
+          qtDate:       r.created_at ? formatDmy(r.created_at) : '',
           oppId:        r.opp_code ?? '',
           leadId:       r.opp_id != null ? Number(r.opp_id) : null,
           oppDate:      r.opportunity_date
-                        ? new Date(r.opportunity_date).toLocaleDateString('en-GB')
+                        ? formatDmy(r.opportunity_date)
                         : '',
           customer:     r.customer_name ?? r.customer?.company_name ?? '',
           consignee:    r.consignee_name ?? r.consignee?.company_name ?? '',
@@ -661,17 +662,17 @@ export default function SalesQPI() {
         const rows: PI[] = (data?.data ?? []).map((r: any) => ({
           id:          r.id,
           piNo:        r.code,
-          piDate:      r.created_at ? new Date(r.created_at).toLocaleDateString('en-GB') : '',
+          piDate:      r.created_at ? formatDmy(r.created_at) : '',
           // "Shipp ID" column — prefer the new sequential shipment code
           // (SHP-NNN) created against the opportunity; fall back to the
           // legacy bt_id for older records not yet shipped.
           btId:        r.shipment_code ?? r.bt_id ?? null,
-          btDate:      r.bt_date ? new Date(r.bt_date).toLocaleDateString('en-GB') : null,
+          btDate:      r.bt_date ? formatDmy(r.bt_date) : null,
           convertFrom: r.convert_from_code ?? r.sourceQuotation?.code ?? null,
           oppId:       r.opp_code ?? '',
           leadId:      r.opp_id != null ? Number(r.opp_id) : null,
           oppDate:     r.opportunity_date
-                       ? new Date(r.opportunity_date).toLocaleDateString('en-GB')
+                       ? formatDmy(r.opportunity_date)
                        : '',
           customer:    r.customer_name ?? r.customer?.company_name ?? '',
           consignee:   r.consignee_name ?? r.consignee?.company_name ?? '',
@@ -1920,7 +1921,7 @@ export default function SalesQPI() {
           open={!!convertTarget}
           fromQuotation={convertTarget?.qtNo ?? ''}
           newPiCode={convertPreviewCode}
-          piDate={new Date().toLocaleDateString('en-GB')}
+          piDate={formatDmy(new Date())}
           quotationValue={`${convertTarget?.currency || '$'} ${
             convertTarget?.grandTotal != null ? convertTarget.grandTotal.toFixed(2) : '—'
           }`}
@@ -2341,7 +2342,7 @@ function shapeQpiMasters(
       opp_code:       code,
       sender_company: who,
       sender_country: r.sender_country_iso ?? r.sender_country ?? '',
-      date:           dateSrc ? new Date(dateSrc).toLocaleDateString('en-GB') : '',
+      date:           dateSrc ? formatDmy(dateSrc) : '',
       customerDbId:   r.customer_id != null ? Number(r.customer_id)
                       : (r.customer?.id != null ? Number(r.customer.id) : null),
       consigneeDbId:  r.consignee_id != null ? Number(r.consignee_id)
@@ -2563,7 +2564,7 @@ export function CreateQuotationModal(props: {
         const r = data?.data;
         if (!r) return;
         setExistingCode(r.code ?? null);
-        setExistingDate(r.created_at ? new Date(r.created_at).toLocaleDateString('en-GB') : null);
+        setExistingDate(r.created_at ? formatDmy(r.created_at) : null);
 
         // Resolve label-formatted dropdown values from the raw rows in
         // masters. We already have customer_id / consignee_id / opp_id /
@@ -2580,7 +2581,7 @@ export function CreateQuotationModal(props: {
         setForm({
           docType:          r.doc_type ?? 'International',
           opportunity:      oppRow ? `${oppRow.opp_code} – ${oppRow.sender_company}` : (r.opp_code ?? ''),
-          opportunityDate:  r.opportunity_date ? new Date(r.opportunity_date).toLocaleDateString('en-GB') : '',
+          opportunityDate:  r.opportunity_date ? formatDmy(r.opportunity_date) : '',
           customer:         custRow ? `${custRow.code} – ${custRow.company}` : (r.customer_name ?? ''),
           consignee:        consRow ? `${consRow.code} – ${consRow.company}` : (r.consignee_name ?? ''),
           bankName:         bankRow?.label ?? (r.bank_label ?? ''),
@@ -2746,7 +2747,7 @@ export function CreateQuotationModal(props: {
             </div>
             <div className="qpi-modal-pill">
               <span className="qpi-modal-pill-label">Quotation Date</span>
-              <span className="qpi-modal-pill-value">{existingDate ?? new Date().toLocaleDateString('en-GB')}</span>
+              <span className="qpi-modal-pill-value">{existingDate ?? formatDmy(new Date())}</span>
             </div>
             <button className="qpi-modal-close" onClick={onClose} aria-label="Close"><IconClose /></button>
           </div>
@@ -2934,7 +2935,7 @@ export function CreatePIModal(props: {
         const r = data?.data;
         if (!r) return;
         setExistingCode(r.code ?? null);
-        setExistingDate(r.created_at ? new Date(r.created_at).toLocaleDateString('en-GB') : null);
+        setExistingDate(r.created_at ? formatDmy(r.created_at) : null);
         setPiType(r.pi_type === 'without_shipment' ? 'without_shipment' : 'with_shipment');
 
         const custRow = r.customer_id != null
@@ -2949,7 +2950,7 @@ export function CreatePIModal(props: {
         setForm({
           docType:          r.doc_type ?? 'International',
           opportunity:      oppRow ? `${oppRow.opp_code} – ${oppRow.sender_company}` : (r.opp_code ?? ''),
-          opportunityDate:  r.opportunity_date ? new Date(r.opportunity_date).toLocaleDateString('en-GB') : '',
+          opportunityDate:  r.opportunity_date ? formatDmy(r.opportunity_date) : '',
           customer:         custRow ? `${custRow.code} – ${custRow.company}` : (r.customer_name ?? ''),
           consignee:        consRow ? `${consRow.code} – ${consRow.company}` : (r.consignee_name ?? ''),
           bankName:         bankRow?.label ?? (r.bank_label ?? ''),
@@ -3112,7 +3113,7 @@ export function CreatePIModal(props: {
             </div>
             <div className="qpi-modal-pill qpi-modal-pill-purple">
               <span className="qpi-modal-pill-label">PI Date</span>
-              <span className="qpi-modal-pill-value">{existingDate ?? new Date().toLocaleDateString('en-GB')}</span>
+              <span className="qpi-modal-pill-value">{existingDate ?? formatDmy(new Date())}</span>
             </div>
             <button className="qpi-modal-close" onClick={onClose} aria-label="Close"><IconClose /></button>
           </div>
@@ -3287,7 +3288,7 @@ function OpportunitySelect({
       opp_code:       code,
       sender_company: who,
       sender_country: r.sender_country_iso ?? r.sender_country ?? '',
-      date:           dateSrc ? new Date(dateSrc).toLocaleDateString('en-GB') : '',
+      date:           dateSrc ? formatDmy(dateSrc) : '',
       customerDbId:   r.customer_id != null ? Number(r.customer_id) : (r.customer?.id != null ? Number(r.customer.id) : null),
       consigneeDbId:  r.consignee_id != null ? Number(r.consignee_id) : (r.consignee?.id != null ? Number(r.consignee.id) : null),
       currency:       r.currency ?? r.quote_currency ?? null,

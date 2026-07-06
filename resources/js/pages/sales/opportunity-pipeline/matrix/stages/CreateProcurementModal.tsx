@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { formatDmy } from '../../../../../utils/formatDmy';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -109,7 +110,7 @@ function formatDdMmYyyy(s: string | undefined): string {
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return s;
-  return d.toLocaleDateString('en-GB');
+  return formatDmy(d);
 }
 
 /* Show the full country name. The lead carries an ISO-2 code (e.g. "IN");

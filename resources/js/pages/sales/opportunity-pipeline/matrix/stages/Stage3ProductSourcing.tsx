@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../../../../api';
+import { formatProductCode } from '../../../../../utils/formatProductCode';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../../components/ui/Tooltip';
@@ -470,7 +471,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                     return (
                       <tr key={r.id}>
                         <td><span className="s3-sr s3-sr-violet">{idx + 1}</span></td>
-                        <td><span className="s3-code s3-code-violet">{r.product_code ?? `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
+                        <td><span className="s3-code s3-code-violet">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                         <td>
                           <div className="s3-prod-name">{r.product_name ?? '—'}</div>
                           {r.product_category && <span className="s3-cat-badge s3-cat-badge-violet">{r.product_category.toUpperCase()}</span>}
@@ -614,7 +615,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                             )}
                           </td>
                           <td><span className="s3-sr s3-sr-amber">{idx + 1}</span></td>
-                          <td><span className="s3-code s3-code-amber">{r.product_code ?? `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
+                          <td><span className="s3-code s3-code-amber">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                           <td>
                             <div className="s3-prod-name">{r.product_name ?? '—'}</div>
                             {r.product_category && <span className="s3-cat-badge s3-cat-badge-amber">{r.product_category.toUpperCase()}</span>}
@@ -777,7 +778,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                     return (
                       <tr key={r.id}>
                         <td><span className="s3-sr s3-sr-mint">{idx + 1}</span></td>
-                        <td><span className="s3-code s3-code-mint">{r.product_code ?? `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
+                        <td><span className="s3-code s3-code-mint">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                         <td>
                           <div className="s3-prod-name">{r.product_name ?? '—'}</div>
                           {r.product_category && <span className="s3-cat-badge s3-cat-badge-mint">{r.product_category.toUpperCase()}</span>}
@@ -892,7 +893,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
       <VendorMappingsModal
         open={vendorMapRow != null}
         productId={vendorMapRow?.product_id ?? null}
-        productCode={vendorMapRow?.product_code ?? null}
+        productCode={formatProductCode(vendorMapRow?.product_code) || null}
         productName={vendorMapRow?.product_name ?? null}
         targetPrice={vendorMapRow?.target_price ?? null}
         currency={vendorMapRow?.currency ?? null}

@@ -941,7 +941,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               <td>{i + 1}</td>
               <td className="cnev-doc-name">{d.name}</td>
               <td className="cnev-mono">{d.reference || '—'}</td>
-              <td>{d.authority || '—'}</td>
+              <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
               <td>
                 {d.attachment ? (
                   d.attachment_url ? (

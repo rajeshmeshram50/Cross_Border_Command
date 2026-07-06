@@ -6,6 +6,7 @@ import api from '../../../api';
 import Tooltip from '../../../components/ui/Tooltip';
 import { useToast } from '../../../contexts/ToastContext';
 import { signatureRequestsToVaultDocs, type SigReqRow } from '../../../utils/vaultSignatureRows';
+import { resolveFileUrl } from '../../../utils/resolveFileUrl';
 import type { VaultData, VaultDoc, VaultStatus } from '../core-masters/customer/CustomerEvidenceVaultModal';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -208,14 +209,26 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
         { folder: 'KYC Documents',   docs: vault.owner_kyc },
         { folder: 'Trade License',   docs: vault.trade_licenses },
       ];
-      let added = 0, failed = 0;
+      /* Re-resolve every stored URL against the app's OWN origin / configured
+       * file base before fetching. A server whose APP_URL is misconfigured (or
+       * whose storage sits on a different host) hands back an absolute URL that
+       * points at the wrong origin — the per-row <a download> still works
+       * (browser navigation ignores that), but fetch() here fails on
+       * CORS / DNS and every file is silently skipped ("nothing to export").
+       * Rebuilding from the path segment fixes that. */
+      const fixUrl = (u: string) => {
+        try { return resolveFileUrl(new URL(u, window.location.origin).pathname); }
+        catch { return resolveFileUrl(u) || u; }
+      };
+      let added = 0, failed = 0, withUrl = 0;
       for (const g of groups) {
         const dir = zip.folder(g.folder)!;
         let idx = 0;
         for (const d of g.docs) {
           if (!d.attachment_url) continue;
+          withUrl++;
           try {
-            const res = await fetch(d.attachment_url);
+            const res = await fetch(fixUrl(d.attachment_url));
             if (!res.ok) { failed++; continue; }
             const blob = await res.blob();
             idx++;
@@ -230,7 +243,14 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
       }
 
       if (added === 0) {
-        toast.warning('Nothing to export', 'No uploaded files were found across the four document buckets.');
+        // Distinguish "genuinely nothing uploaded" from "files exist but the
+        // fetch failed" so a storage/URL misconfig is visible, not hidden.
+        toast.warning(
+          'Nothing to export',
+          withUrl === 0
+            ? 'No uploaded files were found across the document buckets.'
+            : `${withUrl} file${withUrl === 1 ? '' : 's'} exist but could not be downloaded — check the server's file/storage URL configuration.`,
+        );
         return;
       }
 
@@ -385,7 +405,7 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
                       <td>{(safePage - 1) * PAGE_SIZE + i + 1}</td>
                       <td><span className="lev-doc-license">{d.reference || d.doc_code || '—'}</span></td>
                       <td><span className="lev-doc-name">{d.name}</span></td>
-                      <td>{d.authority || '—'}</td>
+                      <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
                       <td>
                         {d.requirement === 'M' ? (
                           <span className="lev-req lev-req-m">★ Mandatory</span>
