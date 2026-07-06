@@ -192,6 +192,14 @@
   color: #fff;
   box-shadow: 0 2px 6px rgba(124, 58, 237, .35);
 }
+/* Past (before minTime) slots — greyed, unclickable, no hover highlight. */
+.master-timepicker-item.is-past,
+.master-timepicker-item:disabled {
+  opacity: .32;
+  cursor: not-allowed;
+  pointer-events: none;
+  text-decoration: line-through;
+}
 [data-bs-theme="dark"] .master-timepicker-item { color: #ede9fe; }
 [data-bs-theme="dark"] .master-timepicker-item:hover {
   background: rgba(167, 139, 250, .15);

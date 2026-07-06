@@ -21,6 +21,7 @@ export function MasterTimePicker({
   invalid,
   minuteStep = 5,
   showNow = true,
+  minTime,
 }: {
   name?: string;
   value?: string;
@@ -33,6 +34,10 @@ export function MasterTimePicker({
   /* The "Now" shortcut only makes sense for a "start" time. Pass false to
    * hide it (e.g. an end time — setting it to "now" is meaningless). */
   showNow?: boolean;
+  /* Earliest selectable time as "HH:MM". Hours before it are disabled, and
+   * on the boundary hour the earlier minutes are disabled too. Used to stop
+   * picking a past time when a meeting is scheduled for today. */
+  minTime?: string;
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
   useEffect(() => {
@@ -55,6 +60,18 @@ export function MasterTimePicker({
 
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const minutes = Array.from({ length: Math.floor(60 / minuteStep) }, (_, i) => i * minuteStep);
+
+  // Min-time floor: parse "HH:MM" once, then expose helpers that tell whether a
+  // given hour / minute falls before it (so past slots render disabled).
+  const [minHStr, minMStr] = (minTime ?? '').split(':');
+  const minH = minTime ? parseInt(minHStr, 10) : null;
+  const minM = minTime ? parseInt(minMStr, 10) : null;
+  const hourDisabled = (h: number) => minH != null && h < minH;
+  const minuteDisabled = (m: number) => {
+    if (minH == null || minM == null) return false;
+    const h = selH != null ? selH : minH;   // no hour picked yet → assume the floor hour
+    return h === minH && m < minM;
+  };
 
   /* Single-open coordination: when this picker opens, broadcast so any other
    * open date/time picker closes itself; and while open, listen for other
@@ -149,11 +166,15 @@ export function MasterTimePicker({
   };
 
   const pickHour = (h: number) => {
-    const m = selM != null ? selM : 0;
+    if (hourDisabled(h)) return;
+    let m = selM != null ? selM : 0;
+    // Landing on the floor hour with an earlier minute → snap up to the floor.
+    if (minH != null && minM != null && h === minH && m < minM) m = minM;
     commit(`${pad(h)}:${pad(m)}`);
   };
   const pickMinute = (m: number) => {
-    const h = selH != null ? selH : 0;
+    const h = selH != null ? selH : (minH != null ? minH : 0);
+    if (hourDisabled(h) || (minH != null && minM != null && h === minH && m < minM)) return;
     commit(`${pad(h)}:${pad(m)}`);
   };
 
@@ -210,7 +231,8 @@ export function MasterTimePicker({
                   <button
                     key={h}
                     type="button"
-                    className={`master-timepicker-item ${selH === h ? 'selected' : ''}`}
+                    disabled={hourDisabled(h)}
+                    className={`master-timepicker-item ${selH === h ? 'selected' : ''} ${hourDisabled(h) ? 'is-past' : ''}`}
                     onClick={() => pickHour(h)}
                   >
                     {pad(h)}
@@ -225,7 +247,8 @@ export function MasterTimePicker({
                   <button
                     key={m}
                     type="button"
-                    className={`master-timepicker-item ${selM === m ? 'selected' : ''}`}
+                    disabled={minuteDisabled(m)}
+                    className={`master-timepicker-item ${selM === m ? 'selected' : ''} ${minuteDisabled(m) ? 'is-past' : ''}`}
                     onClick={() => pickMinute(m)}
                   >
                     {pad(m)}
