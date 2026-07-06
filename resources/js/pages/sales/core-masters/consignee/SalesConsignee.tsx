@@ -11,6 +11,7 @@ import { type ConsigneeVaultTarget } from './ConsigneeEvidenceVaultModal';
 import { ShimmerTable } from '../../../../components/ui/Shimmer';
 import api from '../../../../api';
 import TableContainer from '../../../../velzon/Components/Common/TableContainerReactTable';
+import { MasterSelect } from '../../../../components/ui/MasterSelect';
 
 // The two heavy consignee modals are code-split — their chunks download only
 // when first opened, not on the list's first paint. (DeleteConfirmModal stays
@@ -54,8 +55,30 @@ export default function SalesConsignee() {
   const canEdit = isSuperAdmin || !!perm?.can_edit;
 
   const [q, setQ] = useState('');
+  // "Same as Customer" filter (Yes / No / All).
+  const [sacFilter, setSacFilter] = useState<'all'|'yes'|'no'>('all');
   const [wdhOpen, setWdhOpen] = useState(false);
   const [segOpen, setSegOpen] = useState<{ id: string | number; names: string[]; x: number; y: number } | null>(null);
+  // The segments popover is pinned to fixed x/y captured on click; a resize
+  // (maximize/minimize/zoom) or scroll makes those coords stale and the popover
+  // drifts away from its badge. Close it on either so it never shows stranded.
+  useEffect(() => {
+    if (!segOpen) return;
+    const close = () => setSegOpen(null);
+    // Close on a PAGE/table scroll (coords go stale), but NOT when the user is
+    // scrolling the long list INSIDE the popover itself.
+    const onScroll = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t && typeof t.closest === 'function' && t.closest('.smcg-seg-pop')) return;
+      setSegOpen(null);
+    };
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [segOpen]);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ConsigneeRow | null>(null);
   const [rows, setRows] = useState<ConsigneeRow[]>([]);
@@ -66,6 +89,9 @@ export default function SalesConsignee() {
 
   const tableCardRef = useRef<HTMLDivElement>(null);
   const [pageSize, setPageSize] = useState(ROWS_PER_PAGE);
+  // Once the user picks a Rows-per-page value, stop the viewport auto-fit from
+  // overriding it so the manual choice sticks.
+  const [manualSize, setManualSize] = useState(false);
   useEffect(() => {
     const el = tableCardRef.current;
     if (!el) return;
@@ -82,7 +108,7 @@ export default function SalesConsignee() {
       const rowH     = (el.querySelector('.smcg-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 40;
       const avail = h - toolbarH - theadH - footerH - 26;
       const rowsFit = Math.floor(avail / rowH);
-      setPageSize(Math.max(ROWS_PER_PAGE, rowsFit));
+      if (!manualSize) setPageSize(Math.max(ROWS_PER_PAGE, rowsFit));
     };
     fit();
     const t = window.setTimeout(fit, 120);
@@ -98,7 +124,7 @@ export default function SalesConsignee() {
       window.removeEventListener('resize', fit);
       ro?.disconnect();
     };
-  }, [wdhOpen, loading]);
+  }, [wdhOpen, loading, manualSize]);
 
   const fetchRows = useCallback(async () => {
     if (!canView) return;
@@ -165,10 +191,12 @@ export default function SalesConsignee() {
   };
 
   const filtered = useMemo(() => {
+    let base = rows;
+    if (sacFilter !== 'all') base = base.filter(c => sacFilter === 'yes' ? !!c.same_as_customer : !c.same_as_customer);
     const lo = q.trim().toLowerCase();
-    if (!lo) return rows;
+    if (!lo) return base;
     const m = (v: unknown) => String(v ?? '').toLowerCase();
-    return rows.filter(c =>
+    return base.filter(c =>
       m(c.company).includes(lo)        ||
       m(c.id).includes(lo)             ||
       m(c.customerId).includes(lo)     ||
@@ -180,7 +208,7 @@ export default function SalesConsignee() {
       m(c.countryDetail).includes(lo)  ||
       m(c.risk).includes(lo),
     );
-  }, [q, rows]);
+  }, [q, rows, sacFilter]);
 
   const onSearch = (v: string) => { setQ(v); };
   const soon = (label: string) => toast.info(label, 'Coming in next phase');
@@ -462,6 +490,18 @@ export default function SalesConsignee() {
               onChange={(e) => onSearch(e.target.value)}
             />
           </div>
+          <div className="smcg-sac-filter" style={{ width: 210, flexShrink: 0 }}>
+            <MasterSelect
+              value={sacFilter}
+              placeholder="Same as Customer"
+              options={[
+                { value: 'all', label: 'Same as Customer: All' },
+                { value: 'yes', label: 'Yes' },
+                { value: 'no',  label: 'No' },
+              ]}
+              onChange={(v) => setSacFilter((v || 'all') as 'all'|'yes'|'no')}
+            />
+          </div>
           {false && canAdd && (
             <button
               type="button"
@@ -488,7 +528,9 @@ export default function SalesConsignee() {
               theadClass="table-light"
               divClass="table-responsive table-card border rounded"
               SearchPlaceholder="Search consignees..."
-              pageOfTotalPagination
+              worklistPagination
+              pageSizeOptions={[5, 10, 15, 25, 50]}
+              onPageSizeChange={(n) => { setManualSize(true); setPageSize(n); }}
             />
           )}
           {!loading && filtered.length === 0 && (

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
+import { useScrollLock } from '../../../../hooks/useScrollLock';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * WhatsApp Status — opens off the matrix toolbar's WhatsApp pill.
@@ -73,6 +74,10 @@ export default function WhatsAppStatusModal({
     setRemovedExisting(false);
     if (fileRef.current) fileRef.current.value = '';
   }, [open, currentStatus, currentReason]);
+
+  // Freeze background (html+body) scroll while the modal is open so the page
+  // behind the overlay can't scroll-chain.
+  useScrollLock(open);
 
   if (!open) return null;
 

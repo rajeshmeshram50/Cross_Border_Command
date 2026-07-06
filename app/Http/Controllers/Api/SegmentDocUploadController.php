@@ -636,6 +636,26 @@ class SegmentDocUploadController extends Controller
             ->get(['id', 'opp_id', 'code', 'status', 'emailed_at', 'created_at'])
             ->groupBy('opp_id');
 
+        // A PI reads as "Signed" only once its e-signature is COMPLETE — the same
+        // source of truth the Q/PI list uses (ClmSignatureRequest on the PI). The
+        // PI's own lifecycle column (sent/approved/…) does NOT imply a customer
+        // e-signature, so keying off it made an e-signed PI show "Pending" here.
+        // Map: pi_id ⇒ its completed signature request (carries completion date
+        // + the signed-document path so the vault can offer a "View" link).
+        $piSigReq = [];
+        $piIds = $piByLead->flatten()->pluck('id')->all();
+        if ($piIds) {
+            ClmSignatureRequest::where('client_id', $cid)
+                ->where('document_type', ClmSignatureRequest::DOC_PROFORMA_INVOICE)
+                ->whereIn('trade_doc_id', $piIds)
+                ->where('status', 'completed')
+                ->orderBy('id')
+                ->get()
+                ->each(function ($r) use (&$piSigReq) {
+                    $piSigReq[(int) $r->trade_doc_id] = $r;   // latest completed wins
+                });
+        }
+
         $rows = [];
         $sr = 0;
         foreach ($leads as $lead) {
@@ -658,21 +678,28 @@ class SegmentDocUploadController extends Controller
             // ratio. A finalised PI (sent/approved/converted) reads as Signed;
             // a draft is still Pending. sig_req_id is 0 → no Zoho Remind action.
             foreach (($piByLead->get($lid) ?? collect()) as $pi) {
-                $piSigned = in_array($pi->status, [
-                    ProformaInvoice::STATUS_SENT,
-                    ProformaInvoice::STATUS_APPROVED,
-                    ProformaInvoice::STATUS_CONVERTED_TO_CONTRACT,
-                ], true);
-                $piDate = $pi->emailed_at ?? $pi->created_at;
+                $sigReq   = $piSigReq[(int) $pi->id] ?? null;
+                $piSigned = (bool) $sigReq;
+                $piDate   = $sigReq?->completed_at;
+                // Resolve the signed-document URL the same way trade docs do, so
+                // the vault can offer a "View" link on the signed PI.
+                $signedUrl = null;
+                if ($sigReq) {
+                    $paths = is_array($sigReq->signed_document_paths) ? $sigReq->signed_document_paths : [];
+                    $signedUrl = $paths[0]['file_url'] ?? $paths[0]['url'] ?? null;
+                    if (!$signedUrl && $sigReq->signed_document_path) {
+                        $signedUrl = Storage::disk('public')->url($sigReq->signed_document_path);
+                    }
+                }
                 array_unshift($tradeBuyer, [
-                    'sig_req_id'  => 0,
+                    'sig_req_id'  => $sigReq ? (int) $sigReq->id : 0,
                     'name'        => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
                     'required'    => 'REQ',
                     'status'      => $piSigned ? 'Signed' : 'Pending',
-                    // "Signed On" — only once the PI is finalised; a draft PI shows —.
+                    // "Signed On" — the e-signature completion date; unsigned shows —.
                     'uploaded_on' => $piSigned && $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d/m/Y') : '—',
                     'valid_upto'  => '—',
-                    'signed_url'  => null,
+                    'signed_url'  => $signedUrl,
                 ]);
             }
 

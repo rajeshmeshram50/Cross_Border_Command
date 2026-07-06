@@ -2195,11 +2195,15 @@
 .rec-list-table thead th:first-child { border-top-left-radius: 14px; }
 .rec-list-table thead th:last-child  { border-top-right-radius: 14px; }
 [data-bs-theme="dark"] .rec-list-table thead th {
+  /* Fallback colour is required because this table also renders inside a
+     reactstrap Modal, which portals to <body> — outside the app wrapper that
+     defines --vz-card-bg. Without the fallback the gradient resolves to
+     `transparent` and scrolled rows bleed THROUGH the sticky header. */
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--vz-card-bg) 88%, #ffffff) 0%,
-    var(--vz-card-bg) 100%);
+    color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
+    var(--vz-card-bg, #1a1d29) 100%);
   color: rgba(255,255,255,0.70);
-  border-bottom-color: var(--vz-border-color);
+  border-bottom-color: var(--vz-border-color, #2c3242);
 }
 
 /* Body cells — comfortable padding, subtle row dividers */
@@ -8407,6 +8411,35 @@
 [data-bs-theme="dark"] .att-logs-headbar .att-logs-range:hover { color: #5eead4; background: rgba(20,184,166,0.18); }
 [data-bs-theme="dark"] .att-logs-headbar .att-logs-range.is-active { background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); color: #ffffff; }
 
+/* Segmented pill toggle reused OUTSIDE the logs header (e.g. the Regularization
+   Requests status filter: Pending / Approved / Rejected / All) — same look as
+   the month range switcher so the two controls read as one design language. */
+.att-seg-toggle.att-logs-ranges {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 3px;
+  background: #f3f4f6;
+  border-radius: 9px;
+}
+[data-bs-theme="dark"] .att-seg-toggle.att-logs-ranges { background: rgba(255,255,255,0.05); }
+.att-seg-toggle .att-logs-range {
+  border: 0;
+  padding: 5px 12px;
+  border-radius: 7px;
+  box-shadow: none;
+}
+.att-seg-toggle .att-logs-range:hover { color: #0f766e; background: #ccfbf1; }
+.att-seg-toggle .att-logs-range.is-active {
+  background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 2px 6px rgba(13,148,136,0.30);
+}
+[data-bs-theme="dark"] .att-seg-toggle .att-logs-range { color: rgba(255,255,255,0.65); }
+[data-bs-theme="dark"] .att-seg-toggle .att-logs-range:hover { color: #5eead4; background: rgba(20,184,166,0.18); }
+[data-bs-theme="dark"] .att-seg-toggle .att-logs-range.is-active { background: linear-gradient(135deg, #14b8a6 0%, #0d9488 100%); color: #ffffff; }
+
 /* View toggle (list / calendar) */
 .att-logs-viewtoggle {
   display: inline-flex;
@@ -8880,6 +8913,29 @@
   color: #fcd34d;
 }
 
+/* ── Late Duration column — amber pill showing how many minutes late the
+   employee arrived (the "LATE" badge moved out of the Arrival cell). ── */
+.att-late-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  color: #b45309;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+[data-bs-theme="dark"] .att-late-pill {
+  background: rgba(245,158,11,0.18);
+  border-color: rgba(245,158,11,0.40);
+  color: #fcd34d;
+}
+
 /* ── Log status icon button (right-most column) — neutral grey button,
    no semantic colour. Subtle hover wash. ── */
 .att-log-status-btn {
@@ -8924,6 +8980,18 @@
   color: var(--vz-secondary-color);
   font-weight: 500;
 }
+.att-log-noentry-cell { text-align: center; }
+.att-log-noentry-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-style: italic;
+  font-weight: 500;
+  color: var(--vz-secondary-color);
+  opacity: 0.9;
+}
+.att-log-noentry-text i { font-size: 14px; opacity: 0.8; }
 
 /* ════════════════════════════════════════════════════════════════════════
    Day-detail popover — Keka-style: dark header band, shift info, Regularize

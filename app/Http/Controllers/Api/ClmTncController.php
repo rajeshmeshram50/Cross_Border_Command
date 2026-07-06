@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClmTncCategory;
 use App\Models\ClmTncLibrary;
+use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -18,14 +19,11 @@ class ClmTncController extends Controller
         $user = $request->user(); if (!$user) abort(401);
         // The four standard categories are GLOBAL (client_id NULL) and show
         // for every tenant; a client's own custom categories are merged on top.
-        $rows = ClmTncCategory::where(function ($w) use ($user) {
-                $w->whereNull('client_id');
-                if ($user->client_id) {
-                    $w->orWhere('client_id', $user->client_id);
-                }
-            })
-            ->orderBy('id')
-            ->get();
+        // Branch-scoped read: branch users see globals + client-level rows +
+        // their own branch's rows; sibling branches stay hidden.
+        $query = ClmTncCategory::query()->orderBy('id');
+        MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
+        $rows = $query->get();
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 
@@ -44,6 +42,7 @@ class ClmTncController extends Controller
             $code = $this->nextCode(ClmTncCategory::class, $user->client_id, 'DC-');
             return ClmTncCategory::create([
                 'client_id'  => $user->client_id,
+                'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'       => $code,
                 'short_code' => strtoupper(trim($data['short_code'])),
                 'name'       => trim($data['name']),
@@ -57,7 +56,12 @@ class ClmTncController extends Controller
     public function categoriesUpdate(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmTncCategory::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmTncCategory::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         $data = $request->validate([
             'short_code' => 'sometimes|required|string|max:12',
@@ -73,7 +77,12 @@ class ClmTncController extends Controller
     public function categoriesDestroy(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmTncCategory::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmTncCategory::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
@@ -83,9 +92,13 @@ class ClmTncController extends Controller
     public function libraryIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $rows = $user->client_id
-            ? ClmTncLibrary::where('client_id', $user->client_id)->orderBy('id')->get()
-            : collect();
+        if (!$user->client_id) {
+            return response()->json(['status' => true, 'data' => [], 'count' => 0]);
+        }
+        // Branch-scoped read (globals + client-level + own branch; siblings hidden).
+        $query = ClmTncLibrary::query()->orderBy('id');
+        MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
+        $rows = $query->get();
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 
@@ -108,6 +121,7 @@ class ClmTncController extends Controller
             $code = $this->nextCode(ClmTncLibrary::class, $user->client_id, 'TNC-');
             return ClmTncLibrary::create([
                 'client_id'  => $user->client_id,
+                'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'       => $code,
                 'segment'    => $data['segment'] ?? 'General',
                 'regulatory' => $data['regulatory'] ?? 'highly',
@@ -124,7 +138,12 @@ class ClmTncController extends Controller
     public function libraryUpdate(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmTncLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmTncLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         $data = $request->validate([
             'segment'    => 'nullable|string|max:1024',
@@ -141,7 +160,12 @@ class ClmTncController extends Controller
     public function libraryDestroy(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmTncLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmTncLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }

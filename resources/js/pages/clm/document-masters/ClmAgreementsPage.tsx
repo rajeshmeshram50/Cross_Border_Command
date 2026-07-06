@@ -12,7 +12,7 @@ import ClmAgreementWizardModal from './ClmAgreementWizardModal';
 
 /* Central CLM → Agreements Master (two tabs: Types + Library). */
 
-type AgrType = { id: number; code: string; name: string; description: string };
+type AgrType = { id: number; code: string; name: string; description: string; in_use?: number };
 type AgrLib = {
   id: number; code: string; agreement_type: string; title: string; purpose?: string | null; party: string;
   regulatory: 'highly'|'less'; signing: boolean; segment: string | null;
@@ -99,6 +99,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.description.toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
+  const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
@@ -113,17 +114,18 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    const rootEl = scrollRef.current?.closest('.clm-root');
-    if (rootEl) ro.observe(rootEl);
+    // Not observing the page root: the "What We Are Doing Here" box animates its
+    // height on expand/collapse, so observing the root fired this recompute every
+    // animation frame and visibly disturbed the layout. Recompute only on mount
+    // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
   const onSave = async (form: { name: string; description: string }, id?: number) => {
@@ -182,9 +184,15 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
                     <td className="clm-td-desc">{r.description}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
-                        <Tooltip label={`Edit ${r.name}`}>
-                          <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-                        </Tooltip>
+                        {r.in_use ? (
+                          <Tooltip label={`Used by ${r.in_use} agreement${r.in_use === 1 ? '' : 's'} in the library — cannot edit`}>
+                            <button className="clm-act clm-act-edit" aria-label="Locked — in use" disabled style={{ opacity: .4, cursor: 'not-allowed' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></button>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip label={`Edit ${r.name}`}>
+                            <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                          </Tooltip>
+                        )}
                         <Tooltip label={`Delete ${r.name}`}>
                           <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                         </Tooltip>
@@ -195,7 +203,7 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
         )}
@@ -227,6 +235,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
     return rows.filter(r => r.title.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.agreement_type.toLowerCase().includes(s) || (r.segment ?? '').toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
+  const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
@@ -241,17 +250,18 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    const rootEl = scrollRef.current?.closest('.clm-root');
-    if (rootEl) ro.observe(rootEl);
+    // Not observing the page root: the "What We Are Doing Here" box animates its
+    // height on expand/collapse, so observing the root fired this recompute every
+    // animation frame and visibly disturbed the layout. Recompute only on mount
+    // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
   const onDelete = async () => {
@@ -431,7 +441,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
         )}

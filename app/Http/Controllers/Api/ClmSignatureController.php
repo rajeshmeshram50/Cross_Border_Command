@@ -2572,7 +2572,12 @@ class ClmSignatureController extends Controller
             $html,
         );
 
-        $addr = $party->primaryAddress;   // null-safe via PHP 8 ?->
+        // Prefer the flagged primary address; fall back to the party's first
+        // address when none is marked is_primary. Without this fallback every
+        // address-derived token ({{customer.address}}, .city, .state, .country,
+        // .phone, .contact_person …) came out blank for any party whose address
+        // rows never had is_primary set (CBC — placeholders fail to populate).
+        $addr = $party->primaryAddress ?? $party->addresses()->first();
 
         // The three address tables don't share a shape:
         //   CustomerAddress / ConsigneeAddress → `country`, `state`, `pin`
@@ -2648,6 +2653,11 @@ class ClmSignatureController extends Controller
             'state'           => e($stateStr),
             'city'            => $cityValue,
             'address'         => e($addressLine),
+            'zip_code'        => e($pinStr),
+            // Delivery address = the party's full address line (a consignee IS
+            // the delivery destination); kept as an explicit token so agreements
+            // can reference it distinctly (CBC-438).
+            'delivery_address' => e($addressLine),
             'gst'             => '',
             'pan'             => '',
             'iec'             => '',
@@ -2664,6 +2674,21 @@ class ClmSignatureController extends Controller
                     . preg_quote($field, '/') . '\s*\}\}/iu';
                 $html = preg_replace($pattern, $value, $html);
             }
+        }
+
+        // Blank any REMAINING token in this party's namespace(s) — an unknown /
+        // mis-spelled field (e.g. {{customer.foobar}}) that matched no value
+        // above. Without this the token survived as raw "{{customer.foobar}}"
+        // text in the rendered PDF (CBC — placeholders shown as plain text).
+        // The `signature` field is deliberately excluded: it is resolved later
+        // in replacePlaceholders() into a signature box, so it must NOT be
+        // stripped here. Product / org-level / other-party tokens live in
+        // different namespaces and are untouched by this scoped pass.
+        foreach ($namespaces as $ns) {
+            $leftover = '/\{\{\s*'
+                . preg_quote($ns, '/')
+                . '\s*\.\s*(?!signature\s*\}\})[^{}]*\}\}/iu';
+            $html = preg_replace($leftover, '', $html);
         }
 
         return $html;

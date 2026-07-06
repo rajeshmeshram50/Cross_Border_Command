@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClmAuthority;
 use App\Models\ClmDdDocument;
+use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -18,13 +19,22 @@ class ClmDdController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $rows = $user->client_id
-            ? ClmDdDocument::where('client_id', $user->client_id)->orderBy('id')->get()
-            : collect();
+        // Branch-scoped read: own rows + client-level (shared); siblings hidden (CBC-434).
+        $q = ClmDdDocument::query()->orderBy('id');
+        MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
+        $rows = $q->get();
 
         // `authority` stores authority ids; expose the resolved current names.
         $map = ClmAuthority::idNameMap($user->client_id);
         $rows->each(fn ($r) => $r->authority_names = ClmAuthority::displayNames($r->authority, $map));
+
+        // Per-row "in use" flags so the UI can disable + explain the delete
+        // action for referenced documents (mirrors the checks in destroy()).
+        $rows->each(function ($r) {
+            $labels = $this->usageCheck($r->code);
+            $r->in_use  = !empty($labels);
+            $r->used_in = array_values($labels);
+        });
 
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
@@ -43,9 +53,9 @@ class ClmDdController extends Controller
         ]);
 
         $name = trim($data['name']);
-        if (ClmDdDocument::where('client_id', $user->client_id)
-            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
-            ->exists()) {
+        $dupe = ClmDdDocument::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+        MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
+        if ($dupe->exists()) {
             throw ValidationException::withMessages([
                 'name' => "A due-diligence document named \"{$name}\" already exists. Pick a different name.",
             ]);
@@ -60,6 +70,7 @@ class ClmDdController extends Controller
         $row = DB::transaction(function () use ($user, $data) {
             return ClmDdDocument::create([
                 'client_id'  => $user->client_id,
+                'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'       => $this->nextCode($user->client_id),
                 'name'       => trim($data['name']),
                 'authority'  => $data['authority'],
@@ -77,7 +88,12 @@ class ClmDdController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $row  = ClmDdDocument::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmDdDocument::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         $data = $request->validate([
             'name'      => 'sometimes|required|string|max:255',
@@ -94,14 +110,15 @@ class ClmDdController extends Controller
             }
         }
 
-        if (isset($data['name'])
-            && ClmDdDocument::where('client_id', $user->client_id)
-                ->where('id', '!=', $row->id)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
-                ->exists()) {
-            throw ValidationException::withMessages([
-                'name' => "Another due-diligence document named \"{$data['name']}\" already exists. Pick a different name.",
-            ]);
+        if (isset($data['name'])) {
+            $clash = ClmDdDocument::query()->where('id', '!=', $row->id)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])]);
+            MasterVisibility::applyReadScope($clash, $user, $user->branch_id ?: null);
+            if ($clash->exists()) {
+                throw ValidationException::withMessages([
+                    'name' => "Another due-diligence document named \"{$data['name']}\" already exists. Pick a different name.",
+                ]);
+            }
         }
 
         $data['updated_by'] = $user->id;
@@ -114,7 +131,12 @@ class ClmDdController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $row  = ClmDdDocument::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmDdDocument::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         $usedIn = $this->usageCheck($row->code);
         if (!empty($usedIn)) {

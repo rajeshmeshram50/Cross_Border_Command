@@ -36,14 +36,15 @@ class LeavePlanController extends Controller
         $rows = $q->orderByDesc('is_default')->orderBy('plan_name')->get();
 
         // Per-plan setup completeness. A plan is "configured" only when it has
-        // at least one leave type AND every assigned type has its quota/setup
-        // saved (leave_plan_leave_types.config_json is non-null — it's seeded
-        // null on assign and populated by the Setup modal). The employee form's
-        // leave-plan dropdown uses this to hide unconfigured / draft plans.
+        // at least one leave type AND every assigned type has FINISHED its setup
+        // wizard (leave_plan_leave_types.is_setup = true — flipped only on the
+        // wizard's final Save & Close, not on intermediate section saves). The
+        // employee form's leave-plan dropdown uses this to hide unconfigured /
+        // draft plans, so a plan mid-setup stays hidden until fully finalized.
         $planIds = $rows->pluck('id')->all();
         $cfgStats = empty($planIds) ? collect() : DB::table('leave_plan_leave_types')
             ->whereIn('leave_plan_id', $planIds)
-            ->selectRaw('leave_plan_id, COUNT(*) as total, COUNT(config_json) as configured')
+            ->selectRaw('leave_plan_id, COUNT(*) as total, SUM(CASE WHEN is_setup THEN 1 ELSE 0 END) as configured')
             ->groupBy('leave_plan_id')
             ->get()
             ->keyBy('leave_plan_id');
@@ -331,8 +332,34 @@ class LeavePlanController extends Controller
 
         $data = $request->validate([
             'config' => ['required', 'array'],
+            // Bound the numeric quota fields so a negative or absurdly large
+            // value can't be stored (bug #64). Quota/carry-forward are whole
+            // days within a year, so 0..365 is the valid range. `nullable`
+            // keeps the rules inert when a section that doesn't carry these
+            // keys is saved, or when Unlimited quota is selected.
+            'config.accrual.yearlyQuota'      => ['nullable', 'numeric', 'min:0', 'max:365'],
+            // Attendance-accrual threshold — "for every X days worked in a
+            // month". A month has at most 31 days, so 0..31 (bug #65). min:0
+            // (not 1) so a non-attendance save carrying the default 0 still
+            // passes; the frontend enforces >=1 when attendance mode is on.
+            'config.accrual.attendanceDaysWorked' => ['nullable', 'numeric', 'min:0', 'max:31'],
+            'config.yearEnd.carryForwardCap'  => ['nullable', 'numeric', 'min:0', 'max:365'],
             'quota_summary' => ['nullable', 'string', 'max:255'],
             'eoy_summary' => ['nullable', 'string', 'max:255'],
+            // The setup wizard has N sections; each "Save & Next" posts here.
+            // Only the last section (Save & Close) sends finalize=true. Absent
+            // (legacy/direct API callers) it defaults to true so a single save
+            // still completes the type. See is_setup handling below.
+            'finalize' => ['sometimes', 'boolean'],
+        ], [
+            'config.accrual.yearlyQuota.min'     => 'Yearly leave quota cannot be negative.',
+            'config.accrual.yearlyQuota.max'     => 'Yearly leave quota cannot exceed 365 days.',
+            'config.accrual.yearlyQuota.numeric' => 'Yearly leave quota must be a number.',
+            'config.accrual.attendanceDaysWorked.min'     => 'Days worked in a month cannot be negative.',
+            'config.accrual.attendanceDaysWorked.max'     => 'Days worked in a month cannot exceed 31.',
+            'config.accrual.attendanceDaysWorked.numeric' => 'Days worked in a month must be a number.',
+            'config.yearEnd.carryForwardCap.min' => 'Carry-forward cap cannot be negative.',
+            'config.yearEnd.carryForwardCap.max' => 'Carry-forward cap cannot exceed 365 days.',
         ]);
 
         $row = LeavePlanLeaveType::where('leave_plan_id', $plan->id)
@@ -342,11 +369,34 @@ class LeavePlanController extends Controller
             abort(404, 'Leave type is not assigned to this plan.');
         }
 
-        $row->config_json = $data['config'];
+        // Persist the FULL config from the raw input, not $data['config'] —
+        // validated() prunes the array down to only the keys that have nested
+        // rules (accrual/yearEnd), which would silently drop the leaveApp,
+        // approval, probation and noticePeriod sections. Bounds were already
+        // enforced by the validate() call above.
+        $row->config_json = $request->input('config');
         $row->quota_summary = $data['quota_summary'] ?? $row->quota_summary;
         $row->eoy_summary = $data['eoy_summary'] ?? $row->eoy_summary;
-        $row->is_setup = true;
+        // Mark the type "set up" ONLY when the wizard's final section is saved.
+        // Intermediate section saves persist config but must not flip is_setup —
+        // otherwise a single-type plan would count as complete after section 1
+        // and assertPlanEditable() would 422-reject sections 2..N even though
+        // the data saved (bug #63). Never downgrade an already-set-up type, so
+        // re-editing a cloned plan's sections doesn't transiently un-complete it.
+        if ($request->boolean('finalize', true)) {
+            $row->is_setup = true;
+        }
         $row->save();
+
+        // Once the save that just completed leaves the plan fully set up, a
+        // cloned plan's editable-draft override (`unlocked`) has done its job —
+        // clear it so the plan locks like any other completed plan. Without
+        // this a clone stays `unlocked = true` forever and its Setup buttons
+        // never turn into the "Locked" indicator (bug #61).
+        if ($plan->unlocked && $this->isPlanSetupComplete($plan->id)) {
+            $plan->unlocked = false;
+            $plan->save();
+        }
 
         return response()->json(['data' => $row]);
     }
@@ -919,14 +969,18 @@ class LeavePlanController extends Controller
 
     /**
      * A plan is "setup-complete" once it has at least one assigned leave type
-     * AND every assigned type has its quota config saved (config_json non-null).
-     * Same definition as the `setup_complete` flag returned by index().
+     * AND every assigned type has FINISHED its setup wizard (is_setup = true,
+     * flipped only on the wizard's final Save & Close). Same definition as the
+     * `setup_complete` flag returned by index(). Keying off is_setup (not
+     * config_json) is what stops the lock from tripping mid-wizard: a section's
+     * "Save & Next" persists config_json but leaves is_setup false, so the plan
+     * isn't considered complete until the user finishes (bug #63).
      */
     private function isPlanSetupComplete(int $planId): bool
     {
         $stat = DB::table('leave_plan_leave_types')
             ->where('leave_plan_id', $planId)
-            ->selectRaw('COUNT(*) as total, COUNT(config_json) as configured')
+            ->selectRaw('COUNT(*) as total, SUM(CASE WHEN is_setup THEN 1 ELSE 0 END) as configured')
             ->first();
         $total = (int) ($stat->total ?? 0);
         $configured = (int) ($stat->configured ?? 0);
@@ -941,8 +995,10 @@ class LeavePlanController extends Controller
      *
      * The `unlocked` override exempts cloned plans: a clone is born fully
      * configured, so without this it would be locked the instant it is created
-     * and could never be edited. Clones keep `unlocked = true` and stay
-     * editable.
+     * and could never be edited. A clone stays `unlocked = true` (editable)
+     * only until the next config save leaves it fully set up — at that point
+     * saveTypeConfig() clears the flag so the plan locks like any other
+     * completed plan (see bug #61).
      */
     private function assertPlanEditable(LeavePlans $plan): void
     {

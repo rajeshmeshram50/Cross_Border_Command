@@ -63,6 +63,16 @@ const COLUMN_HEADERS: Record<OppType, string> = {
 export default function SalesLeadAckMaster() {
   const toast = useToast();
   const { user } = useAuth();
+  // Active branch (from the switcher) so writes are scoped to the SAME branch
+  // the list is showing — the Axios interceptor only injects branch_id on GETs,
+  // so POST/PUT must pass it explicitly to keep reasons branch-isolated.
+  const branchParam = (): { branch_id?: number } => {
+    try {
+      const s = user?.id ? localStorage.getItem(`cbc_selected_branch_id_${user.id}`) : null;
+      const n = s ? Number(s) : NaN;
+      return Number.isFinite(n) && n > 0 ? { branch_id: n } : {};
+    } catch { return {}; }
+  };
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perm = user?.permissions?.['sales.lead_ack_master'];
   const canView   = isSuperAdmin || !!perm?.can_view;
@@ -275,7 +285,7 @@ export default function SalesLeadAckMaster() {
       if (editingId !== null) {
         const payload: any = { reason, status: formStatus };
         if (pendingType === 'disqualified') payload.dq_status = formDQ;
-        const res = await api.put(`/sales/lead-ack-reasons/${editingId}`, payload);
+        const res = await api.put(`/sales/lead-ack-reasons/${editingId}`, payload, { params: branchParam() });
         setData(prev => ({
           ...prev,
           [pendingType]: prev[pendingType].map(r => r.id === editingId ? res.data : r),
@@ -288,7 +298,7 @@ export default function SalesLeadAckMaster() {
           status: formStatus,
         };
         if (pendingType === 'disqualified') payload.dq_status = formDQ;
-        const res = await api.post('/sales/lead-ack-reasons', payload);
+        const res = await api.post('/sales/lead-ack-reasons', payload, { params: branchParam() });
         setData(prev => ({ ...prev, [pendingType]: [...prev[pendingType], res.data] }));
         setTab(pendingType);
         setPage(1);
@@ -318,7 +328,7 @@ export default function SalesLeadAckMaster() {
     if (!row) return;
     setInactivating(true);
     try {
-      const res = await api.put(`/sales/lead-ack-reasons/${row.id}`, { status: 'inactive' });
+      const res = await api.put(`/sales/lead-ack-reasons/${row.id}`, { status: 'inactive' }, { params: branchParam() });
       setData(prev => ({
         ...prev,
         [row.opportunity_type]: prev[row.opportunity_type].map(r => r.id === row.id ? res.data : r),

@@ -2703,7 +2703,13 @@ function apiToExitRow(e: any): EmployeeRow {
   // (deactivating an employee flips employees.status to 'Inactive' and kills
   // the login — see EmployeeController). Such staff must NOT appear in the
   // Active Employees list; they belong in the Exited bucket (bug #34).
-  const statusExited = ['Resigned', 'Terminated', 'Inactive'].includes(rawStatus);
+  //
+  // A soft-deleted (trashed) row counts too: disabling an employee via the
+  // Employees-master toggle calls DELETE /employees/{id}, which soft-deletes
+  // the row (deleted_at set) but leaves employees.status = 'Active'. Without
+  // the `trashed` check such a disabled employee leaked back into the Active
+  // Employees list even though the login is dead — the exact bug #34 report.
+  const statusExited = trashed || ['Resigned', 'Terminated', 'Inactive'].includes(rawStatus);
   const statusNotice = rawStatus === 'Notice Period';
   const exitInitiated = !!ex && (
     !!ex.exit_type || !!ex.last_working_day || !!ex.notice_date || Number(ex.current_stage) >= 1

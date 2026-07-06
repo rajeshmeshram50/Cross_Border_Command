@@ -1,6 +1,6 @@
 # PROFORMA INVOICE — COMBINED DOCUMENTATION
 
-> Cross_Border_Command SaaS ERP · Sales Matrix → Stage 5 (Quotation vs PI) → **Proforma Invoice (PI)**
+> Cross_Border_Command SaaS ERP · Sales Matrix → **Proforma Invoice (PI)** (Stage 5 embedded + standalone `/sales/qpi`)
 > **Single-file KT** — Functional · Technical · API · Code-Walkthrough in one document.
 > Base URL: `{APP_URL}/api` · All endpoints require `Authorization: Bearer <sanctum_token>`
 
@@ -12,7 +12,7 @@
 |---|---|---|---|
 | 1.0 | 2026-07-02 | System | Initial combined documentation |
 
-**Scope:** the **Proforma Invoice** entity in **Stage 5** — the binding priced document a customer signs before shipment. A PI is usually created by **converting a Quotation** (see sibling `QUOTATION.md`) but can also be built standalone. The 6-stage shell is in `../matrix-stages/`.
+**Scope:** the **Proforma Invoice** entity — the binding priced document a customer signs before shipment. A PI is usually created by **converting a Quotation** (see sibling `QUOTATION.md`) but can also be built standalone. It is surfaced in **two UI places**: **inside Stage 5** (per-lead) and on the **standalone "Quotation Vs PI History" page** (`/sales/qpi`, tenant-wide, with With/Without-Shipment sub-tabs) — both covered here (§A4, §B7). The 6-stage shell is in `../My WorkPlace/matrix-stages/`.
 
 ---
 
@@ -44,8 +44,15 @@ draft ──► sent ──► approved ──► converted_to_contract (termina
 - **Cancel blocked** if `converted_to_contract` (409). Cancel sets `status=cancelled` (soft).
 - **Currency locked** on from-quotation PIs — changing it → 422.
 
-## A4. Where it lives in the UI
-Stage 5 (`Stage5QuotationVsPI.tsx`) — the **Proforma Invoice** tab. **Create PI** greys out if the deal is locked, a PI already exists (one-per-opp), or mandatory docs aren't 100% uploaded. The PI row shows **Converted From**, a **Status** e-signature pill (**Not Sent → Sent → Signed**, synced ~20s), and per-row actions (Send for Signature, Remind, View/Download signed PDF + Certificate, Edit, Delete, Email). In the list, a PI surfaces in the **With-Shipment** view once its opportunity reaches Victory (`lead_stage_id ≥ 6` or `won_at` set), and carries the `SHP-###` shipment code once a shipment order exists.
+## A4. Where it lives in the UI — **two surfaces**
+Like the Quotation, the PI appears in **two places** sharing one form + row actions:
+
+1. **Inside Stage 5** (`Stage5QuotationVsPI.tsx`) — scoped to **one opportunity**. The **Proforma Invoice** tab; **Create PI** greys out if the deal is locked, a PI already exists (one-per-opp), or mandatory docs aren't 100% uploaded. The row shows **Converted From**, a **Status** e-sign pill (**Not Sent → Sent → Signed**, ~20 s sync) and per-row actions (Send for Signature, Remind, View/Download signed PDF + Certificate, Edit, Delete, Email). This surface drives **Save & Next** to Victory.
+2. **The standalone "Quotation Vs PI History" page** (`/sales/qpi`, nav **`sales.quotation_vs_pi`**) — a **tenant-wide** list of **all** PIs across every lead, with **With Shipment / Without Shipment** sub-tabs. Same actions, no stage progression. Detailed in §B7.2.
+
+> A PI sits in the **With-Shipment** bucket only once a real `SHP-###` shipment order exists (a Victory-stage deal or an auto-assigned legacy `bt_id` alone stays *Without Shipment*). Both surfaces are the same `SalesQPI` module.
+
+**Opportunity is optional.** A PI can be built **from a quotation**, **from an opportunity**, or **standalone against a Customer with no opportunity** (`opp_id` = null; the one-PI-per-opp rule only bites when an `opp_id` is present). All create conditions are in §B7.3.
 
 ## A5. Business rules
 | # | Rule | Behaviour |
@@ -101,6 +108,60 @@ Shares the Quotation columns (`code` unique `(client_id, code)`, `version`, `doc
 ## B6. Access model
 Identical shape to the Quotation controller: `applyScope()` (super-admin all / branch pinned / client-admin all-branches + switcher), `SalesVisibility::applyToSalesDocs()`, `assertScope()` (404 out of scope), `assertQuotationScope()` (for `fromQuotation`), `userCanModify()` (→ `can_modify`).
 
+## B7. Frontend architecture (SPA)
+The PI UI shares the Quotation's list + form (`Stage5QuotationVsPI.tsx`, `SalesQPI.tsx`) and adds the **convert**, **e-sign** and **signed-lock** behaviours.
+
+**Component tree (PI-specific)**
+```
+Stage5QuotationVsPI.tsx     the PI tab of the segmented toggle
+  ├─ Create PI button — greyed if locked, a PI already exists, or mandatoryIncomplete (DCP)
+  ├─ PI rows show: Converted-From · e-sign status pill · Email · Edit · MoreActions (Signed PDF/Certificate)
+  ├─ fetchSignatures(sync) → GET /clm/signature-requests?lead_id=&document_type=proforma_invoice&sync=
+  │     status map: 'inprogress'→Sent · 'completed'→Signed · none→Not Sent ; auto-poll every 20s
+  └─ hosts:
+       CreatePIModal (SalesQPI)                 — 2-step form + piType('with_shipment'|'without_shipment')
+       ConvertToPiModal / ConversionBlockedModal — convert a quotation
+       SalesDocSendForSignatureModal            — Zoho send (single buyer signer)
+       SigningTrackerModal                       — signing progress
+
+SalesQPI.tsx → CreatePIModal
+  ├─ same 2-step form as the quotation, plus piType and source_quotation_id (when converted)
+  └─ seeding: initialOpp (lead context) takes precedence over source (quotation carry-over)
+```
+
+**Create PI.** `POST /sales/proforma-invoices` (or `PUT /{id}`) with the quotation body **plus** `pi_type` and `source_quotation_id`. The **Create PI** button is disabled when the parent reports a live PI (one-per-opp) or `mandatoryIncomplete` (DCP KYC/DD/TL not 100%).
+
+**Convert from quotation.** A quotation row's **Convert to PI** → checks for an existing live PI (else `ConversionBlockedModal` with a *View Existing PI* CTA) → fetches `GET /sales/proforma-invoices/preview-code` → opens **`ConvertToPiModal`** (shows From-Quotation, new PI code, PI date=today, quotation value; collects `pi_type`) → **`POST /sales/proforma-invoices/from-quotation/{qtId}`** → refresh, flip to the PI tab, and call `onPiChange()` to unlock the parent's CLM card.
+
+**Send for signature (Zoho).** **`SalesDocSendForSignatureModal`** renders the PI PDF (`POST …/{id}/preview-pdf {signature:true}` via pdf.js), lets the user **drag/resize a single buyer signature box** (A4-point coords, per-page), set expiry (1–180 d) + notes, then **`POST /clm/signature-requests/sales-doc-send`** `{ doc_kind:'proforma_invoice', doc_id, lead_id, document_settings:{[id]:{buyer:{page,x,y,width,height}}}, expiry_days, notes }`. On success the parent re-polls with `sync=1`; the row pill flips **Not Sent → Sent → Signed**.
+
+**Email.** `POST /sales/proforma-invoices/{id}/email` with a **per-row cooldown** (`emailCooldowns` keyed `pi:{id}`, `emailingRef` double-click mutex, optimistic `emailedAt` stamp); a **429** starts a 60 s (or `retry_after_seconds`) cooldown toast.
+
+**Signed-lock / read-only.** When a PI is `completed` (or a PI `inprogress`), **Edit is blocked** (button greyed, toast on click); the parent-level `locked` prop disables all document creation. Advancing to Victory (`PUT /sales/leads/{id} lead_stage_id:6`) needs a live PI client-side; the server enforces the sent-for-signature gate.
+
+**State/caching/validation** are shared with the Quotation form (master cache `useQpiMasters`, 5-min TTL; live client totals for preview only; Step-1 doc-type-conditional gate). See Quotation §B7.
+
+### B7.1 Stage-5 view vs the standalone page
+See **Quotation §B7.1** for the full comparison. In short: **Stage 5** is scoped to one `opp_id` and drives **Save & Next**; the standalone **`/sales/qpi`** page is **tenant-wide**, has no pipeline, and polls e-sign status across **all** documents.
+
+### B7.2 The standalone "Quotation Vs PI History" page (`SalesQPI` default export)
+Route **`/sales/qpi`** (nav **`sales.quotation_vs_pi`**) — the same page that lists quotations also lists **all PIs tenant-wide** (no `opp_id` filter), separate from the per-opportunity Stage-5 view.
+- **PI tab + sub-tabs:** **With Shipment / Without Shipment** (`piSub`), derived from **`hasShipment`** (a real `shipment_code`/`SHP-###`) — a legacy `bt_id` or a Victory deal without a submitted shipment stays *Without*.
+- **Data:** `GET /sales/proforma-invoices?per_page=200` on mount (spans every lead); each row also carries `convertFrom` (source quotation code), `btId` (**Shipp ID** = `shipment_code ?? bt_id`), `victoryReached`, `salesManager`, `branchName`, `createdBy`.
+- **Columns (fuller than Stage 5):** Sr · PI No · PI Date · **Shipp ID** · **Converted From** · Opp ID/Date · Customer · Consignee · Doc Type · Currency · Sales Manager · Branch · **Created By** ("You" for self) · Actions.
+- **Actions:** same as Stage 5 minus Save & Next — Create PI, **Convert to PI** (preview-code → `ConvertToPiModal`, blocked if the lead already has a PI), Email (cooldown + 429), Reminder (needs prior email), **Send for Signature / View Sent / Signed PDF / Certificate** with the **20 s all-docs** signature poll (`sync=1`, no lead filter), Edit (PUT).
+- Its own auto-fit pager + search (PI No / Opp / Customer / Consignee / Converted-From / Shipp-ID). The read-only **Sign Tracker** page rides on the same `sales.quotation_vs_pi` permission.
+
+> Difference from Stage 5: **scope is the whole tenant, there is no pipeline advance, and the e-sign poll covers every client document** (not one lead). Both surfaces call the same Part C endpoints.
+
+### B7.3 Create conditions — opportunity optional (direct-customer path)
+A PI can be created the same three ways, and **without** an opportunity:
+- **From a quotation** — `Convert to PI` / the `from-quotation` path (the usual route; carries `source_quotation_id` + locks currency).
+- **From an opportunity** — pick the lead; Customer/Consignee/currency auto-fill via the shared cascade.
+- **Standalone (direct customer, no opp)** — pick a Customer directly; **`opp_id` is sent as `null`** (the backend allows unlimited standalone PIs — the one-per-opp rule only applies when an `opp_id` is present).
+
+The **required-field gate, the opp↔customer↔consignee cascade, the locks, the `excludeWithPi` opp filter, and the consignee back-fill** are the **same shared form** — fully documented in **Quotation §B7.3**. PI-only differences: the create modal also carries **`pi_type`** (With/Without Shipment) and `lockParty` additionally locks when **editing**; the DCP mandatory-docs gate + one-PI-per-opp still apply on submit (Part A §A5).
+
 ---
 
 # PART C — API
@@ -150,7 +211,7 @@ Clone: fresh `PI/FY/SEQ`, `status=draft`, `version=1`, replicated items. **201**
 Advisory next `PI/FY/SEQ` (scans `PI/` + `INV/`), no lock: `{ "data": { "code": "PI/2026-27/4" } }`.
 
 ### C9. PDF / email / signed view
-Same contract as Quotation — `preview-pdf` (cached blob), `email` (**3/min**, stamps `emailed_at`, 60-day signed link), `remind` (**422** if never emailed; fresh link; `reminder_count++`), `view` (**public**, `signed`, 60-day). A completed Zoho request stamps `pi_signed_at` → unlocks **Victory (Stage 6)**.
+Same contract as Quotation — `preview-pdf` (cached blob), `email` (**3/min**, stamps `emailed_at`, 60-day signed link), `remind` (**422** if never emailed; fresh link; `reminder_count++`), `view` (**public**, `signed`, 60-day). A completed Zoho request stamps **`pi_signed_at`**, which makes the Matrix centre (Stages 3–5) **read-only**. *(Advancing to **Victory** itself only needs the PI **sent for signature or emailed** — not signed; the `SalesLeadController::update()` gate, see the worksheet/matrix-stages docs.)*
 
 ### C10. Error examples
 ```json
@@ -163,9 +224,9 @@ Same contract as Quotation — `preview-pdf` (cached blob), `email` (**3/min**, 
 
 ---
 
-# PART D — CODE WALKTHROUGH
+# PART D — CODE WALKTHROUGH (backend)
 
-> Legend: `→` call · `⇒` return. Line numbers reference live source and may drift.
+> Legend: `→` call · `⇒` return. Line numbers reference live source and may drift. *(The SPA is documented in §B7 Frontend architecture.)*
 
 ## D1. Create — `store()`
 `validatePayload()` (doc-type-conditional) → **DCP** `missingMandatoryDocs()` (422 if pending) → `segmentPartyBlockResponse()` (422) → **one-PI-per-opp** check on `opp_id` (409 + `existing_pi`) → txn: row-lock `clients`, `nextCode()` (+ `nextBtCode()` when with_shipment) → `resolveCachedLabels()` → `ProformaInvoice::create()` (defaults version 1 / pi_type with_shipment / status draft / manager = creator) → items (`line_no=i+1`) → if `source_quotation_id`, mark that quotation `converted_to_pi` ⇒ **201** `fresh(['items'])`.
@@ -191,7 +252,8 @@ Guard `converted_to_contract` → 409; signed (`hasSignedForDoc`) → 409. **Cur
 | Currency lock | `update()` | Line prices are quote-era; mixing currencies corrupts totals |
 | Dual-lock codes | `nextCode`/`nextBtCode` | Race-free `PI/FY/SEQ` + `BT-####` |
 | Edit/delete locks | signed / converted_to_contract | Protect signed & contracted docs |
-| Victory gate | signed PI → `pi_signed_at` | Unlocks Stage 6 |
+| Victory advance | PI **sent-for-signature / emailed** | `update()` lets the lead enter Stage 6 (not "signed") |
+| Signed lock | completed Zoho → `pi_signed_at` | Stages 3–5 become read-only |
 
 ## D7. Notes & caveats
 - **DB is PostgreSQL** — advisory locks + regex scans (`PI/`+`INV/`, `BT-`).
@@ -201,4 +263,4 @@ Guard `converted_to_contract` → 409; signed (`hasSignedForDoc`) → 409. **Cur
 
 ---
 
-*Related: `QUOTATION.md` (the source of conversion) · `LEAD_ACKNOWLEDGEMENT_MASTER.md` · `../matrix-stages/` (the Stage-5 shell + Victory) · `../lead-worksheet/`.*
+*Related: `QUOTATION.md` (the source of conversion) · `LEAD_ACKNOWLEDGEMENT_MASTER.md` · `../My WorkPlace/matrix-stages/` (the Stage-5 shell + Victory) · `../My WorkPlace/lead-worksheet/`.*

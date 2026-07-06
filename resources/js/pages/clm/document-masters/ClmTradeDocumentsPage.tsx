@@ -16,6 +16,21 @@ type TdName = { id: number; code: string; name: string; in_use?: number };
 type TdLib  = { id: number; code: string; name: string; title: string; doc_type: string; purpose: string; party: string; regulatory?: 'highly'|'less'; segment?: string | null; file_path: string | null; content: string | null; is_signed?: boolean };
 type Seg    = { id: number; name: string; regulatory_status: 'highly' | 'less' };
 
+/* The Applicable-Party field stores internal values ("Buyer", "Supplier-Material")
+   but the form picks by label ("Customer", "Material"). Map stored values back to
+   their display labels so the column shows what the user selected. */
+const PARTY_LABELS: Record<string, string> = {
+  'Buyer': 'Customer',
+  'Consignee': 'Consignee',
+  'Supplier-Material': 'Material',
+  'Supplier-Logistic': 'Logistic',
+  'Supplier-Tech': 'Tech',
+  'Supplier-Advisory': 'Advisory',
+  'Supplier-Strategic Risk': 'Strategic Risk',
+};
+const partyLabels = (party: string): string[] =>
+  (party ?? '').split(',').map(s => s.trim()).filter(Boolean).map(v => PARTY_LABELS[v] ?? v);
+
 export default function ClmTradeDocumentsPage() {
   const toast = useToast();
   const [tab, setTab]           = useState<'list'|'lib'>('list');
@@ -42,7 +57,7 @@ export default function ClmTradeDocumentsPage() {
     <div className="clm-pill-group">
       <button className={`clm-pill ${tab === 'list' ? 'active' : ''}`} onClick={() => setTab('list')}>
         <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span>
-        Trade Document Types
+        Trade Document Type
       </button>
       <button className={`clm-pill ${tab === 'lib' ? 'active' : ''}`} onClick={() => setTab('lib')}>
         <span className="clm-pill-ico"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
@@ -99,6 +114,9 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
+  // Auto-fit rows to the viewport by default; once the user picks a value from
+  // the "Rows per page" dropdown we respect their choice.
+  const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
@@ -113,17 +131,18 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    const rootEl = scrollRef.current?.closest('.clm-root');
-    if (rootEl) ro.observe(rootEl);
+    // Not observing the page root: the "What We Are Doing Here" box animates its
+    // height on expand/collapse, so observing the root fired this recompute every
+    // animation frame and visibly disturbed the layout. Recompute only on mount
+    // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
   const onSave = async (name: string, id?: number) => {
@@ -145,11 +164,11 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
       <div className="clm-tabs-bar" style={{ justifyContent: 'space-between' }}>
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-          <input type="text" placeholder="Search trade documents…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <input type="text" placeholder="Search trade document types…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
         </div>
         <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Add Trade Document
+          Add Trade Document Type
         </button>
       </div>
 
@@ -157,8 +176,8 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
         {slice.length === 0 && !loading ? (
           <div className="clm-empty">
             <div className="clm-empty-ico">{ICO.bTrade}</div>
-            <div className="clm-empty-title">No trade documents yet</div>
-            <div className="clm-empty-sub">Click + Add Trade Document to create the first record.</div>
+            <div className="clm-empty-title">No trade document types yet</div>
+            <div className="clm-empty-sub">Click + Add Trade Document Type to create the first record.</div>
           </div>
         ) : (
           <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
@@ -175,7 +194,7 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <td className="clm-td-name">{r.name}</td>
+                    <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
                         {(() => {
@@ -202,14 +221,14 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
         )}
       </div>
 
-      {modalOpen && <SimpleNameModal title={editing ? 'Edit Trade Document' : 'Add Trade Document'} placeholder="e.g. Bill of Lading, Commercial Invoice" code={editing?.code ?? `TDN-${String(rows.length + 1).padStart(3, '0')}`} isEdit={!!editing} initial={editing?.name ?? ''} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(name) => onSave(name, editing?.id)} />}
-      {pendingDelete && createPortal(<DeleteConf title="Delete trade document?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
+      {modalOpen && <SimpleNameModal title={editing ? 'Edit Trade Document Type' : 'Add Trade Document Type'} placeholder="e.g. Bill of Lading, Commercial Invoice" code={editing?.code ?? `TDN-${String(rows.length + 1).padStart(3, '0')}`} isEdit={!!editing} initial={editing?.name ?? ''} onClose={() => { setModalOpen(false); setEditing(null); }} onSave={(name) => onSave(name, editing?.id)} />}
+      {pendingDelete && createPortal(<DeleteConf title="Delete trade document type?" sub={`${pendingDelete.name} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
     </div>
   );
 }
@@ -225,6 +244,8 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
   const [pendingDelete, setPendingDelete] = useState<TdLib | null>(null);
   // All-segments popover — opened from the +N badge in the SEGMENT column.
   const [segOpen, setSegOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  // All-parties popover — opened from the +N badge in the APPLICABLE PARTY column.
+  const [partyOpen, setPartyOpen] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
   // Blocked-action popup state — set when the user clicks Edit/Delete on a
   // draft that has already been signed.
   const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: TdLib } | null>(null);
@@ -232,7 +253,12 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
   /* Download a library row as PDF (full page-shell: branded header + content
    * + footer) or DOCX. The list exposes only the PDF preview. Errors arrive
    * as a Blob, so read them back for the message. */
+  // Row id currently generating a download, so its button can show a spinner
+  // and disable to prevent duplicate clicks while the PDF/DOCX renders.
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const download = async (row: TdLib, fmt: 'pdf' | 'docx') => {
+    if (downloadingId) return;
+    setDownloadingId(row.id);
     try {
       const url = fmt === 'pdf'
         ? `/clm/trade-doc-library/${row.id}/download-pdf`
@@ -252,15 +278,20 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
         else if (typeof e?.response?.data?.message === 'string') msg = e.response.data.message;
       } catch { /* keep default */ }
       toast.error('Download failed', msg);
+    } finally {
+      setDownloadingId(null);
     }
   };
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
     const s = search.toLowerCase();
-    return rows.filter(r => r.title.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.doc_type.toLowerCase().includes(s) || r.name.toLowerCase().includes(s) || (r.segment ?? '').toLowerCase().includes(s));
+    return rows.filter(r => r.title.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.doc_type.toLowerCase().includes(s) || r.name.toLowerCase().includes(s) || (r.segment ?? '').toLowerCase().includes(s) || (r.purpose ?? '').toLowerCase().includes(s) || partyLabels(r.party).join(' ').toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
+  // Auto-fit rows to the viewport by default; once the user picks a value from
+  // the "Rows per page" dropdown we respect their choice.
+  const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
@@ -275,17 +306,18 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    const rootEl = scrollRef.current?.closest('.clm-root');
-    if (rootEl) ro.observe(rootEl);
+    // Not observing the page root: the "What We Are Doing Here" box animates its
+    // height on expand/collapse, so observing the root fired this recompute every
+    // animation frame and visibly disturbed the layout. Recompute only on mount
+    // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
   const onDelete = async () => {
@@ -352,7 +384,7 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <td className="clm-td-name">{r.title}</td>
+                    <Tooltip label={r.title}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.title}</div></td></Tooltip>
                     <td style={{ textAlign: 'center' }}>
                       {r.name
                         ? <Tooltip label={r.name}><span className="clm-badge clm-badge-violet">{r.name}</span></Tooltip>
@@ -392,16 +424,46 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                         );
                       })()}
                     </td>
-                    <Tooltip label={r.purpose}><td className="clm-td-trunc">{r.purpose}</td></Tooltip>
-                    <td className="clm-td-desc">{r.party}</td>
+                    <Tooltip label={r.purpose}><td className="clm-td-trunc-cell"><div className="clm-td-trunc">{r.purpose}</div></td></Tooltip>
+                    <td>
+                      {(() => {
+                        const list = partyLabels(r.party);
+                        if (list.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>—</span>;
+                        const extra = list.length - 1;
+                        return (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <Tooltip label={`Applies to · ${list[0]}`}><span className="clm-badge clm-badge-teal">{list[0]}</span></Tooltip>
+                            {extra > 0 && (
+                              <Tooltip label="View all applicable parties">
+                                <button
+                                  type="button"
+                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setPartyOpen(partyOpen?.id === r.id ? null : { id: r.id, names: list, x: b.left, y: b.bottom + 4 }); }}
+                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
+                                  +{extra}
+                                </button>
+                              </Tooltip>
+                            )}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td style={{ textAlign: 'center' }}>
                       {/* Draft PDF preview — the complete combined document
                           (branded header + content + footer), to see how the
                           finished trade document looks. */}
                       <Tooltip label="Download the complete draft as PDF">
-                        <button type="button" className="tdl-dl-btn" onClick={() => void download(r, 'pdf')}>
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                          Download Draft PDF
+                        <button type="button" className="tdl-dl-btn" disabled={downloadingId === r.id} onClick={() => void download(r, 'pdf')}>
+                          {downloadingId === r.id ? (
+                            <>
+                              <svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                              Preparing…
+                            </>
+                          ) : (
+                            <>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                              Download Draft PDF
+                            </>
+                          )}
                         </button>
                       </Tooltip>
                     </td>
@@ -416,13 +478,13 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
         )}
       </div>
 
-      {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+      {pendingDelete && createPortal(<DeleteConf title="Delete library entry?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
 
       {/* All-segments popover (opened from the +N badge in the SEGMENT column) */}
       {segOpen && createPortal(
@@ -431,6 +493,22 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
           <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segOpen.names.length})</div>
             {segOpen.names.map((name, i) => (
+              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
+                <span className="clm-badge clm-badge-teal">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+
+      {/* All-parties popover (opened from the +N badge in the APPLICABLE PARTY column) */}
+      {partyOpen && createPortal(
+        <>
+          <div onClick={() => setPartyOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(partyOpen.x, window.innerWidth - 230), top: partyOpen.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Applicable Party ({partyOpen.names.length})</div>
+            {partyOpen.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
                 <span className="clm-badge clm-badge-teal">{name}</span>
               </div>

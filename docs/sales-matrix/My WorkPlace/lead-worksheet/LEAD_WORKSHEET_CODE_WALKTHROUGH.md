@@ -160,16 +160,40 @@ Stage-2 `storeAcknowledgements()` (1725, txn) writes acknowledgement rows and fl
 
 ---
 
-## 8. INDIAMART SYNC — `IndiaMartLeadSyncService`
+## 8. HOW LEADS ARRIVE — inbound sources
+
+Two doors populate `leads`: **manual** (`store()`, §3 — `platform='Offline'`) and the **third-party IndiaMart pull** below.
+
+### 8.1 Trigger & gate
 ```php
-// syncForClient(): loop config('lead_sync.indiamart.keys') → fetchAndStore(crmKey, platform, …)
-// fetchAndStore(): GET IndiaMart CRM Listing v2 (7-day window) → validate CODE/STATUS →
-//   per record: dedupe by (client_id, platform, unique_query_id);
-//   qualified = isQualified(iso)  (QUALIFIED_ISO_CODES — India EXCLUDED);
-//   stage 1; update existing OR create with opp_code + branch attribution.
-// returns { fetched, created, updated, disqualified, errors }
+syncFromCrm() (759): checkSyncTenantGate($user)   // 403 if config('lead_sync.branch') doesn't match (super-admin bypass)
+                     → 422 if no client_id
+                     → $service->syncForClient($user->client, $user);
+syncConfig() (790): { enabled: gate-passes && keys≠∅, labels: [key.label…] }   // drives the button
 ```
-`syncFromCrm()` (759) runs it after `checkSyncTenantGate()`; `syncConfig()` (790) gates the button.
+
+### 8.2 `IndiaMartLeadSyncService`
+```php
+syncForClient(client, user):                                    // loop config('lead_sync.indiamart.keys')
+  foreach ($keys as {label→platform, crm_key})  fetchAndStore(...)   // errors per-key collected, never fatal
+
+fetchAndStore(crmKey, platform, client, user):
+  // 1. build the 7-day window (DD-Mon-YYYY) — required, else IndiaMart 204
+  GET https://mapi.indiamart.com/wservce/crm/crmListing/v2/?glusr_crm_key=&start_time=&end_time=   // 30s timeout
+  // 2. HTTP 200 even on failure → read body CODE/STATUS/MESSAGE (401 expired key · 429 rate-limit)
+  //    CODE≠200 || STATUS==FAILURE  → push message to errors[], return
+  $leads = $body['RESPONSE'];  $fetched = count($leads);
+  foreach ($leads as $row):
+     $iso = upper($row['SENDER_COUNTRY_ISO']);  $qualified = isQualified($iso);   // QUALIFIED_ISO_CODES — India EXCLUDED
+     $uqid = $row['UNIQUE_QUERY_ID'] ?: skip+error;
+     $existing = Lead::where(client_id, platform, unique_query_id=$uqid)->first();   // DEDUPE key
+     $payload = map SENDER_*/QUERY_* → sender_*/query_* + { qualified, disqualified:!qualified, lead_stage_id:1 };
+     $existing ? $existing->update($payload + backfill branch_id-if-empty)  ⇒ updated++
+               : Lead::create($payload + { opp_code:nextOppCode(), created_by, branch_id:resolveSyncBranchId(user) }) ⇒ created++;
+     if (!$qualified) disqualified++;
+  return { fetched, created, updated, disqualified, errors[] };
+```
+`resolveSyncBranchId()` — acting user's branch, else the env-pinned single branch, else null. `nextOppCode()` — `OPP-####` by `count+1` (composite unique catches races). Field map + response shape: **API doc §6.2**.
 
 ---
 

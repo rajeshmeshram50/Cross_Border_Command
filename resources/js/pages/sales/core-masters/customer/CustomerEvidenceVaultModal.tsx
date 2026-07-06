@@ -869,11 +869,8 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
         const sub = isStd
           ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
           : 'Trade Documents & Agreements — pick a shipment';
-        // 5 rows per page with a compact prev/next pager.
-        const OV_PER_PAGE = 5;
-        const ovTotalPages = Math.max(1, Math.ceil(docs.length / OV_PER_PAGE));
-        const ovPageSafe = Math.min(overviewPage, ovTotalPages);
-        const pageDocs = docs.slice((ovPageSafe - 1) * OV_PER_PAGE, (ovPageSafe - 1) * OV_PER_PAGE + OV_PER_PAGE);
+        // No pagination — the full list scrolls inside the fixed-height body
+        // after ~5 rows (see .cev-ov-body max-height + sticky header).
         return (
           <div className="cev-ov-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
             <div className="cev-ov-card">
@@ -908,8 +905,8 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
-                    ) : pageDocs.map((d, i) => {
-                      const absIdx = (ovPageSafe - 1) * OV_PER_PAGE + i;
+                    ) : docs.map((d, i) => {
+                      const absIdx = i;
                       const raw = isStd ? (d as VaultDoc).attachment_url : (d as VaultShipmentDoc).signed_url;
                       const url = raw ? resolveFileUrl(raw) : null;
                       const fname = isStd ? ((d as VaultDoc).attachment || `${d.name}.pdf`) : `${d.name}.pdf`;
@@ -946,25 +943,6 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                   </tbody>
                 </table>
               </div>
-              {/* Pager — 5 per page (Standard list or the active shipment). */}
-              {docs.length > OV_PER_PAGE && (
-                <div className="cev-ov-pager">
-                  <span className="cev-ov-pager-info">
-                    Showing <strong>{(ovPageSafe - 1) * OV_PER_PAGE + 1}–{Math.min(ovPageSafe * OV_PER_PAGE, docs.length)}</strong> of <strong>{docs.length}</strong>
-                  </span>
-                  <div className="cev-ov-pager-btns">
-                    <button type="button" className="cev-ov-pager-nav" disabled={ovPageSafe === 1} onClick={() => setOverviewPage((p) => Math.max(1, p - 1))} aria-label="Previous">
-                      <i className="ri-arrow-left-s-line" aria-hidden />
-                    </button>
-                    {[ovPageSafe, ovPageSafe + 1].filter((p) => p >= 1 && p <= ovTotalPages).map((p) => (
-                      <button type="button" key={p} className={`cev-ov-pager-num ${p === ovPageSafe ? 'is-active' : ''}`} onClick={() => setOverviewPage(p)}>{p}</button>
-                    ))}
-                    <button type="button" className="cev-ov-pager-nav" disabled={ovPageSafe === ovTotalPages} onClick={() => setOverviewPage((p) => Math.min(ovTotalPages, p + 1))} aria-label="Next">
-                      <i className="ri-arrow-right-s-line" aria-hidden />
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         );
@@ -1459,18 +1437,18 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
 
   return (
     <div className="cev-sdp" style={{ padding: '12px 16px 16px' }}>
-      {!forceParty && (
+      {/* When Customer = Consignee there's only one party, so the tab bar and the
+          party-name label are redundant — render the documents table directly. */}
+      {!forceParty && !buyerIsConsignee && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
           <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Customer Documents <b>{buyer.length}</b></button>
-          {!buyerIsConsignee && (
-            <>
-              <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
-              <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{buyer.length + consignee.length}</b></button>
-            </>
-          )}
+          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
+          <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{buyer.length + consignee.length}</b></button>
         </div>
       )}
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{forceParty === 'consignee' ? consigneeName : party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
+      {(forceParty || !buyerIsConsignee) && (
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{forceParty === 'consignee' ? consigneeName : party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
+      )}
       {docs.length === 0 ? (
         <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {party === 'both' ? '' : party === 'buyer' ? 'buyer ' : 'consignee '}documents on this shipment.</div>
       ) : (
@@ -2015,6 +1993,15 @@ export const CEV_CSS = `
 .cev-ov-table tbody tr:hover td { background: #f0fdff; }
 .cev-ov-num { color: #5e94a1; font-weight: 700; }
 .cev-ov-name { font-weight: 700; color: #0a2630; }
+/* Align the # / STATUS / ACTION columns centered (header AND cells) so the
+   status pills and download buttons sit directly under their headings.
+   DOCUMENT NAME stays left-aligned. */
+.cev-ov-table thead th:first-child,
+.cev-ov-table tbody td:first-child,
+.cev-ov-table thead th:nth-child(3),
+.cev-ov-table tbody td:nth-child(3),
+.cev-ov-table thead th:nth-child(4),
+.cev-ov-table tbody td:nth-child(4) { text-align: center; }
 .cev-ov-empty { text-align: center; color: #5e94a1; padding: 28px 12px !important; font-weight: 600; }
 /* Shipment group header row inside the Case-to-Case overview. */
 .cev-ov-ship-head td {

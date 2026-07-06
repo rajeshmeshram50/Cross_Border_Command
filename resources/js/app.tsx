@@ -3,16 +3,6 @@ import '../scss/velzon.scss';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
 import { createRoot } from 'react-dom/client';
 import App from './components/App';
-
-// Apply every persisted layout choice BEFORE React mounts. Without this
-// the page paints once in the default layout (vertical / light / lg etc)
-// and then snaps to the user's saved choice when the Layout's useEffect
-// runs — a visible flash on every refresh. Reading localStorage is
-// synchronous and cheap so it's safe to do at the very top of bootstrap.
-//
-// Keys here MUST match the writes in
-// `resources/js/velzon/slices/layouts/thunk.ts` and the reads in
-// `resources/js/velzon/slices/layouts/reducer.ts`.
 try {
     const root = document.documentElement;
     const seed = (key: string, attr: string, allowed?: readonly string[]) => {

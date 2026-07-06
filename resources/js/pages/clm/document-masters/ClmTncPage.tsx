@@ -9,6 +9,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import { ClmSkeletonRows, DeleteConf } from '../shared/clmCommon';
 import ClmTncWizardModal from './ClmTncWizardModal';
 import Tooltip from '../../../components/ui/Tooltip';
+import { MasterSelect } from '../../../components/ui/MasterSelect';
 
 /* Central CLM → Terms & Conditions Master (two tabs: Categories + Library). */
 
@@ -30,6 +31,22 @@ export function deriveShortCode(name: string): string {
 type Cat = { id: number; code: string; name: string };
 type Lib = { id: number; code: string; segment: string; regulatory?: 'highly' | 'less' | null; category: string; party: string; content: string | null };
 type Seg = { id: number; code: string; name: string; regulatory_status: 'highly' | 'less' };
+
+/* The party field is stored by internal value ("Buyer", "Supplier-Material")
+   but the form (and the user) picks by label ("Customer", "Material"). Map the
+   stored values back to their display labels so the "Applies To" column matches
+   what was selected — e.g. "Customer", not "Buyer" (CBC-443). */
+const PARTY_LABELS: Record<string, string> = {
+  'Buyer': 'Customer',
+  'Consignee': 'Consignee',
+  'Supplier-Material': 'Material',
+};
+const partyLabels = (party: string): string[] =>
+  party.split(',').map(s => s.trim()).filter(Boolean).map(v => PARTY_LABELS[v] ?? v);
+
+/* Display label for the regulatory status — mirrors the table cell (anything
+   not "less" reads as "Highly Regulatory"). Used for the status search + filter. */
+const regLabel = (r?: 'highly' | 'less' | null): string => (r === 'less' ? 'Less Regulatory' : 'Highly Regulatory');
 
 export default function ClmTncPage() {
   const toast = useToast();
@@ -106,6 +123,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
+  const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
@@ -120,17 +138,18 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    const rootEl = scrollRef.current?.closest('.clm-root');
-    if (rootEl) ro.observe(rootEl);
+    // Not observing the page root: the "What We Are Doing Here" box animates its
+    // height on expand/collapse, so observing the root fired this recompute every
+    // animation frame and visibly disturbed the layout. Recompute only on mount
+    // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
   // Document categories are read-only — they're owned by the Quotation &
@@ -179,7 +198,7 @@ function CategoriesPane({ rows, loading }: { rows: Cat[]; loading: boolean; relo
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
         )}
@@ -198,13 +217,33 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
   // All-segments popover — opened from the +N badge in the SEGMENT column
   // (same pattern as the DCP authorities popover).
   const [segPop, setSegPop] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  // All-parties popover — opened from the +N badge in the APPLIES TO column
+  // (same one-badge + "+N" pattern as the SEGMENT column).
+  const [partyPop, setPartyPop] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  // Regulatory-status filter dropdown (All / Highly / Less).
+  const [statusFilter, setStatusFilter] = useState<'all' | 'highly' | 'less'>('all');
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const s = search.toLowerCase();
-    return rows.filter(r => r.category.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.party.toLowerCase().includes(s) || r.segment.toLowerCase().includes(s));
-  }, [rows, search]);
+    let list = rows;
+    if (statusFilter === 'less')   list = list.filter(r => r.regulatory === 'less');
+    if (statusFilter === 'highly') list = list.filter(r => r.regulatory !== 'less');
+    const s = search.trim().toLowerCase();
+    if (!s) return list;
+    return list.filter(r => r.category.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.party.toLowerCase().includes(s) || partyLabels(r.party).join(' ').toLowerCase().includes(s) || r.segment.toLowerCase().includes(s) || regLabel(r.regulatory).toLowerCase().includes(s));
+  }, [rows, search, statusFilter]);
+  /* Next T&C code preview for a NEW entry — MAX(existing suffix)+1, matching the
+     backend's allocator, so gaps from deletions don't reuse a lower number
+     (e.g. after TNC-014 it shows TNC-015, not TNC-010) (CBC-442). */
+  const nextTncCode = useMemo(() => {
+    let maxN = 0;
+    for (const r of rows) {
+      const m = /^TNC-(\d+)$/i.exec(r.code ?? '');
+      if (m) { const n = parseInt(m[1], 10); if (n > maxN) maxN = n; }
+    }
+    return `TNC-${String(maxN + 1).padStart(3, '0')}`;
+  }, [rows]);
   const [rpp, setRpp]     = useState(PER_PAGE);
+  const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
@@ -219,17 +258,18 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    const rootEl = scrollRef.current?.closest('.clm-root');
-    if (rootEl) ro.observe(rootEl);
+    // Not observing the page root: the "What We Are Doing Here" box animates its
+    // height on expand/collapse, so observing the root fired this recompute every
+    // animation frame and visibly disturbed the layout. Recompute only on mount
+    // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
   const onDelete = async () => {
@@ -251,6 +291,18 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
         <div className="clm-search clm-search-grow">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
           <input type="text" placeholder="Search T&C library…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+        </div>
+        <div style={{ width: 190, flex: '0 0 auto' }}>
+          <MasterSelect
+            value={statusFilter}
+            placeholder="Status"
+            options={[
+              { value: 'all',    label: 'Status: All' },
+              { value: 'highly', label: 'Highly Regulatory' },
+              { value: 'less',   label: 'Less Regulatory' },
+            ]}
+            onChange={(v) => { setStatusFilter((v || 'all') as 'all' | 'highly' | 'less'); setPage(1); }}
+          />
         </div>
         <Tooltip label="Draft a new reusable T&C block">
           <button className="clm-add-btn" onClick={() => { setEditing(null); setModalOpen(true); }}>
@@ -321,9 +373,28 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                     </td>
                     <td className="clm-td-name">{r.category}</td>
                     <td className="clm-td-desc">
-                      <Tooltip label={r.party.split(',').map(s => s.trim()).filter(Boolean).join(' · ')} maxWidth={320}>
-                        <span>{r.party}</span>
-                      </Tooltip>
+                      {(() => {
+                        const list = partyLabels(r.party);
+                        if (list.length === 0) return <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>;
+                        const extra = list.length - 1;
+                        return (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <Tooltip label={`Applies to · ${list[0]}`}>
+                              <span className="clm-badge clm-badge-teal">{list[0]}</span>
+                            </Tooltip>
+                            {extra > 0 && (
+                              <Tooltip label="View all applicable parties">
+                                <button
+                                  type="button"
+                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setPartyPop(partyPop?.id === r.id ? null : { id: r.id, names: list, x: b.left, y: b.bottom + 4 }); }}
+                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
+                                  +{extra}
+                                </button>
+                              </Tooltip>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
@@ -340,13 +411,13 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
         )}
       </div>
 
-      {pendingDelete && createPortal(<DeleteConf title="Delete T&C block?" sub={`${pendingDelete.category} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={() => void onDelete()} />, document.body)}
+      {pendingDelete && createPortal(<DeleteConf title="Delete T&C block?" sub={`${pendingDelete.category} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
 
       {/* All-segments popover (opened from the +N badge in the SEGMENT column) */}
       {segPop && createPortal(
@@ -364,12 +435,28 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
         document.body
       )}
 
+      {/* All-parties popover (opened from the +N badge in the APPLIES TO column) */}
+      {partyPop && createPortal(
+        <>
+          <div onClick={() => setPartyPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
+          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(partyPop.x, window.innerWidth - 230), top: partyPop.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
+            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Applies To ({partyPop.names.length})</div>
+            {partyPop.names.map((name, i) => (
+              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
+                <span className="clm-badge clm-badge-teal">{name}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
+
       <ClmTncWizardModal
         open={modalOpen}
         existing={editing}
         cats={cats}
         segments={segOpts}
-        nextCode={editing?.code ?? `TNC-${String(rows.length + 1).padStart(3, '0')}`}
+        nextCode={editing?.code ?? nextTncCode}
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}
       />

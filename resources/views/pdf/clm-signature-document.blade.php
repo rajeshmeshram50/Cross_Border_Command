@@ -142,9 +142,14 @@
         border-radius: 4px;
         word-wrap: break-word;
         page-break-inside: auto;
+        /* Proportional line-height (NOT the body's fixed 15px) so larger fonts
+           in inserted clause content get a proportional line box and don't
+           overlap — the fixed 15px line box clipped/overlapped bigger text. */
+        line-height: 1.5;
       }
 
-      .document-content p { margin: 0 0 8px 0; }
+      .document-content p  { margin: 0 0 8px 0; line-height: 1.5; }
+      .document-content li { line-height: 1.5; }
       .document-content h1, .document-content h2, .document-content h3 { margin: 14px 0 8px; color: #0f172a; }
       .document-content table { width: 100%; border-collapse: collapse; }
       .document-content table td,

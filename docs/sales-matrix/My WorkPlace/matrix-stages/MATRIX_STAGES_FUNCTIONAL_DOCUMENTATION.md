@@ -57,7 +57,7 @@ Reached from the worksheet (gated by `sales.workplace`). Within the stages, ever
 | 2 | **Lead Acknowledgement** | Pick acknowledgement reasons (Qualified / Clarity Pending / Disqualified±) | **Latest** acknowledgement must be *Qualified* |
 | 3 | **Product Sourcing** | Map products, set each **Sourcing Required / Not Required**, create procurements, **Mark as Done** | All products have a status; every *Required* one is procured |
 | 4 | **Price Shared** | Submit a **quoted price** per product (append-only) + view PDF | Customer mapped **and** ≥1 shared price |
-| 5 | **Quotation vs PI** | Create quotation, **Convert to PI**, send for e-signature, email/remind | A **signed PI** exists (+ mandatory KYC complete to create it) |
+| 5 | **Quotation vs PI** | Create quotation, **Convert to PI**, send for e-signature, email/remind | A non-cancelled PI has been **sent for signature or emailed** (+ mandatory KYC complete to create the PI) |
 | 6 | **Victory** | Celebrate; capture the **Shipment Order** (logistics) | — (terminal; `won_at` stamped) |
 
 > **PI-signed lock:** once the PI is e-signed, the center stage becomes **read-only** (Stages 3–5 can't be edited); Shipment capture in Stage 6 stays open. The stepper lets you revisit any completed stage, but not jump ahead of the furthest earned stage.
@@ -135,7 +135,7 @@ Each stage is detailed below: what's on screen, the inputs, the exact **Save & N
 
 **E-signature (Zoho, auto-syncs ~every 20s):** the PI status pill runs **Not Sent → Sent → Signed**. *Not Sent* exposes **Send for Signature**; *Sent* shows **View sent doc** + **Remind**; *Signed* exposes **View/Download signed PDF + Certificate** in the 3-dot menu. Signed / in-progress documents are **read-only** (no edit/delete). Per-row **Email** is rate-limited **3/min** (429 → cooldown).
 
-**Gate → Stage 6:** **a signed PI must exist**. No PI → *"Moving to Victory needs a Proforma Invoice — a quotation alone isn't enough."* PI present but unsigned → blocked server-side. On success it advances to Stage 6 and arms the Victory confetti.
+**Gate → Stage 6:** a non-cancelled PI must have been **sent for signature (a signature request exists) or emailed** — *not necessarily signed*. No PI → *"Moving to Victory needs a Proforma Invoice — a quotation alone isn't enough."* PI that was never sent/emailed → blocked server-side (`SalesLeadController::update()`). On success it advances to Stage 6 and arms the Victory confetti. *(A **completed** e-signature is a separate thing — it stamps `pi_signed_at`, which makes Stages 3–5 read-only.)*
 
 ---
 

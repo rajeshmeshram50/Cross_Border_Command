@@ -131,6 +131,7 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
+  const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
@@ -145,17 +146,18 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    const rootEl = scrollRef.current?.closest('.clm-root');
-    if (rootEl) ro.observe(rootEl);
+    // Not observing the page root: the "What We Are Doing Here" box animates its
+    // height on expand/collapse, so observing the root fired this recompute every
+    // animation frame and visibly disturbed the layout. Recompute only on mount
+    // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
   const onSave = async (form: { name: string; description: string }, id?: number) => {
@@ -165,7 +167,12 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
       toast.success(id ? 'Updated' : 'Added', form.name);
       setModalOpen(false); setEditing(null); reload();
     } catch (e: any) {
-      toast.error('Save failed', e?.response?.data?.errors?.name?.[0] ?? e?.response?.data?.message ?? 'Could not save');
+      // The Clause Type modal surfaces field-level messages (duplicate name,
+      // 422) inline below the input. Only fall back to a toast when there's no
+      // such message to show there, so validation errors aren't shown twice
+      // (CBC-446).
+      const inlineMsg = e?.response?.data?.errors?.name?.[0] ?? e?.response?.data?.message;
+      if (!inlineMsg) toast.error('Save failed', 'Could not save');
       throw e;   // let the modal surface field-level (422) errors below the field
     }
   };
@@ -237,7 +244,7 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
         )}
@@ -263,6 +270,7 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
     return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.clause_type.toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
+  const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const scrollRef         = useRef<HTMLDivElement | null>(null);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
@@ -277,17 +285,18 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    const rootEl = scrollRef.current?.closest('.clm-root');
-    if (rootEl) ro.observe(rootEl);
+    // Not observing the page root: the "What We Are Doing Here" box animates its
+    // height on expand/collapse, so observing the root fired this recompute every
+    // animation frame and visibly disturbed the layout. Recompute only on mount
+    // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
   const onSave = async (form: Omit<ClLib, 'id'|'code'>, id?: number) => {
@@ -365,7 +374,7 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
               </tbody>
             </table>
             {!loading && filtered.length > 0 && (
-              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+              <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
             )}
           </div>
         )}
@@ -596,7 +605,10 @@ function ClauseLibModal(props: {
             setErrors(p => ({ ...p, type: '' }));
             setShowTypeAdd(false);
           } catch (e: any) {
-            toast.error('Save failed', e?.response?.data?.errors?.name?.[0] ?? e?.response?.data?.message ?? 'Could not save clause type');
+            // Only toast when there's no field-level message; the Clause Type
+            // modal shows those inline below the input (CBC-446 — no duplicate).
+            const inlineMsg = e?.response?.data?.errors?.name?.[0] ?? e?.response?.data?.message;
+            if (!inlineMsg) toast.error('Save failed', 'Could not save clause type');
             throw e;   // let the Clause Type modal surface the error below its field
           }
         }}

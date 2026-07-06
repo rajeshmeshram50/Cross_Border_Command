@@ -207,8 +207,26 @@ Aggregates leads pivoted by `(salesperson_id, platform)`; header KPIs `total_lea
 
 ---
 
-## 9. INDIAMART SYNC (`IndiaMartLeadSyncService`)
-`syncForClient()` loops the configured CRM keys (`config/lead_sync.php`); per key `fetchAndStore()` calls the IndiaMart CRM Listing v2 API (7-day lookback), validates the envelope (`CODE`/`STATUS`), then per record: **dedupe** by `(client_id, platform, unique_query_id)`, map `sender_*`, set **qualified = country is exportable** (`QUALIFIED_ISO_CODES` — **India excluded**), stage 1, and upsert (update existing / create with `opp_code` + branch attribution). Returns `{ fetched, created, updated, disqualified, errors }`. `syncConfig()`/`checkSyncTenantGate()` gate the button (branch pin in config).
+## 9. INBOUND LEAD SYNC — third-party (IndiaMart) fetch
+
+### 9.1 How leads enter the system
+Two inbound paths populate `leads`:
+- **Manual** — `store()` (`POST /sales/leads`), `platform='Offline'`, `query_type='Manual'`, Qualified + Stage 1.
+- **IndiaMart CRM sync** — `IndiaMartLeadSyncService` pulls export enquiries; each configured CRM account's **label becomes the lead's `platform`** (Lead Source).
+
+### 9.2 `IndiaMartLeadSyncService`
+`syncForClient(client, user)` loops the configured CRM keys (`config/lead_sync.php` ← `.env`); each key → `fetchAndStore()`:
+```
+GET https://mapi.indiamart.com/wservce/crm/crmListing/v2/
+      ?glusr_crm_key=<key>&start_time=<DD-Mon-YYYY>&end_time=<DD-Mon-YYYY>
+```
+- **7-day window** (required — IndiaMart returns 204 without one); **30 s** HTTP timeout.
+- IndiaMart replies **HTTP 200 even on failure** — the true status is in the body's **`CODE`/`STATUS`/`MESSAGE`** (401 expired key, 429 5-min rate limit); records are in `body.RESPONSE[]`.
+- **Per record:** **dedupe** on `(client_id, platform, unique_query_id)` → map the `SENDER_*`/`QUERY_*` fields onto `sender_*`/`query_*` columns → **`qualified = isQualified(SENDER_COUNTRY_ISO)`** against `QUALIFIED_ISO_CODES` (**India `IN` excluded** — export-buyer feed) → `lead_stage_id=1` → **upsert** (update existing / create with `nextOppCode()` `OPP-####` + `resolveSyncBranchId()`). A row missing `UNIQUE_QUERY_ID` is skipped.
+- **Returns** `{ fetched, created, updated, disqualified, errors[] }` (a bad key/row is collected into `errors[]`, never aborts the batch).
+
+### 9.3 Gating & config
+`syncFromCrm()` (759) runs the service after `checkSyncTenantGate()` (403 on failure; super-admin bypass; needs `client_id`). `syncConfig()` (790) → `{ enabled, labels[] }` drives whether the button renders (`enabled` = gate passes **and** ≥1 CRM key). Config: `lead_sync.indiamart.keys` (`INDIAMART_*_KEY` = `{label, crm_key}`), `LEAD_SYNC_CLIENT_ID`, `LEAD_SYNC_BRANCH_ID`. Full contract in **API doc §6.2**.
 
 ---
 

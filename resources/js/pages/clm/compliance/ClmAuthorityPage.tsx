@@ -99,10 +99,12 @@ export default function ClmAuthorityPage() {
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    if (rootRef.current) ro.observe(rootRef.current);
+    // Not observing the page root: the "What We Are Doing Here" box animates its
+    // height on expand/collapse, so observing the root fired this recompute every
+    // animation frame and visibly disturbed the layout. Recompute only on mount
+    // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
   const onSave = async (form: { name: string; description: string }, id?: number) => {
@@ -111,9 +113,14 @@ export default function ClmAuthorityPage() {
       else    { await api.post('/clm/authorities', form);     toast.success('Added',   `${form.name} added`); }
       setModalOpen(false); setEditing(null); reload();
     } catch (e: any) {
+      const status = e?.response?.status;
       const err = e?.response?.data?.errors as Record<string, string[]> | undefined;
       const first = err ? Object.values(err)[0]?.[0] : undefined;
-      toast.error('Save failed', first ?? e?.response?.data?.message ?? 'Could not save');
+      // 422 field-validation errors are shown inline below the field by the
+      // modal — don't ALSO toast (was showing the same message twice).
+      if (!(status === 422 && err && Object.keys(err).length)) {
+        toast.error('Save failed', first ?? e?.response?.data?.message ?? 'Could not save');
+      }
       throw e;   // let the modal surface field-level (422) errors below the field
     }
   };
@@ -198,7 +205,7 @@ export default function ClmAuthorityPage() {
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                      <td className="clm-td-name">{r.name}</td>
+                      <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
                       <td className="clm-td-desc">{r.description}</td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
@@ -251,7 +258,7 @@ export default function ClmAuthorityPage() {
         subMessage="This authority will be permanently removed. The action cannot be undone."
         loading={deleting}
         onClose={() => setPendingDelete(null)}
-        onConfirm={() => void onDelete()}
+        onConfirm={onDelete}
       />
     </div>
   );

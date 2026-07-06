@@ -119,6 +119,7 @@ A **Lead** becomes an **Opportunity** (`OPP-####`) that flows through **6 stages
 - **Do:** **Create Quotation** (`QT/FY/SEQ`) → **Convert to PI** (`PI/FY/SEQ`, copies fields + line items) → **Send for Signature** (Zoho) and/or **Email** (60-day signed link).
 - **Create-PI gates:** ① mandatory **KYC/DD/Trade-Licence** docs for customer & consignee complete (DCP) · ② **only one non-cancelled PI per opportunity**. *Create Quotation* also greys out once a PI exists.
 - **Gate to advance:** a non-cancelled PI **sent for signature or emailed**. → `PUT lead_stage_id: 6` (arms the Victory confetti).
+- **Also reachable outside the pipeline:** the **standalone "Quotation Vs PI History" page** (`/sales/qpi`, nav `sales.quotation_vs_pi`) lists **all** quotations/PIs tenant-wide and can create them **directly against a customer with no opportunity** — see `masters-and-documents/QUOTATION.md` §B7 / `PROFORMA_INVOICE.md` §B7.
 
 ### Stage 6 — Victory (terminal)
 - **Do:** celebrate; **Create Shipment ID** (`SHP-###`) — the modal auto-fills from the latest PI (opp/PI codes, customer/consignee, inco term, ports, origin, freight).
@@ -163,9 +164,12 @@ Lead (OPP-####) ────┴── LeadProduct ──► Procurement (PROC-##
 | **DCP compliance** | No PI until mandatory KYC/DD/Trade-Licence docs are uploaded for the parties |
 | **One-per-opportunity** | One non-cancelled PI, and one shipment, per opportunity (409) |
 | **Server-side totals** | Line `amount = qty × rate × (1+tax%/100)`; header totals recomputed server-side |
+| **Currency lock** | A PI created from a quotation is locked to the quote's currency (edit → 422) |
 | **Segment (Buyer≠Consignee)** | Can't map a consignee/customer that violates a product's segment rule (422) |
 | **Tenant isolation** | Every read/write scoped by `client_id`/`branch_id` + sales visibility tier |
 | **Signed PDF links** | Customer-facing quotation/PI links are signed and expire after 60 days |
+
+> **Stage-numbering gotcha.** The **Matrix stepper / stored `lead_stage_id` is 1–6** (Victory = 6), and that's what this doc uses. The **Lead Worksheet *filter*** relabels two of them by *signal*: **6 = "Quotation vs PI"** (a PI was sent/emailed) and **8 = "Victory"** (a shipment exists). So a Victory lead is `lead_stage_id = 6` but shows under the worksheet's stage-**8** filter. Don't confuse the two schemes.
 
 ---
 
@@ -173,8 +177,9 @@ Lead (OPP-####) ────┴── LeadProduct ──► Procurement (PROC-##
 
 | Area | Folder / file |
 |---|---|
-| **Worksheet** (add/assign/distribute/filter/export, CTQ, visibility) | `My WorkPlace/lead-worksheet/` (Functional · Technical · API · Code-Walkthrough) |
+| **Worksheet** (how leads arrive — IndiaMart sync + manual add — add/assign/distribute/filter/export, CTQ, visibility) | `My WorkPlace/lead-worksheet/` (Functional · Technical · API · Code-Walkthrough); inbound-sync contract in the **API doc §6.2** |
 | **The 6 stages inside the Matrix** (Quotation/PI/Procurement/Shipment/PDF/e-sign) | `My WorkPlace/matrix-stages/` |
+| **Quotation Vs PI History** (standalone nav page, tenant-wide) | `/sales/qpi` — see `masters-and-documents/QUOTATION.md` & `PROFORMA_INVOICE.md` §B7 |
 | **Lead Acknowledgement Master** (Stage-2 reasons) | `masters-and-documents/LEAD_ACKNOWLEDGEMENT_MASTER.md` |
 | **Quotation** (combined) | `masters-and-documents/QUOTATION.md` |
 | **Proforma Invoice** (combined) | `masters-and-documents/PROFORMA_INVOICE.md` |

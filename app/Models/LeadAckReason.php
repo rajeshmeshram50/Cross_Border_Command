@@ -23,6 +23,7 @@ class LeadAckReason extends Model
 
     protected $fillable = [
         'client_id',
+        'branch_id',
         'opportunity_type',
         'reason',
         'status',

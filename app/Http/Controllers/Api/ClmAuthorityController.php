@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClmAuthority;
+use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -18,9 +19,12 @@ class ClmAuthorityController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $rows = $user->client_id
-            ? ClmAuthority::where('client_id', $user->client_id)->orderBy('id')->get()
-            : collect();
+        // Branch-scoped read: a branch admin sees its own rows + client-level
+        // (shared) rows; sibling branches stay hidden (CBC-431). Client
+        // admins/users see the whole client and may narrow via BranchSwitcher.
+        $q = ClmAuthority::query()->orderBy('id');
+        MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
+        $rows = $q->get();
 
         // Flag each authority that's referenced elsewhere. The frontend uses
         // `in_use` to lock the DELETE action (deleting would orphan those
@@ -56,12 +60,13 @@ class ClmAuthorityController extends Controller
             'status'      => ['nullable', Rule::in(ClmAuthority::STATUSES)],
         ]);
 
-        // Reject duplicate authority names per client (case-insensitive).
+        // Reject duplicate authority names within the caller's branch scope
+        // (case-insensitive). A sibling branch that can't see this row may
+        // reuse the name — consistent with branch-isolated masters.
         $name = trim($data['name']);
-        $exists = ClmAuthority::where('client_id', $user->client_id)
-            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
-            ->exists();
-        if ($exists) {
+        $dupe = ClmAuthority::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+        MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
+        if ($dupe->exists()) {
             throw ValidationException::withMessages([
                 'name' => "An authority named \"{$name}\" already exists. Pick a different name.",
             ]);
@@ -70,6 +75,7 @@ class ClmAuthorityController extends Controller
         $row = DB::transaction(function () use ($user, $data, $name) {
             return ClmAuthority::create([
                 'client_id'   => $user->client_id,
+                'branch_id'   => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'        => $this->nextCode($user->client_id),
                 'name'        => $name,
                 'description' => trim($data['description']),
@@ -86,7 +92,12 @@ class ClmAuthorityController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $row  = ClmAuthority::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmAuthority::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         $data = $request->validate([
             'name'        => 'sometimes|required|string|max:255',
@@ -97,12 +108,13 @@ class ClmAuthorityController extends Controller
         if (isset($data['name']))        $data['name']        = trim($data['name']);
         if (isset($data['description'])) $data['description'] = trim($data['description']);
 
-        // Reject rename to a duplicate (case-insensitive, excluding self).
+        // Reject rename to a duplicate within the caller's branch scope
+        // (case-insensitive, excluding self).
         if (isset($data['name'])) {
-            $clash = ClmAuthority::where('client_id', $user->client_id)
-                ->where('id', '!=', $row->id)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
-                ->exists();
+            $clash = ClmAuthority::query()->where('id', '!=', $row->id)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])]);
+            MasterVisibility::applyReadScope($clash, $user, $user->branch_id ?: null);
+            $clash = $clash->exists();
             if ($clash) {
                 throw ValidationException::withMessages([
                     'name' => "Another authority named \"{$data['name']}\" already exists. Pick a different name.",
@@ -130,7 +142,12 @@ class ClmAuthorityController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $row  = ClmAuthority::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmAuthority::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         // Referenced by ID in the CLM document masters (kyc, dd, trade-license,
         // qc), by NAME in the legacy vendor/customer tables, and by CODE inside

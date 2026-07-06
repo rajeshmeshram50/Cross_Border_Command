@@ -28,10 +28,14 @@ class ProductController extends Controller
     /* ──────────────────────────────────────────────────────────────────
      * Tenant scoping
      *
-     * Products use the shared creator-hierarchy read rule — branch users
-     * see globals + client-level + their own branch's rows; sibling
-     * branches are blocked (every branch is an isolated peer). See
-     * MasterVisibility.
+     * Products are a SHARED branch catalog: branch users AND employees both see
+     * globals + client-level + their own branch's rows (sibling branches stay
+     * hidden). This intentionally OVERRIDES the peer-isolated employee default
+     * in MasterVisibility (where an employee would see only rows they created) —
+     * a product master that hides the branch's catalog from staff isn't useful.
+     * Other user types still fall through to MasterVisibility. Editing remains
+     * gated by hierarchicalDenial, so staff can VIEW but not modify branch-owned
+     * products.
      * ────────────────────────────────────────────────────────────── */
     private function applyScope($query, Request $request, bool $applyBranchFilter = false)
     {
@@ -40,7 +44,35 @@ class ProductController extends Controller
         // but only the list should narrow by it — resolving a single product
         // by id must not 404 just because a different branch is being viewed.
         $branchFilter = $applyBranchFilter ? ($request->integer('branch_id') ?: null) : null;
-        MasterVisibility::applyReadScope($query, $request->user(), $branchFilter);
+        $user = $request->user();
+
+        // An HOD employee sees the WHOLE branch catalog (like the Director /
+        // branch user). A regular employee stays peer-isolated (only their own
+        // rows) via MasterVisibility below — that's fine for staff. The Director
+        // (branch_user) and admins already get the right scope from MasterVisibility.
+        if ($user && ($user->user_type ?? null) === 'employee') {
+            $isHod = \App\Models\Employee::where('user_id', $user->id)
+                ->whereIn('designation_id', \App\Support\DepartmentPermissionSync::hodDesignationIds())
+                ->exists();
+            if ($isHod) {
+                $clientId = $user->client_id ?? optional($user->branch ?? null)->client_id;
+                $branchId = $user->branch_id;
+                $query->where(function ($w) use ($clientId, $branchId) {
+                    $w->whereNull('client_id')                        // globals
+                      ->orWhere(function ($ww) use ($clientId, $branchId) {
+                          $ww->where('client_id', $clientId)
+                             ->where(function ($wb) use ($branchId) {
+                                 $wb->whereNull('branch_id')           // client-level
+                                    ->orWhere('branch_id', $branchId); // own branch
+                             });
+                      });
+                });
+                return $query;
+            }
+            // Regular employee → fall through to peer-isolated MasterVisibility.
+        }
+
+        MasterVisibility::applyReadScope($query, $user, $branchFilter);
         return $query;
     }
 
@@ -52,6 +84,37 @@ class ProductController extends Controller
             'branch_id'  => $user->branch_id,
             'created_by' => $user->id,
         ];
+    }
+
+    /**
+     * Edit/delete denial for a product. An HOD manages the WHOLE branch catalog
+     * (like the Director / branch user), so the peer/hierarchy denial is skipped
+     * for them — they can edit/delete any product in their branch, not just the
+     * ones they created. Everyone else falls through to the standard rule.
+     */
+    private function editDenial($user, $product, string $action = 'edit'): ?string
+    {
+        if ($this->isBranchHod($user, $product)) {
+            return null;
+        }
+        return MasterVisibility::hierarchicalDenial($user, $product, $action);
+    }
+
+    /** True when $user is an HOD employee in the same client + branch as $product. */
+    private function isBranchHod($user, $product): bool
+    {
+        if (!$user || ($user->user_type ?? null) !== 'employee') {
+            return false;
+        }
+        if ((int) $user->client_id !== (int) $product->client_id) {
+            return false;
+        }
+        if ($product->branch_id && (int) $user->branch_id !== (int) $product->branch_id) {
+            return false;
+        }
+        return \App\Models\Employee::where('user_id', $user->id)
+            ->whereIn('designation_id', \App\Support\DepartmentPermissionSync::hodDesignationIds())
+            ->exists();
     }
 
     private function nextProductCode(?int $clientId): string
@@ -240,7 +303,7 @@ class ProductController extends Controller
             ? $this->applyScope(Product::query(), $request)->findOrFail($data['id'])
             : new Product();
         if ($product->exists) {
-            $denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit');
+            $denial = $this->editDenial($request->user(), $product, 'edit');
             if ($denial) return response()->json(['message' => $denial], 403);
         }
         $ownership = $this->ownershipFor($request);
@@ -389,7 +452,7 @@ class ProductController extends Controller
     public function storeSales(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
-        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+        if ($denial = $this->editDenial($request->user(), $product, 'edit')) {
             return response()->json(['message' => $denial], 403);
         }
 
@@ -423,7 +486,7 @@ class ProductController extends Controller
     public function storeQuality(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
-        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+        if ($denial = $this->editDenial($request->user(), $product, 'edit')) {
             return response()->json(['message' => $denial], 403);
         }
 
@@ -524,7 +587,7 @@ class ProductController extends Controller
     public function updateVendorMapPrice(Request $request, int $id, int $mapId)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
-        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+        if ($denial = $this->editDenial($request->user(), $product, 'edit')) {
             return response()->json(['message' => $denial], 403);
         }
 
@@ -567,7 +630,7 @@ class ProductController extends Controller
     public function storeVendors(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
-        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'edit')) {
+        if ($denial = $this->editDenial($request->user(), $product, 'edit')) {
             return response()->json(['message' => $denial], 403);
         }
 
@@ -660,7 +723,7 @@ class ProductController extends Controller
     public function destroy(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
-        if ($denial = MasterVisibility::hierarchicalDenial($request->user(), $product, 'delete')) {
+        if ($denial = $this->editDenial($request->user(), $product, 'delete')) {
             return response()->json(['message' => $denial], 403);
         }
         $product->delete();

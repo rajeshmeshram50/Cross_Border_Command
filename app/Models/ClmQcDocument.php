@@ -16,7 +16,7 @@ class ClmQcDocument extends Model
     public const STATUSES        = [self::STATUS_ACTIVE, self::STATUS_INACTIVE];
 
     protected $fillable = [
-        'client_id', 'code', 'name', 'purpose', 'issued_by', 'doc_type',
+        'client_id', 'branch_id', 'code', 'name', 'purpose', 'issued_by', 'doc_type',
         'qa_params', 'min_criteria', 'status',
         'created_by', 'updated_by',
     ];

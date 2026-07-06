@@ -95,6 +95,24 @@ Gated by the **`sales.workplace`** permission (super-admin bypasses).
 
 > Qualified/Disqualified are mutually exclusive; new leads default to **Qualified**. Entering Victory is **gated** — the opportunity must have a non-cancelled PI that has **at least been sent for signature** (a signature request exists) **or emailed** to the customer. The deal advances once the PI is *out for* e-signature; the system no longer waits for signing to complete.
 
+### 3.2 Lead sources — how leads arrive
+
+Every lead in the worksheet enters through **one of two doors**, and each is stamped with a **Lead Source** (`platform`) and a **Lead Type** (`query_type`) so you can tell where it came from.
+
+| Source | How it arrives | Platform / Lead Source | Default state |
+|---|---|---|---|
+| **Manual entry** | A user clicks **Add New Lead** and fills the form (optionally auto-filling from an existing customer) | **`Offline`** (Lead Type *Manual*) | Qualified · Stage 1 |
+| **IndiaMart CRM sync** | The **Sync from IndiaMart** button pulls inbound export enquiries from IndiaMart's CRM API | the configured **CRM-account label** (e.g. *Agrotech*, *Purvee*) | Stage 1; **Qualified only if the buyer's country is exportable** |
+
+**How the IndiaMart pull works (functional view)**
+- The **Sync from IndiaMart** button only appears when inbound sync is **configured for this tenant/branch** (otherwise it's hidden). Each configured **CRM account** becomes a Lead Source column value.
+- Clicking it fetches the **last 7 days** of enquiries from IndiaMart and, per record: **de-duplicates** (the same enquiry re-synced updates the existing row instead of creating a copy), maps the sender's contact/company/product details onto the lead, and files it at **Stage 1 (Inquiry Received)**.
+- **Export-buyer focus:** a synced lead is auto-**Qualified** only if the buyer's country is on the export whitelist; **India (IN) is intentionally excluded** (treated as *Disqualified*), because this CRM feed is for cross-border buyers.
+- After the pull a summary toast reports **{created} new · {updated} updated · {disqualified} disqualified**; if a CRM key is expired or rate-limited that reason is surfaced (so a "0 fetched" is explained, not silent).
+- New leads are attributed to the **acting user's branch** (or the configured sync branch); the automatically-allocated **`OPP-####`** code makes them first-class opportunities identical to manually-added ones.
+
+> Until a lead is linked to a Customer, its sender details (name/phone/email/company/country) live **directly on the lead** (denormalized) — that's what the list columns show. Full endpoint/field detail is in the **API doc §6.2** and the **Code-Walkthrough §8**.
+
 ---
 
 ## 4. SCREEN SPECIFICATIONS

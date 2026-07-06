@@ -89,8 +89,9 @@
 ```
 Sorted heaviest-first. **`convert-to-qualified`** — `POST /sales/leads/convert-to-qualified { lead_ids[] }`.
 
-## 6. FILTER OPTIONS & SYNC
-**GET `/sales/leads/filter-options`**
+## 6. FILTER OPTIONS & INBOUND LEAD SYNC (IndiaMart)
+
+### 6.1 `GET /sales/leads/filter-options`
 ```json
 { "status": true,
   "platforms": ["Offline","Agrotech","Purvee"], "query_types": ["Manual","Direct Enquiries"],
@@ -100,7 +101,60 @@ Sorted heaviest-first. **`convert-to-qualified`** — `POST /sales/leads/convert
               {"value":"3","label":"Product Sourcing"}, {"value":"4","label":"Price Shared"},
               {"value":"6","label":"Quotation vs PI"}, {"value":"8","label":"Victory"} ] }
 ```
-**GET `/sales/leads/sync/config`** → `{ enabled, labels[] }`. **POST `/sales/leads/sync`** → `{ fetched, created, updated, disqualified, errors[] }` (IndiaMart; India excluded; dedupe by `(client_id, platform, unique_query_id)`).
+
+---
+
+### 6.2 Inbound sync — how leads are fetched from the third-party (IndiaMart) API
+Inbound leads are pulled from **IndiaMart's CRM Listing v2** API by `IndiaMartLeadSyncService`, triggered by the **Sync from IndiaMart** toolbar button (or a scheduled job). Two endpoints back it.
+
+#### `GET /sales/leads/sync/config` — is the button available?
+Tells the frontend whether to render the Sync button.
+```json
+{ "enabled": true, "labels": ["Agrotech","Purvee"] }
+```
+- **`enabled`** = the tenant gate passes **and** ≥1 CRM key is configured. `labels` = the configured CRM-account labels (each becomes a lead's **`platform`** / *Lead Source*).
+- **Tenant gate** (`checkSyncTenantGate`, from `config/lead_sync.php` ← `.env`): `LEAD_SYNC_BRANCH_ID` — `null` → disabled for everyone · `all` → any authenticated user · `<int>` → only that branch · `[ints]` → any branch in the list. **Super-admins bypass** the gate. The caller must also have a `client_id`.
+
+#### `POST /sales/leads/sync` — run the pull
+No body. Runs `syncForClient(client, user)` across every configured CRM key and returns the tallies:
+```json
+{ "status": true, "fetched": 42, "created": 30, "updated": 9, "disqualified": 12, "errors": [] }
+```
+| Field | Meaning |
+|---|---|
+| `fetched` | records IndiaMart returned (across all keys) |
+| `created` | new leads inserted (`OPP-####` allocated) |
+| `updated` | existing leads refreshed (matched on dedupe key) |
+| `disqualified` | of those, how many are non-exportable countries (India etc.) |
+| `errors[]` | per-key / per-row messages (a bad key or row never aborts the batch) |
+
+**Errors:** `403` (tenant gate) · `422` (no `client_id` / client not loaded) · `401` (unauth). A configured-but-failing key surfaces inside `errors[]` (not an HTTP error).
+
+#### The third-party call (per CRM key)
+```
+GET https://mapi.indiamart.com/wservce/crm/crmListing/v2/
+      ?glusr_crm_key=<key>&start_time=<DD-Mon-YYYY>&end_time=<DD-Mon-YYYY>
+```
+- **Window:** `[now − 7 days, now]` (a window is **required** — IndiaMart returns 204 without one). HTTP timeout **30 s**.
+- IndiaMart returns **HTTP 200 even on failure** — the real status is in the body's **`CODE` / `STATUS` / `MESSAGE`**. `CODE ≠ 200` or `STATUS = FAILURE` → the message is pushed to `errors[]` (common: **401** expired CRM key, **429** 5-minute rate limit). Records live in `body.RESPONSE[]`.
+
+#### Per-record: dedupe → map → qualify → upsert
+1. **Dedupe** on **`(client_id, platform, unique_query_id)`** — found ⇒ **update**, else **create** (`opp_code` = next `OPP-####`, `created_by` = trigerer, `branch_id` = acting user's branch, else the env-pinned single branch, else null). A record with no `UNIQUE_QUERY_ID` is skipped (→ `errors[]`).
+2. **Qualification** — `qualified = SENDER_COUNTRY_ISO ∈ QUALIFIED_ISO_CODES` (export-buyer whitelist; **India `IN` is intentionally excluded**). `disqualified = !qualified`. Every synced lead starts at **`lead_stage_id = 1`**.
+3. **Branch backfill** on updates only fills `branch_id` when it's empty (never clobbers a manual reassignment).
+
+**IndiaMart field → lead column**
+| IndiaMart key | Lead column |
+|---|---|
+| `UNIQUE_QUERY_ID` | `unique_query_id` (dedupe) |
+| `QUERY_TYPE` (default *Direct Enquiries*) | `query_type` |
+| `QUERY_TIME` | `query_time` |
+| `SENDER_NAME`/`_MOBILE`/`_EMAIL`/`_COMPANY`/`_ADDRESS`/`_CITY`/`_STATE`/`_PINCODE` | `sender_*` |
+| `SENDER_COUNTRY_ISO` | `sender_country_iso` (drives qualification) |
+| `SENDER_MOBILE_ALT`/`SENDER_EMAIL_ALT` | `sender_mobile_alt`/`sender_email_alt` |
+| `QUERY_PRODUCT_NAME`/`QUERY_MESSAGE`/`QUERY_PROD_QTY`/`QUERY_MCAT_NAME` | `query_product_name`/`query_message`/`product_quantity`/`query_mcat_name` |
+
+> **Config** (`config/lead_sync.php` ← `.env`): `INDIAMART_AGROTECH_KEY` / `_PURVEE_KEY` / `_VORTEX_KEY` (each `{label, crm_key}`), `LEAD_SYNC_CLIENT_ID`, `LEAD_SYNC_BRANCH_ID`. One deployment is scoped to **one tenant**; the `label` is the lead's *platform*.
 
 ## 7. STAGE DATA (per-lead, reached from the Matrix Detail)
 | Method | Path | Stage |

@@ -19,6 +19,7 @@ type Qc = {
   id: number; code: string; name: string; purpose: string; issued_by: string; issued_by_names?: string;
   doc_type: 'cert'|'comp'; qa_params: string | null; min_criteria: string | null;
   status: 'active'|'inactive';
+  in_use?: boolean; used_in?: string[];
 };
 type Authority = { id: number; code: string; name: string };
 
@@ -31,6 +32,7 @@ export default function ClmQcPage() {
   const [page, setPage]         = useState(1);
   // Dynamic pagination: rows-per-page auto-fits the visible table height.
   const [rpp, setRpp]           = useState(PER_PAGE);
+  const autoFitRef              = useRef(true);
   const [fillH, setFillH]       = useState<number | undefined>(undefined);
   const scrollRef               = useRef<HTMLDivElement | null>(null);
   const rootRef                 = useRef<HTMLDivElement | null>(null);
@@ -71,16 +73,18 @@ export default function ClmQcPage() {
       const THEAD = 40, ROW = 46, FOOTER = 96;
       const avail = window.innerHeight - top - THEAD - FOOTER;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    if (rootRef.current) ro.observe(rootRef.current);
+    // Not observing the page root: the "What We Are Doing Here" box animates its
+    // height on expand/collapse, so observing the root fired this recompute every
+    // animation frame and visibly disturbed the layout. Recompute only on mount
+    // and on genuine window resizes instead.
     window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
   const onSave = async (form: Omit<Qc, 'id'|'code'|'status'>, id?: number) => {
@@ -89,9 +93,15 @@ export default function ClmQcPage() {
       else    { await api.post('/clm/qc-documents', form);     toast.success('Added',   `${form.name} added`); }
       setModalOpen(false); setEditing(null); reload();
     } catch (e: any) {
+      const status = e?.response?.status;
       const err = e?.response?.data?.errors as Record<string, string[]> | undefined;
       const first = err ? Object.values(err)[0]?.[0] : undefined;
-      toast.error('Save failed', first ?? e?.response?.data?.message ?? 'Could not save');
+      // 422 field-validation errors are shown inline below the field by the
+      // modal — don't ALSO toast (avoids the same message appearing twice).
+      if (!(status === 422 && err && Object.keys(err).length)) {
+        toast.error('Save failed', first ?? e?.response?.data?.message ?? 'Could not save');
+      }
+      throw e;   // let the modal surface field-level (422) errors below the field
     }
   };
   const onDelete = async () => {
@@ -164,7 +174,7 @@ export default function ClmQcPage() {
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                      <td className="clm-td-name">{r.name}</td>
+                      <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
                       <td className="clm-td-desc">{r.purpose}</td>
                       <td style={{ textAlign: 'center' }}>
                         <span className="clm-badge clm-badge-teal"><span className="clm-badge-dot" />{r.issued_by_names || '—'}</span>
@@ -172,7 +182,7 @@ export default function ClmQcPage() {
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
                           <Tooltip label="Edit"><button type="button" aria-label="Edit" className="clm-act clm-act-edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
-                          <Tooltip label="Delete"><button type="button" aria-label="Delete" className="clm-act clm-act-del" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button></Tooltip>
+                          <Tooltip label={r.in_use ? `In use by ${(r.used_in || []).join(', ')} — can't delete` : 'Delete'}><button type="button" aria-label="Delete" className="clm-act clm-act-del" aria-disabled={r.in_use || undefined} onClick={() => { if (r.in_use) return; setPendingDelete(r); }} style={r.in_use ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></button></Tooltip>
                         </div>
                       </td>
                     </tr>
@@ -180,7 +190,7 @@ export default function ClmQcPage() {
                 </tbody>
               </table>
               {!loading && filtered.length > 0 && (
-                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
           )}
@@ -195,7 +205,7 @@ export default function ClmQcPage() {
         subMessage="This QC document will be permanently removed. The action cannot be undone."
         loading={deleting}
         onClose={() => setPendingDelete(null)}
-        onConfirm={() => void onDelete()}
+        onConfirm={onDelete}
       />
     </div>
   );
@@ -234,6 +244,12 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
         name: name.trim(), purpose: purpose.trim(), issued_by: issuedBy.trim(),
         doc_type: type, qa_params: qaParams?.trim() || null, min_criteria: minCrit?.trim() || null,
       }));
+    } catch (e: any) {
+      const apiErrors = e?.response?.data?.errors as Record<string, string[] | string> | undefined;
+      if (apiErrors) {
+        const keyMap: Record<string, string> = { issued_by: 'issuedBy' };   // backend field → inline field
+        setErrors(p => ({ ...p, ...Object.fromEntries(Object.entries(apiErrors).map(([k, v]) => [keyMap[k] ?? k, Array.isArray(v) ? v[0] : String(v)])) }));
+      }
     } finally { setSaving(false); }
   };
 
@@ -276,6 +292,7 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
           <div className="clm-field">
             <label className="clm-field-label">QC Certificate Name <span className="clm-req">*</span></label>
             <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. ISO 9001, HACCP, GOTS" maxLength={255} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
+            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{name.length}/255</div>
             {errors.name && <div className="clm-err">{errors.name}</div>}
           </div>
           <div className="clm-field">
@@ -308,11 +325,13 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
           </div>
           <div className="clm-field">
             <label className="clm-field-label">QA Testing Parameters</label>
-            <textarea className="clm-textarea" placeholder="e.g. Moisture %, microbial count, contamination levels" value={qaParams ?? ''} onChange={e => setQaParams(e.target.value)} />
+            <textarea className="clm-textarea" placeholder="e.g. Moisture %, microbial count, contamination levels" value={qaParams ?? ''} maxLength={256} onChange={e => setQaParams(e.target.value.slice(0, 256))} />
+            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{(qaParams ?? '').length}/256</div>
           </div>
           <div className="clm-field">
             <label className="clm-field-label">Minimum Acceptance Criteria</label>
-            <textarea className="clm-textarea" placeholder="e.g. Moisture < 13%, zero contamination, pH 6.0–7.5" value={minCrit ?? ''} onChange={e => setMinCrit(e.target.value)} />
+            <textarea className="clm-textarea" placeholder="e.g. Moisture < 13%, zero contamination, pH 6.0–7.5" value={minCrit ?? ''} maxLength={256} onChange={e => setMinCrit(e.target.value.slice(0, 256))} />
+            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{(minCrit ?? '').length}/256</div>
           </div>
         </div>
         <div className="clm-modal-foot">
@@ -333,7 +352,7 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
           initialName=""
           initialDesc=""
           onClose={() => setQuickAddOpen(false)}
-          onSave={(f) => void onAddNewAuthority(f)}
+          onSave={(f) => onAddNewAuthority(f)}
         />
       )}
     </div>
