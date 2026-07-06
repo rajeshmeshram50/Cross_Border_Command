@@ -22,6 +22,7 @@ export function MasterTimePicker({
   minuteStep = 5,
   showNow = true,
   minTime,
+  accent,
 }: {
   name?: string;
   value?: string;
@@ -38,7 +39,12 @@ export function MasterTimePicker({
    * on the boundary hour the earlier minutes are disabled too. Used to stop
    * picking a past time when a meeting is scheduled for today. */
   minTime?: string;
+  /* Accent colour of the popup (selected slot + Now/Done buttons). Defaults to
+   * the app violet; pass 'teal' inside the teal-themed Meeting modal so the
+   * dropdown matches its surroundings instead of clashing purple. */
+  accent?: 'violet' | 'teal';
 }) {
+  const accentCls = accent === 'teal' ? ' mtp-accent-teal' : '';
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
   useEffect(() => {
     if (value === undefined) setInternal(defaultValue ?? '');
@@ -179,7 +185,7 @@ export function MasterTimePicker({
   };
 
   return (
-    <div ref={wrapRef} className={`master-timepicker-wrap ${invalid ? 'invalid' : ''} ${disabled ? 'disabled' : ''}`}>
+    <div ref={wrapRef} className={`master-timepicker-wrap${accentCls} ${invalid ? 'invalid' : ''} ${disabled ? 'disabled' : ''}`}>
       {name && <input type="hidden" name={name} value={currentValue} />}
       <div
         className={`master-timepicker-toggle ${open ? 'open' : ''}`}
@@ -211,7 +217,7 @@ export function MasterTimePicker({
       {open && popupPos && createPortal(
         <div
           ref={popupRef}
-          className="master-timepicker-popup"
+          className={`master-timepicker-popup${accentCls}`}
           style={{
             position: 'fixed',
             top: popupPos.top,

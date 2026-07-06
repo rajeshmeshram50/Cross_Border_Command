@@ -264,3 +264,32 @@
 [data-bs-theme="dark"] .master-timepicker-foot-btn.primary:hover {
   background: linear-gradient(135deg, #8b5cf6, #6d28d9);
 }
+
+/* ── Teal accent (Meeting modal) — recolours the violet bits to match the
+      teal-themed modal the picker opens inside. ────────────────────────── */
+.master-timepicker-popup.mtp-accent-teal .master-timepicker-col-head { color: #0d9488; }
+.master-timepicker-popup.mtp-accent-teal .master-timepicker-col-list {
+  scrollbar-color: rgba(13,148,136,.30) transparent;
+}
+.master-timepicker-popup.mtp-accent-teal .master-timepicker-col-list::-webkit-scrollbar-thumb {
+  background: rgba(13,148,136,.30);
+}
+.master-timepicker-popup.mtp-accent-teal .master-timepicker-item:hover {
+  background: rgba(20,184,166,.12); color: #0d9488;
+}
+.master-timepicker-popup.mtp-accent-teal .master-timepicker-item.selected {
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(13,148,136,.35);
+}
+.master-timepicker-popup.mtp-accent-teal .master-timepicker-foot-btn.primary {
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+}
+.master-timepicker-popup.mtp-accent-teal .master-timepicker-foot-btn.primary:hover {
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+}
+/* Teal focus ring on the field toggle so it matches when open. */
+.master-timepicker-wrap.mtp-accent-teal .master-timepicker-toggle.open {
+  border-color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20,184,166,.15);
+}

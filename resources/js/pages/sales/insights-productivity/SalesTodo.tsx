@@ -1643,6 +1643,7 @@ export default function SalesTodo() {
                         onChange={v => { setForm(p => ({ ...p, startTime: v })); clearMtgErr('startTime'); clearMtgErr('endTime'); }}
                         placeholder="--:--"
                         invalid={!!mtgErr.startTime}
+                        accent="teal"
                         // Today → can't start before now.
                         minTime={form.date === TODAY_STR ? hmNow() : undefined}
                       />
@@ -1653,6 +1654,7 @@ export default function SalesTodo() {
                         onChange={v => { setForm(p => ({ ...p, endTime: v })); clearMtgErr('endTime'); }}
                         placeholder="--:--"
                         invalid={!!mtgErr.endTime}
+                        accent="teal"
                         // End must be ≥ Start + 15 min (min meeting length), and
                         // also ≥ now when the meeting is today.
                         minTime={(() => {
