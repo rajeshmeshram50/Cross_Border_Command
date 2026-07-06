@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { formatDmy } from '../../../utils/formatDmy';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
@@ -100,8 +101,8 @@ export default function LeadDetailsModal({ open, leadId, onClose }: Props) {
 
   const status: 'qualified' | 'disqualified' = lead?.disqualified ? 'disqualified' : 'qualified';
   const dateLabel = lead?.query_time
-    ? new Date(lead.query_time).toLocaleDateString('en-GB')
-    : (lead?.created_at ? new Date(lead.created_at).toLocaleDateString('en-GB') : '—');
+    ? formatDmy(lead.query_time)
+    : (lead?.created_at ? formatDmy(lead.created_at) : '—');
   const fullAddress = lead
     ? [lead.sender_address, lead.sender_city, lead.sender_state, lead.sender_pincode ?? null]
         .filter(Boolean)

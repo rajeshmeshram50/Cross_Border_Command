@@ -1060,7 +1060,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               <td>{i + 1}</td>
               <td className="cev-mono">{d.reference || d.doc_code || '—'}</td>
               <td className="cev-doc-name">{d.name}</td>
-              <td>{d.authority || '—'}</td>
+              <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
               <td>
                 {d.requirement === 'M' ? (
                   <span className="cev-req cev-req-m" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>

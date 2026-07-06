@@ -83,16 +83,17 @@ const formatPrice = (val: string | number | null | undefined, currency?: string 
   return `${sym ? sym + ' ' : ''}${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
+const FSA_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const formatSharedAt = (iso: string): string => {
   if (!iso) return '—';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   const dd  = String(d.getDate()).padStart(2, '0');
-  const mm  = String(d.getMonth() + 1).padStart(2, '0');
   const yy  = d.getFullYear();
   const hh  = String(d.getHours()).padStart(2, '0');
   const min = String(d.getMinutes()).padStart(2, '0');
-  return `${dd}/${mm}/${yy} ${hh}:${min}`;
+  // DD-Mon-YYYY HH:MM (e.g. 04-Jul-2026 14:30)
+  return `${dd}-${FSA_MONTHS[d.getMonth()]}-${yy} ${hh}:${min}`;
 };
 
 function StatusPill({ status }: { status: string | null | undefined }) {

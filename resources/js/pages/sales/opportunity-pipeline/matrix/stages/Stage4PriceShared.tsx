@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../../../../../api';
+import { formatProductCode } from '../../../../../utils/formatProductCode';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 
@@ -325,7 +326,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
               {/* Left: product name + id (no "Price History" title, no count). */}
               <div className="s4-card-head-titlewrap">
                 <div className="s4-card-title s4-history-titlerow">
-                  <span className="s4-history-code">{historyHeader?.product_code ?? '—'}</span>
+                  <span className="s4-history-code">{formatProductCode(historyHeader?.product_code) || '—'}</span>
                   <span>{historyHeader?.product_name ?? '—'}</span>
                 </div>
               </div>
@@ -373,7 +374,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                     return (
                       <tr key={h.id} className={pdfBusy === h.id ? 's4-row-busy' : undefined}>
                         <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
-                        <td><span className="s4-code s4-code-navy">{historyHeader?.product_code ?? '—'}</span></td>
+                        <td><span className="s4-code s4-code-navy">{formatProductCode(historyHeader?.product_code) || '—'}</span></td>
                         <td><div className="s4-prod-name">{historyHeader?.product_name ?? '—'}</div></td>
                         <td><span className="s4-dt">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
@@ -491,7 +492,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                         return (
                           <tr key={r.id} className={blocked ? 's4-row-blocked' : ''}>
                             <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
-                            <td><span className="s4-code s4-code-navy">{r.product_code ?? `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
+                            <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                             <td>
                               <div className="s4-prod-name">{r.product_name ?? '—'}</div>
                               {r.product_category && <span className="s4-cat-badge">{r.product_category.toUpperCase()}</span>}
@@ -610,7 +611,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                         return (
                           <tr key={r.id} className={pdfBusy === r.id ? 's4-row-busy' : undefined}>
                             <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
-                            <td><span className="s4-code s4-code-navy">{r.product_code ?? `P-${String(r.product_id ?? 0).padStart(3,'0')}`}</span></td>
+                            <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id ?? 0).padStart(3,'0')}`}</span></td>
                             <td>
                               <div className="s4-prod-name">{r.product_name ?? '—'}</div>
                               {r.product_category && <span className="s4-cat-badge">{r.product_category.toUpperCase()}</span>}

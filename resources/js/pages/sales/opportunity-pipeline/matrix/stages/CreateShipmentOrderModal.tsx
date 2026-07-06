@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { formatDmy } from '../../../../../utils/formatDmy';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -67,7 +68,7 @@ const SHIPPING_MODE_OPTIONS = [
 function fmtDate(s: string | null | undefined): string {
   if (!s) return '—';
   const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB');
+  return Number.isNaN(d.getTime()) ? s : formatDmy(d);
 }
 
 function downloadFile(file: File) {
@@ -235,7 +236,7 @@ export default function CreateShipmentOrderModal({
             </span>
             <span className="cso-pill">
               <span className="cso-pill-label">SHIPMENT DATE</span>
-              <span className="cso-pill-val">{new Date().toLocaleDateString('en-GB')}</span>
+              <span className="cso-pill-val">{formatDmy(new Date())}</span>
             </span>
             <button className="cso-close" onClick={onClose} aria-label="Close">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">

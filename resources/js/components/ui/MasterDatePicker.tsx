@@ -160,9 +160,15 @@ export function MasterDatePicker({
     (!!minD && dayOnly(today) < minD) ||
     (!!maxD && dayOnly(today) > maxD);
   const selected = currentValue ? new Date(currentValue) : null;
-  const display = currentValue
-    ? new Date(currentValue).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-    : '';
+  // DD-Mon-YYYY (e.g. 11-Jun-2026) — dashed, matching the app's display format.
+  const MDP_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const display = (() => {
+    if (!currentValue) return '';
+    const d = new Date(currentValue);
+    return Number.isNaN(d.getTime())
+      ? ''
+      : `${String(d.getDate()).padStart(2, '0')}-${MDP_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+  })();
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();

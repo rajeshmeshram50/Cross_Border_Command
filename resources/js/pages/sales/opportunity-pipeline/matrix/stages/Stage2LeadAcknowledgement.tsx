@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { formatDmy } from '../../../../../utils/formatDmy';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -340,7 +341,7 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
                   return (
                     <tr key={row.id}>
                       <td><span className="smd-st2-row-num">{idx + 1}</span></td>
-                      <td>{new Date(row.created_at).toLocaleDateString('en-GB')}</td>
+                      <td>{formatDmy(row.created_at)}</td>
                       <td>
                         <span className={`smd-st2-row-pill ${BUCKET_META[bucket].pill}`}>
                           {BUCKET_META[bucket].label}
@@ -683,6 +684,11 @@ const STAGE2_CSS = `
 .smd-st2-row-reason {
   font-size: 10.5px; font-weight: 500; color: #2d1b69;
   white-space: normal !important;
+  /* Break even a long UNBROKEN string (e.g. "AAAA…") so the reason wraps
+     inside its column instead of stretching the row and overlapping the
+     table boundaries. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .smd-st2-empty {
   text-align: center; padding: 22px 12px;
