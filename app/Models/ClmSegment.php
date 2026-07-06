@@ -28,7 +28,7 @@ class ClmSegment extends Model
     public const STATUSES        = [self::STATUS_ACTIVE, self::STATUS_INACTIVE];
 
     protected $fillable = [
-        'client_id', 'code', 'name',
+        'client_id', 'branch_id', 'code', 'name',
         'regulatory_status', 'buyer_consignee', 'status',
         'created_by', 'updated_by',
     ];

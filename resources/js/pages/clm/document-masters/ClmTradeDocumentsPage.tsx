@@ -194,7 +194,7 @@ function NamesPane({ rows, loading, reload }: { rows: TdName[]; loading: boolean
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <td className="clm-td-name">{r.name}</td>
+                    <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
                         {(() => {

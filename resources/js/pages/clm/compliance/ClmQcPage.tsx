@@ -174,7 +174,7 @@ export default function ClmQcPage() {
                     <tr key={r.id}>
                       <td className="clm-td-num">{start + i + 1}</td>
                       <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                      <td className="clm-td-name">{r.name}</td>
+                      <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
                       <td className="clm-td-desc">{r.purpose}</td>
                       <td style={{ textAlign: 'center' }}>
                         <span className="clm-badge clm-badge-teal"><span className="clm-badge-dot" />{r.issued_by_names || '—'}</span>

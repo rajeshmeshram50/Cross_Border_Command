@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClmAuthority;
 use App\Models\ClmQcDocument;
+use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -18,9 +19,10 @@ class ClmQcController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $rows = $user->client_id
-            ? ClmQcDocument::where('client_id', $user->client_id)->orderBy('id')->get()
-            : collect();
+        // Branch-scoped read: own rows + client-level (shared); siblings hidden (CBC-432).
+        $q = ClmQcDocument::query()->orderBy('id');
+        MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
+        $rows = $q->get();
 
         // `issued_by` stores authority ids; expose the resolved current names.
         $map = ClmAuthority::idNameMap($user->client_id);
@@ -62,9 +64,9 @@ class ClmQcController extends Controller
         ]);
 
         $name = trim($data['name']);
-        if (ClmQcDocument::where('client_id', $user->client_id)
-            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
-            ->exists()) {
+        $dupe = ClmQcDocument::query()->whereRaw('LOWER(name) = ?', [mb_strtolower($name)]);
+        MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
+        if ($dupe->exists()) {
             return response()->json([
                 'status'  => false,
                 'message' => "A QC document named \"{$name}\" already exists. Pick a different name.",
@@ -80,6 +82,7 @@ class ClmQcController extends Controller
         $row = DB::transaction(function () use ($user, $data) {
             return ClmQcDocument::create([
                 'client_id'    => $user->client_id,
+                'branch_id'    => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'         => $this->nextCode($user->client_id),
                 'name'         => trim($data['name']),
                 'purpose'      => trim($data['purpose']),
@@ -100,7 +103,12 @@ class ClmQcController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $row  = ClmQcDocument::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmQcDocument::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         $data = $request->validate([
             'name'         => 'sometimes|required|string|max:255',
@@ -120,15 +128,16 @@ class ClmQcController extends Controller
             }
         }
 
-        if (isset($data['name'])
-            && ClmQcDocument::where('client_id', $user->client_id)
-                ->where('id', '!=', $row->id)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])])
-                ->exists()) {
-            return response()->json([
-                'status'  => false,
-                'message' => "Another QC document named \"{$data['name']}\" already exists. Pick a different name.",
-            ], 409);
+        if (isset($data['name'])) {
+            $clash = ClmQcDocument::query()->where('id', '!=', $row->id)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($data['name'])]);
+            MasterVisibility::applyReadScope($clash, $user, $user->branch_id ?: null);
+            if ($clash->exists()) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => "Another QC document named \"{$data['name']}\" already exists. Pick a different name.",
+                ], 409);
+            }
         }
 
         $data['updated_by'] = $user->id;
@@ -141,7 +150,12 @@ class ClmQcController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $row  = ClmQcDocument::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmQcDocument::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         $usedIn = $this->usageCheck($user->client_id, $row->code, $row->name);
         if (!empty($usedIn)) {
