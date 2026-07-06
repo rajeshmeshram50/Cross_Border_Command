@@ -703,12 +703,18 @@ class SegmentDocUploadController extends Controller
                 ]);
             }
 
-            $tradeAll = array_merge($tradeBuyer, $tradeCons);
-            $agrAll   = array_merge($agrBuyer, $agrCons);
-            $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
-
             $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;
             $buyerIsConsignee = !$cons || (bool) ($cons->same_as_customer ?? false);
+
+            // When Customer = Consignee the expanded panel shows ONLY the buyer
+            // documents (the Consignee/Both tabs are hidden), so the ratio must
+            // count that same set — otherwise the denominator includes
+            // consignee-side docs that are never displayed (e.g. "2/5" when only
+            // 4 buyer rows exist). When they differ, the "Both" view is shown, so
+            // count buyer + consignee.
+            $tradeAll = $buyerIsConsignee ? $tradeBuyer : array_merge($tradeBuyer, $tradeCons);
+            $agrAll   = $buyerIsConsignee ? $agrBuyer   : array_merge($agrBuyer, $agrCons);
+            $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
 
             $sr++;
             $rows[] = [

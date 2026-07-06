@@ -2252,7 +2252,7 @@ export const CEV_CSS = `
 .cev-table-scroll {
   overflow-x: auto;
   overflow-y: auto;
-  max-height: 300px;
+  max-height: 550px;
   scrollbar-width: thin;
 }
 .cev-table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
