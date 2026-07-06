@@ -157,7 +157,10 @@ class AttendanceController extends Controller
             $rowIso = \Carbon\Carbon::parse($row->attendance_date)->toDateString();
             if (strcasecmp($status, 'Present') === 0)  $present++;
             if (strcasecmp($status, 'Late') === 0)     { $late++; $present++; } // late still counts as present
-            if (strcasecmp($status, 'Leave') === 0)    $leaveDays++;
+            // Leave days are counted from approved LeaveRequests below (bug #18):
+            // the attendance table doesn't store a 'Leave' status row, so this
+            // raw check always yielded 0 even when the employee was on approved
+            // leave. The daily view overlays 'Leave' at read time — mirror that.
             if (strcasecmp($status, 'Missing In') === 0 || strcasecmp($status, 'Missing Out') === 0) {
                 $missingBio++;
             } elseif ($rowIso < $todayStr && $row->check_in_at && !$row->check_out_at) {
@@ -182,6 +185,34 @@ class AttendanceController extends Controller
         $empHolidaySet = $emp->holiday_group_id
             ? ($this->holidayDatesForGroups([$emp->holiday_group_id], (clone $start), (clone $end))[$emp->holiday_group_id] ?? [])
             : [];
+
+        // Total Leaves KPI (bug #18) — count the working days in the month window
+        // covered by an APPROVED leave request. Weekly-offs and holidays are
+        // excluded so a leave spanning a weekend doesn't inflate the count,
+        // matching the daily-view overlay (which only turns an "Absent" day into
+        // "Leave"). Distinct-day set guards against overlapping requests.
+        $weeklyOffSet = $this->parseWeeklyOff((string) ($emp->weekly_off ?? ''));
+        $approvedLeaves = \App\Models\LeaveRequest::query()
+            ->where('employee_id', $emp->id)
+            ->where('status', 'Approved')
+            ->whereDate('from_date', '<=', $end->toDateString())
+            ->whereDate('to_date', '>=', $start->toDateString())
+            ->get(['from_date', 'to_date']);
+        $leaveDaySet = [];
+        foreach ($approvedLeaves as $lv) {
+            $fromC = \Carbon\Carbon::parse($lv->from_date);
+            $toC   = \Carbon\Carbon::parse($lv->to_date);
+            $cursor = $fromC->lt($start) ? $start->copy() : $fromC->copy();
+            $till   = $toC->gt($end)     ? $end->copy()   : $toC->copy();
+            for ($c = $cursor->copy(); $c->lte($till); $c->addDay()) {
+                $iso = $c->toDateString();
+                if (isset($leaveDaySet[$iso])) continue;
+                if (isset($weeklyOffSet[$c->dayOfWeek])) continue; // weekend isn't a leave day
+                if (isset($empHolidaySet[$iso])) continue;         // holiday isn't a leave day
+                $leaveDaySet[$iso] = true;
+            }
+        }
+        $leaveDays = count($leaveDaySet);
 
         return response()->json([
             'employee' => [
@@ -404,7 +435,33 @@ class AttendanceController extends Controller
             foreach ($leaveEmpIds as $lid) $onLeaveSet[(int) $lid] = true;
         }
 
-        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date, $histStart, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet) {
+        // Approved-leave days across the WHOLE month, keyed employee → ISO-day
+        // set. The compliance denominator must exclude these (a sanctioned
+        // absence neither helps nor hurts the score) — but leaves aren't stored
+        // in the attendance table, so trackedWorkingDays could never "see" them
+        // and counted them as expected working days, understating compliance
+        // (bug #20). Precompute once here to avoid an N+1 in the map.
+        $monthStartC = (clone $dateC)->startOfMonth();
+        $leaveDaysByEmp = [];
+        if (!empty($empIdsForLeave)) {
+            $mLeaves = \App\Models\LeaveRequest::query()
+                ->whereIn('employee_id', $empIdsForLeave)
+                ->where('status', 'Approved')
+                ->whereDate('from_date', '<=', $monthEndC->toDateString())
+                ->whereDate('to_date', '>=', $monthStartC->toDateString())
+                ->get(['employee_id', 'from_date', 'to_date']);
+            foreach ($mLeaves as $lv) {
+                $fromC = \Carbon\Carbon::parse($lv->from_date);
+                $toC   = \Carbon\Carbon::parse($lv->to_date);
+                $c   = $fromC->lt($monthStartC) ? $monthStartC->copy() : $fromC->copy();
+                $end = $toC->gt($monthEndC)     ? $monthEndC->copy()   : $toC->copy();
+                for ($d = $c->copy(); $d->lte($end); $d->addDay()) {
+                    $leaveDaysByEmp[(int) $lv->employee_id][$d->toDateString()] = true;
+                }
+            }
+        }
+
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date, $histStart, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp) {
             [$parsedStart, $parsedEnd] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
             $shiftStart = $parsedStart ?: $defaultShiftStart;
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
@@ -488,7 +545,8 @@ class AttendanceController extends Controller
             $holidaySet  = $holidayByGroup[$emp->holiday_group_id] ?? [];
             $joinDate    = $emp->date_of_joining ? \Carbon\Carbon::parse($emp->date_of_joining) : null;
             $tracked     = $this->trackedWorkingDays(
-                (clone $dateC)->startOfMonth(), $mtdEndC, $joinDate, $weeklyOffSet, $holidaySet, $mByIso
+                (clone $dateC)->startOfMonth(), $mtdEndC, $joinDate, $weeklyOffSet, $holidaySet, $mByIso,
+                $leaveDaysByEmp[$emp->id] ?? []
             );
             $compliancePct = $tracked === 0
                 ? 100
@@ -613,7 +671,8 @@ class AttendanceController extends Controller
         ?\Carbon\Carbon $joinDate,
         array $weeklyOffSet,
         array $holidaySet,
-        array $mByIso
+        array $mByIso,
+        array $leaveDaySet = []
     ): int {
         $tracked = 0;
         $cursor  = $monthStart->copy();
@@ -629,7 +688,12 @@ class AttendanceController extends Controller
             $isWeeklyOff = isset($weeklyOffSet[$cursor->dayOfWeek]);
             $isHoliday   = isset($holidaySet[$iso]);
             $st          = strtolower((string) ($mByIso[$iso]->status ?? ''));
-            $isSanctioned = str_contains($st, 'leave') || str_contains($st, 'holiday')
+            // Approved leave is sanctioned — exclude via the precomputed leave-day
+            // set (leaves aren't stored as an attendance status), plus the legacy
+            // status-string check for any row that does carry a leave/holiday
+            // status. (bug #20)
+            $isSanctioned = isset($leaveDaySet[$iso])
+                || str_contains($st, 'leave') || str_contains($st, 'holiday')
                 || str_contains($st, 'week off') || $st === 'weekly off';
 
             if (!$isWeeklyOff && !$isHoliday && !$isSanctioned) {
@@ -833,6 +897,17 @@ class AttendanceController extends Controller
                 $lateMin = max(0, $this->minutesBetween($shiftStart, $firstIn));
             }
 
+            // Gross = the full first-in → last-out span (includes breaks);
+            // effective ($worked) is only the time inside in/out segments. The
+            // difference is the Break Taken column (bug #22). Previously gross
+            // was set equal to effective, so break always read 0. Clamp gross
+            // to be at least effective so break can never go negative.
+            $grossMin = $worked;
+            if ($r && $r->check_in_at && $r->check_out_at) {
+                $span = (int) floor(abs($r->check_out_at->diffInSeconds($r->check_in_at)) / 60);
+                if ($span > $grossMin) $grossMin = $span;
+            }
+
             $out[] = [
                 'iso'              => $iso,
                 'date'             => $cursor->format('d M Y'),
@@ -847,7 +922,7 @@ class AttendanceController extends Controller
                 'exception'        => in_array(strtolower($status), ['late', 'half day', 'absent', 'corrected', 'missing in', 'missing out'], true) ? $status : null,
                 'workSegments'     => $segments,
                 'effectiveMinutes' => $worked,
-                'grossMinutes'     => $worked,
+                'grossMinutes'     => $grossMin,
                 'expectedMinutes'  => $expectedMinutes,
                 'lateMinutes'      => $lateMin,
             ];
@@ -871,6 +946,19 @@ class AttendanceController extends Controller
         ]);
 
         $employee = $this->callerEmployee($request);
+
+        // Attendance cannot be marked before the employee's joining date (bug
+        // #19). Covers both clock-in and clock-out since they share facePunch().
+        if ($employee->date_of_joining) {
+            $joinDate = \Carbon\Carbon::parse($employee->date_of_joining)->toDateString();
+            if (self::todayLocal() < $joinDate) {
+                return response()->json([
+                    'message' => 'Attendance cannot be marked before your joining date ('
+                        . \Carbon\Carbon::parse($employee->date_of_joining)->format('d M Y') . ').',
+                    'before_joining' => true,
+                ], 422);
+            }
+        }
 
         if (empty($employee->face_descriptor) || $employee->face_registered_at === null) {
             return response()->json([
