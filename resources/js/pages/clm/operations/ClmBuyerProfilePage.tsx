@@ -5,6 +5,7 @@ import CustomerEvidenceVaultModal, { type CustomerVaultTarget, type TabKey as Va
 import ConsigneeEvidenceVaultModal, { type ConsigneeVaultTarget } from '../../sales/core-masters/consignee/ConsigneeEvidenceVaultModal';
 import ClmDocsPopup, { type DocCategory } from '../shared/ClmDocsPopup';
 import Tooltip from '../../../components/ui/Tooltip';
+import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 
 /*
  * CLM → Buyer Profile page.
@@ -756,11 +757,14 @@ export default function ClmBuyerProfilePage() {
 
   // ── Live data from GET /clm/buyer-profile ──
   const [bp, setBp] = useState<BpData>(EMPTY_BP);
+  const [bpLoading, setBpLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
+    setBpLoading(true);
     api.get('/clm/buyer-profile')
       .then((r) => { if (!cancelled) setBp((r.data?.data ?? EMPTY_BP) as BpData); })
-      .catch(() => { if (!cancelled) setBp(EMPTY_BP); });
+      .catch(() => { if (!cancelled) setBp(EMPTY_BP); })
+      .finally(() => { if (!cancelled) setBpLoading(false); });
     return () => { cancelled = true; };
   }, []);
   // Fetched views — shadow the legacy demo arrays of the same name so the
@@ -1328,7 +1332,8 @@ export default function ClmBuyerProfilePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {buyerSlice.map((r, i) => {
+                      {bpLoading && <ShimmerTableRows rows={8} cols={13} keyPrefix="buyer" />}
+                      {!bpLoading && buyerSlice.map((r, i) => {
                         const bg = rowBg(i);
                         return (
                           <tr key={r.id} className="bp-buyer-row" style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }}
@@ -1419,7 +1424,8 @@ export default function ClmBuyerProfilePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {consSlice.map((r, i) => {
+                      {bpLoading && <ShimmerTableRows rows={8} cols={13} keyPrefix="cons" />}
+                      {!bpLoading && consSlice.map((r, i) => {
                         const bg = rowBg(i);
                         return (
                           <tr key={r.id} className="bp-buyer-row" style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }}
