@@ -1498,11 +1498,16 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                       : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>}
                   </td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: '#475569' }}>{d.uploaded_on}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'center' }}><span style={{ fontSize: 9.5, fontWeight: 800, color: stTone(d.status) }}>● {d.status}</span></td>
+                  <td style={{ padding: '8px 10px', textAlign: 'center' }}>{(() => {
+                    const fg = stTone(d.status);
+                    const bg = d.status === 'Signed' ? '#ecfdf5' : (d.status === 'Declined' || d.status === 'Expired') ? '#fef2f2' : '#fffbeb';
+                    const bd = d.status === 'Signed' ? '#a7f3d0' : (d.status === 'Declined' || d.status === 'Expired') ? '#fecaca' : '#fde68a';
+                    return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: bg, color: fg, border: `1px solid ${bd}`, whiteSpace: 'nowrap' }}>● {d.status}</span>;
+                  })()}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                    {d.signed_url && <button type="button" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={docActStyle('#0891b2')}>View</button>}
-                    {d.status === 'Draft' && onSend && d.db_id && <button type="button" onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')} style={docActStyle('#7c3aed')}>Send</button>}
-                    {d.status !== 'Signed' && d.sig_req_id > 0 && <button type="button" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={docActStyle('#06b6d4')}>{busy === d.sig_req_id ? '…' : 'Send Reminder'}</button>}
+                    {d.signed_url && <button type="button" title="View" aria-label="View" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={{ ...docActStyle('#0891b2'), padding: '4px 8px' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></button>}
+                    {d.status === 'Draft' && onSend && d.db_id && <button type="button" title="Send" aria-label="Send" onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')} style={{ ...docActStyle('#7c3aed'), padding: '4px 8px' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></button>}
+                    {d.status !== 'Signed' && d.sig_req_id > 0 && <button type="button" title="Send Reminder" aria-label="Send Reminder" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={{ ...docActStyle('#06b6d4'), padding: '4px 8px' }}>{busy === d.sig_req_id ? '…' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}</button>}
                   </td>
                 </tr>
               ))}
