@@ -1385,12 +1385,41 @@ class DashboardController extends Controller
         // 'active' (the value the seed/migration writes) is enough here.
         $announcements = collect();
         if ($clientId) {
+            // Audience of the viewing employee — mirrors AnnouncementController's
+            // computeAudienceCount so the dashboard shows ONLY announcements
+            // actually targeted at this employee (a Designation-Based announcement
+            // must not reach other designations). Filtering happens BEFORE the
+            // take(5) so a relevant one isn't dropped by an irrelevant recent one.
+            $viewerId = $emp && $emp->id ? (int) $emp->id : 0;
+            $empDesig = ($emp && $emp->designation_id !== null) ? (int) $emp->designation_id : null;
+            $empRoles = $emp ? array_values(array_unique(array_map('intval', array_filter(array_merge(
+                [$emp->primary_role_id, $emp->ancillary_role_id],
+                is_array($emp->ancillary_role_ids) ? $emp->ancillary_role_ids : [],
+            ), fn ($v) => $v !== null && $v !== '')))) : [];
+
             $announcements = Announcement::query()
                 ->where('client_id', $clientId)
                 ->whereRaw('LOWER(status) = ?', ['active'])
                 ->orderByDesc('created_at')
-                ->limit(5)
-                ->get(['id', 'title', 'description', 'created_at'])
+                ->get(['id', 'title', 'description', 'created_at', 'audience_type', 'audience_role_ids', 'audience_designation_ids', 'exclude_employee_ids'])
+                ->filter(function ($a) use ($viewerId, $empDesig, $empRoles) {
+                    // Explicitly excluded employees never receive it.
+                    $excl = is_array($a->exclude_employee_ids) ? array_map('intval', $a->exclude_employee_ids) : [];
+                    if ($viewerId && in_array($viewerId, $excl, true)) return false;
+
+                    $type = (string) $a->audience_type;
+                    if ($type === 'roles') {
+                        $roles = is_array($a->audience_role_ids) ? array_map('intval', $a->audience_role_ids) : [];
+                        return !empty($roles) && !empty(array_intersect($empRoles, $roles));
+                    }
+                    if ($type === 'designations') {
+                        $desigs = is_array($a->audience_designation_ids) ? array_map('intval', $a->audience_designation_ids) : [];
+                        return $empDesig !== null && in_array($empDesig, $desigs, true);
+                    }
+                    // all_employees (or any unrecognised type) → everyone in-tenant.
+                    return true;
+                })
+                ->take(5)
                 ->map(fn ($a) => [
                     'id'         => $a->id,
                     'title'      => $a->title,
@@ -1399,7 +1428,8 @@ class DashboardController extends Controller
                     // announcement without an extra (permission-gated) fetch.
                     'body'       => (string) $a->description,
                     'created_at' => optional($a->created_at)->toDateString(),
-                ]);
+                ])
+                ->values();
         }
 
         // ── Upcoming events — birthdays + work anniversaries this month ─
