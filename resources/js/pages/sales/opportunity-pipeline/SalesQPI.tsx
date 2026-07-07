@@ -431,7 +431,34 @@ function MoreOptionsMenu(props: {
       role="menu"
       style={pos ? { top: pos.top, left: pos.left } : { top: -9999, left: -9999 }}
     >
-      {sigId != null ? (
+      {kind === 'quotation' ? (
+        /* Quotations are never e-signed through Zoho here, so the whole
+           with/without-Signature split (and the certificate) is meaningless
+           for them — show a single plain View + Download. */
+        <>
+          <button
+            type="button" role="menuitem"
+            className="qpi-moremenu-item"
+            disabled={busy !== null}
+            onClick={() => pick('view', false)}
+          >
+            <IconEyeSm />
+            <span>View {docLabel}</span>
+            {busy === 'view-nosig' && <span className="qpi-moremenu-spinner" />}
+          </button>
+          <div className="qpi-moremenu-sep" />
+          <button
+            type="button" role="menuitem"
+            className="qpi-moremenu-item"
+            disabled={busy !== null}
+            onClick={() => pick('download', false)}
+          >
+            <IconDownloadSm />
+            <span>Download {docLabel}</span>
+            {busy === 'dl-nosig' && <span className="qpi-moremenu-spinner" />}
+          </button>
+        </>
+      ) : sigId != null ? (
         /* ── SIGNED row: the "with Signature" rows become the actual
               customer-signed (Zoho-executed) document, plus the blank
               variant + the completion certificate. ── */
@@ -595,6 +622,9 @@ export default function SalesQPI() {
   const [piSub, setPiSub] = useState<PISubTab>('with');
   const [wdhOpen, setWdhOpen] = useState(false);
   const [q, setQ] = useState('');
+  // Document Type filter (International / Domestic) — applies to both the
+  // Quotation and PI lists so the user can narrow + effectively sort by it.
+  const [docTypeFilter, setDocTypeFilter] = useState<'all' | 'International' | 'Domestic'>('all');
   // Pagination is owned here now (the project "apna wala" footer — Showing
   // X–Y of Z + numbered chips) instead of TableContainer's built-in bar.
   // We slice the data ourselves and feed a single page to TableContainer.
@@ -737,8 +767,11 @@ export default function SalesQPI() {
   /* ─── Filter + paginate ─── */
   const filtered = useMemo(() => {
     const lo = q.trim().toLowerCase();
+    // Document-type narrowing shared by both tabs.
+    const byDoc = <T extends { docType: string }>(arr: T[]) =>
+      docTypeFilter === 'all' ? arr : arr.filter(r => r.docType === docTypeFilter);
     if (tab === 'quotation') {
-      const src = quotations;
+      const src = byDoc(quotations);
       if (!lo) return src;
       return src.filter(r => (
         r.qtNo.toLowerCase().includes(lo) ||
@@ -748,7 +781,7 @@ export default function SalesQPI() {
         r.salesManager.toLowerCase().includes(lo)
       ));
     }
-    const src = piSub === 'with' ? piWithShipment : piWithoutShipment;
+    const src = byDoc(piSub === 'with' ? piWithShipment : piWithoutShipment);
     if (!lo) return src;
     return src.filter(r => (
       r.piNo.toLowerCase().includes(lo) ||
@@ -758,7 +791,7 @@ export default function SalesQPI() {
       (r.convertFrom ?? '').toLowerCase().includes(lo) ||
       (r.btId ?? '').toLowerCase().includes(lo)
     ));
-  }, [tab, piSub, q, quotations, pis, piWithShipment, piWithoutShipment]);
+  }, [tab, piSub, q, quotations, pis, piWithShipment, piWithoutShipment, docTypeFilter]);
 
   /* ─── Dynamic page size ───
    * Rows-per-page auto-fits the space between the table header and the
@@ -811,7 +844,7 @@ export default function SalesQPI() {
   const pageRows  = filtered.slice(pageStart, pageStart + rpp);
   // Snap back to page 1 whenever the active dataset changes (tab, sub-tab or
   // search), so we never sit on an out-of-range empty page.
-  useEffect(() => { setPage(1); }, [tab, piSub, q]);
+  useEffect(() => { setPage(1); }, [tab, piSub, q, docTypeFilter]);
 
   /* ─── Helpers ─── */
   // Clear the search box on tab switch so the new tab starts unfiltered.
@@ -1723,6 +1756,21 @@ export default function SalesQPI() {
               placeholder="Search by name, ID, company, email, segment..."
               value={q}
               onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+
+          {/* Document Type filter — the "Doc Type" label lives INSIDE the
+              dropdown (as the default "Doc Type: All Types" option), matching
+              the app's other filter dropdowns. Uses the styled MasterSelect. */}
+          <div className={`qpi-doctype-filter ${docTypeFilter !== 'all' ? 'active' : ''}`}>
+            <MasterSelect
+              value={docTypeFilter}
+              options={[
+                { value: 'all', label: 'Doc Type: All Types' },
+                { value: 'International', label: 'International' },
+                { value: 'Domestic', label: 'Domestic' },
+              ]}
+              onChange={(v) => setDocTypeFilter((v || 'all') as 'all' | 'International' | 'Domestic')}
             />
           </div>
 
@@ -4336,6 +4384,11 @@ const IconSearch = () => (
     <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
   </svg>
 );
+const IconFilter = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+  </svg>
+);
 const IconMail = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
     <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
@@ -4694,6 +4747,25 @@ const SCOPED_CSS = `
   font-weight: 500;
 }
 .qpi-search input::placeholder { color: var(--vz-secondary-color, #878a99); }
+
+/* Document Type filter — the app's styled MasterSelect dropdown (searchable),
+   with the "Doc Type" label baked into its default option. */
+.qpi-doctype-filter {
+  display: flex; align-items: center;
+  height: 42px;
+  /* Locked flex-basis (grow 0, shrink 0, basis 200px) so the box is EXACTLY
+     200px no matter which label is selected — the toolbar never reflows. */
+  flex: 0 0 200px;
+  width: 200px; min-width: 200px; max-width: 200px;
+}
+/* Force the MasterSelect wrap + toggle to the container's fixed width/height so
+   they never resize to their text content. */
+.qpi-doctype-filter .master-select-wrap { width: 100% !important; }
+.qpi-doctype-filter .master-select-toggle { height: 42px; width: 100% !important; }
+/* Truncate an over-long selected label instead of stretching the box. */
+.qpi-doctype-filter .master-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qpi-doctype-filter.active .master-select-toggle { border-color: #7c3aed; background: rgba(124,58,237,.06); }
+[data-bs-theme="dark"] .qpi-doctype-filter.active .master-select-toggle { background: rgba(124,58,237,.22); }
 
 /* Create button — match .smc-add-btn (42px pill, purple gradient). */
 .qpi-create-btn {
