@@ -335,18 +335,23 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       URL.revokeObjectURL(url);
     } catch (e: any) {
       // The response is a Blob (responseType: 'blob'), so a server error body
-      // arrives as a Blob too — read it back to surface the real message
-      // instead of a generic "Please try again".
-      let msg = 'Please try again.';
+      // arrives as a Blob too — read it back to surface the real message.
+      let raw = '';
       try {
         const blob = e?.response?.data;
         if (blob instanceof Blob) {
           const json = JSON.parse(await blob.text());
-          if (json?.message) msg = json.message;
+          raw = typeof json?.message === 'string' ? json.message : '';
         } else if (typeof e?.response?.data?.message === 'string') {
-          msg = e.response.data.message;
+          raw = e.response.data.message;
         }
-      } catch { /* keep the default message */ }
+      } catch { /* no readable message */ }
+      // Never surface a raw server error that leaks a file path — show a
+      // friendly, actionable message instead.
+      const leaksPath = /does not exist|no such file|[\\/](storage|var|www|home|app|tmp)[\\/]/i.test(raw);
+      const msg = raw && !leaksPath
+        ? raw
+        : 'The document file could not be found. Please re-save the trade document, then try downloading again.';
       toast.error('Download failed', msg);
     }
   };
@@ -837,6 +842,16 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                   <div className="tdw-editor-actions">
                     <input ref={docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
                            onChange={e => { const f = e.target.files?.[0]; if (f) void uploadDocx(f); e.currentTarget.value = ''; }} />
+                    {/* In edit mode, surface the currently attached Word file so the
+                        user can see it exists — Download DOCX views it, Upload Word
+                        Doc replaces it. */}
+                    {editingId && existing?.file_path && (
+                      <span className="tdw-editor-file" title="Currently attached Word file — Download DOCX to view, Upload Word Doc to replace"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', borderRadius: 8, padding: '5px 10px', maxWidth: 240 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(existing?.name || existing?.title || 'Trade document')}.docx</span>
+                      </span>
+                    )}
                     {/* DOCX only — Stage 2 exports the editable Word file. The
                         full combined PDF preview lives on the Library list as
                         "Download Draft PDF". */}

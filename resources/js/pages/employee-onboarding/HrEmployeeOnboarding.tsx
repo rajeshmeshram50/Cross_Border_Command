@@ -3343,7 +3343,7 @@ function InitiateOnboardingModal({
   const [mDesignations, setMDesignations] = useState<{ id: number; name: string }[]>([]);
   const [mRoles, setMRoles]               = useState<{ id: number; name: string }[]>([]);
   const [mLegalEntities, setMLegalEntities] = useState<{ id: number; entity_name: string; city?: string | null }[]>([]);
-  const [managerOpts, setManagerOpts]       = useState<{ value: string; label: string }[]>([]);
+  const [managerOpts, setManagerOpts]       = useState<{ value: string; label: string; deptId?: string; isHod?: boolean }[]>([]);
   // Leave plans need to come from the API (admin-defined per branch) — the
   // Add Employee form stores the plan id as the saved value, so a hardcoded
   // ["Leave Policy"] list would leave the onboarding dropdown blank for
@@ -3375,7 +3375,7 @@ function InitiateOnboardingModal({
         const filtered = selfId
           ? merged.filter(m => !(m.kind === 'employee' && Number(m.id) === Number(selfId)))
           : merged;
-        setManagerOpts(filtered.map(m => ({ value: `${m.kind}:${m.id}`, label: m.label })));
+        setManagerOpts(filtered.map(m => ({ value: `${m.kind}:${m.id}`, label: m.label, deptId: m.department_id != null ? String(m.department_id) : undefined, isHod: !!m.is_hod })));
       }).catch(() => { if (!cancelled) setManagerOpts([]); }),
       api.get('/leave-plans').then(r => {
         if (cancelled) return;
@@ -3394,7 +3394,18 @@ function InitiateOnboardingModal({
 
   const countryOpts     = mCountries.map(c => ({ value: String(c.id), label: c.name }));
   const departmentOpts  = mDepts.map(d => ({ value: String(d.id), label: d.name }));
-  const designationOpts = mDesignations.map(d => ({ value: String(d.id), label: d.name }));
+  // 'Director / CEO' is the Branch User's role (the branch director), not an
+  // assignable employee designation — keep it out of the picker (mirrors the
+  // Add Employee form).
+  const designationOpts = mDesignations
+    .filter(d => d?.name !== 'Director / CEO')
+    .map(d => ({ value: String(d.id), label: d.name }));
+  // Id of the "Head of Department (HOD)" designation — an HOD must report to a
+  // Branch User (Director / CEO); this gates the manager picker + validation.
+  const hodDesignationId = (() => {
+    const h = mDesignations.find(d => d?.name === 'Head of Department (HOD)');
+    return h ? String(h.id) : '';
+  })();
   const roleOpts        = mRoles.map(r => ({ value: String(r.id), label: r.name }));
   const legalEntityOpts = mLegalEntities.map(le => ({ value: String(le.id), label: le.entity_name }));
 
@@ -3583,6 +3594,43 @@ useEffect(() => {
   // ── Form validation state ──────────────────────────────────────────
 const [s1Errors, setS1Errors] = useState<Record<string, string>>({});
 const [nextLoading, setNextLoading] = useState(false);
+
+  // ── Reporting-manager rule (org hierarchy: employee → dept HOD → Branch User).
+  // A non-HOD hire reports to their department's HOD when one exists; until then
+  // to a Branch User (the backend re-parents them to the HOD once it's added).
+  // An HOD reports to a Branch User (the branch Director / CEO).
+  const isHodSelected = !!hodDesignationId && String(s1.designation_id) === hodDesignationId;
+  const selectedDeptId = String(s1.department_id || '');
+  const branchUserMgrOpts = managerOpts.filter(m => m.value.startsWith('branch_user:'));
+  const deptHodOpt = managerOpts.find(m => m.isHod && m.deptId && m.deptId === selectedDeptId) || null;
+  // Non-HOD hire: Branch User(s) are always eligible; employees are scoped to the
+  // SELECTED department, so the list reacts to the chosen department instead of
+  // listing the whole company. The department's HOD is one of those employees
+  // and is auto-selected below. HOD hire → Branch User(s) only.
+  let reportingMgrOpts = isHodSelected
+    ? branchUserMgrOpts
+    : selectedDeptId
+      ? managerOpts.filter(m => m.value.startsWith('branch_user:') || (m.deptId && m.deptId === selectedDeptId))
+      : managerOpts;
+  // Preserve an already-saved manager that falls outside the rule (e.g. an
+  // existing employee reporting to a Team Lead) so edit mode never blanks it.
+  const savedMgrOpt = managerOpts.find(m => m.value === s1.reporting_manager);
+  if (savedMgrOpt && !reportingMgrOpts.some(o => o.value === savedMgrOpt.value)) {
+    reportingMgrOpts = [savedMgrOpt, ...reportingMgrOpts];
+  }
+  // Auto-point a non-HOD hire at the department HOD once one exists — but only
+  // when nothing is set or the current pick is the "temporary" Branch User the
+  // HOD now supersedes; never override a manager deliberately chosen.
+  useEffect(() => {
+    if (isHodSelected || !deptHodOpt) return;
+    setS1(p => {
+      if (!p.reporting_manager || String(p.reporting_manager).startsWith('branch_user:')) {
+        return p.reporting_manager === deptHodOpt.value ? p : { ...p, reporting_manager: deptHodOpt.value };
+      }
+      return p;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHodSelected, deptHodOpt?.value]);
 // Two-step confirmation before flipping the employee to "complete". Once
 // the macro watermark hits 6, profile% locks to 100% and several stages
 // stop being editable, so we don't want this firing on an accidental click.
@@ -3746,6 +3794,9 @@ const validateStage1 = (): boolean => {
   // Organisational Details — Legal Entity + Reporting Manager are required.
   if (!s1.legal_entity_id?.toString().trim()) errors.legal_entity_id = 'Legal entity is required';
   if (!s1.reporting_manager?.toString().trim()) errors.reporting_manager = 'Reporting manager is required';
+  else if (hodDesignationId && String(s1.designation_id) === hodDesignationId
+           && !String(s1.reporting_manager).startsWith('branch_user:'))
+    errors.reporting_manager = 'An HOD must report to a Branch User (Director / CEO).';
 
   // Work Details — Expense Policy is required (marked * in the form).
   if (!s1.expense_policy?.toString().trim()) errors.expense_policy = 'Expense policy is required';
@@ -3947,7 +3998,16 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       pf_deduction:        String(x.pf_type ?? '').toLowerCase() === 'standard' ? 'Standard' : 'Statutory', // repurposed: holds PF Type
       esi_applicable:      String(x.esi_applicable      ?? 'No'),
       gratuity_nominee_name: String(x.gratuity_nominee_name ?? ''),
-      agreed_ctc_lpa:      x.agreed_ctc_lpa != null ? String(x.agreed_ctc_lpa) : '',
+      // Agreed CTC mirrors the Stage 1 annual salary (read-only). Derive it
+      // straight from the saved annual_salary here so it shows IMMEDIATELY on
+      // open — seeding from the (often-null) saved agreed_ctc_lpa left it blank
+      // until the salary was edited/re-saved, and this init re-running on an
+      // emp.raw refresh clobbered the mirror effect's value (bug #42).
+      agreed_ctc_lpa:      (() => {
+        const annual = Number(x.annual_salary);
+        if (annual > 0) return String(+(annual / 100000).toFixed(2));
+        return x.agreed_ctc_lpa != null ? String(x.agreed_ctc_lpa) : '';
+      })(),
     });
   }, [isOpen, emp?.id, emp?.raw]);
 
@@ -4774,8 +4834,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     />
                     {s1Errors.date_of_joining && <div className="onb-error-msg">{s1Errors.date_of_joining}</div>}
                   </Col>
-                  <Col md={4} data-field="department_id"><label className="onb-init-label">Department<span className="req">*</span></label><MasterSelect options={departmentOpts} placeholder="Select department" value={s1.department_id} invalid={!!s1Errors.department_id} onChange={(v) => { setS1(p => ({ ...p, department_id: v })); setS1Errors(p => ({ ...p, department_id: '' })); }} />{s1Errors.department_id && <div className="onb-error-msg">{s1Errors.department_id}</div>}</Col>
-                  <Col md={4} data-field="designation_id"><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} placeholder="Select designation" value={s1.designation_id} invalid={!!s1Errors.designation_id} onChange={(v) => { setS1(p => ({ ...p, designation_id: v })); setS1Errors(p => ({ ...p, designation_id: '' })); }} />{s1Errors.designation_id && <div className="onb-error-msg">{s1Errors.designation_id}</div>}</Col>
+                  <Col md={4} data-field="department_id"><label className="onb-init-label">Department<span className="req">*</span></label><MasterSelect options={departmentOpts} placeholder="Select department" value={s1.department_id} invalid={!!s1Errors.department_id} onChange={(v) => { setS1(p => { const mgr = managerOpts.find(m => m.value === p.reporting_manager); const keepMgr = !mgr || mgr.value.startsWith('branch_user:') || (mgr.deptId && mgr.deptId === String(v)); return { ...p, department_id: v, reporting_manager: keepMgr ? p.reporting_manager : '' }; }); setS1Errors(p => ({ ...p, department_id: '', reporting_manager: '' })); }} />{s1Errors.department_id && <div className="onb-error-msg">{s1Errors.department_id}</div>}</Col>
+                  <Col md={4} data-field="designation_id"><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} placeholder="Select designation" value={s1.designation_id} invalid={!!s1Errors.designation_id} onChange={(v) => { const nowHod = !!hodDesignationId && String(v) === hodDesignationId; setS1(p => { const rmIsBranchUser = String(p.reporting_manager || '').startsWith('branch_user:'); const clearMgr = nowHod && !!p.reporting_manager && !rmIsBranchUser; return { ...p, designation_id: v, reporting_manager: clearMgr ? '' : p.reporting_manager }; }); setS1Errors(p => ({ ...p, designation_id: '', reporting_manager: '' })); }} />{s1Errors.designation_id && <div className="onb-error-msg">{s1Errors.designation_id}</div>}</Col>
                   <Col md={4} data-field="primary_role_id"><label className="onb-init-label">Primary Role<span className="req">*</span></label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.primary_role_id} invalid={!!s1Errors.primary_role_id} onChange={(v) => { setS1(p => ({ ...p, primary_role_id: v })); setS1Errors(p => ({ ...p, primary_role_id: '' })); }} />{s1Errors.primary_role_id && <div className="onb-error-msg">{s1Errors.primary_role_id}</div>}</Col>
                   <Col md={4}><label className="onb-init-label">Ancillary Role</label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.ancillary_role_id} onChange={(v) => setS1(p => ({ ...p, ancillary_role_id: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Work Type <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="Full Time" /></Col>
@@ -4814,7 +4874,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       placeholder={s1.legal_entity_id ? '—' : 'Select a Legal Entity first'}
                     />
                   </Col>
-                  <Col md={4} data-field="reporting_manager"><label className="onb-init-label">Reporting Manager<span className="req">*</span></label><MasterSelect options={managerOpts} placeholder="Select manager" value={s1.reporting_manager} invalid={!!s1Errors.reporting_manager} onChange={(v) => { setS1(p => ({ ...p, reporting_manager: v })); setS1Errors(p => ({ ...p, reporting_manager: '' })); }} />{s1Errors.reporting_manager && <div className="onb-error-msg">{s1Errors.reporting_manager}</div>}</Col>
+                  <Col md={4} data-field="reporting_manager"><label className="onb-init-label">Reporting Manager<span className="req">*</span></label><MasterSelect options={reportingMgrOpts} placeholder="Select manager" value={s1.reporting_manager} invalid={!!s1Errors.reporting_manager} onChange={(v) => { const mgr = managerOpts.find(m => m.value === v); setS1(p => ({ ...p, reporting_manager: v, department_id: (mgr && mgr.deptId) ? mgr.deptId : p.department_id })); setS1Errors(p => ({ ...p, reporting_manager: '', department_id: '' })); }} />{s1Errors.reporting_manager && <div className="onb-error-msg">{s1Errors.reporting_manager}</div>}</Col>
                 </Row>
 
                 <p className="onb-init-subgroup">Employment Terms</p>

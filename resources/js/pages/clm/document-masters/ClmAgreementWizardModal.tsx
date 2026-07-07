@@ -4,6 +4,7 @@ import api from '../../../api';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
 import { useSelectionLock } from '../../../hooks/useSelectionLock';
+import { useScrollLock } from '../../../hooks/useScrollLock';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../master/masterFormKit';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -91,6 +92,7 @@ interface Props {
 export default function ClmAgreementWizardModal({ open, existing, types: initialTypes, knownSegments, nextCode, onClose, onSaved }: Props) {
   const toast = useToast();
   useSelectionLock(open);   // block selecting/copying the background while open
+  useScrollLock(open);      // freeze background page scroll while open
   const editingId = existing?.id ?? null;
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -1168,14 +1170,19 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
     { label: 'Risk Level',     token: '{{buyer.risk_level}}' },
   ] },
   { id: 'consignee', label: 'Consignee', iconEmoji: '🚚', iconColor: '#f59e0b', fields: [
-    { label: 'Consignee Name', token: '{{consignee.consignee_name}}' },
-    { label: 'Country',        token: '{{consignee.country}}' },
-    { label: 'Address',        token: '{{consignee.address}}' },
-    { label: 'Role',           token: '{{consignee.role}}' },
-    { label: 'City',           token: '{{consignee.city}}' },
-    { label: 'Contact Person', token: '{{consignee.contact_person}}' },
-    { label: 'Phone',          token: '{{consignee.phone}}' },
-    { label: 'Email',          token: '{{consignee.email}}' },
+    { label: 'Consignee Name',   token: '{{consignee.consignee_name}}' },
+    { label: 'Consignee Code',   token: '{{consignee.consignee_code}}' },
+    { label: 'Company',          token: '{{consignee.company}}' },
+    { label: 'Contact Person',   token: '{{consignee.contact_person}}' },
+    { label: 'Phone',            token: '{{consignee.phone}}' },
+    { label: 'Email',            token: '{{consignee.email}}' },
+    { label: 'Address',          token: '{{consignee.address}}' },
+    { label: 'City',             token: '{{consignee.city}}' },
+    { label: 'State',            token: '{{consignee.state}}' },
+    { label: 'Zip Code',         token: '{{consignee.zip_code}}' },
+    { label: 'Country',          token: '{{consignee.country}}' },
+    { label: 'Delivery Address', token: '{{consignee.delivery_address}}' },
+    { label: 'Role',             token: '{{consignee.role}}' },
   ] },
   { id: 'supplier', label: 'Supplier', iconEmoji: '📦', iconColor: '#16a34a', fields: [
     { label: 'Supplier Name',  token: '{{supplier.supplier_name}}' },

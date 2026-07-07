@@ -2018,12 +2018,12 @@ export default function HrEmployees() {
     };
   }, [apiRows]);
 
-  const [managerCandidates, setManagerCandidates] = useState<{ id: number; kind: string; label: string }[]>([]);
+  const [managerCandidates, setManagerCandidates] = useState<{ id: number; kind: string; label: string; department_id?: number | null; is_hod?: boolean }[]>([]);
   const reloadManagers = useCallback(async () => {
     try {
       const r = await api.get('/employees/managers');
       const merged = [
-        ...((r?.data?.employees   ?? []) as { id: number; kind: string; label: string }[]),
+        ...((r?.data?.employees   ?? []) as { id: number; kind: string; label: string; department_id?: number | null; is_hod?: boolean }[]),
         ...((r?.data?.login_users ?? []) as { id: number; kind: string; label: string }[]),
       ];
       setManagerCandidates(merged);
@@ -2034,24 +2034,47 @@ export default function HrEmployees() {
   useEffect(() => { reloadManagers(); }, [reloadManagers]);
   const reportingManagerOptions = useMemo(
     () => {
-      // An HOD reports to the branch's Director/CEO — i.e. a Branch User. When
-      // HOD is the chosen designation, restrict the manager list to branch users
-      // (there can be several); otherwise show the full manager pool.
+      // Org hierarchy: employee → dept HOD → Branch User (Director / CEO).
+      //  - HOD hire → Branch Users only.
+      //  - non-HOD → Branch Users (always) + employees scoped to the SELECTED
+      //    department, so the list reacts to the chosen department instead of
+      //    listing the whole company. No department yet → full pool.
       const isHod = !!hodDesignationId && String(eDesignation) === hodDesignationId;
-      const base = managerCandidates
+      const deptId = String(eDept || '');
+      let base = managerCandidates
         .filter(m => !(editingDbId && m.kind === 'employee' && m.id === editingDbId))
-        .filter(m => !isHod || m.kind === 'branch_user')
+        .filter(m => {
+          if (isHod) return m.kind === 'branch_user';
+          if (m.kind === 'branch_user') return true;
+          if (!deptId) return true;
+          return m.department_id != null && String(m.department_id) === deptId;
+        })
         .map(m => ({ value: `${m.kind}:${m.id}`, label: m.label }));
       if (savedMgrOption && !base.some(o => o.value === savedMgrOption.value)) {
         // keep the previously-saved manager only if it still satisfies the HOD rule
         if (!isHod || String(savedMgrOption.value).startsWith('branch_user:')) {
-          return [savedMgrOption, ...base];
+          base = [savedMgrOption, ...base];
         }
       }
       return base;
     },
-    [managerCandidates, editingDbId, savedMgrOption, hodDesignationId, eDesignation]
+    [managerCandidates, editingDbId, savedMgrOption, hodDesignationId, eDesignation, eDept]
   );
+
+  // Auto-point a non-HOD hire at their department's HOD when one exists — only
+  // when the manager is empty or the "temporary" Branch User the HOD supersedes;
+  // never overrides a manager deliberately chosen (keeps edit mode intact).
+  const deptHodValue = useMemo(() => {
+    const deptId = String(eDept || '');
+    const isHod = !!hodDesignationId && String(eDesignation) === hodDesignationId;
+    if (isHod || !deptId) return '';
+    const hod = managerCandidates.find(m => m.is_hod && m.department_id != null && String(m.department_id) === deptId);
+    return hod ? `${hod.kind}:${hod.id}` : '';
+  }, [managerCandidates, eDept, eDesignation, hodDesignationId]);
+  useEffect(() => {
+    if (!deptHodValue) return;
+    setEReportingMgr(prev => (!prev || String(prev).startsWith('branch_user:')) ? deptHodValue : prev);
+  }, [deptHodValue]);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -3464,7 +3487,7 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Department<span className="req">*</span></label>
-                      <MasterSelect value={eDept} onChange={(v) => { setEDept(v); clearEErr('department_id'); }} placeholder="Select department" options={departmentOptions} invalid={!!eErrors.department_id} />
+                      <MasterSelect value={eDept} onChange={(v) => { setEDept(v); clearEErr('department_id'); setEReportingMgr(prev => { const mgr = managerCandidates.find(m => `${m.kind}:${m.id}` === prev); const keep = !mgr || mgr.kind === 'branch_user' || (mgr.department_id != null && String(mgr.department_id) === String(v)); return keep ? prev : ''; }); }} placeholder="Select department" options={departmentOptions} invalid={!!eErrors.department_id} />
                       {eErrors.department_id && <small className="emp-err">{eErrors.department_id}</small>}
                     </Col>
                     <Col md={4}>
@@ -3545,7 +3568,7 @@ export default function HrEmployees() {
                       <label className="emp-label">Reporting Manager<span className="req">*</span></label>
                       <MasterSelect
                         value={eReportingMgr}
-                        onChange={(v) => { setEReportingMgr(v); clearEErr('reporting_manager_id'); }}
+                        onChange={(v) => { setEReportingMgr(v); clearEErr('reporting_manager_id'); const mgr = managerCandidates.find(m => `${m.kind}:${m.id}` === v); if (mgr && mgr.kind === 'employee' && mgr.department_id != null) { setEDept(String(mgr.department_id)); clearEErr('department_id'); } }}
                         placeholder="Select manager"
                         options={reportingManagerOptions}
                         invalid={!!eErrors.reporting_manager_id}
@@ -4363,9 +4386,24 @@ export default function HrEmployees() {
               <Button onClick={closeAssign} className="master-modal-cancel d-inline-flex align-items-center gap-1">
                 <i className="ri-close-line" style={{ fontSize: 15 }} /> Cancel
               </Button>
-              <button type="button" onClick={handleSaveAssign} className="assign-save-btn">
-                <i className="ri-save-line" style={{ fontSize: 16 }} />
-                Save Assets
+              <button
+                type="button"
+                onClick={handleSaveAssign}
+                disabled={aSaving}
+                className="assign-save-btn"
+                style={aSaving ? { opacity: 0.7, cursor: 'not-allowed' } : undefined}
+              >
+                {aSaving ? (
+                  <>
+                    <i className="ri-loader-4-line" style={{ fontSize: 16, animation: 'spin 1s linear infinite' }} />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <i className="ri-save-line" style={{ fontSize: 16 }} />
+                    Save Assets
+                  </>
+                )}
               </button>
             </div>
           </div>

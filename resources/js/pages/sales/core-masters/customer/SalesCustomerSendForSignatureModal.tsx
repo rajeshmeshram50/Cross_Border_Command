@@ -1121,6 +1121,13 @@ export default function SalesCustomerSendForSignatureModal({
   return createPortal(
     <div className="ssf-overlay" onMouseDown={e => { if (e.target === e.currentTarget && !sending) onClose(); }} role="dialog" aria-modal="true">
       <style>{SSF_CSS}</style>
+      {/* Full-page blocking loader while the signature request is in flight. */}
+      {sending && (
+        <div className="ssf-page-loader">
+          <span className="ssf-spin" />
+          <div className="ssf-page-loader-text">Sending for signature…</div>
+        </div>
+      )}
       <div className="ssf-shell" onMouseDown={e => e.stopPropagation()}>
         {/* ── Header ── */}
         <div className="ssf-head">
@@ -1712,15 +1719,20 @@ export default function SalesCustomerSendForSignatureModal({
               const tooltip = unmapped.length > 0
                 ? `Cannot send — missing: ${unmapped.map(s => s.role === 'buyer' ? 'Customer' : s.role === 'consignee' ? 'Consignee' : 'Supplier').join(', ')}`
                 : undefined;
+              // Preview still rendering → keep Send disabled with a spinner so
+              // the user can't fire before the document (and its signature
+              // marker) is ready.
+              const pdfLoading = step === 2 && !pdfRenderReady;
               return (
                 <button
                   type="button"
                   className="ssf-btn ssf-btn-primary"
-                  disabled={sending || blocked}
+                  disabled={sending || blocked || pdfLoading}
                   onClick={send}
-                  title={tooltip}
+                  title={pdfLoading ? 'Preparing the document preview…' : tooltip}
                 >
-                  {sending ? 'Sending…'
+                  {sending ? <><span className="ssf-spin" /> Sending…</>
+                    : pdfLoading ? <><span className="ssf-spin" /> Preparing document…</>
                     : isAgreement
                       ? `Send Agreement${selectedDocs.length > 1 ? `s (${selectedDocs.length})` : ''} for Signature`
                       : `Send for Signature (${selectedDocs.length})`}
@@ -2037,6 +2049,21 @@ export const SSF_CSS = `
   font-family: var(--font-sans);
 }
 @keyframes ssfFade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes ssfSpin { to { transform: rotate(360deg) } }
+/* Small inline spinner for buttons. */
+.ssf-spin {
+  display: inline-block; width: 15px; height: 15px; vertical-align: -2px;
+  border: 2px solid currentColor; border-top-color: transparent;
+  border-radius: 50%; animation: ssfSpin .7s linear infinite;
+}
+/* Full-page blocking loader shown while a Send request is in flight. */
+.ssf-page-loader {
+  position: fixed; inset: 0; z-index: 3000;
+  background: rgba(15,23,42,.55); backdrop-filter: blur(3px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+}
+.ssf-page-loader .ssf-spin { width: 44px; height: 44px; border-width: 4px; color: #fff; }
+.ssf-page-loader-text { color: #fff; font-weight: 700; font-size: 15px; letter-spacing: .2px; }
 
 .ssf-shell {
   width: 100%; max-width: 1200px; height: calc(100vh - 36px);

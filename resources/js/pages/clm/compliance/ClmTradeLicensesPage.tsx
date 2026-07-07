@@ -40,6 +40,15 @@ export default function ClmTradeLicensesPage() {
   // All-authorities popover — opened from the +N badge in the ISSUING
   // AUTHORITY column (same pattern as the DCP authorities popover).
   const [authPop, setAuthPop] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  // Close the fixed-positioned authorities popover on scroll/resize so it can't
+  // drift away from its badge (capture:true catches ancestor + table scrolls).
+  useEffect(() => {
+    if (!authPop) return;
+    const close = () => setAuthPop(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [authPop]);
 
   const reload = () => {
     setLoading(true);

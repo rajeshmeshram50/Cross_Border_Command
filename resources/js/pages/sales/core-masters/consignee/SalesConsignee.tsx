@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
+import { useTheme } from '../../../../contexts/ThemeContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { type ConsigneeRow } from './AddConsigneeModal';
@@ -48,6 +49,21 @@ export default function SalesConsignee() {
   const toast = useToast();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  // Theme-aware palette for the Mapped Customers popup (portaled → inline styles).
+  const mc = {
+    card:      isDark ? '#0f1420' : '#ffffff',
+    rowBase:   isDark ? '#141a28' : '#ffffff',
+    rowAlt:    isDark ? 'rgba(124,58,237,.10)' : '#faf5ff',
+    border:    isDark ? 'rgba(148,163,184,.16)' : '#f1ebfb',
+    textStrong:isDark ? '#e2e8f0' : '#334155',
+    textMuted: isDark ? '#94a3b8' : '#475569',
+    chipBg:    isDark ? 'rgba(124,58,237,.28)' : '#ede9fe',
+    chipFg:    isDark ? '#c4b5fd' : '#5b21b6',
+    segBg:     isDark ? 'rgba(148,163,184,.14)' : '#f1f5f9',
+    popBg:     isDark ? '#141a28' : '#ffffff',
+  };
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perm = user?.permissions?.['sales.consignee'];
   const canView = isSuperAdmin || !!perm?.can_view;
@@ -85,6 +101,41 @@ export default function SalesConsignee() {
   const [loading, setLoading] = useState(true);
   const [delTarget, setDelTarget] = useState<ConsigneeRow | null>(null);
   const [vaultTarget, setVaultTarget] = useState<ConsigneeVaultTarget | null>(null);
+  // Consignee whose "Mapped Customers" list popup is open.
+  const [mappedTarget, setMappedTarget] = useState<ConsigneeRow | null>(null);
+  // "+N" segment overflow popover inside the Mapped Customers modal.
+  const [mappedSeg, setMappedSeg] = useState<{ names: string[]; x: number; y: number } | null>(null);
+  // "Map Customer" flow inside the Mapped Customers modal.
+  const [custMapOpen, setCustMapOpen] = useState(false);
+  const [allCustomers, setAllCustomers] = useState<any[]>([]);
+  const [custMapId, setCustMapId] = useState('');
+  const [custMapping, setCustMapping] = useState(false);
+
+  const openCustMap = async () => {
+    setCustMapId('');
+    setCustMapOpen(true);
+    try {
+      const r = await api.get('/customers', { params: { tab: 'all' } });
+      setAllCustomers(Array.isArray(r.data?.data) ? r.data.data : []);
+    } catch { setAllCustomers([]); }
+  };
+
+  const doMapCustomer = async () => {
+    if (!custMapId || !mappedTarget?.db_id) return;
+    setCustMapping(true);
+    try {
+      const r = await api.post(`/consignees/${mappedTarget.db_id}/map-customer`, { customer_id: Number(custMapId) });
+      toast.success('Customer mapped', 'The customer is now linked to this consignee.');
+      const updated = r.data?.data;
+      if (updated) {
+        setMappedTarget(prev => (prev ? { ...prev, customers: updated.customers ?? prev.customers, segment: updated.segment ?? prev.segment } : prev));
+      }
+      setCustMapOpen(false);
+      fetchRows();
+    } catch (e: any) {
+      toast.error('Map failed', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setCustMapping(false); }
+  };
   const [deleting, setDeleting] = useState(false);
 
   const tableCardRef = useRef<HTMLDivElement>(null);
@@ -137,6 +188,7 @@ export default function SalesConsignee() {
         db_id:          typeof d.db_id === 'number' ? d.db_id : undefined,
         customerId:     String(d.customer_code ?? d.customer_id ?? ''),
         customer_db_id: typeof d.customer_id === 'number' ? d.customer_id : undefined,
+        customers:      Array.isArray(d.customers) ? d.customers : [],
         company:        d.company ?? '',
         segment:        d.segment ?? '',
         risk:           d.riskLevel ?? '',
@@ -259,7 +311,32 @@ export default function SalesConsignee() {
       header: 'Customer ID',
       accessorKey: 'customerId',
       meta: { align: 'center' },
-      cell: (info: any) => <span className="smcg-cust-chip">{info.getValue()}</span>,
+      cell: (info: any) => {
+        const row = info.row.original as ConsigneeRow;
+        const list = (row.customers ?? []).map(c => c.code || `C-${c.id}`);
+        // Fall back to the single primary code for rows loaded before the
+        // many-to-many payload existed.
+        const chips = list.length > 0 ? list : [String(info.getValue() ?? '')].filter(Boolean);
+        if (chips.length === 0) return <span className="text-muted">—</span>;
+        // Show the first customer + a "+N" chip; clicking "+N" opens the same
+        // Mapped Customers popup as the Actions-column button (both ways).
+        return (
+          <span className="d-inline-flex align-items-center" style={{ gap: 4, justifyContent: 'center' }}>
+            <span className="smcg-cust-chip">{chips[0]}</span>
+            {chips.length > 1 && (
+              <span
+                role="button"
+                onClick={(e) => { e.stopPropagation(); setMappedTarget(row); }}
+                className="smcg-cust-chip"
+                style={{ cursor: 'pointer', background: '#ede9fe', color: '#5b21b6', fontWeight: 700 }}
+                title="View all mapped customers"
+              >
+                +{chips.length - 1}
+              </span>
+            )}
+          </span>
+        );
+      },
     },
     {
       header: 'Company Name',
@@ -366,6 +443,11 @@ export default function SalesConsignee() {
                 })}
               >
                 <i className="ri-archive-line" />
+              </button>
+            </Tooltip>
+            <Tooltip label="Mapped Customers">
+              <button type="button" className="smcg-act smcg-act-vault" onClick={() => setMappedTarget(c)}>
+                <i className="ri-links-line" />
               </button>
             </Tooltip>
           </div>
@@ -483,8 +565,8 @@ export default function SalesConsignee() {
               placeholder="Same as Customer"
               options={[
                 { value: 'all', label: 'Same as Customer: All' },
-                { value: 'yes', label: 'Yes' },
-                { value: 'no',  label: 'No' },
+                { value: 'yes', label: 'Same as Customer: Yes' },
+                { value: 'no',  label: 'Same as Customer: No' },
               ]}
               onChange={(v) => setSacFilter((v || 'all') as 'all'|'yes'|'no')}
             />
@@ -570,6 +652,138 @@ export default function SalesConsignee() {
           </div>
         </>,
         document.body
+      )}
+
+      {/* Mapped Customers — table modal styled like the customer module
+          (purple palette), full column set. */}
+      {mappedTarget && createPortal(
+        <div onMouseDown={() => { setMappedTarget(null); setMappedSeg(null); setCustMapOpen(false); }} style={{ position: 'fixed', inset: 0, zIndex: 1096, background: 'rgba(46,16,101,.50)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div onMouseDown={e => e.stopPropagation()} style={{ width: '96vw', maxWidth: 1280, maxHeight: '90vh', display: 'flex', flexDirection: 'column', background: mc.card, borderRadius: 18, overflow: 'hidden', boxShadow: '0 30px 80px rgba(0,0,0,.45)' }}>
+            {/* Header — purple gradient (customer module palette) + dotted texture. */}
+            <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '20px', background: 'linear-gradient(135deg,#4c1d95 0%,#6d28d9 50%,#7c3aed 100%)', color: '#fff', flexShrink: 0 }}>
+              {/* Dotted overlay effect. */}
+              <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', opacity: .5, backgroundImage: 'radial-gradient(rgba(255,255,255,.35) 1.4px, transparent 1.5px)', backgroundSize: '16px 16px' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
+                  <i className="ri-links-line" style={{ fontSize: 20 }} />
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.2 }}>Mapped Customers</div>
+                  <div style={{ fontSize: 12.5, opacity: .9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Customers linked to <strong>{mappedTarget.id}</strong> · {mappedTarget.company}</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+                {canEdit && (
+                  <button type="button" onClick={() => (custMapOpen ? setCustMapOpen(false) : openCustMap())} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, background: '#fff', color: '#6d28d9', border: 'none', borderRadius: 9, padding: '7px 13px', cursor: 'pointer' }}>
+                    <i className="ri-link" /> Map Customer
+                  </button>
+                )}
+                <span style={{ fontSize: 12, fontWeight: 700, background: 'rgba(255,255,255,.16)', borderRadius: 20, padding: '3px 12px' }}>{(mappedTarget.customers ?? []).length} {(mappedTarget.customers ?? []).length === 1 ? 'customer' : 'customers'}</span>
+                <button type="button" onClick={() => setMappedTarget(null)} aria-label="Close" style={{ width: 30, height: 30, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,.16)', color: '#fff', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
+              </div>
+            </div>
+
+            {/* Map Customer — its own centered popup (above the Mapped
+                Customers modal). Pick a customer NOT already mapped; the
+                consignee's segments update with the customer's. */}
+            {custMapOpen && (() => {
+              // mappedTarget.customers[].id is the numeric DB id; the /customers
+              // list exposes the numeric id as `db_id` (its `id` is the display
+              // code). Match + send the numeric db_id, not the code.
+              const mappedIds = new Set((mappedTarget.customers ?? []).map(c => c.id));
+              const options = allCustomers
+                .filter(c => typeof c.db_id === 'number' && !mappedIds.has(c.db_id))
+                .map(c => ({ value: String(c.db_id), label: `${c.id} — ${c.company ?? ''}` }));
+              return (
+                <div onMouseDown={() => !custMapping && setCustMapOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1099, background: 'rgba(46,16,101,.55)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+                  <div onMouseDown={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 470, background: mc.card, borderRadius: 16, overflow: 'visible', boxShadow: '0 26px 64px rgba(0,0,0,.45)' }}>
+                    <div style={{ padding: '17px 20px', background: 'linear-gradient(135deg,#4c1d95,#6d28d9 55%,#7c3aed)', color: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 }}>
+                      <div style={{ fontSize: 15.5, fontWeight: 800 }}>Map Customer</div>
+                      <div style={{ fontSize: 12.5, opacity: .92, marginTop: 2 }}>Link a customer to <strong>{mappedTarget.id}</strong> · {mappedTarget.company}. Its segments update accordingly.</div>
+                    </div>
+                    <div style={{ padding: 18 }}>
+                      <label style={{ fontSize: 11.5, fontWeight: 700, color: mc.textStrong, textTransform: 'uppercase', letterSpacing: .4, display: 'block', marginBottom: 6 }}>Customer</label>
+                      <MasterSelect value={custMapId} onChange={(v) => setCustMapId(v)} placeholder="Select a customer to map…" options={options} />
+                      {options.length === 0 && (
+                        <div style={{ fontSize: 12, color: mc.textMuted, marginTop: 8 }}>No other customers available to map.</div>
+                      )}
+                    </div>
+                    <div style={{ padding: '0 18px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                      <button type="button" onClick={() => setCustMapOpen(false)} disabled={custMapping} style={{ border: `1px solid ${mc.border}`, background: mc.card, color: mc.textStrong, borderRadius: 9, padding: '8px 16px', fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}>Cancel</button>
+                      <button type="button" onClick={doMapCustomer} disabled={!custMapId || custMapping} style={{ border: 'none', background: custMapId && !custMapping ? 'linear-gradient(135deg,#6d28d9,#7c3aed)' : (isDark ? 'rgba(124,58,237,.3)' : '#ddd6fe'), color: '#fff', borderRadius: 9, padding: '8px 18px', fontWeight: 700, fontSize: 12.5, cursor: custMapId && !custMapping ? 'pointer' : 'not-allowed' }}>{custMapping ? 'Mapping…' : 'Map Customer'}</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+            {/* Table — ~5 rows visible, the rest scroll (header ~44px + 5×~46px). */}
+            <div style={{ padding: '12px 18px 18px', maxHeight: 320, overflowX: 'auto', overflowY: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, borderRadius: 10, overflow: 'hidden', minWidth: 780 }}>
+                <thead>
+                  <tr style={{ background: 'linear-gradient(110deg,#6d28d9 0%,#7c3aed 55%,#5b21b6 100%)' }}>
+                    {['SR NO', 'CUSTOMER ID', 'COMPANY NAME', 'SEGMENT', 'TYPE', 'COUNTRY', 'CONTACT PERSON', 'CONTACT NO'].map((h, i) => (
+                      <th key={h} style={{ color: '#fff', fontSize: 11.5, fontWeight: 700, letterSpacing: .3, textAlign: i === 0 ? 'center' : 'left', padding: '11px 14px', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(mappedTarget.customers ?? []).length === 0 ? (
+                    <tr><td colSpan={8} style={{ textAlign: 'center', color: mc.textMuted, padding: '26px 0', fontSize: 13 }}>Not mapped to any customer yet.</td></tr>
+                  ) : (
+                    (mappedTarget.customers ?? []).map((cu, i) => {
+                      const segList = String(cu.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
+                      return (
+                        <tr key={cu.id} style={{ background: i % 2 ? mc.rowAlt : mc.rowBase }}>
+                          <td style={{ textAlign: 'center', padding: '10px 14px', fontSize: 13, color: mc.textMuted, borderBottom: `1px solid ${mc.border}` }}>{i + 1}</td>
+                          <td style={{ padding: '10px 14px', borderBottom: `1px solid ${mc.border}` }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: mc.chipFg, background: mc.chipBg, borderRadius: 8, padding: '2px 9px', whiteSpace: 'nowrap' }}>{cu.code || `C-${cu.id}`}</span>
+                          </td>
+                          <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: mc.textStrong, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{cu.name || '—'}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}` }}>
+                            {segList.length === 0 ? '—' : (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ background: mc.chipBg, color: mc.chipFg, borderRadius: 6, padding: '1px 8px', fontSize: 11.5, fontWeight: 600 }}>{segList[0]}</span>
+                                {segList.length > 1 && (
+                                  <span
+                                    role="button"
+                                    onClick={(e) => { e.stopPropagation(); setMappedSeg({ names: segList, x: e.clientX, y: e.clientY }); }}
+                                    style={{ cursor: 'pointer', fontSize: 11, color: mc.chipFg, fontWeight: 700, background: mc.chipBg, borderRadius: 6, padding: '1px 6px' }}
+                                    title="Show all segments"
+                                  >
+                                    +{segList.length - 1}
+                                  </span>
+                                )}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#475569', borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{cu.type || '—'}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{cu.country || '—'}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{cu.contact || '—'}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{cu.phone || '—'}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {/* "+N" segment overflow popover for the Mapped Customers modal. */}
+      {mappedSeg && createPortal(
+        <>
+          <div onClick={() => setMappedSeg(null)} style={{ position: 'fixed', inset: 0, zIndex: 1097 }} />
+          <div style={{ position: 'fixed', left: Math.min(mappedSeg.x, window.innerWidth - 220), top: mappedSeg.y + 10, zIndex: 1098, width: 200, maxHeight: 260, overflowY: 'auto', background: mc.popBg, borderRadius: 10, boxShadow: '0 14px 34px rgba(0,0,0,.35)', padding: 8, border: `1px solid ${mc.border}` }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: mc.chipFg, marginBottom: 6, textTransform: 'uppercase', letterSpacing: .3 }}>Segments ({mappedSeg.names.length})</div>
+            {mappedSeg.names.map((n, i) => (
+              <div key={i} style={{ fontSize: 12.5, color: mc.textStrong, padding: '5px 7px', borderRadius: 6, background: i % 2 ? mc.rowAlt : 'transparent' }}>{n}</div>
+            ))}
+          </div>
+        </>,
+        document.body,
       )}
     </div>
   );

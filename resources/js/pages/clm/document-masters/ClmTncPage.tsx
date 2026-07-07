@@ -220,6 +220,15 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
   // All-parties popover — opened from the +N badge in the APPLIES TO column
   // (same one-badge + "+N" pattern as the SEGMENT column).
   const [partyPop, setPartyPop] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
+  // Close the fixed-positioned badge popovers on scroll/resize so they can't
+  // drift out of the table (capture:true catches ancestor + table scrolls).
+  useEffect(() => {
+    if (!segPop && !partyPop) return;
+    const close = () => { setSegPop(null); setPartyPop(null); };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [segPop, partyPop]);
   // Regulatory-status filter dropdown (All / Highly / Less).
   const [statusFilter, setStatusFilter] = useState<'all' | 'highly' | 'less'>('all');
 

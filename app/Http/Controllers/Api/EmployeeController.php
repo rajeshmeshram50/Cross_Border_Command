@@ -319,16 +319,24 @@ class EmployeeController extends Controller
             ->where('status', 'Active')
             ->where('onboarding_stage_completed', '>=', 6);
         $this->applyScope($eq, $user, $request->integer('branch_id') ?: null);
+        // HOD designation ids so the picker can flag which employees are a
+        // department's Head — the reporting-manager rule points a non-HOD hire
+        // at their department's HOD (or the Branch User until one exists).
+        $hodIds = \App\Support\DepartmentPermissionSync::hodDesignationIds();
         $employees = $eq
             // designation_id MUST be selected or the belongsTo('designation')
             // eager-load returns null and every label falls back to "(Employee)".
-            ->select(['id', 'emp_code', 'display_name', 'first_name', 'last_name', 'designation_id'])
+            ->select(['id', 'emp_code', 'display_name', 'first_name', 'last_name', 'designation_id', 'department_id'])
             ->with(['designation:id,name'])
             ->orderBy('display_name')
             ->get()
             ->map(fn($e) => [
-                'id'    => $e->id,
-                'kind'  => 'employee',
+                'id'            => $e->id,
+                'kind'          => 'employee',
+                // Department + HOD flag drive the reporting-manager rule on the
+                // client; an employee reports to their department's HOD.
+                'department_id' => $e->department_id,
+                'is_hod'        => in_array((int) $e->designation_id, $hodIds, true),
                 // Show the employee's DESIGNATION in brackets (e.g. "Anushka
                 // Bakde (HOD)") rather than the generic "(Employee)" kind.
                 // Falls back to "Employee" only when no designation is set.
@@ -383,6 +391,93 @@ class EmployeeController extends Controller
             'employees'   => $employees->values(),
             'login_users' => $loginUsers->values(),
         ]);
+    }
+
+    /**
+     * GET /employees/department-tree/{departmentId}
+     *
+     * Org chart for one department, scoped to the caller's client (+ active
+     * branch): the Branch User(s) (Director / CEO) at the top, the single HOD,
+     * the Team Leaders, then the remaining employees — the 4-tier hierarchy the
+     * reporting-manager rule builds (employee → TL → HOD → Director).
+     */
+    public function departmentOrgTree(Request $request, int $departmentId)
+    {
+        $this->authorize($request, 'can_view');
+        $user = $request->user();
+        $branchFilter = ($user->branch_id ?: null) ?: ($request->integer('branch_id') ?: null);
+
+        // Directors = the Branch User(s) of the client (+ active branch). They are
+        // the roots of the chart (an HOD reports to a Branch User).
+        $directors = User::query()
+            ->where('client_id', $user->client_id)
+            ->where('user_type', 'branch_user')
+            ->where('status', 'active')
+            ->when($branchFilter, fn ($q) => $q->where('branch_id', $branchFilter))
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        // Everyone in the department (client + branch scoped). No peer-isolation
+        // here: the org chart is a management view of the whole department.
+        $emps = Employee::query()
+            ->where('client_id', $user->client_id)
+            ->where('department_id', $departmentId)
+            ->when($branchFilter, fn ($q) => $q->where('branch_id', $branchFilter))
+            ->with(['designation:id,name', 'photoDocument'])   // photoDocument backs $e->photo_url (passport-size photo)
+            ->orderBy('display_name')
+            ->get();
+
+        // Flat node map keyed by u{id} (Branch User) / e{id} (Employee).
+        $byId = [];
+        foreach ($directors as $d) {
+            $byId['u' . $d->id] = ['id' => 'u' . $d->id, 'name' => $d->name, 'role' => 'Director / CEO', 'photo' => null];
+        }
+        foreach ($emps as $e) {
+            $byId['e' . $e->id] = [
+                'id'    => 'e' . $e->id,
+                'name'  => $e->display_name ?: trim($e->first_name . ' ' . $e->last_name),
+                'role'  => $e->designation?->name ?: 'Employee',
+                'photo' => $e->photo_url,   // passport-size photo, or null → initials fallback
+            ];
+        }
+
+        // Nest each employee under their actual reporting manager (an employee in
+        // this set, or a Branch User). A manager outside the department (or unset)
+        // falls back to hanging under the first Director so the chart stays connected.
+        $firstDirector = $directors->first() ? 'u' . $directors->first()->id : null;
+        $childrenOf = [];   // parentKey => [childKey, …]
+        $orphanRoots = [];
+        foreach ($emps as $e) {
+            $ck = 'e' . $e->id;
+            $pk = null;
+            if ($e->reporting_manager_id && isset($byId['e' . $e->reporting_manager_id])) {
+                $pk = 'e' . $e->reporting_manager_id;
+            } elseif ($e->reporting_manager_user_id && isset($byId['u' . $e->reporting_manager_user_id])) {
+                $pk = 'u' . $e->reporting_manager_user_id;
+            } elseif ($firstDirector) {
+                $pk = $firstDirector;
+            }
+            if ($pk) { $childrenOf[$pk][] = $ck; } else { $orphanRoots[] = $ck; }
+        }
+
+        // Roots = all Directors (each shows even with no reports) + any employee
+        // whose manager couldn't be resolved and there was no Director to hang under.
+        $rootKeys = array_values(array_unique(array_merge(
+            array_map(fn ($d) => 'u' . $d->id, $directors->all()),
+            $orphanRoots
+        )));
+
+        // Recursively assemble the nested tree, guarding against reporting cycles.
+        $build = function ($key, array $seen = []) use (&$build, $byId, $childrenOf) {
+            $node = $byId[$key];
+            $seen[$key] = true;
+            $kids = array_filter($childrenOf[$key] ?? [], fn ($ck) => empty($seen[$ck]));
+            $node['children'] = array_values(array_map(fn ($ck) => $build($ck, $seen), $kids));
+            return $node;
+        };
+        $roots = array_map(fn ($k) => $build($k), $rootKeys);
+
+        return response()->json(['status' => true, 'data' => ['roots' => $roots]]);
     }
 
     /**

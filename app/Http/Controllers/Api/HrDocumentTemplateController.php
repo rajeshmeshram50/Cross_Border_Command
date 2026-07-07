@@ -97,6 +97,26 @@ class HrDocumentTemplateController extends Controller
         ]);
     }
 
+    /**
+     * GET /hr-document-templates/last-branding
+     *
+     * Header/footer config of the caller's most recent template, so a NEW
+     * template can prefill the same letterhead (logo / title / footer) instead
+     * of re-uploading it every time. Scoped like the list; null when the tenant
+     * has no prior template.
+     */
+    public function lastBranding(Request $request)
+    {
+        $this->authorize($request, 'can_view');
+        $q = HrDocumentTemplate::query()->whereNotNull('header_config');
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
+        $row = $q->orderByDesc('id')->first(['header_config', 'footer_config']);
+        return response()->json([
+            'header_config' => $row->header_config ?? null,
+            'footer_config' => $row->footer_config ?? null,
+        ]);
+    }
+
     public function stats(Request $request)
     {
         $this->authorize($request, 'can_view');

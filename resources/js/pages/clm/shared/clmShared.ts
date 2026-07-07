@@ -616,6 +616,13 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
 /* ──────────────────────────────────────────────────────────
  * MODAL — gradient teal head, body with cyan gradient bg.
  * ────────────────────────────────────────────────────────── */
+/* When ANY CLM modal is open, lock selection of the page BEHIND it so Ctrl+A /
+ * drag-select can't grab and copy the background. :has() matches the portaled
+ * .clm-modal-bd anywhere under <body>; the backdrop re-enables selection for the
+ * modal's own content below (so this covers modals that don't call
+ * useSelectionLock without touching each one). */
+body:has(.clm-modal-bd) { -webkit-user-select: none; user-select: none; }
+
 .clm-modal-bd {
   position: fixed; inset: 0; z-index: 200000;
   background: rgba(7,30,50,.6); backdrop-filter: blur(8px);

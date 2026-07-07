@@ -7,6 +7,7 @@ import TextAlign from '@tiptap/extension-text-align';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { useSelectionLock } from '../../../hooks/useSelectionLock';
+import { useScrollLock } from '../../../hooks/useScrollLock';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../../components/ui/MasterMultiSelect';
 import { SegmentModal, nextSegmentCode, type SegmentForm, type SaveResult } from '../compliance/ClmSegmentPage';
@@ -68,6 +69,7 @@ interface Props {
 export default function ClmTncWizardModal({ open, existing, cats: initialCats, segments, nextCode, onClose, onSaved }: Props) {
   const toast = useToast();
   useSelectionLock(open);   // block selecting/copying the background while open
+  useScrollLock(open);      // freeze background page scroll while open
   const editingId = existing?.id ?? null;
 
   const [step, setStep] = useState<1 | 2>(1);

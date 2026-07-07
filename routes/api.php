@@ -182,6 +182,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post('/consignees/{consignee}/clone-from-customer',
         [\App\Http\Controllers\Api\ConsigneeController::class, 'cloneFromCustomer']);
 
+    // Map an existing consignee to a customer (many-to-many) + merge segments.
+    Route::post('/consignees/{consignee}/map-customer',
+        [\App\Http\Controllers\Api\ConsigneeController::class, 'mapCustomer']);
+
     Route::get   ('/consignees/{consignee}/documents',           [\App\Http\Controllers\Api\ConsigneeDocumentController::class, 'index']);
     Route::post  ('/consignees/{consignee}/documents',           [\App\Http\Controllers\Api\ConsigneeDocumentController::class, 'store']);
     Route::get   ('/consignees/{consignee}/documents/{document}',[\App\Http\Controllers\Api\ConsigneeDocumentController::class, 'show']);
@@ -517,6 +521,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     Route::get   ('/employees/next-code',         [EmployeeController::class, 'nextCode']);
     Route::get   ('/employees/managers',          [EmployeeController::class, 'managers']);
+    Route::get   ('/employees/department-tree/{departmentId}', [EmployeeController::class, 'departmentOrgTree'])->whereNumber('departmentId');
     Route::get   ('/employees/available-assets',  [EmployeeController::class, 'availableAssets']);
 
     Route::get   ('/employees/check-mobile',      [EmployeeController::class, 'checkMobile']);
@@ -642,7 +647,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     Route::get ('/hr-document-templates/stats',                [HrDocumentTemplateController::class, 'stats']);
     Route::get ('/hr-document-templates/next-code',            [HrDocumentTemplateController::class, 'nextCode']);
-  
+    Route::get ('/hr-document-templates/last-branding',        [HrDocumentTemplateController::class, 'lastBranding']);
+
     Route::post('/hr-document-templates/upload-header-logo',   [HrDocumentTemplateController::class, 'uploadHeaderLogo']);
 
     Route::get ('/hr-document-templates/match',                [HrDocumentTemplateController::class, 'matchForEmployee']);

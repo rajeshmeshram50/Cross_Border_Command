@@ -8,8 +8,8 @@ import { useAuth } from '../contexts/AuthContext';
 import Avatar from '../components/ui/Avatar';
 import BranchSwitcher from '../components/BranchSwitcher';
 import GlobalSearch from '../components/GlobalSearch';
-import { Moon, Sun, Bell, Menu, Maximize2, Minimize2 } from 'lucide-react';
-import { useState, useCallback, useEffect, type ReactNode } from 'react';
+import { Moon, Sun, Bell, Menu, Maximize2, Minimize2, X } from 'lucide-react';
+import { useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 
 // Reverse of `hrLeafLink` in velzon/Layouts/LayoutMenuData.tsx — maps the
@@ -105,6 +105,14 @@ export default function AppLayout({ onNavigate, children }: Props) {
   const page = getPageFromPath(location.pathname);
   const { mode, sidebarCollapsed, toggleSidebar, mobileOpen, setMobileOpen } = useLayout();
 
+  // Scroll the content area back to the top on every navigation so a new page
+  // opens at its header instead of retaining the previous page's scroll
+  // position (bug #25).
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [location.pathname]);
+
   const showSidebar = mode === 'both' || mode === 'sidebar';
   const showTopbar = mode === 'both';
   const showTopnav = mode === 'topnav';
@@ -176,7 +184,7 @@ export default function AppLayout({ onNavigate, children }: Props) {
           )}
 
           {/* ═══ PAGE CONTENT ═══ */}
-          <main className="flex-1 overflow-y-auto p-3 sm:p-4 pb-20">
+          <main ref={mainRef} className="flex-1 overflow-y-auto p-3 sm:p-4 pb-20">
             <div className="animate-in fade-in slide-in-from-bottom-2 duration-300" key={page}>
               {children}
             </div>
@@ -262,6 +270,19 @@ function SidebarTopStrip({ page, onToggleSidebar, onNavigate }: { page: string; 
       {user && (
         <button onClick={() => onNavigate('profile')} className="p-[2px] rounded-md border border-border hover:border-primary/40 transition-colors cursor-pointer">
           <Avatar initials={user.initials} size="sm" />
+        </button>
+      )}
+
+      {/* Close (X) — returns to the dashboard from any module page (bug #8).
+          Hidden on the dashboard itself since there's nothing to close. */}
+      {page !== 'dashboard' && (
+        <button
+          onClick={() => onNavigate('dashboard')}
+          title="Close — back to Dashboard"
+          aria-label="Close"
+          className="w-7 h-7 rounded-md border border-border flex items-center justify-center text-secondary hover:text-red-500 hover:border-red-400/50 hover:bg-red-500/5 transition-all cursor-pointer"
+        >
+          <X size={14} />
         </button>
       )}
     </div>

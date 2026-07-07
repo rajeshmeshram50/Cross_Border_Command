@@ -1232,14 +1232,46 @@ export default function SalesTodo() {
                               </Tooltip>
                             )
                           ) : (m.link && (
-                            <Tooltip label="Join Meeting">
-                              <a href={m.link} target="_blank" rel="noreferrer" className="td-ab td-ab-join" aria-label="Join Meeting"><IconVideo /></a>
-                            </Tooltip>
+                            // Join is only valid while the meeting is live. Once it's
+                            // Postponed or Cancelled the link must not be launchable —
+                            // render a greyed-out (disabled) button instead of the
+                            // active anchor.
+                            (m.status === 'Postponed' || m.status === 'Cancelled') ? (
+                              <Tooltip label={`Join disabled — meeting ${m.status.toLowerCase()}`}>
+                                <button
+                                  type="button"
+                                  className="td-ab td-ab-join"
+                                  aria-label={`Join disabled — meeting ${m.status.toLowerCase()}`}
+                                  disabled
+                                  style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                                ><IconVideo /></button>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip label="Join Meeting">
+                                <a href={m.link} target="_blank" rel="noreferrer" className="td-ab td-ab-join" aria-label="Join Meeting"><IconVideo /></a>
+                              </Tooltip>
+                            )
                           ))}
                           {canEdit && (
-                            <Tooltip label="Edit">
-                              <button className="td-ab td-ab-edit" aria-label="Edit" onClick={() => openEdit(m)}><IconEdit /></button>
-                            </Tooltip>
+                            // A finalized meeting (Done / Cancelled) must not be
+                            // editable — prevents backdated modifications. Greyed
+                            // out (disabled); use the Undo action to revert it to
+                            // In Progress first if a change is genuinely needed.
+                            (m.status === 'Done' || m.status === 'Cancelled') ? (
+                              <Tooltip label={`Editing disabled — meeting ${m.status.toLowerCase()}`}>
+                                <button
+                                  type="button"
+                                  className="td-ab td-ab-edit"
+                                  aria-label={`Edit disabled — meeting ${m.status.toLowerCase()}`}
+                                  disabled
+                                  style={{ opacity: 0.4, cursor: 'not-allowed' }}
+                                ><IconEdit /></button>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip label="Edit">
+                                <button className="td-ab td-ab-edit" aria-label="Edit" onClick={() => openEdit(m)}><IconEdit /></button>
+                              </Tooltip>
+                            )
                           )}
                           {m.status === 'In Progress' && canEdit && (
                             <>

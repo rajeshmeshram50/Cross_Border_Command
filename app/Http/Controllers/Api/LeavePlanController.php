@@ -342,7 +342,14 @@ class LeavePlanController extends Controller
             // month". A month has at most 31 days, so 0..31 (bug #65). min:0
             // (not 1) so a non-attendance save carrying the default 0 still
             // passes; the frontend enforces >=1 when attendance mode is on.
-            'config.accrual.attendanceDaysWorked' => ['nullable', 'numeric', 'min:0', 'max:31'],
+            // Only bound the attendance threshold when attendance accrual is
+            // actually selected — otherwise a stale value left over from that
+            // mode blocks the save after the user switches to periodic (bug #73).
+            'config.accrual.attendanceDaysWorked' => ['exclude_unless:config.accrual.mode,attendance', 'nullable', 'numeric', 'min:0', 'max:31'],
+            // Extra leave (overdraft) — days beyond balance, 0..365 (bug #72).
+            // min:0 keeps a disabled/default value valid; the frontend enforces
+            // >=1 when the option is enabled.
+            'config.accrual.employeeOverdraft.days' => ['nullable', 'numeric', 'min:0', 'max:365'],
             'config.yearEnd.carryForwardCap'  => ['nullable', 'numeric', 'min:0', 'max:365'],
             'quota_summary' => ['nullable', 'string', 'max:255'],
             'eoy_summary' => ['nullable', 'string', 'max:255'],
@@ -358,6 +365,9 @@ class LeavePlanController extends Controller
             'config.accrual.attendanceDaysWorked.min'     => 'Days worked in a month cannot be negative.',
             'config.accrual.attendanceDaysWorked.max'     => 'Days worked in a month cannot exceed 31.',
             'config.accrual.attendanceDaysWorked.numeric' => 'Days worked in a month must be a number.',
+            'config.accrual.employeeOverdraft.days.min'     => 'Extra leave cannot be negative.',
+            'config.accrual.employeeOverdraft.days.max'     => 'Extra leave cannot exceed 365 days.',
+            'config.accrual.employeeOverdraft.days.numeric' => 'Extra leave must be a number.',
             'config.yearEnd.carryForwardCap.min' => 'Carry-forward cap cannot be negative.',
             'config.yearEnd.carryForwardCap.max' => 'Carry-forward cap cannot exceed 365 days.',
         ]);

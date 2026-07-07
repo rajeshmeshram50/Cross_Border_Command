@@ -1052,6 +1052,10 @@ function Step2Audience({
   // Total tenant headcount drives the All-Employees banner — the picked
   // role/designation case shows its own picker count instead.
   const totalEmps = employees.length;
+  // Actual recipients = headcount minus excluded employees. The banner must
+  // reflect this (0 when everyone is excluded), not the raw headcount.
+  const excludeSet = new Set(excludeIds);
+  const recipientCount = employees.filter((e: any) => !excludeSet.has(e.id)).length;
 
   return (
     <>
@@ -1082,10 +1086,10 @@ function Step2Audience({
       {audienceType === 'all_employees' && (
         <>
           <div style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.30)', borderRadius: 10, padding: '12px 16px', marginBottom: 10, color: 'var(--vz-body-color, #15803d)', fontSize: 13 }}>
-            <i className="ri-checkbox-circle-line me-1" style={{ color: '#22c55e' }} /> Announcement delivered to all <strong>{totalEmps}</strong> employee{totalEmps === 1 ? '' : 's'}.
+            <i className="ri-checkbox-circle-line me-1" style={{ color: '#22c55e' }} /> Announcement delivered to {recipientCount === totalEmps ? 'all ' : ''}<strong>{recipientCount}</strong> employee{recipientCount === 1 ? '' : 's'}.
           </div>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 18, background: 'rgba(34,211,238,0.14)', color: 'var(--vz-body-color, #0e7490)', fontSize: 12.5, fontWeight: 600, border: '1px solid rgba(34,211,238,0.30)', marginBottom: 14 }}>
-            <i className="ri-user-line" /> {totalEmps} employees selected
+            <i className="ri-user-line" /> {recipientCount} employee{recipientCount === 1 ? '' : 's'} selected
           </span>
         </>
       )}
