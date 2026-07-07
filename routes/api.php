@@ -647,7 +647,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     Route::get ('/hr-document-templates/stats',                [HrDocumentTemplateController::class, 'stats']);
     Route::get ('/hr-document-templates/next-code',            [HrDocumentTemplateController::class, 'nextCode']);
-  
+    Route::get ('/hr-document-templates/last-branding',        [HrDocumentTemplateController::class, 'lastBranding']);
+
     Route::post('/hr-document-templates/upload-header-logo',   [HrDocumentTemplateController::class, 'uploadHeaderLogo']);
 
     Route::get ('/hr-document-templates/match',                [HrDocumentTemplateController::class, 'matchForEmployee']);
