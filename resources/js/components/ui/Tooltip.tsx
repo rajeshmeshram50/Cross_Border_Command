@@ -177,6 +177,31 @@ export default function Tooltip({
     'aria-label': childProps['aria-label'] ?? (typeof label === 'string' ? label : undefined),
   } as any);
 
+  // A native disabled control (a <button disabled> / aria-disabled trigger)
+  // emits NO pointer events, so the hover handlers cloned onto it above never
+  // fire and its tooltip never appears — e.g. an "in use — can't edit" Edit
+  // button reads as having no explanation, while its enabled Delete sibling
+  // tooltips fine. Wrap such a trigger in a span that carries the handlers and
+  // let pointer events fall THROUGH the disabled child (pointerEvents:none)
+  // onto that span, so hovering a disabled control still surfaces the reason.
+  const isChildDisabled = !!(childProps.disabled || childProps['aria-disabled']);
+  const disabledTrigger = isChildDisabled ? (
+    <span
+      ref={(node: HTMLElement | null) => { triggerRef.current = node; }}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+      onFocus={onEnter}
+      onBlur={onLeave}
+      style={{ display: 'inline-flex', cursor: 'not-allowed' }}
+    >
+      {cloneElement(children, {
+        style: { ...(childProps.style ?? {}), pointerEvents: 'none' },
+        'aria-label': childProps['aria-label'] ?? (typeof label === 'string' ? label : undefined),
+      } as any)}
+    </span>
+  ) : null;
+  const trigger = disabledTrigger ?? childWithProps;
+
   // Theme-aware palette. Default (themed=false) stays the always-dark pill.
   // When themed, follow the live app theme — read from the <html> attribute
   // the ThemeContext maintains (data-bs-theme / data-theme), so the tooltip
@@ -221,7 +246,7 @@ export default function Tooltip({
 
   return (
     <>
-      {childWithProps}
+      {trigger}
       {open && createPortal(
         <div
           ref={tipRef}

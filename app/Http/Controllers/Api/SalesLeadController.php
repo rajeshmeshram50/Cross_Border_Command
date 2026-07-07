@@ -1953,7 +1953,7 @@ class SalesLeadController extends Controller
         $emps = \App\Models\Employee::query()
             ->whereNotNull('user_id')
             ->with(['designation:id,name', 'department:id,name'])
-            ->get(['id', 'user_id', 'designation_id', 'department_id'])
+            ->get(['id', 'user_id', 'emp_code', 'designation_id', 'department_id'])
             ->keyBy('user_id');
 
         // Active branch — prefer the switcher's branch_id (Axios injects it on
@@ -2000,7 +2000,11 @@ class SalesLeadController extends Controller
                 return [
                     'id'        => $u->id,
                     'name'      => $u->name,
-                    'code'      => 'EMP-' . str_pad((string) $u->id, 3, '0', STR_PAD_LEFT),
+                    // Use the employee's REAL code (EMP-009) from the employees
+                    // table — not one synthesised from the user id (which gave a
+                    // mismatched "EMP-016"). Falls back to the id-based code only
+                    // when the user has no employee record.
+                    'code'      => $emp?->emp_code ?: ('EMP-' . str_pad((string) $u->id, 3, '0', STR_PAD_LEFT)),
                     'role'      => $desg ?: $u->user_type,
                     // Shown next to the name in the picker: designation · department.
                     'subtitle'  => trim(implode(' · ', array_filter([$desg, $dept]))) ?: ucfirst(str_replace('_', ' ', (string) $u->user_type)),

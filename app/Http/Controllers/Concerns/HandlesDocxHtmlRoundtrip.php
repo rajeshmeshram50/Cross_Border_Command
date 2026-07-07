@@ -26,6 +26,16 @@ trait HandlesDocxHtmlRoundtrip
      */
     protected function normaliseEditorHtml(string $html): string
     {
+        // The contentEditable editor writes font sizes in px (e.g. the toolbar's
+        // applyFontSize sets `font-size:16px`), but Word/PhpWord expects points.
+        // Convert px→pt (1px ≈ 0.75pt) up front so the DOCX text keeps the same
+        // sizes the user saw in the editor instead of being scaled wrong.
+        $html = preg_replace_callback(
+            '/font-size\s*:\s*(\d+(?:\.\d+)?)\s*px/i',
+            fn ($m) => 'font-size:' . round(((float) $m[1]) * 0.75, 1) . 'pt',
+            $html
+        );
+
         $sizeMap = [1 => 8, 2 => 10, 3 => 12, 4 => 14, 5 => 18, 6 => 24, 7 => 36];
         $html = preg_replace_callback(
             '/<font([^>]*)>/i',

@@ -4,6 +4,7 @@ import api from '../../../api';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
 import { useSelectionLock } from '../../../hooks/useSelectionLock';
+import { useScrollLock } from '../../../hooks/useScrollLock';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../master/masterFormKit';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -91,6 +92,7 @@ interface Props {
 export default function ClmAgreementWizardModal({ open, existing, types: initialTypes, knownSegments, nextCode, onClose, onSaved }: Props) {
   const toast = useToast();
   useSelectionLock(open);   // block selecting/copying the background while open
+  useScrollLock(open);      // freeze background page scroll while open
   const editingId = existing?.id ?? null;
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -131,6 +133,9 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   const [block, setBlockState]       = useState('p');
   const lastRangeRef                  = useRef<Range | null>(null);
   const docxRef                       = useRef<HTMLInputElement | null>(null);
+  // True while a Word doc is being uploaded/converted — drives the button
+  // spinner so a slow (large-file) conversion shows progress.
+  const [uploadingDocx, setUploadingDocx] = useState(false);
 
   /* Stage 2 page-shell — same UX as Trade Document modal. Defaults pre-
    * fill the header with the user's branch (or client) logo + name so
@@ -275,22 +280,24 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     }
   };
   const uploadDocx = async (file: File) => {
+    if (uploadingDocx) return;
+    setUploadingDocx(true);
     const fd = new FormData();
     fd.append('docx', file);
+    // A large (50-page) DOCX takes a while to convert server-side; give the
+    // request a generous timeout so it isn't aborted mid-conversion ("sometimes
+    // it is not uploaded").
+    const cfg = { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 };
     try {
       let html: string | undefined;
       if (editingId) {
         // Saved agreement — persist the DOCX and reflect its HTML in the editor.
-        const { data } = await api.post(`/clm/agreement-library/${editingId}/upload-docx`, fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        const { data } = await api.post(`/clm/agreement-library/${editingId}/upload-docx`, fd, cfg);
         html = data?.data?.content;
       } else {
         // Brand-new (unsaved) draft — convert the DOCX to HTML statelessly so the
         // editor reflects it immediately (CBC-437). The content persists on Save.
-        const { data } = await api.post('/clm/docx-to-html', fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        const { data } = await api.post('/clm/docx-to-html', fd, cfg);
         html = data?.html;
       }
       if (html) {
@@ -299,7 +306,12 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       }
       toast.success('Uploaded', file.name);
     } catch (e: any) {
-      toast.error('Upload failed', e?.response?.data?.message ?? 'Please try again.');
+      const msg = e?.code === 'ECONNABORTED'
+        ? 'The document is large and timed out. Try a smaller file or split it.'
+        : (e?.response?.data?.message ?? 'Please try again.');
+      toast.error('Upload failed', msg);
+    } finally {
+      setUploadingDocx(false);
     }
   };
 
@@ -457,7 +469,10 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     else if (p.length > 1000) next.purpose = 'Purpose must not be greater than 1000 characters';
 
     if (parties.size === 0)     next.party         = 'Select at least one applicable party';
-    if (regulatory === 'highly' && segments.length !== 1) {
+    // Segment is mandatory (CBC-437): at least one for less-reg, exactly one for high-reg.
+    if (segments.length === 0) {
+      next.segment = 'Select at least one segment';
+    } else if (regulatory === 'highly' && segments.length !== 1) {
       next.segment = 'High-regulatory agreements need exactly one segment';
     }
     setErrors(next);
@@ -781,6 +796,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                 stashSelection={stashSelection}
                 syncContent={syncContent}
                 docxRef={docxRef}
+                uploadingDocx={uploadingDocx}
                 onDownloadDocx={() => void downloadDocx()}
                 onUploadDocx={(f) => void uploadDocx(f)}
                 onOpenPlaceholder={() => { stashSelection(); setPlaceholderOpen(true); setClauseOpen(false); }}
@@ -892,6 +908,7 @@ function AgrEditor({
   stashSelection,
   syncContent,
   docxRef,
+  uploadingDocx,
   onDownloadDocx,
   onUploadDocx,
   onOpenPlaceholder,
@@ -921,6 +938,7 @@ function AgrEditor({
   stashSelection: () => void;
   syncContent: () => void;
   docxRef: React.MutableRefObject<HTMLInputElement | null>;
+  uploadingDocx: boolean;
   onDownloadDocx: () => void;
   onUploadDocx: (file: File) => void;
   onOpenPlaceholder: () => void;
@@ -954,10 +972,19 @@ function AgrEditor({
               Download DOCX
             </button>
           </Tooltip>
-          <Tooltip label={editingId ? 'Upload a revised Word file' : 'Upload a Word file to draft from'}>
-            <button type="button" className="agw-editor-btn" onClick={() => docxRef.current?.click()}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-              Upload Word Doc
+          <Tooltip label={uploadingDocx ? 'Converting the document…' : (editingId ? 'Upload a revised Word file' : 'Upload a Word file to draft from')}>
+            <button type="button" className="agw-editor-btn" disabled={uploadingDocx} onClick={() => docxRef.current?.click()}>
+              {uploadingDocx ? (
+                <>
+                  <svg className="agw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                  Uploading…
+                </>
+              ) : (
+                <>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                  Upload Word Doc
+                </>
+              )}
             </button>
           </Tooltip>
           <Tooltip label="Insert a {{group.field}} placeholder">
@@ -1143,14 +1170,19 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
     { label: 'Risk Level',     token: '{{buyer.risk_level}}' },
   ] },
   { id: 'consignee', label: 'Consignee', iconEmoji: '🚚', iconColor: '#f59e0b', fields: [
-    { label: 'Consignee Name', token: '{{consignee.consignee_name}}' },
-    { label: 'Country',        token: '{{consignee.country}}' },
-    { label: 'Address',        token: '{{consignee.address}}' },
-    { label: 'Role',           token: '{{consignee.role}}' },
-    { label: 'City',           token: '{{consignee.city}}' },
-    { label: 'Contact Person', token: '{{consignee.contact_person}}' },
-    { label: 'Phone',          token: '{{consignee.phone}}' },
-    { label: 'Email',          token: '{{consignee.email}}' },
+    { label: 'Consignee Name',   token: '{{consignee.consignee_name}}' },
+    { label: 'Consignee Code',   token: '{{consignee.consignee_code}}' },
+    { label: 'Company',          token: '{{consignee.company}}' },
+    { label: 'Contact Person',   token: '{{consignee.contact_person}}' },
+    { label: 'Phone',            token: '{{consignee.phone}}' },
+    { label: 'Email',            token: '{{consignee.email}}' },
+    { label: 'Address',          token: '{{consignee.address}}' },
+    { label: 'City',             token: '{{consignee.city}}' },
+    { label: 'State',            token: '{{consignee.state}}' },
+    { label: 'Zip Code',         token: '{{consignee.zip_code}}' },
+    { label: 'Country',          token: '{{consignee.country}}' },
+    { label: 'Delivery Address', token: '{{consignee.delivery_address}}' },
+    { label: 'Role',             token: '{{consignee.role}}' },
   ] },
   { id: 'supplier', label: 'Supplier', iconEmoji: '📦', iconColor: '#16a34a', fields: [
     { label: 'Supplier Name',  token: '{{supplier.supplier_name}}' },
@@ -1447,6 +1479,9 @@ const AGW_CSS = `
   font-family: var(--font-sans);
 }
 @keyframes agwFade { from { opacity: 0; } to { opacity: 1; } }
+.agw-spin { animation: agwSpin .8s linear infinite; }
+@keyframes agwSpin { to { transform: rotate(360deg); } }
+.agw-editor-btn:disabled { opacity: .6; cursor: not-allowed; }
 .agw-shell {
   width: 100%; max-width: 1100px; max-height: calc(100vh - 48px);
   display: flex; flex-direction: column;

@@ -83,16 +83,17 @@ const formatPrice = (val: string | number | null | undefined, currency?: string 
   return `${sym ? sym + ' ' : ''}${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
+const FSA_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const formatSharedAt = (iso: string): string => {
   if (!iso) return '—';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   const dd  = String(d.getDate()).padStart(2, '0');
-  const mm  = String(d.getMonth() + 1).padStart(2, '0');
   const yy  = d.getFullYear();
   const hh  = String(d.getHours()).padStart(2, '0');
   const min = String(d.getMinutes()).padStart(2, '0');
-  return `${dd}/${mm}/${yy} ${hh}:${min}`;
+  // DD-Mon-YYYY HH:MM (e.g. 04-Jul-2026 14:30)
+  return `${dd}-${FSA_MONTHS[d.getMonth()]}-${yy} ${hh}:${min}`;
 };
 
 function StatusPill({ status }: { status: string | null | undefined }) {
@@ -394,7 +395,7 @@ function ToShareTable({
                         title={isLocked ? 'Activate this product master before sharing a price' : 'Submit quoted price'}
                       >
                         {isSaving ? (
-                          <>Saving…</>
+                          <><span className="prs-spinner" aria-hidden /> Submitting…</>
                         ) : (
                           <>
                             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -733,6 +734,16 @@ const SCOPED_CSS = `
 
 /* ── Submit + eye buttons ── */
 .prs-act-cell { display: flex; gap: 6px; align-items: center; }
+/* Inline spinner shown on the Submit button while a shared price saves. */
+.prs-spinner {
+  width: 12px; height: 12px; flex-shrink: 0;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  display: inline-block;
+  animation: prs-spin .6s linear infinite;
+}
+@keyframes prs-spin { to { transform: rotate(360deg); } }
 .prs-submit-btn {
   flex: 1;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

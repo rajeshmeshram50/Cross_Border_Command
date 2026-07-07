@@ -2,11 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
-import { useSelectionLock } from '../../../hooks/useSelectionLock';
 import { useAuth } from '../../../contexts/AuthContext';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../master/masterFormKit';
-import { SimpleNameModal } from '../shared/clmCommon';
+import { SimpleNameModal, useScrollLock } from '../shared/clmCommon';
 import ClmInsertPlaceholderModal from './ClmInsertPlaceholderModal';
 import ClmInsertTableModal from './ClmInsertTableModal';
 import ClmInsertHrModal from './ClmInsertHrModal';
@@ -99,7 +98,7 @@ interface Props {
 
 export default function ClmTradeDocumentDraftModal({ open, existing, names: initialNames, nextCode, knownSegments = [], onClose, onSaved }: Props) {
   const toast = useToast();
-  useSelectionLock(open);   // block selecting/copying the background while open
+  useScrollLock(open);   // lock the background scroll + selection while open
   const editingId = existing?.id ?? null;
 
   const [step, setStep] = useState<1 | 2>(1);
@@ -202,6 +201,28 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     document.execCommand(cmd, false, value);
     syncContent();
   };
+  /* "Clear formatting" needs more than execCommand('removeFormat'): that only
+   * strips INLINE marks (bold/italic/underline/colour/font/size) and no-ops on
+   * a collapsed caret, so headings, block formats and alignment survived and it
+   * read as "not working". Expand a bare caret to the whole document, strip the
+   * inline marks, then reset the block(s) to a normal paragraph and drop any
+   * alignment so the selection returns to truly plain text. */
+  const clearFormatting = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const sel = window.getSelection();
+    if (sel && sel.isCollapsed) {
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    document.execCommand('removeFormat');            // inline marks
+    document.execCommand('formatBlock', false, '<div>'); // headings/quotes → normal
+    document.execCommand('justifyLeft');             // clear centre/right/justify
+    syncContent();
+  };
   const applyFontSize = (px: string) => {
     // Restore the selection stashed before the <select> stole focus, so the
     // size applies to the text the user had highlighted (a bare focus() would
@@ -296,6 +317,9 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
    * fly); upload replaces the editor body with the parsed DOCX. Both
    * require the row to have been saved at least once so we have an id. */
   const docxRef = useRef<HTMLInputElement | null>(null);
+  // DOCX import can be slow for large (50+ page) files, so surface a loader on
+  // the "Upload Word Doc" button and block repeat clicks until it resolves.
+  const [docxUploading, setDocxUploading] = useState(false);
   const downloadDocx = async () => {
     if (!editingId) {
       toast.error('Save first', 'Save the trade document before downloading as DOCX.');
@@ -311,18 +335,23 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       URL.revokeObjectURL(url);
     } catch (e: any) {
       // The response is a Blob (responseType: 'blob'), so a server error body
-      // arrives as a Blob too — read it back to surface the real message
-      // instead of a generic "Please try again".
-      let msg = 'Please try again.';
+      // arrives as a Blob too — read it back to surface the real message.
+      let raw = '';
       try {
         const blob = e?.response?.data;
         if (blob instanceof Blob) {
           const json = JSON.parse(await blob.text());
-          if (json?.message) msg = json.message;
+          raw = typeof json?.message === 'string' ? json.message : '';
         } else if (typeof e?.response?.data?.message === 'string') {
-          msg = e.response.data.message;
+          raw = e.response.data.message;
         }
-      } catch { /* keep the default message */ }
+      } catch { /* no readable message */ }
+      // Never surface a raw server error that leaks a file path — show a
+      // friendly, actionable message instead.
+      const leaksPath = /does not exist|no such file|[\\/](storage|var|www|home|app|tmp)[\\/]/i.test(raw);
+      const msg = raw && !leaksPath
+        ? raw
+        : 'The document file could not be found. Please re-save the trade document, then try downloading again.';
       toast.error('Download failed', msg);
     }
   };
@@ -353,6 +382,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     }
   };
   const uploadDocx = async (file: File) => {
+    if (docxUploading) return;               // ignore repeat clicks mid-upload
+    setDocxUploading(true);
     const fd = new FormData();
     fd.append('docx', file);
     try {
@@ -385,6 +416,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       toast.success('Uploaded', file.name);
     } catch (e: any) {
       toast.error('Upload failed', e?.response?.data?.message ?? 'Please try again.');
+    } finally {
+      setDocxUploading(false);
     }
   };
 
@@ -495,10 +528,13 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     else if (purpose.trim().length < PURPOSE_MIN) next.purpose = `Purpose must be at least ${PURPOSE_MIN} characters`;
     else if (purpose.trim().length > PURPOSE_MAX) next.purpose = `Purpose must not exceed ${PURPOSE_MAX} characters`;
     if (parties.size === 0) next.party = 'Select at least one applicable party';
-    // High-regulatory trade docs target exactly one regulated segment;
-    // less-regulatory may apply to many (or none → all standard segments).
+    // Segment is mandatory: high-regulatory trade docs target exactly one
+    // regulated segment; less-regulatory may apply to several — but at least
+    // one must be chosen.
     if (regulatory === 'highly' && segments.length !== 1) {
       next.segment = 'High-regulatory documents need exactly one segment';
+    } else if (segments.length === 0) {
+      next.segment = 'Select at least one segment';
     }
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -709,7 +745,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                 </div>
                 <div className="tdw-field" style={{ marginTop: 12 }}>
                   <label className="tdw-label">
-                    {regulatory === 'highly' ? <>Segment <span className="tdw-req">*</span></> : 'Segments (select one or more)'}
+                    {regulatory === 'highly' ? <>Segment <span className="tdw-req">*</span></> : <>Segments (select one or more) <span className="tdw-req">*</span></>}
                   </label>
                   {regulatory === 'highly' ? (
                     <MasterSelect
@@ -806,6 +842,16 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                   <div className="tdw-editor-actions">
                     <input ref={docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
                            onChange={e => { const f = e.target.files?.[0]; if (f) void uploadDocx(f); e.currentTarget.value = ''; }} />
+                    {/* In edit mode, surface the currently attached Word file so the
+                        user can see it exists — Download DOCX views it, Upload Word
+                        Doc replaces it. */}
+                    {editingId && existing?.file_path && (
+                      <span className="tdw-editor-file" title="Currently attached Word file — Download DOCX to view, Upload Word Doc to replace"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', borderRadius: 8, padding: '5px 10px', maxWidth: 240 }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(existing?.name || existing?.title || 'Trade document')}.docx</span>
+                      </span>
+                    )}
                     {/* DOCX only — Stage 2 exports the editable Word file. The
                         full combined PDF preview lives on the Library list as
                         "Download Draft PDF". */}
@@ -813,9 +859,18 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                       Download DOCX
                     </button>
-                    <button type="button" className="tdw-editor-btn" onClick={() => docxRef.current?.click()} title={editingId ? 'Upload a revised Word file' : 'Import content from a Word file'}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                      Upload Word Doc
+                    <button type="button" className="tdw-editor-btn" disabled={docxUploading} onClick={() => docxRef.current?.click()} title={docxUploading ? 'Importing your Word file…' : (editingId ? 'Upload a revised Word file' : 'Import content from a Word file')}>
+                      {docxUploading ? (
+                        <>
+                          <svg className="tdw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                          Uploading…
+                        </>
+                      ) : (
+                        <>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                          Upload Word Doc
+                        </>
+                      )}
                     </button>
                     <button type="button" className="tdw-editor-btn" onMouseDown={e => { e.preventDefault(); stashSelection(); }} onClick={() => setPickerOpen(true)}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>
@@ -903,10 +958,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     >&nbsp;</button>
                   ))}
                   <span className="tdw-toolbar-sep" />
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyLeft')}    title="Align left">≡</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyCenter')}  title="Align center">≡</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyRight')}   title="Align right">≡</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyFull')}    title="Justify">≡</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyLeft')}    title="Align left"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg></button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyCenter')}  title="Align center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="5" y1="18" x2="19" y2="18"/></svg></button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyRight')}   title="Align right"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg></button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyFull')}    title="Justify"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
                   <span className="tdw-toolbar-sep" />
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('insertUnorderedList')} title="Bullet list">•≡</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('insertOrderedList')}   title="Numbered list">1≡</button>
@@ -921,7 +976,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                   >—</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('undo')} title="Undo">↶</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('redo')} title="Redo">↷</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('removeFormat')} title="Clear formatting">🅣</button>
+                  <button type="button" className="tdw-toolbar-btn" onClick={clearFormatting} title="Clear formatting">🅣</button>
                 </div>
                 {/* Scrollable region — the editor head + toolbar above stay
                    pinned; only this page-shell preview scrolls when the
@@ -1057,6 +1112,9 @@ const TDW_CSS = `
   animation: tdwSlideUp .24s cubic-bezier(.22,1,.36,1) both;
 }
 @keyframes tdwSlideUp { from { opacity: 0; transform: translateY(20px) scale(.97) } to { opacity: 1; transform: none } }
+@keyframes tdwSpin { to { transform: rotate(360deg); } }
+.tdw-spin { animation: tdwSpin .7s linear infinite; transform-origin: center; }
+.tdw-editor-btn:disabled { opacity: .6; cursor: wait; }
 
 /* ── Header strip ── */
 .tdw-head {
@@ -1362,6 +1420,7 @@ const TDW_CSS = `
 .tdw-toolbar::-webkit-scrollbar { height: 6px; }
 .tdw-toolbar::-webkit-scrollbar-thumb { background: rgba(6,182,212,.30); border-radius: 999px; }
 .tdw-toolbar-sel, .tdw-toolbar-btn {
+  box-sizing: border-box; line-height: 1; vertical-align: middle;
   height: 26px; min-width: 26px; padding: 0 6px; flex-shrink: 0;
   border: 1px solid #e2e8f0; border-radius: 6px;
   background: #fff; color: #475569;
@@ -1369,6 +1428,11 @@ const TDW_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
   transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
+.tdw-toolbar-btn svg { display: block; }
+/* Colour-picker labels (T / highlight): pin them to the same 26px box and
+   clip the native <input type="color"> so it can't poke the button out of row. */
+.tdw-toolbar-color { position: relative; top: 4px; width: 26px; padding: 0; overflow: hidden; font-weight: 800; }
+.tdw-toolbar-color input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: none; padding: 0; margin: 0; }
 .tdw-toolbar-sel { min-width: auto; }
 .tdw-toolbar-btn:hover { background: #f0fdff; border-color: #67e8f9; color: #0891b2; }
 .tdw-toolbar-sep { width: 1px; height: 18px; flex-shrink: 0; background: #cbd5e1; }
@@ -1379,6 +1443,14 @@ const TDW_CSS = `
   outline: none;
   font-size: 13.5px; line-height: 1.6; color: #0c4a6e;
 }
+/* Restore list markers inside the editor — the app's global CSS reset strips
+   list-style/padding off ul/ol, so insertUnorderedList / insertOrderedList
+   produced lists with no bullets or numbers. */
+.tdw-editor ul { list-style: disc outside; padding-left: 1.6em; margin: .4em 0; }
+.tdw-editor ol { list-style: decimal outside; padding-left: 1.6em; margin: .4em 0; }
+.tdw-editor ul ul { list-style: circle outside; }
+.tdw-editor ol ol { list-style: lower-alpha outside; }
+.tdw-editor li { margin: .15em 0; }
 .tdw-editor-foot {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 18px;

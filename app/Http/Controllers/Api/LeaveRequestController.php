@@ -312,6 +312,33 @@ class LeaveRequestController extends Controller
             }
         }
 
+        // Periodic monthly accrual (Bug #74) — "Leave accrued periodically → Once
+        // every month" vests one month's worth of quota per calendar month, so
+        // usage in a month must be capped at that monthly accrual (yearlyQuota /
+        // 12). Without this the employee could drain the whole annual quota
+        // inside a single month. Approved + Pending days in the month count.
+        $mode      = strtolower((string) ($accrual['mode'] ?? ''));
+        $frequency = strtolower((string) ($accrual['frequency'] ?? ''));
+        if (!$unlimited && $mode === 'periodic' && $frequency === 'monthly') {
+            $monthlyAccrual = round(((float) ($accrual['yearlyQuota'] ?? 0)) / 12.0, 2);
+            if ($monthlyAccrual > 0) {
+                $usedThisMonthAcc = (float) LeaveRequest::query()
+                    ->where('employee_id', $employee->id)
+                    ->where('leave_type_id', $data['leave_type_id'])
+                    ->whereIn('status', ['Approved', 'Pending'])
+                    ->whereBetween('from_date', [
+                        $from->copy()->startOfMonth()->toDateString(),
+                        $from->copy()->endOfMonth()->toDateString(),
+                    ])
+                    ->sum('days');
+                if ($usedThisMonthAcc + $days > $monthlyAccrual) {
+                    $fmt = fn (float $n) => rtrim(rtrim(number_format($n, 2), '0'), '.');
+                    $remaining = max(0.0, $monthlyAccrual - $usedThisMonthAcc);
+                    abort(422, "This leave type accrues {$fmt($monthlyAccrual)} day(s) per month (Once every month). You've already used {$fmt($usedThisMonthAcc)} this month, so only {$fmt($remaining)} more can be applied (you requested {$fmt($days)}).");
+                }
+            }
+        }
+
         // Snapshot the approval chain from the plan-type config_json so
         // changing the plan rules later doesn't reroute in-flight requests.
         // Pass the computed day count so any skip_if rules (e.g. days_lt: 2)
@@ -981,8 +1008,22 @@ class LeaveRequestController extends Controller
                 && $resolvedEmpId
                 && !$resolvedExists
             ) {
-                $shouldSkip = true;
-                $skipReason = "Auto-skipped — approver employee #{$resolvedEmpId} no longer exists";
+                if ($kind === 'reporting_manager') {
+                    // The reporting manager was removed / soft-deleted. Do NOT
+                    // skip this level: on the default sole-RM chain, skipping the
+                    // only level makes firstActionableLevel run past the end and
+                    // the request auto-approves with no human review (bug #68).
+                    // Keep it Pending — an inactive/disabled/missing RM is treated
+                    // as unavailable by isReportingManagerUnavailable(), so HR can
+                    // step in (Bug 55) and the request is actually reviewed
+                    // instead of silently granted.
+                    $skipReason = 'Reporting manager unavailable — awaiting HR review';
+                } else {
+                    // A non-RM explicit approver that no longer exists → skip to
+                    // the next level so the chain doesn't stall on a dead entry.
+                    $shouldSkip = true;
+                    $skipReason = "Auto-skipped — approver employee #{$resolvedEmpId} no longer exists";
+                }
             }
 
             $chain[] = [

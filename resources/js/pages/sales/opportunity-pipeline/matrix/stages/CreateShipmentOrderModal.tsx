@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { formatDmy } from '../../../../../utils/formatDmy';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
+import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { useQpiMasters } from '../../SalesQPI';
 
 /* Ensure a pre-filled value (carried over from the PI/quotation) still
@@ -67,7 +69,7 @@ const SHIPPING_MODE_OPTIONS = [
 function fmtDate(s: string | null | undefined): string {
   if (!s) return '—';
   const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB');
+  return Number.isNaN(d.getTime()) ? s : formatDmy(d);
 }
 
 function downloadFile(file: File) {
@@ -84,6 +86,9 @@ export default function CreateShipmentOrderModal({
 }: Props) {
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement | null>(null);
+
+  // Freeze background page scroll while the modal is open (locks html + body).
+  useScrollLock(open);
 
   const [shippingLiability, setLiability] = useState('');
   const [coldChain, setColdChain]         = useState('');
@@ -126,6 +131,7 @@ export default function CreateShipmentOrderModal({
     if (!shippingLiability) e.shippingLiability = 'Required';
     if (!coldChain)         e.coldChain         = 'Required';
     if (!zipCode.trim())    e.zipCode           = 'Required';
+    else if (zipCode.trim().length > 12) e.zipCode = 'Must be 12 characters or fewer';
     if (!freightCost || !Number.isFinite(Number(freightCost)) || Number(freightCost) < 0)
       e.freightCost = 'Positive number required';
     if (!shippingMode)      e.shippingMode      = 'Required';
@@ -170,8 +176,28 @@ export default function CreateShipmentOrderModal({
     } catch (e: any) {
       const msg = e?.response?.data?.message;
       const fieldErrs = e?.response?.data?.errors as Record<string, string[]> | undefined;
-      const detail = fieldErrs ? Object.values(fieldErrs).flat().join(' ') : (msg ?? 'Could not save the shipment order.');
-      toast.error('Save failed', detail);
+      // Map Laravel's snake_case validation keys back to this form's fields so
+      // the message renders INLINE under the offending input (red highlight +
+      // helper text) instead of only as a top-right toast.
+      const KEY_MAP: Record<string, string> = {
+        zip_code: 'zipCode', shipping_liability: 'shippingLiability', cold_chain: 'coldChain',
+        freight_cost: 'freightCost', shipping_mode: 'shippingMode', inco_term: 'incoTerm',
+        port_of_loading: 'portOfLoading', port_of_unloading: 'portOfUnloading',
+        final_destination: 'finalDestination', origin_country: 'originCountry', remarks: 'remarks',
+      };
+      const inline: Record<string, string> = {};
+      if (fieldErrs) {
+        for (const [k, v] of Object.entries(fieldErrs)) {
+          const key = KEY_MAP[k] ?? k;
+          inline[key] = Array.isArray(v) ? v[0] : String(v);
+        }
+      }
+      if (Object.keys(inline).length) {
+        setErrors(prev => ({ ...prev, ...inline }));
+        toast.warning('Please fix the highlighted fields', 'Check the fields marked in red below.');
+      } else {
+        toast.error('Save failed', msg ?? 'Could not save the shipment order.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -235,7 +261,7 @@ export default function CreateShipmentOrderModal({
             </span>
             <span className="cso-pill">
               <span className="cso-pill-label">SHIPMENT DATE</span>
-              <span className="cso-pill-val">{new Date().toLocaleDateString('en-GB')}</span>
+              <span className="cso-pill-val">{formatDmy(new Date())}</span>
             </span>
             <button className="cso-close" onClick={onClose} aria-label="Close">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
@@ -284,7 +310,7 @@ export default function CreateShipmentOrderModal({
             </Field>
             <Field label="Zip Code" required error={errors.zipCode}>
               <input className={`cso-input ${errors.zipCode ? 'cso-input-err' : ''}`}
-                value={zipCode} onChange={(e) => setZipCode(e.target.value)} placeholder="Enter zip code" />
+                value={zipCode} onChange={(e) => { setZipCode(e.target.value); if (errors.zipCode) setErrors(p => ({ ...p, zipCode: '' })); }} placeholder="Enter zip code" />
             </Field>
 
             <Field label={`Freight Cost${curCode ? ` (${curCode})` : ''}`} required error={errors.freightCost}>

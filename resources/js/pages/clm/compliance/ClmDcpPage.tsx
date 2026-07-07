@@ -148,6 +148,15 @@ export default function ClmDcpPage() {
   // so the last entries aren't clipped off the bottom of the viewport. `y` is the
   // badge's bottom edge when opening down, or its top edge when flipping up.
   const [authOpen, setAuthOpen] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean } | null>(null);
+  // Close the fixed-positioned authorities popover on scroll/resize so it can't
+  // drift away from its badge (capture:true catches ancestor + table scrolls).
+  useEffect(() => {
+    if (!authOpen) return;
+    const close = () => setAuthOpen(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [authOpen]);
 
   const reload = () => {
     setLoading(true);

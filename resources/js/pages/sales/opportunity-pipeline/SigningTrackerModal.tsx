@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
+import { useScrollLock } from '../../../hooks/useScrollLock';
 
 /* Shared Signing Tracker modal — reusable across the QPI list, Sales Matrix
    Stage 5, and Customer / Consignee signing flows. Self-contained: it injects
@@ -342,6 +343,9 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   const [auditing, setAuditing] = useState(false);
   // Two-stage: compact summary card first → "View details" opens the full panel.
   const [view, setView] = useState<'compact' | 'expanded'>('compact');
+
+  // Freeze background page scroll while this modal is open (locks html + body).
+  useScrollLock();
 
   const load = useCallback(() => {
     setLoading(true); setErr(null);

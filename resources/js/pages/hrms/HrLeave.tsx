@@ -36,7 +36,10 @@ type LeaveStage =
   | 'Rejected'
   | 'Cancelled';
 type ApprovalState = 'Pending' | 'Approved' | 'Rejected' | 'NA';
-type PayrollMode = 'Paid Leave' | 'Unpaid' | 'Half-Pay';
+// Payroll classification is binary — a leave type is either Paid or Unpaid.
+// 'Half-Pay' was never produced by the system (see the classification in
+// apiToRow) so it was dropped from the type + the Payroll filter (bug #69).
+type PayrollMode = 'Paid Leave' | 'Unpaid';
 type ProofState = 'Uploaded' | 'Missing' | 'N/A';
 type EscalationReason = 'manager_rejected' | 'aged_out' | 'manager_unavailable' | 'hr_raised' | 'none';
 
@@ -122,7 +125,6 @@ const TYPE_TONE: Record<LeaveType, { fg: string; bg: string }> = {
 const PAYROLL_TONE: Record<PayrollMode, { fg: string; bg: string }> = {
   'Paid Leave': { fg: '#5a3fd1', bg: '#ece6ff' },
   'Unpaid':     { fg: '#374151', bg: '#eef2f6' },
-  'Half-Pay':   { fg: '#a4661c', bg: '#fde8c4' },
 };
 
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e'];
@@ -544,7 +546,6 @@ export default function HrLeave() {
     { value: 'All',        label: 'All' },
     { value: 'Paid Leave', label: 'Paid Leave' },
     { value: 'Unpaid',     label: 'Unpaid' },
-    { value: 'Half-Pay',   label: 'Half-Pay' },
   ];
 
   return (

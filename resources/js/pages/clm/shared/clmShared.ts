@@ -354,17 +354,26 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
   box-shadow: 0 0 0 1000px #fff inset !important;
   transition: background-color 9999s ease-in-out 0s;
 }
-.clm-search-grow:focus-within { width: 480px; }
+/* Width stays constant on focus — only the border/glow reacts. Growing the bar
+   on focus made it jump wider when clicked and snap back on blur (reported: the
+   search bar changes size on focus). */
 
 /* Figma-match: fixed-width search box (not flex-grow). Pairs with the toolbar's
-   space-between so a Total badge sits at the far right. Expands on focus. */
+   space-between so a Total badge sits at the far right. */
 .clm-tabs-bar .clm-search-fixed {
   flex: 0 0 auto; width: 500px; max-width: 100%;
-  transition: width .18s ease, border-color .15s ease, box-shadow .15s ease;
+  transition: border-color .15s ease, box-shadow .15s ease;
 }
-.clm-tabs-bar .clm-search-fixed:focus-within { width: 580px; }
 @media (max-width: 1280px) { .clm-tabs-bar .clm-search-fixed { width: 360px; } }
-@media (max-width: 760px)  { .clm-tabs-bar .clm-search-fixed { width: 100%; } }
+/* Once the search goes full-width, stack the toolbar so the search input and
+   the Total badge each take their own row instead of colliding / mis-aligning
+   (reported: search bar not responsive on mobile). Matches the search's
+   full-width breakpoint so there's no awkward in-between band. */
+@media (max-width: 760px) {
+  .clm-tabs-bar .clm-search-fixed { width: 100%; }
+  .clm-tabs-bar { flex-direction: column; align-items: stretch; }
+  .clm-tabs-bar .clm-total { align-self: stretch; }
+}
 
 /* Compound Total badge — icon block + label + count number */
 .clm-total {
@@ -445,6 +454,13 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
 /* Single-line truncation with ellipsis — keeps long Purpose text on one
  * line so the row height stays compact; full text shows in the native
  * title tooltip on hover. */
+/* Truncating cell: the ellipsis lives on an inner block <div> (text-overflow
+   doesn't work on a display:table-cell), while the cell caps its own width so
+   long Purpose text truncates instead of wrapping and expanding the row. */
+.clm-td-trunc-cell { max-width: 260px; }
+/* Single-line ellipsis for the (bold) Trade Document Title — keeps its
+   .clm-td-name weight/colour but stops long titles wrapping like Purpose. */
+.clm-td-name-trunc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clm-td-trunc { font-size: 12px; color: #475569; text-transform: capitalize; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clm-td-trunc::first-letter { text-transform: uppercase; }
 
@@ -600,6 +616,13 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
 /* ──────────────────────────────────────────────────────────
  * MODAL — gradient teal head, body with cyan gradient bg.
  * ────────────────────────────────────────────────────────── */
+/* When ANY CLM modal is open, lock selection of the page BEHIND it so Ctrl+A /
+ * drag-select can't grab and copy the background. :has() matches the portaled
+ * .clm-modal-bd anywhere under <body>; the backdrop re-enables selection for the
+ * modal's own content below (so this covers modals that don't call
+ * useSelectionLock without touching each one). */
+body:has(.clm-modal-bd) { -webkit-user-select: none; user-select: none; }
+
 .clm-modal-bd {
   position: fixed; inset: 0; z-index: 200000;
   background: rgba(7,30,50,.6); backdrop-filter: blur(8px);

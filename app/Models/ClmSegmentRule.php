@@ -12,7 +12,7 @@ class ClmSegmentRule extends Model
     public const REG_VALUES = [self::REG_HIGHLY, self::REG_LESS];
 
     protected $fillable = [
-        'client_id', 'segment_id', 'segment_code', 'rule_code',
+        'client_id', 'branch_id', 'segment_id', 'segment_code', 'rule_code',
         'regulatory_status', 'auths_json', 'doc_selections',
         'mandatory_count', 'optional_count', 'status',
         'created_by', 'updated_by',

@@ -182,6 +182,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post('/consignees/{consignee}/clone-from-customer',
         [\App\Http\Controllers\Api\ConsigneeController::class, 'cloneFromCustomer']);
 
+    // Map an existing consignee to a customer (many-to-many) + merge segments.
+    Route::post('/consignees/{consignee}/map-customer',
+        [\App\Http\Controllers\Api\ConsigneeController::class, 'mapCustomer']);
+
     Route::get   ('/consignees/{consignee}/documents',           [\App\Http\Controllers\Api\ConsigneeDocumentController::class, 'index']);
     Route::post  ('/consignees/{consignee}/documents',           [\App\Http\Controllers\Api\ConsigneeDocumentController::class, 'store']);
     Route::get   ('/consignees/{consignee}/documents/{document}',[\App\Http\Controllers\Api\ConsigneeDocumentController::class, 'show']);

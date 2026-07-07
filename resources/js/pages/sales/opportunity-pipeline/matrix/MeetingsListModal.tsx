@@ -103,11 +103,13 @@ export default function MeetingsListModal({
     }
   };
 
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const fmtDate = (s: string) => {
     if (!s) return '—';
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
       const [y, m, d] = s.slice(0, 10).split('-');
-      return `${d}/${m}/${y}`;
+      // DD-Mon-YYYY (e.g. 04-Jul-2026)
+      return `${d}-${MONTHS[Number(m) - 1] ?? m}-${y}`;
     }
     return s;
   };

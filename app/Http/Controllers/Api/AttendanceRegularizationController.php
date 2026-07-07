@@ -112,8 +112,13 @@ class AttendanceRegularizationController extends Controller
         }
 
         // Self-service rule — an employee regularizes their OWN attendance.
-        // Filing on behalf of someone else is an admin-only capability.
-        $isAdmin = in_array($user->user_type, ['super_admin', 'client_admin'], true);
+        // Filing on behalf of someone else is an HR/admin capability. Use the
+        // shared ADMIN_TYPES (which includes branch_user) so this matches the
+        // index / approve / cancel checks — a branch-level HR admin could
+        // otherwise view and approve regularizations but not create one on
+        // behalf of an employee, getting "You can only raise a regularization
+        // request for yourself" (bug #15).
+        $isAdmin = in_array($user->user_type, self::ADMIN_TYPES, true);
         if (!$isAdmin && (int) ($employee->user_id ?? 0) !== (int) $user->id) {
             abort(403, 'You can only raise a regularization request for yourself.');
         }

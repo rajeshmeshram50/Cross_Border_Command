@@ -4,6 +4,7 @@ import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import RemindersForLeadModal from './RemindersForLeadModal';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
+import Tooltip from '../../../../components/ui/Tooltip';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Reminders Directory — list of every reminder against the current
@@ -91,11 +92,13 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
     }
   };
 
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const fmtDate = (s: string) => {
     if (!s) return '—';
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
       const [y, m, d] = s.slice(0, 10).split('-');
-      return `${d}/${m}/${y}`;
+      // DD-Mon-YYYY (e.g. 04-Jul-2026)
+      return `${d}-${MONTHS[Number(m) - 1] ?? m}-${y}`;
     }
     return s;
   };
@@ -140,7 +143,7 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
               <table className="rlm-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 50 }}>#</th>
+                    <th style={{ width: 64 }}>SR NO</th>
                     <th>SUBJECT</th>
                     <th style={{ width: 120 }}>SET DATE</th>
                     <th style={{ width: 100 }}>TAT</th>
@@ -149,9 +152,19 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
                   </tr>
                 </thead>
                 <tbody>
-                  {loading && (
-                    <tr><td colSpan={6} className="rlm-status">Loading reminders…</td></tr>
-                  )}
+                  {loading && Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={`sk-${i}`} className="rlm-sk-row">
+                      <td><span className="rlm-sk rlm-sk-num" /></td>
+                      <td>
+                        <span className="rlm-sk rlm-sk-line" style={{ width: '68%' }} />
+                        <span className="rlm-sk rlm-sk-line rlm-sk-sub" style={{ width: '42%' }} />
+                      </td>
+                      <td><span className="rlm-sk rlm-sk-line" style={{ width: 74 }} /></td>
+                      <td><span className="rlm-sk rlm-sk-pill" /></td>
+                      <td><span className="rlm-sk rlm-sk-pill" /></td>
+                      <td><span className="rlm-sk rlm-sk-btn" /></td>
+                    </tr>
+                  ))}
                   {!loading && rows.length === 0 && (
                     <tr>
                       <td colSpan={6} className="rlm-status">
@@ -166,8 +179,8 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
                         <td><span className="rlm-num">{i + 1}</span></td>
                         <td>
                           <div className="rlm-subj-cell">
-                            <span className="rlm-subj">{r.subject}</span>
-                            {r.remark && <span className="rlm-remark" title={r.remark}>{r.remark}</span>}
+                            <Tooltip label={r.subject}><span className="rlm-subj">{r.subject}</span></Tooltip>
+                            {r.remark && <Tooltip label={r.remark}><span className="rlm-remark">{r.remark}</span></Tooltip>}
                           </div>
                         </td>
                         <td className="rlm-date">{fmtDate(r.set_date)}</td>
@@ -182,7 +195,6 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
                             <button
                               className={`rlm-row-btn ${done ? 'rlm-row-btn-undo' : 'rlm-row-btn-done'}`}
                               onClick={() => void toggleStatus(r)}
-                              title={done ? 'Reopen' : 'Mark Done'}
                             >
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                                 {done
@@ -191,13 +203,13 @@ export default function RemindersListModal({ open, oppId, oppDate, onClose }: Pr
                               </svg>
                               {done ? 'Reopen' : 'Done'}
                             </button>
-                            <button className="rlm-row-btn rlm-row-btn-del" onClick={() => setPendingDelete(r)} title="Delete">
+                            <Tooltip label="Delete"><button className="rlm-row-btn rlm-row-btn-del" onClick={() => setPendingDelete(r)}>
                               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
                                 <polyline points="3 6 5 6 21 6" />
                                 <path d="M19 6l-1.5 14a2 2 0 0 1-2 2H8.5a2 2 0 0 1-2-2L5 6" />
                                 <path d="M10 11v6M14 11v6" />
                               </svg>
-                            </button>
+                            </button></Tooltip>
                           </div>
                         </td>
                       </tr>
@@ -315,8 +327,28 @@ const RLM_CSS = `
   color: #5b21b6;
   font-size: 9.5px; font-weight: 800;
 }
-.rlm-subj-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.rlm-subj { font-size: 12.5px; font-weight: 700; color: #1e1b4b; line-height: 1.25; }
+/* Cap the subject column so a long reason can't stretch the table / cause
+   horizontal overflow — truncate with an ellipsis and show the full text on
+   hover (title attr) instead. */
+.rlm-subj-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-width: 360px; }
+.rlm-subj { font-size: 12.5px; font-weight: 700; color: #1e1b4b; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Skeleton shimmer shown in the table while reminders fetch (no "Loading…" text). */
+.rlm-sk {
+  display: inline-block; border-radius: 6px;
+  background: linear-gradient(90deg, #ece9f6 25%, #f6f4fc 50%, #ece9f6 75%);
+  background-size: 400px 100%;
+  animation: rlm-shimmer 1.15s ease-in-out infinite;
+}
+@keyframes rlm-shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
+.rlm-sk-line { display: block; height: 12px; }
+.rlm-sk-sub  { height: 9px; margin-top: 6px; opacity: .7; }
+.rlm-sk-num  { width: 22px; height: 22px; border-radius: 7px; }
+.rlm-sk-pill { width: 74px; height: 20px; border-radius: 999px; }
+.rlm-sk-btn  { width: 62px; height: 28px; border-radius: 7px; }
+[data-bs-theme="dark"] .rlm-sk {
+  background: linear-gradient(90deg, #241c48 25%, #2e2557 50%, #241c48 75%);
+  background-size: 400px 100%;
+}
 .rlm-remark {
   font-size: 10.5px; color: #64748b;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -353,6 +385,9 @@ const RLM_CSS = `
   font-family: inherit;
 }
 .rlm-row-btn:hover:not(:disabled) { background: #f1f5f9; }
+/* Fixed width so the toggle button reads the same whether it says "Done" or
+   "Reopen" — the action buttons never shift position when the status flips. */
+.rlm-row-btn-done, .rlm-row-btn-undo { min-width: 96px; justify-content: center; }
 .rlm-row-btn-done { color: #15803d; border-color: #bbf7d0; background: #f0fdf4; }
 .rlm-row-btn-done:hover { background: #dcfce7; border-color: #86efac; }
 .rlm-row-btn-undo { color: #b45309; border-color: #fde68a; background: #fffbeb; }

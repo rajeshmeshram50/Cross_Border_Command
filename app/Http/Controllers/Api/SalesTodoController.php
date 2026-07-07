@@ -208,6 +208,9 @@ class SalesTodoController extends Controller
             [$clientId, $branchId] = $this->resolveOwnership($user);
             $employeeId = Employee::where('user_id', $user->id)->value('id');
 
+            // Reject overlapping meetings for the same opportunity + time slot.
+            $this->assertNoScheduleConflict($data, $clientId, $branchId);
+
             $code = $this->allocateMeetingCode($data['type'], $clientId, $branchId);
 
             $row = SalesMeeting::create([
@@ -255,6 +258,16 @@ class SalesTodoController extends Controller
             if (array_key_exists($f, $data)) $row->{$f} = $data[$f];
         }
         if (isset($data['date'])) $row->date = $data['date'];
+
+        // Same conflict guard on edit — a reschedule must not overlap another
+        // meeting for the same opportunity (excluding this row itself).
+        $this->assertNoScheduleConflict([
+            'opp_id'     => $row->opp_id,
+            'date'       => $row->date instanceof \Carbon\Carbon ? $row->date->toDateString() : $row->date,
+            'start_time' => $row->start_time,
+            'end_time'   => $row->end_time,
+        ], $row->client_id, $row->branch_id, $row->id);
+
         $row->save();
 
         $row->load('creator:id,name,email');
@@ -361,6 +374,42 @@ class SalesTodoController extends Controller
     /* ─────────────────────────────────────────────────────────────────
      *  HELPERS
      * ───────────────────────────────────────────────────────────────── */
+
+    /**
+     * Scheduling conflict guard: block a meeting that overlaps an existing
+     * (non-cancelled) meeting for the SAME opportunity on the SAME date within
+     * the same tenant. Two windows overlap when existing.start < new.end AND
+     * existing.end > new.start. No opportunity / times = nothing to clash on.
+     */
+    private function assertNoScheduleConflict(array $data, $clientId, $branchId, ?int $ignoreId = null): void
+    {
+        $oppId = $data['opp_id'] ?? null;
+        if (!$oppId || empty($data['date']) || empty($data['start_time']) || empty($data['end_time'])) {
+            return;
+        }
+
+        $conflict = SalesMeeting::query()
+            ->where('client_id', $clientId)
+            ->when(
+                $branchId === null,
+                fn ($q) => $q->whereNull('branch_id'),
+                fn ($q) => $q->where('branch_id', $branchId),
+            )
+            ->whereDate('date', $data['date'])
+            ->where('opp_id', $oppId)
+            ->where('status', '!=', SalesMeeting::STATUS_CANCELLED)
+            ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->where('start_time', '<', $data['end_time'])
+            ->where('end_time', '>', $data['start_time'])
+            ->exists();
+
+        if ($conflict) {
+            abort(response()->json([
+                'message' => 'Time Conflict: A meeting is already scheduled for this time slot.',
+                'errors'  => ['start_time' => ['Time Conflict: A meeting is already scheduled for this time slot.']],
+            ], 422));
+        }
+    }
 
     /**
      * Resolve which (client_id, branch_id) tuple a new row should be

@@ -239,7 +239,7 @@ class CustomerController extends Controller
             if ($clientId !== null) {
                 DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
             }
-            $code = $this->nextCustomerCode($clientId);
+            $code = $this->nextCustomerCode($clientId, $branchId);
 
             $customer = Customer::create([
                 'client_id'      => $clientId,
@@ -366,7 +366,24 @@ class CustomerController extends Controller
             return response()->json(['message' => $denial], 403);
         }
 
-        $customer->delete();
+        \Illuminate\Support\Facades\DB::transaction(function () use ($customer) {
+            // Many-to-many unlink: a consignee mapped to this customer stays
+            // alive if it's still mapped to others (primary reassigned when the
+            // deleted customer was its primary); a consignee left with NO
+            // customers is soft-deleted.
+            foreach ($customer->consignees()->get() as $consignee) {
+                $consignee->customers()->detach($customer->id);
+                $remaining = $consignee->customers()->pluck('customers.id')->all();
+                if (empty($remaining)) {
+                    $consignee->delete();
+                } elseif ((int) $consignee->customer_id === (int) $customer->id) {
+                    $consignee->update(['customer_id' => $remaining[0]]);
+                }
+            }
+
+            $customer->delete();
+        });
+
         return response()->json(['id' => $customer->id, 'deleted' => true]);
     }
 
@@ -731,13 +748,19 @@ class CustomerController extends Controller
      * soft-deleted customer's number is never reused — keeping codes a
      * stable per-tenant audit trail.
      */
-    private function nextCustomerCode($clientId): string
+    private function nextCustomerCode($clientId, $branchId = null): string
     {
+        // Per-branch sequence: each branch owns its own C-001, C-002 … run.
         $codes = Customer::withTrashed()
             ->when(
                 $clientId === null,
                 fn ($q) => $q->whereNull('client_id'),
                 fn ($q) => $q->where('client_id', $clientId)
+            )
+            ->when(
+                $branchId === null,
+                fn ($q) => $q->whereNull('branch_id'),
+                fn ($q) => $q->where('branch_id', $branchId)
             )
             ->pluck('customer_code');
 

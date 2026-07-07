@@ -113,8 +113,17 @@ const DEFAULT_HEADER: OppHeaderData = {
   oppId:        'OPP-001',
   customer:     'GreenHarvest Global',
   customerCode: 'C-001',
-  oppDate:      '10/04/2026',
+  oppDate:      '10-Apr-2026',
   country:      'IN',
+};
+
+/* DD-Mon-YYYY (e.g. 04-Jul-2026) — the app-wide display date format. */
+const DMY_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtDmy = (iso: string): string => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ''
+    : `${String(d.getDate()).padStart(2, '0')}-${DMY_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 };
 
 /* Full-page loading shimmer for the Sales Matrix detail page — banner +
@@ -631,7 +640,7 @@ export default function SalesMatrixDetail() {
      * loses location.state, so seedHeader.oppDate fell back to the hardcoded
      * DEFAULT (10/04/2026). Preferring the loaded server date fixes that. */
     oppDate:            serverHeader.oppDateIso
-                          ? new Date(serverHeader.oppDateIso).toLocaleDateString('en-GB')
+                          ? (fmtDmy(serverHeader.oppDateIso) || seedHeader.oppDate)
                           : seedHeader.oppDate,
     /* Customer name from the SERVER (mapped customer's company_name) for the
      * same reason — the seed is lost on stage navigation and fell back to the

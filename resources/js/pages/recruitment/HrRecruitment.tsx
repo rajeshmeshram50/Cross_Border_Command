@@ -913,6 +913,12 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
     if (!rq)                  e.requiredQual = 'Required qualification is required';
     else if (rq.length < 2)   e.requiredQual = 'Qualification must be at least 2 characters';
     else if (rq.length > 255) e.requiredQual = 'Qualification must be at most 255 characters';
+    // Must contain at least one letter and only qualification-safe characters —
+    // rejects special-character junk like "@#$%" (bug #32).
+    else if (!/[A-Za-z]/.test(rq))
+      e.requiredQual = 'Qualification must contain letters (not just symbols)';
+    else if (!/^[A-Za-z0-9 .,/&()+\-]+$/.test(rq))
+      e.requiredQual = "Qualification may only contain letters, numbers, spaces and . , / & ( ) + -";
     return e;
   };
 
@@ -2082,18 +2088,20 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       }
     }
     const ctc = ctcRange.trim();
-    if (!ctc) {
-      e.ctcRange = 'CTC range is required';
-    } else if (ctc.length > 50) {
-      e.ctcRange = 'CTC range cannot exceed 50 characters';
-    } else if (!/^\d+(\.\d+)?(\s*-\s*\d+(\.\d+)?)?$/.test(ctc)) {
-      e.ctcRange = 'Enter a valid CTC range — a number or min-max, e.g. 8 or 8-12';
-    } else {
-      const nums = ctc.match(/\d+(?:\.\d+)?/g) || [];
-      if (nums.some(num => Number(num) > 9999.99)) {
-        e.ctcRange = 'CTC values cannot exceed 9,999.99 LPA';
-      } else if (nums.length === 2 && Number(nums[0]) > Number(nums[1])) {
-        e.ctcRange = 'CTC range minimum cannot be greater than the maximum';
+    // CTC range is OPTIONAL (bug #28) — only validate format/bounds when a
+    // value is actually entered; an empty value is allowed.
+    if (ctc) {
+      if (ctc.length > 50) {
+        e.ctcRange = 'CTC range cannot exceed 50 characters';
+      } else if (!/^\d+(\.\d+)?(\s*-\s*\d+(\.\d+)?)?$/.test(ctc)) {
+        e.ctcRange = 'Enter a valid CTC range — a number or min-max, e.g. 8 or 8-12';
+      } else {
+        const nums = ctc.match(/\d+(?:\.\d+)?/g) || [];
+        if (nums.some(num => Number(num) > 9999.99)) {
+          e.ctcRange = 'CTC values cannot exceed 9,999.99 LPA';
+        } else if (nums.length === 2 && Number(nums[0]) > Number(nums[1])) {
+          e.ctcRange = 'CTC range minimum cannot be greater than the maximum';
+        }
       }
     }
     if (!priority)               e.priority        = 'Priority is required';
@@ -2378,7 +2386,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                 {errors.workMode && <div className="rec-error"><i className="ri-error-warning-line" />{errors.workMode}</div>}
               </Col>
               <Col md={6}>
-                <label className="rec-form-label"><i className="ri-money-rupee-circle-line" />CTC Range (LPA)<span className="req">*</span></label>
+                <label className="rec-form-label"><i className="ri-money-rupee-circle-line" />CTC Range (LPA)</label>
                 <input
                   type="text"
                   maxLength={50}

@@ -5,6 +5,8 @@ import CustomerEvidenceVaultModal, { type CustomerVaultTarget, type TabKey as Va
 import ConsigneeEvidenceVaultModal, { type ConsigneeVaultTarget } from '../../sales/core-masters/consignee/ConsigneeEvidenceVaultModal';
 import ClmDocsPopup, { type DocCategory } from '../shared/ClmDocsPopup';
 import Tooltip from '../../../components/ui/Tooltip';
+import { ShimmerTableRows } from '../../../components/ui/Shimmer';
+import WorklistPager from '../../../components/ui/WorklistPager';
 
 /*
  * CLM → Buyer Profile page.
@@ -372,6 +374,33 @@ const BP_CSS = `
 /* Segment tooltip */
 [data-bs-theme="dark"] .seg-pop { background: #1e293b !important; border-color: rgba(6,182,212,.3) !important; box-shadow: 0 18px 50px rgba(0,0,0,.5) !important; }
 [data-bs-theme="dark"] .seg-pop span { color: #cfe8f3 !important; }
+
+/* WorklistPager recoloured to the page's cyan/teal theme (default is violet). */
+.wl-pager.bp-wl { border-top-color: #a5e8f5; background: linear-gradient(90deg,#f0fdff 0%,#e6fafe 40%,#f0fdff 100%); }
+.bp-wl .tc-wl-info, .bp-wl .tc-wl-rows { color: #0e7490; border-color: #a5e8f5; }
+.bp-wl .tc-wl-info .tc-wl-hl, .bp-wl .tc-wl-rows select { color: #0891b2; }
+.bp-wl .tc-wl-range { background: linear-gradient(135deg,#22d3ee 0%,#0891b2 55%,#0e7490 100%); box-shadow: 0 3px 12px rgba(8,145,178,.4),0 1px 0 rgba(255,255,255,.2) inset; }
+.bp-wl .tc-wl-btn { border-color: #a5e8f5; color: #0891b2; }
+.bp-wl .tc-wl-btn:hover:not(:disabled) { border-color: #0891b2; box-shadow: 0 4px 12px rgba(8,145,178,.25); }
+[data-bs-theme="dark"] .wl-pager.bp-wl { border-top-color: rgba(6,182,212,.30); background: linear-gradient(90deg,#0b1220 0%,#0e1726 45%,#0b1220 100%); }
+[data-bs-theme="dark"] .bp-wl .tc-wl-info, [data-bs-theme="dark"] .bp-wl .tc-wl-rows, [data-bs-theme="dark"] .bp-wl .tc-wl-btn { color: #67e8f9; border-color: rgba(6,182,212,.30); background: rgba(255,255,255,.05); }
+[data-bs-theme="dark"] .bp-wl .tc-wl-info .tc-wl-hl, [data-bs-theme="dark"] .bp-wl .tc-wl-rows select { color: #a5f3fc; }
+[data-bs-theme="dark"] .bp-wl .tc-wl-btn:hover:not(:disabled) { background: rgba(255,255,255,.10); border-color: #22d3ee; }
+
+/* ── Responsive (tablet / mobile) ──
+ * Header strips, analytics headers and table toolbars already flex-wrap inline,
+ * so the right-hand controls drop below on narrow screens. These rules make the
+ * search box flexible (instead of a fixed 280px that overflows), let the top
+ * Party/Transaction tab pills wrap, and hide the long sub-heading on phones. */
+@media (max-width: 820px) {
+  .seg-page .bpa-seg { flex-wrap: wrap; }
+  .seg-page .bpa-tab { height: 40px; padding: 0 14px; font-size: 11px; }
+  .seg-page input[type="text"] { width: auto !important; flex: 1 1 120px; min-width: 0; }
+}
+@media (max-width: 560px) {
+  .seg-page .bref-box__header-sub { display: none; }
+  .seg-page .bpa-tab { flex: 1 1 auto; justify-content: center; }
+}
 `;
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -512,45 +541,6 @@ function EvidenceVaultBtn({ icon, onClick, disabled }: { icon: 'shield' | 'box';
   );
 }
 
-/* Reusable list-table pager (buyer / consignee). */
-function ListPager({ page, total, perPage, noun, onPage }: { page: number; total: number; perPage: number; noun: string; onPage: (p: number) => void }) {
-  const totalPages = Math.ceil(total / perPage) || 1;
-  const start = (page - 1) * perPage;
-  const fromR = start + 1;
-  const toR = Math.min(start + perPage, total);
-  const prevDis: CSSProperties = page === 1 ? { opacity: .4, cursor: 'default' } : { cursor: 'pointer' };
-  const nextDis: CSSProperties = page === totalPages ? { opacity: .4, cursor: 'default' } : { cursor: 'pointer' };
-  const navBtn: CSSProperties = { width: '28px', height: '28px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.22)', background: '#fff', color: '#0891b2', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all .15s' };
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderTop: '1.5px solid #A5F3FC', flexShrink: 0 }}>
-      <span style={{ fontSize: '10px', fontWeight: 600, color: '#0891b2' }}>
-        Showing <strong>{fromR}–{toR}</strong> of <strong>{total}</strong> {noun}
-      </span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-        <button style={{ ...navBtn, ...prevDis }} onClick={() => page > 1 && onPage(page - 1)}>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
-        </button>
-        {/* Compact: current page + next page only (not every page number). */}
-        {[page, page + 1].filter((p) => p >= 1 && p <= totalPages).map((p) => {
-          const isActive = p === page;
-          return (
-            <button key={p} onClick={() => onPage(p)} style={{
-              width: '28px', height: '28px', borderRadius: '7px',
-              border: isActive ? '1.5px solid #0891b2' : '1.5px solid rgba(6,182,212,.2)',
-              background: isActive ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : '#fff',
-              color: isActive ? '#fff' : '#0891b2', fontWeight: isActive ? 800 : 600,
-              fontSize: '10.5px', cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s',
-            }}>{p}</button>
-          );
-        })}
-        <button style={{ ...navBtn, ...nextDis }} onClick={() => page < totalPages && onPage(page + 1)}>
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
-        </button>
-      </div>
-    </div>
-  );
-}
-
 /* Compact pager used by the transaction tables (ws/wos). */
 function TxnPager({ page, total, perPage, noun, onPage }: { page: number; total: number; perPage: number; noun: string; onPage: (p: number) => void }) {
   const totalPages = Math.ceil(total / perPage) || 1;
@@ -654,8 +644,14 @@ export default function ClmBuyerProfilePage() {
   const consTableRef = useRef<HTMLDivElement>(null);
   const buyerCardRef = useRef<HTMLDivElement>(null);
   const consCardRef = useRef<HTMLDivElement>(null);
-  const bpPerPage = useDynamicPerPage(buyerTableRef, { deps: [bpaTab, partyAnalyticsOpen] });
-  const consPerPage = useDynamicPerPage(consTableRef, { deps: [bpaTab, partyAnalyticsOpen] });
+  // Rows-per-page: auto-fits the viewport by default, but a manual choice from
+  // the pager's "Rows per page" selector (when set) overrides the auto-fit.
+  const [bpManualSize, setBpManualSize] = useState<number | null>(null);
+  const [consManualSize, setConsManualSize] = useState<number | null>(null);
+  const bpDynamicSize = useDynamicPerPage(buyerTableRef, { deps: [bpaTab, partyAnalyticsOpen] });
+  const consDynamicSize = useDynamicPerPage(consTableRef, { deps: [bpaTab, partyAnalyticsOpen] });
+  const bpPerPage = bpManualSize ?? bpDynamicSize;
+  const consPerPage = consManualSize ?? consDynamicSize;
   // Stretch each list card to the bottom of the viewport so its pager footer
   // pins to the bottom of the screen.
   const buyerCardFill = useFillHeight(buyerCardRef, { deps: [bpaTab, partyAnalyticsOpen] });
@@ -686,6 +682,15 @@ export default function ClmBuyerProfilePage() {
   // Segment "+N" popover — lists all segments for a row when the count badge
   // is clicked (mirrors the DCP authorities badge popover).
   const [segOpen, setSegOpen] = useState<{ key: string; names: string[]; x: number; y: number; flipUp: boolean } | null>(null);
+  // Close the fixed-positioned segment popover on scroll/resize so it can't
+  // drift away from its badge (capture:true catches ancestor + table scrolls).
+  useEffect(() => {
+    if (!segOpen) return;
+    const close = () => setSegOpen(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [segOpen]);
   // "Consignees for this buyer" popup — opened from the CONSIGNEES count cell.
   const [consListBuyer, setConsListBuyer] = useState<BuyerRow | null>(null);
 
@@ -742,25 +747,30 @@ export default function ClmBuyerProfilePage() {
     const flipUp = spaceBelow < estH + 12 && b.top > spaceBelow;
     setSegOpen({ key, names, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp });
   };
-  // Render a segment cell as: first chip + a clickable "+N" badge.
-  const renderSegCell = (key: string, names: string[], sc: string, sb: string) => {
+  // Render a segment cell like the Authorities column: a teal chip for the first
+  // segment + a circular teal-gradient "+N" badge that opens the full list.
+  const renderSegCell = (key: string, names: string[]) => {
     const segs = names.map((s) => s.trim()).filter(Boolean);
     if (segs.length === 0) return <span style={{ fontSize: '10px', color: '#94a3b8' }}>—</span>;
+    const extra = segs.length - 1;
     return <>
-      <span style={{ fontSize: '8.5px', fontWeight: 600, color: sc, background: sb, border: '1px solid rgba(6,182,212,.15)', padding: '2px 7px', borderRadius: '20px', whiteSpace: 'nowrap' }}>{segs[0]}</span>
-      {segs.length > 1 && (
-        <Tooltip label="View all segments"><button type="button" onClick={(e) => toggleSegPop(e, key, segs)} style={{ fontSize: '8.5px', fontWeight: 800, color: '#fff', background: 'linear-gradient(135deg, #06b6d4, #0891b2)', padding: '2px 8px', borderRadius: '20px', whiteSpace: 'nowrap', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{segs.length - 1}</button></Tooltip>
+      <span style={{ fontSize: '9.5px', fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', padding: '2px 9px', borderRadius: '20px', whiteSpace: 'nowrap', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.6 }}>{segs[0]}</span>
+      {extra > 0 && (
+        <Tooltip label="View all segments"><button type="button" onClick={(e) => toggleSegPop(e, key, segs)} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, cursor: 'pointer', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)', border: 'none', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>
       )}
     </>;
   };
 
   // ── Live data from GET /clm/buyer-profile ──
   const [bp, setBp] = useState<BpData>(EMPTY_BP);
+  const [bpLoading, setBpLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
+    setBpLoading(true);
     api.get('/clm/buyer-profile')
       .then((r) => { if (!cancelled) setBp((r.data?.data ?? EMPTY_BP) as BpData); })
-      .catch(() => { if (!cancelled) setBp(EMPTY_BP); });
+      .catch(() => { if (!cancelled) setBp(EMPTY_BP); })
+      .finally(() => { if (!cancelled) setBpLoading(false); });
     return () => { cancelled = true; };
   }, []);
   // Fetched views — shadow the legacy demo arrays of the same name so the
@@ -808,7 +818,13 @@ export default function ClmBuyerProfilePage() {
   const consAgr = scopedCons.filter((r) => r.agr.d < r.agr.t).length;
 
   // ── derived transaction (opportunity) analytics ──
-  const allTxn: (WsEqRow | WsNeqRow | WosEqRow | WosNeqRow)[] = [...wsEqData, ...wsNeqData, ...wosEqData, ...wosNeqData];
+  // Count only the transactions of the ACTIVE shipment tab so the metrics match
+  // the table on screen: "With Shipment ID" → ws (eq + neq); "Without Shipment
+  // ID" → wos (eq + neq). Summing all four made the totals include rows the
+  // visible table never shows.
+  const allTxn: (WsEqRow | WsNeqRow | WosEqRow | WosNeqRow)[] = shipTab === 'without'
+    ? [...wosEqData, ...wosNeqData]
+    : [...wsEqData, ...wsNeqData];
   const txnTotal = allTxn.length;
   const txnCompliant = allTxn.filter((r) => r.kyc.d === r.kyc.t && r.dd.d === r.dd.t && r.tl.d === r.tl.t).length;
   const txnKyc = allTxn.filter((r) => r.kyc.d < r.kyc.t).length;
@@ -860,7 +876,7 @@ export default function ClmBuyerProfilePage() {
 
       {/* ── Header Strip ── */}
       <div className="seg-page-card" style={{ background: 'linear-gradient(110deg,#e0f9fd 0%,#cef8ff 18%,#d0f4f9 45%,#baeef7 75%,#a0e8f2 100%)' }}>
-        <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: '64px' }}>
+        <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '10px 18px', minHeight: '64px' }}>
           <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '5px', background: 'linear-gradient(180deg,#22d3ee,#0891b2,#0e7490)' }} />
           <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.5),transparent)', pointerEvents: 'none' }} />
           <span style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle,rgba(6,182,212,.07) 1px,transparent 1px)', backgroundSize: '18px 18px', pointerEvents: 'none' }} />
@@ -938,7 +954,7 @@ export default function ClmBuyerProfilePage() {
         <div>
           <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
             <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: 'linear-gradient(180deg,#67e8f9,#0891b2,#0e7490)', zIndex: 10, borderRadius: '14px 0 0 14px' }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 8px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '48px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '8px 12px 8px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '48px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.32)' }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /><line x1="0" y1="20" x2="24" y2="20" /></svg>
@@ -974,7 +990,7 @@ export default function ClmBuyerProfilePage() {
               </div>
             </div>
             <div style={{ maxHeight: txnAnalyticsOpen ? '200px' : '0px', opacity: txnAnalyticsOpen ? 1 : 0, padding: txnAnalyticsOpen ? '6px 8px 8px' : '0 8px', background: 'linear-gradient(180deg,#f0fdff,#f4feff)', overflow: 'hidden', transition: 'max-height .32s cubic-bezier(.22,1,.36,1),opacity .22s,padding .22s' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: '6px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px' }}>
                 {[
                   { num: pad(txnTotal), label: 'Total Transactions', tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg> },
                   { num: pad(txnCompliant), label: 'Fully Compliant', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
@@ -1016,7 +1032,6 @@ export default function ClmBuyerProfilePage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '36px', padding: '0 14px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)', transition: 'border-color .15s,box-shadow .15s', flex: 1, maxWidth: '680px' }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round" style={{ flexShrink: 0, opacity: .7 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                 <input type="text" placeholder="Search by Shipment ID, Customer, Segment or Status..." style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
-                <span style={{ fontSize: '9px', fontWeight: 600, color: '#94a3b8', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '5px', padding: '2px 6px', whiteSpace: 'nowrap', flexShrink: 0 }}>⌘ K</span>
               </div>
             </div>
 
@@ -1206,7 +1221,7 @@ export default function ClmBuyerProfilePage() {
           <div className="seg-page-card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ position: 'relative' }}>
               <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px', background: 'linear-gradient(180deg,#67e8f9,#0891b2,#0e7490)', zIndex: 10, borderRadius: '14px 0 0 14px' }} />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 8px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '48px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', padding: '8px 12px 8px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '48px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.32)' }}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /><line x1="0" y1="20" x2="24" y2="20" /></svg>
@@ -1233,7 +1248,7 @@ export default function ClmBuyerProfilePage() {
               </div>
               <div className="bpa-cards-wrap" style={{ maxHeight: partyAnalyticsOpen ? '200px' : '0px', opacity: partyAnalyticsOpen ? 1 : 0, padding: partyAnalyticsOpen ? '6px 8px 8px' : '0 8px', background: 'linear-gradient(180deg,#f0fdff,#f4feff)' }}>
                 {bpaTab === 'buyer' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: '6px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px' }}>
                     {[
                       { num: pad(buyerTotal), label: `Total ${buyerScope === 'domestic' ? 'Domestic' : 'International'} Customers`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
                       { num: pad(buyerCompliant), label: 'Compliant Customers', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
@@ -1256,7 +1271,7 @@ export default function ClmBuyerProfilePage() {
                   </div>
                 )}
                 {bpaTab === 'consignee' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: '6px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px' }}>
                     {[
                       { num: pad(consTotal), label: `Total ${consScope === 'domestic' ? 'Domestic' : 'International'} Consignees`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
                       { num: pad(consCompliant), label: 'Compliant Consignees', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
@@ -1286,7 +1301,7 @@ export default function ClmBuyerProfilePage() {
           {bpaTab === 'buyer' && (
             <div>
               <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: buyerCardFill }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
@@ -1328,18 +1343,19 @@ export default function ClmBuyerProfilePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {buyerSlice.map((r, i) => {
+                      {bpLoading && <ShimmerTableRows rows={8} cols={13} keyPrefix="buyer" />}
+                      {!bpLoading && buyerSlice.map((r, i) => {
                         const bg = rowBg(i);
                         return (
                           <tr key={r.id} className="bp-buyer-row" style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(224,249,253,.7)'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = bg; }}>
-                            <td style={{ padding: '9px 12px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{r.sr}</span></td>
+                            <td style={{ padding: '9px 12px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{(buyerPageSafe - 1) * bpPerPage + i + 1}</span></td>
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px' }}>{r.id}</span></td>
                             <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
                             <td style={{ padding: '9px 11px', textAlign: 'center', verticalAlign: 'middle', minWidth: '140px' }}>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'center', alignItems: 'center', width: '100%' }}>
-                                {renderSegCell(`buyer-${r.id}`, r.seg, r.sc, r.sb)}
+                              <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'center', alignItems: 'center' }}>
+                                {renderSegCell(`buyer-${r.id}`, r.seg)}
                               </div>
                             </td>
                             <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
@@ -1368,7 +1384,7 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <ListPager page={buyerPageSafe} total={buyerListTotal} perPage={bpPerPage} noun="customers" onPage={setBuyerPage} />
+                <WorklistPager total={buyerListTotal} page={buyerPageSafe} pageSize={bpPerPage} onPage={setBuyerPage} onPageSize={(n) => { setBpManualSize(n); setBuyerPage(1); }} className="bp-wl" />
               </div>
             </div>
           )}
@@ -1377,7 +1393,7 @@ export default function ClmBuyerProfilePage() {
           {bpaTab === 'consignee' && (
             <div>
               <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: consCardFill }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>
@@ -1419,19 +1435,20 @@ export default function ClmBuyerProfilePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {consSlice.map((r, i) => {
+                      {bpLoading && <ShimmerTableRows rows={8} cols={13} keyPrefix="cons" />}
+                      {!bpLoading && consSlice.map((r, i) => {
                         const bg = rowBg(i);
                         return (
                           <tr key={r.id} className="bp-buyer-row" style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(224,249,253,.7)'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = bg; }}>
-                            <td style={{ padding: '9px 12px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{r.sr}</span></td>
+                            <td style={{ padding: '9px 12px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{(consPageSafe - 1) * consPerPage + i + 1}</span></td>
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0e7490', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px' }}>{r.id}</span></td>
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.06)', border: '1px solid rgba(6,182,212,.14)', padding: '2px 7px', borderRadius: '5px' }}>{r.cid}</span></td>
                             <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
                             <td style={{ padding: '9px 11px', textAlign: 'center', verticalAlign: 'middle', minWidth: '140px' }}>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', justifyContent: 'center', alignItems: 'center', width: '100%' }}>
-                                {renderSegCell(`cons-${r.id}`, r.seg.split(','), r.sc, r.sb)}
+                              <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'center', alignItems: 'center' }}>
+                                {renderSegCell(`cons-${r.id}`, r.seg.split(','))}
                               </div>
                             </td>
                             <td style={{ padding: '9px 11px', fontSize: '11px', color: '#475569', textAlign: 'center' }}>{r.country}</td>
@@ -1452,7 +1469,7 @@ export default function ClmBuyerProfilePage() {
                     </tbody>
                   </table>
                 </div>
-                <ListPager page={consPageSafe} total={consListTotal} perPage={consPerPage} noun="consignees" onPage={setConsPage} />
+                <WorklistPager total={consListTotal} page={consPageSafe} pageSize={consPerPage} onPage={setConsPage} onPageSize={(n) => { setConsManualSize(n); setConsPage(1); }} className="bp-wl" />
               </div>
             </div>
           )}

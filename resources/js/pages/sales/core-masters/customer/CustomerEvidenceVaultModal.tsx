@@ -129,6 +129,7 @@ export interface VaultData {
   owner_kyc_count:        number;
   trade_license_count:    number;
   trade_documents_count:  number;
+  agreements_count:       number;
   total_shipments:        number;
   company_dd:             VaultDoc[];
   owner_kyc:              VaultDoc[];
@@ -203,6 +204,7 @@ function buildDemoVault(customer: CustomerVaultTarget): VaultData {
     owner_kyc_count:       5,
     trade_license_count:   4,
     trade_documents_count: 3,
+    agreements_count:      5,
     total_shipments:       4,
     company_dd: [
       { id: 1, name: 'Company PAN',          reference: 'AABCT1234F',     authority: 'Income Tax Dept', issue_date: '01/01/2023', expiry: '01/01/2028', attachment: 'CompanyPAN.pdf',     status: 'Verified' },
@@ -458,19 +460,14 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     const sigRows            = signatureRequestsToVaultDocs(signatureRows);
     const baseSegmentTd      = (base.trade_documents ?? []) as VaultDoc[];
     const mergedTd           = mergeTradeDocuments(baseSegmentTd as any, sigRows, 'buyer') as unknown as VaultDoc[];
-    const baseSegmentSigned  = baseSegmentTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
-    const baseSegmentPending = baseSegmentTd.filter(r => r.status === 'Pending').length;
-    const mergedSigned       = mergedTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
-    const mergedPending      = mergedTd.filter(r => r.status === 'Pending').length;
     return {
       ...base,
+      // The header KPIs (Total Documents / Verified / Pending / Trade Documents /
+      // Total Agreements) are computed authoritatively by the backend from the
+      // Standard + Case-to-Case document families, so they pass through
+      // unchanged. We still merge the segment-rule TD bucket with live
+      // signatures for the Export workbook's Trade Documents sheet.
       trade_documents: mergedTd as typeof base.trade_documents,
-      trade_documents_count: mergedTd.length,
-      // KPI roll-ups: swap the raw segment-rule TD contribution for the
-      // merged (party-filtered + signature-aware) numbers.
-      verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + mergedSigned,
-      pending:         Math.max(0, (base.pending ?? 0)         - baseSegmentPending) + mergedPending,
-      total_documents: Math.max(0, (base.total_documents ?? 0) - baseSegmentTd.length) + mergedTd.length,
     };
   }, [customer, data, vaultLive, signatureRows]);
 
@@ -515,7 +512,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
       const summary = [
         { Field: 'Customer ID',           Value: customer.id },
         { Field: 'Company',               Value: customer.company },
-        { Field: 'Risk',                  Value: customer.risk || '' },
+        { Field: 'Risk',                  Value: customer.risk ?? 'Low' },
         { Field: 'Type',                  Value: customer.type || '' },
         { Field: 'Segment',               Value: customer.segment || '' },
         { Field: 'Country',               Value: customer.country || '' },
@@ -708,6 +705,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
             <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        accent="#0e7490" />
             <KpiTile label="Trade License"          value={vault.trade_license_count}    accent="#0891b2" />
             <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  accent="#0d9488" />
+            <KpiTile label="Total Agreements"       value={vault.agreements_count}       accent="#0891b2" />
             <KpiTile label="Total Shipments"        value={vault.total_shipments}        accent="#0c4a6e" />
           </div>
         </div>
@@ -850,12 +848,27 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           Overview" button on each group card. */}
       {overview && (() => {
         const isStd = overview === 'standard';
-        const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => [
-          ...(r.trade_docs_buyer ?? []),
-          ...(r.trade_docs_consignee ?? []),
-          ...(r.agreements_buyer ?? []),
-          ...(r.agreements_consignee ?? []),
-        ];
+        // Match the inline panel: when Customer = Consignee only the buyer set
+        // applies (the Consignee/Both tabs are hidden), so the overview must not
+        // list the consignee-side docs — otherwise they appear as extra rows
+        // that don't belong to the shipment. A both-party doc is returned in both
+        // lists, so de-dupe the union (else it shows twice).
+        const ovKey = (d: VaultShipmentDoc) => (d.db_id != null ? `${d.doc_type ?? ''}#${d.db_id}` : `n#${d.name}#${d.sig_req_id}`);
+        const dedupeDocs = (list: VaultShipmentDoc[]): VaultShipmentDoc[] => {
+          const seen = new Set<string>();
+          return list.filter((d) => { const k = ovKey(d); if (seen.has(k)) return false; seen.add(k); return true; });
+        };
+        const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => r.buyer_is_consignee
+          ? [
+              ...(r.trade_docs_buyer ?? []),
+              ...(r.agreements_buyer ?? []),
+            ]
+          : dedupeDocs([
+              ...(r.trade_docs_buyer ?? []),
+              ...(r.trade_docs_consignee ?? []),
+              ...(r.agreements_buyer ?? []),
+              ...(r.agreements_consignee ?? []),
+            ]);
         const shipments = isStd ? [] : vault.shipment_agreements;
         // Case-to-Case: shipments are shown as horizontal tabs; the active
         // shipment's Trade Documents + Agreements are listed below (paginated
@@ -901,7 +914,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               )}
               <div className="cev-ov-body">
                 <table className="cev-ov-table">
-                  <thead><tr><th style={{ width: 48 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+                  <thead><tr><th style={{ width: 64 }}>Sr. No.</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
@@ -1047,7 +1060,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               <td>{i + 1}</td>
               <td className="cev-mono">{d.reference || d.doc_code || '—'}</td>
               <td className="cev-doc-name">{d.name}</td>
-              <td>{d.authority || '—'}</td>
+              <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
               <td>
                 {d.requirement === 'M' ? (
                   <span className="cev-req cev-req-m" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
@@ -1419,9 +1432,22 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
   const toast = useToast();
   const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>(forceParty ?? 'buyer');
   const [busy, setBusy] = useState<number | null>(null);
+  // A document whose party is "both" (buyer AND consignee) is returned in BOTH
+  // lists. Split the three views by membership:
+  //   • Customer Documents  → docs only the buyer has (buyer-exclusive)
+  //   • Consignee Documents → docs only the consignee has (consignee-exclusive)
+  //   • Both                → the COMMON docs shared by both parties (intersection)
+  // (When Customer = Consignee the tabs are hidden and we show all buyer docs.)
+  const docKey = (d: VaultShipmentDoc) => (d.db_id != null ? `${d.doc_type ?? ''}#${d.db_id}` : `n#${d.name}#${d.sig_req_id}`);
+  const buyerKeys = new Set(buyer.map(docKey));
+  const consKeys = new Set(consignee.map(docKey));
+  const buyerOnly = buyer.filter(d => !consKeys.has(docKey(d)));
+  const consOnly = consignee.filter(d => !buyerKeys.has(docKey(d)));
+  const bothDocs = buyer.filter(d => consKeys.has(docKey(d)));
   const docs = forceParty
     ? (forceParty === 'consignee' ? consignee : buyer)
-    : party === 'both' ? [...buyer, ...consignee] : party === 'buyer' ? buyer : consignee;
+    : buyerIsConsignee ? buyer
+    : party === 'both' ? bothDocs : party === 'buyer' ? buyerOnly : consOnly;
 
   const remind = async (d: VaultShipmentDoc) => {
     setBusy(d.sig_req_id);
@@ -1437,18 +1463,18 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
 
   return (
     <div className="cev-sdp" style={{ padding: '12px 16px 16px' }}>
-      {!forceParty && (
+      {/* When Customer = Consignee there's only one party, so the tab bar and the
+          party-name label are redundant — render the documents table directly. */}
+      {!forceParty && !buyerIsConsignee && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Customer Documents <b>{buyer.length}</b></button>
-          {!buyerIsConsignee && (
-            <>
-              <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consignee.length}</b></button>
-              <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{buyer.length + consignee.length}</b></button>
-            </>
-          )}
+          <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Customer Documents <b>{buyerOnly.length}</b></button>
+          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consOnly.length}</b></button>
+          <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{bothDocs.length}</b></button>
         </div>
       )}
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{forceParty === 'consignee' ? consigneeName : party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
+      {(forceParty || !buyerIsConsignee) && (
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{forceParty === 'consignee' ? consigneeName : party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
+      )}
       {docs.length === 0 ? (
         <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {party === 'both' ? '' : party === 'buyer' ? 'buyer ' : 'consignee '}documents on this shipment.</div>
       ) : (
@@ -2252,7 +2278,7 @@ export const CEV_CSS = `
 .cev-table-scroll {
   overflow-x: auto;
   overflow-y: auto;
-  max-height: 300px;
+  max-height: 550px;
   scrollbar-width: thin;
 }
 .cev-table-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -2385,9 +2411,9 @@ export const CEV_CSS = `
 }
 .cev-ship-filter-2 .cev-ship-fbtn {
   flex: 0 0 auto; min-width: 0;
-  padding: 8px 18px; border: none; background: transparent; border-radius: 9px;
+  padding: 8px 18px; border: 1px solid rgba(8,145,178,.22); background: #fff; border-radius: 9px;
 }
-.cev-ship-filter-2 .cev-ship-fbtn:not(.is-active):hover { background: rgba(8,145,178,.08); color: #0891b2; }
+.cev-ship-filter-2 .cev-ship-fbtn:not(.is-active):hover { background: #f0fdff; border-color: rgba(8,145,178,.40); color: #0891b2; }
 .cev-ship-fbtn {
   flex: 1; min-width: 160px;
   padding: 10px 18px;
@@ -2514,7 +2540,7 @@ export const CEV_CSS = `
 [data-bs-theme="dark"] .cev-ship-fbtn { background: #0a2a33; color: #94a3b8; border-color: rgba(8,145,178,.28); }
 [data-bs-theme="dark"] .cev-ship-fbtn:hover { color: #67e8f9; background: rgba(8,145,178,.10); }
 [data-bs-theme="dark"] .cev-ship-filter-2 { background: rgba(8,145,178,.12); }
-[data-bs-theme="dark"] .cev-ship-filter-2 .cev-ship-fbtn:not(.is-active) { background: transparent; border-color: transparent; }
+[data-bs-theme="dark"] .cev-ship-filter-2 .cev-ship-fbtn:not(.is-active) { background: #0a2a33; border-color: rgba(8,145,178,.28); }
 [data-bs-theme="dark"] .cev-ship-fbtn.is-active { background: linear-gradient(135deg,#0891b2,#22d3ee); color: #06283a; border-color: transparent; box-shadow: 0 4px 14px rgba(34,211,238,.4); }
 /* All badges — translucent colour fills on dark (match the segment chips). */
 [data-bs-theme="dark"] .cev-req-m { background: rgba(16,185,129,.18) !important; color: #6ee7b7 !important; border-color: rgba(16,185,129,.4) !important; }

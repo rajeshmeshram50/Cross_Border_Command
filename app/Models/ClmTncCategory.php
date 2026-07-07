@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class ClmTncCategory extends Model
 {
     protected $fillable = [
-        'client_id', 'code', 'short_code', 'name', 'status',
+        'client_id', 'branch_id', 'code', 'short_code', 'name', 'status',
         'created_by', 'updated_by',
     ];
 

@@ -73,10 +73,13 @@ type Shipment = {
   creator?:             { id: number; name: string } | null;
 };
 
+const DMY_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const fmtDate = (s: string | null | undefined): string => {
   if (!s) return '—';
   const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB');
+  if (Number.isNaN(d.getTime())) return '—';
+  // DD-Mon-YYYY (e.g. 04-Jul-2026)
+  return `${String(d.getDate()).padStart(2, '0')}-${DMY_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 };
 
 const fmtMoney = (v: number | string | null | undefined, ccy: string | null | undefined): string => {

@@ -4871,7 +4871,7 @@ function TradeDocsTable(props: {
                                     background: 'rgba(255,255,255,.22)', color: '#fff',
                                     fontFamily: "'Geist Mono', ui-monospace, monospace",
                                     fontSize: 9.5, fontWeight: 800, letterSpacing: '.02em', lineHeight: 1,
-                                  }}>× {remCount}</span>
+                                  }}>{remCount}</span>
                                 )}
                               </button>
                             );

@@ -8,6 +8,7 @@ use App\Models\Client;
 use App\Models\ClmSignatureRequest;
 use App\Models\ClmTradeDocLibrary;
 use App\Models\ClmTradeDocName;
+use App\Support\MasterVisibility;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -38,12 +39,20 @@ class ClmTradeDocumentController extends Controller
         if (!$user->client_id) {
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
-        $rows = ClmTradeDocName::where('client_id', $user->client_id)->orderBy('id')->get();
+        // Branch-scoped read: branch users see globals + client-level rows +
+        // their own branch's rows; sibling branches stay hidden.
+        $branchFilter = $request->integer('branch_id') ?: null;
+        $nameQuery = ClmTradeDocName::query()->orderBy('id');
+        MasterVisibility::applyReadScope($nameQuery, $user, $branchFilter);
+        $rows = $nameQuery->get();
 
         /* Usage map: how many Library drafts reference each name (by name string,
          * case-insensitive — the library links to it by name, not an FK). Drives
-         * the "can't edit an in-use type" guard on the client. */
-        $usage = ClmTradeDocLibrary::where('client_id', $user->client_id)
+         * the "can't edit an in-use type" guard on the client. Scope the count the
+         * same way so a branch only counts library rows it can actually see. */
+        $usageQuery = ClmTradeDocLibrary::query();
+        MasterVisibility::applyReadScope($usageQuery, $user, $branchFilter);
+        $usage = $usageQuery
             ->selectRaw('LOWER(TRIM(name)) as t, COUNT(*) as c')
             ->groupBy(DB::raw('LOWER(TRIM(name))'))
             ->pluck('c', 't');
@@ -59,25 +68,54 @@ class ClmTradeDocumentController extends Controller
         $user = $request->user(); if (!$user) abort(401);
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
         $data = $request->validate(['name' => 'required|string|max:255']);
+        $name = trim($data['name']);
 
-        $row = DB::transaction(function () use ($user, $data) {
+        // Reject a duplicate type name (case-insensitive, whitespace-trimmed).
+        // The dedupe + insert both run under the per-client lock so two
+        // concurrent "Add" requests can't slip a duplicate past the check.
+        // Scoped to the caller's visibility (globals + client-level + own
+        // branch) so a sibling branch that can't see this row may still reuse
+        // the name — consistent with the branch-scoped master rule.
+        $result = DB::transaction(function () use ($user, $name) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
+
+            $dupe = ClmTradeDocName::query()
+                ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)]);
+            MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
+            if ($dupe->exists()) {
+                return ['dupe' => true];
+            }
+
             $code = $this->nextCode(ClmTradeDocName::class, $user->client_id, 'TDN-');
-            return ClmTradeDocName::create([
+            return ['row' => ClmTradeDocName::create([
                 'client_id'  => $user->client_id,
+                'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'       => $code,
-                'name'       => trim($data['name']),
+                'name'       => $name,
                 'created_by' => $user->id,
                 'updated_by' => $user->id,
-            ]);
+            ])];
         });
-        return response()->json(['status' => true, 'data' => $row], 201);
+
+        if (!empty($result['dupe'])) {
+            return response()->json([
+                'status'  => false,
+                'message' => "A trade document type named \"{$name}\" already exists. Pick a different name.",
+            ], 422);
+        }
+        return response()->json(['status' => true, 'data' => $result['row']], 201);
     }
 
     public function namesUpdate(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmTradeDocName::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmTradeDocName::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        // A branch user can VIEW shared client-level types but not manage them.
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         // Block edit while library drafts reference this name — the library links
         // to it by the name STRING, so renaming would orphan those drafts. Only
@@ -94,14 +132,34 @@ class ClmTradeDocumentController extends Controller
         }
 
         $data = $request->validate(['name' => 'required|string|max:255']);
-        $row->update(['name' => trim($data['name']), 'updated_by' => $user->id]);
+        $name = trim($data['name']);
+
+        // Reject a rename that collides with another visible type
+        // (case-insensitive, excluding this row itself).
+        $dupe = ClmTradeDocName::query()
+            ->whereKeyNot($row->id)
+            ->whereRaw('LOWER(TRIM(name)) = ?', [mb_strtolower($name)]);
+        MasterVisibility::applyReadScope($dupe, $user, $user->branch_id ?: null);
+        if ($dupe->exists()) {
+            return response()->json([
+                'status'  => false,
+                'message' => "Another trade document type named \"{$name}\" already exists. Pick a different name.",
+            ], 422);
+        }
+
+        $row->update(['name' => $name, 'updated_by' => $user->id]);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 
     public function namesDestroy(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmTradeDocName::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmTradeDocName::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         // Block delete if this trade document name is in use. Library drafts
         // store the chosen name string in clm_trade_doc_library.name (the draft
@@ -128,9 +186,14 @@ class ClmTradeDocumentController extends Controller
     public function libraryIndex(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $rows = $user->client_id
-            ? ClmTradeDocLibrary::where('client_id', $user->client_id)->orderBy('id')->get()
-            : collect();
+        if (!$user->client_id) {
+            return response()->json(['status' => true, 'data' => [], 'count' => 0]);
+        }
+        // Branch-scoped read (globals + client-level + own branch; siblings hidden).
+        $branchFilter = $request->integer('branch_id') ?: null;
+        $libQuery = ClmTradeDocLibrary::query()->orderBy('id');
+        MasterVisibility::applyReadScope($libQuery, $user, $branchFilter);
+        $rows = $libQuery->get();
 
         // Flag rows that have a signed (completed) signature request so the
         // frontend can lock Edit / Delete on them. Batch lookup avoids an
@@ -153,8 +216,10 @@ class ClmTradeDocumentController extends Controller
             'purpose'   => 'required|string|max:500',
             'party'     => 'required|string|max:255',
             // Regulatory tier + segment scope — mirrors clm_agreement_library.
+            // Segment is mandatory (at least one) — the frontend enforces the
+            // same rule in validateStep1.
             'regulatory' => 'nullable|string|in:highly,less',
-            'segment'    => 'nullable|string|max:500',
+            'segment'    => 'required|string|max:500',
             'file_path' => 'nullable|string|max:500',
             'content'   => 'nullable|string',
             // Stage 2 page-shell config — same JSON shape as
@@ -169,6 +234,7 @@ class ClmTradeDocumentController extends Controller
             $code = $this->nextCode(ClmTradeDocLibrary::class, $user->client_id, 'TD-');
             return ClmTradeDocLibrary::create($data + [
                 'client_id'  => $user->client_id,
+                'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'       => $code,
                 'created_by' => $user->id,
                 'updated_by' => $user->id,
@@ -180,7 +246,13 @@ class ClmTradeDocumentController extends Controller
     public function libraryUpdate(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmTradeDocLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        // Branch users may view shared client-level trade documents but not edit them.
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         // Lock once the draft has been sent and signed. A trade document that
         // has come back signed via Zoho (a `completed` signature request) is
@@ -200,7 +272,7 @@ class ClmTradeDocumentController extends Controller
             'purpose'   => 'sometimes|required|string|max:500',
             'party'     => 'sometimes|required|string|max:255',
             'regulatory' => 'sometimes|nullable|string|in:highly,less',
-            'segment'    => 'sometimes|nullable|string|max:500',
+            'segment'    => 'sometimes|required|string|max:500',
             'file_path' => 'nullable|string|max:500',
             'content'   => 'nullable|string',
             // Same Stage 2 page-shell config as libraryStore. Re-validated
@@ -217,7 +289,12 @@ class ClmTradeDocumentController extends Controller
     public function libraryDestroy(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmTradeDocLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         // Same lock as libraryUpdate — a signed trade document must stay on
         // record, so block the delete once a `completed` signature request
@@ -278,7 +355,9 @@ class ClmTradeDocumentController extends Controller
     public function downloadDocx(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmTradeDocLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
 
         // DOCX generation (PhpWord HTML reader + Word2007 writer) is memory-
         // and time-heavy for table-rich documents. The web SAPI's default
@@ -292,9 +371,17 @@ class ClmTradeDocumentController extends Controller
         // Word round-trip — preserves header/footer/styling we can't fully
         // reproduce from HTML alone).
         if ($row->docx_path && Storage::disk('public')->exists($row->docx_path)) {
-            $abs  = Storage::disk('public')->path($row->docx_path);
             $name = $row->docx_original_name ?: ($row->code ?: 'trade-document') . '.docx';
-            return response()->download($abs, $name);
+            try {
+                // Stream via the Storage disk — works for both local and cloud
+                // disks (Azure Blob). response()->download() needs a real local
+                // path and 500s with "The file does not exist" (leaking the path)
+                // when the file lives on a cloud disk. On any read failure we fall
+                // through and regenerate the DOCX from the row's content below.
+                return Storage::disk('public')->download($row->docx_path, $name);
+            } catch (\Throwable $e) {
+                // fall through to regeneration
+            }
         }
 
         // Generate a fresh DOCX from the row's HTML content. Title goes on
@@ -371,7 +458,9 @@ class ClmTradeDocumentController extends Controller
     public function downloadPdf(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmTradeDocLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
 
         @ini_set('memory_limit', '512M');
         @set_time_limit(120);
@@ -439,7 +528,12 @@ class ClmTradeDocumentController extends Controller
     public function uploadDocx(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $row  = ClmTradeDocLibrary::where('client_id', $user->client_id)->findOrFail($id);
+        $lookup = ClmTradeDocLibrary::query()->whereKey($id);
+        MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
+        $row = $lookup->firstOrFail();
+        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+            return response()->json(['status' => false, 'message' => $msg], 403);
+        }
 
         $request->validate(['docx' => 'required|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB]);
 

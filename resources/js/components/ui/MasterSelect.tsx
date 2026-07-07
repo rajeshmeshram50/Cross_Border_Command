@@ -92,15 +92,23 @@ export function MasterSelect({
     // Resize / browser-zoom reflows the whole layout and can strand or clip
     // the portalled menu away from its trigger — close it instead so it never
     // shows mispositioned; the user reopens it cleanly at the new size.
-    const closeOnResize = () => setOpen(false);
-    window.addEventListener('resize', closeOnResize);
-    // capture:true so scrolls inside ANY ancestor (modals, panels) also
-    // recompute the open direction — keeps the menu attached to its trigger
-    // on scroll instead of stranding it at a stale position.
-    window.addEventListener('scroll', update, true);
+    const closeMenu = () => setOpen(false);
+    window.addEventListener('resize', closeMenu);
+    // The menu is portalled to <body> with fixed positioning, so a page/ancestor
+    // scroll moves the trigger but leaves the menu behind — it drifts out of
+    // alignment (bug #70). Close it on scroll (capture:true catches scrolls in
+    // any ancestor: page, modal bodies, side panels). EXCEPTION: a scroll that
+    // originates INSIDE the menu's own option list (infinite-scroll paging)
+    // must not close it.
+    const onScroll = (e: Event) => {
+      const el = e.target instanceof Element ? e.target : null;
+      if (el && el.closest('.master-select-menu')) return;
+      setOpen(false);
+    };
+    window.addEventListener('scroll', onScroll, true);
     return () => {
-      window.removeEventListener('resize', closeOnResize);
-      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [open]);
   const selected = options.find(o => o.value === currentValue);
