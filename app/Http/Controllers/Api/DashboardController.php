@@ -1395,6 +1395,9 @@ class DashboardController extends Controller
                     'id'         => $a->id,
                     'title'      => $a->title,
                     'snippet'    => mb_strimwidth(strip_tags((string) $a->description), 0, 140, '…'),
+                    // Full body so clicking the dashboard card can open the complete
+                    // announcement without an extra (permission-gated) fetch.
+                    'body'       => (string) $a->description,
                     'created_at' => optional($a->created_at)->toDateString(),
                 ]);
         }
