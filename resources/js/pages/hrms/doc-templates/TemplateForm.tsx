@@ -121,6 +121,9 @@ export default function TemplateFormPage() {
   const [headerConfig, setHeaderConfig] = useState<HeaderConfig>(DEFAULT_HEADER);
   const [footerConfig, setFooterConfig] = useState<FooterConfig>(DEFAULT_FOOTER);
   const [uploadingDocx, setUploadingDocx] = useState(false);
+  // True when Step 3's header/footer was prefilled from the tenant's last
+  // template (create only) — drives the "reused / start blank" hint.
+  const [brandingFromLast, setBrandingFromLast] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const docxRef = useRef<HTMLInputElement | null>(null);
 
@@ -212,6 +215,25 @@ export default function TemplateFormPage() {
       } finally {
         if (!cancelled) setBootstrapping(false);
       }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId]);
+
+  // ── Prefill header/footer from the last template (create only) ────────────
+  // Reuse the tenant's most recent letterhead so a new template doesn't require
+  // re-uploading the logo / re-typing the footer every time. Still fully
+  // editable, and resettable to blank via the Step 3 hint.
+  useEffect(() => {
+    if (editingId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get('/hr-document-templates/last-branding');
+        if (cancelled || !data) return;
+        if (data.header_config) { setHeaderConfig({ ...DEFAULT_HEADER, ...data.header_config } as HeaderConfig); setBrandingFromLast(true); }
+        if (data.footer_config) { setFooterConfig({ ...DEFAULT_FOOTER, ...data.footer_config } as FooterConfig); }
+      } catch { /* no previous template — keep the blank defaults */ }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -648,6 +670,8 @@ export default function TemplateFormPage() {
               onUploadDocx={uploadDocx}
               uploadingDocx={uploadingDocx}
               downloadingDocx={downloadingDocx}
+              brandingFromLast={brandingFromLast}
+              onResetBranding={() => { setHeaderConfig(DEFAULT_HEADER); setFooterConfig(DEFAULT_FOOTER); setBrandingFromLast(false); }}
             />
           )}
         </CardBody>
@@ -969,6 +993,8 @@ function Step3(props: {
   onUploadDocx: (f: File) => void;
   uploadingDocx: boolean;
   downloadingDocx: boolean;
+  brandingFromLast?: boolean;
+  onResetBranding?: () => void;
 }) {
   const tabBtn = (active: boolean): React.CSSProperties => ({
     padding: '7px 16px', border: '1px solid ' + (active ? '#6366f1' : '#e5e7eb'),
@@ -978,6 +1004,17 @@ function Step3(props: {
 
   return (
     <>
+      {props.brandingFromLast && !props.editingId && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 13px', marginBottom: 12, background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 10, fontSize: 12 }}>
+          <span style={{ color: '#4338ca', fontWeight: 600 }}>
+            <i className="ri-magic-line me-1" />Header &amp; footer reused from your last template — edit it below, or start over.
+          </span>
+          <button type="button" onClick={props.onResetBranding}
+            style={{ border: '1px solid #c7d2fe', background: '#fff', color: '#4338ca', borderRadius: 8, padding: '4px 11px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+            <i className="ri-eraser-line me-1" />Start blank
+          </button>
+        </div>
+      )}
       <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
         <div className="tpl-help" style={{ fontSize: 11.5, color: '#6b7280' }}>
           <i className="ri-information-line me-1" />

@@ -489,7 +489,7 @@ function HeaderEditor({
                 style={chipStyle(header.align === a)}>{a}</button>
             ))}
             <button type="button"
-              onClick={() => setHeader({ ...header, logo_pos: { x: 10, y: 50 }, title_pos: { x: 88, y: 50 } })}
+              onClick={() => setHeader({ ...header, logo_pos: { ...DEFAULT_HEADER.logo_pos }, title_pos: { ...DEFAULT_HEADER.title_pos }, align: DEFAULT_HEADER.align })}
               title="Snap logo to left, title to right"
               className="tpl-chip tpl-chip-reset"
               style={{ ...chipStyle(false), marginLeft: 6, background: '#fef3c7', border: '1px solid #fde68a', color: '#92400e' }}>

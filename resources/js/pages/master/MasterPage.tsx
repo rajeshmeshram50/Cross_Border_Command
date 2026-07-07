@@ -132,6 +132,9 @@ function MasterPageInner({
   // Audit history modal — shown when a row's history (clock) button is clicked.
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditTarget, setAuditTarget] = useState<any | null>(null);
+  // Employee-tree modal — replaces the audit button on the Department master.
+  const [treeOpen, setTreeOpen] = useState(false);
+  const [treeTarget, setTreeTarget] = useState<any | null>(null);
 
   // Sublist values keyed by field name (e.g. { banks: [{ bank_name, account_number, ... }] }).
   // Sublists live OUTSIDE the form's FormData because each item is a multi-field card,
@@ -1598,12 +1601,21 @@ function MasterPageInner({
                 onClick={() => { setBanksMgrTarget(info.row.original); setBanksMgrOpen(true); }}
               />
             )}
-            <ActionBtn
-              title="Audit History"
-              icon="ri-history-line"
-              color="secondary"
-              onClick={() => { setAuditTarget(info.row.original); setAuditOpen(true); }}
-            />
+            {cfg.slug === 'departments' ? (
+              <ActionBtn
+                title="Employee Tree"
+                icon="ri-organization-chart"
+                color="secondary"
+                onClick={() => { setTreeTarget(info.row.original); setTreeOpen(true); }}
+              />
+            ) : (
+              <ActionBtn
+                title="Audit History"
+                icon="ri-history-line"
+                color="secondary"
+                onClick={() => { setAuditTarget(info.row.original); setAuditOpen(true); }}
+              />
+            )}
             {!showAny && <span className="text-muted">—</span>}
           </div>
         );
@@ -2379,6 +2391,12 @@ function MasterPageInner({
         primaryLabel={auditTarget ? deleteLabel(auditTarget) : ''}
       />
 
+      <EmployeeTreeModal
+        open={treeOpen}
+        onClose={() => { setTreeOpen(false); setTreeTarget(null); }}
+        department={treeTarget}
+      />
+
       <BanksManagerModal
         open={banksMgrOpen}
         onClose={() => { setBanksMgrOpen(false); setBanksMgrTarget(null); }}
@@ -2830,6 +2848,185 @@ function BanksManagerModal({
     </Modal>
   );
 }
+
+/* ────────────────────────────────────────────────────────────────────
+ * Employee Tree modal — opens from the Department master's row action
+ * (replaces the audit button there). Renders the department's org chart as
+ * four tiers: Director / CEO (Branch User) → single HOD → Team Leaders →
+ * Employees, connected top-to-bottom. Data from GET /employees/department-tree.
+ * ──────────────────────────────────────────────────────────────────── */
+function EmployeeTreeModal({
+  open,
+  onClose,
+  department,
+}: {
+  open: boolean;
+  onClose: () => void;
+  department: any | null;
+}) {
+  type TreeNode = { id: string; name: string; role: string; photo?: string | null; children?: TreeNode[] };
+  const [loading, setLoading] = useState(false);
+  const [roots, setRoots] = useState<TreeNode[] | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!open || !department?.id) return;
+    let alive = true;
+    setLoading(true); setError(''); setRoots(null);
+    api.get(`/employees/department-tree/${department.id}`)
+      .then(r => { if (alive) setRoots((r.data?.data?.roots ?? []) as TreeNode[]); })
+      .catch(() => { if (alive) setError('Could not load the department tree.'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [open, department?.id]);
+
+  const initials = (n: string) => (n || '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+  // Colour a node by its tier: Branch User = violet, HOD = cyan, Team Leader =
+  // green, everyone else = amber.
+  const accentFor = (node: TreeNode) => {
+    if (node.id.startsWith('u')) return '#7c3aed';
+    const r = (node.role || '').toLowerCase();
+    if (r.includes('head of department') || r === 'hod') return '#0891b2';
+    if (r.includes('team leader')) return '#059669';
+    return '#d97706';
+  };
+
+  const renderNode = (node: TreeNode): React.ReactNode => {
+    const accent = accentFor(node);
+    return (
+      <li key={node.id}>
+        <div className="et-node" style={{ background: `linear-gradient(180deg, ${accent}20 0%, transparent 58%), var(--vz-card-bg)`, borderColor: `${accent}45`, boxShadow: `0 10px 26px ${accent}26` }}>
+          <div className="et-avatar-ring" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}66)`, boxShadow: `0 6px 16px ${accent}55` }}>
+            {node.photo
+              ? <img className="et-avatar et-avatar-img" src={node.photo} alt={node.name} />
+              : <div className="et-avatar" style={{ background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}>{initials(node.name)}</div>}
+          </div>
+          <div className="et-name">{node.name}</div>
+          <div className="et-role" style={{ background: `${accent}1f`, color: accent }}>{node.role}</div>
+        </div>
+        {node.children && node.children.length > 0 && <ul>{node.children.map(renderNode)}</ul>}
+      </li>
+    );
+  };
+
+  return (
+    <Modal isOpen={open} toggle={onClose} centered backdrop="static" contentClassName="et-modal" modalClassName="et-modal-wrap">
+      <style>{ET_TREE_CSS}</style>
+      <div className="et-modal-header">
+        <div className="d-flex align-items-center justify-content-between gap-3">
+          <div className="d-flex align-items-center gap-3 min-w-0">
+            <span className="et-modal-icon"><i className="ri-organization-chart" /></span>
+            <div className="min-w-0">
+              <h5 className="mb-0 fw-bold et-modal-title">Employee Tree</h5>
+              <div className="et-modal-sub">{(department?.name ?? 'Department')}{/department/i.test(department?.name ?? '') ? '' : ' Department'}</div>
+            </div>
+          </div>
+          <button type="button" className="et-modal-close" onClick={onClose} aria-label="Close"><i className="ri-close-line" /></button>
+        </div>
+      </div>
+      <ModalBody className="et-modal-body" style={{ padding: '22px 12px 26px' }}>
+        {loading ? (
+          <div className="text-center py-5"><Spinner /></div>
+        ) : error ? (
+          <div className="text-center text-danger py-4">{error}</div>
+        ) : roots && roots.length ? (
+          <div className="et-scroll">
+            <div className="et-tree"><ul>{roots.map(renderNode)}</ul></div>
+          </div>
+        ) : (
+          <div className="text-center text-muted py-4">No employees in this department yet.</div>
+        )}
+      </ModalBody>
+    </Modal>
+  );
+}
+
+/* Employee-tree modal styling. The header mirrors the Audit History modal
+ * (indigo → violet → purple gradient + white icon box); the body is a pure-CSS
+ * org chart (classic nested-UL connectors) with card-style nodes. Theme-aware
+ * via the Velzon CSS variables so it reads in light and dark. */
+const ET_TREE_CSS = `
+.et-modal-wrap .modal-dialog { max-width: 94vw; }
+.et-modal {
+  border-radius: 16px !important; overflow: hidden; border: 0;
+  box-shadow: 0 25px 60px rgba(15,23,42,0.25);
+  width: fit-content; min-width: 340px; max-width: 100%; margin: 0 auto;
+}
+.et-modal-header {
+  padding: 16px 18px;
+  background:
+    radial-gradient(rgba(255,255,255,0.16) 1px, transparent 1px) 0 0 / 13px 13px,
+    linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #a855f7 100%);
+}
+.et-modal-title { color: #ffffff !important; letter-spacing: 0.01em; font-size: 16px; }
+.et-modal-sub { color: rgba(255,255,255,0.85); font-size: 12px; }
+.et-modal-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+  background: rgba(255,255,255,0.20); color: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+}
+.et-modal-icon i { font-size: 18px; line-height: 1; }
+.et-modal-close {
+  width: 30px; height: 30px; border-radius: 8px; border: 0; flex-shrink: 0;
+  background: rgba(255,255,255,0.18); color: #ffffff; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.15s ease;
+}
+.et-modal-close:hover { background: rgba(255,255,255,0.30); }
+.et-modal-close i { font-size: 16px; line-height: 1; }
+.et-modal-body {
+  position: relative;
+  max-height: 76vh; overflow-y: auto;
+  background:
+    radial-gradient(circle at 10% 8%,  rgba(139,92,246,0.22), transparent 24%),
+    radial-gradient(circle at 90% 12%, rgba(236,72,153,0.18), transparent 22%),
+    radial-gradient(circle at 88% 90%, rgba(6,182,212,0.18),  transparent 26%),
+    radial-gradient(circle at 12% 92%, rgba(16,185,129,0.16), transparent 24%),
+    linear-gradient(160deg, rgba(139,92,246,0.10) 0%, rgba(168,85,247,0.05) 45%, rgba(236,72,153,0.04) 100%),
+    var(--vz-card-bg);
+}
+.et-scroll { position: relative; z-index: 1; overflow-x: auto; padding: 16px 6px 8px; }
+.et-tree { display: inline-block; text-align: center; }
+.et-avatar-img { object-fit: cover; background: var(--vz-card-bg); }
+.et-tree ul { position: relative; padding: 26px 0 0; margin: 0; display: flex; justify-content: center; list-style: none; }
+.et-tree li { position: relative; padding: 26px 8px 0; list-style: none; }
+.et-tree li::before, .et-tree li::after {
+  content: ''; position: absolute; top: 0; right: 50%; width: 50%; height: 26px;
+  border-top: 2px solid rgba(124,58,237,0.32);
+}
+.et-tree li::after { right: auto; left: 50%; border-left: 2px solid rgba(124,58,237,0.32); }
+.et-tree li:only-child::before, .et-tree li:only-child::after { display: none; }
+.et-tree li:only-child { padding-top: 26px; }
+.et-tree li:first-child::before, .et-tree li:last-child::after { border: 0 none; }
+.et-tree li:last-child::before { border-right: 2px solid rgba(124,58,237,0.32); border-radius: 0 7px 0 0; }
+.et-tree li:first-child::after { border-radius: 7px 0 0 0; }
+.et-tree ul ul::before {
+  content: ''; position: absolute; top: 0; left: 50%; width: 0; height: 26px;
+  border-left: 2px solid rgba(124,58,237,0.32);
+}
+.et-tree > ul { padding-top: 0; }
+.et-node {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 9px;
+  width: 184px; min-height: 184px; padding: 18px 14px 15px; border-radius: 16px;
+  border: 1px solid rgba(139,92,246,0.12); background: var(--vz-card-bg);
+  box-shadow: 0 8px 20px rgba(76,29,149,0.10); transition: transform .15s ease, box-shadow .15s ease;
+}
+.et-node:hover { transform: translateY(-3px); box-shadow: 0 14px 28px rgba(99,102,241,0.20); }
+.et-avatar-ring {
+  padding: 3px; border-radius: 50%; display: inline-flex;
+}
+.et-avatar {
+  width: 60px; height: 60px; border-radius: 50%; color: #fff; display: flex;
+  align-items: center; justify-content: center; font-weight: 800; font-size: 20px;
+  border: 3px solid var(--vz-card-bg);
+}
+.et-name { font-weight: 700; font-size: 14.5px; line-height: 1.25; color: var(--vz-body-color); text-align: center; }
+.et-role {
+  display: inline-block; padding: 4px 12px; border-radius: 999px;
+  font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+}
+`;
 
 /* ────────────────────────────────────────────────────────────────────
  * Audit History modal — opens from the row's "clock" action button.

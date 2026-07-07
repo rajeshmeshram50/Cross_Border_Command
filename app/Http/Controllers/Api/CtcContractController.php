@@ -672,20 +672,45 @@ class CtcContractController extends Controller
             $query->where('branch_id', $branchFilter);    // branch + its employees
         }
 
+        $candidates = $query->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id']);
+
+        // Only employees who actually hold a CLM module grant (can_view on any
+        // clm.* module) may appear — otherwise, in a 500-employee company, the
+        // whole roster floods the picker and the user can't tell who has CLM
+        // access. Branch users (the branch Director / CEO) are the internal
+        // decision-makers and stay eligible regardless of explicit grants.
+        $clmUserIds = \App\Models\Permission::whereIn('user_id', $candidates->pluck('id'))
+            ->where('can_view', true)
+            ->whereHas('module', fn ($m) => $m->where('slug', 'like', 'clm.%'))
+            ->pluck('user_id')->unique()->flip();
+
+        // Designation + Department come from each candidate's linked Employee row
+        // so the picker shows the person's job title / team instead of just the
+        // branch name — the reviewer knows who they're sending to.
+        $employees = \App\Models\Employee::whereIn('user_id', $candidates->pluck('id'))
+            ->with(['designation:id,name', 'department:id,name'])
+            ->get()->keyBy('user_id');
+
         // BRANCH first, then employees — and alphabetical within each.
         $order = ['branch_user' => 0, 'employee' => 1];
-        $rows = $query->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id'])
+        $rows = $candidates
+            ->filter(fn ($u) => $u->user_type === 'branch_user' || $clmUserIds->has($u->id))
             ->sortBy(fn ($u) => [$order[$u->user_type] ?? 9, strtolower($u->name ?? '')])
             ->values()
-            ->map(fn ($u) => [
-                'id'          => $u->id,
-                'name'        => $u->name,
-                'email'       => $u->email,
-                'user_type'   => $u->user_type,
-                'branch_name' => $u->branch->name ?? null,
-            ]);
+            ->map(function ($u) use ($employees) {
+                $emp = $employees->get($u->id);
+                return [
+                    'id'          => $u->id,
+                    'name'        => $u->name,
+                    'email'       => $u->email,
+                    'user_type'   => $u->user_type,
+                    'branch_name' => $u->branch->name ?? null,
+                    'designation' => $emp?->designation?->name,
+                    'department'  => $emp?->department?->name,
+                ];
+            });
 
-        return response()->json(['status' => true, 'data' => $rows]);
+        return response()->json(['status' => true, 'data' => $rows->values()]);
     }
 
     /* ── Create (Submit & Send for Approval from the add form) ── */

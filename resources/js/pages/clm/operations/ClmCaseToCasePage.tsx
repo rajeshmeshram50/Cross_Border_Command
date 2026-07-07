@@ -72,6 +72,7 @@ export default function ClmCaseToCasePage() {
   const [rows, setRows] = useState<CtcContract[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);   // row currently downloading
+  const [hoverId, setHoverId] = useState<string | null>(null);   // hovered table row (state-driven so the highlight survives re-renders)
   // Stretch the contracts card to fill the viewport so its footer (pagination)
   // sits at the bottom of the card even with few rows — same dynamic behaviour
   // as the CLM master tables.
@@ -316,13 +317,18 @@ export default function ClmCaseToCasePage() {
                     const s = S_CFG[c.status];
                     const ap = AP_CFG[c.approval];
                     const apb = badgeTok(ap);
-                    const rowBg = n % 2 === 0 ? t.rowAlt : t.tableBg;
+                    const isHover = hoverId === c.id;
+                    // Drive the hover highlight from React state (not imperative
+                    // DOM writes) so a re-render — download click, popover, search —
+                    // can't reset a hovered row back to the whitish `rowAlt` stripe
+                    // mid-hover (the "white flash / flicker" in dark mode).
+                    const rowBg = isHover ? t.rowHover : (n % 2 === 0 ? t.rowAlt : t.tableBg);
                     const extra = c.cp.length - 1;
                     const cpS = c.cpSignedDate !== '—' ? c.cpSignedDate : (c.status === 'signed' ? c.date : '—');
                     return (
-                      <tr key={c.id} style={{ background: rowBg, transition: 'all .12s' }}
-                        onMouseEnter={e => { e.currentTarget.style.background = t.rowHover; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #7C3AED'; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = rowBg; e.currentTarget.style.boxShadow = 'none'; }}>
+                      <tr key={c.id} style={{ background: rowBg, transition: 'background .12s', boxShadow: isHover ? 'inset 3px 0 0 #7C3AED' : 'none' }}
+                        onMouseEnter={() => setHoverId(c.id)}
+                        onMouseLeave={() => setHoverId(h => (h === c.id ? null : h))}>
                         <td style={{ ...TD, width: 52 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#6D28D9,#5B21B6)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(109,40,217,.3)' }}><span style={{ fontSize: 9, fontWeight: 900, color: '#fff' }}>{String(n).padStart(2, '0')}</span></div></td>
                         <td style={{ ...TD, width: 124 }}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 10, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#4C1D95', background: t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,rgba(109,40,217,.1),rgba(124,58,237,.06))', padding: '3px 7px', borderRadius: 6, border: '1px solid rgba(124,58,237,.28)', whiteSpace: 'nowrap', letterSpacing: '.02em' }}>{c.id}</span></td>
                         <td style={{ ...TD, width: 110 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.date}</span></td>

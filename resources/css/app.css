@@ -3329,3 +3329,15 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   color: #fcd34d !important;
   border-bottom-color: rgba(245, 158, 11, 0.30) !important;
 }
+
+/* Recharts — remove the browser focus outline that appears as a black border
+ * around a chart when a bar / slice / point is clicked. Applies to every chart
+ * (Recharts renders .recharts-wrapper + .recharts-surface everywhere). */
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
+.recharts-surface:focus,
+.recharts-surface:focus-visible,
+.recharts-wrapper *:focus,
+.recharts-wrapper *:focus-visible {
+  outline: none !important;
+}

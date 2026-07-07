@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, CardBody, Col, Row } from 'reactstrap';
+import { Card, CardBody, Col, Row, Modal, ModalBody, ModalHeader } from 'reactstrap';
 import { PieChart, Pie, Cell, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -170,7 +170,7 @@ interface OverviewData {
   pending_approvals: Array<{ id: number; claim_no: string; title: string; category: string; amount: number; currency: string; filed_by: string | null; emp_code: string | null; created_at: string | null }>;
   team_kind: 'reports' | 'peers' | 'department' | 'none';
   team_peers: Array<{ id: number; emp_code: string; display_name: string; photo_url: string | null; designation_name: string | null }>;
-  announcements: Array<{ id: number; title: string; snippet: string; created_at: string | null }>;
+  announcements: Array<{ id: number; title: string; snippet: string; body?: string; created_at: string | null }>;
   upcoming_events: Array<{ employee_id: number; name: string; kind: 'birthday' | 'anniversary'; on: string; years: number | null }>;
   onboarding: { current_stage: number; total_stages: number; percent: number; next_label: string | null } | null;
   analytics: {
@@ -340,6 +340,8 @@ export default function EmployeeDashboard() {
   const ct = useChartTheme();
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
+  // Announcement clicked on the list → opens a modal with the full details.
+  const [openAnn, setOpenAnn] = useState<OverviewData['announcements'][number] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -954,7 +956,11 @@ export default function EmployeeDashboard() {
                 <EmptyState icon="ri-megaphone-line" text="No announcements yet." />
               ) : (
                 announcements.map(a => (
-                  <div key={a.id} style={{ padding: '14px 18px', borderBottom: '1px solid var(--vz-border-color)' }}>
+                  <div key={a.id} role="button" tabIndex={0}
+                       onClick={() => setOpenAnn(a)}
+                       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenAnn(a); } }}
+                       title="Click to read the full announcement"
+                       style={{ padding: '14px 18px', borderBottom: '1px solid var(--vz-border-color)', cursor: 'pointer' }}>
                     <div className="d-flex align-items-start justify-content-between gap-2 mb-1">
                       <div className="d-flex align-items-center gap-2 min-w-0">
                         <div className="fw-semibold" style={{ fontSize: 13.5, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{a.title}</div>
@@ -1065,6 +1071,19 @@ export default function EmployeeDashboard() {
         </Card>
         );
       })()}
+
+      {/* Announcement detail — opened by clicking a card in the list above. */}
+      <Modal isOpen={!!openAnn} toggle={() => setOpenAnn(null)} centered scrollable size="lg">
+        <ModalHeader toggle={() => setOpenAnn(null)}>{openAnn?.title}</ModalHeader>
+        <ModalBody>
+          {openAnn?.created_at && (
+            <div className="text-muted mb-2" style={{ fontSize: 12 }}>{fmtDateShort(openAnn.created_at)}</div>
+          )}
+          <div style={{ whiteSpace: 'pre-wrap', fontSize: 13.5, lineHeight: 1.6, color: 'var(--vz-body-color)' }}>
+            {(openAnn?.body || openAnn?.snippet || '').trim() || 'No further details.'}
+          </div>
+        </ModalBody>
+      </Modal>
     </div>
   );
 }

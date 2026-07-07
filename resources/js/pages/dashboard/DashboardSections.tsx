@@ -32,9 +32,12 @@ export function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: num
 
 export const ChartTooltip = ({ active, payload, label, prefix = '' }: any) => {
   if (!active || !payload?.length) return null;
+  // Pie/donut segments carry no axis `label`; fall back to the hovered slice's
+  // own name so the dark tooltip reads e.g. "Completed" + "14", not just "14".
+  const header = label ?? payload[0]?.name;
   return (
     <div style={{ background: '#1e2a3a', borderRadius: 10, padding: '8px 14px', boxShadow: '0 4px 20px rgba(0,0,0,0.18)', border: 'none', fontSize: 12 }}>
-      <div style={{ color: '#a8b8c8', fontWeight: 600, marginBottom: 4, fontSize: 11 }}>{label}</div>
+      {header != null && header !== '' && <div style={{ color: '#a8b8c8', fontWeight: 600, marginBottom: 4, fontSize: 11 }}>{header}</div>}
       {payload.map((p: any, i: number) => (
         <div key={i} style={{ color: '#fff', fontWeight: 700, fontSize: 13 }}>
           {prefix}{typeof p.value === 'number' ? p.value.toLocaleString() : p.value}
@@ -934,7 +937,7 @@ export default function DashboardSections({ data, scope }: { data: any; scope: '
                           <Pie data={sig.status.filter((s: any) => s.value > 0)} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={42} outerRadius={70} paddingAngle={0} stroke="none">
                             {sig.status.filter((s: any) => s.value > 0).map((_: any, i: number) => <Cell key={i} fill={statusColors[i % statusColors.length]} />)}
                           </Pie>
-                          <Tooltip />
+                          <Tooltip content={<ChartTooltip />} />
                           <Legend verticalAlign="bottom" iconType="circle" wrapperStyle={{ fontSize: 10.5, paddingTop: 2 }} />
                         </PieChart>
                       </ResponsiveContainer>
@@ -1128,7 +1131,7 @@ export default function DashboardSections({ data, scope }: { data: any; scope: '
                           <Cell key={i} fill={['#0ab39c', '#878a99', '#f7b84b', '#9b72cf', '#f06548', '#6c7080', '#dc3545'][i % 7]} />
                         ))}
                       </Pie>
-                      <Tooltip />
+                      <Tooltip content={<ChartTooltip />} />
                       <Legend
                         verticalAlign="bottom"
                         iconType="circle"
