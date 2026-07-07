@@ -648,7 +648,13 @@ function MasterPageInner({
       if (f.auto) continue;
       // Sublist values aren't tied to a single FormData input — they live in
       // their own state and are validated by the sub-modal at add/edit time.
-      if (f.t === 'sublist') continue;
+      // A REQUIRED sublist must hold at least one entry (bug #9 — Bank Details).
+      if (f.t === 'sublist') {
+        if (f.r && (!sublistValues[f.n] || sublistValues[f.n].length === 0)) {
+          errs[f.n] = `Please add at least one ${f.subSingular || f.l}.`;
+        }
+        continue;
+      }
       if (isHiddenByShowWhen(f)) continue;
       // File inputs: required check uses File.size; skip the rest of validation.
       // On EDIT the existing file already lives on the server, so we don't
@@ -716,7 +722,9 @@ function MasterPageInner({
           errs[f.n] = `${f.l} contains disallowed patterns (possible SQL/JS injection)`;
           continue;
         }
-        if (f.r && !/[A-Za-z0-9]/.test(raw)) {
+        // The currency Symbol field is legitimately symbol-only (₹, $, €, £),
+        // so it's exempt from the "must contain letters/numbers" check (bug #19).
+        if (f.n !== 'symbol' && f.r && !/[A-Za-z0-9]/.test(raw)) {
           errs[f.n] = `${f.l} must contain meaningful text (letters or numbers, not only symbols)`;
           continue;
         }
@@ -736,6 +744,13 @@ function MasterPageInner({
             continue;
           }
         }
+        // Per-field regex from the config — stricter field-specific formats
+        // (e.g. "no numbers" name fields, numeric-only codes). Runs when the
+        // field declares a `pattern` and has a value.
+        if (f.pattern && !new RegExp(f.pattern).test(raw)) {
+          errs[f.n] = f.patternMessage || `${f.l} is invalid`;
+          continue;
+        }
       }
       // Future-only date guard — kicks in for fields like Warranty
       // Expiry where a backdated value doesn't make sense. Lexical
@@ -745,6 +760,17 @@ function MasterPageInner({
         const todayIso = new Date().toISOString().slice(0, 10);
         if (raw < todayIso) {
           errs[f.n] = `${f.l} must be a future date`;
+          continue;
+        }
+      }
+      // Cross-date constraint — this date must be AFTER another date field
+      // (e.g. Warranty Expiry must be later than Purchase Date, bug #27). Only
+      // checks when both dates are present; lexical YYYY-MM-DD compare is safe.
+      if (f.t === 'date' && (f as any).afterField) {
+        const other = String(fd.get((f as any).afterField) ?? '').trim();
+        const otherLabel = cfg.fields.find(x => x.n === (f as any).afterField)?.l || 'the start date';
+        if (raw && other && raw <= other) {
+          errs[f.n] = `${f.l} must be after ${otherLabel}.`;
           continue;
         }
       }
@@ -2443,6 +2469,10 @@ function InlineSublist({
       const raw = draft[sf.n];
       const str = raw == null ? '' : String(raw).trim();
       if (sf.r && !str) errs[sf.n] = `${sf.l} is required`;
+      // Format check — only when a value is present (required handled above).
+      else if (str && sf.pattern && !new RegExp(sf.pattern).test(str)) {
+        errs[sf.n] = sf.patternMessage || `${sf.l} is invalid`;
+      }
       if (sf.n === field.subPrimaryFlagField) {
         payload[sf.n] = str === 'Yes' || str === 'true' || str === '1' || raw === true;
       } else if (sf.t === 'number') {
@@ -4255,13 +4285,17 @@ export function renderField(
         }
       }
       /* Number-input sanitiser. HTML `type="number"` accepts scientific
-       * notation (`e`, `+`, `-`, `.`) which silently breaks integer-only
-       * fields like Credit Limit and Payment Terms — a user typing "e"
-       * leaves the input value as just "e" and the form submits NaN.
-       * Strip everything except digits so only whole numbers stick. */
+       * notation (`e`, `+`, `-`) which silently breaks numeric fields — a
+       * user typing "e" leaves the value as just "e" and the form submits NaN.
+       * Strip everything except digits and a SINGLE decimal point so valid
+       * decimals (e.g. GST 18.5, exchange rates) are preserved (bug #18). */
       if (f.t === 'number') {
         const target = e.currentTarget;
-        const cleaned = target.value.replace(/[^\d]/g, '');
+        let cleaned = target.value.replace(/[^\d.]/g, '');
+        const firstDot = cleaned.indexOf('.');
+        if (firstDot !== -1) {
+          cleaned = cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+        }
         if (target.value !== cleaned) {
           const cursor = Math.max(0, (target.selectionStart ?? cleaned.length) - (target.value.length - cleaned.length));
           target.value = cleaned;
@@ -4277,7 +4311,8 @@ export function renderField(
      * trap. Paste is still cleaned by handleInput above. */
     const handleNumberKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (f.t !== 'number') return;
-      if (['e', 'E', '+', '-', '.', ','].includes(e.key)) {
+      // Allow '.' for decimals (bug #18); still block scientific-notation keys.
+      if (['e', 'E', '+', '-', ','].includes(e.key)) {
         e.preventDefault();
       }
     };

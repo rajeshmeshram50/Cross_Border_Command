@@ -86,7 +86,7 @@ class MasterController extends Controller
      */
     private const SCHEMAS = [
         'company' => ['fields' => [['n' => 'company_name', 't' => 'text', 'r' => true], ['n' => 'short_code', 't' => 'text', 'r' => true], ['n' => 'gstin', 't' => 'text', 'r' => true, 'normalize' => 'upper'], ['n' => 'pan', 't' => 'text', 'r' => true, 'normalize' => 'upper'], ['n' => 'cin', 't' => 'text', 'normalize' => 'upper'], ['n' => 'iec', 't' => 'text'], ['n' => 'email', 't' => 'email'], ['n' => 'mobile', 't' => 'text'], ['n' => 'city', 't' => 'text'], ['n' => 'state', 't' => 'text'], ['n' => 'address', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['company_name', 'gstin', 'pan']],
-        'bank_accounts' => ['fields' => [['n' => 'bank_name', 't' => 'text', 'r' => true], ['n' => 'account_holder', 't' => 'text', 'r' => true], ['n' => 'account_number', 't' => 'text', 'r' => true], ['n' => 'ifsc_code', 't' => 'text', 'r' => true], ['n' => 'branch_name', 't' => 'text'], ['n' => 'city', 't' => 'text'], ['n' => 'swift_code', 't' => 'text', 'r' => true], ['n' => 'ad_code', 't' => 'text', 'r' => true], ['n' => 'is_primary', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['account_number', 'ifsc_code']],
+        'bank_accounts' => ['fields' => [['n' => 'bank_name', 't' => 'text', 'r' => true, 'pattern' => "/^[A-Za-z][A-Za-z .,&'()\\-]*$/", 'patternMessage' => 'Bank Name may only contain letters (no numbers or special characters).'], ['n' => 'account_holder', 't' => 'text', 'r' => true, 'pattern' => "/^[A-Za-z][A-Za-z .,&'()\\-]*$/", 'patternMessage' => 'Account Holder may only contain letters.'], ['n' => 'account_number', 't' => 'text', 'r' => true, 'pattern' => '/^[0-9]{9,18}$/', 'patternMessage' => 'Account Number must be 9 to 18 digits.'], ['n' => 'ifsc_code', 't' => 'text', 'r' => true, 'normalize' => 'upper', 'pattern' => '/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/', 'patternMessage' => 'Enter a valid 11-character IFSC code.'], ['n' => 'branch_name', 't' => 'text'], ['n' => 'city', 't' => 'text'], ['n' => 'swift_code', 't' => 'text', 'r' => true], ['n' => 'ad_code', 't' => 'text', 'r' => true, 'pattern' => '/^[0-9]{14}$/', 'patternMessage' => 'AD Code must be exactly 14 digits.'], ['n' => 'is_primary', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['account_number', 'ifsc_code']],
         // `uEach` — department name and code each independently unique.
         'departments' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'parent_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'head', 't' => 'select'], ['n' => 'email', 't' => 'email'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name', 'code'], 'tenantScoped' => true],
         'roles' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'role_type', 't' => 'select', 'r' => true, 'opts' => ['Primary', 'Ancillary']], ['n' => 'department_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'role_category', 't' => 'select', 'opts' => ['Technical', 'Management', 'Operational', 'Support', 'Sales', 'Compliance', 'Finance', 'HR']], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
@@ -141,7 +141,7 @@ class MasterController extends Controller
         // (Low / High are seeded as global is_system rows and can't be
         // shadow-created under any tenant scope).
         'risk_levels' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'text'], ['n' => 'action_required', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name']],
-        'document_type' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'applicable_to', 't' => 'select', 'opts' => ['Customer', 'Vendor', 'Both', 'Internal']], ['n' => 'is_mandatory', 't' => 'select', 'opts' => ['Yes', 'No']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['title']],
+        'document_type' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'applicable_to', 't' => 'select', 'opts' => ['Customer', 'Vendor', 'Supplier', 'Both', 'Internal']], ['n' => 'is_mandatory', 't' => 'select', 'opts' => ['Yes', 'No']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['title']],
         'haz_class' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'compliance_behaviours' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'action_required', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'assets' => ['fields' => [['n' => 'asset_name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'asset_type_id', 't' => 'select', 'r' => true, 'ref' => 'asset_categories'], ['n' => 'description', 't' => 'textarea'], ['n' => 'vendor_id', 't' => 'select', 'ref' => 'vendor_directory'], ['n' => 'purchase_date', 't' => 'date'], ['n' => 'warranty_expiry_date', 't' => 'date'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive', 'Under Repair', 'Disposed']]], 'uEach' => ['asset_name', 'code']],
@@ -688,6 +688,12 @@ class MasterController extends Controller
             $banks = $request->input('banks');
             if (!is_array($banks)) return;
 
+            // At least one bank account is mandatory (bug #9).
+            $nonEmpty = collect($banks)->filter(fn ($b) => is_array($b) && !empty($b['bank_name']))->count();
+            if ($nonEmpty === 0) {
+                throw ValidationException::withMessages(['banks' => ['Please add at least one bank account.']]);
+            }
+
             $allowed = ['bank_name', 'branch_name', 'account_number', 'ifsc_code', 'account_type', 'is_primary'];
             $keptIds = [];
 
@@ -699,6 +705,25 @@ class MasterController extends Controller
                 }
                 // Required field — skip silently if missing so the parent save still succeeds.
                 if (empty($payload['bank_name']) || empty($payload['account_number'])) continue;
+
+                // Server-side format guards mirroring the frontend (bugs #1-#7):
+                // name charsets, numeric account number, IFSC format, mandatory
+                // branch + IFSC. Reject so a crafted API payload can't bypass the UI.
+                $bn = trim((string) ($payload['bank_name'] ?? ''));
+                $br = trim((string) ($payload['branch_name'] ?? ''));
+                $ac = trim((string) ($payload['account_number'] ?? ''));
+                $if = trim((string) ($payload['ifsc_code'] ?? ''));
+                $bankErr = [];
+                if (!preg_match("/^[A-Za-z][A-Za-z .&'()\\-]*$/", $bn)) $bankErr[] = 'Bank Name may only contain letters and . & \' ( ) -.';
+                if ($br === '')                                        $bankErr[] = 'Branch Name is required.';
+                elseif (!preg_match("/^[A-Za-z][A-Za-z .&'()\\-]*$/", $br)) $bankErr[] = 'Branch Name may only contain letters and . & \' ( ) -.';
+                if (!preg_match('/^[0-9]{9,18}$/', $ac))               $bankErr[] = 'Account Number must be 9 to 18 digits.';
+                if ($if === '')                                        $bankErr[] = 'IFSC Code is required.';
+                elseif (!preg_match('/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/', $if)) $bankErr[] = 'IFSC Code is invalid (e.g. HDFC0000001).';
+                if ($bankErr) {
+                    throw ValidationException::withMessages(['banks' => [implode(' ', $bankErr)]]);
+                }
+
                 $payload['is_primary'] = !empty($payload['is_primary']);
 
                 $existingId = $b['id'] ?? null;

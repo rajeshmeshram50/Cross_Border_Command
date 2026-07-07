@@ -59,6 +59,17 @@ export type FieldDef = {
   // stops once the user manually edits the target field, so user input
   // is always preserved.
   autoDeriveFrom?: string;
+  // Regex validation (source string, no delimiters) applied on save when the
+  // field has a value. Used by sublist sub-fields (e.g. bank account number /
+  // IFSC) and any field needing a format check. `patternMessage` is the error
+  // shown when it fails.
+  pattern?: string;
+  patternMessage?: string;
+  // Max character length for text/textarea inputs.
+  maxLen?: number;
+  // Cross-date constraint (t === 'date') — this date must be strictly AFTER
+  // the referenced date field (e.g. warranty_expiry_date afterField 'purchase_date').
+  afterField?: string;
 };
 
 export type WtdStep = { icon: string; title: string; desc: string };
@@ -106,6 +117,20 @@ export function normalizeOpts(opts: FieldOption[] | undefined): { value: string;
 export function masterEndpoint(cfg: Pick<MasterConfig, 'slug' | 'endpoint'>): string {
   return cfg.endpoint || `/master/${cfg.slug}`;
 }
+
+// Shared field-validation patterns (regex source strings; enforced by
+// MasterPage.validateForm and mirrored server-side). Added for the master
+// field-validation bug batch (#11-#30).
+const P_NAME_NO_DIGITS  = "^[A-Za-z][A-Za-z .,&'()\\-]*$";           // letters + name punctuation, no digits
+const M_NAME_NO_DIGITS  = "Only letters and spaces are allowed (no numbers or special characters).";
+const P_NAME_NO_SYMBOLS = "^(?=.*[A-Za-z])[A-Za-z0-9 .,&'()/\\-]+$"; // letters/numbers/space/basic punct, no special symbols
+const M_NAME_NO_SYMBOLS = "Special characters are not allowed.";
+const P_ACCOUNT_NO      = "^[0-9]{9,18}$";                            // bank account number: 9-18 digits
+const M_ACCOUNT_NO      = "Account Number must be 9 to 18 digits (numbers only).";
+const P_AD_CODE         = "^[0-9]{14}$";                              // AD code: exactly 14 digits
+const M_AD_CODE         = "AD Code must be exactly 14 digits (numbers only).";
+const P_ALNUM_CODE      = "^[A-Za-z0-9]+$";                           // alphanumeric code
+const M_ALNUM_CODE      = "Only letters and numbers are allowed (no spaces or special characters).";
 
 const C: Record<string, MasterConfig> = {
   // ---------- IDENTITY & ENTITY ----------
@@ -178,7 +203,7 @@ const C: Record<string, MasterConfig> = {
 
       // — BANK DETAILS (sublist — saved alongside the entity) ---------
       { sec: 'Bank Details', n: '', l: '', t: 'text' },
-      { n: 'banks', l: 'Bank Accounts', t: 'sublist',
+      { n: 'banks', l: 'Bank Accounts', t: 'sublist', r: true,
         subSingular: 'Bank Detail',
         subDesc: 'Bank accounts used for payroll & expense tracking',
         subCardTitleField: 'bank_name',
@@ -186,10 +211,18 @@ const C: Record<string, MasterConfig> = {
         subCardLines: ['account_number', 'ifsc_code', 'account_type'],
         subPrimaryFlagField: 'is_primary',
         subFields: [
-          { n: 'bank_name', l: 'Bank Name', t: 'text', r: true, p: 'e.g. HDFC Bank' },
-          { n: 'branch_name', l: 'Branch Name', t: 'text', p: 'e.g. HINJAWADI branch' },
-          { n: 'account_number', l: 'Account Number', t: 'text', r: true, p: 'Full account number' },
-          { n: 'ifsc_code', l: 'IFSC Code', t: 'text', p: 'e.g. HDFC0000001' },
+          // Bug #5 — bank name: letters and name-safe punctuation only, no digits/symbols.
+          { n: 'bank_name', l: 'Bank Name', t: 'text', r: true, p: 'e.g. HDFC Bank',
+            pattern: "^[A-Za-z][A-Za-z .&'()\\-]*$", patternMessage: 'Bank Name may only contain letters, spaces and . & \' ( ) -' },
+          // Bug #3 (mandatory) + #6 (no numbers/special) — branch name.
+          { n: 'branch_name', l: 'Branch Name', t: 'text', r: true, p: 'e.g. HINJAWADI branch',
+            pattern: "^[A-Za-z][A-Za-z .&'()\\-]*$", patternMessage: 'Branch Name may only contain letters, spaces and . & \' ( ) -' },
+          // Bug #1 (validation) + #7 (numeric only) — account number: 9–18 digits.
+          { n: 'account_number', l: 'Account Number', t: 'text', r: true, p: 'Full account number',
+            pattern: '^[0-9]{9,18}$', patternMessage: 'Account Number must be 9 to 18 digits (numbers only).' },
+          // Bug #4 (mandatory) + #2 (format) — IFSC code: 4 letters + 0 + 6 alphanumerics.
+          { n: 'ifsc_code', l: 'IFSC Code', t: 'text', r: true, p: 'e.g. HDFC0000001',
+            pattern: '^[A-Za-z]{4}0[A-Za-z0-9]{6}$', patternMessage: 'Enter a valid 11-character IFSC code, e.g. HDFC0000001.' },
           { n: 'account_type', l: 'Account Type', t: 'select', opts: ['Current', 'Savings'] },
           { n: 'is_primary', l: 'Primary Account', t: 'select', opts: [{ value: 'No', label: 'No' }, { value: 'Yes', label: 'Yes' }] },
         ],
@@ -245,15 +278,15 @@ const C: Record<string, MasterConfig> = {
     desc: 'Bank registry — Swift Code + AD Code mandatory for export',
     cat: 'Identity & Entity',
     fields: [
-      { n: 'bank_name', l: 'Bank Name', t: 'text', r: true, p: 'State Bank of India' },
-      { n: 'account_holder', l: 'Account Holder', t: 'text', r: true, p: 'As per bank records' },
-      { n: 'account_number', l: 'Account Number', t: 'text', r: true, p: 'Full account number' },
+      { n: 'bank_name', l: 'Bank Name', t: 'text', r: true, p: 'State Bank of India', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
+      { n: 'account_holder', l: 'Account Holder', t: 'text', r: true, p: 'As per bank records', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
+      { n: 'account_number', l: 'Account Number', t: 'text', r: true, p: 'Full account number', pattern: P_ACCOUNT_NO, patternMessage: M_ACCOUNT_NO },
       { n: 'ifsc_code', l: 'IFSC Code', t: 'text', r: true, p: 'SBIN0000691' },
       { n: 'branch_name', l: 'Branch Name', t: 'text', p: 'Branch name' },
       { n: 'city', l: 'City', t: 'text', p: 'City' },
       { sec: 'Export Banking', n: '', l: '', t: 'text' },
       { n: 'swift_code', l: 'Swift Code', t: 'text', r: true, p: 'SBININBB104' },
-      { n: 'ad_code', l: 'AD Code', t: 'text', r: true, p: 'Authorized Dealer code' },
+      { n: 'ad_code', l: 'AD Code', t: 'text', r: true, p: 'Authorized Dealer code', pattern: P_AD_CODE, patternMessage: M_AD_CODE },
       { n: 'is_primary', l: 'Primary Account', t: 'select', opts: ['No', 'Yes'] },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
@@ -275,7 +308,7 @@ const C: Record<string, MasterConfig> = {
     desc: 'Manage all departments, structure, ownership, and readiness for HR operations',
     cat: 'Identity & Entity',
     fields: [
-      { n: 'name', l: 'Department Name', t: 'text', r: true, p: 'e.g. Software Development' },
+      { n: 'name', l: 'Department Name', t: 'text', r: true, p: 'e.g. Software Development', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'code', l: 'Department Code', t: 'text', r: true, p: 'e.g. DEPT-001',
         autogenApi: true,
         // Fallback used until /next-code resolves (or if it errors out). Same
@@ -349,7 +382,7 @@ const C: Record<string, MasterConfig> = {
     desc: 'User roles controlling module access permissions',
     cat: 'Identity & Entity',
     fields: [
-      { n: 'name', l: 'Role Name', t: 'text', r: true, p: 'e.g., Software Engineer' },
+      { n: 'name', l: 'Role Name', t: 'text', r: true, p: 'e.g., Software Engineer', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'code', l: 'Role Code', t: 'text', auto: true, hint: '(auto-generated)', p: 'ROL-XXX' },
       { n: 'role_type', l: 'Role Type', t: 'select', r: true, p: '— Select Type —', opts: ['Primary', 'Ancillary'] },
       { n: 'department_id', l: 'Department', t: 'select', ref: 'departments', refL: 'name', p: '— All Departments —' },
@@ -461,7 +494,7 @@ const C: Record<string, MasterConfig> = {
     desc: 'Country master — referenced on all trade documents',
     cat: 'Geography & Location',
     fields: [
-      { n: 'name', l: 'Country Name', t: 'text', r: true, p: 'e.g. India' },
+      { n: 'name', l: 'Country Name', t: 'text', r: true, p: 'e.g. India', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'iso_code', l: 'ISO Code', t: 'text', p: 'e.g. IN' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
@@ -763,7 +796,7 @@ const C: Record<string, MasterConfig> = {
     desc: 'Units (Kg, Box, Pcs) on product & shipment records',
     cat: 'Trade & Commercial',
     fields: [
-      { n: 'title', l: 'Unit Title', t: 'text', r: true, p: 'e.g. Kilogram' },
+      { n: 'title', l: 'Unit Title', t: 'text', r: true, p: 'e.g. Kilogram', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'short_code', l: 'Short Code', t: 'text', r: true, p: 'e.g. KG', autoDeriveFrom: 'title', hint: 'auto-suggested from title, editable' },
       { n: 'unit_type', l: 'Unit Type', t: 'select', opts: ['Weight', 'Volume', 'Length', 'Area', 'Count', 'Other'] },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
@@ -826,7 +859,7 @@ const C: Record<string, MasterConfig> = {
     desc: 'Storage & handling states (Organic, Fresh, Frozen)',
     cat: 'Trade & Commercial',
     fields: [
-      { n: 'title', l: 'Condition Title', t: 'text', r: true, p: 'e.g. Organic, Fresh, Processed' },
+      { n: 'title', l: 'Condition Title', t: 'text', r: true, p: 'e.g. Organic, Fresh, Processed', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
     cols: ['title', 'status'],
@@ -855,7 +888,7 @@ const C: Record<string, MasterConfig> = {
     cat: 'Trade & Commercial',
     fields: [
       { n: 'code', l: 'Incoterm Code', t: 'text', r: true, p: 'e.g. FOB' },
-      { n: 'full_name', l: 'Full Name', t: 'text', r: true, p: 'e.g. Free On Board' },
+      { n: 'full_name', l: 'Full Name', t: 'text', r: true, p: 'e.g. Free On Board', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'transport_mode', l: 'Transport Mode', t: 'select', opts: ['Sea/Inland Waterway', 'Any Mode', 'Air', 'Road', 'Rail'] },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
@@ -888,7 +921,7 @@ const C: Record<string, MasterConfig> = {
     desc: 'Customer / consignee classification — drives pricing & GST rules',
     cat: 'Party & Classification',
     fields: [
-      { n: 'name', l: 'Customer Consignee Type', t: 'text', r: true, p: 'e.g. Retailer, Wholesaler' },
+      { n: 'name', l: 'Customer Consignee Type', t: 'text', r: true, p: 'e.g. Retailer, Wholesaler', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       // "No" listed first so a fresh form defaults to GST-not-applicable;
       // user flips to "Yes" for taxable buyer types. Required so the
       // server never sees a null GST flag for a customer-type row.
@@ -1194,7 +1227,7 @@ const C: Record<string, MasterConfig> = {
       { n: 'description', l: 'Asset Description', t: 'textarea', full: true, p: 'Describe the asset — model, specs, condition…' },
       { n: 'vendor_id', l: 'Supplier', t: 'select', ref: 'vendor_directory', refL: 'vendor_company_name', p: '— Select —' },
       { n: 'purchase_date', l: 'Purchase Date', t: 'date' },
-      { n: 'warranty_expiry_date', l: 'Warranty Expiry Date', t: 'date', futureOnly: true },
+      { n: 'warranty_expiry_date', l: 'Warranty Expiry Date', t: 'date', futureOnly: true, afterField: 'purchase_date' },
       { sec: 'Documents & Attachments', n: '', l: '', t: 'text' },
       { n: 'invoice_file', l: 'Invoice', t: 'file', r: true, accept: '.pdf,.jpg,.jpeg,.png', maxMb: 10, icon: 'ri-file-text-line', optionalLabel: 'MANDATORY' },
       { n: 'warranty_card_file', l: 'Warranty Card', t: 'file', accept: '.pdf,.jpg,.jpeg,.png', maxMb: 10, icon: 'ri-file-shield-2-line', optionalLabel: 'OPTIONAL' },
@@ -1286,8 +1319,8 @@ const C: Record<string, MasterConfig> = {
     desc: 'Credit days, advance %, milestone structure for PO terms',
     cat: 'P2P Masters',
     fields: [
-      { n: 'term_code', l: 'Term Code', t: 'text', r: true, p: 'e.g. NET30, ADV100' },
-      { n: 'term_name', l: 'Term Name', t: 'text', r: true, p: 'e.g. Net 30 Days' },
+      { n: 'term_code', l: 'Term Code', t: 'text', r: true, p: 'e.g. NET30, ADV100', pattern: P_ALNUM_CODE, patternMessage: M_ALNUM_CODE },
+      { n: 'term_name', l: 'Term Name', t: 'text', r: true, p: 'e.g. Net 30 Days', pattern: P_NAME_NO_SYMBOLS, patternMessage: M_NAME_NO_SYMBOLS },
       { n: 'credit_days', l: 'Credit Days', t: 'number', r: true, p: 'e.g. 30', min: 0, max: 3650 },
       { n: 'advance_pct', l: 'Advance Required (%)', t: 'number', p: 'e.g. 30', min: 0, max: 100 },
       { n: 'payment_type', l: 'Payment Type', t: 'select', r: true, opts: ['Full Advance', 'Partial Advance', 'Credit', 'Milestone-Based', 'COD'] },
@@ -1413,7 +1446,7 @@ const C: Record<string, MasterConfig> = {
     cat: 'P2P Masters',
     fields: [
       { n: 'reason_code', l: 'Reason Code', t: 'text', r: true, p: 'e.g. RATE-REV' },
-      { n: 'reason_name', l: 'Reason Name', t: 'text', r: true, p: 'e.g. Rate Revised Post Negotiation' },
+      { n: 'reason_name', l: 'Reason Name', t: 'text', r: true, p: 'e.g. Rate Revised Post Negotiation', pattern: P_NAME_NO_SYMBOLS, patternMessage: M_NAME_NO_SYMBOLS },
       { n: 'module', l: 'Applicable Module', t: 'select', r: true, opts: ['Purchase Order', 'Supplier Comparison', 'VTI', 'GRN', 'Payment', 'All'] },
       { n: 'attachment_required', l: 'Attachment Required', t: 'select', r: true, opts: ['Yes', 'No'] },
       { n: 'requires_approval', l: 'Requires Approval', t: 'select', r: true, opts: ['Yes', 'No'] },
