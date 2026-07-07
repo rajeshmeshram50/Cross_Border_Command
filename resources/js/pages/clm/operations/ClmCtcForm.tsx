@@ -1257,7 +1257,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               <div style={{ borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.45)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F3FF', padding: '9px 11px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-                  <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#7C3AED', textTransform: 'uppercase', letterSpacing: '.08em' }}>Clarification Requested{apprName ? ` · ${apprName}` : ''}</span>
+                  <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#7C3AED', textTransform: 'uppercase', letterSpacing: '.08em' }}>Clarification Requested{(openClar.by || apprName) ? ` · ${openClar.by || apprName}` : ''}</span>
                 </div>
                 <div style={{ fontSize: 9, color: t.dark ? '#ddd6fe' : '#4C1D95', lineHeight: 1.5 }}>{openClar.query || 'The approver requested clarification before deciding.'}</div>
                 {openClar.response
@@ -2215,7 +2215,6 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ width: 3, height: 10, borderRadius: 2, background: 'linear-gradient(180deg,#7C3AED,#5B21B6)' }} /><span style={{ fontSize: 8, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#4C1D95', letterSpacing: '.08em', textTransform: 'uppercase' }}>Approvers</span></div>
-              <button onClick={addApprover} style={{ display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px', borderRadius: 6, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF', cursor: 'pointer', fontFamily: 'inherit' }}><svg width="8" height="8" viewBox="0 0 16 16" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.5" strokeLinecap="round"><line x1="8" y1="2" x2="8" y2="14" /><line x1="2" y1="8" x2="14" y2="8" /></svg><span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#c4b5fd' : '#6D28D9' }}>Add Approver</span></button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {approvers.map((a, i) => (
@@ -2286,9 +2285,18 @@ function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; ex
         setEmps(rows.map((e, i) => {
           const ut = String(e.user_type ?? '');
           const branchName = e.branch_name ? String(e.branch_name) : '';
-          const role = ut === 'client_admin' ? 'CLIENT' : ut === 'branch_user' ? 'BRANCH' : (branchName || 'EMPLOYEE').toUpperCase();
+          const designation = e.designation ? String(e.designation) : '';
+          const department = e.department ? String(e.department) : '';
+          // Role badge = job title (Designation); subtitle = Department — so an
+          // approver's position/team is visible before sending. Branch users are
+          // the branch Director / CEO.
+          const role = ut === 'client_admin' ? 'CLIENT'
+            : ut === 'branch_user' ? 'DIRECTOR / CEO'
+            : (designation || 'EMPLOYEE').toUpperCase();
           const roleFg = ut === 'client_admin' ? '#7C3AED' : ut === 'branch_user' ? '#0891b2' : ROLE_FG[role.split('').reduce((s, c) => s + c.charCodeAt(0), 0) % ROLE_FG.length];
-          const title = ut === 'client_admin' ? 'Client Administrator' : ut === 'branch_user' ? (branchName ? `${branchName} · Branch` : 'Branch') : branchName;
+          const title = ut === 'client_admin' ? 'Client Administrator'
+            : ut === 'branch_user' ? 'Director / CEO'
+            : (department || designation || '—');
           const name = String(e.name ?? 'User');
           return { name, email: String(e.email ?? ''), title, role, roleFg, initials: orgInitials(name), grad: ORG_GRADS[i % ORG_GRADS.length], branch: branchName };
         }));
