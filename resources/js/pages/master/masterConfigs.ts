@@ -70,6 +70,10 @@ export type FieldDef = {
   // Cross-date constraint (t === 'date') — this date must be strictly AFTER
   // the referenced date field (e.g. warranty_expiry_date afterField 'purchase_date').
   afterField?: string;
+  // Cascade (t: ref select) — filter this dropdown's options by the current
+  // value of another field, matching on the ref row's column of the same name
+  // (e.g. state_id cascadeFrom 'country_id' shows only that country's states).
+  cascadeFrom?: string;
 };
 
 export type WtdStep = { icon: string; title: string; desc: string };
@@ -192,7 +196,7 @@ const C: Record<string, MasterConfig> = {
       { n: 'address_line1', l: 'Address Line 1', t: 'text', r: true, p: 'Office address' },
       { n: 'address_line2', l: 'Address Line 2', t: 'text', p: 'Street, locality' },
       { n: 'city', l: 'City', t: 'text', r: true, p: 'e.g. Pune' },
-      { n: 'state_id', l: 'State', t: 'select', r: true, ref: 'states', refL: 'name', p: '— Select —' },
+      { n: 'state_id', l: 'State', t: 'select', r: true, ref: 'states', refL: 'name', p: '— Select —', cascadeFrom: 'country_id' },
       { n: 'zip_code', l: 'Zip Code', t: 'text', r: true, p: 'e.g. 411045' },
 
       // — FINANCIAL ---------------------------------------------------
@@ -1479,7 +1483,7 @@ const C: Record<string, MasterConfig> = {
     fields: [
       { n: 'exc_code', l: 'Exception Code', t: 'text', r: true, p: 'e.g. QTY-TOL' },
       { n: 'exc_name', l: 'Exception Name', t: 'text', r: true, p: 'e.g. Quantity Tolerance Breach' },
-      { n: 'tolerance_pct', l: 'Tolerance % Allowed', t: 'number', p: 'e.g. 2' },
+      { n: 'tolerance_pct', l: 'Tolerance % Allowed', t: 'number', p: 'e.g. 2', min: 0, max: 100 },
       { n: 'blocks_payment', l: 'Blocks Payment', t: 'select', r: true, opts: ['Yes — Hard Block', 'Yes — Soft Block (Warning)', 'No'] },
       { n: 'resolver_role', l: 'Resolver Role', t: 'text', r: true, p: 'e.g. Purchase Manager' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
@@ -1511,7 +1515,7 @@ const C: Record<string, MasterConfig> = {
     fields: [
       { n: 'vendor_type', l: 'Supplier Type', t: 'text', r: true, p: 'e.g. Farmer, Trader, Manufacturer' },
       { n: 'procurement_cat', l: 'Procurement Category', t: 'text', p: 'e.g. Goods, Services' },
-      { n: 'max_advance_pct', l: 'Max Advance Allowed (%)', t: 'number', r: true, p: 'e.g. 30' },
+      { n: 'max_advance_pct', l: 'Max Advance Allowed (%)', t: 'number', r: true, p: 'e.g. 30', min: 0, max: 100 },
       { n: 'approval_above', l: 'Extra Approval Above (₹)', t: 'number', p: 'e.g. 100000' },
       { n: 'approver_role', l: 'Approver Role', t: 'text', p: 'e.g. Finance Manager' },
       { n: 'attachment_required', l: 'PO/Quote Attachment Required', t: 'select', r: true, opts: ['Yes', 'No'] },

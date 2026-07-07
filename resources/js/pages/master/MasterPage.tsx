@@ -831,17 +831,34 @@ function MasterPageInner({
      * with itself. Surfaces a clear inline error on the duplicate field
      * instead of waiting for a 422 round-trip. */
     if (cfg.uFields && cfg.uFields.length > 0 && records.length > 0) {
-      for (const uName of cfg.uFields) {
-        if (errs[uName]) continue; // already failed an earlier check
+      const labelOf = (u: string) => cfg.fields.find(ff => ff.n === u)?.l || u;
+      if (cfg.uFields.length > 1) {
+        // COMPOSITE uniqueness — only the COMBINATION of all uFields must be
+        // unique (matches the backend). Checking each field independently wrongly
+        // flagged e.g. module_scope as a duplicate whenever ANY row used the same
+        // scope, so every option errored (bug #29).
+        const vals = cfg.uFields.map(u => String(fd.get(u) ?? '').trim());
+        if (vals.every(v => v !== '')) {
+          const dup = records.some(r => {
+            if (editingId != null && r.id === editingId) return false;
+            return cfg.uFields!.every((u, i) => String(r[u] ?? '').trim().toLowerCase() === vals[i].toLowerCase());
+          });
+          if (dup) {
+            const first = cfg.uFields[0];
+            errs[first] = `A record with this ${cfg.uFields.map(labelOf).join(' + ')} combination already exists — change one of them.`;
+          }
+        }
+      } else {
+        const uName = cfg.uFields[0];
         const dupRaw = String(fd.get(uName) ?? '').trim();
-        if (!dupRaw) continue;
-        const dup = records.some(r => {
-          if (editingId != null && r.id === editingId) return false;
-          return String(r[uName] ?? '').trim().toLowerCase() === dupRaw.toLowerCase();
-        });
-        if (dup) {
-          const fLabel = cfg.fields.find(ff => ff.n === uName)?.l || uName;
-          errs[uName] = `${fLabel} "${dupRaw}" already exists — pick a different value`;
+        if (dupRaw && !errs[uName]) {
+          const dup = records.some(r => {
+            if (editingId != null && r.id === editingId) return false;
+            return String(r[uName] ?? '').trim().toLowerCase() === dupRaw.toLowerCase();
+          });
+          if (dup) {
+            errs[uName] = `${labelOf(uName)} "${dupRaw}" already exists — pick a different value`;
+          }
         }
       }
     }
@@ -4258,9 +4275,18 @@ export function renderField(
     };
     // Self-references: hide the row being edited so a department can't pick
     // itself as its own parent (which would create a cycle).
-    const refRows = (f.ref === undefined || editing == null)
+    let refRows = (f.ref === undefined || editing == null)
       ? rows
       : rows.filter((r: any) => String(r.id) !== String(editing.id));
+    // Cascade filter — e.g. the State dropdown shows only states of the selected
+    // Country (bug #10). Uses the source field's live value (tracked in
+    // radioValues) or the editing row's value; shows all when nothing's picked
+    // yet so the field is never empty-locked.
+    const cascadeKey = (f as any).cascadeFrom as string | undefined;
+    if (cascadeKey) {
+      const srcVal = radioValues[cascadeKey] ?? (editing != null ? String(editing[cascadeKey] ?? '') : '');
+      if (srcVal) refRows = refRows.filter((r: any) => String(r[cascadeKey] ?? '') === String(srcVal));
+    }
     let options = refRows.map((r: any) => ({
       value: String(r.id),
       label: buildLabel(r),
@@ -4276,7 +4302,8 @@ export function renderField(
         placeholder={f.noneLabel || `Select ${f.l}…`}
         disabled={viewOnly}
         invalid={!!err}
-        onChange={onFieldChange}
+        // Track the value so cascade targets (e.g. State ← Country) can filter.
+        onChange={(v) => { onFieldChange(); onRadioChange(f.n, v); }}
       />
     );
   } else if (f.t === 'select') {

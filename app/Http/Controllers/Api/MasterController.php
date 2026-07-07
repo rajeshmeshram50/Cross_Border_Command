@@ -153,8 +153,8 @@ class MasterController extends Controller
         'procurement_category' => ['fields' => [['n' => 'cat_code', 't' => 'text', 'r' => true], ['n' => 'cat_name', 't' => 'text', 'r' => true], ['n' => 'match_logic', 't' => 'select', 'r' => true, 'opts' => ['3-Way Match (PO+VTI+GRN)', '2-Way Match (PO+VTI)', '4-Way Match (PO+VTI+GRN+QC)']], ['n' => 'grn_required', 't' => 'select', 'r' => true, 'opts' => ['Yes — Physical Receipt', 'Yes — Service Confirmation', 'No']], ['n' => 'gst_applicable', 't' => 'select', 'r' => true, 'opts' => ['Yes', 'No', 'Reverse Charge']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['cat_code', 'cat_name']],
         'sourcing_type' => ['fields' => [['n' => 'type_code', 't' => 'text', 'r' => true], ['n' => 'type_name', 't' => 'text', 'r' => true], ['n' => 'quotation_required', 't' => 'select', 'r' => true, 'opts' => ['Mandatory — Min 3 Quotes', 'Mandatory — Min 1 Quote', 'Optional', 'Not Required']], ['n' => 'approval_required', 't' => 'select', 'r' => true, 'opts' => ['Yes', 'No']], ['n' => 'urgency_flag', 't' => 'select', 'opts' => ['Normal', 'Urgent', 'Emergency']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['type_code', 'type_name']],
         'deviation_reason' => ['fields' => [['n' => 'reason_code', 't' => 'text', 'r' => true], ['n' => 'reason_name', 't' => 'text', 'r' => true], ['n' => 'module', 't' => 'select', 'r' => true, 'opts' => ['Purchase Order', 'Vendor Comparison', 'VTI', 'GRN', 'Payment', 'All']], ['n' => 'attachment_required', 't' => 'select', 'r' => true, 'opts' => ['Yes', 'No']], ['n' => 'requires_approval', 't' => 'select', 'r' => true, 'opts' => ['Yes', 'No']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['reason_code', 'reason_name']],
-        'match_exception' => ['fields' => [['n' => 'exc_code', 't' => 'text', 'r' => true], ['n' => 'exc_name', 't' => 'text', 'r' => true], ['n' => 'tolerance_pct', 't' => 'number'], ['n' => 'blocks_payment', 't' => 'select', 'r' => true, 'opts' => ['Yes — Hard Block', 'Yes — Soft Block (Warning)', 'No']], ['n' => 'resolver_role', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['exc_code', 'exc_name']],
-        'advance_payment_rules' => ['fields' => [['n' => 'vendor_type', 't' => 'text', 'r' => true], ['n' => 'procurement_cat', 't' => 'text'], ['n' => 'max_advance_pct', 't' => 'number', 'r' => true], ['n' => 'approval_above', 't' => 'number'], ['n' => 'approver_role', 't' => 'text'], ['n' => 'attachment_required', 't' => 'select', 'r' => true, 'opts' => ['Yes', 'No']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['vendor_type', 'procurement_cat']],
+        'match_exception' => ['fields' => [['n' => 'exc_code', 't' => 'text', 'r' => true], ['n' => 'exc_name', 't' => 'text', 'r' => true], ['n' => 'tolerance_pct', 't' => 'number', 'min' => 0, 'max' => 100], ['n' => 'blocks_payment', 't' => 'select', 'r' => true, 'opts' => ['Yes — Hard Block', 'Yes — Soft Block (Warning)', 'No']], ['n' => 'resolver_role', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['exc_code', 'exc_name']],
+        'advance_payment_rules' => ['fields' => [['n' => 'vendor_type', 't' => 'text', 'r' => true], ['n' => 'procurement_cat', 't' => 'text'], ['n' => 'max_advance_pct', 't' => 'number', 'r' => true, 'min' => 0, 'max' => 100], ['n' => 'approval_above', 't' => 'number'], ['n' => 'approver_role', 't' => 'text'], ['n' => 'attachment_required', 't' => 'select', 'r' => true, 'opts' => ['Yes', 'No']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['vendor_type', 'procurement_cat']],
         'exchange_rate_log' => ['fields' => [['n' => 'currency_code', 't' => 'text', 'r' => true], ['n' => 'currency_name', 't' => 'text'], ['n' => 'rate_vs_inr', 't' => 'number', 'r' => true], ['n' => 'effective_date', 't' => 'date', 'r' => true], ['n' => 'rate_source', 't' => 'select', 'r' => true, 'opts' => ['RBI Reference Rate', 'Bank Rate', 'Agreed Rate', 'Custom']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Superseded']]], 'uFields' => ['currency_code', 'effective_date']],
         'goods_service_flag' => ['fields' => [['n' => 'flag_code', 't' => 'text', 'r' => true], ['n' => 'flag_name', 't' => 'text', 'r' => true], ['n' => 'grn_screen', 't' => 'select', 'r' => true, 'opts' => ['Physical Receipt — Qty + Batch + Warehouse', 'Service Completion — Date + Proof Doc', 'Mixed — Partial Goods + Service']], ['n' => 'evidence_type', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['flag_code', 'flag_name']],
         // `uEach` — vendor company name, mobile, and email each must be
@@ -233,20 +233,20 @@ class MasterController extends Controller
             try {
                 $q = $modelClass::query();
                 $this->applyScope($q, $user, $branchFilter);
-                // Status column is universal across master tables (enum
-                // 'Active'/'Inactive'). Masters that don't have one — none
-                // currently — would simply return total in `inactive`.
-                $rows = $q->get(['status']);
-                $active = 0; $inactive = 0;
-                foreach ($rows as $r) {
-                    $s = strtolower(trim((string)($r->status ?? '')));
-                    $isActive = in_array($s, ['active', '1', 'true', 'yes', 'enabled'], true);
-                    if ($isActive) $active++; else $inactive++;
-                }
+                // Count in SQL with a single aggregate instead of pulling every
+                // row into PHP — the old get(['status']) loaded whole tables
+                // (e.g. `states` has tens of thousands of rows) on every counts
+                // call, which is what made the master pages crawl (bug #16/#21).
+                $stat = $q->selectRaw(
+                    "COUNT(*) AS total, "
+                    . "SUM(CASE WHEN LOWER(TRIM(status)) IN ('active','1','true','yes','enabled') THEN 1 ELSE 0 END) AS active"
+                )->first();
+                $total  = (int) ($stat->total ?? 0);
+                $active = (int) ($stat->active ?? 0);
                 $out[$slug] = [
                     'active'   => $active,
-                    'inactive' => $inactive,
-                    'total'    => count($rows),
+                    'inactive' => max(0, $total - $active),
+                    'total'    => $total,
                 ];
             } catch (\Throwable $e) {
                 // Don't fail the whole batch for one bad model — just record
@@ -877,6 +877,11 @@ class MasterController extends Controller
             $r[] = $f['r'] ?? false ? 'required' : 'nullable';
             if ($f['t'] === 'number') {
                 $r[] = 'numeric';
+                // Honour per-field numeric bounds (e.g. percentages capped at
+                // 0..100) so the server rejects out-of-range values too (bugs
+                // #31/#32), not just the frontend.
+                if (isset($f['min'])) $r[] = 'min:' . $f['min'];
+                if (isset($f['max'])) $r[] = 'max:' . $f['max'];
             } elseif ($f['t'] === 'email') {
                 $r[] = 'email';
                 $r[] = 'max:255';
