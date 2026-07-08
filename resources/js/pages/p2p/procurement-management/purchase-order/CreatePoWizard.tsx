@@ -112,7 +112,7 @@ const XIco = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" 
 const docHd = (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 12l1.6 1.6L14 10" /><line x1="8" y1="17" x2="16" y2="17" /></svg>);
 
 /* ── Reusable dropdown (pof-dd, fixed panel positioned from anchor) ────── */
-function Dd({ label, value, options, onChange }: { label?: string; value: string; options: string[]; onChange: (v: string) => void }) {
+function Dd({ label, value, options, onChange, req }: { label?: string; value: string; options: string[]; onChange: (v: string) => void; req?: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement | null>(null);
   const [pos, setPos] = useState({ left: 0, top: 0, width: 0 });
@@ -139,7 +139,7 @@ function Dd({ label, value, options, onChange }: { label?: string; value: string
   }, [open]);
   return (
     <div className="pof-f">
-      {label && <label>{label}</label>}
+      {label && <label>{label}{req && <span className="pof-reqstar"> *</span>}</label>}
       <button type="button" ref={ref} className={`pof-dd ${open ? 'is-open' : ''}`} onClick={() => setOpen(o => !o)}>
         <span className="pof-dd__val">{value}</span><Chev />
       </button>
@@ -163,10 +163,10 @@ const Field = ({ label, value, onChange, ph, type, full }: { label: string; valu
     <input className="pof-in" type={type || 'text'} value={value} placeholder={ph} onChange={e => onChange(e.target.value)} />
   </div>
 );
-const DateField = ({ label, value, onChange, full }: { label: string; value: string; onChange: (v: string) => void; full?: boolean }) => (
+const DateField = ({ label, value, onChange, full, minDate, req }: { label: string; value: string; onChange: (v: string) => void; full?: boolean; minDate?: string; req?: boolean }) => (
   <div className={`pof-f ${full ? 'pof-f--full' : ''}`}>
-    <label>{label}</label>
-    <MasterDatePicker value={value} onChange={onChange} placeholder="Select date" />
+    <label>{label}{req && <span className="pof-reqstar"> *</span>}</label>
+    <MasterDatePicker value={value} onChange={onChange} placeholder="Select date" minDate={minDate} />
   </div>
 );
 /* Read-only display cell — auto-filled supplier details are not editable. */
@@ -178,8 +178,8 @@ const ReadField = ({ label, value, full }: { label: string; value: string; full?
     <div className="pof-ro" title={value || undefined}>{value || '—'}</div>
   </div>
 );
-const Frozen = ({ label, value }: { label: string; value: string }) => (
-  <div className="pof-f"><label>{label}</label>
+const Frozen = ({ label, value, req }: { label: string; value: string; req?: boolean }) => (
+  <div className="pof-f"><label>{label}{req && <span className="pof-reqstar"> *</span>}</label>
     <div className="pof-frozen" title="Auto-generated — not editable">
       <span className="pof-frozen__val">{value}</span>
       <span className="pof-frozen__tag"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Auto</span>
@@ -406,6 +406,8 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     .filter(m => m.miss > 0), [rows]);
 
   const todayDisp = useMemo(() => { const d = new Date(); const mm = ('0' + (d.getMonth() + 1)).slice(-2), dd = ('0' + d.getDate()).slice(-2); return `${dd}/${mm}/${d.getFullYear()}`; }, []);
+  // Local (not UTC) yyyy-mm-dd — used to block past Expected Delivery Dates.
+  const todayIso = useMemo(() => { const d = new Date(); const mm = ('0' + (d.getMonth() + 1)).slice(-2), dd = ('0' + d.getDate()).slice(-2); return `${d.getFullYear()}-${mm}-${dd}`; }, []);
 
   const confirmChoice = () => {
     if (!poMode) return;
@@ -446,8 +448,9 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
 
   const withShip = poMode === 'with';
 
-  const generate = () => {
-    if (saving) return;
+  // Build the API payload from the current form state — shared by save
+  // (store/update) and the unsaved PDF preview.
+  const buildPayload = () => {
     const items = rows
       .filter(r => r.name || r.qty || r.piName)
       .map(r => ({
@@ -455,7 +458,8 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
         pi_product_name: r.piName || null, pi_quantity: r.piQty === '' ? null : num(r.piQty),
         product_name: r.name || null, quantity: num(r.qty), rate: num(r.rate), gst_pct: num(r.gst),
       }));
-    const payload = {
+    return {
+      code: poCode || null,
       po_type: po.poType, document_type: po.docType, mode_of_transport: po.transport,
       po_date: new Date().toISOString().slice(0, 10), expected_delivery_date: po.edd || null,
       warehouse_id: warehouseId, delivery_location: po.deliveryLoc || null,
@@ -469,6 +473,16 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
       terms: terms || null, shipping_charges: num(charges.ship), packaging_charges: num(charges.pack), other_charges: num(charges.other),
       items,
     };
+  };
+
+  const generate = () => {
+    if (saving) return;
+    // Expected Delivery Date can't be earlier than today.
+    if (po.edd && po.edd < todayIso) {
+      toast.error('Invalid Expected Delivery Date', 'It cannot be earlier than today.');
+      return;
+    }
+    const payload = buildPayload();
     setSaving(true);
     const req = isEdit && editId
       ? api.put(`/p2p/purchase-orders/${editId}`, payload)
@@ -481,7 +495,28 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     }).finally(() => setSaving(false));
   };
 
+  // Stage 1 mandatory fields — all must be filled before leaving stage 1.
+  const validateStage1 = (): boolean => {
+    const missing: string[] = [];
+    if (supName === SUPPLIER_PLACEHOLDER) missing.push('Select Supplier');
+    if (!po.poType) missing.push('PO Type');
+    if (!po.docType) missing.push('Document Type');
+    if (!po.transport) missing.push('Mode of Transport');
+    if (!po.edd) missing.push('Expected Delivery Date');
+    if (!po.deliveryLoc) missing.push('Delivery Location');
+    if (missing.length) {
+      toast.error('Required fields missing', `Please fill: ${missing.join(', ')}.`);
+      return false;
+    }
+    if (po.edd < todayIso) {
+      toast.error('Invalid Expected Delivery Date', 'It cannot be earlier than today.');
+      return false;
+    }
+    return true;
+  };
+
   const next = () => {
+    if (stage === 1 && !isEdit && !validateStage1()) return;
     if (stage === 3) toast.success('Purchase Order submitted successfully');
     if (stage < 4) setStage(s => s + 1);
     else generate();
@@ -632,12 +667,12 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                           <ReadField label="Country of Origin" value={po.origin} />
                         </>)}
                       </>) : (<>
-                        <Dd label="PO Type" value={po.poType} options={PO_TYPES} onChange={v => setPoF('poType', v)} />
-                        <Dd label="Document Type" value={po.docType} options={DOC_TYPES} onChange={v => setPoF('docType', v)} />
-                        <Dd label="Mode of Transport" value={po.transport} options={TRANSPORTS} onChange={v => setPoF('transport', v)} />
-                        <Frozen label="PO Date" value={todayDisp} />
-                        <DateField label="Expected Delivery Date" value={po.edd} onChange={v => setPoF('edd', v)} />
-                        <Dd label="Delivery Location" value={po.deliveryLoc || DELIVERY_PLACEHOLDER} options={[DELIVERY_PLACEHOLDER, ...(warehouses.length ? warehouses.map(w => w.name) : WAREHOUSE_FALLBACK)]} onChange={v => { setPoF('deliveryLoc', v === DELIVERY_PLACEHOLDER ? '' : v); setWarehouseId(warehouses.find(w => w.name === v)?.id ?? null); }} />
+                        <Dd label="PO Type" req value={po.poType} options={PO_TYPES} onChange={v => setPoF('poType', v)} />
+                        <Dd label="Document Type" req value={po.docType} options={DOC_TYPES} onChange={v => setPoF('docType', v)} />
+                        <Dd label="Mode of Transport" req value={po.transport} options={TRANSPORTS} onChange={v => setPoF('transport', v)} />
+                        <Frozen label="PO Date" req value={todayDisp} />
+                        <DateField label="Expected Delivery Date" req value={po.edd} onChange={v => setPoF('edd', v)} minDate={todayIso} />
+                        <Dd label="Delivery Location" req value={po.deliveryLoc || DELIVERY_PLACEHOLDER} options={[DELIVERY_PLACEHOLDER, ...(warehouses.length ? warehouses.map(w => w.name) : WAREHOUSE_FALLBACK)]} onChange={v => { setPoF('deliveryLoc', v === DELIVERY_PLACEHOLDER ? '' : v); setWarehouseId(warehouses.find(w => w.name === v)?.id ?? null); }} />
                         <Dd label="Payment Type" value={po.payType} options={PAY_TYPES} onChange={v => setPoF('payType', v)} />
                         <Toggle label="Physical Inspection Required" on={po.inspection} onToggle={() => setPoF('inspection', !po.inspection)} />
                         {po.docType === 'International' && (<>
@@ -835,7 +870,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
               {stage === 4 && (
                 <Box label="Documents" title="Post PO Trade Document Management" sub="Generate, e-sign & track documents via Zoho Sign" ico={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>}
                   extra={<button type="button" className="cptd-vault-btn" onClick={e => { e.stopPropagation(); setVaultOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg><span>Supplier Legal Status</span></button>}>
-                  <TradeDocsTable po={poCode || undefined} poId={editId} supplierId={vendorId} onSignActive={setSignActive} />
+                  <TradeDocsTable po={poCode || undefined} poId={editId} supplierId={vendorId} buildPreview={buildPayload} onSignActive={setSignActive} />
                 </Box>
               )}
             </div>

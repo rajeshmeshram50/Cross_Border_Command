@@ -744,15 +744,27 @@ class SalesPdfController extends Controller
      * PURCHASE ORDER (P2P) — PDF + email, reusing the PI template/mailer.
      * ────────────────────────────────────────────────────────────────── */
 
+    /**
+     * Render a PurchaseOrder (saved OR a transient in-memory instance) to an
+     * inline PDF stream. Shared by the saved-PO view routes and the
+     * unsaved-form preview (PurchaseOrderController::previewPdf).
+     */
+    public function streamPoPdf($po, bool $withSignature = true, $vendor = null)
+    {
+        $vendor = $vendor ?: ($po->vendor_id ? \App\Models\Vendor::with('primaryAddress')->find($po->vendor_id) : null);
+        $viewData = $this->buildPurchaseOrderViewData($po, $withSignature, $vendor);
+        @set_time_limit(180);
+        $pdf = Pdf::loadView('pdf.purchase-order', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true);
+        $ref = $po->code ?: ('id-' . ($po->id ?? 'draft'));
+        $name = 'PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $ref) . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
+        return $pdf->stream($name);
+    }
+
     /** Public signed PDF view for the PO email's "View" button. */
     public function publicViewPurchaseOrder(int $id)
     {
         $po = \App\Models\PurchaseOrder::with('items')->findOrFail($id);
-        $vendor = $po->vendor_id ? \App\Models\Vendor::with('primaryAddress')->find($po->vendor_id) : null;
-        $viewData = $this->buildPurchaseOrderViewData($po, true, $vendor);
-        @set_time_limit(180);
-        $pdf = Pdf::loadView('pdf.purchase-order', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true);
-        return $pdf->stream('PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $po->code ?? ('id-' . $po->id)) . '.pdf');
+        return $this->streamPoPdf($po, true);
     }
 
     /** Authenticated inline PDF stream (for the wizard/modal View actions). */
@@ -762,13 +774,7 @@ class SalesPdfController extends Controller
         if (!$user) abort(401);
         $po = \App\Models\PurchaseOrder::with('items')->findOrFail($id);
         if ($user->user_type !== 'super_admin' && (int) $po->client_id !== (int) $user->client_id) abort(404);
-        $vendor = $po->vendor_id ? \App\Models\Vendor::with('primaryAddress')->find($po->vendor_id) : null;
-        $withSignature = $request->boolean('signature', true);
-        $viewData = $this->buildPurchaseOrderViewData($po, $withSignature, $vendor);
-        @set_time_limit(180);
-        $pdf = Pdf::loadView('pdf.purchase-order', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true);
-        $name = 'PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $po->code ?? ('id-' . $po->id)) . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
-        return $pdf->stream($name);
+        return $this->streamPoPdf($po, $request->boolean('signature', true));
     }
 
     /** Email the Purchase Order PDF to the supplier using the PI email template. */

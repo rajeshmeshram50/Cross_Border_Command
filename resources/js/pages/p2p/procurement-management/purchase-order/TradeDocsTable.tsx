@@ -38,7 +38,7 @@ const I = {
   tabAgr: (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>),
 };
 
-export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId, onSignActive }: { po?: string; poId?: number | null; supplierId?: number | null; onSignActive?: (active: boolean) => void }) {
+export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId, buildPreview, onSignActive }: { po?: string; poId?: number | null; supplierId?: number | null; buildPreview?: () => Record<string, unknown>; onSignActive?: (active: boolean) => void }) {
   const toast = useToast();
   const [docs, setDocs] = useState<TradeDoc[]>(() => makeConstants(po));
   const [sel, setSel] = useState<Record<string, boolean>>({});
@@ -123,19 +123,24 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
     toast.success('Sent for signature via Zoho Sign');
   };
 
-  // Open the actual PO PDF (same render as the PI PDF). Only the "Purchase Order"
-  // constant row maps to the PO document; other rows are CLM library docs.
+  // Open the PO PDF. In Edit (saved) mode → GET the stored PO's PDF; in Add
+  // (unsaved) mode → POST the current form data to render a live preview.
+  // Only the "Purchase Order" constant row maps to the PO document.
   const openPoPdf = (withSignature: boolean) => {
-    if (!poId) { toast.info('Save the PO first', 'The Purchase Order document is available once the PO is saved.'); return; }
     const w = window.open('', '_blank');
     toast.info(`Preparing PO PDF${withSignature ? ' (signed)' : ' (draft)'}…`);
-    api.get(`/p2p/purchase-orders/${poId}/pdf`, { params: { signature: withSignature ? 1 : 0 }, responseType: 'blob' })
-      .then(res => {
-        const url = URL.createObjectURL(res.data as Blob);
-        if (w) w.location.href = url; else window.open(url, '_blank');
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-      })
-      .catch(() => { if (w) w.close(); toast.error('Could not open PO PDF', 'Please try again.'); });
+    const done = (blob: Blob) => { const url = URL.createObjectURL(blob); if (w) w.location.href = url; else window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); };
+    const fail = () => { if (w) w.close(); toast.error('Could not open PO PDF', 'Please try again.'); };
+    if (poId) {
+      api.get(`/p2p/purchase-orders/${poId}/pdf`, { params: { signature: withSignature ? 1 : 0 }, responseType: 'blob' })
+        .then(res => done(res.data as Blob)).catch(fail);
+    } else if (buildPreview) {
+      api.post('/p2p/purchase-orders/preview-pdf', { ...buildPreview(), signature: withSignature ? 1 : 0 }, { responseType: 'blob' })
+        .then(res => done(res.data as Blob)).catch(fail);
+    } else {
+      if (w) w.close();
+      toast.info('Select a supplier first', 'The Purchase Order preview needs a supplier and products.');
+    }
   };
   // Draft (no signature) / signed view. Only the "Purchase Order" row maps to
   // the PO document; other rows are CLM library docs (placeholder for now).

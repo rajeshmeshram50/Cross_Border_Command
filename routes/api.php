@@ -504,6 +504,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     // ── Purchase Orders (P2P) ──
     Route::get   ('/p2p/purchase-orders/preview-code',            [PurchaseOrderController::class, 'previewCode']);
+    Route::post  ('/p2p/purchase-orders/preview-pdf',             [PurchaseOrderController::class, 'previewPdf']);
     Route::get   ('/p2p/purchase-orders/suppliers',               [PurchaseOrderController::class, 'suppliers']);
     Route::get   ('/p2p/purchase-orders/suppliers/{id}',          [PurchaseOrderController::class, 'supplier'])->whereNumber('id');
     Route::get   ('/p2p/purchase-orders/suppliers/{id}/trade-documents', [PurchaseOrderController::class, 'supplierTradeDocs'])->whereNumber('id');
