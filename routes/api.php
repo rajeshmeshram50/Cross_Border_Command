@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\ExpenseClaimController;
 use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\ProcurementController;
 use App\Http\Controllers\Api\ProductController;
+use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
 use App\Http\Controllers\Api\HrDocumentSignatureController;
@@ -496,6 +497,19 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/procurements',             [ProcurementController::class, 'index']);
     Route::post  ('/procurements',             [ProcurementController::class, 'store']);
     Route::get   ('/procurements/{id}',        [ProcurementController::class, 'show'])->whereNumber('id');
+
+    // ── Purchase Orders (P2P) ──
+    Route::get   ('/p2p/purchase-orders/preview-code',            [PurchaseOrderController::class, 'previewCode']);
+    Route::get   ('/p2p/purchase-orders/suppliers',               [PurchaseOrderController::class, 'suppliers']);
+    Route::get   ('/p2p/purchase-orders/suppliers/{id}',          [PurchaseOrderController::class, 'supplier'])->whereNumber('id');
+    Route::get   ('/p2p/purchase-orders/shipments',               [PurchaseOrderController::class, 'shipments']);
+    Route::get   ('/p2p/purchase-orders/shipments/{id}/pi-products', [PurchaseOrderController::class, 'shipmentPiProducts'])->whereNumber('id');
+    Route::get   ('/p2p/purchase-orders',                         [PurchaseOrderController::class, 'index']);
+    Route::post  ('/p2p/purchase-orders',                         [PurchaseOrderController::class, 'store']);
+    Route::get   ('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'show'])->whereNumber('id');
+    Route::put   ('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'update'])->whereNumber('id');
+    Route::delete('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'destroy'])->whereNumber('id');
+    Route::post  ('/p2p/purchase-orders/{id}/sync',               [PurchaseOrderController::class, 'sync'])->whereNumber('id');
 
   
     Route::get   ('/sales/reminders',                 [SalesTodoController::class, 'listReminders']);
