@@ -1732,7 +1732,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               </svg>
             </div>
             <div>
-              <div className="acm-title">{isEdit ? `Edit Customer — ${customer!.id}` : 'Add Customer'}</div>
+              <div className="acm-title">{isEdit ? `Edit Customer — ${customer!.company || customer!.id}` : 'Add Customer'}</div>
               <div className="acm-subtitle">{isEdit ? 'Update customer details, KYC, and trade documents.' : 'Capture, verify, and onboard customers with complete compliance and product readiness.'}</div>
             </div>
           </div>

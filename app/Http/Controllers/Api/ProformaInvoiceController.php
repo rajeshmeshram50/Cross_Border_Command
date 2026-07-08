@@ -56,15 +56,34 @@ class ProformaInvoiceController extends Controller
         $page    = max((int) $request->query('page', 1), 1);
         $paginator = $q->paginate($perPage, ['*'], 'page', $page);
 
+        // Sales Manager column = the OWNER's REPORTING MANAGER (not the owner).
+        // Owner = sales_manager_id (lead's salesperson) or created_by; the stored
+        // sales_manager_name is the owner's name, so override it at read time with
+        // the owner's manager, resolved in ONE query to avoid N+1. Mirrors
+        // QuotationController::index.
+        $items    = collect($paginator->items());
+        $ownerIds = $items->map(fn ($r) => (int) ($r->sales_manager_id ?: $r->created_by))
+            ->filter()->unique()->values()->all();
+        $mgrByOwner = empty($ownerIds) ? collect() : \App\Models\Employee::query()
+            ->whereIn('user_id', $ownerIds)
+            ->with(['reportingManager.user:id,name', 'reportingManagerUser:id,name'])
+            ->get(['id', 'user_id', 'reporting_manager_id', 'reporting_manager_user_id'])
+            ->keyBy('user_id');
+
         // Stamp per-row `can_modify` — mirrors the Quotation API. Drives
         // the frontend's edit/delete/email/reminder enable-state on rows
         // visible-but-read-only (rows outside the user's own branch).
-        $rows = collect($paginator->items())->map(function ($r) use ($user) {
+        $rows = $items->map(function ($r) use ($user, $mgrByOwner) {
             $r->can_modify = $this->userCanModify($r, $user);
             // Flatten creator info for the "Created By" column — same
             // shape as the Quotation list.
             $r->creator_name      = $r->creator?->name;
             $r->creator_user_type = $r->creator?->user_type;
+            // Reporting-manager override for the Sales Manager column (falls
+            // back to the stored owner name when the owner has no manager).
+            $emp     = $mgrByOwner->get((int) ($r->sales_manager_id ?: $r->created_by));
+            $mgrName = $emp?->reportingManager?->user?->name ?? $emp?->reportingManagerUser?->name;
+            if ($mgrName) $r->sales_manager_name = $mgrName;
             // Victory-stage gate — the opportunity behind this PI has
             // crossed Stage 6 (Victory Stage) when EITHER lead_stage_id
             // is at-or-past 6, OR won_at is stamped. Either signal flips
@@ -159,7 +178,7 @@ class ProformaInvoiceController extends Controller
 
         $row = DB::transaction(function () use ($user, $data, $items, $totals) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = $this->nextCode($user->client_id);
+            $code = $this->nextCode($user->client_id, $user->branch_id);
             $btId = !empty($data['pi_type']) && $data['pi_type'] === ProformaInvoice::TYPE_WITH_SHIPMENT
                 ? ($data['bt_id'] ?? $this->nextBtCode($user->client_id))
                 : null;
@@ -436,7 +455,9 @@ class ProformaInvoiceController extends Controller
 
         $clone = DB::transaction(function () use ($user, $src) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $newCode = $this->nextCode($user->client_id);
+            // The clone keeps the source's branch_id (replicate copies it), so
+            // allocate its code from that branch's sequence.
+            $newCode = $this->nextCode($user->client_id, $src->branch_id);
             $copy = $src->replicate(['code', 'status', 'version', 'created_by', 'updated_by']);
             $copy->code        = $newCode;
             $copy->status      = ProformaInvoice::STATUS_DRAFT;
@@ -520,7 +541,7 @@ class ProformaInvoiceController extends Controller
 
         $pi = DB::transaction(function () use ($user, $qt) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = $this->nextCode($user->client_id);
+            $code = $this->nextCode($user->client_id, $user->branch_id);
             $btId = $this->nextBtCode($user->client_id);
 
             $pi = ProformaInvoice::create([
@@ -742,9 +763,14 @@ class ProformaInvoiceController extends Controller
         $code = null;
         if ($user && $user->client_id) {
             $fy = $this->currentFinancialYear();
+            // PI numbering is PER BRANCH and store() stamps $user->branch_id, so
+            // preview against the same branch (null for client-level users).
+            $branchId = $user->branch_id;
             // Scan BOTH the new "PI/" and legacy "INV/" prefixes so the
             // sequence stays continuous across the rename.
             $codes = ProformaInvoice::where('client_id', $user->client_id)
+                ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+                ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
                 ->where(function ($qq) use ($fy) {
                     $qq->where('code', 'like', "PI/{$fy}/%")
                        ->orWhere('code', 'like', "INV/{$fy}/%");
@@ -762,16 +788,21 @@ class ProformaInvoiceController extends Controller
         return response()->json(['status' => true, 'data' => ['code' => $code]]);
     }
 
-    private function nextCode(int $clientId): string
+    private function nextCode(int $clientId, ?int $branchId): string
     {
         $fy = $this->currentFinancialYear();
         // B20: defense-in-depth advisory lock — see QuotationController::nextCode.
+        // The branch is in the key so each branch's PI sequence serializes on
+        // its own lock (numbering restarts per branch).
         if (DB::getDriverName() === 'pgsql') {
-            DB::statement('SELECT pg_advisory_xact_lock(?)', [crc32("pi-code:{$clientId}:{$fy}")]);
+            DB::statement('SELECT pg_advisory_xact_lock(?)', [crc32("pi-code:{$clientId}:" . ($branchId ?? 0) . ":{$fy}")]);
         }
         // Scan BOTH the new "PI/" and legacy "INV/" prefixes for the max
-        // sequence so numbering continues seamlessly after the rename.
+        // sequence so numbering continues seamlessly after the rename — scoped
+        // to this branch so each branch gets its own PI/<FY>/1..N.
         $codes = ProformaInvoice::where('client_id', $clientId)
+            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
             ->where(function ($qq) use ($fy) {
                 $qq->where('code', 'like', "PI/{$fy}/%")
                    ->orWhere('code', 'like', "INV/{$fy}/%");

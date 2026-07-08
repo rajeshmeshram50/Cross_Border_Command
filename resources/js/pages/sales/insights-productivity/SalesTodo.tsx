@@ -221,7 +221,7 @@ export default function SalesTodo() {
   /* Real opportunities for the picker (code + its opportunity date), so
    * selecting an opportunity can auto-fill the Opportunity Date. Falls back
    * to the static OPP_ID_OPTIONS list if the fetch fails / returns none. */
-  const [oppOptions, setOppOptions] = useState<{ value: string; label: string; date: string }[]>([]);
+  const [oppOptions, setOppOptions] = useState<{ value: string; label: string; date: string; customer: string; email: string }[]>([]);
   // Admins (super_admin / client_admin / client_user) see the whole tenant
   // by default; everyone else (branch users + employees) sees their own rows.
   // Mirrors the controller's applyScope() — the SPA just hints at which scope
@@ -365,6 +365,10 @@ export default function SalesTodo() {
       value: l.opp_code as string,
       label: company ? `${l.opp_code} · ${company}` : (l.opp_code as string),
       date: raw ? isoToDisplay(raw) : '',
+      // Carried so selecting an opportunity can auto-fill the meeting's
+      // Customer Name + Email (prefer the mapped customer's email).
+      customer: company,
+      email: l.customer?.primary_email ?? '',
     };
   };
 
@@ -408,6 +412,8 @@ export default function SalesTodo() {
 
   const oppPickerOptions = oppOptions.map(o => ({ value: o.value, label: o.label }));
   const oppDateFor = (code: string): string => oppOptions.find(o => o.value === code)?.date ?? '';
+  const oppCustomerFor = (code: string): string => oppOptions.find(o => o.value === code)?.customer ?? '';
+  const oppEmailFor    = (code: string): string => oppOptions.find(o => o.value === code)?.email ?? '';
 
   /* ── Reminder filtering ── */
   const filteredReminders = useMemo(() => {
@@ -1569,7 +1575,16 @@ export default function SalesTodo() {
                         onSearchChange={handleOppSearch}
                         onScrollEnd={handleOppScrollEnd}
                         loadingMore={oppLoadingMore}
-                        onChange={v => setForm(p => ({ ...p, oppId: v, oppDate: oppDateFor(v) }))}
+                        onChange={v => setForm(p => ({
+                          ...p,
+                          oppId: v,
+                          oppDate: oppDateFor(v),
+                          // Auto-fill customer name + email from the selected
+                          // opportunity; keep any manually-typed value when the
+                          // mapped customer is missing that field.
+                          customer: oppCustomerFor(v) || p.customer,
+                          email:    oppEmailFor(v)    || p.email,
+                        }))}
                       />
                     </Field>
                     <Field label="Opportunity Date">

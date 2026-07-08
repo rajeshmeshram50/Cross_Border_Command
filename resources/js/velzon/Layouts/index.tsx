@@ -90,9 +90,16 @@ const Layout = (props : any) => {
             dispatch(changeSidebarImageType(leftSidebarImageType));
             dispatch(changeSidebarVisibility(sidebarVisibilitytype));
         }
+    // NOTE: layoutModeType is intentionally OMITTED from the deps below. A pure
+    // dark/light toggle already applies `data-bs-theme` directly via
+    // onChangeLayoutMode → changeLayoutMode, so re-running this whole effect
+    // (which fires a synthetic window `resize` + re-dispatches all 10 layout
+    // thunks) on every theme switch just forces a full-page reflow — the
+    // flash/shake QA reported. Structural changes (sidebar size, layout
+    // width/type, etc.) still fire the effect and pick up the current mode via
+    // the live closure.
     }, [layoutType,
         leftSidebarType,
-        layoutModeType,
         layoutWidthType,
         layoutPositionType,
         topbarThemeType,

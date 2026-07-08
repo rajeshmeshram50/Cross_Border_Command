@@ -179,9 +179,11 @@ class IndiaMartLeadSyncService
                     $existing->update($payload);
                     $stats['updated']++;
                 } else {
-                    $payload['opp_code']   = $this->nextOppCode($client->id);
-                    $payload['created_by'] = $triggeredBy?->id;
+                    // Resolve the branch first — opp_code is sequenced PER BRANCH,
+                    // so the allocator needs to know which branch this lead lands in.
                     $payload['branch_id']  = $this->resolveSyncBranchId($triggeredBy);
+                    $payload['opp_code']   = $this->nextOppCode($client->id, $payload['branch_id']);
+                    $payload['created_by'] = $triggeredBy?->id;
                     Lead::create($payload);
                     $stats['created']++;
                 }
@@ -220,14 +222,23 @@ class IndiaMartLeadSyncService
     }
 
     /**
-     * Allocate the next opp_code for a client. The loop inside fetchAndStore
-     * runs sequentially in a single process, so we just count + format; the
-     * composite UNIQUE (client_id, opp_code) catches any cross-request race.
+     * Allocate the next opp_code — sequenced PER BRANCH (each branch restarts
+     * at OPP-0001), matching the manual-create allocator in SalesLeadController.
+     * Uses `withTrashed()` + highest-numeric-suffix + 1 rather than count():
+     * count() skips soft-deleted rows the UNIQUE index still sees, so a delete
+     * followed by a create would reuse a number and collide. The loop inside
+     * fetchAndStore runs sequentially in one process; the composite UNIQUE
+     * (client_id, branch_id, opp_code) catches any cross-request race.
      */
-    private function nextOppCode(int $clientId): string
+    private function nextOppCode(int $clientId, ?int $branchId = null): string
     {
-        $count = Lead::where('client_id', $clientId)->count();
-        return sprintf('OPP-%04d', $count + 1);
+        $max = Lead::withTrashed()
+            ->where('client_id', $clientId)
+            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
+            ->selectRaw("COALESCE(MAX(CAST(NULLIF(regexp_replace(COALESCE(opp_code, ''), '\\D', '', 'g'), '') AS INTEGER)), 0) AS max_code")
+            ->value('max_code');
+        return sprintf('OPP-%04d', ((int) $max) + 1);
     }
 
     /** Country qualification — export-buyer CRM, so India (IN) is intentionally NOT in the list. */

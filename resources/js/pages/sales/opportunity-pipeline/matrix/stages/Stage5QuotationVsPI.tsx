@@ -127,7 +127,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
   /* The open More-Actions menu — tracks the row + a screen anchor rect so
    * the menu can be portalled to <body> (escaping the table's overflow). */
-  const [moreMenu, setMoreMenu] = useState<{ kind: DocType; id: number; anchor: DOMRect } | null>(null);
+  const [moreMenu, setMoreMenu] = useState<{ kind: DocType; id: number; anchor: HTMLElement } | null>(null);
   // Which More-Actions item is mid-flight — drives the in-menu spinner so the
   // user sees the View/Download is working (and can't fire it twice).
   const [menuBusy, setMenuBusy] = useState<{ action: 'download' | 'view' | 'certificate'; signature: boolean } | null>(null);
@@ -808,7 +808,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                                       Only the useful actions remain: View the sent
                                       document + Remind the signer. */}
                                   <Tooltip label="View sent document">
-                                    <button type="button" className="s5-icn" onClick={() => void onViewPdf(docType, r.id, true)} disabled={anyActing}>
+                                    {/* The doc sent to Zoho for an in-progress PI is the
+                                        locally rendered PI PDF, not a signed artifact — so
+                                        view it with signature=false (the signed-only guard
+                                        would otherwise bounce every in-progress row with a
+                                        "Not signed yet" toast and open nothing). */}
+                                    <button type="button" className="s5-icn" onClick={() => void onViewPdf(docType, r.id, false)} disabled={anyActing}>
                                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                     </button>
                                   </Tooltip>
@@ -899,8 +904,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             <button
                               type="button" className="s5-icn s5-icn-more"
                               onClick={(e) => {
-                                const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                setMoreMenu(prev => prev && prev.id === r.id && prev.kind === docType ? null : { kind: docType, id: r.id, anchor: rect });
+                                // Keep the button ELEMENT (not a frozen rect) so the
+                                // menu can re-measure and stay glued to it while the
+                                // stage scrolls.
+                                const el = e.currentTarget as HTMLButtonElement;
+                                setMoreMenu(prev => prev && prev.id === r.id && prev.kind === docType ? null : { kind: docType, id: r.id, anchor: el });
                               }}
                               disabled={anyActing}
                             >
@@ -944,7 +952,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       {/* ── More Actions menu (portalled) ── */}
       {moreMenu && (
         <MoreActionsMenu
-          anchor={moreMenu.anchor}
+          anchorEl={moreMenu.anchor}
           kind={moreMenu.kind}
           signed={sigByRow[`${moreMenu.kind}:${moreMenu.id}`]?.status === 'completed'}
           busy={menuBusy}
@@ -1081,8 +1089,8 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
 /* ─── More Actions menu — fixed-position portal anchored to the 3-dot
  *      button. Download / View, each With / Without Signature. */
-function MoreActionsMenu({ anchor, onClose, onPick, signed, onCertificate, busy, kind }: {
-  anchor: DOMRect;
+function MoreActionsMenu({ anchorEl, onClose, onPick, signed, onCertificate, busy, kind }: {
+  anchorEl: HTMLElement;
   onClose: () => void;
   onPick: (action: 'download' | 'view', signature: boolean) => void;
   signed: boolean;
@@ -1091,31 +1099,44 @@ function MoreActionsMenu({ anchor, onClose, onPick, signed, onCertificate, busy,
   kind: DocType;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number }>({ top: anchor.bottom + 6, left: anchor.right - 210 });
+  const [pos, setPos] = useState<{ top: number; left: number }>(() => {
+    const a = anchorEl.getBoundingClientRect();
+    return { top: a.bottom + 6, left: a.right - 210 };
+  });
 
-  useLayoutEffect(() => {
+  // Re-measure the button's LIVE position (not a frozen rect) so the menu
+  // stays glued to it while the stage body / embed popup scrolls or the
+  // window resizes.
+  const reposition = useCallback(() => {
+    const a = anchorEl.getBoundingClientRect();
     const w = ref.current?.offsetWidth ?? 210;
     const h = ref.current?.offsetHeight ?? 230;
-    let left = anchor.right - w;
-    let top = anchor.bottom + 6;
+    let left = a.right - w;
+    let top = a.bottom + 6;
     if (left < 8) left = 8;
-    if (top + h > window.innerHeight - 8) top = anchor.top - h - 6;   // flip above
+    if (top + h > window.innerHeight - 8) top = a.top - h - 6;   // flip above
     setPos({ top, left });
-  }, [anchor]);
+  }, [anchorEl]);
+
+  useLayoutEffect(() => { reposition(); }, [reposition]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    const onScroll = () => onClose();
+    // Follow the button on scroll/resize instead of closing, so the menu
+    // never detaches from the 3-dot trigger.
+    const onScroll = () => reposition();
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
     window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
     return () => {
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
     };
-  }, [onClose]);
+  }, [onClose, reposition]);
 
   const dl = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
   const eye = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;

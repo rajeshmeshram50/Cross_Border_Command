@@ -54,6 +54,15 @@ export default function EntityPickerModal(props: {
   // pick doesn't leak into the next.
   useEffect(() => { if (open) setSelected(''); }, [open]);
 
+  // Freeze the page behind the modal so the parent body can't scroll
+  // while the picker is open.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+
   if (!open) return null;
 
   const handlePick = (value: string) => {

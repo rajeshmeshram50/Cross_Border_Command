@@ -2867,6 +2867,7 @@ export function CreateQuotationModal(props: {
               </button>
             ) : (
               <button className="qpi-btn-submit qpi-btn-submit-teal" onClick={submit} disabled={saving || hydrating}>
+                {saving && <span className="qpi-send-spin" />}
                 {saving
                   ? (isEdit ? 'Updating…' : 'Saving…')
                   : (isEdit ? '✓ Update Quotation' : '✓ Submit Quotation')}
@@ -3233,6 +3234,7 @@ export function CreatePIModal(props: {
               </button>
             ) : (
               <button className="qpi-btn-submit qpi-btn-submit-purple" onClick={submitPi} disabled={products.length === 0 || saving || hydrating}>
+                {saving && <span className="qpi-send-spin" />}
                 {saving
                   ? (isEdit ? 'Updating…' : 'Saving…')
                   : (isEdit ? '✓ Update PI' : '✓ Submit PI')}
@@ -5281,8 +5283,10 @@ const SCOPED_CSS = `
 .qpi-send-btn:disabled { cursor: not-allowed; }
 .qpi-send-btn-sent, .qpi-send-btn-sent:disabled {
   background: linear-gradient(135deg, #6366f1, #4f46e5);
-  box-shadow: 0 3px 10px rgba(99,102,241,.28);
-  opacity: 1; cursor: not-allowed;
+  /* Faded + shadowless so the already-sent state reads as inert (non-clickable)
+     rather than looking like a live blue button. */
+  box-shadow: none;
+  opacity: .55; cursor: not-allowed;
 }
 .qpi-send-btn-sent:hover { transform: none; }
 .qpi-send-btn-signed, .qpi-send-btn-signed:disabled {

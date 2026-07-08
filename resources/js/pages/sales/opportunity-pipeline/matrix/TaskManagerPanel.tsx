@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
+import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Task Manager Panel — right sidebar of the Sales Matrix detail page.
@@ -160,7 +161,11 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
       return;
     }
     if (existingPath) {
-      window.open(`/storage/${existingPath}`, '_blank', 'noopener');
+      // existingPath is a disk-relative path (e.g. leads/task-manager/5/x.pdf).
+      // A bare "/storage/…" resolves against the SPA origin, where the router's
+      // catch-all serves index.html and bounces the user to the dashboard.
+      // resolveFileUrl prefixes the API/storage origin so the real file opens.
+      window.open(resolveFileUrl(existingPath), '_blank', 'noopener');
     }
   };
 

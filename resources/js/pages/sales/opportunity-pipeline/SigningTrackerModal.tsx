@@ -381,17 +381,20 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   const completedAt = data?.completed_at;
   const lastRem     = data?.last_reminder_sent_at;
 
-  /* Download the Zoho completion certificate (audit trail). */
+  /* Download the executed signed PDF (the agreement with signatures + Zoho's
+   * embedded audit page). This is a DIFFERENT artifact from the Completion
+   * Certificate that Stage 5's "Download Signed Certificate" streams — the
+   * two buttons previously both hit /certificate and returned the same file. */
   const downloadAudit = () => {
     setAuditing(true);
-    api.get(`/clm/signature-requests/${sigId}/certificate`, { responseType: 'blob' })
+    api.get(`/clm/signature-requests/${sigId}/view-file/0`, { responseType: 'blob' })
       .then((res) => {
         const url = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
         const a = document.createElement('a');
         a.href = url; a.download = `${(code || `sig-${sigId}`).replace(/[^a-z0-9\-_.]/gi, '_')}_audit.pdf`;
         a.click(); URL.revokeObjectURL(url);
       })
-      .catch(() => { /* certificate may not be ready until completed */ })
+      .catch(() => { /* signed document may not be ready until completed */ })
       .finally(() => setAuditing(false));
   };
 

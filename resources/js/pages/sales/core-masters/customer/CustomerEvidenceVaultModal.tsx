@@ -914,7 +914,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               )}
               <div className="cev-ov-body">
                 <table className="cev-ov-table">
-                  <thead><tr><th style={{ width: 64 }}>Sr. No.</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+                  <thead><tr><th style={{ width: 64 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
@@ -1586,8 +1586,23 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
     return () => { cancelled = true; };
   }, [target]);   // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Between clicking a row's "Send" and the send wizard opening we fetch the
+  // applicable agreement/trade-doc (agreement-applicable) — a few seconds. Show
+  // a loader for that window so the Send action gives immediate feedback
+  // instead of appearing to do nothing.
+  const preparing = !!target && !agr && !td;
+
   return (
     <>
+      {preparing && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(15,23,42,.45)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
+            <i className="ri-loader-4-line cev-spin" style={{ fontSize: 34 }} aria-hidden />
+            Preparing document…
+          </div>
+        </div>,
+        document.body,
+      )}
       <SalesCustomerSendForSignatureModal
         open={!!agr}
         customer={null}

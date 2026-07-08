@@ -263,6 +263,8 @@ class SalesTodoController extends Controller
         // meeting for the same opportunity (excluding this row itself).
         $this->assertNoScheduleConflict([
             'opp_id'     => $row->opp_id,
+            'type'       => $row->type,
+            'venue'      => $row->venue,
             'date'       => $row->date instanceof \Carbon\Carbon ? $row->date->toDateString() : $row->date,
             'start_time' => $row->start_time,
             'end_time'   => $row->end_time,
@@ -354,7 +356,10 @@ class SalesTodoController extends Controller
             'platform'   => ['required','string','max:100'],
             'date'       => ['required','date'],
             'start_time' => ['required','date_format:H:i'],
-            'end_time'   => ['required','date_format:H:i','after_or_equal:start_time'],
+            // Strictly after start (not after_or_equal) — a zero-minute meeting
+            // (end == start) is invalid. Surfaces "The end time field must be a
+            // date after start time." inline under the End Time field.
+            'end_time'   => ['required','date_format:H:i','after:start_time'],
             // Link required for virtual; venue required for physical. Cross-field
             // checks below the array-validate call would be cleaner, but Laravel's
             // sometimes+required_if covers it inline.
@@ -368,6 +373,8 @@ class SalesTodoController extends Controller
                               }],
             'agenda'     => ['required','string','max:1000', $this->safeTextRule(2, 1000)],
             'status'     => ['nullable', Rule::in(SalesMeeting::STATUSES)],
+        ], [
+            'end_time.after' => 'End Time must be greater than Start Time.',
         ]);
     }
 
@@ -383,6 +390,40 @@ class SalesTodoController extends Controller
      */
     private function assertNoScheduleConflict(array $data, $clientId, $branchId, ?int $ignoreId = null): void
     {
+        // PHYSICAL double-booking guard — block a DUPLICATE booking: another
+        // physical meeting at the SAME venue on the SAME date in the SAME exact
+        // time slot (same start AND end). Deliberately an exact-slot match, not
+        // a broad time-overlap — an overlap rule flagged legitimately different
+        // meetings as conflicts. Runs before the opp-only early-return below so
+        // it fires even when the meeting has no opp_id.
+        $type  = $data['type'] ?? null;
+        $venue = trim((string) ($data['venue'] ?? ''));
+        if ($type === 'physical' && $venue !== ''
+            && !empty($data['date']) && !empty($data['start_time']) && !empty($data['end_time'])) {
+            $venueConflict = SalesMeeting::query()
+                ->where('client_id', $clientId)
+                ->when(
+                    $branchId === null,
+                    fn ($q) => $q->whereNull('branch_id'),
+                    fn ($q) => $q->where('branch_id', $branchId),
+                )
+                ->where('type', 'physical')
+                ->whereDate('date', $data['date'])
+                ->whereRaw('LOWER(TRIM(venue)) = ?', [strtolower($venue)])
+                ->where('status', '!=', SalesMeeting::STATUS_CANCELLED)
+                ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+                ->where('start_time', $data['start_time'])
+                ->where('end_time', $data['end_time'])
+                ->exists();
+
+            if ($venueConflict) {
+                abort(response()->json([
+                    'message' => 'Time and venue conflict identified',
+                    'errors'  => ['venue' => ['Time and venue conflict identified']],
+                ], 422));
+            }
+        }
+
         $oppId = $data['opp_id'] ?? null;
         if (!$oppId || empty($data['date']) || empty($data['start_time']) || empty($data['end_time'])) {
             return;

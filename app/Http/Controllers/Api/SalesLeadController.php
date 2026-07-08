@@ -73,26 +73,28 @@ class SalesLeadController extends Controller
                 ->whereColumn('lead_products.lead_id', 'leads.id')
                 ->whereNotNull('currency')
                 ->limit(1)])
-            // PI Number + Shipment (BT) ID for the lead — the latest
-            // non-cancelled Proforma Invoice on this opportunity. Surfaced so
-            // the Leads Details / Total-Leads tables can show them instead of
-            // "N/A" once a PI is created.
+            // PI Number for the lead — the latest non-cancelled Proforma
+            // Invoice on this opportunity. Surfaced so the Leads Details /
+            // Total-Leads tables can show it instead of "N/A" once a PI exists.
             ->addSelect(['pi_number' => \Illuminate\Support\Facades\DB::table('proforma_invoices')
                 ->select('code')
                 ->whereColumn('proforma_invoices.opp_id', 'leads.id')
                 ->where('proforma_invoices.status', '!=', \App\Models\ProformaInvoice::STATUS_CANCELLED)
                 ->orderByDesc('id')
                 ->limit(1)])
-            ->addSelect(['shipment_id' => \Illuminate\Support\Facades\DB::table('proforma_invoices')
-                ->select('bt_id')
-                ->whereColumn('proforma_invoices.opp_id', 'leads.id')
-                ->where('proforma_invoices.status', '!=', \App\Models\ProformaInvoice::STATUS_CANCELLED)
-                ->whereNotNull('bt_id')
+            // Shipment ID = the Shipment Order's SHP-NNN code (shipment_orders
+            // are keyed on lead_id). The column previously aliased the PI's
+            // legacy bt_id ("BT-NNNN" batch code) here, which surfaced BT- codes
+            // under the "Shipment ID" column instead of the real SHP- code.
+            ->addSelect(['shipment_id' => \Illuminate\Support\Facades\DB::table('shipment_orders')
+                ->select('shipment_code')
+                ->whereColumn('shipment_orders.lead_id', 'leads.id')
+                ->whereNotNull('shipment_code')
                 ->orderByDesc('id')
                 ->limit(1)])
             ->with([
                 'salesperson' => fn ($r) => $r->select('id', 'name')->withTrashed(),
-                'customer'    => fn ($r) => $r->select('id', 'company_name', 'legal_name', 'customer_code')->withTrashed(),
+                'customer'    => fn ($r) => $r->select('id', 'company_name', 'legal_name', 'customer_code', 'primary_email')->withTrashed(),
                 'consignee'   => fn ($r) => $r->select('id', 'company_name')->withTrashed(),
             ])
             ->orderByDesc('id');
@@ -452,7 +454,7 @@ class SalesLeadController extends Controller
             return Lead::create(array_merge($data, [
                 'client_id'       => $user->client_id,
                 'branch_id'       => $user->branch_id,
-                'opp_code'        => $this->nextOppCode($user->client_id),
+                'opp_code'        => $this->nextOppCode($user->client_id, $user->branch_id),
                 'unique_query_id' => (string) mt_rand(100000000, 999999999),
                 'platform'        => 'Offline',
                 'query_type'      => 'Manual',
@@ -2064,13 +2066,14 @@ class SalesLeadController extends Controller
             ->sortBy('label')
             ->values();
 
-        // Customer dropdown — same tenant scope as the main listing.
+        // Customer dropdown — SAME branch-aware scope as the main Customer
+        // listing (CustomerController::index). forUser() applies tenant +
+        // branch visibility (branch users see only their branch; client admins
+        // honour the BranchSwitcher's branch_id), so the filter no longer leaks
+        // other branches' customers the way a client_id-only scope did.
         // We cap at 500 so the modal stays light; the search box on the
         // right pane is client-side so this is plenty for typical usage.
-        $cq = Customer::query();
-        if ($user->user_type !== 'super_admin' && $user->client_id) {
-            $cq->where('client_id', $user->client_id);
-        }
+        $cq = Customer::query()->forUser($user, $request->integer('branch_id') ?: null);
         $customers = $cq->select(['id', 'company_name', 'customer_code'])
                         ->orderBy('company_name')
                         ->limit(500)
@@ -2192,15 +2195,27 @@ class SalesLeadController extends Controller
     }
 
     /**
-     * Allocate the next opp_code for a client. Serializes concurrent calls
-     * by row-locking the parent client row — Postgres rejects FOR UPDATE
-     * on aggregates so we can't lock the count(*) directly. The composite
-     * UNIQUE (client_id, opp_code) is the second line of defense.
+     * Allocate the next opp_code — sequenced PER BRANCH (each branch restarts
+     * at OPP-0001), mirroring the per-branch Shipment ID allocator. Serializes
+     * concurrent calls by row-locking the parent client row (Postgres rejects
+     * FOR UPDATE on aggregates, so we can't lock the MAX() directly).
+     *
+     * Uses `withTrashed()` + highest-numeric-suffix + 1 (NOT count()): a bare
+     * count() excludes soft-deleted rows while the UNIQUE index still counts
+     * them, so after deleting the latest lead the next create would reuse its
+     * number and hit a unique-constraint violation. MAX(suffix)+1 is always
+     * above every existing code, trashed or not, so it can't collide.
+     * The composite UNIQUE (client_id, branch_id, opp_code) is the backstop.
      */
-    public function nextOppCode(int $clientId): string
+    public function nextOppCode(int $clientId, ?int $branchId = null): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-        $count = Lead::where('client_id', $clientId)->count();
-        return sprintf('OPP-%04d', $count + 1);
+        $max = Lead::withTrashed()
+            ->where('client_id', $clientId)
+            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
+            ->selectRaw("COALESCE(MAX(CAST(NULLIF(regexp_replace(COALESCE(opp_code, ''), '\\D', '', 'g'), '') AS INTEGER)), 0) AS max_code")
+            ->value('max_code');
+        return sprintf('OPP-%04d', ((int) $max) + 1);
     }
 }

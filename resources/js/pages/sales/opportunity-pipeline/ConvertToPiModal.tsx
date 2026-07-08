@@ -1,4 +1,18 @@
+import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
+
+/**
+ * Lock the page body scroll while a modal is mounted/open. Shared by both
+ * dialogs below so the background can't scroll behind the popup.
+ */
+function useBodyScrollLock(open: boolean) {
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
+}
 
 /**
  * Convert-to-PI confirmation dialog.
@@ -33,6 +47,7 @@ export default function ConvertToPiModal({
   onCancel,
   onConfirm,
 }: ConvertToPiModalProps) {
+  useBodyScrollLock(open);
   if (!open) return null;
 
   return createPortal(
@@ -122,6 +137,7 @@ export function ConversionBlockedModal({
   onClose,
   onViewExistingPi,
 }: ConversionBlockedModalProps) {
+  useBodyScrollLock(open);
   if (!open) return null;
 
   return createPortal(
