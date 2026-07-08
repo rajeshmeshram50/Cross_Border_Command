@@ -110,16 +110,26 @@ export type VendorOpt = {
   email: string;
   designation: string;
   status: string;
+  type: string;   // supplier type (vendor_type_name) — shown in Map Supplier
+  state: string;  // supplier's state (primaryAddress) — shown in Map Supplier
 };
 
 type Tab = 'core' | 'sales' | 'quality';
 
-// Zero-pad the trailing number in a code to 3 digits (e.g. V-4 -> V-004),
+// Zero-pad the trailing number in a code to 3 digits (e.g. P-4 -> P-004),
 // matching how supplier/product codes are shown across the module.
 const formatCode = (raw: string): string => {
   const m = raw.match(/^(.*?)(\d+)\s*$/);
   if (!m) return raw;
   return `${m[1] || 'S-'}${m[2].padStart(3, '0')}`;
+};
+
+// Supplier codes ALWAYS render with the canonical "S-" prefix (VendorController
+// generates them as S-###). Legacy rows with a different prefix (e.g. V-001) are
+// normalised on display to S-001 so the supplier code is consistent everywhere.
+const formatSupplierCode = (raw: string): string => {
+  const m = String(raw ?? '').match(/(\d+)\s*$/);
+  return m ? `S-${m[1].padStart(3, '0')}` : String(raw ?? '');
 };
 
 const today = () => {
@@ -763,6 +773,22 @@ export default function AddProductModal(props: {
       return;
     }
 
+    /* No duplicate suppliers on one product — the SAME supplier can't be
+     * mapped twice. Matches on vendor id (primary) or code (fallback for
+     * server-loaded rows). In edit mode the row being edited is excluded, so
+     * you can still re-save its own supplier while changing price/GST. */
+    const selId   = String(vendorSelected.id);
+    const selCode = String(vendorSelected.code ?? '');
+    const alreadyMapped = vendors.some(row =>
+      row.id !== vendorEditingId &&
+      ((row.vendorId && String(row.vendorId) === selId) ||
+       (selCode && String(row.vendorCode) === selCode))
+    );
+    if (alreadyMapped) {
+      toast.error('Already mapped', `${vendorSelected.name} is already mapped to this product.`);
+      return;
+    }
+
     /* Edit mode — overlay the editable fields onto the existing row
      * and keep its id so the change is in-place rather than producing
      * a duplicate "added" row. Map date is preserved from the original
@@ -945,6 +971,8 @@ export default function AddProductModal(props: {
         website?: string | null;
         primary_email?: string | null;
         status?: string | null;
+        vendor_type_name?: string | null;
+        state?: string | null;
         primary_address?: {
           contact_name?: string | null;
           contact_no?: string | null;
@@ -996,6 +1024,8 @@ export default function AddProductModal(props: {
         email:       String(r.primary_address?.email ?? r.primary_email ?? ''),
         designation: String(r.primary_address?.designation ?? ''),
         status:      String(r.status ?? '').toLowerCase(),
+        type:        String(r.vendor_type_name ?? ''),
+        state:       String(r.state ?? ''),
       })));
     };
 
@@ -2209,19 +2239,19 @@ export default function AddProductModal(props: {
                           <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select Supplier Name"
                             options={vendorOpts.map(v => ({
                               value: v.code,
-                              label: `${v.code ? `${formatCode(v.code)}: ` : ''}${v.name}`,
+                              label: `${v.code ? `${formatSupplierCode(v.code)}: ` : ''}${v.name}`,
                             }))}
                           />
                         </Field>
                         <Field label="Supplier Code">
-                          <input className="apm-input apm-readonly" value={vendorSelected?.code ?? ''} readOnly placeholder="Auto-fills from supplier" />
+                          <input className="apm-input apm-readonly" value={vendorSelected ? formatSupplierCode(vendorSelected.code) : ''} readOnly placeholder="Auto-fills from supplier" />
                         </Field>
                         <Field label="Supplier Type">
-                          <input className="apm-input apm-readonly" value={vendorSelected ? '—' : ''} readOnly placeholder="—" />
+                          <input className="apm-input apm-readonly" value={vendorSelected ? (vendorSelected.type || '—') : ''} readOnly placeholder="—" />
                         </Field>
 
                         <Field label="State">
-                          <input className="apm-input apm-readonly" value={vendorSelected ? '—' : ''} readOnly placeholder="—" />
+                          <input className="apm-input apm-readonly" value={vendorSelected ? (vendorSelected.state || '—') : ''} readOnly placeholder="—" />
                         </Field>
                         <Field label="Contact Person">
                           <input className="apm-input apm-readonly" value={vendorSelected?.contact ?? ''} readOnly placeholder="—" />
@@ -2255,7 +2285,10 @@ export default function AddProductModal(props: {
 
                     <div className="apm-mv-popup-foot">
                       <button className="apm-btn-ghost" onClick={closeVendorDraft}>Cancel</button>
-                      <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={!vendorSelected || !vendorPp}>
+                      {/* Not disabled on missing fields — saveVendorDraft validates
+                          and toasts exactly what's missing (e.g. Purchase Price), so
+                          the user isn't left staring at a silently-dead button. */}
+                      <button className="apm-btn-primary" onClick={saveVendorDraft}>
                         {vendorEditingId ? 'Save Changes' : 'Save'}
                       </button>
                     </div>
@@ -2276,13 +2309,23 @@ export default function AddProductModal(props: {
                       </tr>
                     </thead>
                     <tbody>
-                      {vendors.map((v, i) => (
+                      {vendors.map((v, i) => {
+                        // Type + State aren't stored on the mapping row — look the
+                        // supplier up in the master options (which now carry them)
+                        // by id (primary) or code (fallback) so both freshly-mapped
+                        // and server-loaded rows show the current values.
+                        const opt = vendorOpts.find(o => (v.vendorId && o.id === String(v.vendorId)) || (v.vendorCode && o.code === v.vendorCode));
+                        return (
                         <tr key={v.id}>
                           <td><span className="apm-sup-sr">{String(i + 1).padStart(2, '0')}</span></td>
-                          <td className="apm-sup-cname">{v.vendorName}</td>
-                          <td><span className="apm-sup-code">{v.vendorCode}</span></td>
-                          <td>—</td>
-                          <td>—</td>
+                          <td className="apm-sup-cname">
+                            {v.vendorName.length > 15
+                              ? <Tooltip label={v.vendorName}><span>{v.vendorName.slice(0, 15) + '…'}</span></Tooltip>
+                              : (v.vendorName || '—')}
+                          </td>
+                          <td><span className="apm-sup-code">{formatSupplierCode(v.vendorCode)}</span></td>
+                          <td>{opt?.type || '—'}</td>
+                          <td>{opt?.state || '—'}</td>
                           <td className="apm-sup-cperson">{v.contactPerson || '—'}</td>
                           <td>₹{v.purchasePrice.toLocaleString()}</td>
                           <td>{v.gstPct.toFixed(0)}%</td>
@@ -2290,15 +2333,17 @@ export default function AddProductModal(props: {
                           <td className="apm-sup-ctotal">₹{v.totalAmt.toLocaleString()}</td>
                           <td>
                             <div className="apm-sup-actions">
-                              <button type="button" className="apm-sup-edit" title="Edit supplier" onClick={() => openVendorEdit(v)}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
-                                Edit
+                              <button type="button" className="apm-sup-edit" title="Edit supplier" aria-label="Edit supplier" onClick={() => openVendorEdit(v)}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                               </button>
-                              <button type="button" className="apm-sup-del" title="Remove supplier" onClick={() => setVendorDeleteTarget(v)}>×</button>
+                              <button type="button" className="apm-sup-del" title="Remove supplier" onClick={() => setVendorDeleteTarget(v)}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                              </button>
                             </div>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

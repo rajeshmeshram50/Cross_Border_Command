@@ -730,7 +730,7 @@ class VendorController extends Controller
     {
         return $request->validate([
             'gst_number'              => 'required|string|max:16',
-            'status'                  => ['nullable', Rule::in(['Active', 'Suspended', 'Cancelled'])],
+            'status'                  => ['nullable', Rule::in(['Active', 'Inactive'])],
             'last_filing_date'        => 'nullable|date',
             'prev_non_gst_2a_invoice' => 'nullable|string|max:255',
             'red_flags'               => 'nullable|string|max:2000',

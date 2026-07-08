@@ -865,9 +865,13 @@ class ProductController extends Controller
 
             $vendors = Vendor::query()
                 ->forUser($user)
-                ->with('primaryAddress:id,vendor_id,contact_name,contact_no,email,designation')
+                ->with([
+                    'primaryAddress:id,vendor_id,state_id,state_code,contact_name,contact_no,email,designation',
+                    'primaryAddress.state:id,name',
+                    'vendorType:id,name',
+                ])
                 ->orderByDesc('id')
-                ->get(['id', 'vendor_code', 'company_name', 'website', 'primary_email', 'status'])
+                ->get(['id', 'vendor_code', 'company_name', 'website', 'primary_email', 'status', 'vendor_type_id'])
                 ->map(fn ($v) => [
                     'id'             => $v->id,
                     'vendor_code'    => $v->vendor_code,
@@ -875,6 +879,11 @@ class ProductController extends Controller
                     'website'        => $v->website,
                     'primary_email'  => $v->primary_email,
                     'status'         => $v->status,
+                    'vendor_type_name' => optional($v->vendorType)->name,
+                    // Supplier's state — name (from the state relation) with the
+                    // 2-letter state_code as a fallback when the relation is empty.
+                    'state'          => optional(optional($v->primaryAddress)->state)->name
+                                        ?? (optional($v->primaryAddress)->state_code ?: null),
                     'primary_address' => $v->primaryAddress ? [
                         'contact_name' => $v->primaryAddress->contact_name,
                         'contact_no'   => $v->primaryAddress->contact_no,

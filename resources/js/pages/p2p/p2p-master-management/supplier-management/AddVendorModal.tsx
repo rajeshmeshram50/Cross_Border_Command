@@ -14,6 +14,7 @@ import { CLM_CSS } from '../../../clm/shared/clmShared';
 import { SegmentTags } from '../../procurement-management/bulk-sourcing/SegmentTags';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { downloadFile } from '../../../../utils/downloadFile';
+import { formatProductCode } from '../../../../utils/formatProductCode';
 import {
   validateEmail, validatePincode, validateWebsite,
   validateGstin, validateIfsc, validateAccountNumber,
@@ -173,7 +174,7 @@ export type BankRow = {
 export type GstScrutinyRow = {
   id: string;
   gstNumber: string;
-  status: 'Active' | 'Suspended' | 'Cancelled';
+  status: 'Active' | 'Inactive';
   scrutinyDate?: string;   // server-set creation date (Figma "Scrutiny Date")
   lastFilingDate: string;
   prevNonGst2aInvoice: string;
@@ -264,13 +265,12 @@ const SEED_TRADE_LICENSE: TradeLicenseRow[] = [];
 
 /* Supplier Type is a FIXED vocabulary (not the shared customer/consignee
  * types). The form sends the chosen name; the backend resolves it to a
- * master_vendor_types row so the vendor_type_id FK stays valid. */
+ * master_vendor_types row (find-or-create) so the vendor_type_id FK stays
+ * valid — new names auto-create their master row on first save. */
 const SUPPLIER_TYPE_OPTS: { value: string; label: string }[] = [
-  { value: 'Logistic',          label: 'Logistic' },
-  { value: 'Material',          label: 'Material' },
-  { value: 'Tech Services',     label: 'Tech Services' },
-  { value: 'Advisory Services', label: 'Advisory Services' },
-  { value: 'Risk Services',     label: 'Risk Services' },
+  { value: 'Material / Goods',  label: 'Material / Goods' },
+  { value: 'Services',          label: 'Services' },
+  { value: 'FFD / Transporter', label: 'FFD / Transporter' },
 ];
 
 /* Step 2 KYC sub-tab → section-header title + subtitle (mirrors the Figma,
@@ -1378,7 +1378,9 @@ export default function AddVendorModal(props: {
         setGstRows((v.gst_scrutiny ?? []).map(r => ({
           id: String(r.id),
           gstNumber: r.gst_number ?? '',
-          status: (r.status === 'Suspended' || r.status === 'Cancelled' ? r.status : 'Active'),
+          // Only Active / Inactive now — any legacy value (Suspended/Cancelled)
+          // collapses to Inactive since it's a non-active state.
+          status: (r.status === 'Active' ? 'Active' : 'Inactive'),
           scrutinyDate: r.scrutiny_date ?? '',
           lastFilingDate: r.last_filing_date ?? '',
           prevNonGst2aInvoice: r.prev_non_gst_2a_invoice ?? '',
@@ -1978,7 +1980,7 @@ export default function AddVendorModal(props: {
       setGstRows(prev => [...prev, {
         id: String(g.id),
         gstNumber: g.gst_number ?? '',
-        status: (g.status === 'Suspended' || g.status === 'Cancelled' ? g.status : 'Active'),
+        status: (g.status === 'Active' ? 'Active' : 'Inactive'),
         scrutinyDate: g.scrutiny_date ?? new Date().toISOString().slice(0, 10),
         lastFilingDate: g.last_filing_date ?? '',
         prevNonGst2aInvoice: g.prev_non_gst_2a_invoice ?? '',
@@ -2152,7 +2154,7 @@ export default function AddVendorModal(props: {
       const eligible = rows.filter(r => Number(r.step_completed ?? 0) >= 3);
       setProductOpts(eligible.map(r => ({
         value:    String(r.id),
-        label:    `${r.product_code ?? ''} — ${r.name ?? ''}`.replace(/^ — /, ''),
+        label:    `${formatProductCode(r.product_code) || (r.product_code ?? '')} — ${r.name ?? ''}`.replace(/^ — /, ''),
         code:     r.product_code ?? '',
         name:     r.name ?? '',
         hsn:      r.hsn?.hsn_code ?? '',
@@ -4743,7 +4745,7 @@ function GstScrutinyTable(props: { rows: GstScrutinyRow[]; onRemove?: (id: strin
               <td>{r.scrutinyDate || '—'}</td>
               <td><span className="font-monospace fs-13">{r.gstNumber}</span></td>
               <td>
-                <span className={`avm-pill ${r.status === 'Active' ? 'avm-pill-success' : (r.status === 'Suspended' ? 'avm-pill-warning' : 'avm-pill-danger')}`}>
+                <span className={`avm-pill ${r.status === 'Active' ? 'avm-pill-success' : 'avm-pill-danger'}`}>
                   {r.status}
                 </span>
               </td>
@@ -4977,7 +4979,7 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
             <tr key={r.id}>
               <td><span className="avm-sr-pill">{String(i + 1).padStart(2, '0')}</span></td>
               <td><strong>{r.productName}</strong></td>
-              <td><span className="avm-auto-code">{r.productCode}</span></td>
+              <td><span className="avm-auto-code">{formatProductCode(r.productCode) || r.productCode}</span></td>
               <td><span className="font-monospace fs-13">{r.hsnSacCode || '—'}</span></td>
               <td>{r.segment ? <SegmentTags segment={r.segment} tagClassName="avm-seg-tag" /> : '—'}</td>
               <td className="text-end font-monospace fs-13">₹{r.purchasePrice.toFixed(2)}</td>
@@ -5659,7 +5661,7 @@ function BankAddPopup(props: {
   );
 }
 
-type GstScrutinyAddPopupDraft = { gstNumber: string; status: 'Active' | 'Suspended' | 'Cancelled'; lastFilingDate: string; prevNonGst2aInvoice: string; redFlags: string };
+type GstScrutinyAddPopupDraft = { gstNumber: string; status: 'Active' | 'Inactive'; lastFilingDate: string; prevNonGst2aInvoice: string; redFlags: string };
 function GstScrutinyAddPopup(props: {
   draft: GstScrutinyAddPopupDraft;
   setDraft: Setter<GstScrutinyAddPopupDraft>;
@@ -5698,7 +5700,15 @@ function GstScrutinyAddPopup(props: {
   // Async + awaited so PopupShell's Save spinner shows while the row saves.
   const handleSave = async () => {
     const e: typeof errors = {};
-    if (!draft.gstNumber.trim())  e.gstNumber = 'GST Number is required';
+    // Required + format checks surface INLINE under the field (red helper text),
+    // not as a top-right toast — so the user sees the expected GSTIN structure
+    // right where they're typing.
+    if (!draft.gstNumber.trim()) {
+      e.gstNumber = 'GST Number is required';
+    } else {
+      const gstErr = validateGstin(draft.gstNumber);
+      if (gstErr) e.gstNumber = gstErr;
+    }
     if (!draft.lastFilingDate)    e.lastFilingDate = 'GST Last Filing Date is required';
     if (Object.keys(e).length) { setErrors(prev => ({ ...prev, ...e })); return; }
     await onSave();
@@ -5709,14 +5719,14 @@ function GstScrutinyAddPopup(props: {
         <Field label="GST Number" required error={errors.gstNumber}>
           <input
             className="avm-input"
-            placeholder="Enter GST number"
+            placeholder="e.g. 29ABCDE1234F1Z5"
             value={draft.gstNumber}
             maxLength={15}
             onChange={e => handleGstNumberChange(e.target.value)}
           />
         </Field>
         <Field label="GST Status" required>
-          <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Suspended' | 'Cancelled')} placeholder="Select GST status" options={['Active', 'Suspended', 'Cancelled']} />
+          <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Inactive')} placeholder="Select GST status" options={['Active', 'Inactive']} />
         </Field>
         <Field label="GST Last Filing Date" required error={errors.lastFilingDate}>
           <MasterDatePicker
@@ -5772,7 +5782,7 @@ function AddProductMappingPopup(props: {
             : <input className="avm-input" placeholder="Loading products…" value={draft.productName} onChange={e => set('productName', e.target.value)} />}
         </Field>
         <Field label="Product Code">
-          <input className="avm-input" value={draft.productCode} readOnly placeholder="Auto-fills from product" />
+          <input className="avm-input" value={formatProductCode(draft.productCode) || draft.productCode} readOnly placeholder="Auto-fills from product" />
         </Field>
       </div>
       {/* HSN/SAC + Segment only (2-col) — matches the Figma's Map Product

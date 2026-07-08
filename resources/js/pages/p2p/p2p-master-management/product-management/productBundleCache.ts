@@ -24,11 +24,11 @@
  * SSR), all helpers degrade gracefully: read returns null, write is a no-op.
  */
 
-// v2 bump — discards any pre-tenant-scope cache entries written before
-// MasterVisibility::applyReadScope was added to the server bundle.
-// Without bumping, browsers would keep serving the older potentially-
-// leaky payload until the 5-min TTL expired.
-const KEY = 'product:master-bundle:v2';
+// v4 bump — vendor rows now carry `vendor_type_name` (Supplier Type) AND
+// `state` (supplier's state) for the Map Supplier popup. Bumping discards older
+// cached bundles that lack them so the fields fill immediately (no 5-min wait).
+// (v2 discarded pre-tenant-scope entries; v3 added vendor_type_name.)
+const KEY = 'product:master-bundle:v4';
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 type Envelope<T> = { v: 1; ts: number; data: T };
