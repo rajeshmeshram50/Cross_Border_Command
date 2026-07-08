@@ -297,6 +297,98 @@ class PurchaseOrderController extends Controller
         return response()->json(['status' => true, 'data' => $data]);
     }
 
+    /* ══════════════════════════ TRADE DOCS + AGREEMENTS (Stage 4) ══════════════════════════ */
+
+    /**
+     * Applicable Trade Documents + Agreements for a supplier's Stage-4 tabs.
+     * Sourced from the CLM masters (clm_trade_doc_library / clm_agreement_library)
+     * where the applicable party is a Supplier AND the row's segment matches one
+     * of the vendor's segments. "Purchase Order" (trade) and "Purchase Agreement"
+     * (agreement) are always present as constants.
+     */
+    public function supplierTradeDocs(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $cid = $user->client_id;
+
+        $out = [
+            'trade' => [[
+                'id' => 'po', 'name' => 'Purchase Order', 'sub' => 'Purchase Order', 'required' => true, 'cat' => 'trade',
+            ]],
+            'agreements' => [[
+                'id' => 'pa', 'name' => 'Purchase Agreement', 'sub' => 'Agreement', 'required' => true, 'cat' => 'agreement',
+            ]],
+        ];
+
+        $vendor = Vendor::forUser($user, $request->integer('branch_id') ?: null)->find($id);
+        if (!$vendor || !$cid) return response()->json(['status' => true, 'data' => $out]);
+
+        $segIds = DB::table('vendor_segments')->where('vendor_id', $vendor->id)->pluck('segment_id')->map(fn ($x) => (int) $x)->unique()->values()->all();
+        if (empty($segIds) && $vendor->segment_id) $segIds = [(int) $vendor->segment_id];
+        if (empty($segIds)) return response()->json(['status' => true, 'data' => $out]);
+
+        $segments = DB::table('clm_segments')->whereIn('id', $segIds)->get(['name', 'code', 'regulatory_status']);
+
+        $trade = collect();
+        $agr = collect();
+        foreach ($segments as $seg) {
+            $trade = $trade->merge($this->matchLibrary('clm_trade_doc_library', 'status', 'active', $cid, $seg));
+            $agr = $agr->merge($this->matchLibrary('clm_agreement_library', 'agr_status', 'Active', $cid, $seg));
+        }
+
+        foreach ($trade->unique('id') as $r) {
+            if ($this->supplierApplicable($r->party ?? '')) $out['trade'][] = $this->shapeDoc($r, 'trade');
+        }
+        foreach ($agr->unique('id') as $r) {
+            if ($this->supplierApplicable($r->party ?? '')) $out['agreements'][] = $this->shapeDoc($r, 'agreement');
+        }
+
+        return response()->json(['status' => true, 'data' => $out]);
+    }
+
+    private function matchLibrary(string $table, string $statusCol, string $statusVal, int $cid, object $seg)
+    {
+        $needles = array_values(array_filter([$seg->name, $seg->code]));
+        return DB::table($table)
+            ->where('client_id', $cid)
+            ->where('regulatory', $seg->regulatory_status)
+            ->where(function ($q) use ($needles) {
+                foreach ($needles as $n) {
+                    $q->orWhere('segment', $n)
+                        ->orWhere('segment', 'LIKE', $n . ',%')->orWhere('segment', 'LIKE', $n . ', %')
+                        ->orWhere('segment', 'LIKE', '%,' . $n)->orWhere('segment', 'LIKE', '%, ' . $n)
+                        ->orWhere('segment', 'LIKE', '%,' . $n . ',%')->orWhere('segment', 'LIKE', '%, ' . $n . ',%');
+                }
+            })
+            ->where($statusCol, $statusVal)
+            ->get();
+    }
+
+    private function supplierApplicable(?string $party): bool
+    {
+        $party = trim((string) $party);
+        if ($party === '') return true; // no party restriction → applies to all
+        foreach (explode(',', $party) as $tok) {
+            $t = strtolower(trim($tok));
+            if ($t === 'supplier' || str_starts_with($t, 'supplier')) return true;
+        }
+        return false;
+    }
+
+    private function shapeDoc(object $r, string $cat): array
+    {
+        $name = $cat === 'trade' ? ($r->title ?: ($r->name ?? '')) : ($r->title ?: ($r->agreement_type ?? ''));
+        $sub = $cat === 'trade' ? ($r->doc_type ?? '') : ($r->agreement_type ?? 'Agreement');
+        return [
+            'id' => $cat . '-' . $r->id,
+            'name' => $name ?: ($cat === 'trade' ? 'Trade Document' : 'Agreement'),
+            'sub' => $sub ?: '',
+            'required' => ($r->regulatory ?? 'less') === 'highly',
+            'cat' => $cat,
+        ];
+    }
+
     /* ══════════════════════════ INTERNALS ══════════════════════════ */
 
     private function validatePayload(Request $request): array
@@ -454,6 +546,7 @@ class PurchaseOrderController extends Controller
     {
         return [
             'id' => $po->id,
+            'vendor_id' => $po->vendor_id,
             'po' => $po->code,
             'date' => optional($po->po_date)->toDateString(),
             'type' => $po->po_type,

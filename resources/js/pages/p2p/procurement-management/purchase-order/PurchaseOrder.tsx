@@ -24,6 +24,7 @@ import './purchase-order.css';
 
 type PoRow = {
   id?: number;
+  vendor_id?: number | null;
   po: string;
   date: string;
   type: string;
@@ -504,7 +505,7 @@ export default function PurchaseOrder() {
 
       {/* ── TRADE DOCUMENTS & AGREEMENTS MODAL ───────────────────────── */}
       {tradeDoc && (
-        <TradeDocsModal po={tradeDoc.po} supName={tradeDoc.supName} supCode={tradeDoc.supCode} onClose={() => setTradeDoc(null)} />
+        <TradeDocsModal po={tradeDoc.po} supName={tradeDoc.supName} supCode={tradeDoc.supCode} supplierId={tradeDoc.vendor_id} onClose={() => setTradeDoc(null)} />
       )}
     </div>
   );

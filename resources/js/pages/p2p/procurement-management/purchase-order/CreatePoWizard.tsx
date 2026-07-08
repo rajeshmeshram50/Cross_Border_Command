@@ -834,7 +834,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
               {stage === 4 && (
                 <Box label="Documents" title="Post PO Trade Document Management" sub="Generate, e-sign & track documents via Zoho Sign" ico={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>}
                   extra={<button type="button" className="cptd-vault-btn" onClick={e => { e.stopPropagation(); setVaultOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg><span>Supplier Legal Status</span></button>}>
-                  <TradeDocsTable />
+                  <TradeDocsTable po={poCode || undefined} supplierId={vendorId} />
                 </Box>
               )}
             </div>

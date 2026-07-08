@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -14,9 +15,12 @@ import { useToast } from '../../../../contexts/ToastContext';
 
 type Cat = 'trade' | 'agreement';
 type TradeDoc = { id: string; name: string; sub: string; cat: Cat; required: boolean; generated: string; status: 'pending' | 'sent' | 'signed' };
-const makeTradeDocs = (po: string): TradeDoc[] => [
-  { id: 'po', name: 'Purchase Order', sub: po, cat: 'trade', required: true, generated: '10/01/2025', status: 'pending' },
-  { id: 'pa', name: 'Purchase Agreement', sub: 'Agreement', cat: 'agreement', required: true, generated: '10/01/2025', status: 'pending' },
+const TODAY = (() => { const d = new Date(); const mm = ('0' + (d.getMonth() + 1)).slice(-2), dd = ('0' + d.getDate()).slice(-2); return `${dd}/${mm}/${d.getFullYear()}`; })();
+// Constants always present (Purchase Order + Purchase Agreement); the rest are
+// fetched from the CLM Trade Document / Agreement masters for the supplier.
+const makeConstants = (po: string): TradeDoc[] => [
+  { id: 'po', name: 'Purchase Order', sub: po, cat: 'trade', required: true, generated: TODAY, status: 'pending' },
+  { id: 'pa', name: 'Purchase Agreement', sub: 'Agreement', cat: 'agreement', required: true, generated: TODAY, status: 'pending' },
 ];
 
 type MenuState = { id: string; name: string; left: number; top: number; maxH: number; open: boolean };
@@ -35,11 +39,38 @@ const I = {
   tabAgr: (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>),
 };
 
-export default function TradeDocsTable({ po = 'PO/2025-26/001' }: { po?: string }) {
+export default function TradeDocsTable({ po = 'PO/2025-26/001', supplierId }: { po?: string; supplierId?: number | null }) {
   const toast = useToast();
-  const [docs, setDocs] = useState<TradeDoc[]>(() => makeTradeDocs(po));
+  const [docs, setDocs] = useState<TradeDoc[]>(() => makeConstants(po));
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [tab, setTab] = useState<Cat>('trade');
+
+  // Fetch applicable Trade Documents + Agreements for the supplier from the CLM
+  // masters (segment + supplier-party matched). PO / Purchase Agreement are the
+  // constants; anything else is master-driven.
+  useEffect(() => {
+    if (!supplierId) { setDocs(makeConstants(po)); return; }
+    let cancelled = false;
+    api.get(`/p2p/purchase-orders/suppliers/${supplierId}/trade-documents`).then(r => {
+      if (cancelled) return;
+      const d = r.data?.data;
+      const list: TradeDoc[] = [];
+      const push = (arr: Array<Record<string, unknown>> | undefined, cat: Cat) => (arr ?? []).forEach(x => {
+        const id = String(x.id);
+        list.push({
+          id, cat,
+          name: String(x.name ?? (cat === 'trade' ? 'Trade Document' : 'Agreement')),
+          sub: id === 'po' ? po : id === 'pa' ? 'Agreement' : String(x.sub ?? ''),
+          required: !!x.required, generated: TODAY, status: 'pending',
+        });
+      });
+      push(d?.trade, 'trade');
+      push(d?.agreements, 'agreement');
+      setDocs(list.length ? list : makeConstants(po));
+    }).catch(() => { if (!cancelled) setDocs(makeConstants(po)); });
+    return () => { cancelled = true; };
+  }, [supplierId, po]);
+
   const [menu, setMenu] = useState<MenuState | null>(null);
   const menuBtnRef = useRef<HTMLButtonElement | null>(null);
   const menuPopRef = useRef<HTMLDivElement | null>(null);
