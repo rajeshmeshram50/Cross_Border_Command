@@ -119,6 +119,7 @@ import PublicOnboarding from '../pages/PublicOnboarding';
 import ClockIn from '../pages/ClockIn';
 import ModuleStubPage from '../pages/ModuleStubPage';
 import P2pBulkSourcing from '../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing';
+import PurchaseOrder from '../pages/p2p/procurement-management/purchase-order/PurchaseOrder';
 import MyTeam from '../pages/MyTeam';
 import Inbox from '../pages/Inbox';
 import Gmail from '../pages/Gmail';
@@ -782,7 +783,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/p2p/diagnosis" element={<ModuleStubPage />} />
               <Route path="/p2p/bulk-sourcing" element={<P2pBulkSourcing />} />
               <Route path="/p2p/case-to-case" element={<ModuleStubPage />} />
-              <Route path="/p2p/purchase-order" element={<ModuleStubPage />} />
+              <Route path="/p2p/purchase-order" element={<PurchaseOrder />} />
               <Route path="/p2p/supplier-purchase-invoice" element={<ModuleStubPage />} />
               <Route path="/developers/shipment" element={<DeveloperShipments />} />
               <Route path="/products" element={<Products />} />
