@@ -741,6 +741,291 @@ class SalesPdfController extends Controller
     }
 
     /* ──────────────────────────────────────────────────────────────────
+     * PURCHASE ORDER (P2P) — PDF + email, reusing the PI template/mailer.
+     * ────────────────────────────────────────────────────────────────── */
+
+    /** Public signed PDF view for the PO email's "View" button. */
+    public function publicViewPurchaseOrder(int $id)
+    {
+        $po = \App\Models\PurchaseOrder::with('items')->findOrFail($id);
+        $vendor = $po->vendor_id ? \App\Models\Vendor::with('primaryAddress')->find($po->vendor_id) : null;
+        $viewData = $this->buildPurchaseOrderViewData($po, true, $vendor);
+        @set_time_limit(180);
+        $pdf = Pdf::loadView('pdf.purchase-order', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true);
+        return $pdf->stream('PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $po->code ?? ('id-' . $po->id)) . '.pdf');
+    }
+
+    /** Authenticated inline PDF stream (for the wizard/modal View actions). */
+    public function viewPurchaseOrderPdf(Request $request, int $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $po = \App\Models\PurchaseOrder::with('items')->findOrFail($id);
+        if ($user->user_type !== 'super_admin' && (int) $po->client_id !== (int) $user->client_id) abort(404);
+        $vendor = $po->vendor_id ? \App\Models\Vendor::with('primaryAddress')->find($po->vendor_id) : null;
+        $withSignature = $request->boolean('signature', true);
+        $viewData = $this->buildPurchaseOrderViewData($po, $withSignature, $vendor);
+        @set_time_limit(180);
+        $pdf = Pdf::loadView('pdf.purchase-order', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true);
+        $name = 'PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $po->code ?? ('id-' . $po->id)) . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
+        return $pdf->stream($name);
+    }
+
+    /** Email the Purchase Order PDF to the supplier using the PI email template. */
+    public function emailPurchaseOrder(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $po = \App\Models\PurchaseOrder::with('items')->findOrFail($id);
+        if ($user->user_type !== 'super_admin' && (int) $po->client_id !== (int) $user->client_id) abort(404);
+
+        $vendor = $po->vendor_id ? \App\Models\Vendor::with('primaryAddress')->find($po->vendor_id) : null;
+        $override = trim((string) $request->input('to', ''));
+        $to = ($override !== '' && filter_var($override, FILTER_VALIDATE_EMAIL))
+            ? $override
+            : ($vendor?->primaryAddress?->email ?: ($vendor?->primary_email ?: null));
+        if (!$to || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            return response()->json(['status' => false, 'message' => 'No valid email address for this supplier. Set a primary contact email on the supplier first.'], 422);
+        }
+
+        $withSignature = $request->boolean('signature', true);
+        $viewData = $this->buildPurchaseOrderViewData($po, $withSignature, $vendor);
+        @set_time_limit(180);
+        $pdf = Pdf::loadView('pdf.purchase-order', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true);
+
+        $tmpDir = storage_path('app/tmp/sales-pdfs');
+        if (!is_dir($tmpDir)) @mkdir($tmpDir, 0775, true);
+        $safeCode = preg_replace('/[^A-Za-z0-9_-]/', '_', $po->code ?? ('id-' . $po->id));
+        $pdfFilename = 'PO-' . $safeCode . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
+        $pdfPath = $tmpDir . '/' . uniqid('mail-', true) . '-' . $pdfFilename;
+        $pdf->save($pdfPath);
+
+        try {
+            $branch = \App\Models\Branch::find($po->branch_id);
+            $viewUrl = \Illuminate\Support\Facades\URL::temporarySignedRoute('p2p.po.view', now()->addDays(60), ['id' => $po->id]);
+            Mail::to($to)->send(new SalesDocumentEmail([
+                'docKind' => 'Purchase Order',
+                'docLabel' => 'PO',
+                'docCode' => $po->code,
+                'docDate' => optional($po->po_date)->format('d/m/Y') ?: date('d/m/Y'),
+                'branchName' => $branch?->name ?: ($branch?->code ?: 'Procurement Team'),
+                'branchEmail' => $branch?->email ?: null,
+                'branchWebsite' => $branch?->website ?: null,
+                'customerName' => $po->supplier_name ?: ($vendor?->company_name ?: 'Sir/Madam'),
+                'productSummary' => (string) (optional($po->items->first())->product_name ?? ''),
+                'productsCount' => (int) $po->items->count(),
+                'grandTotal' => (float) ($po->grand_total ?? 0),
+                'currency' => (string) ($po->currency_code ?: ($po->document_type === 'International' ? 'USD' : 'INR')),
+                'docType' => (string) ($po->document_type ?? ''),
+                'viewUrl' => $viewUrl,
+                'logoPath' => $this->branchAssetAbsolutePath($branch?->logo),
+                'pdfPath' => $pdfPath,
+                'pdfFilename' => $pdfFilename,
+            ]));
+        } catch (\Throwable $e) {
+            @unlink($pdfPath);
+            Log::error('Purchase Order email failed', ['po' => $po->code, 'to' => $to, 'error' => $e->getMessage()]);
+            return response()->json([
+                'status' => false,
+                'message' => config('app.debug') ? "Could not send Purchase Order email: {$e->getMessage()}" : 'Could not send Purchase Order email. Please try again or contact support.',
+            ], 500);
+        }
+        @unlink($pdfPath);
+
+        return response()->json(['status' => true, 'message' => "Purchase Order emailed to {$to}", 'to' => $to]);
+    }
+
+    /**
+     * Build view data for the dedicated Purchase Order PDF
+     * (`pdf/purchase-order.blade.php`). Mirrors the shared letterhead/branding
+     * of the PI PDF but with the PO-specific layout: Vendor / Bill-To /
+     * Deliver-To blocks, a PO info grid, per-line GST%, charges and the PO
+     * Terms & Conditions boilerplate.
+     */
+    private function buildPurchaseOrderViewData($po, bool $withSignature, $vendor = null): array
+    {
+        $branch = \App\Models\Branch::find($po->branch_id);
+        $client = !empty($po->client_id) ? \App\Models\Client::find($po->client_id) : null;
+
+        $branchAddress = trim(implode(', ', array_filter([$branch?->address, $branch?->city, $branch?->state, $branch?->pincode, $branch?->country]))) ?: '';
+        $clientAddress = trim(implode(', ', array_filter([$client?->address, $client?->city, $client?->state, $client?->pincode, $client?->country]))) ?: '';
+        $logoData = $this->branchAssetDataUri($branch?->logo) ?: $this->branchAssetDataUri($client?->logo);
+
+        $companyDetails = (object) [
+            'name' => ($branch?->name ?: $client?->org_name) ?: ($branch?->code ?: 'Branch'),
+            'address' => $branchAddress ?: $clientAddress,
+            'mobile' => $branch?->phone ?: ($client?->phone ?? ''),
+            'email' => $branch?->email ?: ($client?->email ?? ''),
+            'website' => $branch?->website ?: ($client?->website ?? ''),
+            'gst_no' => $branch?->gst_number ?: ($client?->gst_number ?? ''),
+            'pan_no' => $branch?->pan_number ?: ($client?->pan_number ?? ''),
+            'gst_state_code' => $branch?->gst_state_code ?? '',
+            'cin' => $branch?->cin ?? '',
+            'iec' => $branch?->iec ?? '',
+            'drug_license' => $branch?->drug_license ?? '',
+            'pcpndt_no' => $branch?->pcpndt_no ?? '',
+            'aeo_code' => $branch?->aeo_code ?? '',
+            'onestartfilename' => $branch?->one_star_file_no ?? '',
+            'onestarudinumber' => $branch?->one_star_udin_no ?? '',
+            'primary_color' => $primaryColor = ($this->normalizeHex($branch?->primary_color ?: $client?->primary_color) ?: '#7CB342'),
+            'secondary_color' => $this->normalizeHex($branch?->secondary_color ?: $client?->secondary_color) ?: '#37B1E0',
+            'primary_text_color' => $this->contrastColor($primaryColor),
+            'logo_data' => $logoData,
+            'signature_data' => $this->branchAssetDataUri($branch?->signature_path) ?? $this->publicImageDataUri('images/test-signature.png'),
+        ];
+
+        // Vendor (supplier) block. state/country on VendorAddress are BelongsTo
+        // relations (States/Countries) — resolve their names, not the models.
+        $vAddr = $vendor?->primaryAddress;
+        $vendorBlock = (object) [
+            'name' => $po->supplier_name ?: ($vendor?->company_name ?: 'Supplier'),
+            'address' => $this->composeAddress(
+                $vAddr?->address_line,
+                $vAddr?->city,
+                $vAddr?->state?->name ?? $vAddr?->state_code,
+                $vAddr?->pincode,
+                $vAddr?->country?->name,
+            ),
+            'email' => $vAddr?->email ?: ($vendor?->primary_email ?? ''),
+            'contact_no' => $vAddr?->contact_no ?? '',
+        ];
+
+        // Bill-To = the purchasing company (issuing branch / client).
+        $billTo = (object) [
+            'name' => strtoupper((string) (($branch?->name ?: $client?->org_name) ?: '')),
+            'address' => $branchAddress ?: $clientAddress,
+            'contact' => $branch?->phone ?: ($client?->phone ?? ''),
+        ];
+
+        // Deliver-To = the selected warehouse (by warehouse_id) or the free-text
+        // delivery location; falls back to the bill-to address.
+        $wh = $po->warehouse_id ? DB::table('master_warehouse_master')->where('id', $po->warehouse_id)->first() : null;
+        $whAddress = $wh
+            ? trim(implode(', ', array_filter([$wh->address, $wh->city, $wh->state, $wh->pincode])))
+            : '';
+        $deliverTo = (object) [
+            'name' => strtoupper((string) (($branch?->name ?: $client?->org_name) ?: '')),
+            'address' => $whAddress ?: ($po->delivery_location ?: $billTo->address),
+            'contact' => $wh?->contact_phone ?: $billTo->contact,
+        ];
+
+        // Bank = the branch's bank (first master_bank_accounts row for this
+        // client, preferring the branch-specific one over a client-wide one).
+        $bankRow = DB::table('master_bank_accounts')
+            ->where('client_id', $po->client_id)
+            ->when($po->branch_id, fn ($q) => $q->where(fn ($w) => $w->where('branch_id', $po->branch_id)->orWhereNull('branch_id')))
+            ->orderByRaw('branch_id IS NULL')
+            ->first();
+        $bankDetails = (object) [
+            'bank_name' => $bankRow->bank_name ?? '',
+            'account_holder_name' => $bankRow->account_holder ?? '',
+            'address' => trim((string) ($bankRow->city ?? '')),
+            'branch' => $bankRow->branch_name ?? '',
+            'branch_code' => '',
+            'ad_code' => $bankRow->ad_code ?? '',
+            'account_no' => $bankRow->account_number ?? '',
+            'ifsc' => $bankRow->ifsc_code ?? '',
+            'swift_code' => $bankRow->swift_code ?? '',
+        ];
+
+        $productIds = collect($po->items)->pluck('product_id')->filter()->unique()->values();
+        $productMap = $productIds->isNotEmpty()
+            ? DB::table('products')->whereIn('id', $productIds)->get(['id', 'product_code', 'name', 'description', 'brand'])->keyBy('id')
+            : collect();
+
+        $poProducts = collect($po->items)->map(function ($it) use ($productMap) {
+            $qty = (float) $it->quantity;
+            $rate = (float) $it->rate;
+            $gstPct = (float) ($it->gst_pct ?: ((float) $it->cgst_pct + (float) $it->sgst_pct));
+            $amt = (float) $it->cost;
+            $live = $it->product_id ? $productMap->get($it->product_id) : null;
+            if ($live) {
+                $code = (string) ($live->product_code ?? '');
+                $name = (string) ($live->name ?? '');
+                $desc = (string) ($live->description ?? '');
+                $brand = (string) ($live->brand ?? '');
+            } else {
+                $code = (string) ($it->product_code ?? '');
+                $name = (string) ($it->product_name ?? '');
+                $desc = '';
+                $brand = '';
+            }
+            return [
+                'product_code' => $code,
+                'product_name' => $name . ($code !== '' ? " ({$code})" : ''),
+                'brand' => $brand,
+                'product_description' => $desc,
+                'quantity' => $qty,
+                'rate' => $rate,
+                'gst_pct' => $gstPct,
+                'amount' => $amt,
+            ];
+        })->values()->all();
+
+        $totalCgst = (float) $po->total_cgst;
+        $totalSgst = (float) $po->total_sgst;
+        $subTotal = round((float) $po->total_product_cost - $totalCgst - $totalSgst, 2);
+        $grandTotal = (float) $po->grand_total;
+        $isIntl = ($po->document_type ?? 'Domestic') === 'International';
+        $igst = $isIntl ? round($totalCgst + $totalSgst, 2) : 0;
+        $cgst = $isIntl ? 0 : $totalCgst;
+        $sgst = $isIntl ? 0 : $totalSgst;
+
+        $poInfo = (object) [
+            'code' => $po->code,
+            'po_date' => optional($po->po_date)->format('d/m/Y') ?: '',
+            'po_type' => $po->po_type ?: '',
+            'edd' => optional($po->expected_delivery_date)->format('d/m/Y') ?: 'NA',
+            'currency' => $po->currency_code ?: 'INR',
+            'document_type' => $po->document_type ?: 'Domestic',
+            'bt_id' => (string) ($po->shipment_code ?: ($po->shipment_order_id ?: '0')),
+            'bt_date' => 'NA',
+            'opp_id' => $po->opportunity_code ?: 'NA',
+            'opp_date' => 'NA',
+            'terms' => $po->terms ?: null,
+        ];
+
+        $totals = (object) [
+            'shipping' => (float) $po->shipping_charges,
+            'packing' => (float) $po->packaging_charges,
+            'other' => (float) $po->other_charges,
+            'sub_total' => $subTotal,
+            'igst' => (float) $igst,
+            'cgst' => (float) $cgst,
+            'sgst' => (float) $sgst,
+            'grand_total' => $grandTotal,
+        ];
+
+        $branchWebsite = trim((string) ($branch?->website ?? ''));
+        $orgName = trim((string) ($branch?->name ?? '')) ?: trim((string) ($branch?->code ?? ''));
+        $barcodeValue = $branchWebsite !== '' ? $branchWebsite : $orgName;
+
+        return [
+            'pdf_title' => 'PURCHASE ORDER',
+            'signature' => $withSignature ? 'Yes' : 'No',
+            'barcodeData' => $barcodeValue !== '' ? $this->makeCode128($barcodeValue) : null,
+            'barcodeText' => $barcodeValue,
+            'qrData' => $this->makeBankQr([
+                'bank_name' => $bankDetails->bank_name ?: '',
+                'account_holder' => $bankDetails->account_holder_name ?: '',
+                'account_number' => $bankDetails->account_no ?: '',
+                'ifsc_code' => $bankDetails->ifsc ?: '',
+                'swift_code' => $bankDetails->swift_code ?: '',
+                'branch_name' => $bankDetails->branch ?: '',
+                'doc_code' => $po->code, 'amount' => $grandTotal, 'currency' => $po->currency_code ?? 'INR',
+            ]),
+            'companyDetails' => $companyDetails,
+            'vendor' => $vendorBlock,
+            'billTo' => $billTo,
+            'deliverTo' => $deliverTo,
+            'bankDetails' => $bankDetails,
+            'po' => $poInfo,
+            'products' => $poProducts,
+            'totals' => $totals,
+        ];
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
      * REMINDER EMAIL endpoints — POST /sales/quotations/{id}/remind and
      *                             /sales/proforma-invoices/{id}/remind
      *

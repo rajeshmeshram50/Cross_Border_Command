@@ -91,6 +91,10 @@ Route::get('/sales/quotations/{id}/view',        [SalesPdfController::class, 'pu
 Route::get('/sales/proforma-invoices/{id}/view', [SalesPdfController::class, 'publicViewProformaInvoice'])
     ->middleware('signed')
     ->name('sales.pi.view');
+Route::get('/p2p/purchase-orders/{id}/view',     [SalesPdfController::class, 'publicViewPurchaseOrder'])
+    ->middleware('signed')
+    ->whereNumber('id')
+    ->name('p2p.po.view');
 
 // Protected
 Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
@@ -502,6 +506,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/p2p/purchase-orders/preview-code',            [PurchaseOrderController::class, 'previewCode']);
     Route::get   ('/p2p/purchase-orders/suppliers',               [PurchaseOrderController::class, 'suppliers']);
     Route::get   ('/p2p/purchase-orders/suppliers/{id}',          [PurchaseOrderController::class, 'supplier'])->whereNumber('id');
+    Route::get   ('/p2p/purchase-orders/suppliers/{id}/trade-documents', [PurchaseOrderController::class, 'supplierTradeDocs'])->whereNumber('id');
     Route::get   ('/p2p/purchase-orders/shipments',               [PurchaseOrderController::class, 'shipments']);
     Route::get   ('/p2p/purchase-orders/shipments/{id}/pi-products', [PurchaseOrderController::class, 'shipmentPiProducts'])->whereNumber('id');
     Route::get   ('/p2p/purchase-orders',                         [PurchaseOrderController::class, 'index']);
@@ -510,6 +515,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'update'])->whereNumber('id');
     Route::delete('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/sync',               [PurchaseOrderController::class, 'sync'])->whereNumber('id');
+    Route::post  ('/p2p/purchase-orders/{id}/email',              [SalesPdfController::class, 'emailPurchaseOrder'])->whereNumber('id');
+    Route::get   ('/p2p/purchase-orders/{id}/pdf',                [SalesPdfController::class, 'viewPurchaseOrderPdf'])->whereNumber('id');
 
   
     Route::get   ('/sales/reminders',                 [SalesTodoController::class, 'listReminders']);

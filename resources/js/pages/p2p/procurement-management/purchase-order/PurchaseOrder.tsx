@@ -24,6 +24,7 @@ import './purchase-order.css';
 
 type PoRow = {
   id?: number;
+  vendor_id?: number | null;
   po: string;
   date: string;
   type: string;
@@ -174,6 +175,7 @@ export default function PurchaseOrder() {
   const [sync, setSync] = useState<SyncState | null>(null);
   const [wizard, setWizard] = useState<{ editRow: PoRow | null } | null>(null);
   const [tradeDoc, setTradeDoc] = useState<PoRow | null>(null);
+  const [emailing, setEmailing] = useState<Record<number, boolean>>({});
 
   // ── Server-driven data (branch_id is auto-injected on GETs → branch isolation) ──
   const [rows, setRows] = useState<PoRow[]>([]);
@@ -270,6 +272,50 @@ export default function PurchaseOrder() {
     if (!r.id) return;
     setMore(null);
     setSync({ id: r.id, po: r.po, supName: r.supName, busy: false });
+  };
+
+  const doEmail = (r: PoRow) => {
+    if (!r.id || emailing[r.id]) return;
+    const id = r.id;
+    setEmailing(m => ({ ...m, [id]: true }));
+    toast.info(`Emailing ${r.po} to supplier…`);
+    api.post(`/p2p/purchase-orders/${id}/email`)
+      .then(res => toast.success(res.data?.message || `Purchase Order emailed — ${r.po}`))
+      .catch(err => {
+        const msg = err?.response?.data?.message;
+        if (err?.response?.status === 422) toast.error('Cannot send email', msg || 'No valid supplier email address.');
+        else toast.error('Email failed', msg || 'Please try again.');
+      })
+      .finally(() => setEmailing(m => { const n = { ...m }; delete n[id]; return n; }));
+  };
+
+  // PO PDF (same render as the PI PDF) — with/without signature. Used by the
+  // list-row "More" menu's View & Download actions.
+  const poPdfBlob = (id: number, withSign: boolean) =>
+    api.get(`/p2p/purchase-orders/${id}/pdf`, { params: { signature: withSign ? 1 : 0 }, responseType: 'blob' });
+  const viewPoPdf = (withSign: boolean) => {
+    const r = rows.find(x => x.po === more?.po); setMore(null);
+    if (!r?.id) return;
+    const w = window.open('', '_blank');
+    toast.info(`Preparing PO PDF${withSign ? ' (signed)' : ' (without signature)'}…`);
+    poPdfBlob(r.id, withSign)
+      .then(res => { const url = URL.createObjectURL(res.data as Blob); if (w) w.location.href = url; else window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); })
+      .catch(() => { if (w) w.close(); toast.error('Could not open PO PDF', 'Please try again.'); });
+  };
+  const downloadPoPdf = (withSign: boolean) => {
+    const r = rows.find(x => x.po === more?.po); setMore(null);
+    if (!r?.id) return;
+    toast.info(`Downloading PO PDF${withSign ? ' (signed)' : ' (without signature)'}…`);
+    poPdfBlob(r.id, withSign)
+      .then(res => {
+        const url = URL.createObjectURL(res.data as Blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `PO-${r.po.replace(/[^A-Za-z0-9_-]/g, '_')}${withSign ? '_signed' : '_unsigned'}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      })
+      .catch(() => toast.error('Could not download PO PDF', 'Please try again.'));
   };
 
   const doSync = () => {
@@ -424,7 +470,7 @@ export default function PurchaseOrder() {
                             <button type="button" className="polist-zoho" title="Sync with Zohobook" onClick={() => openZohoConfirm(r)}>{Ico.sync(14)}<span>Zoho Sync</span></button>
                           )}
                           <button type="button" className="polist-ico" title="Edit PO" onClick={() => setWizard({ editRow: r })}>{Ico.edit(15)}</button>
-                          <button type="button" className="polist-ico" title="Send PO Via Email" onClick={() => toast.success(`Email sent — ${r.po}`)}>{Ico.mail(15)}</button>
+                          <button type="button" className="polist-ico" title="Send PO Via Email" disabled={!!(r.id && emailing[r.id])} onClick={() => doEmail(r)}>{Ico.mail(15)}</button>
                           <button type="button" className="polist-ico" title="Trade Documents & Agreements" onClick={() => setTradeDoc(r)}>{Ico.vault(15)}</button>
                           <button type="button" className="polist-ico" title="PO Payment" onClick={() => stub(`PO Payment — ${r.po}`)}>{Ico.pay(15)}</button>
                           <button type="button" className="polist-ico" title="More Actions" onClick={e => openMore(e, r)}>{Ico.kebab(15)}</button>
@@ -468,11 +514,11 @@ export default function PurchaseOrder() {
             </button>
             <div className="pomore-divider" />
             <div className="pomore-sec pomore-sec--view">{Ico.eye(15)} View</div>
-            <button type="button" className="pomore-item" onClick={() => { setMore(null); toast.info(`Viewing document (with signature) — ${more.po}`); }}><span className="pomore-item__ico pomore-item__ico--view">{Ico.eye(15)}</span>With Signature</button>
-            <button type="button" className="pomore-item" onClick={() => { setMore(null); toast.info(`Viewing document (without signature) — ${more.po}`); }}><span className="pomore-item__ico pomore-item__ico--view">{Ico.eye(15)}</span>Without Signature</button>
+            <button type="button" className="pomore-item" onClick={() => viewPoPdf(true)}><span className="pomore-item__ico pomore-item__ico--view">{Ico.eye(15)}</span>With Signature</button>
+            <button type="button" className="pomore-item" onClick={() => viewPoPdf(false)}><span className="pomore-item__ico pomore-item__ico--view">{Ico.eye(15)}</span>Without Signature</button>
             <div className="pomore-sec pomore-sec--dl">{Ico.down(15)} Download</div>
-            <button type="button" className="pomore-item" onClick={() => { setMore(null); toast.info(`Downloading (with signature) — ${more.po}`); }}><span className="pomore-item__ico pomore-item__ico--dl">{Ico.down(15)}</span>With Signature</button>
-            <button type="button" className="pomore-item" onClick={() => { setMore(null); toast.info(`Downloading (without signature) — ${more.po}`); }}><span className="pomore-item__ico pomore-item__ico--dl">{Ico.down(15)}</span>Without Signature</button>
+            <button type="button" className="pomore-item" onClick={() => downloadPoPdf(true)}><span className="pomore-item__ico pomore-item__ico--dl">{Ico.down(15)}</span>With Signature</button>
+            <button type="button" className="pomore-item" onClick={() => downloadPoPdf(false)}><span className="pomore-item__ico pomore-item__ico--dl">{Ico.down(15)}</span>Without Signature</button>
           </div>
         </>
       )}
@@ -504,7 +550,7 @@ export default function PurchaseOrder() {
 
       {/* ── TRADE DOCUMENTS & AGREEMENTS MODAL ───────────────────────── */}
       {tradeDoc && (
-        <TradeDocsModal po={tradeDoc.po} supName={tradeDoc.supName} supCode={tradeDoc.supCode} onClose={() => setTradeDoc(null)} />
+        <TradeDocsModal po={tradeDoc.po} poId={tradeDoc.id} supName={tradeDoc.supName} supCode={tradeDoc.supCode} supplierId={tradeDoc.vendor_id} onClose={() => setTradeDoc(null)} />
       )}
     </div>
   );
