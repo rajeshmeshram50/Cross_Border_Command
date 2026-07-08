@@ -49,14 +49,26 @@ class ClmSegmentRuleController extends Controller
         $user = $request->user(); if (!$user) abort(401);
         $cid = $user->client_id;
 
-        $segments    = $cid ? ClmSegment::where('client_id', $cid)->orderBy('id')->get() : collect();
-        $authorities = $cid ? ClmAuthority::where('client_id', $cid)->orderBy('id')->get() : collect();
-        $kyc         = $cid ? ClmKycDocument::where('client_id', $cid)->orderBy('id')->get() : collect();
-        $dd          = $cid ? ClmDdDocument::where('client_id', $cid)->orderBy('id')->get() : collect();
-        $tl          = $cid ? ClmTradeLicense::where('client_id', $cid)->orderBy('id')->get() : collect();
+        // Branch-scoped read: a branch sees globals + client-level rows + its own
+        // branch's rows; sibling branches stay hidden. Without this, the SELECT
+        // SEGMENT dropdown (and the other CLM masters) leaked segments configured
+        // by independent sibling branches into this branch's DCP setup.
+        $branchId = $request->integer('branch_id') ?: null;
+        $load = function (string $modelClass) use ($cid, $user, $branchId) {
+            if (!$cid) return collect();
+            $q = $modelClass::query()->orderBy('id');
+            MasterVisibility::applyReadScope($q, $user, $branchId);
+            return $q->get();
+        };
+
+        $segments    = $load(ClmSegment::class);
+        $authorities = $load(ClmAuthority::class);
+        $kyc         = $load(ClmKycDocument::class);
+        $dd          = $load(ClmDdDocument::class);
+        $tl          = $load(ClmTradeLicense::class);
         // Trade Documents (td) was removed from the Document Control Panel — it
         // is no longer a configurable category, so it isn't shipped here.
-        $qc          = $cid ? ClmQcDocument::where('client_id', $cid)->orderBy('id')->get() : collect();
+        $qc          = $load(ClmQcDocument::class);
 
         // The document masters store the authority by id; resolve to current
         // names so the DCP table + configure modal display live values.
