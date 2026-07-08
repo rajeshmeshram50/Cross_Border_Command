@@ -303,8 +303,8 @@ class PurchaseOrderController extends Controller
      * Applicable Trade Documents + Agreements for a supplier's Stage-4 tabs.
      * Sourced from the CLM masters (clm_trade_doc_library / clm_agreement_library)
      * where the applicable party is a Supplier AND the row's segment matches one
-     * of the vendor's segments. "Purchase Order" (trade) and "Purchase Agreement"
-     * (agreement) are always present as constants.
+     * of the vendor's segments. Only "Purchase Order" (trade) is a constant;
+     * agreements — including "Purchase Agreement" — come from the masters.
      */
     public function supplierTradeDocs(Request $request, int $id): JsonResponse
     {
@@ -312,13 +312,14 @@ class PurchaseOrderController extends Controller
         if (!$user) abort(401);
         $cid = $user->client_id;
 
+        // Only "Purchase Order" is a constant (rendered from the PI blade,
+        // viewable & downloadable). Agreements — including "Purchase Agreement"
+        // if present — are fetched from the CLM masters like any other document.
         $out = [
             'trade' => [[
                 'id' => 'po', 'name' => 'Purchase Order', 'sub' => 'Purchase Order', 'required' => true, 'cat' => 'trade',
             ]],
-            'agreements' => [[
-                'id' => 'pa', 'name' => 'Purchase Agreement', 'sub' => 'Agreement', 'required' => true, 'cat' => 'agreement',
-            ]],
+            'agreements' => [],
         ];
 
         $vendor = Vendor::forUser($user, $request->integer('branch_id') ?: null)->find($id);

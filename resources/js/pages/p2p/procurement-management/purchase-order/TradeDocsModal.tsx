@@ -10,7 +10,7 @@ import SupplierEvidenceVaultModal from '../../p2p-master-management/supplier-man
  * Zoho-Sign-style trade-document table (TradeDocsTable). Frontend-only.
  * ───────────────────────────────────────────────────────────────────────── */
 
-export default function TradeDocsModal({ po, supName, supCode, supplierId, onClose }: { po: string; supName: string; supCode?: string; supplierId?: number | null; onClose: () => void }) {
+export default function TradeDocsModal({ po, poId, supName, supCode, supplierId, onClose }: { po: string; poId?: number | null; supName: string; supCode?: string; supplierId?: number | null; onClose: () => void }) {
   const [shown, setShown] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [signActive, setSignActive] = useState(false);
@@ -45,7 +45,7 @@ export default function TradeDocsModal({ po, supName, supCode, supplierId, onClo
           </div>
 
           <div className="cpaysum-bd2">
-            <TradeDocsTable po={po} supplierId={supplierId} onSignActive={setSignActive} />
+            <TradeDocsTable po={po} poId={poId} supplierId={supplierId} onSignActive={setSignActive} />
           </div>
         </div>
       </div>

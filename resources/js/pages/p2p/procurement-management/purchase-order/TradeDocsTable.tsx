@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
@@ -7,24 +7,22 @@ import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/cust
  * Trade Documents table — shared by the Trade Documents & Agreements modal
  * (row action) and the Create-PO wizard's stage 4.
  *
- * Two tabs: "Trade Documents" (Purchase Order) and "Agreements" (Purchase
- * Agreement). Zoho-Sign-style list: per-row Send for Sign, bulk send, and —
- * once a document is sent — Track + Reminder actions. A kebab (⋮) menu exposes
- * Download / View (with & without signature) and Certificate of Origin.
- * Frontend-only; downstream actions are toast placeholders.
+ * Two tabs: "Trade Documents" (Purchase Order) and "Agreements". Zoho-Sign-style
+ * list: per-row Send for Sign, bulk send, a draft "View" (opens the unsigned PO
+ * PDF), and — once a document is sent — Track + Reminder actions. When signed &
+ * returned, the row shows "Signed PDF" + "Certificate of Origin" buttons.
+ * The PO row's View/Signed PDF open the real PO PDF; other rows are placeholders.
  * ───────────────────────────────────────────────────────────────────────── */
 
 type Cat = 'trade' | 'agreement';
 type TradeDoc = { id: string; name: string; sub: string; cat: Cat; required: boolean; generated: string; status: 'pending' | 'sent' | 'signed' };
 const TODAY = (() => { const d = new Date(); const mm = ('0' + (d.getMonth() + 1)).slice(-2), dd = ('0' + d.getDate()).slice(-2); return `${dd}/${mm}/${d.getFullYear()}`; })();
-// Constants always present (Purchase Order + Purchase Agreement); the rest are
-// fetched from the CLM Trade Document / Agreement masters for the supplier.
+// Only "Purchase Order" is a constant (rendered from the PI blade — view &
+// download). Everything else, including "Purchase Agreement", is fetched from
+// the CLM Trade Document / Agreement masters for the supplier.
 const makeConstants = (po: string): TradeDoc[] => [
   { id: 'po', name: 'Purchase Order', sub: po, cat: 'trade', required: true, generated: TODAY, status: 'pending' },
-  { id: 'pa', name: 'Purchase Agreement', sub: 'Agreement', cat: 'agreement', required: true, generated: TODAY, status: 'pending' },
 ];
-
-type MenuState = { id: string; name: string; left: number; top: number; maxH: number; open: boolean };
 
 const I = {
   send: (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>),
@@ -40,7 +38,7 @@ const I = {
   tabAgr: (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>),
 };
 
-export default function TradeDocsTable({ po = 'PO/2025-26/001', supplierId, onSignActive }: { po?: string; supplierId?: number | null; onSignActive?: (active: boolean) => void }) {
+export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId, onSignActive }: { po?: string; poId?: number | null; supplierId?: number | null; onSignActive?: (active: boolean) => void }) {
   const toast = useToast();
   const [docs, setDocs] = useState<TradeDoc[]>(() => makeConstants(po));
   const [sel, setSel] = useState<Record<string, boolean>>({});
@@ -61,7 +59,7 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', supplierId, onSi
         list.push({
           id, cat,
           name: String(x.name ?? (cat === 'trade' ? 'Trade Document' : 'Agreement')),
-          sub: id === 'po' ? po : id === 'pa' ? 'Agreement' : String(x.sub ?? ''),
+          sub: id === 'po' ? po : String(x.sub ?? ''),
           required: !!x.required, generated: TODAY, status: 'pending',
         });
       });
@@ -71,10 +69,6 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', supplierId, onSi
     }).catch(() => { if (!cancelled) setDocs(makeConstants(po)); });
     return () => { cancelled = true; };
   }, [supplierId, po]);
-
-  const [menu, setMenu] = useState<MenuState | null>(null);
-  const menuBtnRef = useRef<HTMLButtonElement | null>(null);
-  const menuPopRef = useRef<HTMLDivElement | null>(null);
 
   // ── Zoho Sign (reuse the CLM Send-for-Signature flow for the supplier) ──
   type Party = { id: string; db_id?: number; company: string; contact?: string; email?: string };
@@ -129,38 +123,27 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', supplierId, onSi
     toast.success('Sent for signature via Zoho Sign');
   };
 
-  // ── kebab menu positioning (fixed panel from the button rect) ──
-  useLayoutEffect(() => {
-    if (!menu || menu.open) return;
-    const btn = menuBtnRef.current, pop = menuPopRef.current;
-    if (!btn || !pop) return;
-    const r = btn.getBoundingClientRect();
-    const pw = pop.offsetWidth, gap = 6, pad = 8;
-    let left = r.right - pw; if (left < pad) left = pad; if (left + pw > window.innerWidth - pad) left = window.innerWidth - pad - pw;
-    // Always drop below the button; cap the height to the space below so it
-    // never spills off-screen (scrolls internally when the list is taller).
-    const top = r.bottom + gap;
-    const maxH = Math.max(160, window.innerHeight - top - pad);
-    setMenu(m => (m ? { ...m, left, top, maxH, open: true } : m));
-  }, [menu]);
-  useEffect(() => {
-    if (!menu) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null); };
-    // Close on scroll — but ignore scrolls that happen INSIDE the menu itself
-    // (the list can scroll internally when it's taller than the space below).
-    const onScroll = (e: Event) => { const el = e.target instanceof Element ? e.target : null; if (el && el.closest('.pomore-pop')) return; setMenu(null); };
-    const onResize = () => setMenu(null);
-    document.addEventListener('keydown', onKey);
-    document.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', onResize);
-    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onResize); };
-  }, [menu]);
-  const openMenu = (e: React.MouseEvent<HTMLButtonElement>, d: TradeDoc) => {
-    e.preventDefault(); e.stopPropagation();
-    menuBtnRef.current = e.currentTarget;
-    setMenu({ id: d.id, name: d.name, left: -9999, top: -9999, maxH: 400, open: false });
+  // Open the actual PO PDF (same render as the PI PDF). Only the "Purchase Order"
+  // constant row maps to the PO document; other rows are CLM library docs.
+  const openPoPdf = (withSignature: boolean) => {
+    if (!poId) { toast.info('Save the PO first', 'The Purchase Order document is available once the PO is saved.'); return; }
+    const w = window.open('', '_blank');
+    toast.info(`Preparing PO PDF${withSignature ? ' (signed)' : ' (draft)'}…`);
+    api.get(`/p2p/purchase-orders/${poId}/pdf`, { params: { signature: withSignature ? 1 : 0 }, responseType: 'blob' })
+      .then(res => {
+        const url = URL.createObjectURL(res.data as Blob);
+        if (w) w.location.href = url; else window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      })
+      .catch(() => { if (w) w.close(); toast.error('Could not open PO PDF', 'Please try again.'); });
   };
-  const menuAct = (label: string) => { const name = menu?.name; setMenu(null); toast.info(`${label}${name ? ` — ${name}` : ''}`); };
+  // Draft (no signature) / signed view. Only the "Purchase Order" row maps to
+  // the PO document; other rows are CLM library docs (placeholder for now).
+  const viewDoc = (d: TradeDoc, withSignature: boolean) => {
+    if (d.id === 'po') { openPoPdf(withSignature); return; }
+    toast.info(`Viewing ${d.name} (${withSignature ? 'signed' : 'draft'})`);
+  };
+  const viewCoo = (d: TradeDoc) => toast.info(`Certificate of Origin — ${d.name}`, 'Coming in a later phase');
 
   return (
     <>
@@ -188,11 +171,19 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', supplierId, onSi
               <td className="cptd-date">{d.generated}</td>
               <td><span className={`cptd-status cptd-status--${d.status}`}><span className="cptd-dot" />{d.status === 'pending' ? 'Pending' : d.status === 'sent' ? 'Sent' : 'Signed'}</span></td>
               <td><div className="cptd-actions">
-                <button className="cptd-send" type="button" disabled={sent} onClick={() => sendDoc(d.id)}>{I.send} {sent ? 'Sent' : 'Send for Sign'}</button>
+                {d.status === 'signed' ? (
+                  <>
+                    <button className="cptd-lbtn cptd-lbtn--signed" type="button" title="View signed PO" onClick={() => viewDoc(d, true)}>{I.eye} Signed PDF</button>
+                    <button className="cptd-lbtn cptd-lbtn--coo" type="button" title="Certificate of Origin" onClick={() => viewCoo(d)}>{I.cert} Certificate of Origin</button>
+                  </>
+                ) : (
+                  <button className="cptd-send" type="button" disabled={sent} onClick={() => sendDoc(d.id)}>{I.send} {sent ? 'Sent' : 'Send for Sign'}</button>
+                )}
+                {/* Draft view — always available (unsigned PO PDF) */}
+                <button className="cptd-lbtn" type="button" title="View draft" onClick={() => viewDoc(d, false)}>{I.eye} View</button>
                 <button className="cptd-act" type="button" title="Email document" onClick={() => toast.info(`Email composer opened for "${d.name}"`)}>{I.mail}</button>
-                {sent && <button className="cptd-act" type="button" title="Track signature status" onClick={() => toast.info(`Tracking signature status — ${d.name}`)}>{I.track}</button>}
-                {sent && <button className="cptd-act" type="button" title="Send reminder" onClick={() => toast.info(`Reminder sent — ${d.name}`)}>{I.reminder}</button>}
-                <button className="cptd-act" type="button" title="More actions" onClick={e => openMenu(e, d)}>{I.kebab}</button>
+                {d.status === 'sent' && <button className="cptd-act" type="button" title="Track signature status" onClick={() => toast.info(`Tracking signature status — ${d.name}`)}>{I.track}</button>}
+                {d.status === 'sent' && <button className="cptd-act" type="button" title="Send reminder" onClick={() => toast.info(`Reminder sent — ${d.name}`)}>{I.reminder}</button>}
               </div></td>
             </tr>
           );
@@ -203,30 +194,6 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', supplierId, onSi
         <span className="cptd-bulk__cnt">{selCount ? <><strong>{selCount}</strong> document{selCount > 1 ? 's' : ''} selected</> : (pendingCount ? 'Select documents to send for signature together' : 'All documents have been sent')}</span>
         <button className="cptd-bulk__btn" type="button" disabled={!selCount} onClick={sendSelected}>{I.send}<span>Send Selected for Sign{selCount ? ` (${selCount})` : ''}</span></button>
       </div>
-
-      {menu && (
-        <>
-          <div className="pomore-backdrop" onClick={() => setMenu(null)} />
-          <div ref={menuPopRef} className={`pomore-pop ${menu.open ? 'is-open' : ''}`} style={{ left: menu.left, top: menu.top, maxHeight: menu.maxH, overflowY: 'auto' }}>
-            <div className="pomore-hd">
-              <span className="pomore-hd__ico">{I.kebab}</span>
-              <span className="pomore-hd__txt">
-                <span className="pomore-hd__t">Document Actions</span>
-                <span className="pomore-hd__chip">{I.fileSm}<b>{menu.name}</b></span>
-              </span>
-              <button type="button" className="pomore-x" onClick={() => setMenu(null)} aria-label="Close">✕</button>
-            </div>
-            <div className="pomore-sec pomore-sec--dl">{I.down} Download</div>
-            <button type="button" className="pomore-item" onClick={() => menuAct('Downloading (with signature)')}><span className="pomore-item__ico pomore-item__ico--dl">{I.down}</span>With Signature</button>
-            <button type="button" className="pomore-item" onClick={() => menuAct('Downloading (without signature)')}><span className="pomore-item__ico pomore-item__ico--dl">{I.down}</span>Without Signature</button>
-            <div className="pomore-sec pomore-sec--view">{I.eye} View</div>
-            <button type="button" className="pomore-item" onClick={() => menuAct('Viewing document (with signature)')}><span className="pomore-item__ico pomore-item__ico--view">{I.eye}</span>With Signature</button>
-            <button type="button" className="pomore-item" onClick={() => menuAct('Viewing document (without signature)')}><span className="pomore-item__ico pomore-item__ico--view">{I.eye}</span>Without Signature</button>
-            <div className="pomore-divider" />
-            <button type="button" className="pomore-item" onClick={() => menuAct('Certificate of Origin')}><span className="pomore-item__ico pomore-item__ico--sync">{I.cert}</span>Certificate of Origin</button>
-          </div>
-        </>
-      )}
 
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(sendDocIds)}
