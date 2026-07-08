@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
+import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Trade Documents table — shared by the Trade Documents & Agreements modal
@@ -39,7 +40,7 @@ const I = {
   tabAgr: (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>),
 };
 
-export default function TradeDocsTable({ po = 'PO/2025-26/001', supplierId }: { po?: string; supplierId?: number | null }) {
+export default function TradeDocsTable({ po = 'PO/2025-26/001', supplierId, onSignActive }: { po?: string; supplierId?: number | null; onSignActive?: (active: boolean) => void }) {
   const toast = useToast();
   const [docs, setDocs] = useState<TradeDoc[]>(() => makeConstants(po));
   const [sel, setSel] = useState<Record<string, boolean>>({});
@@ -75,6 +76,33 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', supplierId }: { 
   const menuBtnRef = useRef<HTMLButtonElement | null>(null);
   const menuPopRef = useRef<HTMLDivElement | null>(null);
 
+  // ── Zoho Sign (reuse the CLM Send-for-Signature flow for the supplier) ──
+  type Party = { id: string; db_id?: number; company: string; contact?: string; email?: string };
+  const [party, setParty] = useState<Party | null>(null);
+  const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
+  const [sendKind, setSendKind] = useState<'trade' | 'agreement'>('trade');
+  const [sentBatch, setSentBatch] = useState<string[]>([]);
+  // The shared sign modal (z ~265k) sits below the PO wizard/modal (z 2.5M+), so
+  // signal the parent to hide itself while the sign modal is open.
+  useEffect(() => { onSignActive?.(Array.isArray(sendDocIds)); }, [sendDocIds, onSignActive]);
+  useEffect(() => {
+    if (!supplierId) { setParty(null); return; }
+    let cancelled = false;
+    api.get(`/p2p/purchase-orders/suppliers/${supplierId}`).then(r => {
+      const d = r.data?.data; if (cancelled || !d) return;
+      setParty({ id: d.code || 'S-001', db_id: supplierId, company: d.name || 'Supplier', contact: d.contact || undefined, email: d.email || undefined });
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [supplierId]);
+  // Parse a row id ("trade-5" / "agreement-3") → library id + kind; constants skip.
+  const parseRow = (id: string): { libId: number; kind: 'trade' | 'agreement' } | null => {
+    if (id === 'po' || id === 'pa') return null;
+    const [prefix, num] = id.split('-');
+    const libId = Number(num);
+    if (Number.isNaN(libId)) return null;
+    return { libId, kind: prefix === 'agreement' ? 'agreement' : 'trade' };
+  };
+
   const tradeCount = docs.filter(d => d.cat === 'trade').length;
   const agrCount = docs.filter(d => d.cat === 'agreement').length;
   const visible = docs.filter(d => d.cat === tab);
@@ -83,8 +111,23 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', supplierId }: { 
 
   const toggleDoc = (id: string, on: boolean) => setSel(s => { const n = { ...s }; if (on) n[id] = true; else delete n[id]; return n; });
   const toggleAll = (on: boolean) => setSel(s => { const n = { ...s }; visible.forEach(d => { if (d.status === 'pending') { if (on) n[d.id] = true; else delete n[d.id]; } }); return n; });
-  const sendDoc = (id: string) => { const d = docs.find(x => x.id === id); setDocs(ds => ds.map(x => x.id === id ? { ...x, status: 'sent' } : x)); setSel(s => { const n = { ...s }; delete n[id]; return n; }); toast.success(`"${d?.name}" sent for signature via Zoho Sign`); };
-  const sendSelected = () => { const ids = visible.filter(d => d.status === 'pending' && sel[d.id]).map(d => d.id); if (!ids.length) return; setDocs(ds => ds.map(d => ids.includes(d.id) ? { ...d, status: 'sent' } : d)); setSel(s => { const n = { ...s }; ids.forEach(id => delete n[id]); return n; }); toast.success(`${ids.length} document${ids.length > 1 ? 's' : ''} sent for signature via Zoho Sign`); };
+  const launchSign = (rowIds: string[]) => {
+    if (!party?.db_id) { toast.error('Supplier required', 'Select a supplier first to send documents for signature.'); return; }
+    const parsed = rowIds.map(parseRow).filter(Boolean) as Array<{ libId: number; kind: 'trade' | 'agreement' }>;
+    if (rowIds.some(id => id === 'po' || id === 'pa') && !parsed.length) { toast.info('Purchase Order / Agreement', 'Generate the PO document first — it is not a CLM library document.'); return; }
+    if (!parsed.length) return;
+    setSentBatch(rowIds.filter(id => parseRow(id)));
+    setSendKind(parsed[0].kind);
+    setSendDocIds(parsed.map(p => p.libId));
+  };
+  const sendDoc = (id: string) => launchSign([id]);
+  const sendSelected = () => { const ids = visible.filter(d => d.status === 'pending' && sel[d.id]).map(d => d.id); if (ids.length) launchSign(ids); };
+  const onSigSent = () => {
+    setDocs(ds => ds.map(x => sentBatch.includes(x.id) ? { ...x, status: 'sent' } : x));
+    setSel(s => { const n = { ...s }; sentBatch.forEach(id => delete n[id]); return n; });
+    setSendDocIds(null); setSentBatch([]);
+    toast.success('Sent for signature via Zoho Sign');
+  };
 
   // ── kebab menu positioning (fixed panel from the button rect) ──
   useLayoutEffect(() => {
@@ -184,6 +227,16 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', supplierId }: { 
           </div>
         </>
       )}
+
+      <SalesCustomerSendForSignatureModal
+        open={Array.isArray(sendDocIds)}
+        customer={party}
+        modelName="Vendor"
+        sendAsAgreement={sendKind === 'agreement'}
+        preselectedDocIds={sendDocIds ?? undefined}
+        onClose={() => { setSendDocIds(null); setSentBatch([]); }}
+        onSent={onSigSent}
+      />
     </>
   );
 }
