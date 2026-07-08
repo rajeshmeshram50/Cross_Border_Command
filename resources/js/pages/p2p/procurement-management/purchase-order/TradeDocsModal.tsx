@@ -10,9 +10,10 @@ import SupplierEvidenceVaultModal from '../../p2p-master-management/supplier-man
  * Zoho-Sign-style trade-document table (TradeDocsTable). Frontend-only.
  * ───────────────────────────────────────────────────────────────────────── */
 
-export default function TradeDocsModal({ po, supName, supCode, onClose }: { po: string; supName: string; supCode?: string; onClose: () => void }) {
+export default function TradeDocsModal({ po, poId, supName, supCode, supplierId, onClose }: { po: string; poId?: number | null; supName: string; supCode?: string; supplierId?: number | null; onClose: () => void }) {
   const [shown, setShown] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
+  const [signActive, setSignActive] = useState(false);
 
   useEffect(() => {
     const id = requestAnimationFrame(() => setShown(true));
@@ -23,7 +24,7 @@ export default function TradeDocsModal({ po, supName, supCode, onClose }: { po: 
 
   return (
     <div className="pom">
-      <div className={`cpaysum-overlay ${shown ? 'is-open' : ''}`} style={{ display: vaultOpen ? 'none' : undefined }} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={`cpaysum-overlay ${shown ? 'is-open' : ''}`} style={{ display: (vaultOpen || signActive) ? 'none' : undefined }} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
         <div className="cpaysum-card cpaysum-card--lux cpaysum-card--xwide" role="dialog" aria-modal="true">
           <div className="cpaysum-hd cpaysum-hd--lux">
             <div className="cpaysum-hd__ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg></div>
@@ -44,7 +45,7 @@ export default function TradeDocsModal({ po, supName, supCode, onClose }: { po: 
           </div>
 
           <div className="cpaysum-bd2">
-            <TradeDocsTable po={po} />
+            <TradeDocsTable po={po} poId={poId} supplierId={supplierId} onSignActive={setSignActive} />
           </div>
         </div>
       </div>
