@@ -221,16 +221,15 @@ export default function SupplierPurchaseInvoice() {
                 <tr key={r.spiNo}>
                   <td className="spi-c-sr"><span className="spi-sr">{start + i + 1}</span></td>
                   <td>
-                    <span className="spi-pill spi-pill-spi">{r.spiNo}</span>
-                    <span className="spi-date-sub">{r.spiDate}</span>
+                    <span className="spi-idstack"><span className="spi-pill spi-pill-spi">{r.spiNo}</span><span className="spi-date-sub">{r.spiDate}</span></span>
                   </td>
-                  {withPo && <td><span className="spi-pill spi-pill-po">{r.poNo}</span><span className="spi-date-sub">{r.poDate}</span></td>}
+                  {withPo && <td><span className="spi-idstack"><span className="spi-pill spi-pill-po">{r.poNo}</span><span className="spi-date-sub">{r.poDate}</span></span></td>}
                   {withPo && <td>{r.poType}</td>}
                   {withShip && <td><span className="spi-pill spi-pill-shp">{r.shipId}</span></td>}
                   {withShip && <td><span className="spi-pill spi-pill-pi">{r.piNo}</span></td>}
                   <td><span className="spi-pill spi-pill-proc">{r.procId}</span></td>
                   {withShip && <td>{r.customer}</td>}
-                  <td className="spi-strong">{r.supplier}</td>
+                  <td>{r.supplier}</td>
                   <td className="spi-c-r spi-amt">{inr(r.totalPo)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.netPayable)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.totalPaid)}</td>

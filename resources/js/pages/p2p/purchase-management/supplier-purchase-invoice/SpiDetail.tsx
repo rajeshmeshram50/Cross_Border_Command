@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useScrollLock } from '../../../../hooks/useScrollLock';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * SPI Detail wizard — Step 1 "PO Link Supplier Details" (DESIGN-ONLY static).
@@ -6,23 +8,36 @@ import { useState } from 'react';
  * the P2P_Main prototype. No real data / save yet.
  * ───────────────────────────────────────────────────────────────────────── */
 
+const PRODUCTS = [
+  { code: 'P-002', name: 'Whole Wheat Flour 50kg', qty: '150', hsn: '11010000', ratePo: '₹220.00', rateSpi: '220' },
+  { code: 'P-003', name: 'GreenBoost Organic Fertilizer', qty: '50', hsn: '31010000', ratePo: '₹188.00', rateSpi: '188' },
+  { code: 'P-004', name: 'Organic Mango Pulp', qty: '100', hsn: '20079100', ratePo: '₹75.00', rateSpi: '75' },
+  { code: 'P-005', name: 'Quality Testing Service', qty: '1', hsn: '999899', ratePo: '₹3,200.00', rateSpi: '3200' },
+];
+
 export default function SpiDetail({ onClose }: { onClose: () => void }) {
+  useScrollLock();
+  const [step, setStep] = useState(1);
   const [poOpen, setPoOpen] = useState(true);
   const [supOpen, setSupOpen] = useState(true);
   const [legalOpen, setLegalOpen] = useState(true);
   const [physInsp, setPhysInsp] = useState(false);
+  const [sumOpen, setSumOpen] = useState(true);
+  const [invOpen, setInvOpen] = useState(true);
+  const [prodOpen, setProdOpen] = useState(true);
 
-  return (
+  return createPortal(
+    <div className="spi-dt-overlay">
     <div className="spi-dt">
       {/* Header + stepper live in ONE card (Figma) */}
       <div className="spi-dt-topcard">
       {/* ── Header ── */}
       <div className="spi-dt-head">
         <div className="spi-dt-head-l">
-          <div className="spi-dt-head-ico"><IcoDoc /></div>
+          <div className="spi-dt-head-ico"><IcoDoc /><span className="spi-dt-head-dot" /></div>
           <div>
             <div className="spi-dt-head-title">Supplier Purchase Invoice</div>
-            <div className="spi-dt-head-sub"><span className="spi-dt-livedot" /> Draft · not yet mapped</div>
+            <div className="spi-dt-head-sub">Draft · not yet mapped</div>
           </div>
         </div>
         <div className="spi-dt-pills">
@@ -42,15 +57,21 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
 
       {/* ── Step tabs ── */}
       <div className="spi-dt-steps">
-        <div className="spi-dt-step is-active">
-          <div className="spi-dt-step-top"><span className="spi-dt-step-lbl">STEP 01</span><span className="spi-dt-step-badge">ACTIVE</span></div>
+        <div className={`spi-dt-step ${step === 1 ? 'is-active' : 'is-done'}`}>
+          <div className="spi-dt-step-top"><span className="spi-dt-step-lbl">STEP 01</span>
+            {step === 1
+              ? <span className="spi-dt-step-badge">ACTIVE</span>
+              : <span className="spi-dt-step-badge spi-dt-step-badge-done"><IcoCheck /> DONE</span>}
+          </div>
           <div className="spi-dt-step-big">01</div>
           <div className="spi-dt-step-title">PO Link Supplier Details</div>
           <div className="spi-dt-step-desc">Link the PO and confirm supplier details</div>
           <span className="spi-dt-step-ghost">01</span>
         </div>
-        <div className="spi-dt-step">
-          <div className="spi-dt-step-top"><span className="spi-dt-step-lbl">STEP 02</span></div>
+        <div className={`spi-dt-step ${step === 2 ? 'is-active' : ''}`}>
+          <div className="spi-dt-step-top"><span className="spi-dt-step-lbl">STEP 02</span>
+            {step === 2 && <span className="spi-dt-step-badge">ACTIVE</span>}
+          </div>
           <div className="spi-dt-step-big">02</div>
           <div className="spi-dt-step-title">Invoice &amp; Product Details (3-Way Match)</div>
           <div className="spi-dt-step-desc">Enter invoice details &amp; match products against the PO &amp; GRN</div>
@@ -59,7 +80,8 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
       </div>
       </div>
 
-      {/* ── Body ── */}
+      {/* ── Body (Step 1) ── */}
+      {step === 1 && (
       <div className="spi-dt-body">
         {/* Purchase Order section */}
         <div className={`spi-dt-sec ${poOpen ? '' : 'is-collapsed'}`}>
@@ -163,8 +185,160 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
           </div>
         </div>
       </div>
+      )}
+
+      {/* ── Body (Step 2) — read-only summary of the completed Step 1 ── */}
+      {step === 2 && (
+      <div className="spi-dt-body">
+        <div className={`spi-dt-sec ${sumOpen ? '' : 'is-collapsed'}`}>
+          <div className="spi-dt-sec-head" onClick={() => setSumOpen(o => !o)}>
+            <div className="spi-dt-sec-ico"><IcoHistory /></div>
+            <div className="spi-dt-sec-mid">
+              <div className="spi-dt-sec-row"><span className="spi-dt-sec-lbl">Summary</span><span className="spi-dt-sec-sep" /><span className="spi-dt-sec-title">What We Did in the Previous Stages</span></div>
+              <div className="spi-dt-sec-sub">Read-only summary of all completed stages so far — 1 stage done.</div>
+            </div>
+            <div className="spi-dt-sec-toggle"><IcoChevron /></div>
+          </div>
+          <div className="spi-dt-sec-body">
+            <div className="spi-dt-sumstep">
+              <div className="spi-dt-sumstep-hd">
+                <div className="spi-dt-sumstep-hd-l">
+                  <span className="spi-dt-sumstep-num">01</span>
+                  <span className="spi-dt-sumstep-title">PO Link Supplier Details</span>
+                </div>
+                <span className="spi-dt-sumstep-done"><IcoCheck /> COMPLETED</span>
+              </div>
+              <div className="spi-dt-sumstep-body">
+                <ROGroup label="Basic Purchase Order Details">
+                  <RO label="PO TYPE" value="Services" />
+                  <RO label="DOCUMENT TYPE" value="Domestics" />
+                  <RO label="MODE OF TRANSPORT" value="Road" />
+                  <RO label="PO DATE" value="07/08/2026" />
+                  <RO label="EXPECTED DELIVERY DATE" value="2026-07-01" />
+                  <RO label="DELIVERY LOCATION" value="— Not provided" muted />
+                  <RO label="PAYMENT TYPE" value="Advance" />
+                  <RO label="PHYSICAL INSPECTION REQUIRED" value="No" />
+                </ROGroup>
+                <ROGroup label="Supplier Details">
+                  <RO label="SELECT SUPPLIER" value="Havells India Ltd" />
+                  <RO label="SUPPLIER CODE" value="S-018" />
+                  <RO label="COMPANY NAME" value="Havells India" />
+                  <RO label="SUPPLIER TYPE" value="Manufacturer" />
+                </ROGroup>
+                <ROGroup label="Supplier Legal Status">
+                  <RO label="COMPLIANCE" value="100% — 18 of 18 documents completed across all 5 parameters" full />
+                </ROGroup>
+                <ROGroup label="Address & Contact Details">
+                  <RO label="REGISTERED OFFICE ADDRESS" value="QRG Towers, Sector 90, Gurugram 122505" full />
+                  <RO label="COUNTRY" value="India" />
+                  <RO label="STATE" value="Haryana" />
+                  <RO label="STATE CODE" value="06" />
+                  <RO label="CITY" value="Gurugram" />
+                  <RO label="CONTACT PERSON NAME" value="Anil Rai Gupta" />
+                  <RO label="DESIGNATION" value="Procurement Manager" />
+                  <RO label="CONTACT NUMBER" value="+91 98110 22334" />
+                  <RO label="EMAIL ID" value="anil.gupta@havells.com" />
+                </ROGroup>
+                <ROGroup label="GST Scrutiny Details">
+                  <RO label="SCRUTINY DATE" value="2026-03-15" />
+                  <RO label="GST NUMBER" value="27AABCA1234F1Z5" />
+                  <RO label="GST STATUS" value="Active" />
+                  <RO label="LAST FILING DATE" value="2026-05-10" />
+                  <RO label="PREV. INVOICE / REMARKS" value="Preferred supplier. All historical invoices cleared." full />
+                </ROGroup>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Invoice section */}
+        <div className={`spi-dt-sec ${invOpen ? '' : 'is-collapsed'}`}>
+          <div className="spi-dt-sec-head" onClick={() => setInvOpen(o => !o)}>
+            <div className="spi-dt-sec-ico"><IcoDocSm /></div>
+            <div className="spi-dt-sec-mid">
+              <div className="spi-dt-sec-row"><span className="spi-dt-sec-lbl">Invoice</span><span className="spi-dt-sec-sep" /><span className="spi-dt-sec-title">Supplier Purchase Invoice Details</span></div>
+              <div className="spi-dt-sec-sub">Enter invoice number, date &amp; attachment</div>
+            </div>
+            <div className="spi-dt-sec-toggle"><IcoChevron /></div>
+          </div>
+          <div className="spi-dt-sec-body">
+            <div className="spi-dt-grid3">
+              <Field label="PURCHASE INVOICE NUMBER"><input className="spi-dt-inp" placeholder="e.g. INV-2025-001" /></Field>
+              <Field label="PURCHASE INVOICE DATE"><input className="spi-dt-inp" type="date" /></Field>
+              <Field label="PURCHASE INVOICE ATTACHMENT">
+                <div className="spi-dt-file"><span className="spi-dt-file-txt"><IcoClip /> Choose file…</span><button type="button" className="spi-dt-file-btn">Browse</button></div>
+              </Field>
+            </div>
+          </div>
+        </div>
+
+        {/* Products — 3-way match section */}
+        <div className={`spi-dt-sec ${prodOpen ? '' : 'is-collapsed'}`}>
+          <div className="spi-dt-sec-head" onClick={() => setProdOpen(o => !o)}>
+            <div className="spi-dt-sec-ico spi-dt-sec-ico-2"><IcoBox /></div>
+            <div className="spi-dt-sec-mid">
+              <div className="spi-dt-sec-row"><span className="spi-dt-sec-lbl">Products</span><span className="spi-dt-sec-sep" /><span className="spi-dt-sec-title">Product Details</span></div>
+              <div className="spi-dt-sec-sub">PI vs PO vs SPI product mapping &amp; 3-way match</div>
+            </div>
+            <div className="spi-dt-secpills">
+              <HeadPill icon={<IcoDocSm />} label="SUPPLIER CODE" value="S-018" />
+              <span className="spi-dt-dots">⋮</span>
+              <HeadPill icon={<IcoUser />} label="SUPPLIER NAME" value="Havells India" />
+              <span className="spi-dt-dots">⋮</span>
+              <HeadPill icon={<IcoPin />} label="STATE CODE" value="06" />
+              <span className="spi-dt-dots">⋮</span>
+              <HeadPill icon={<IcoDocSm />} label="PO NUMBER" value="PO/2025-26/040" />
+              <span className="spi-dt-dots">⋮</span>
+              <HeadPill icon={<IcoDocSm />} label="PI NUMBER" value="PI/2025-26/001" />
+            </div>
+            <div className="spi-dt-sec-toggle"><IcoChevron /></div>
+          </div>
+          <div className="spi-dt-sec-body">
+            <div className="spi-dt-mtable-wrap">
+              <table className="spi-dt-mtable">
+                <thead>
+                  <tr>
+                    <th className="spi-dt-mc-c">SR NO</th>
+                    <th>PRODUCT CODE</th>
+                    <th>PRODUCT NAME (PI)</th>
+                    <th>PRODUCT NAME (PO)</th>
+                    <th>PRODUCT NAME (SPI)</th>
+                    <th>QUANTITY (PI)</th>
+                    <th>QUANTITY (PO)</th>
+                    <th>QUANTITY (SPI)</th>
+                    <th>MISSING QTY</th>
+                    <th>HSN CODE</th>
+                    <th>RATE (PO)</th>
+                    <th>RATE (SPI)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {PRODUCTS.map((p, i) => (
+                    <tr key={p.code}>
+                      <td className="spi-dt-mc-c">{i + 1}</td>
+                      <td><span className="spi-dt-mcode">{p.code}</span></td>
+                      <td className="spi-dt-mname">{p.name}</td>
+                      <td className="spi-dt-mname">{p.name}</td>
+                      <td><input className="spi-dt-minp" defaultValue={p.name} /></td>
+                      <td>{p.qty}</td>
+                      <td>{p.qty}</td>
+                      <td><input className="spi-dt-minp spi-dt-minp-sm" defaultValue={p.qty} /></td>
+                      <td>0</td>
+                      <td><input className="spi-dt-minp" defaultValue={p.hsn} /></td>
+                      <td className="spi-dt-amt">{p.ratePo}</td>
+                      <td><input className="spi-dt-minp spi-dt-minp-sm" defaultValue={p.rateSpi} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      )}
 
       {/* ── Footer ── */}
+      {step === 1 ? (
       <div className="spi-dt-foot">
         <div className="spi-dt-foot-l">
           <div>
@@ -175,10 +349,27 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
         </div>
         <div className="spi-dt-foot-r">
           <button type="button" className="spi-dt-btn-ghost" onClick={onClose}><IcoChevronL /> Change Selection</button>
-          <button type="button" className="spi-dt-btn-next">Save &amp; Next <IcoChevronR /></button>
+          <button type="button" className="spi-dt-btn-next" onClick={() => setStep(2)}>Save &amp; Next <IcoChevronR /></button>
         </div>
       </div>
+      ) : (
+      <div className="spi-dt-foot">
+        <div className="spi-dt-foot-l">
+          <div>
+            <div className="spi-dt-foot-step">STEP 02 OF 02</div>
+            <div className="spi-dt-foot-name">Invoice &amp; Product Details (3-Way Match)</div>
+          </div>
+          <div className="spi-dt-dots"><span /><span className="on" /></div>
+        </div>
+        <div className="spi-dt-foot-r">
+          <button type="button" className="spi-dt-btn-ghost" onClick={() => setStep(1)}><IcoChevronL /> Back</button>
+          <button type="button" className="spi-dt-btn-map"><IcoCheck /> Map Invoice</button>
+        </div>
+      </div>
+      )}
     </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -202,6 +393,13 @@ function Select({ value, muted }: { value: string; muted?: boolean }) {
     </div>
   );
 }
+/* read-only recap field + group (Step 2 Summary) */
+function RO({ label, value, full, muted }: { label: string; value: string; full?: boolean; muted?: boolean }) {
+  return <div className={`spi-dt-ro ${full ? 'spi-dt-ro-full' : ''}`}><div className="spi-dt-ro-lbl">{label}</div><div className={`spi-dt-ro-val ${muted ? 'is-muted' : ''}`}>{value}</div></div>;
+}
+function ROGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="spi-dt-rogroup"><div className="spi-dt-rogroup-hd">{label}</div><div className="spi-dt-robox"><div className="spi-dt-rogrid">{children}</div></div></div>;
+}
 
 /* ── Icons ── */
 function IcoDoc() { return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>; }
@@ -217,3 +415,7 @@ function IcoChevronR() { return <svg width="13" height="13" viewBox="0 0 24 24" 
 function IcoLock() { return <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>; }
 function IcoCal() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>; }
 function IcoPin() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>; }
+function IcoCheck() { return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>; }
+function IcoHistory() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>; }
+function IcoClip() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>; }
+function IcoBox() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>; }
