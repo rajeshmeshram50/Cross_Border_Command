@@ -52,7 +52,7 @@ export default function TradeDocsModal({ po, poId, supName, supCode, supplierId,
 
       <SupplierEvidenceVaultModal
         open={vaultOpen}
-        supplier={{ id: supCode || 'S-001', company: supName || 'Supplier', country: 'India', risk: 'Compliant' }}
+        supplier={{ id: supCode || 'S-001', db_id: supplierId ?? undefined, company: supName || 'Supplier', country: 'India', risk: 'Compliant' }}
         onClose={() => setVaultOpen(false)}
       />
     </div>

@@ -897,7 +897,16 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
 
       <SupplierEvidenceVaultModal
         open={vaultOpen}
-        supplier={{ id: sup.code || 'S-001', company: sup.name || (supName !== SUPPLIER_PLACEHOLDER ? supName : 'Supplier'), country: sup.country || 'India', risk: 'Compliant' }}
+        supplier={{
+          id: sup.code || 'S-001',
+          db_id: vendorId ?? undefined,          // real vendor id → live vault fetch
+          company: sup.name || (supName !== SUPPLIER_PLACEHOLDER ? supName : 'Supplier'),
+          country: sup.country || 'India',
+          contact: sup.contact || undefined,
+          contactCity: sup.city || undefined,
+          email: sup.email && sup.email !== '—' ? sup.email : undefined,
+          risk: 'Compliant',
+        }}
         onClose={() => setVaultOpen(false)}
       />
     </div>
