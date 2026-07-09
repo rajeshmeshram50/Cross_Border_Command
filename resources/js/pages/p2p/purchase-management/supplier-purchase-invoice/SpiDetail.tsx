@@ -41,13 +41,13 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <div className="spi-dt-pills">
-          <HeadPill icon={<IcoHash />} label="INVOICE NO" value="SPI/2025-26/001" />
+          <HeadPill icon={<IcoLines />} label="INVOICE NO" value="SPI/2025-26/001" />
           <span className="spi-dt-dots">⋮</span>
-          <HeadPill icon={<IcoDocSm />} label="PO NUMBER" value="PO/2025-26/040" />
+          <HeadPill icon={<IcoLines />} label="PO NUMBER" value="PO/2025-26/040" alt />
           <span className="spi-dt-dots">⋮</span>
           <HeadPill icon={<IcoUser />} label="SUPPLIER" value="Havells India" />
           <span className="spi-dt-dots">⋮</span>
-          <HeadPill icon={<IcoShield />} label="GSTIN" value="27AABCA1234F1Z5" />
+          <HeadPill icon={<IcoLines />} label="GSTIN" value="27AABCA1234F1Z5" alt />
         </div>
         <div className="spi-dt-head-r">
           <button type="button" className="spi-dt-btn-pay"><IcoCard /> SPI Payment</button>
@@ -374,14 +374,15 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
 }
 
 /* ── Small sub-components ── */
-function HeadPill({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function HeadPill({ icon, label, value, alt }: { icon: React.ReactNode; label: string; value: string; alt?: boolean }) {
   return (
     <div className="spi-dt-pill">
-      <span className="spi-dt-pill-ico">{icon}</span>
+      <span className={`spi-dt-pill-ico ${alt ? 'spi-dt-pill-ico--alt' : ''}`}>{icon}</span>
       <div><div className="spi-dt-pill-lbl">{label}</div><div className="spi-dt-pill-val">{value}</div></div>
     </div>
   );
 }
+function IcoLines() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7h16M4 12h10M4 17h7"/></svg>; }
 function Field({ label, children, full }: { label: string; children: React.ReactNode; full?: boolean }) {
   return <div className={`spi-dt-field ${full ? 'spi-dt-field-full' : ''}`}><label className="spi-dt-field-lbl">{label}</label>{children}</div>;
 }
