@@ -163,7 +163,7 @@ export function ToasterRoot({ toasts, onDismiss }: { toasts: ToastItemType[]; on
         }
         .cbc-toast-title {
           font-size: 13px;
-          font-weight: 700;
+          font-weight: 600;
           line-height: 1.25;
           color: var(--cbc-toast-title-light);
           /* Break long unbroken strings (tokens, URLs) instead of overflowing

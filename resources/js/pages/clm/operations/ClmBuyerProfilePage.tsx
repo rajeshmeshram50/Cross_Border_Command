@@ -349,6 +349,12 @@ const BP_CSS = `
 [data-bs-theme="dark"] .seg-page-card thead th { color: #67e8f9 !important; border-color: rgba(6,182,212,.22) !important; }
 [data-bs-theme="dark"] .seg-page-card tbody tr { background: transparent !important; border-bottom-color: rgba(6,182,212,.10) !important; }
 [data-bs-theme="dark"] .seg-page-card tbody td { color: #cbd5e1 !important; }
+/* Light-cyan (#A5F3FC = rgb(165,243,252)) borders — used inline on table header
+ * rows, toolbar/panel dividers and search boxes — had no dark sweep, so they
+ * rendered as bright near-WHITE lines cutting across the dark cards (bug #57).
+ * Mute them to the same translucent cyan the rest of the dark theme uses. Only
+ * the border colour changes, so layout + text are untouched. */
+[data-bs-theme="dark"] .seg-page [style*="rgb(165, 243, 252)"] { border-color: rgba(6,182,212,.22) !important; }
 [data-bs-theme="dark"] .bp-buyer-row:hover { background: rgba(8,145,178,.14)!important; box-shadow: inset 3px 0 0 #22d3ee; }
 /* Count badges (KYC/DD/TL/TD/Agreements "d/t") — swap the light pill fills for
  * translucent-dark equivalents so all three states read consistently on dark.
@@ -542,7 +548,7 @@ function EvidenceVaultBtn({ icon, onClick, disabled }: { icon: 'shield' | 'box';
 }
 
 /* Compact pager used by the transaction tables (ws/wos). */
-function TxnPager({ page, total, perPage, noun, onPage }: { page: number; total: number; perPage: number; noun: string; onPage: (p: number) => void }) {
+function TxnPager({ page, total, perPage, noun, onPage, onPageSize }: { page: number; total: number; perPage: number; noun: string; onPage: (p: number) => void; onPageSize?: (n: number) => void }) {
   const totalPages = Math.ceil(total / perPage) || 1;
   const start = (page - 1) * perPage;
   return (
@@ -550,7 +556,16 @@ function TxnPager({ page, total, perPage, noun, onPage }: { page: number; total:
       <span style={{ fontSize: '11.5px', color: '#0e7490', fontWeight: 500 }}>
         Showing <b style={{ color: '#0c4a6e' }}>{start + 1}–{Math.min(start + perPage, total)}</b> of <b style={{ color: '#0c4a6e' }}>{total}</b> {noun}{total !== 1 ? 's' : ''}
       </span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        {onPageSize && (
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '11px', color: '#0e7490', fontWeight: 600, whiteSpace: 'nowrap' }}>
+            Rows per page
+            <select value={perPage} onChange={(e) => onPageSize(Number(e.target.value))}
+              style={{ height: 28, borderRadius: 7, border: '1.5px solid rgba(6,182,212,.22)', background: '#fff', color: '#0891b2', fontFamily: 'inherit', fontSize: '11px', fontWeight: 700, padding: '0 6px', cursor: 'pointer' }}>
+              {Array.from(new Set([perPage, 10, 25, 50])).sort((a, b) => a - b).map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        )}
         {/* Compact: < current next > (not every page number). */}
         <button onClick={() => page > 1 && onPage(page - 1)} style={{
           width: '28px', height: '28px', borderRadius: '7px', border: '1.5px solid rgba(6,182,212,.22)',
@@ -660,7 +675,11 @@ export default function ClmBuyerProfilePage() {
   // so a single dynamic page size drives whichever is visible.
   const txnCardRef = useRef<HTMLDivElement>(null);
   const txnTableRef = useRef<HTMLDivElement>(null);
-  const txnPerPage = useDynamicPerPage(txnTableRef, { deps: [clmTab, txnAnalyticsOpen, shipTab, wsSub, wosSub, neqParty] });
+  // Auto-fit page size by default; a manual "Rows per page" choice overrides it
+  // (mirrors the Buyer / Consignee list tables).
+  const [txnManualSize, setTxnManualSize] = useState<number | null>(null);
+  const txnDynamicSize = useDynamicPerPage(txnTableRef, { deps: [clmTab, txnAnalyticsOpen, shipTab, wsSub, wosSub, neqParty] });
+  const txnPerPage = txnManualSize ?? txnDynamicSize;
   const txnCardFill = useFillHeight(txnCardRef, { deps: [clmTab, txnAnalyticsOpen, shipTab, wsSub, wosSub, neqParty] });
   // Buyer / Consignee list search boxes (name · id · segment · country).
   const [buyerSearch, setBuyerSearch] = useState('');
@@ -686,7 +705,15 @@ export default function ClmBuyerProfilePage() {
   // drift away from its badge (capture:true catches ancestor + table scrolls).
   useEffect(() => {
     if (!segOpen) return;
-    const close = () => setSegOpen(null);
+    // Close on ancestor/table/page scroll so the fixed popover can't drift from
+    // its badge — BUT ignore scrolls that originate INSIDE the popover's own
+    // list (its overflowY:auto). With capture:true a bare handler fired on the
+    // popover's inner scroll too, closing it the instant the user tried to
+    // scroll the segment list ("not scrolling").
+    const close = (e: Event) => {
+      if (e.type === 'scroll' && e.target instanceof Element && e.target.closest('.seg-pop')) return;
+      setSegOpen(null);
+    };
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
@@ -1072,7 +1099,7 @@ export default function ClmBuyerProfilePage() {
                       </tbody>
                     </table>
                     <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
-                      <TxnPager page={wsEqPageSafe} total={wsEqData.length} perPage={txnPerPage} noun="shipment" onPage={setWsEqPage} />
+                      <TxnPager page={wsEqPageSafe} total={wsEqData.length} perPage={txnPerPage} noun="shipment" onPage={setWsEqPage} onPageSize={(n) => { setTxnManualSize(n); setWsEqPage(1); }} />
                     </div>
                   </div>
                 )}
@@ -1113,7 +1140,7 @@ export default function ClmBuyerProfilePage() {
                       </tbody>
                     </table>
                     <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
-                      <TxnPager page={wsNeqPageSafe} total={wsNeqData.length} perPage={txnPerPage} noun="shipment" onPage={setWsNeqPage} />
+                      <TxnPager page={wsNeqPageSafe} total={wsNeqData.length} perPage={txnPerPage} noun="shipment" onPage={setWsNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWsNeqPage(1); }} />
                     </div>
                   </div>
                 )}
@@ -1160,7 +1187,7 @@ export default function ClmBuyerProfilePage() {
                       </tbody>
                     </table>
                     <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
-                      <TxnPager page={wosEqPageSafe} total={wosEqData.length} perPage={txnPerPage} noun="transaction" onPage={setWosEqPage} />
+                      <TxnPager page={wosEqPageSafe} total={wosEqData.length} perPage={txnPerPage} noun="transaction" onPage={setWosEqPage} onPageSize={(n) => { setTxnManualSize(n); setWosEqPage(1); }} />
                     </div>
                   </div>
                 )}
@@ -1204,7 +1231,7 @@ export default function ClmBuyerProfilePage() {
                       </tbody>
                     </table>
                     <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
-                      <TxnPager page={wosNeqPageSafe} total={wosNeqData.length} perPage={txnPerPage} noun="transaction" onPage={setWosNeqPage} />
+                      <TxnPager page={wosNeqPageSafe} total={wosNeqData.length} perPage={txnPerPage} noun="transaction" onPage={setWosNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWosNeqPage(1); }} />
                     </div>
                   </div>
                 )}
