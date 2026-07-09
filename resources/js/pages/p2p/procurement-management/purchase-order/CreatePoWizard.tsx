@@ -4,6 +4,7 @@ import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { formatDmy } from '../../../../utils/formatDmy';
 import TradeDocsTable from './TradeDocsTable';
 import SupplierEvidenceVaultModal from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 
@@ -130,6 +131,21 @@ const mapPiRow = (it: Record<string, unknown>): PiRow => ({
   rate: it.rate != null ? String(num(it.rate)) : '',
   gst: num(it.gst),
 });
+// Seed a PO row from a pi-products item — PO name/qty default to the PI values.
+const piItemToLine = (it: Record<string, unknown>, id: number): PoLine => {
+  const p = mapPiRow(it);
+  return { id, productId: p.productId, code: p.code, piName: p.piName, piQty: p.piQty, name: p.piName, qty: p.piQty, rate: p.rate, gst: p.gst };
+};
+
+// Tax columns — CGST+SGST (intra-state) or a single IGST (inter-state). Shared
+// by the products table's header and each body row so the two never drift.
+type TaxComputed = { cgstP: number; sgstP: number; igstP: number; cgstA: number; sgstA: number; igstA: number };
+const TaxHeadCells = ({ intra }: { intra: boolean }) => (intra
+  ? <><th className="cpd-c">CGST (%)</th><th className="cpd-c">SGST (%)</th><th className="cpd-r">CGST Amount</th><th className="cpd-r">SGST Amount</th></>
+  : <><th className="cpd-c">IGST (%)</th><th className="cpd-r">IGST Amount</th></>);
+const TaxBodyCells = ({ c, intra }: { c: TaxComputed; intra: boolean }) => (intra
+  ? <><td className="cpd-c">{c.cgstP}%</td><td className="cpd-c">{c.sgstP}%</td><td className="cpd-r">{money2(c.cgstA)}</td><td className="cpd-r">{money2(c.sgstA)}</td></>
+  : <><td className="cpd-c">{c.igstP}%</td><td className="cpd-r">{money2(c.igstA)}</td></>);
 
 const CPO_STAGES = [
   { t: 'PO Link Supplier Details', d: 'Confirm the supplier for this PO' },
@@ -236,8 +252,19 @@ const DateField = ({ label, value, onChange, full, minDate, req, err }: { label:
   </div>
 );
 /* Read-only display cell — auto-filled supplier details are not editable. */
-const RO_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const roDate = (iso: string) => { if (!iso) return ''; const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso : `${String(d.getDate()).padStart(2, '0')}-${RO_MONTHS[d.getMonth()]}-${d.getFullYear()}`; };
+// GST scrutiny is "old" when the last scrutiny date is older than this many months.
+const SCRUTINY_STALE_MONTHS = 3;
+const isScrutinyOld = (iso?: string | null) => {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - SCRUTINY_STALE_MONTHS);
+  return d < cutoff;
+};
+// Our home GST state — intra-state supply (CGST+SGST) vs inter-state (IGST).
+const HOME_STATE_CODE = '27';
+const isIntraState = (stateCode?: string) => (stateCode || HOME_STATE_CODE) === HOME_STATE_CODE;
 const ReadField = ({ label, value, full, loading }: { label: string; value: string; full?: boolean; loading?: boolean }) => (
   <div className={`pof-f ${full ? 'pof-f--full' : ''}`}>
     <label>{label}</label>
@@ -419,7 +446,12 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
       setSupLoading(true);
       loadSupplierLegal(s.id);
       api.get(`/p2p/purchase-orders/suppliers/${s.id}`).then(r => {
-        const d = r.data?.data; if (d) { setSup(mapDetailToSup(d)); toast.success(`Supplier details auto-fetched — ${d.name}`); }
+        const d = r.data?.data;
+        if (d) {
+          setSup(mapDetailToSup(d));
+          toast.success(`Supplier details auto-fetched — ${d.name}`);
+          if (isScrutinyOld(d.scrutiny)) toast.warning('GST scrutiny date is old', `It is more than ${SCRUTINY_STALE_MONTHS} months old — do the scrutiny for this supplier.`);
+        }
       }).catch(() => toast.error('Failed to load supplier')).finally(() => setSupLoading(false));
     } else if (CPO_SUPPLIERS[name]) { setSup({ ...CPO_SUPPLIERS[name] }); setVendorId(null); setSupLegal(null); }
     else { setSup(emptySup()); setVendorId(null); setSupLegal(null); }
@@ -512,7 +544,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
   //   • Intra-state (supplier state code = 27, our home state) → CGST + SGST,
   //     each = gst/2 (e.g. 10% GST → 5% CGST + 5% SGST).
   //   • Inter-state (any other state code) → a single IGST = the full gst %.
-  const intra = (sup.stateCode || '27') === '27';
+  const intra = isIntraState(sup.stateCode);
   const compute = (r: PoLine) => {
     const gst = num(r.gst);
     const base = num(r.qty) * num(r.rate);
@@ -554,12 +586,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
         const items = (r.data?.data ?? []) as Array<Record<string, unknown>>;
         setPiSet(items.map(mapPiRow));
         if (items.length) {
-          let id = 0;
-          setRows(items.map(it => ({
-            id: ++id, productId: it.product_id != null ? Number(it.product_id) : null, code: String(it.code ?? ''),
-            piName: String(it.name ?? ''), piQty: it.qty != null ? String(num(it.qty)) : '',
-            name: String(it.name ?? ''), qty: it.qty != null ? String(num(it.qty)) : '', rate: it.rate != null ? String(num(it.rate)) : '', gst: num(it.gst),
-          })));
+          setRows(items.map((it, i) => piItemToLine(it, i + 1)));
           lineId.current = items.length;
         } else { lineId.current = 1; setRows([blankLine(1)]); }
       }).catch(() => { lineId.current = 1; setRows([blankLine(1)]); }).finally(proceed);
@@ -585,6 +612,11 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
   // demo SUP_LEGAL calc for the built-in demo supplier names.
   const legalView = supLegal ?? legalCalc;
 
+  // Supplier GST scrutiny is "old" when its last scrutiny date is more than 3
+  // months ago — surfaced as a warning so the buyer re-runs scrutiny before
+  // raising the PO.
+  const scrutinyOld = useMemo(() => isScrutinyOld(sup.scrutiny), [sup.scrutiny]);
+
   // Delivery Location dropdown metadata — code + Own/Third-Party badge per
   // warehouse name (the option value). Keyed by name to match the Dd options.
   const whMeta = useMemo(() => {
@@ -604,6 +636,9 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
   }, [suppliers]);
 
   const withShip = poMode === 'with';
+  // Stage-2 products table column count (for full-width colSpan cells) — depends
+  // on the layout (with/without shipment) and the tax split (CGST+SGST vs IGST).
+  const colCount = withShip ? (intra ? 14 : 12) : (intra ? 11 : 9);
 
   // With-Shipment product rules: rows are constrained to the PI product set.
   //  • removedPi        — PI products not currently on a linked row (available to re-add)
@@ -898,12 +933,14 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                       </div>
 
                       <div className="pof-sub">
-                        <div className="pof-sub__hd"><div className="pof-sub__ico">{fileIco}</div><div className="pof-sub__t">GST Scrutiny Details</div><span className="pof-sub__n">5 Fields</span></div>
-                        <div className="pof-sub__bd"><div className="pof-grid pof-grid--4">
-                          <ReadField label="Scrutiny Date" value={roDate(sup.scrutiny)} loading={supLoading} />
+                        <div className="pof-sub__hd"><div className="pof-sub__ico">{fileIco}</div><div className="pof-sub__t">GST Scrutiny Details</div><span className="pof-sub__n">5 Fields</span>{!supLoading && scrutinyOld && <span className="pof-scrutiny-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg> Scrutiny Overdue</span>}</div>
+                        <div className="pof-sub__bd">
+                          {!supLoading && scrutinyOld && <div className="pof-scrutiny-warn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg><span><b>GST scrutiny date is old</b> (more than {SCRUTINY_STALE_MONTHS} months). Please do the scrutiny for this supplier before raising the PO.</span></div>}
+                          <div className="pof-grid pof-grid--4">
+                          <ReadField label="Scrutiny Date" value={formatDmy(sup.scrutiny)} loading={supLoading} />
                           <ReadField label="GST Number" value={sup.gstNo} loading={supLoading} />
                           <ReadField label="GST Status" value={sup.gstStatus} loading={supLoading} />
-                          <ReadField label="Last Filing Date" value={roDate(sup.filing)} loading={supLoading} />
+                          <ReadField label="Last Filing Date" value={formatDmy(sup.filing)} loading={supLoading} />
                           <ReadField label="Prev. Invoice / Remarks" value={sup.remarks} full loading={supLoading} />
                         </div></div>
                       </div>
@@ -928,21 +965,17 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                         {withShip ? (<>
                           <th className="cpd-c">Sr. No</th><th>Product Code</th><th>Product Name (PI)</th><th className="cpd-c">Quantity (PI)</th>
                           <th>Product Name (PO)</th><th className="cpd-c">Quantity (PO)</th><th className="cpd-c">Missing Qty</th><th>Product Rate</th>
-                          {intra
-                            ? <><th className="cpd-c">CGST (%)</th><th className="cpd-c">SGST (%)</th><th className="cpd-r">CGST Amount</th><th className="cpd-r">SGST Amount</th></>
-                            : <><th className="cpd-c">IGST (%)</th><th className="cpd-r">IGST Amount</th></>}
+                          <TaxHeadCells intra={intra} />
                           <th className="cpd-r">Product Cost</th><th className="cpd-c"> </th>
                         </>) : (<>
                           <th className="cpd-c">Sr. No</th><th>Product Code</th><th>Product Name (PO)</th><th className="cpd-c">Quantity (PO)</th><th>Product Rate</th>
-                          {intra
-                            ? <><th className="cpd-c">CGST (%)</th><th className="cpd-c">SGST (%)</th><th className="cpd-r">CGST Amount</th><th className="cpd-r">SGST Amount</th></>
-                            : <><th className="cpd-c">IGST (%)</th><th className="cpd-r">IGST Amount</th></>}
+                          <TaxHeadCells intra={intra} />
                           <th className="cpd-r">Product Cost</th><th className="cpd-c"> </th>
                         </>)}
                       </tr></thead>
                       <tbody>
                         {rows.length === 0 ? (
-                          <tr><td colSpan={withShip ? (intra ? 14 : 12) : (intra ? 11 : 9)} style={{ padding: '24px', textAlign: 'center', color: '#9fb2c0', fontWeight: 600 }}>No products added — click “Add Product” below to start.</td></tr>
+                          <tr><td colSpan={colCount} style={{ padding: '24px', textAlign: 'center', color: '#9fb2c0', fontWeight: 600 }}>No products added — click “Add Product” below to start.</td></tr>
                         ) : rows.map((r, i) => {
                           const c = compute(r);
                           return withShip ? (
@@ -957,9 +990,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
                               <td className={`cpd-c cpd-miss ${c.miss > 0 ? 'is-short' : (c.miss < 0 ? 'is-over' : '')}`}>{c.miss}</td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
-                              {intra
-                                ? <><td className="cpd-c">{c.cgstP}%</td><td className="cpd-c">{c.sgstP}%</td><td className="cpd-r">{money2(c.cgstA)}</td><td className="cpd-r">{money2(c.sgstA)}</td></>
-                                : <><td className="cpd-c">{c.igstP}%</td><td className="cpd-r">{money2(c.igstA)}</td></>}
+                              <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
                               <td className="cpd-c"><button type="button" className="cpd-del" title="Remove product" onClick={() => removeLine(r.id)}>✕</button></td>
                             </tr>
@@ -970,9 +1001,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                               <td className="cpd-prodcell"><Dd value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.map(o => o.name)]} onChange={name => pickProduct(r.id, name)} /></td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
-                              {intra
-                                ? <><td className="cpd-c">{c.cgstP}%</td><td className="cpd-c">{c.sgstP}%</td><td className="cpd-r">{money2(c.cgstA)}</td><td className="cpd-r">{money2(c.sgstA)}</td></>
-                                : <><td className="cpd-c">{c.igstP}%</td><td className="cpd-r">{money2(c.igstA)}</td></>}
+                              <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
                               <td className="cpd-c"><button type="button" className="cpd-del" title="Remove product" onClick={() => removeLine(r.id)}>✕</button></td>
                             </tr>
@@ -981,7 +1010,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                       </tbody>
                       {canAddProduct && (
                         <tfoot>
-                          <tr className="cpd-addtr"><td colSpan={withShip ? (intra ? 14 : 12) : (intra ? 11 : 9)}>
+                          <tr className="cpd-addtr"><td colSpan={colCount}>
                             <button type="button" className="cpd-add-btn" onClick={addLine}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add Product</button>
                           </td></tr>
                         </tfoot>
@@ -1160,7 +1189,7 @@ function PrevSummary(props: {
       <div className="cposum-stage__bd">
         <div><div className="cposum-grp__t">Basic Purchase Order Details</div><div className="cposum-grid">
           <F l="PO Type" v={po.poType} /><F l="Document Type" v={po.docType} /><F l="Mode of Transport" v={po.transport} /><F l="PO Date" v={todayDisp} />
-          <F l="Expected Delivery Date" v={po.edd ? roDate(po.edd) : ''} /><F l="Delivery Location" v={po.deliveryLoc} /><F l="Payment Type" v={po.payType} /><F l="Physical Inspection Required" v={po.inspection ? 'Yes' : 'No'} />
+          <F l="Expected Delivery Date" v={po.edd ? formatDmy(po.edd) : ''} /><F l="Delivery Location" v={po.deliveryLoc} /><F l="Payment Type" v={po.payType} /><F l="Physical Inspection Required" v={po.inspection ? 'Yes' : 'No'} />
           {po.docType === 'International' &&<><F l="Currency" v={po.currency} /><F l="Exchange Rate" v={po.exRate} /><F l="INCO Term" v={po.inco} /><F l="Port of Loading" v={po.portLoad} /><F l="Port of Discharge" v={po.portDischarge} /><F l="Final Destination" v={po.finalDest} /><F l="Country of Origin" v={po.origin} /></>}
         </div></div>
         <div><div className="cposum-grp__t">Supplier Details</div><div className="cposum-grid">
@@ -1174,7 +1203,7 @@ function PrevSummary(props: {
           <F l="City" v={sup.city} /><F l="Contact Person Name" v={sup.contact} /><F l="Designation" v={sup.desig} /><F l="Contact Number" v={sup.phone} /><F l="Email ID" v={sup.email} />
         </div></div>
         <div><div className="cposum-grp__t">GST Scrutiny Details</div><div className="cposum-grid">
-          <F l="Scrutiny Date" v={roDate(sup.scrutiny)} /><F l="GST Number" v={sup.gstNo} /><F l="GST Status" v={sup.gstStatus} /><F l="Last Filing Date" v={roDate(sup.filing)} />
+          <F l="Scrutiny Date" v={formatDmy(sup.scrutiny)} /><F l="GST Number" v={sup.gstNo} /><F l="GST Status" v={sup.gstStatus} /><F l="Last Filing Date" v={formatDmy(sup.filing)} />
           <F l="Prev. Invoice / Remarks" v={sup.remarks} full />
         </div></div>
       </div>
@@ -1193,7 +1222,7 @@ function PrevSummary(props: {
         </div>
         <div><div className="cposum-grp__t">Cost Summary</div><div className="cposum-grid">
           <F l="Total Product Cost" v={money2(summary.prod)} />
-          {(sup.stateCode || '27') === '27'
+          {isIntraState(sup.stateCode)
             ? <><F l="Total CGST Amount" v={money2(summary.cgst)} /><F l="Total SGST Amount" v={money2(summary.sgst)} /></>
             : <F l="Total IGST Amount" v={money2(summary.igst)} />}
           <F l="Additional Charges" v={money2(summary.addl)} /><F l="Grand Total" v={money2(summary.grand)} />
