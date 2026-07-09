@@ -394,6 +394,8 @@ class SegmentDocUploadController extends Controller
         // Supplier/vendor vaults model their per-deal docs differently (vendor
         // deals, not $shipments) and DO use the standard 'td' bucket, so they
         // keep the original all-inclusive standard tally.
+        // Vendor-only top-level Agreements bucket (populated in the else branch).
+        $agreements = [];
         if (in_array($type, ['customer', 'consignee'], true)) {
             $c2c = function (string $key) use ($shipments) {
                 $signed = 0; $total = 0;
@@ -424,7 +426,20 @@ class SegmentDocUploadController extends Controller
             $verifiedSigned      = collect($allRows)->where('status', 'Verified')->count();
             $pending             = collect($allRows)->where('status', 'Pending')->count();
             $tradeDocumentsCount = count($trade_documents);
-            $agreementsCount     = 0;
+
+            // Vendor-level Agreements — the applicable agreement-library docs for
+            // the vendor's segments, overlaid with this vendor's signature status
+            // across ALL its deals (an agreement signed on any deal counts as
+            // done). Feeds the PO form's Supplier Legal Status "Agreements" card,
+            // mirroring how the standard buckets above expose verified-vs-total.
+            $vendorSegIds  = $this->resolveSegmentIds($owner, 'vendor', $cid);
+            $agreementLib  = $this->vendorSupplierLibrary($cid, $vendorSegIds, ClmAgreementLibrary::class, 'agr_status');
+            $vendorAgrReqs = ClmSignatureRequest::where('client_id', $cid)
+                ->where('model_name', 'Vendor')
+                ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
+                ->get();
+            $agreements      = $this->overlaySupplierDocs($agreementLib, $vendorAgrReqs, ClmSignatureRequest::DOC_AGREEMENT);
+            $agreementsCount = count($agreements);
         }
 
         // Supplier Case-to-Case deals — split the vendor's procurements by
@@ -454,6 +469,7 @@ class SegmentDocUploadController extends Controller
                 'owner_kyc'              => $owner_kyc,
                 'trade_licenses'         => $trade_licenses,
                 'trade_documents'        => $trade_documents,
+                'agreements'             => $agreements,
                 'shipment_agreements'    => $shipments,
                 'last_updated'           => optional($uploads->max('updated_at'))->format('d/m/Y'),
             ],

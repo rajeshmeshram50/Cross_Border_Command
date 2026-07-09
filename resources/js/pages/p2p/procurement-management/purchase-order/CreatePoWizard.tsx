@@ -30,7 +30,7 @@ type PoRow = {
 };
 
 type Shipment = { id: number; code: string; customer: string; consignee?: string | null; opportunity_id?: number | null; opportunity_code?: string | null; proforma_invoice_id?: number | null; pi_number?: string | null };
-type Warehouse = { id: number; name: string };
+type Warehouse = { id: number; name: string; code?: string; type?: string };
 type Currency = { id: number; code: string };
 type SupplierOpt = { id: number; code: string; name: string };
 type SupplierRec = {
@@ -65,6 +65,35 @@ const SUP_LEGAL: Record<string, number[]> = {
   'Larsen & Toubro Ltd': [4, 3, 1, 4, 2],
 };
 
+/* Real Supplier Legal Status — the 5 parameters shown in the card are derived
+ * from the vendor's Evidence Vault (/segment-uploads/supplier/{id}/vault):
+ * Company Due Diligence / Owner KYC / Trade Licenses / Trade Documents from
+ * their upload buckets (Verified = done), Agreements from signature status
+ * (Signed = done). Same {cards,p,done,tot} shape as the demo SUP_LEGAL calc. */
+type LegalCard = { name: string; t: number; d: number; st: 'full' | 'part' | 'none'; pc: number };
+type LegalView = { cards: LegalCard[]; p: number; done: number; tot: number };
+const LEGAL_DONE = ['Verified', 'Signed', 'Approved'];
+type VaultDocRow = { status?: string };
+const buildLegalFromVault = (v: Record<string, unknown>): LegalView => {
+  const rowsOf = (k: string) => (Array.isArray(v[k]) ? (v[k] as VaultDocRow[]) : []);
+  const defs: [string, VaultDocRow[]][] = [
+    ['Company Due Diligence', rowsOf('company_dd')],
+    ['Owner KYC Documents', rowsOf('owner_kyc')],
+    ['Trade Licenses', rowsOf('trade_licenses')],
+    ['Trade Documents', rowsOf('trade_documents')],
+    ['Agreements', rowsOf('agreements')],
+  ];
+  let tot = 0, done = 0;
+  const cards: LegalCard[] = defs.map(([name, rows]) => {
+    const t = rows.length;
+    const d = rows.filter(r => LEGAL_DONE.includes(String(r.status))).length;
+    tot += t; done += d;
+    const st: LegalCard['st'] = t > 0 && d >= t ? 'full' : (d > 0 ? 'part' : 'none');
+    return { name, t, d, st, pc: t ? Math.round(d / t * 100) : 0 };
+  });
+  return { cards, p: tot ? Math.round(done / tot * 100) : 0, done, tot };
+};
+
 const PO_PRODUCTS = [
   { code: 'P-002', name: 'Whole Wheat Flour 50kg', hsn: '11010000', qty: 150, price: 220, gst: 5 },
   { code: 'P-003', name: 'GreenBoost Organic Fertilizer', hsn: '31010000', qty: 50, price: 188, gst: 5 },
@@ -78,9 +107,28 @@ const PO_PRODUCTS = [
  * dropdown fallback when the product master fetch fails. */
 type PoLine = { id: number; productId: number | null; code: string; piName: string; piQty: string; name: string; qty: string; rate: string; gst: number };
 type ProdOpt = { id: number | null; code: string; name: string; price: number; gst: number };
+/* With-Shipment only: the canonical PI product set for the PO. PO rows may drop
+ * below it (user removes a product); those removed PI products can be re-added
+ * via the "Product Name (PO)" dropdown on a new Add-Product row. */
+type PiRow = { productId: number | null; code: string; piName: string; piQty: string; rate: string; gst: number };
 const PRODUCT_FALLBACK: ProdOpt[] = PO_PRODUCTS.map(p => ({ id: null, code: p.code, name: p.name, price: p.price, gst: p.gst }));
 const PRODUCT_PLACEHOLDER = '— Select Product —';
+const PI_REPICK_PLACEHOLDER = '— Select PI Product —';
+// Stable identity for matching a PO row against a PI product: prefer product id,
+// then product code, then the PI name.
+const piIdent = (x: { productId: number | null; code: string; piName?: string; name?: string }) =>
+  x.productId != null ? `#${x.productId}` : (x.code || x.piName || x.name || '');
+const piLabel = (p: PiRow) => (p.code ? `${p.code} — ${p.piName}` : p.piName);
 const blankLine = (id: number): PoLine => ({ id, productId: null, code: '', piName: '', piQty: '', name: '', qty: '', rate: '', gst: 0 });
+// Map a /shipments/{id}/pi-products item into the canonical PI product set.
+const mapPiRow = (it: Record<string, unknown>): PiRow => ({
+  productId: it.product_id != null ? Number(it.product_id) : null,
+  code: String(it.code ?? ''),
+  piName: String(it.name ?? ''),
+  piQty: it.qty != null ? String(num(it.qty)) : '',
+  rate: it.rate != null ? String(num(it.rate)) : '',
+  gst: num(it.gst),
+});
 
 const CPO_STAGES = [
   { t: 'PO Link Supplier Details', d: 'Confirm the supplier for this PO' },
@@ -109,10 +157,25 @@ const emptySup = (): SupplierRec => ({ code: '', type: '', name: '', legal: '', 
 const Chev = ({ c = 'pof-dd__chev' }: { c?: string }) => (<svg className={c} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>);
 const Check = ({ c }: { c?: string }) => (<svg className={c} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>);
 const XIco = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>);
+const Spin = ({ s = 14 }: { s?: number }) => (<svg className="pof-spin" width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>);
+const Skel = ({ w = '70%' }: { w?: number | string }) => <span className="pof-skel" style={{ width: w }} />;
 const docHd = (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 12l1.6 1.6L14 10" /><line x1="8" y1="17" x2="16" y2="17" /></svg>);
 
-/* ── Reusable dropdown (pof-dd, fixed panel positioned from anchor) ────── */
-function Dd({ label, value, options, onChange, req }: { label?: string; value: string; options: string[]; onChange: (v: string) => void; req?: boolean }) {
+/* ── Reusable dropdown (pof-dd, fixed panel positioned from anchor) ──────
+ * `optMeta` (optional) enriches an option with a leading code and an
+ * Own/Third-Party badge — used by the Delivery Location (warehouse) field to
+ * render "WH-001: Pune Main  [Own]". */
+type DdOptMeta = { code?: string; badge?: string; badgeTone?: 'own' | 'third' };
+const DdOptLabel = ({ o, meta }: { o: string; meta?: DdOptMeta }) => (
+  meta ? (
+    <span className="pof-dd__optlbl">
+      {meta.code && <span className="pof-dd__optcode">{meta.code}:</span>}
+      <span className="pof-dd__optname">{o}</span>
+      {meta.badge && <span className={`pof-dd__optbadge pof-dd__optbadge--${meta.badgeTone || 'own'}`}>{meta.badge}</span>}
+    </span>
+  ) : <span>{o}</span>
+);
+function Dd({ label, value, options, onChange, req, err, optMeta }: { label?: string; value: string; options: string[]; onChange: (v: string) => void; req?: boolean; err?: string; optMeta?: Record<string, DdOptMeta> }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement | null>(null);
   const [pos, setPos] = useState({ left: 0, top: 0, width: 0 });
@@ -140,14 +203,15 @@ function Dd({ label, value, options, onChange, req }: { label?: string; value: s
   return (
     <div className="pof-f">
       {label && <label>{label}{req && <span className="pof-reqstar"> *</span>}</label>}
-      <button type="button" ref={ref} className={`pof-dd ${open ? 'is-open' : ''}`} onClick={() => setOpen(o => !o)}>
-        <span className="pof-dd__val">{value}</span><Chev />
+      <button type="button" ref={ref} className={`pof-dd ${open ? 'is-open' : ''} ${err ? 'is-error' : ''}`} onClick={() => setOpen(o => !o)}>
+        <span className="pof-dd__val"><DdOptLabel o={value} meta={optMeta?.[value]} /></span><Chev />
       </button>
+      {err && <div className="pof-err-msg">{err}</div>}
       {open && createPortal(
         <div className="pof-dd-pop pof-dd-pop--portal" style={{ left: pos.left, top: pos.top, width: pos.width }}>
           {options.map(o => (
             <div key={o} className={`pof-dd-pop__opt ${o === value ? 'is-sel' : ''}`} onClick={() => { onChange(o); setOpen(false); }}>
-              <span>{o}</span><Check c="pof-dd-pop__ck" />
+              <DdOptLabel o={o} meta={optMeta?.[o]} /><Check c="pof-dd-pop__ck" />
             </div>
           ))}
         </div>,
@@ -163,19 +227,22 @@ const Field = ({ label, value, onChange, ph, type, full }: { label: string; valu
     <input className="pof-in" type={type || 'text'} value={value} placeholder={ph} onChange={e => onChange(e.target.value)} />
   </div>
 );
-const DateField = ({ label, value, onChange, full, minDate, req }: { label: string; value: string; onChange: (v: string) => void; full?: boolean; minDate?: string; req?: boolean }) => (
+const DateField = ({ label, value, onChange, full, minDate, req, err }: { label: string; value: string; onChange: (v: string) => void; full?: boolean; minDate?: string; req?: boolean; err?: string }) => (
   <div className={`pof-f ${full ? 'pof-f--full' : ''}`}>
     <label>{label}{req && <span className="pof-reqstar"> *</span>}</label>
-    <MasterDatePicker value={value} onChange={onChange} placeholder="Select date" minDate={minDate} />
+    <MasterDatePicker value={value} onChange={onChange} placeholder="Select date" minDate={minDate} invalid={!!err} />
+    {err && <div className="pof-err-msg">{err}</div>}
   </div>
 );
 /* Read-only display cell — auto-filled supplier details are not editable. */
 const RO_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const roDate = (iso: string) => { if (!iso) return ''; const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso : `${String(d.getDate()).padStart(2, '0')}-${RO_MONTHS[d.getMonth()]}-${d.getFullYear()}`; };
-const ReadField = ({ label, value, full }: { label: string; value: string; full?: boolean }) => (
+const ReadField = ({ label, value, full, loading }: { label: string; value: string; full?: boolean; loading?: boolean }) => (
   <div className={`pof-f ${full ? 'pof-f--full' : ''}`}>
     <label>{label}</label>
-    <div className="pof-ro" title={value || undefined}>{value || '—'}</div>
+    {loading
+      ? <div className="pof-ro pof-ro--skel"><Skel w="72%" /></div>
+      : <div className="pof-ro" title={value || undefined}>{value || '—'}</div>}
   </div>
 );
 const Frozen = ({ label, value, req }: { label: string; value: string; req?: boolean }) => (
@@ -246,6 +313,9 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
   const [shipCustomer, setShipCustomer] = useState<string>(editRow?.cust || '');
   const [shipErr, setShipErr] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);   // choice-modal "Confirm & Continue" fetch
+  const [supLoading, setSupLoading] = useState(false);    // supplier detail + legal fetch after select
+  const [savingDetails, setSavingDetails] = useState(false); // stage-2 "Save Details" click feedback
 
   // Wizard
   const [stage, setStage] = useState(1);
@@ -268,7 +338,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     let cancelled = false;
     api.get('/master/warehouse_master').then(r => {
       const arr = Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
-      const w = arr.map((x: Record<string, unknown>) => ({ id: Number(x.id), name: String(x.wh_name ?? x.name ?? '') })).filter((x: Warehouse) => x.name && x.id);
+      const w = arr.map((x: Record<string, unknown>) => ({ id: Number(x.id), name: String(x.wh_name ?? x.name ?? ''), code: String(x.wh_id ?? x.code ?? ''), type: String(x.wh_type ?? '') })).filter((x: Warehouse) => x.name && x.id);
       if (!cancelled && w.length) setWarehouses(w);
     }).catch(() => {});
     api.get('/master/currencies').then(r => {
@@ -315,27 +385,45 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     inspection: false,
     currency: CURRENCIES[0], exRate: '', inco: INCO[0], portLoad: '', portDischarge: '', finalDest: '', origin: '',
   });
-  const setPoF = (k: keyof typeof po, v: string | boolean) => setPo(p => ({ ...p, [k]: v }));
+  // Stage 1 inline validation errors, keyed by field. Cleared as the user fixes each.
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const clearErr = (k: string) => setErrs(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; });
+  const setPoF = (k: keyof typeof po, v: string | boolean) => { setPo(p => ({ ...p, [k]: v })); clearErr(k); };
 
   // Stage 1 — supplier (selecting fetches full detail to auto-fill the form)
   const [supName, setSupName] = useState(SUPPLIER_PLACEHOLDER);
   const [sup, setSup] = useState<SupplierRec>(emptySup());
+  // Real per-vendor legal status (from the Evidence Vault); null → fall back to
+  // the demo SUP_LEGAL calc for the built-in demo suppliers.
+  const [supLegal, setSupLegal] = useState<LegalView | null>(null);
   const supplierNames = suppliers.length ? suppliers.map(s => s.name) : Object.keys(CPO_SUPPLIERS);
+  // Pull a vendor's real 5-parameter compliance breakdown for the legal-status card.
+  const loadSupplierLegal = (vendorId: number) => {
+    setSupLegal(null);
+    api.get(`/segment-uploads/supplier/${vendorId}/vault`).then(r => {
+      const v = r.data?.data; if (v) setSupLegal(buildLegalFromVault(v));
+    }).catch(() => setSupLegal(null));
+  };
   const pickSupplier = (name: string) => {
     setSupName(name);
+    if (name !== SUPPLIER_PLACEHOLDER) clearErr('supplier');
     const s = suppliers.find(x => x.name === name);
     if (s) {
       setVendorId(s.id);
+      setSupLoading(true);
+      loadSupplierLegal(s.id);
       api.get(`/p2p/purchase-orders/suppliers/${s.id}`).then(r => {
         const d = r.data?.data; if (d) { setSup(mapDetailToSup(d)); toast.success(`Supplier details auto-fetched — ${d.name}`); }
-      }).catch(() => toast.error('Failed to load supplier'));
-    } else if (CPO_SUPPLIERS[name]) { setSup({ ...CPO_SUPPLIERS[name] }); setVendorId(null); }
-    else { setSup(emptySup()); setVendorId(null); }
+      }).catch(() => toast.error('Failed to load supplier')).finally(() => setSupLoading(false));
+    } else if (CPO_SUPPLIERS[name]) { setSup({ ...CPO_SUPPLIERS[name] }); setVendorId(null); setSupLegal(null); }
+    else { setSup(emptySup()); setVendorId(null); setSupLegal(null); }
   };
 
   // Stage 2 — products
   const lineId = useRef(1);
   const [rows, setRows] = useState<PoLine[]>(() => [blankLine(1)]);
+  // With-Shipment: the full PI product set this PO was seeded from.
+  const [piSet, setPiSet] = useState<PiRow[]>([]);
   const [charges, setCharges] = useState({ ship: '', pack: '', other: '' });
   const setLine = (id: number, patch: Partial<PoLine>) => setRows(rs => rs.map(r => (r.id === id ? { ...r, ...patch } : r)));
   const addLine = () => setRows(rs => [...rs, blankLine(++lineId.current)]);
@@ -344,6 +432,12 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     const opt = prodOpts.find(o => o.name === name);
     if (opt) setLine(id, { productId: opt.id, code: opt.code, name: opt.name, rate: String(opt.price), gst: opt.gst });
     else setLine(id, { productId: null, code: '', name: '', rate: '', gst: 0 });
+  };
+  // Re-add a previously-removed PI product into a blank Add-Product row (With-Shipment).
+  const reAddPi = (id: number, label: string) => {
+    const p = piSet.find(x => piLabel(x) === label);
+    if (!p) { setLine(id, blankLine(id)); return; }
+    setLine(id, { productId: p.productId, code: p.code, piName: p.piName, piQty: p.piQty, name: p.piName, qty: p.piQty, rate: p.rate, gst: p.gst });
   };
 
   // ── Edit mode: load the full PO detail and prefill every stage ──
@@ -362,6 +456,13 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
       setCurrencyId(d.currency_id ?? null);
       setVendorId(d.vendor_id ?? null);
       setShipmentDbId(d.shipment_order_id ?? null);
+      // With-Shipment PO: load the shipment's full PI product set so removed PI
+      // products can be re-added via the Add-Product dropdown.
+      if (d.shipment_order_id) {
+        api.get(`/p2p/purchase-orders/shipments/${d.shipment_order_id}/pi-products`)
+          .then(pr => setPiSet(((pr.data?.data ?? []) as Array<Record<string, unknown>>).map(mapPiRow)))
+          .catch(() => {});
+      }
       setShipId(d.ship ?? null);
       setShipCustomer(d.cust ?? '');
       setTerms(d.terms || '');
@@ -370,14 +471,17 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
         let id = 0;
         setRows(d.items.map((it: Record<string, unknown>) => ({
           id: ++id, productId: it.product_id != null ? Number(it.product_id) : null, code: String(it.code ?? ''),
-          piName: String(it.piName ?? ''), piQty: it.piQty != null ? String(it.piQty) : '',
-          name: String(it.name ?? ''), qty: it.qty != null ? String(it.qty) : '', rate: it.rate != null ? String(it.rate) : '', gst: num(it.gst),
+          piName: String(it.piName ?? ''), piQty: it.piQty != null ? String(num(it.piQty)) : '',
+          name: String(it.name ?? ''), qty: it.qty != null ? String(num(it.qty)) : '', rate: it.rate != null ? String(num(it.rate)) : '', gst: num(it.gst),
         })));
         lineId.current = d.items.length;
       }
-      if (d.vendor_id) api.get(`/p2p/purchase-orders/suppliers/${d.vendor_id}`).then(sr => {
-        const s = sr.data?.data; if (s) { setSup(mapDetailToSup(s)); setSupName(s.name); }
-      }).catch(() => {});
+      if (d.vendor_id) {
+        loadSupplierLegal(d.vendor_id);
+        api.get(`/p2p/purchase-orders/suppliers/${d.vendor_id}`).then(sr => {
+          const s = sr.data?.data; if (s) { setSup(mapDetailToSup(s)); setSupName(s.name); }
+        }).catch(() => {});
+      }
     }).catch(() => toast.error('Failed to load purchase order'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, editId]);
@@ -387,15 +491,27 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
 
   // Stage 4 — trade docs
 
-  // GST + cost computation
-  const gstRate = (r: PoLine) => { const sc = sup.stateCode || '27'; if (sc === '27') return { cgst: 9, sgst: 9 }; const h = num(r.gst) / 2; return { cgst: h, sgst: h }; };
-  const compute = (r: PoLine) => { const g = gstRate(r); const base = num(r.qty) * num(r.rate); const cgstA = base * g.cgst / 100, sgstA = base * g.sgst / 100; return { cgstP: g.cgst, sgstP: g.sgst, base, cgstA, sgstA, cost: base + cgstA + sgstA, miss: r.piQty === '' ? 0 : num(r.piQty) - num(r.qty) }; };
+  // GST + cost computation.
+  // Tax is driven by the PRODUCT's GST % (r.gst), split by place of supply:
+  //   • Intra-state (supplier state code = 27, our home state) → CGST + SGST,
+  //     each = gst/2 (e.g. 10% GST → 5% CGST + 5% SGST).
+  //   • Inter-state (any other state code) → a single IGST = the full gst %.
+  const intra = (sup.stateCode || '27') === '27';
+  const compute = (r: PoLine) => {
+    const gst = num(r.gst);
+    const base = num(r.qty) * num(r.rate);
+    const cgstP = intra ? gst / 2 : 0;
+    const sgstP = intra ? gst / 2 : 0;
+    const igstP = intra ? 0 : gst;
+    const cgstA = base * cgstP / 100, sgstA = base * sgstP / 100, igstA = base * igstP / 100;
+    return { cgstP, sgstP, igstP, base, cgstA, sgstA, igstA, cost: base + cgstA + sgstA + igstA, miss: r.piQty === '' ? 0 : num(r.piQty) - num(r.qty) };
+  };
   const summary = useMemo(() => {
-    let prod = 0, cg = 0, sg = 0;
-    rows.forEach(r => { const c = compute(r); prod += c.cost; cg += c.cgstA; sg += c.sgstA; });
+    let prod = 0, cg = 0, sg = 0, ig = 0;
+    rows.forEach(r => { const c = compute(r); prod += c.cost; cg += c.cgstA; sg += c.sgstA; ig += c.igstA; });
     const ship = num(charges.ship), pack = num(charges.pack), other = num(charges.other);
     const addl = ship + pack + other;
-    return { prod, cgst: cg, sgst: sg, addl, grand: prod + addl };
+    return { prod, cgst: cg, sgst: sg, igst: ig, addl, grand: prod + addl };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, charges, sup.stateCode]);
   // Missing Product Details — per PI-linked row, the PI qty not covered by the PO
@@ -410,25 +526,28 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
   const todayIso = useMemo(() => { const d = new Date(); const mm = ('0' + (d.getMonth() + 1)).slice(-2), dd = ('0' + d.getDate()).slice(-2); return `${d.getFullYear()}-${mm}-${dd}`; }, []);
 
   const confirmChoice = () => {
-    if (!poMode) return;
+    if (!poMode || confirming) return;
     if (poMode === 'with' && !shipmentDbId) { setShipErr(true); return; }
+    // Transition into the wizard once seeding is done (so the button spinner
+    // stays visible while the PI products are being fetched).
+    const proceed = () => { setConfirming(false); setChoiceOpen(false); setTimeout(() => setPhase('form'), 180); };
     if (poMode === 'with' && shipmentDbId) {
+      setConfirming(true);
       // Seed Stage 2 from the shipment's PI products.
       api.get(`/p2p/purchase-orders/shipments/${shipmentDbId}/pi-products`).then(r => {
         const items = (r.data?.data ?? []) as Array<Record<string, unknown>>;
+        setPiSet(items.map(mapPiRow));
         if (items.length) {
           let id = 0;
           setRows(items.map(it => ({
             id: ++id, productId: it.product_id != null ? Number(it.product_id) : null, code: String(it.code ?? ''),
-            piName: String(it.name ?? ''), piQty: it.qty != null ? String(it.qty) : '',
-            name: String(it.name ?? ''), qty: it.qty != null ? String(it.qty) : '', rate: it.rate != null ? String(it.rate) : '', gst: num(it.gst),
+            piName: String(it.name ?? ''), piQty: it.qty != null ? String(num(it.qty)) : '',
+            name: String(it.name ?? ''), qty: it.qty != null ? String(num(it.qty)) : '', rate: it.rate != null ? String(num(it.rate)) : '', gst: num(it.gst),
           })));
           lineId.current = items.length;
         } else { lineId.current = 1; setRows([blankLine(1)]); }
-      }).catch(() => { lineId.current = 1; setRows([blankLine(1)]); });
-    } else { lineId.current = 1; setRows([blankLine(1)]); }
-    setChoiceOpen(false);
-    setTimeout(() => setPhase('form'), 180);
+      }).catch(() => { lineId.current = 1; setRows([blankLine(1)]); }).finally(proceed);
+    } else { lineId.current = 1; setRows([blankLine(1)]); proceed(); }
   };
   const backToChoice = () => { setPhase('choice'); setChoiceOpen(true); };
 
@@ -446,7 +565,42 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     return { cards, p, done, tot };
   }, [legal]);
 
+  // Prefer the real vault-derived breakdown for actual vendors; fall back to the
+  // demo SUP_LEGAL calc for the built-in demo supplier names.
+  const legalView = supLegal ?? legalCalc;
+
+  // Delivery Location dropdown metadata — code + Own/Third-Party badge per
+  // warehouse name (the option value). Keyed by name to match the Dd options.
+  const whMeta = useMemo(() => {
+    const m: Record<string, DdOptMeta> = {};
+    warehouses.forEach(w => {
+      const third = /third/i.test(w.type || '');
+      m[w.name] = { code: w.code || undefined, badge: third ? 'Third Party' : 'Own', badgeTone: third ? 'third' : 'own' };
+    });
+    return m;
+  }, [warehouses]);
+
+  // Select Supplier dropdown labels — "S-001: Reliance Industries" (code : name).
+  const supMeta = useMemo(() => {
+    const m: Record<string, DdOptMeta> = {};
+    suppliers.forEach(s => { if (s.name) m[s.name] = { code: s.code || undefined }; });
+    return m;
+  }, [suppliers]);
+
   const withShip = poMode === 'with';
+
+  // With-Shipment product rules: rows are constrained to the PI product set.
+  //  • removedPi        — PI products not currently on a linked row (available to re-add)
+  //  • pendingBlankRows — blank Add-Product rows still awaiting a PI selection
+  //  • canAddProduct    — With-Shipment: only when a removed PI product isn't already
+  //                       being re-added by a pending blank row. Without-Shipment: always.
+  const removedPi = useMemo(() => {
+    if (!withShip || !piSet.length) return [] as PiRow[];
+    const present = new Set(rows.filter(r => r.productId != null || r.code || r.piName).map(piIdent));
+    return piSet.filter(p => !present.has(piIdent(p)));
+  }, [withShip, piSet, rows]);
+  const pendingBlankRows = withShip ? rows.filter(r => r.productId == null && !r.code && !r.piName).length : 0;
+  const canAddProduct = withShip ? removedPi.length > pendingBlankRows : true;
 
   // Build the API payload from the current form state — shared by save
   // (store/update) and the unsaved PDF preview.
@@ -497,26 +651,24 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
 
   // Stage 1 mandatory fields — all must be filled before leaving stage 1.
   const validateStage1 = (): boolean => {
-    const missing: string[] = [];
-    if (supName === SUPPLIER_PLACEHOLDER) missing.push('Select Supplier');
-    if (!po.poType) missing.push('PO Type');
-    if (!po.docType) missing.push('Document Type');
-    if (!po.transport) missing.push('Mode of Transport');
-    if (!po.edd) missing.push('Expected Delivery Date');
-    if (!po.deliveryLoc) missing.push('Delivery Location');
-    if (missing.length) {
-      toast.error('Required fields missing', `Please fill: ${missing.join(', ')}.`);
-      return false;
-    }
-    if (po.edd < todayIso) {
-      toast.error('Invalid Expected Delivery Date', 'It cannot be earlier than today.');
+    const e: Record<string, string> = {};
+    if (supName === SUPPLIER_PLACEHOLDER) e.supplier = 'Please select a supplier.';
+    if (!po.poType) e.poType = 'PO Type is required.';
+    if (!po.docType) e.docType = 'Document Type is required.';
+    if (!po.transport) e.transport = 'Mode of Transport is required.';
+    if (!po.edd) e.edd = 'Expected Delivery Date is required.';
+    else if (po.edd < todayIso) e.edd = 'It cannot be earlier than today.';
+    if (!po.deliveryLoc) e.deliveryLoc = 'Delivery Location is required.';
+    setErrs(e);
+    if (Object.keys(e).length) {
+      toast.error('Required fields missing', 'Please complete the highlighted fields.');
       return false;
     }
     return true;
   };
 
   const next = () => {
-    if (stage === 1 && !isEdit && !validateStage1()) return;
+    if (stage === 1 && !validateStage1()) return;
     if (stage === 3) toast.success('Purchase Order submitted successfully');
     if (stage < 4) setStage(s => s + 1);
     else generate();
@@ -569,7 +721,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                 <span className="cpo-ft__note"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> All POs are audit-tracked</span>
                 <div className="cpo-ft__b">
                   <button type="button" className="cpo-btn cpo-btn--g" onClick={onClose}>Cancel</button>
-                  <button type="button" className="cpo-btn cpo-btn--p" disabled={!poMode} onClick={confirmChoice}>Confirm & Continue <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></button>
+                  <button type="button" className="cpo-btn cpo-btn--p" disabled={!poMode || confirming} onClick={confirmChoice}>{confirming ? <><Spin s={13} /> Loading…</> : <>Confirm & Continue <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>}</button>
                 </div>
               </div>
             </div>
@@ -642,37 +794,19 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
         <div className="p2pj-body">
           <div className="p2pj-detail-wrap">
             <div className="pof-wrap">
-              {stage > 1 && <PrevSummary stage={stage} po={po} sup={sup} supName={supName} rows={rows} compute={compute} summary={summary} charges={charges} terms={terms} shipId={shipId} poMode={poMode} shipCustomer={shipCustomer} todayDisp={todayDisp} legalText={legalCalc ? (legalCalc.p === 100 ? '100% Compliant' : `${legalCalc.p}% · Needs Review`) : ''} />}
+              {stage > 1 && <PrevSummary stage={stage} po={po} sup={sup} supName={supName} rows={rows} compute={compute} summary={summary} charges={charges} terms={terms} todayDisp={todayDisp} legalText={legalView ? `${legalView.p}% ${legalView.p === 100 ? 'Compliant' : '· Needs Review'} — ${legalView.done} of ${legalView.tot} documents completed across all 5 parameters` : ''} />}
 
               {stage === 1 && (
                 <div className="pof-wrap" style={{ gap: 13 }}>
                   <Box label="Purchase Order" title="Basic Purchase Order Details" sub="Core details that identify this purchase order." ico={fileIco}>
                     <div className="pof-grid pof-grid--4">
-                      {isEdit ? (<>
-                        <ReadField label="PO Type" value={po.poType} />
-                        <ReadField label="Document Type" value={po.docType} />
-                        <ReadField label="Mode of Transport" value={po.transport} />
-                        <ReadField label="PO Date" value={todayDisp} />
-                        <ReadField label="Expected Delivery Date" value={po.edd ? roDate(po.edd) : ''} />
-                        <ReadField label="Delivery Location" value={po.deliveryLoc} />
-                        <ReadField label="Payment Type" value={po.payType} />
-                        <ReadField label="Physical Inspection Required" value={po.inspection ? 'Yes' : 'No'} />
-                        {po.docType === 'International' && (<>
-                          <ReadField label="Currency" value={po.currency} />
-                          <ReadField label="Exchange Rate" value={po.exRate} />
-                          <ReadField label="INCO Term" value={po.inco} />
-                          <ReadField label="Port of Loading" value={po.portLoad} />
-                          <ReadField label="Port of Discharge" value={po.portDischarge} />
-                          <ReadField label="Final Destination" value={po.finalDest} />
-                          <ReadField label="Country of Origin" value={po.origin} />
-                        </>)}
-                      </>) : (<>
-                        <Dd label="PO Type" req value={po.poType} options={PO_TYPES} onChange={v => setPoF('poType', v)} />
-                        <Dd label="Document Type" req value={po.docType} options={DOC_TYPES} onChange={v => setPoF('docType', v)} />
-                        <Dd label="Mode of Transport" req value={po.transport} options={TRANSPORTS} onChange={v => setPoF('transport', v)} />
+                      {(<>
+                        <Dd label="PO Type" req err={errs.poType} value={po.poType} options={PO_TYPES} onChange={v => setPoF('poType', v)} />
+                        <Dd label="Document Type" req err={errs.docType} value={po.docType} options={DOC_TYPES} onChange={v => setPoF('docType', v)} />
+                        <Dd label="Mode of Transport" req err={errs.transport} value={po.transport} options={TRANSPORTS} onChange={v => setPoF('transport', v)} />
                         <Frozen label="PO Date" req value={todayDisp} />
-                        <DateField label="Expected Delivery Date" req value={po.edd} onChange={v => setPoF('edd', v)} minDate={todayIso} />
-                        <Dd label="Delivery Location" req value={po.deliveryLoc || DELIVERY_PLACEHOLDER} options={[DELIVERY_PLACEHOLDER, ...(warehouses.length ? warehouses.map(w => w.name) : WAREHOUSE_FALLBACK)]} onChange={v => { setPoF('deliveryLoc', v === DELIVERY_PLACEHOLDER ? '' : v); setWarehouseId(warehouses.find(w => w.name === v)?.id ?? null); }} />
+                        <DateField label="Expected Delivery Date" req err={errs.edd} value={po.edd} onChange={v => setPoF('edd', v)} minDate={todayIso} />
+                        <Dd label="Delivery Location" req err={errs.deliveryLoc} optMeta={whMeta} value={po.deliveryLoc || DELIVERY_PLACEHOLDER} options={[DELIVERY_PLACEHOLDER, ...(warehouses.length ? warehouses.map(w => w.name) : WAREHOUSE_FALLBACK)]} onChange={v => { setPoF('deliveryLoc', v === DELIVERY_PLACEHOLDER ? '' : v); setWarehouseId(warehouses.find(w => w.name === v)?.id ?? null); }} />
                         <Dd label="Payment Type" value={po.payType} options={PAY_TYPES} onChange={v => setPoF('payType', v)} />
                         <Toggle label="Physical Inspection Required" on={po.inspection} onToggle={() => setPoF('inspection', !po.inspection)} />
                         {po.docType === 'International' && (<>
@@ -691,58 +825,67 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                   <Box label="Supplier" title="Basic Supplier Details" sub="Primary information about the supplier this PO is issued to." ico={userIco}>
                     <div className="pof-subs">
                       <div className="pof-sub">
-                        <div className="pof-sub__hd"><div className="pof-sub__ico">{userIco}</div><div className="pof-sub__t">Supplier Details</div><span className="pof-sub__n">4 Fields</span></div>
+                        <div className="pof-sub__hd"><div className="pof-sub__ico">{userIco}</div><div className="pof-sub__t">Supplier Details</div><span className="pof-sub__n">4 Fields</span>{supLoading && <span className="pof-sub__loading"><Spin s={12} /> Fetching…</span>}</div>
                         <div className="pof-sub__bd"><div className="pof-grid pof-grid--4">
                           {isEdit
                             ? <ReadField label="Select Supplier" value={supName !== SUPPLIER_PLACEHOLDER ? supName : (sup.name || '')} />
-                            : <Dd label="Select Supplier" value={supName} options={[SUPPLIER_PLACEHOLDER, ...supplierNames]} onChange={pickSupplier} />}
-                          <ReadField label="Supplier Code" value={sup.code} />
-                          <ReadField label="Company Name" value={sup.name} />
-                          <ReadField label="Supplier Type" value={sup.type} />
+                            : <Dd label="Select Supplier" req err={errs.supplier} optMeta={supMeta} value={supName} options={[SUPPLIER_PLACEHOLDER, ...supplierNames]} onChange={pickSupplier} />}
+                          <ReadField label="Supplier Code" value={sup.code} loading={supLoading} />
+                          <ReadField label="Company Name" value={sup.name} loading={supLoading} />
+                          <ReadField label="Supplier Type" value={sup.type} loading={supLoading} />
                         </div></div>
                       </div>
 
                       <div className="pof-sub">
-                        <div className="pof-sub__hd"><div className="pof-sub__ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" /></svg></div><div className="pof-sub__t">Supplier Legal Status</div><span className={`splegal-badge ${legalCalc ? (legalCalc.p === 100 ? 'ok' : 'warn') : ''}`}>{legalCalc ? (legalCalc.p === 100 ? '100% Compliant' : `${legalCalc.p}% · Needs Review`) : '—'}</span><button type="button" className="cptd-vault-btn" style={{ marginLeft: 'auto' }} onClick={() => setVaultOpen(true)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg><span>Supplier Legal Status</span></button></div>
+                        <div className="pof-sub__hd"><div className="pof-sub__ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" /></svg></div><div className="pof-sub__t">Supplier Legal Status</div><span className={`splegal-badge ${legalView ? (legalView.p === 100 ? 'ok' : 'warn') : ''}`}>{legalView ? (legalView.p === 100 ? '100% Compliant' : `${legalView.p}% · Needs Review`) : '—'}</span><button type="button" className="cptd-vault-btn" style={{ marginLeft: 'auto' }} onClick={() => setVaultOpen(true)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg><span>Supplier Legal Status</span></button></div>
                         <div className="pof-sub__bd">
-                          <div className="splegal"><div className="splegal-bar"><div className="splegal-fill" style={{ width: `${legalCalc?.p || 0}%`, background: legalCalc ? (legalCalc.p === 100 ? 'linear-gradient(90deg,#0e7490,#0891b2 55%,#06b6d4)' : legalCalc.p >= 60 ? 'linear-gradient(90deg,#d97706,#f59e0b)' : 'linear-gradient(90deg,#dc2626,#ef4444)') : undefined }} /></div><div className="splegal-pct">{legalCalc?.p || 0}%</div></div>
-                          {legalCalc ? (<>
-                            <div className="splegal-summary"><strong>{legalCalc.done}</strong> of <strong>{legalCalc.tot}</strong> documents completed across all 5 parameters</div>
+                          <div className="splegal"><div className="splegal-bar"><div className="splegal-fill" style={{ width: `${legalView?.p || 0}%`, background: legalView ? (legalView.p === 100 ? 'linear-gradient(90deg,#0e7490,#0891b2 55%,#06b6d4)' : legalView.p >= 60 ? 'linear-gradient(90deg,#d97706,#f59e0b)' : 'linear-gradient(90deg,#dc2626,#ef4444)') : undefined }} /></div><div className="splegal-pct">{legalView?.p || 0}%</div></div>
+                          {legalView ? (<>
+                            <div className="splegal-summary"><strong>{legalView.done}</strong> of <strong>{legalView.tot}</strong> documents completed across all 5 parameters</div>
                             <div className="splegal-grid">
-                              {legalCalc.cards.map(c => (
+                              {legalView.cards.map(c => (
                                 <div key={c.name} className={`splegal-card splegal-card--${c.st}`}>
                                   <div className="splegal-card__hd"><span className="splegal-card__ico"><Check /></span><span className="splegal-card__nm">{c.name}</span><span className="splegal-card__cnt">{c.d} / {c.t}</span></div>
                                   <div className="splegal-card__bar"><div className="splegal-card__fill" style={{ width: `${c.pc}%` }} /></div>
                                 </div>
                               ))}
                             </div>
-                          </>) : <div className="splegal-empty">Select a supplier to view legal &amp; compliance status.</div>}
+                          </>) : supLoading ? (
+                            <div className="splegal-grid">
+                              {[0, 1, 2, 3, 4].map(i => (
+                                <div key={i} className="splegal-card splegal-card--none">
+                                  <div className="splegal-card__hd"><Skel w="60%" /><Skel w="28px" /></div>
+                                  <div className="splegal-card__bar"><div className="splegal-card__fill pof-skel" style={{ width: '40%' }} /></div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : <div className="splegal-empty">Select a supplier to view legal &amp; compliance status.</div>}
                         </div>
                       </div>
 
                       <div className="pof-sub">
                         <div className="pof-sub__hd"><div className="pof-sub__ico">{pinIco}</div><div className="pof-sub__t">Address &amp; Contact Details</div><span className="pof-sub__n">9 Fields</span></div>
                         <div className="pof-sub__bd"><div className="pof-grid pof-grid--4">
-                          <ReadField label="Registered Office Address" value={sup.addr} full />
-                          <ReadField label="Country" value={sup.country} />
-                          <ReadField label="State" value={sup.state} />
-                          <ReadField label="State Code" value={sup.stateCode} />
-                          <ReadField label="City" value={sup.city} />
-                          <ReadField label="Contact Person Name" value={sup.contact} />
-                          <ReadField label="Designation" value={sup.desig} />
-                          <ReadField label="Contact Number" value={sup.phone} />
-                          <ReadField label="Email ID" value={sup.email} />
+                          <ReadField label="Registered Office Address" value={sup.addr} full loading={supLoading} />
+                          <ReadField label="Country" value={sup.country} loading={supLoading} />
+                          <ReadField label="State" value={sup.state} loading={supLoading} />
+                          <ReadField label="State Code" value={sup.stateCode} loading={supLoading} />
+                          <ReadField label="City" value={sup.city} loading={supLoading} />
+                          <ReadField label="Contact Person Name" value={sup.contact} loading={supLoading} />
+                          <ReadField label="Designation" value={sup.desig} loading={supLoading} />
+                          <ReadField label="Contact Number" value={sup.phone} loading={supLoading} />
+                          <ReadField label="Email ID" value={sup.email} loading={supLoading} />
                         </div></div>
                       </div>
 
                       <div className="pof-sub">
                         <div className="pof-sub__hd"><div className="pof-sub__ico">{fileIco}</div><div className="pof-sub__t">GST Scrutiny Details</div><span className="pof-sub__n">5 Fields</span></div>
                         <div className="pof-sub__bd"><div className="pof-grid pof-grid--4">
-                          <ReadField label="Scrutiny Date" value={roDate(sup.scrutiny)} />
-                          <ReadField label="GST Number" value={sup.gstNo} />
-                          <ReadField label="GST Status" value={sup.gstStatus} />
-                          <ReadField label="Last Filing Date" value={roDate(sup.filing)} />
-                          <ReadField label="Prev. Invoice / Remarks" value={sup.remarks} full />
+                          <ReadField label="Scrutiny Date" value={roDate(sup.scrutiny)} loading={supLoading} />
+                          <ReadField label="GST Number" value={sup.gstNo} loading={supLoading} />
+                          <ReadField label="GST Status" value={sup.gstStatus} loading={supLoading} />
+                          <ReadField label="Last Filing Date" value={roDate(sup.filing)} loading={supLoading} />
+                          <ReadField label="Prev. Invoice / Remarks" value={sup.remarks} full loading={supLoading} />
                         </div></div>
                       </div>
                     </div>
@@ -766,15 +909,21 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                         {withShip ? (<>
                           <th className="cpd-c">Sr. No</th><th>Product Code</th><th>Product Name (PI)</th><th className="cpd-c">Quantity (PI)</th>
                           <th>Product Name (PO)</th><th className="cpd-c">Quantity (PO)</th><th className="cpd-c">Missing Qty</th><th>Product Rate</th>
-                          <th className="cpd-c">CGST (%)</th><th className="cpd-c">SGST (%)</th><th className="cpd-r">CGST Amount</th><th className="cpd-r">SGST Amount</th><th className="cpd-r">Product Cost</th><th className="cpd-c"> </th>
+                          {intra
+                            ? <><th className="cpd-c">CGST (%)</th><th className="cpd-c">SGST (%)</th><th className="cpd-r">CGST Amount</th><th className="cpd-r">SGST Amount</th></>
+                            : <><th className="cpd-c">IGST (%)</th><th className="cpd-r">IGST Amount</th></>}
+                          <th className="cpd-r">Product Cost</th><th className="cpd-c"> </th>
                         </>) : (<>
                           <th className="cpd-c">Sr. No</th><th>Product Name (PO)</th><th className="cpd-c">Quantity (PO)</th><th>Product Rate</th>
-                          <th className="cpd-c">CGST (%)</th><th className="cpd-c">SGST (%)</th><th className="cpd-r">CGST Amount</th><th className="cpd-r">SGST Amount</th><th className="cpd-r">Product Cost</th><th className="cpd-c"> </th>
+                          {intra
+                            ? <><th className="cpd-c">CGST (%)</th><th className="cpd-c">SGST (%)</th><th className="cpd-r">CGST Amount</th><th className="cpd-r">SGST Amount</th></>
+                            : <><th className="cpd-c">IGST (%)</th><th className="cpd-r">IGST Amount</th></>}
+                          <th className="cpd-r">Product Cost</th><th className="cpd-c"> </th>
                         </>)}
                       </tr></thead>
                       <tbody>
                         {rows.length === 0 ? (
-                          <tr><td colSpan={withShip ? 14 : 10} style={{ padding: '24px', textAlign: 'center', color: '#9fb2c0', fontWeight: 600 }}>No products added — click “Add Product” below to start.</td></tr>
+                          <tr><td colSpan={withShip ? (intra ? 14 : 12) : (intra ? 10 : 8)} style={{ padding: '24px', textAlign: 'center', color: '#9fb2c0', fontWeight: 600 }}>No products added — click “Add Product” below to start.</td></tr>
                         ) : rows.map((r, i) => {
                           const c = compute(r);
                           return withShip ? (
@@ -783,14 +932,15 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                               <td className="cpd-c"><span className="cpd-code">{r.code || '—'}</span></td>
                               <td className="cpd-name">{r.piName || '—'}</td>
                               <td className="cpd-c">{r.piQty || 0}</td>
-                              <td><input className="cpd-in cpd-in--name" value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} /></td>
+                              <td>{(r.productId == null && !r.code && !r.piName)
+                                ? <div className="cpd-prodcell"><Dd value={PI_REPICK_PLACEHOLDER} options={[PI_REPICK_PLACEHOLDER, ...removedPi.map(piLabel)]} onChange={label => { if (label !== PI_REPICK_PLACEHOLDER) reAddPi(r.id, label); }} /></div>
+                                : <input className="cpd-in cpd-in--name" value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} />}</td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
                               <td className={`cpd-c cpd-miss ${c.miss > 0 ? 'is-short' : (c.miss < 0 ? 'is-over' : '')}`}>{c.miss}</td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
-                              <td className="cpd-c">{c.cgstP}%</td>
-                              <td className="cpd-c">{c.sgstP}%</td>
-                              <td className="cpd-r">{money2(c.cgstA)}</td>
-                              <td className="cpd-r">{money2(c.sgstA)}</td>
+                              {intra
+                                ? <><td className="cpd-c">{c.cgstP}%</td><td className="cpd-c">{c.sgstP}%</td><td className="cpd-r">{money2(c.cgstA)}</td><td className="cpd-r">{money2(c.sgstA)}</td></>
+                                : <><td className="cpd-c">{c.igstP}%</td><td className="cpd-r">{money2(c.igstA)}</td></>}
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
                               <td className="cpd-c"><button type="button" className="cpd-del" title="Remove product" onClick={() => removeLine(r.id)}>✕</button></td>
                             </tr>
@@ -800,21 +950,22 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                               <td className="cpd-prodcell"><Dd value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.map(o => o.name)]} onChange={name => pickProduct(r.id, name)} /></td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
-                              <td className="cpd-c">{c.cgstP}%</td>
-                              <td className="cpd-c">{c.sgstP}%</td>
-                              <td className="cpd-r">{money2(c.cgstA)}</td>
-                              <td className="cpd-r">{money2(c.sgstA)}</td>
+                              {intra
+                                ? <><td className="cpd-c">{c.cgstP}%</td><td className="cpd-c">{c.sgstP}%</td><td className="cpd-r">{money2(c.cgstA)}</td><td className="cpd-r">{money2(c.sgstA)}</td></>
+                                : <><td className="cpd-c">{c.igstP}%</td><td className="cpd-r">{money2(c.igstA)}</td></>}
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
                               <td className="cpd-c"><button type="button" className="cpd-del" title="Remove product" onClick={() => removeLine(r.id)}>✕</button></td>
                             </tr>
                           );
                         })}
                       </tbody>
-                      <tfoot>
-                        <tr className="cpd-addtr"><td colSpan={withShip ? 14 : 10}>
-                          <button type="button" className="cpd-add-btn" onClick={addLine}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add Product</button>
-                        </td></tr>
-                      </tfoot>
+                      {canAddProduct && (
+                        <tfoot>
+                          <tr className="cpd-addtr"><td colSpan={withShip ? (intra ? 14 : 12) : (intra ? 10 : 8)}>
+                            <button type="button" className="cpd-add-btn" onClick={addLine}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add Product</button>
+                          </td></tr>
+                        </tfoot>
+                      )}
                     </table>
                   </div>
                   <div className="cpd-sum">
@@ -828,16 +979,25 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                     </div>
                     <div className="cpd-totbox">
                       <div className="cpd-totrow"><div className="cpd-totrow__k">Total Product Cost</div><div className="cpd-totrow__v">{money2(summary.prod)}</div></div>
-                      <div className="cpd-totrow"><div className="cpd-totrow__k">Total CGST Amount</div><div className="cpd-totrow__v">{money2(summary.cgst)}</div></div>
-                      <div className="cpd-totrow"><div className="cpd-totrow__k">Total SGST Amount</div><div className="cpd-totrow__v">{money2(summary.sgst)}</div></div>
+                      {intra ? (<>
+                        <div className="cpd-totrow"><div className="cpd-totrow__k">Total CGST Amount</div><div className="cpd-totrow__v">{money2(summary.cgst)}</div></div>
+                        <div className="cpd-totrow"><div className="cpd-totrow__k">Total SGST Amount</div><div className="cpd-totrow__v">{money2(summary.sgst)}</div></div>
+                      </>) : (
+                        <div className="cpd-totrow"><div className="cpd-totrow__k">Total IGST Amount</div><div className="cpd-totrow__v">{money2(summary.igst)}</div></div>
+                      )}
                       <div className="cpd-totrow"><div className="cpd-totrow__k">Additional Charges</div><div className="cpd-totrow__v">{money2(summary.addl)}</div></div>
                       <div className="cpd-totrow cpd-totrow--grand"><div className="cpd-totrow__k">Grand Total</div><div className="cpd-totrow__v">{money2(summary.grand)}</div></div>
                     </div>
                   </div>
                   <div className="cpd-saverow">
-                    <button type="button" className="cpd-save-btn" onClick={() => { setShowMissing(true); toast.success('Product details saved'); }}>
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
-                      Save Details
+                    <button type="button" className="cpd-save-btn" disabled={savingDetails} onClick={() => {
+                      if (savingDetails) return;
+                      setSavingDetails(true);
+                      setTimeout(() => { setSavingDetails(false); setShowMissing(true); toast.success('Product details saved'); }, 500);
+                    }}>
+                      {savingDetails
+                        ? <><Spin s={15} /> Saving…</>
+                        : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg> Save Details</>}
                     </button>
                   </div>
                 </Box>
@@ -886,8 +1046,9 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
           <div className="p2pj-footer__dots">{[1, 2, 3, 4].map(i => <div key={i} className={`p2pj-fdot ${i < stage ? 'is-done' : (i === stage ? 'is-active' : '')}`} />)}</div>
           <div className="p2pj-footer__btns">
             <button className="p2pj-fbtn p2pj-fbtn--ghost" onClick={back}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg> {stage === 1 ? 'Change Link' : 'Back'}</button>
-            <button className={`p2pj-fbtn ${stage === 3 ? 'p2pj-fbtn--submit' : 'p2pj-fbtn--primary'}`} onClick={next}>
-              {stage === 3 ? (<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> Submit PO &amp; Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)
+            <button className={`p2pj-fbtn ${stage === 3 ? 'p2pj-fbtn--submit' : 'p2pj-fbtn--primary'}`} disabled={saving} onClick={next}>
+              {saving ? (<><Spin s={14} /> {stage === 4 ? (isEdit ? 'Updating…' : 'Generating…') : 'Please wait…'}</>)
+                : stage === 3 ? (<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> Submit PO &amp; Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)
                 : stage === 4 ? (<>{isEdit ? 'Update Purchase Order' : 'Generate Purchase Order'} <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)
                   : (<>Save &amp; Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)}
             </button>
@@ -961,11 +1122,11 @@ function ShipDd({ shipments, value, onPick }: { shipments: Shipment[]; value: nu
 /* ── Previous-stage read-only summary ─────────────────────────────────── */
 function PrevSummary(props: {
   stage: number; po: any; sup: SupplierRec; supName: string; rows: PoLine[];
-  compute: (r: PoLine) => any; summary: { prod: number; cgst: number; sgst: number; addl: number; grand: number };
+  compute: (r: PoLine) => any; summary: { prod: number; cgst: number; sgst: number; igst: number; addl: number; grand: number };
   charges: { ship: string; pack: string; other: string }; terms: string;
-  shipId: string | null; poMode: 'with' | 'without' | null; shipCustomer: string; todayDisp: string; legalText: string;
+  todayDisp: string; legalText: string;
 }) {
-  const { stage, po, sup, supName, rows, compute, summary, charges, terms, shipId, poMode, shipCustomer, todayDisp, legalText } = props;
+  const { stage, po, sup, supName, rows, compute, summary, charges, terms, todayDisp, legalText } = props;
   const F = ({ l, v, full }: { l: string; v: string; full?: boolean }) => (
     <div className={`cposum-f ${full ? 'cposum-f--full' : ''}`}><div className="cposum-f__l">{l}</div><div className={`cposum-f__v ${!v ? 'is-empty' : ''}`}>{v || '— Not provided'}</div></div>
   );
@@ -978,15 +1139,13 @@ function PrevSummary(props: {
         <div><div className="cposum-grp__t">Basic Purchase Order Details</div><div className="cposum-grid">
           <F l="PO Type" v={po.poType} /><F l="Document Type" v={po.docType} /><F l="Mode of Transport" v={po.transport} /><F l="PO Date" v={todayDisp} />
           <F l="Expected Delivery Date" v={po.edd ? roDate(po.edd) : ''} /><F l="Delivery Location" v={po.deliveryLoc} /><F l="Payment Type" v={po.payType} /><F l="Physical Inspection Required" v={po.inspection ? 'Yes' : 'No'} />
-          {poMode === 'with' && <F l="Shipment ID" v={shipId || ''} />}
-          {poMode === 'with' && <F l="Customer Name" v={shipCustomer} />}
-          {po.docType === 'International' && <><F l="Currency" v={po.currency} /><F l="Exchange Rate" v={po.exRate} /><F l="INCO Term" v={po.inco} /><F l="Port of Loading" v={po.portLoad} /><F l="Port of Discharge" v={po.portDischarge} /><F l="Final Destination" v={po.finalDest} /><F l="Country of Origin" v={po.origin} /></>}
+          {po.docType === 'International' &&<><F l="Currency" v={po.currency} /><F l="Exchange Rate" v={po.exRate} /><F l="INCO Term" v={po.inco} /><F l="Port of Loading" v={po.portLoad} /><F l="Port of Discharge" v={po.portDischarge} /><F l="Final Destination" v={po.finalDest} /><F l="Country of Origin" v={po.origin} /></>}
         </div></div>
         <div><div className="cposum-grp__t">Supplier Details</div><div className="cposum-grid">
           <F l="Select Supplier" v={supName !== SUPPLIER_PLACEHOLDER ? supName : ''} /><F l="Supplier Code" v={sup.code} /><F l="Company Name" v={sup.name} /><F l="Supplier Type" v={sup.type} />
         </div></div>
         <div><div className="cposum-grp__t">Supplier Legal Status</div><div className="cposum-grid">
-          <F l="Compliance" v={legalText} />
+          <F l="Compliance" v={legalText} full />
         </div></div>
         <div><div className="cposum-grp__t">Address &amp; Contact Details</div><div className="cposum-grid">
           <F l="Registered Office Address" v={sup.addr} full /><F l="Country" v={sup.country} /><F l="State" v={sup.state} /><F l="State Code" v={sup.stateCode} />
@@ -1011,7 +1170,11 @@ function PrevSummary(props: {
           </div>
         </div>
         <div><div className="cposum-grp__t">Cost Summary</div><div className="cposum-grid">
-          <F l="Total Product Cost" v={money2(summary.prod)} /><F l="Total CGST Amount" v={money2(summary.cgst)} /><F l="Total SGST Amount" v={money2(summary.sgst)} /><F l="Additional Charges" v={money2(summary.addl)} /><F l="Grand Total" v={money2(summary.grand)} />
+          <F l="Total Product Cost" v={money2(summary.prod)} />
+          {(sup.stateCode || '27') === '27'
+            ? <><F l="Total CGST Amount" v={money2(summary.cgst)} /><F l="Total SGST Amount" v={money2(summary.sgst)} /></>
+            : <F l="Total IGST Amount" v={money2(summary.igst)} />}
+          <F l="Additional Charges" v={money2(summary.addl)} /><F l="Grand Total" v={money2(summary.grand)} />
         </div></div>
       </div>
     </div>

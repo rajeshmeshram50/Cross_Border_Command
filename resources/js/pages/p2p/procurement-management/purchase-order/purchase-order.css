@@ -91,6 +91,13 @@
 .pom .bref-box--teal .bref-item__ico{color:#0891b2;}
 
 /* ── PO list (tabs, search, table, pager) ───────────────────────────────── */
+/* Fixed-height page shell so the table area gets a bounded height and the
+ * auto-fit pagination (My Workplace pattern) can fill it. Only the PO list
+ * root opts in via .polist-page — the wizard/other .pom views are untouched. */
+.pom.polist-page{height:calc(100vh - 130px);min-height:420px;}
+.pom.polist-page .polist-wrap{flex:1;min-height:0;display:flex;flex-direction:column;}
+.pom.polist-page .polist-body{flex:1;min-height:0;display:flex;flex-direction:column;}
+.pom.polist-page .polist-scroll{flex:1;min-height:0;overflow-y:auto;}
 .pom .polist-wrap{margin-top:4px;background:#fff;border:1px solid #e3eef3;border-radius:16px;box-shadow:0 4px 16px rgba(8,80,110,.06);overflow:hidden;}
 .pom .polist-top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:0;padding:14px;}
 .pom .polist-seg{display:inline-flex;align-items:center;gap:6px;background:#eef5f9;border:1px solid #dce9f0;border-radius:14px;padding:5px;}
@@ -116,7 +123,7 @@
 .pom .polist-scroll::-webkit-scrollbar{height:9px;}
 .pom .polist-scroll::-webkit-scrollbar-thumb{background:#cfe3ea;border-radius:8px;}
 .pom .polist-tbl{width:100%;border-collapse:collapse;font-size:11.5px;table-layout:auto;}
-.pom .polist-tbl thead{background:#f1f8fb;}
+.pom .polist-tbl thead{background:#f1f8fb;position:sticky;top:0;z-index:5;}
 .pom .polist-tbl thead th{text-align:center;font-size:8.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#5f7d92;padding:11px 7px;white-space:normal;line-height:1.3;border-bottom:1px solid #e1edf2;}
 .pom .polist-tbl tbody td{padding:12px 7px;border-bottom:1px solid #eef3f6;color:#3a5161;font-weight:600;white-space:normal;text-align:center;vertical-align:middle;line-height:1.35;}
 .pom .polist-tbl tbody tr:last-child td{border-bottom:none;}
@@ -425,7 +432,7 @@
 .pom .pof-f{display:flex;flex-direction:column;gap:3px;position:relative;}
 .pom .pof-f--full{grid-column:1/-1;}
 .pom .pof-f label{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5b7585;}
-.pom .pof-in{font-family:inherit;font-size:12.5px;font-weight:600;color:#0f172a;padding:0 12px;border:1.5px solid #e6eef3;border-radius:9px;background:#f9fdfe;transition:border-color .15s,box-shadow .15s,background .15s;width:100%;box-sizing:border-box;}
+.pom .pof-in{font-family:inherit;font-size:12.5px;font-weight:600;color:#0f172a;padding:0 12px;border:1.5px solid #e6eef3;border-radius:9px;background:#ffffff;transition:border-color .15s,box-shadow .15s,background .15s;width:100%;box-sizing:border-box;}
 .pom input.pof-in{height:40px;line-height:normal;}
 .pom .pof-in:focus{outline:none;border-color:#22d3ee;background:#fff;box-shadow:0 0 0 4px rgba(34,211,238,.12);}
 .pom .pof-in::placeholder{color:#9fb0bf;}
@@ -434,7 +441,7 @@
 .pom .pof-ro{min-height:40px;display:flex;align-items:center;padding:9px 12px;border:1.5px solid #e3ebf0;border-radius:9px;background:#f1f6f9;color:#3f566a;font-size:12.5px;font-weight:600;line-height:1.4;box-sizing:border-box;cursor:default;word-break:break-word;}
 .pom .pof-frozen__val{font-size:12.5px;font-weight:700;color:#3f566a;font-variant-numeric:tabular-nums;letter-spacing:.2px;}
 .pom .pof-frozen__tag{display:inline-flex;align-items:center;gap:4px;font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#0e7490;background:#e0f7fb;border:1px solid #c2ecf3;border-radius:20px;padding:3px 7px;white-space:nowrap;flex-shrink:0;}
-.pom .pof-dd{height:40px;width:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 9px 0 13px;border:1.5px solid #e6eef3;border-radius:9px;background:#f9fdfe;font-family:inherit;font-size:12.5px;font-weight:600;color:#0f172a;cursor:pointer;text-align:left;transition:border-color .15s,box-shadow .15s,background .15s;}
+.pom .pof-dd{height:40px;width:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 9px 0 13px;border:1.5px solid #e6eef3;border-radius:9px;background:#ffffff;font-family:inherit;font-size:12.5px;font-weight:600;color:#0f172a;cursor:pointer;text-align:left;transition:border-color .15s,box-shadow .15s,background .15s;}
 .pom .pof-dd:hover{border-color:#bfe5ee;background:#fff;}
 .pom .pof-dd.is-open{border-color:#22d3ee;background:#fff;box-shadow:0 0 0 4px rgba(34,211,238,.12);}
 .pom .pof-dd__val{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -539,7 +546,7 @@
 .pom .cpd-tbl tfoot .cpd-addtr td{background:#fff;border-top:1px solid #eef3f6;text-align:right;padding:10px 12px;white-space:nowrap;}
 .pom .cpd-add-btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 15px;border:1.5px solid #bfe9f3;background:#eafaff;color:#0e7490;font-family:inherit;font-size:12px;font-weight:800;border-radius:9px;cursor:pointer;transition:background .15s,border-color .15s,transform .15s;}
 .pom .cpd-add-btn:hover{background:#d8f4fb;border-color:#7fc3d8;transform:translateY(-1px);}
-.pom .cpd-saverow{display:flex;justify-content:center;margin-top:16px;}
+.pom .cpd-saverow{display:flex;justify-content:center;margin-top:-40px;}
 .pom .cpd-save-btn{display:inline-flex;align-items:center;gap:8px;padding:11px 26px;border:none;border-radius:11px;font-family:inherit;font-size:13px;font-weight:800;letter-spacing:.01em;color:#fff;cursor:pointer;background:linear-gradient(135deg,#0e7490,#0891b2 55%,#06b6d4);box-shadow:0 4px 14px rgba(8,145,178,.34);transition:transform .15s,box-shadow .15s,filter .15s;}
 .pom .cpd-save-btn:hover{transform:translateY(-1px);box-shadow:0 7px 20px rgba(8,145,178,.46);filter:brightness(1.03);}
 .pom .cpd-miss-empty{display:flex;align-items:center;justify-content:center;gap:9px;padding:26px 16px;border:1px dashed #cfe3ea;border-radius:11px;background:#f7fdff;color:#0e7490;font-size:12.5px;font-weight:700;}
@@ -652,6 +659,32 @@
 .pom .cptd-act{width:32px;height:32px;border-radius:8px;border:1.5px solid #d3e3ea;background:#fff;color:#0891b2;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .13s,background .13s;}
 .pom .cptd-act:hover{border-color:#22d3ee;background:#f0fbfe;}
 .pom .pof-reqstar{color:#e11d48;font-weight:800;}
+.pom .pof-dd.is-error{border-color:#f06548;background:#fff6f4;}
+.pom .pof-dd.is-error:hover{border-color:#f06548;}
+.pom .pof-dd.is-error.is-open{border-color:#f06548;box-shadow:0 0 0 4px rgba(240,101,72,.14);}
+.pom .pof-err-msg{margin-top:5px;font-size:10.5px;font-weight:600;color:#e11d48;line-height:1.3;}
+/* ── Loaders & shimmer ────────────────────────────────────────────── */
+.pof-spin{animation:pofSpin .7s linear infinite;flex-shrink:0;}
+@keyframes pofSpin{to{transform:rotate(360deg);}}
+.pom .pof-skel,.pof-skel{display:inline-block;height:11px;border-radius:5px;background:linear-gradient(90deg,#e2e8f0 0%,#f1f5f9 50%,#e2e8f0 100%);background-size:200% 100%;animation:pofShimmer 1.1s ease-in-out infinite;}
+@keyframes pofShimmer{0%{background-position:200% 0;}100%{background-position:-200% 0;}}
+.pom .pof-ro--skel{display:flex;align-items:center;}
+.pom .pof-sub__loading{display:inline-flex;align-items:center;gap:5px;margin-left:8px;font-size:10px;font-weight:700;color:#0891b2;}
+[data-bs-theme="dark"] .pom .pof-skel,[data-bs-theme="dark"] .pof-skel{background:linear-gradient(90deg,#1e293b 0%,#334155 50%,#1e293b 100%);background-size:200% 100%;}
+/* PO list skeleton rows (shimmer while the table is fetching). */
+.pom .polist-skel{display:inline-block;height:11px;width:70%;border-radius:5px;background:linear-gradient(90deg,#e2e8f0 0%,#f1f5f9 50%,#e2e8f0 100%);background-size:200% 100%;animation:pofShimmer 1.1s ease-in-out infinite;}
+.pom .polist-skel-row td{padding:14px 7px;}
+[data-bs-theme="dark"] .pom .polist-skel{background:linear-gradient(90deg,#1e293b 0%,#334155 50%,#1e293b 100%);background-size:200% 100%;}
+/* Rich dropdown option (code : name  [badge]) — Delivery Location warehouse.
+ * Unprefixed (no .pom) so it also applies to the option list, which renders in
+ * a portal on document.body (.pof-dd-pop--portal), outside the .pom wrapper. */
+.pof-dd__optlbl{display:inline-flex;align-items:center;gap:7px;min-width:0;overflow:hidden;flex:1;}
+.pof-dd__optcode{font-weight:800;color:#0e7490;font-variant-numeric:tabular-nums;flex-shrink:0;}
+.pof-dd__optname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pof-dd__optbadge{flex-shrink:0;margin-left:auto;font-size:8.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:20px;padding:2px 8px;line-height:1.4;white-space:nowrap;}
+.pof-dd__optbadge--own{color:#0e7490;background:#e0f7fb;border:1px solid #c2ecf3;}
+.pof-dd__optbadge--third{color:#b45309;background:#fef3c7;border:1px solid #fde68a;}
+[data-bs-theme="dark"] .pom .pof-dd.is-error{background:#2a1614;border-color:#f06548;}
 .pom .cptd-lbtn{display:inline-flex;align-items:center;gap:6px;font-family:inherit;font-size:11px;font-weight:700;color:#0e7490;background:#eafcff;border:1.5px solid #c8eef6;border-radius:8px;padding:6px 11px;cursor:pointer;transition:border-color .13s,background .13s,opacity .15s;white-space:nowrap;}
 .pom .cptd-lbtn:hover:not(:disabled){border-color:#22d3ee;background:#e0f7fb;}
 .pom .cptd-lbtn:disabled{opacity:.5;cursor:not-allowed;}
