@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
+import Tooltip from '../../../../components/ui/Tooltip';
 import TradeDocsTable from './TradeDocsTable';
 import SupplierEvidenceVaultModal from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 
@@ -289,6 +290,11 @@ const userIco = (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" str
 const pinIco = (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>);
 const fileIco = (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></svg>);
 const boxIco = (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>);
+const linesIco = (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="16" y2="12" /><line x1="4" y1="18" x2="11" y2="18" /></svg>);
+// Reference-pill icon by label — supplier code = lines, supplier name = person,
+// state code = map pin, everything else = document.
+const refIcoFor = (label: string) => label.includes('Supplier Name') || label.includes('Customer') || label.includes('Consignee')
+  ? userIco : label.includes('State Code') ? pinIco : label.includes('Supplier Code') ? linesIco : fileIco;
 
 const mapDetailToSup = (s: Record<string, unknown>): SupplierRec => ({
   code: String(s.code ?? ''), type: String(s.type ?? ''), name: String(s.name ?? ''), legal: String(s.name ?? ''),
@@ -456,11 +462,21 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
       setCurrencyId(d.currency_id ?? null);
       setVendorId(d.vendor_id ?? null);
       setShipmentDbId(d.shipment_order_id ?? null);
-      // With-Shipment PO: load the shipment's full PI product set so removed PI
-      // products can be re-added via the Add-Product dropdown.
+      // With-Shipment PO: load the shipment's full PI product set (with the
+      // quantity REMAINING for this PO = PI total − what other POs consumed;
+      // this PO's own lines are excluded). Used to (a) re-add removed PI
+      // products and (b) refresh each loaded row's PI quantity so Missing Qty
+      // reflects how much more this PO can still take.
       if (d.shipment_order_id) {
-        api.get(`/p2p/purchase-orders/shipments/${d.shipment_order_id}/pi-products`)
-          .then(pr => setPiSet(((pr.data?.data ?? []) as Array<Record<string, unknown>>).map(mapPiRow)))
+        api.get(`/p2p/purchase-orders/shipments/${d.shipment_order_id}/pi-products`, { params: { exclude_po: editId } })
+          .then(pr => {
+            const piRows = ((pr.data?.data ?? []) as Array<Record<string, unknown>>).map(mapPiRow);
+            setPiSet(piRows);
+            setRows(rs => rs.map(r => {
+              const p = piRows.find(x => piIdent(x) === piIdent(r));
+              return p ? { ...r, piQty: p.piQty } : r;
+            }));
+          })
           .catch(() => {});
       }
       setShipId(d.ship ?? null);
@@ -759,7 +775,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                   {refPills.map((p, i) => (
                     <span key={i} style={{ display: 'contents' }}>
                       <div className="cpd-ref__pill">
-                        <div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{(p.l === 'Customer Name' || p.l === 'Consignee Name') ? userIco : fileIco}</div>
+                        <div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{refIcoFor(p.l)}</div>
                         <div className="cpd-ref__txt"><div className="cpd-ref__l">{p.l}</div><div className={`cpd-ref__v ${p.mono ? 'cpd-ref__v--mono' : ''}`}>{p.v || '—'}</div></div>
                       </div>
                       {i < refPills.length - 1 && <div className="cpd-ref__dots"><span /><span /><span /></div>}
@@ -901,7 +917,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                   extra={<div className="cpd-ref">
                     {[{ l: 'Supplier Code', v: sup.code || 'S-001', mono: true }, { l: 'Supplier Name', v: sup.name || 'AgroSource Materials Pvt Ltd', mono: false }, { l: 'State Code', v: sup.stateCode || '27', mono: true }, { l: 'PI Number', v: 'PI/2025-26/001', mono: true }].map((f, i, arr) => (
                       <span key={f.l} style={{ display: 'contents' }}>
-                        <div className="cpd-ref__pill"><div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{fileIco}</div><div className="cpd-ref__txt"><div className="cpd-ref__l">{f.l}</div><div className={`cpd-ref__v ${f.mono ? 'cpd-ref__v--mono' : ''}`}>{f.v}</div></div></div>
+                        <div className="cpd-ref__pill"><div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{refIcoFor(f.l)}</div><div className="cpd-ref__txt"><div className="cpd-ref__l">{f.l}</div><div className={`cpd-ref__v ${f.mono ? 'cpd-ref__v--mono' : ''}`}>{f.v}</div></div></div>
                         {i < arr.length - 1 && <div className="cpd-ref__dots"><span /><span /><span /></div>}
                       </span>
                     ))}
@@ -917,7 +933,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                             : <><th className="cpd-c">IGST (%)</th><th className="cpd-r">IGST Amount</th></>}
                           <th className="cpd-r">Product Cost</th><th className="cpd-c"> </th>
                         </>) : (<>
-                          <th className="cpd-c">Sr. No</th><th>Product Name (PO)</th><th className="cpd-c">Quantity (PO)</th><th>Product Rate</th>
+                          <th className="cpd-c">Sr. No</th><th>Product Code</th><th>Product Name (PO)</th><th className="cpd-c">Quantity (PO)</th><th>Product Rate</th>
                           {intra
                             ? <><th className="cpd-c">CGST (%)</th><th className="cpd-c">SGST (%)</th><th className="cpd-r">CGST Amount</th><th className="cpd-r">SGST Amount</th></>
                             : <><th className="cpd-c">IGST (%)</th><th className="cpd-r">IGST Amount</th></>}
@@ -926,18 +942,18 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                       </tr></thead>
                       <tbody>
                         {rows.length === 0 ? (
-                          <tr><td colSpan={withShip ? (intra ? 14 : 12) : (intra ? 10 : 8)} style={{ padding: '24px', textAlign: 'center', color: '#9fb2c0', fontWeight: 600 }}>No products added — click “Add Product” below to start.</td></tr>
+                          <tr><td colSpan={withShip ? (intra ? 14 : 12) : (intra ? 11 : 9)} style={{ padding: '24px', textAlign: 'center', color: '#9fb2c0', fontWeight: 600 }}>No products added — click “Add Product” below to start.</td></tr>
                         ) : rows.map((r, i) => {
                           const c = compute(r);
                           return withShip ? (
                             <tr key={r.id}>
                               <td className="cpd-c">{i + 1}</td>
                               <td className="cpd-c"><span className="cpd-code">{r.code || '—'}</span></td>
-                              <td className="cpd-name">{r.piName || '—'}</td>
-                              <td className="cpd-c">{r.piQty || 0}</td>
-                              <td>{(r.productId == null && !r.code && !r.piName)
+                              <td className="cpd-name">{(r.productId == null && !r.code && !r.piName)
                                 ? <div className="cpd-prodcell"><Dd value={PI_REPICK_PLACEHOLDER} options={[PI_REPICK_PLACEHOLDER, ...removedPi.map(piLabel)]} onChange={label => { if (label !== PI_REPICK_PLACEHOLDER) reAddPi(r.id, label); }} /></div>
-                                : <input className="cpd-in cpd-in--name" value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} />}</td>
+                                : <Tooltip label={r.piName} disabled={!r.piName}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
+                              <td className="cpd-c">{r.piQty || 0}</td>
+                              <td><input className="cpd-in cpd-in--name" value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} /></td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
                               <td className={`cpd-c cpd-miss ${c.miss > 0 ? 'is-short' : (c.miss < 0 ? 'is-over' : '')}`}>{c.miss}</td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
@@ -950,6 +966,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                           ) : (
                             <tr key={r.id}>
                               <td className="cpd-c">{i + 1}</td>
+                              <td className="cpd-c"><span className="cpd-code">{r.code || '—'}</span></td>
                               <td className="cpd-prodcell"><Dd value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.map(o => o.name)]} onChange={name => pickProduct(r.id, name)} /></td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
@@ -964,7 +981,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                       </tbody>
                       {canAddProduct && (
                         <tfoot>
-                          <tr className="cpd-addtr"><td colSpan={withShip ? (intra ? 14 : 12) : (intra ? 10 : 8)}>
+                          <tr className="cpd-addtr"><td colSpan={withShip ? (intra ? 14 : 12) : (intra ? 11 : 9)}>
                             <button type="button" className="cpd-add-btn" onClick={addLine}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add Product</button>
                           </td></tr>
                         </tfoot>
@@ -1004,6 +1021,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                     </button>
                   </div>
                 </Box>
+                {withShip && (
                 <Box label="Products" title="Missing Product Details" sub="PI quantities not fully covered by the purchase order" ico={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>}
                   extra={showMissing ? <span className={`cpd-misscount ${missing.length === 0 ? 'is-zero' : ''}`}>{missing.length} Missing</span> : undefined}>
                   {!showMissing ? (
@@ -1014,11 +1032,12 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                     <div className="cpd-scroll"><table className="cpd-tbl">
                       <thead><tr><th className="cpd-c">Sr. No</th><th>Product Code</th><th>Product Name (PI)</th><th className="cpd-c">Quantity (PI)</th><th>Product Name (PO)</th><th className="cpd-c">Missing Qty</th></tr></thead>
                       <tbody>{missing.map((m, idx) => (
-                        <tr key={m.code}><td className="cpd-c">{idx + 1}</td><td className="cpd-c"><span className="cpd-code">{m.code}</span></td><td className="cpd-name">{m.piName}</td><td className="cpd-c">{m.piQty}</td><td>{m.poName}</td><td className="cpd-c" style={{ color: '#dc2626', fontWeight: 800 }}>{m.miss}</td></tr>
+                        <tr key={m.code}><td className="cpd-c">{idx + 1}</td><td className="cpd-c"><span className="cpd-code">{m.code}</span></td><td className="cpd-name"><Tooltip label={m.piName} disabled={!m.piName}><span className="cpd-name__txt">{m.piName}</span></Tooltip></td><td className="cpd-c">{m.piQty}</td><td><Tooltip label={m.poName} disabled={!m.poName || m.poName === '—'}><span className="cpd-name__txt">{m.poName}</span></Tooltip></td><td className="cpd-c" style={{ color: '#dc2626', fontWeight: 800 }}>{m.miss}</td></tr>
                       ))}</tbody>
                     </table></div>
                   )}
                 </Box>
+                )}
               </>)}
 
               {stage === 3 && (
@@ -1168,7 +1187,7 @@ function PrevSummary(props: {
         <div><div className="cposum-grp__t">Product Details</div>
           <div style={{ overflowX: 'auto', border: '1px solid #e8eff3', borderRadius: 10 }}>
             <table className="cpd-tbl"><thead><tr><th className="cpd-c">Sr</th><th>Code</th><th>Product (PO)</th><th className="cpd-c">Qty</th><th>Rate</th><th className="cpd-r">Cost</th></tr></thead>
-              <tbody>{rows.map((r, i) => { const c = compute(r); return <tr key={r.id}><td className="cpd-c">{i + 1}</td><td className="cpd-c"><span className="cpd-code">{r.code || '—'}</span></td><td className="cpd-name">{r.name || '—'}</td><td className="cpd-c">{r.qty || 0}</td><td className="cpd-r">{money2(num(r.rate))}</td><td className="cpd-r cpd-cost">{money2(c.cost)}</td></tr>; })}</tbody>
+              <tbody>{rows.map((r, i) => { const c = compute(r); return <tr key={r.id}><td className="cpd-c">{i + 1}</td><td className="cpd-c"><span className="cpd-code">{r.code || '—'}</span></td><td className="cpd-name"><Tooltip label={r.name} disabled={!r.name}><span className="cpd-name__txt">{r.name || '—'}</span></Tooltip></td><td className="cpd-c">{r.qty || 0}</td><td className="cpd-r">{money2(num(r.rate))}</td><td className="cpd-r cpd-cost">{money2(c.cost)}</td></tr>; })}</tbody>
             </table>
           </div>
         </div>

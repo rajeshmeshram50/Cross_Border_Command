@@ -336,7 +336,30 @@ class PurchaseOrderController extends Controller
             ->whereIn('id', $items->pluck('product_id')->filter()->all())
             ->pluck('product_code', 'id');
 
-        $data = $items->map(function ($it) use ($codes) {
+        // Quantity already ordered against this shipment across existing POs, so a
+        // second PO only sees the REMAINING PI quantity (PI qty − already ordered).
+        // Editing a PO excludes its own lines (exclude_po) so they don't count
+        // twice. Keyed by product_id (preferred) and product_code (fallback).
+        $excludePo = $request->integer('exclude_po') ?: null;
+        $orderedRows = DB::table('purchase_order_items as poi')
+            ->join('purchase_orders as po', 'po.id', '=', 'poi.purchase_order_id')
+            ->where('po.shipment_order_id', $id)
+            ->whereNull('po.deleted_at')
+            ->when($excludePo, fn ($q) => $q->where('po.id', '!=', $excludePo))
+            ->selectRaw('poi.product_id, poi.product_code, SUM(poi.quantity) as qty')
+            ->groupBy('poi.product_id', 'poi.product_code')
+            ->get();
+        $orderedById = [];
+        $orderedByCode = [];
+        foreach ($orderedRows as $row) {
+            if ($row->product_id) {
+                $orderedById[(int) $row->product_id] = ($orderedById[(int) $row->product_id] ?? 0) + (float) $row->qty;
+            } elseif ($row->product_code) {
+                $orderedByCode[$row->product_code] = ($orderedByCode[$row->product_code] ?? 0) + (float) $row->qty;
+            }
+        }
+
+        $data = $items->map(function ($it) use ($codes, $orderedById, $orderedByCode) {
             $rawName = (string) $it->product_name;
             $code = $it->product_id ? ($codes[$it->product_id] ?? null) : null;
             $name = $rawName;
@@ -346,16 +369,28 @@ class PurchaseOrderController extends Controller
                 $code = trim($m[1]);
                 $name = trim($m[2]);
             }
+            $piQty = (float) $it->quantity;
+            $ordered = $it->product_id ? ($orderedById[(int) $it->product_id] ?? 0)
+                : ($code ? ($orderedByCode[$code] ?? 0) : 0);
+            $remaining = max(0, $piQty - $ordered);
             return [
                 'product_id' => $it->product_id,
                 'code' => $code,
                 'name' => $name,
                 'hsn' => $it->hsn_code,
-                'qty' => (float) $it->quantity,
+                // qty = REMAINING PI quantity available for this PO (drives the
+                // seeded PI/PO quantities). pi_qty/ordered kept for reference.
+                'qty' => $remaining,
+                'pi_qty' => $piQty,
+                'ordered' => $ordered,
                 'rate' => (float) $it->rate,
                 'gst' => (float) $it->tax_pct,
             ];
-        });
+        })
+        // Fully-ordered PI products (nothing left) drop out — a new PO can only be
+        // built while at least one PI product still has remaining quantity.
+        ->filter(fn ($r) => $r['qty'] > 0)
+        ->values();
 
         return response()->json(['status' => true, 'data' => $data]);
     }
