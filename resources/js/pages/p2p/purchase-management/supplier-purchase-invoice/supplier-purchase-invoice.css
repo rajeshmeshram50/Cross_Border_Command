@@ -108,7 +108,7 @@
 .spi-seg-btn.is-active .spi-seg-c { background: rgba(255,255,255,.25); color:#fff; }
 
 /* Sub tabs (With / Without Shipment) + search on same row */
-.spi-sub { display:flex; align-items:flex-end; gap:14px; padding:2px 16px 0; flex-wrap:wrap; border-bottom:1px solid #eef6f9; }
+.spi-sub { display:flex; align-items:flex-end; gap:14px; padding:0 16px 0; margin-top:-12px; flex-wrap:wrap; border-bottom:1px solid #eef6f9; }
 .spi-subtabs { display:flex; gap:22px; }
 /* Underline-style tabs (match Figma): active = cyan text + cyan bottom bar. */
 .spi-subtab { display:inline-flex; align-items:center; gap:7px; padding:5px 12px; margin-bottom:-1.5px; cursor:pointer;
