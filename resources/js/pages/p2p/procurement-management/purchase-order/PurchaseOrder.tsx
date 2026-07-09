@@ -360,7 +360,7 @@ export default function PurchaseOrder() {
 
   const heads = tab === 'with'
     ? ['Sr. No', 'PO Number', 'PO Type', 'Document Type', 'Shipment ID', 'Opportunity ID', 'Procurement ID', 'Customer Name', 'Supplier Name', 'Expected Delivery Date', 'Zohobook Status', 'Action']
-    : ['Sr. No', 'PO Number', 'PO Type', 'Document Type', 'Supplier Name', 'Expected Delivery Date', 'Zohobook Status', 'Action'];
+    : ['Sr. No', 'PO Number', 'PO Type', 'Document Type', 'Procurement ID', 'Supplier Name', 'Expected Delivery Date', 'Zohobook Status', 'Action'];
 
   const Pill = ({ v }: { v?: string }) => <span className="polist-pill">{v}</span>;
   const DocPill = ({ d }: { d: string }) => (
@@ -460,7 +460,14 @@ export default function PurchaseOrder() {
         </div>
 
         <div className="polist-body">
-          <div className="polist-scroll" ref={scrollRef}>
+          <div className={`polist-scroll ${!loading && total === 0 ? 'is-empty' : ''}`} ref={scrollRef}>
+            {!loading && total === 0 ? (
+              <div className="polist-empty-center">
+                <div className="polist-empty-ico">{Ico.doc(30)}</div>
+                <div className="polist-empty-t">No purchase orders found</div>
+                <div className="polist-empty-s">{query ? `Nothing matches "${query}".` : 'There are no purchase orders in this category yet.'}</div>
+              </div>
+            ) : (
             <table className="polist-tbl">
               <thead><tr>{heads.map(h => <th key={h}>{h}</th>)}</tr></thead>
               <tbody>
@@ -470,8 +477,6 @@ export default function PurchaseOrder() {
                       {heads.map((h, j) => <td key={h}><span className="polist-skel" style={{ width: j === 0 ? 18 : `${55 + ((i + j) % 4) * 12}%` }} /></td>)}
                     </tr>
                   ))
-                ) : total === 0 ? (
-                  <tr><td colSpan={heads.length} className="polist-empty">No purchase orders found{query ? ` for "${query}"` : ' in this category'}.</td></tr>
                 ) : pageRows.map((r, i) => {
                   const synced = r.zoho.toLowerCase() === 'sync';
                   return (
@@ -492,7 +497,9 @@ export default function PurchaseOrder() {
                           <td><Pill v={r.proc} /></td>
                           <td>{r.cust || '—'}</td>
                         </>
-                      ) : null}
+                      ) : (
+                        <td>{r.proc ? <Pill v={r.proc} /> : '—'}</td>
+                      )}
                       <td>{r.supName}</td>
                       <td>{r.edd}</td>
                       <td><ZohoPill z={r.zoho} /></td>
@@ -515,6 +522,7 @@ export default function PurchaseOrder() {
                 })}
               </tbody>
             </table>
+            )}
           </div>
 
           {total > 0 && (
