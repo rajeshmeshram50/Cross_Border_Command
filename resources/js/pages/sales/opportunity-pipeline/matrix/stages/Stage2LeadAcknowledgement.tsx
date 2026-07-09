@@ -322,7 +322,7 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
               </colgroup>
               <thead>
                 <tr>
-                  <th>#</th>
+                  <th>Sr No</th>
                   <th>Date</th>
                   <th>Status</th>
                   <th>Reason</th>
