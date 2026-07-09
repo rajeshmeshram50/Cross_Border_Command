@@ -15,7 +15,9 @@ const PRODUCTS = [
   { code: 'P-005', name: 'Quality Testing Service', qty: '1', hsn: '999899', ratePo: '₹3,200.00', rateSpi: '3200' },
 ];
 
-export default function SpiDetail({ onClose }: { onClose: () => void }) {
+const inr = (n: number) => '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+export default function SpiDetail({ onClose, withPo = true }: { onClose: () => void; withPo?: boolean }) {
   useScrollLock();
   const [step, setStep] = useState(1);
   const [poOpen, setPoOpen] = useState(true);
@@ -41,16 +43,18 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <div className="spi-dt-pills">
-          <HeadPill icon={<IcoLines />} label="INVOICE NO" value="SPI/2025-26/001" />
+          <HeadPill icon={<IcoLines />} label="INVOICE NO" value="SPI/2025-26/001" mono />
           <span className="spi-dt-dots">⋮</span>
-          <HeadPill icon={<IcoLines />} label="PO NUMBER" value="PO/2025-26/040" alt />
+          <HeadPill icon={<IcoLines />} label="PO NUMBER" value="PO/2025-26/040" alt mono />
           <span className="spi-dt-dots">⋮</span>
           <HeadPill icon={<IcoUser />} label="SUPPLIER" value="Havells India" />
           <span className="spi-dt-dots">⋮</span>
-          <HeadPill icon={<IcoLines />} label="GSTIN" value="27AABCA1234F1Z5" alt />
+          <HeadPill icon={<IcoLines />} label="GSTIN" value="27AABCA1234F1Z5" alt mono />
         </div>
         <div className="spi-dt-head-r">
+          <span className="spi-dt-divider" />
           <button type="button" className="spi-dt-btn-pay"><IcoCard /> SPI Payment</button>
+          <span className="spi-dt-divider" />
           <button type="button" className="spi-dt-btn-close" onClick={onClose}><IcoX /> Close</button>
         </div>
       </div>
@@ -272,7 +276,8 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        {/* Products — 3-way match section */}
+        {/* Products — 3-way match (With PO) OR standalone tax & cost (Direct/Without PO) */}
+        {withPo ? (
         <div className={`spi-dt-sec ${prodOpen ? '' : 'is-collapsed'}`}>
           <div className="spi-dt-sec-head" onClick={() => setProdOpen(o => !o)}>
             <div className="spi-dt-sec-ico spi-dt-sec-ico-2"><IcoBox /></div>
@@ -281,21 +286,26 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
               <div className="spi-dt-sec-sub">PI vs PO vs SPI product mapping &amp; 3-way match</div>
             </div>
             <div className="spi-dt-secpills">
-              <HeadPill icon={<IcoDocSm />} label="SUPPLIER CODE" value="S-018" />
+              <HeadPill icon={<IcoDocSm />} label="SUPPLIER CODE" value="S-018" mono />
               <span className="spi-dt-dots">⋮</span>
               <HeadPill icon={<IcoUser />} label="SUPPLIER NAME" value="Havells India" />
               <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoPin />} label="STATE CODE" value="06" />
+              <HeadPill icon={<IcoPin />} label="STATE CODE" value="06" mono />
               <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoDocSm />} label="PO NUMBER" value="PO/2025-26/040" />
+              <HeadPill icon={<IcoDocSm />} label="PO NUMBER" value="PO/2025-26/040" mono />
               <span className="spi-dt-dots">⋮</span>
-              <HeadPill icon={<IcoDocSm />} label="PI NUMBER" value="PI/2025-26/001" />
+              <HeadPill icon={<IcoDocSm />} label="PI NUMBER" value="PI/2025-26/001" mono />
             </div>
             <div className="spi-dt-sec-toggle"><IcoChevron /></div>
           </div>
           <div className="spi-dt-sec-body">
             <div className="spi-dt-mtable-wrap">
               <table className="spi-dt-mtable">
+                <colgroup>
+                  <col style={{ width: '3.5%' }} /><col style={{ width: '6.5%' }} /><col style={{ width: '14%' }} /><col style={{ width: '14%' }} /><col style={{ width: '15%' }} />
+                  <col style={{ width: '5%' }} /><col style={{ width: '5%' }} /><col style={{ width: '6.5%' }} /><col style={{ width: '6%' }} />
+                  <col style={{ width: '8.5%' }} /><col style={{ width: '7.5%' }} /><col style={{ width: '8.5%' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th className="spi-dt-mc-c">SR NO</th>
@@ -324,7 +334,7 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
                       <td>{p.qty}</td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" defaultValue={p.qty} /></td>
                       <td>0</td>
-                      <td><input className="spi-dt-minp" defaultValue={p.hsn} /></td>
+                      <td><input className="spi-dt-minp spi-dt-minp-sm" defaultValue={p.hsn} /></td>
                       <td className="spi-dt-amt">{p.ratePo}</td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" defaultValue={p.rateSpi} /></td>
                     </tr>
@@ -334,6 +344,69 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
             </div>
           </div>
         </div>
+        ) : (
+        <div className={`spi-dt-sec ${prodOpen ? '' : 'is-collapsed'}`}>
+          <div className="spi-dt-sec-head" onClick={() => setProdOpen(o => !o)}>
+            <div className="spi-dt-sec-ico spi-dt-sec-ico-2"><IcoBox /></div>
+            <div className="spi-dt-sec-mid">
+              <div className="spi-dt-sec-row"><span className="spi-dt-sec-lbl">Products</span><span className="spi-dt-sec-sep" /><span className="spi-dt-sec-title">Product Details</span></div>
+              <div className="spi-dt-sec-sub">Supplier invoice products with tax &amp; cost computation</div>
+            </div>
+            <div className="spi-dt-secpills">
+              <HeadPill icon={<IcoDocSm />} label="SUPPLIER CODE" value="S-001" mono />
+              <span className="spi-dt-dots">⋮</span>
+              <HeadPill icon={<IcoUser />} label="SUPPLIER NAME" value="Reliance Industries Ltd" />
+              <span className="spi-dt-dots">⋮</span>
+              <HeadPill icon={<IcoPin />} label="STATE CODE" value="27" mono />
+            </div>
+            <div className="spi-dt-sec-toggle"><IcoChevron /></div>
+          </div>
+          <div className="spi-dt-sec-body">
+            <div className="spi-dt-mtable-wrap">
+              <table className="spi-dt-mtable">
+                <colgroup>
+                  <col style={{ width: '5%' }} /><col style={{ width: '9%' }} /><col style={{ width: '22%' }} /><col style={{ width: '9%' }} /><col style={{ width: '11%' }} />
+                  <col style={{ width: '11%' }} /><col style={{ width: '11%' }} /><col style={{ width: '11%' }} /><col style={{ width: '11%' }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th className="spi-dt-mc-c">SR NO</th>
+                    <th>PRODUCT CODE</th>
+                    <th>PRODUCT NAME</th>
+                    <th>PRODUCT QUANTITY</th>
+                    <th>HSN CODE</th>
+                    <th>PRODUCT RATE</th>
+                    <th className="spi-dt-mc-r">CGST</th>
+                    <th className="spi-dt-mc-r">SGST</th>
+                    <th className="spi-dt-mc-r">PRODUCT COST</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {PRODUCTS.map((p, i) => {
+                    const base = Number(p.qty) * Number(p.rateSpi);
+                    const cgst = base * 0.09;
+                    const sgst = base * 0.09;
+                    const cost = base + cgst + sgst;
+                    return (
+                    <tr key={p.code}>
+                      <td className="spi-dt-mc-c">{i + 1}</td>
+                      <td><span className="spi-dt-mcode">{p.code}</span></td>
+                      <td><input className="spi-dt-minp" defaultValue={p.name} /></td>
+                      <td><input className="spi-dt-minp spi-dt-minp-sm" defaultValue={p.qty} /></td>
+                      <td><input className="spi-dt-minp spi-dt-minp-sm" defaultValue={p.hsn} /></td>
+                      <td><input className="spi-dt-minp spi-dt-minp-sm" defaultValue={p.rateSpi} /></td>
+                      <td className="spi-dt-amt spi-dt-mc-r">{inr(cgst)}</td>
+                      <td className="spi-dt-amt spi-dt-mc-r">{inr(sgst)}</td>
+                      <td className="spi-dt-amt spi-dt-mc-r">{inr(cost)}</td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        )}
       </div>
       )}
 
@@ -359,7 +432,7 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
             <div className="spi-dt-foot-step">STEP 02 OF 02</div>
             <div className="spi-dt-foot-name">Invoice &amp; Product Details (3-Way Match)</div>
           </div>
-          <div className="spi-dt-dots"><span /><span className="on" /></div>
+          <div className="spi-dt-dots"><span className="done" /><span className="on" /></div>
         </div>
         <div className="spi-dt-foot-r">
           <button type="button" className="spi-dt-btn-ghost" onClick={() => setStep(1)}><IcoChevronL /> Back</button>
@@ -374,11 +447,11 @@ export default function SpiDetail({ onClose }: { onClose: () => void }) {
 }
 
 /* ── Small sub-components ── */
-function HeadPill({ icon, label, value, alt }: { icon: React.ReactNode; label: string; value: string; alt?: boolean }) {
+function HeadPill({ icon, label, value, alt, mono }: { icon: React.ReactNode; label: string; value: string; alt?: boolean; mono?: boolean }) {
   return (
     <div className="spi-dt-pill">
       <span className={`spi-dt-pill-ico ${alt ? 'spi-dt-pill-ico--alt' : ''}`}>{icon}</span>
-      <div><div className="spi-dt-pill-lbl">{label}</div><div className="spi-dt-pill-val">{value}</div></div>
+      <div><div className="spi-dt-pill-lbl">{label}</div><div className={`spi-dt-pill-val ${mono ? 'spi-dt-pill-val--mono' : ''}`}>{value}</div></div>
     </div>
   );
 }
