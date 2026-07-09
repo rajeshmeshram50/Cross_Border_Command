@@ -73,7 +73,7 @@ class ClmKycController extends Controller
             return ClmKycDocument::create([
                 'client_id'  => $user->client_id,
                 'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
-                'code'       => $this->nextCode($user->client_id),
+                'code'       => $this->nextCode($user->client_id, $user->branch_id),
                 'name'       => trim($data['name']),
                 'authority'  => $data['authority'],
                 'expiry'     => $data['expiry'] ?? 'N/A',
@@ -173,10 +173,16 @@ class ClmKycController extends Controller
         return $usedIn;
     }
 
-    private function nextCode(int $clientId): string
+    private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-        $codes = ClmKycDocument::where('client_id', $clientId)->pluck('code')->all();
+        // Branch-scoped so each branch restarts from KYC-001 rather than
+        // continuing another branch's tally — the KYC master is branch-
+        // isolated via MasterVisibility. A client-level creator ($branchId
+        // null) sequences the shared rows.
+        $query = ClmKycDocument::where('client_id', $clientId);
+        $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
+        $codes = $query->pluck('code')->all();
         $maxN = 0;
         $taken = [];
         foreach ($codes as $c) {

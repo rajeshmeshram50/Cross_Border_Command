@@ -70,7 +70,7 @@ class ClmClauseController extends Controller
         }
 
         $row = DB::transaction(function () use ($user, $data) {
-            $code = $this->nextCode(ClmClauseType::class, $user->client_id, 'CLT');
+            $code = $this->nextCode(ClmClauseType::class, $user->client_id, $user->branch_id, 'CLT');
             return ClmClauseType::create([
                 'client_id'   => $user->client_id,
                 'branch_id'   => $user->branch_id,   // branch-owned; null for client-level users → shared
@@ -189,7 +189,7 @@ class ClmClauseController extends Controller
         }
 
         $row = DB::transaction(function () use ($user, $data) {
-            $code = $this->nextCode(ClmClauseLibrary::class, $user->client_id, 'CL');
+            $code = $this->nextCode(ClmClauseLibrary::class, $user->client_id, $user->branch_id, 'CL');
             return ClmClauseLibrary::create([
                 'client_id'     => $user->client_id,
                 'branch_id'     => $user->branch_id,   // branch-owned; null for client-level users → shared
@@ -258,17 +258,23 @@ class ClmClauseController extends Controller
     }
 
     /**
-     * Allocate the next sequential code (e.g. CL-005 / CLT-005) for a client.
+     * Allocate the next sequential code (e.g. CL-005 / CLT-005) for a
+     * client + branch. Branch-scoped so each branch restarts its own
+     * sequence from 001 rather than continuing another branch's tally
+     * (the clause master is branch-isolated via MasterVisibility). A
+     * client-level creator ($branchId null) sequences the shared rows.
      * Uses max-existing + skip-taken rather than count()+1, so deleting a
      * middle row never makes the next code collide with an existing one.
      * Runs under a row lock on the client to serialise concurrent inserts.
      *
      * @param  class-string<\Illuminate\Database\Eloquent\Model>  $model
      */
-    private function nextCode(string $model, int $clientId, string $prefix): string
+    private function nextCode(string $model, int $clientId, ?int $branchId, string $prefix): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
-        $codes = $model::where('client_id', $clientId)->pluck('code')->all();
+        $query = $model::where('client_id', $clientId);
+        $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
+        $codes = $query->pluck('code')->all();
         $maxN = 0;
         $taken = [];
         foreach ($codes as $c) {

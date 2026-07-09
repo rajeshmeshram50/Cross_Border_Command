@@ -1092,6 +1092,10 @@ body > .dropdown-menu.master-select-menu,
 .clm-conf-sub {
   font-size: 12.5px; color: #475569; line-height: 1.5;
   margin-bottom: 4px;
+  /* Wrap long record names (e.g. a pasted agreement title) instead of
+     overflowing — .clm-conf has overflow:hidden, so an unbroken string
+     would otherwise clip and break the popup layout. */
+  overflow-wrap: anywhere; word-break: break-word;
 }
 /* Inline code pill inside the subtitle — auto-wrapped by JSX
  * around any parenthesised CODE pattern. Uses the same monospace
