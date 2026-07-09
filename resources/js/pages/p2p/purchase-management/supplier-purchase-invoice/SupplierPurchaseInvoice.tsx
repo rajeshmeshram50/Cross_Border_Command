@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import './supplier-purchase-invoice.css';
 import MapSupplierPurchaseInvoiceModal from './MapSupplierPurchaseInvoiceModal';
 import SpiDetail from './SpiDetail';
+import WorklistPager from '../../../../components/ui/WorklistPager';
+import Tooltip from '../../../../components/ui/Tooltip';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Supplier Purchase Invoice (SPI) — DESIGN-ONLY static page (teal theme).
@@ -72,7 +75,6 @@ const STEPS = [
 ];
 
 const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
-const PAGE_SIZE = 8;
 
 export default function SupplierPurchaseInvoice() {
   const [stepsOpen, setStepsOpen] = useState(true);
@@ -80,8 +82,17 @@ export default function SupplierPurchaseInvoice() {
   const [shipTab, setShipTab] = useState<ShipTab>('with');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
+  const [rpp, setRpp] = useState(8);
   const [mapOpen, setMapOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [menu, setMenu] = useState<{ row: SpiRow; x: number; y: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const openMenu = (e: React.MouseEvent, r: SpiRow) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setMenu({ row: r, x: rect.right, y: rect.bottom + 6 });
+  };
 
   // Load DM Sans once (the Figma font) so the page + modal render crisp.
   useEffect(() => {
@@ -107,10 +118,30 @@ export default function SupplierPurchaseInvoice() {
   }, [rows, q]);
 
   const totalRows = filtered.length;
-  const pageCount = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(totalRows / rpp));
   const safePage = Math.min(page, pageCount);
-  const start = (safePage - 1) * PAGE_SIZE;
-  const pageRows = filtered.slice(start, start + PAGE_SIZE);
+  const start = (safePage - 1) * rpp;
+  const pageRows = filtered.slice(start, start + rpp);
+
+  // Dynamic pagination: fit rows-per-page between the table top and the viewport
+  // bottom (same behaviour as the Segment master / Bulk Sourcing lists).
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 40, ROW = 56, FOOTER = 96;
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const ro = new ResizeObserver(recompute);
+    if (rootRef.current) ro.observe(rootRef.current);
+    window.addEventListener('resize', recompute);
+    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+  }, [totalRows, poTab, shipTab, stepsOpen]);
 
   const switchPo = (t: PoTab) => { setPoTab(t); setPage(1); setQ(''); };
   const switchShip = (t: ShipTab) => { setShipTab(t); setPage(1); };
@@ -119,7 +150,7 @@ export default function SupplierPurchaseInvoice() {
   if (detailOpen) return <SpiDetail onClose={() => setDetailOpen(false)} />;
 
   return (
-    <div className="spi-root">
+    <div className="spi-root" ref={rootRef}>
       {/* ── Header banner ── */}
       <div className="spi-head">
         <div className="spi-head-left">
@@ -190,7 +221,7 @@ export default function SupplierPurchaseInvoice() {
         </div>
 
         {/* Table */}
-        <div className="spi-tablewrap">
+        <div className="spi-tablewrap" ref={scrollRef}>
           <table className="spi-table">
             <thead>
               <tr>
@@ -241,11 +272,11 @@ export default function SupplierPurchaseInvoice() {
                   <td className="spi-c-c">
                     <span className="spi-acts">
                       {r.zoho === 'sync'
-                        ? <button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button>
-                        : <button type="button" className="spi-zohobtn"><IcoSync size={13} /> Zoho Sync</button>}
-                      <button type="button" className="spi-iconbtn" title="Edit"><IcoEdit /></button>
-                      <button type="button" className="spi-iconbtn" title="Payment"><IcoRupee /></button>
-                      <button type="button" className="spi-iconbtn" title="More"><IcoMore /></button>
+                        ? <Tooltip label="Already synced to Zohobook"><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
+                        : <Tooltip label="Sync this invoice to Zohobook"><button type="button" className="spi-zohobtn"><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
+                      <Tooltip label="Edit invoice"><button type="button" className="spi-iconbtn"><IcoEdit /></button></Tooltip>
+                      <Tooltip label="Record payment"><button type="button" className="spi-iconbtn"><IcoRupee /></button></Tooltip>
+                      <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => openMenu(e, r)}><IcoMore /></button></Tooltip>
                     </span>
                   </td>
                 </tr>
@@ -254,20 +285,33 @@ export default function SupplierPurchaseInvoice() {
           </table>
         </div>
 
-        {/* Pagination */}
-        <div className="spi-pag">
-          <div className="spi-pag-info">Showing {totalRows === 0 ? 0 : start + 1}–{start + pageRows.length} of {totalRows}</div>
-          <div className="spi-pag-btns">
-            <button type="button" className="spi-pag-btn" disabled={safePage <= 1} onClick={() => setPage(safePage - 1)}>‹</button>
-            {Array.from({ length: pageCount }, (_, i) => (
-              <button type="button" key={i} className={`spi-pag-btn ${safePage === i + 1 ? 'is-on' : ''}`} onClick={() => setPage(i + 1)}>{i + 1}</button>
-            ))}
-            <button type="button" className="spi-pag-btn" disabled={safePage >= pageCount} onClick={() => setPage(safePage + 1)}>›</button>
-          </div>
-        </div>
+        {/* Dynamic pagination (viewport-fit) — same as Segment / Bulk Sourcing lists */}
+        <WorklistPager total={totalRows} page={safePage} pageSize={rpp} onPage={setPage} />
       </div>
 
       {mapOpen && <MapSupplierPurchaseInvoiceModal onClose={() => setMapOpen(false)} onConfirm={() => { setMapOpen(false); setDetailOpen(true); }} />}
+
+      {/* ── More Actions dropdown (3-dot) ── */}
+      {menu && createPortal(
+        <div className="spi-menu-backdrop" onMouseDown={() => setMenu(null)}>
+          <div className="spi-menu" style={{ top: menu.y, left: Math.max(8, menu.x - 280) }} onMouseDown={e => e.stopPropagation()}>
+            <div className="spi-menu-head">
+              <div className="spi-menu-head-l"><span className="spi-menu-head-ico"><IcoMore /></span> More Actions</div>
+              <button type="button" className="spi-menu-x" onClick={() => setMenu(null)}><IcoX /></button>
+            </div>
+            <div className="spi-menu-info">
+              <span className="spi-pill spi-pill-spi">{menu.row.spiNo}</span>
+              <div className="spi-menu-sup">Supplier: {menu.row.supplier}</div>
+            </div>
+            <div className="spi-menu-items">
+              <button type="button" className="spi-menu-item is-teal"><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
+              <button type="button" className="spi-menu-item"><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> Download SPI</button>
+              <button type="button" className="spi-menu-item"><span className="spi-menu-item-ico spi-menu-item-ico-pay"><IcoCard /></span> SPI Payment</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }
@@ -285,3 +329,5 @@ function IcoClip() { return <svg width="12" height="12" viewBox="0 0 24 24" fill
 function IcoEdit() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>; }
 function IcoRupee() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12M6 8h12M6 13l8.5 8M6 8c9 0 9 5 0 5"/></svg>; }
 function IcoMore() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><circle cx="12" cy="5" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="19" r="1" fill="currentColor"/></svg>; }
+function IcoX() { return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>; }
+function IcoDownload() { return <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>; }
