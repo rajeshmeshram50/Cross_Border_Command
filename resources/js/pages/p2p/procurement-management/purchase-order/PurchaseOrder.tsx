@@ -188,6 +188,34 @@ export default function PurchaseOrder() {
   const [debQuery, setDebQuery] = useState('');
   useEffect(() => { const t = setTimeout(() => setDebQuery(query), 300); return () => clearTimeout(t); }, [query]);
 
+  // ── Auto-fit rows to a fixed-height table (My Workplace pattern) ── show
+  // exactly as many rows as fill the scroll area so big screens don't leave a
+  // gap and small ones don't overflow. Picking a Rows-per-page value in the
+  // pager overrides auto-fit (autoFitRef → false).
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const autoFitRef = useRef(true);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const recompute = () => {
+      if (!autoFitRef.current) return;
+      const avail = el.clientHeight;
+      if (avail <= 0) return;
+      const thead = el.querySelector('thead') as HTMLElement | null;
+      const bodyRow = el.querySelector('tbody tr:not(.polist-skel-row)') as HTMLElement | null;
+      const THEAD = thead?.offsetHeight || 42;
+      // Measure a real data row when present; the empty-state row is taller, so
+      // fall back to a sane constant until rows render.
+      const ROW = (total > 0 && bodyRow) ? bodyRow.offsetHeight : 56;
+      const fit = Math.max(5, Math.floor((avail - THEAD) / ROW));
+      setPageSize(prev => (prev === fit ? prev : fit));
+    };
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    recompute();
+    return () => ro.disconnect();
+  }, [total, rows]);
+
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, pages);
   const start = (safePage - 1) * pageSize;
@@ -344,7 +372,7 @@ export default function PurchaseOrder() {
   };
 
   return (
-    <div className="pom" style={{ margin: '-6px 0 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div className="pom polist-page" style={{ margin: '-6px 0 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
 
       {/* ── HEADER STRIP ─────────────────────────────────────────────── */}
       <div className="cstrip cstrip--teal">
@@ -431,12 +459,18 @@ export default function PurchaseOrder() {
           </div>
         </div>
 
-        <div>
-          <div className="polist-scroll">
+        <div className="polist-body">
+          <div className="polist-scroll" ref={scrollRef}>
             <table className="polist-tbl">
               <thead><tr>{heads.map(h => <th key={h}>{h}</th>)}</tr></thead>
               <tbody>
-                {total === 0 ? (
+                {loading ? (
+                  Array.from({ length: Math.min(pageSize, 10) }).map((_, i) => (
+                    <tr key={`sk-${i}`} className="polist-skel-row">
+                      {heads.map((h, j) => <td key={h}><span className="polist-skel" style={{ width: j === 0 ? 18 : `${55 + ((i + j) % 4) * 12}%` }} /></td>)}
+                    </tr>
+                  ))
+                ) : total === 0 ? (
                   <tr><td colSpan={heads.length} className="polist-empty">No purchase orders found{query ? ` for "${query}"` : ' in this category'}.</td></tr>
                 ) : pageRows.map((r, i) => {
                   const synced = r.zoho.toLowerCase() === 'sync';
@@ -489,7 +523,7 @@ export default function PurchaseOrder() {
               page={safePage}
               pageSize={pageSize}
               onPage={setPage}
-              onPageSize={n => { setPageSize(n); setPage(1); }}
+              onPageSize={n => { autoFitRef.current = false; setPageSize(n); setPage(1); }}
             />
           )}
         </div>
