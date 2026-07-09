@@ -482,10 +482,10 @@ class SegmentDocUploadController extends Controller
      * then surfaces two views over those deals:
      *   - with_shipment    → one row per shipment on those leads (SHP-xxx) +
      *                        customer / consignee
-     *   - without_shipment → one row per procurement (PROC-xxx) — ALL of them,
-     *                        the procurement-stage view (a deal can appear in
-     *                        both views; "Without Shipment ID" is the procurement
-     *                        lens, not "procurements lacking a shipment").
+     *   - without_shipment → one row per procurement (PROC-xxx) whose lead has
+     *                        NO shipment yet. Strict either/or split: a deal
+     *                        whose lead already has a shipment appears only under
+     *                        with_shipment, never here (no overlap).
      * Compliance ratios (KYC/DD/TL/TD) are the vendor's overall verified-vs-total
      * (no per-shipment document tracking exists in the schema), so the same
      * ratios ride on every row.

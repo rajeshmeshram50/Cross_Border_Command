@@ -1644,7 +1644,12 @@ class SalesPdfController extends Controller
         $clientId = $q->client_id ?? null;
         if (!$clientId) return [];
 
-        $docKind = $docLabelShort === 'PI' ? 'proforma invoice' : 'quotation';
+        // Quotation and Proforma Invoice SHARE the same T&C set — a document's
+        // kind no longer picks a different category. Both always match the
+        // "Proforma Invoice" categories (the two Quotation categories were
+        // retired and their T&Cs merged onto the PI ones). The International vs
+        // Domestic split below ($docType) still applies.
+        $docKind = 'proforma invoice';
         $docType = mb_strtolower(trim((string) ($q->doc_type ?? 'International'))); // international|domestic
         if ($docType === '') return [];
 

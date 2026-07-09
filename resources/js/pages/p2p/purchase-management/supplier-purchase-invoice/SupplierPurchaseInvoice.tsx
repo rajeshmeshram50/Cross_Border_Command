@@ -128,7 +128,7 @@ export default function SupplierPurchaseInvoice() {
   const switchShip = (t: ShipTab) => { setShipTab(t); setPage(1); };
   const onSearch = (v: string) => { setQ(v); setPage(1); };
 
-  if (detailOpen) return <SpiDetail onClose={() => setDetailOpen(false)} />;
+  if (detailOpen) return <SpiDetail withPo={withPo} onClose={() => setDetailOpen(false)} />;
 
   return (
     <div className="spi-root" ref={rootRef}>

@@ -1454,6 +1454,15 @@ export default function AddVendorModal(props: {
                               errs.segment             = 'Select at least one supplier segment';
     if (!complianceBehaviour) errs.complianceBehaviour = 'Compliance Behaviour is required';
     if (website)             { const e = validateWebsite(website); if (e) errs.website = e; }
+    // The Supplier Address block lives on THIS same tab, so validate it here too
+    // — before the API call. A missing/invalid State Code (or any address field)
+    // now blocks on the frontend and never wastes a /vendors/step/identity call.
+    if (!registeredOffice.trim()) errs.registeredOffice = 'Registered Office Address is required';
+    if (!country)                 errs.country          = 'Country is required';
+    if (!state)                   errs.state            = 'State is required';
+    if (!stateCode.trim())        errs.stateCode        = 'State Code is required';
+    else if (!/^\d{1,2}$/.test(stateCode.trim())) errs.stateCode = 'State Code must be a 1–2 digit GST code';
+    if (!city.trim())             errs.city             = 'City is required';
     if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); toast.error('Missing required fields', 'Please fix the highlighted fields'); return false; }
 
     setSaving(true);
@@ -1501,7 +1510,8 @@ export default function AddVendorModal(props: {
     if (!registeredOffice.trim())  errs.registeredOffice = 'Registered Office Address is required';
     if (!country)                  errs.country          = 'Country is required';
     if (!state)                    errs.state            = 'State is required';
-    if (!stateCode)                errs.stateCode        = 'State Code is required (pick a State to auto-fill)';
+    if (!stateCode.trim())         errs.stateCode        = 'State Code is required';
+    else if (!/^\d{1,2}$/.test(stateCode.trim())) errs.stateCode = 'State Code must be a 1–2 digit GST code';
     if (!city.trim())              errs.city             = 'City is required';
     if (!contactName.trim())       errs.contactName      = 'Contact Person Name is required';
     if (!designation.trim())       errs.designation      = 'Designation is required';
@@ -1661,22 +1671,6 @@ export default function AddVendorModal(props: {
     }
   };
 
-  /* Client-side validation of the address fields (which live on tab 1's
-     "Supplier Address Details" card). Run when LEAVING tab 1 so address
-     errors highlight on the tab the user is actually looking at — instead
-     of surfacing later via saveContacts() while the user is on tab 2.
-     Sets fieldErrors but does NOT toast (the caller decides). */
-  const validateAddress = (): boolean => {
-    const errs: Record<string, string> = {};
-    if (!registeredOffice.trim()) errs.registeredOffice = 'Registered Office Address is required';
-    if (!country)                 errs.country          = 'Country is required';
-    if (!state)                   errs.state            = 'State is required';
-    if (!stateCode)               errs.stateCode        = 'State Code is required (pick a State to auto-fill)';
-    if (!city.trim())             errs.city             = 'City is required';
-    if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); return false; }
-    return true;
-  };
-
   const goNext = async () => {
     if (saving || advancing) return;
     // Page-level shimmer while the step's save is in flight + we advance, so
@@ -1686,10 +1680,11 @@ export default function AddVendorModal(props: {
     setAdvancing(true);
     try {
       if (step === 1 && idTab === 'identification') {
-        const okId = await saveIdentity();
-        const okAddr = validateAddress();
-        if (okId && okAddr) setIdTab('address');
-        else if (okId && !okAddr) toast.error('Missing required fields', 'Please fix the highlighted address fields');
+        // saveIdentity validates the WHOLE tab (company + address) on the
+        // frontend first, so a missing State Code blocks here without an
+        // API call. Only a fully-valid tab reaches the server + advances.
+        const ok = await saveIdentity();
+        if (ok) setIdTab('address');
       } else if (step === 1 && idTab === 'address') {
         const ok = await saveContacts();
         if (ok) setStep(2);
@@ -2780,7 +2775,7 @@ export default function AddVendorModal(props: {
                     Identification is valid. Mirrors Save & Next: validates +
                     persists (so the contact step has a vendorId to attach to)
                     and only switches when clean — else inline errors show. */}
-                <button className={`avm-tab ${idTab === 'address' ? 'on' : ''}`} disabled={saving || advancing} onClick={async () => { if (saving || advancing || idTab === 'address') return; setAdvancing(true); try { const okId = await saveIdentity(); const okAddr = validateAddress(); if (okId && okAddr) setIdTab('address'); else if (okId && !okAddr) toast.error('Missing required fields', 'Please fix the highlighted address fields'); } finally { setAdvancing(false); } }}>Contact Person Details</button>
+                <button className={`avm-tab ${idTab === 'address' ? 'on' : ''}`} disabled={saving || advancing} onClick={async () => { if (saving || advancing || idTab === 'address') return; setAdvancing(true); try { const ok = await saveIdentity(); if (ok) setIdTab('address'); } finally { setAdvancing(false); } }}>Contact Person Details</button>
               </div>
 
               {idTab === 'identification' && (
@@ -2902,10 +2897,13 @@ export default function AddVendorModal(props: {
                     <Field label="State Code" required error={fieldErrors.stateCode}>
                       <input
                         className="avm-input"
-                        placeholder="Auto-filled from State"
+                        placeholder="Auto-filled from State (editable)"
                         value={stateCode}
-                        readOnly
-                        title="Pulled from State Codes master based on the selected State"
+                        inputMode="numeric"
+                        pattern="\d*"
+                        maxLength={2}
+                        title="GST state code — auto-fills from the selected State; edit it if it's blank or wrong"
+                        onChange={e => { setStateCode(e.target.value.replace(/\D/g, '').slice(0, 2)); clearFieldError('stateCode'); }}
                       />
                     </Field>
                     <Field label="City" required error={fieldErrors.city}>
