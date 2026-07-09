@@ -354,7 +354,11 @@ class ClmBuyerProfileController extends Controller
             $segIds = $segIdsFromNames($c->segment);
             $prog   = $progressFor($unionFor($segIds), Consignee::class . '#' . $c->id);
             $applic = $agrIdsForSegments($segIds);
-            $agr    = $agrProgress($applic, $sigByParty['Consignee#' . $c->id] ?? []);
+            // Party-filter the agreement total to the CONSIGNEE side (same as the
+            // transaction matrix's c_agr) — $agrProgress counted ALL segment
+            // agreements incl. buyer-only ones a consignee can never sign, so the
+            // "Agreements Pending" KPI was inflated for every consignee.
+            $agr    = $docProgress($applic, $agrPartyById, $sigByParty['Consignee#' . $c->id] ?? [], 'consignee');
             $consOut[] = [
                 'sr'      => $sr,
                 'id'      => $c->consignee_code ?: ('CS-' . str_pad((string) $c->id, 3, '0', STR_PAD_LEFT)),
