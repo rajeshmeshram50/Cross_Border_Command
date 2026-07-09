@@ -707,7 +707,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
               <div className="cpo-sec">Link to procurement workflow</div>
               {opt('with', 'With Shipment ID', 'Recommended', 'ok', '3-way match & complete audit trail.', (
                 <div className="cpo-reveal">
-                  <label className="cpo-lbl">Select Shipment ID <span className="cpo-req">*</span></label>
+                  <label className="cpo-lbl"><svg className="cpo-lbl-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg> Select Shipment ID <span className="cpo-req">*</span></label>
                   <ShipDd shipments={shipments} value={shipmentDbId} onPick={s => { setShipmentDbId(s.id); setShipId(s.code); setShipCustomer(s.customer || ''); setShipErr(false); }} />
                   {shipErr && <div className="cpo-err"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> Please select a Shipment ID to continue.</div>}
                 </div>
@@ -757,10 +757,13 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
               <div className="cstrip__right">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, overflowX: 'auto' }}>
                   {refPills.map((p, i) => (
-                    <div key={i} className="cpd-ref__pill">
-                      <div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{fileIco}</div>
-                      <div className="cpd-ref__txt"><div className="cpd-ref__l">{p.l}</div><div className={`cpd-ref__v ${p.mono ? 'cpd-ref__v--mono' : ''}`}>{p.v || '—'}</div></div>
-                    </div>
+                    <span key={i} style={{ display: 'contents' }}>
+                      <div className="cpd-ref__pill">
+                        <div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{(p.l === 'Customer Name' || p.l === 'Consignee Name') ? userIco : fileIco}</div>
+                        <div className="cpd-ref__txt"><div className="cpd-ref__l">{p.l}</div><div className={`cpd-ref__v ${p.mono ? 'cpd-ref__v--mono' : ''}`}>{p.v || '—'}</div></div>
+                      </div>
+                      {i < refPills.length - 1 && <div className="cpd-ref__dots"><span /><span /><span /></div>}
+                    </span>
                   ))}
                 </div>
                 <span className="cstrip__divider" />
@@ -801,7 +804,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                   <Box label="Purchase Order" title="Basic Purchase Order Details" sub="Core details that identify this purchase order." ico={fileIco}>
                     <div className="pof-grid pof-grid--4">
                       {(<>
-                        <Dd label="PO Type" req err={errs.poType} value={po.poType} options={PO_TYPES} onChange={v => setPoF('poType', v)} />
+                        <Dd label="PO Type" req err={errs.poType} value={po.poType} options={PO_TYPES} onChange={v => { if (v !== PO_TYPES[0]) { toast.info('Coming soon', `${v} PO type is currently in development. Only ${PO_TYPES[0]} is available.`); return; } setPoF('poType', v); }} />
                         <Dd label="Document Type" req err={errs.docType} value={po.docType} options={DOC_TYPES} onChange={v => setPoF('docType', v)} />
                         <Dd label="Mode of Transport" req err={errs.transport} value={po.transport} options={TRANSPORTS} onChange={v => setPoF('transport', v)} />
                         <Frozen label="PO Date" req value={todayDisp} />
