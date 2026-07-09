@@ -406,11 +406,26 @@
 .smcg-add-btn:active { transform: translateY(0); }
 .smcg-add-btn i { font-size: 16px; }
 
+/* "Same as Customer" filter (a MasterSelect next to the search box) styled to
+   match the Add Consignee button — dark-green gradient with white text. Only
+   the toggle is themed; the portalled options menu keeps its default look. */
+.smcg-sac-filter .master-select-toggle {
+  background: linear-gradient(135deg, #0d9488, #065f46) !important;
+  border-color: transparent !important;
+  color: #fff !important;
+  box-shadow: 0 4px 12px rgba(16,185,129,0.30);
+}
+.smcg-sac-filter .master-select-toggle:hover { filter: brightness(1.06); }
+.smcg-sac-filter .master-select-value,
+.smcg-sac-filter .master-select-placeholder,
+.smcg-sac-filter .master-select-chev { color: #fff !important; }
+
 .smcg-table-card {
   position: relative;
   background: var(--vz-card-bg, #fff);
   border: 1px solid var(--vz-border-color);
-  border-radius: 16px;
+  /* Square box (no rounded corners) to match the Customer list card. */
+  border-radius: 0;
   overflow: hidden;
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
@@ -501,7 +516,9 @@
 .smcg-table-wrap .table td:nth-child(7) { width: 84px; padding-left: 8px !important; padding-right: 8px !important; }
 .smcg-table-wrap .table thead th:nth-child(7) { white-space: normal !important; line-height: 1.2; }
 
-.smcg-table-wrap .table tbody tr { background: transparent; transition: background .12s ease; }
+/* No background transition on rows — it animated the background on every theme
+   flip, contributing to the white flicker when switching Dark/Light. Instant. */
+.smcg-table-wrap .table tbody tr { background: transparent; }
 .smcg-table-wrap .table tbody tr:hover { background: #f0fdf4 !important; }
 .smcg-table-wrap .table tbody td {
   --bs-table-bg: transparent !important;
@@ -642,6 +659,31 @@
   border-color: rgba(255,255,255,0.08);
   color: rgba(255,255,255,0.28);
 }
+
+/* Footer treatment matched to the Customer list: soft pastel pagination pills
+   (no bold gradient / coloured shadow) + a white count chip. Only the HUE
+   differs from the customer footer (green here vs the customer's violet) — the
+   consignee footer previously used a bold green gradient active pill + green
+   count chip, which read as a different footer style rather than just a colour. */
+.smcg-table-wrap .pagination .page-link { background: rgba(255,255,255,0.7); }
+.smcg-table-wrap .pagination .page-item.active .page-link,
+.smcg-table-wrap .pagination .page-link.active {
+  background: #a7f3d0 !important;
+  border-color: #6ee7b7 !important;
+  color: #065f46 !important;
+  box-shadow: none !important;
+}
+.smcg-table-wrap .pagination .page-link.page-of-total {
+  border-radius: 20px !important;
+  padding: 0 16px !important;
+  height: 32px; min-width: 52px;
+  background: #d1fae5 !important;
+  border: 1.5px solid #6ee7b7 !important;
+  color: #065f46 !important;
+  font-weight: 800; font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.smcg-table-wrap > .row .text-muted { background: #ffffff; }
 
 .smcg-table {
   width: 100%; min-width: 1200px;

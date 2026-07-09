@@ -651,6 +651,7 @@
 .pom .cptd-send:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none;}
 .pom .cptd-act{width:32px;height:32px;border-radius:8px;border:1.5px solid #d3e3ea;background:#fff;color:#0891b2;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .13s,background .13s;}
 .pom .cptd-act:hover{border-color:#22d3ee;background:#f0fbfe;}
+.pom .pof-reqstar{color:#e11d48;font-weight:800;}
 .pom .cptd-lbtn{display:inline-flex;align-items:center;gap:6px;font-family:inherit;font-size:11px;font-weight:700;color:#0e7490;background:#eafcff;border:1.5px solid #c8eef6;border-radius:8px;padding:6px 11px;cursor:pointer;transition:border-color .13s,background .13s,opacity .15s;white-space:nowrap;}
 .pom .cptd-lbtn:hover:not(:disabled){border-color:#22d3ee;background:#e0f7fb;}
 .pom .cptd-lbtn:disabled{opacity:.5;cursor:not-allowed;}

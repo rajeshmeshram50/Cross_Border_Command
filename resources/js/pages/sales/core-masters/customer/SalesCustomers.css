@@ -556,7 +556,9 @@
 
 .smc-table-wrap .table tbody tr {
   background: #ffffff;
-  transition: background .12s ease;
+  /* No background transition: it animated the hardcoded white base toward the
+     dark override on every theme flip, so all rows flashed white for ~120ms
+     (read as "rows reload white") when switching Dark/Light. Instant swap. */
 }
 
 .smc-table-wrap .table tbody tr:nth-child(even) {

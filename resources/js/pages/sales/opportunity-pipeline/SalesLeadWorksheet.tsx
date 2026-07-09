@@ -42,7 +42,7 @@ type ServerLead = {
   /* Linked buyer entity. When a lead is mapped to a customer the worksheet
    * shows the customer's company_name (Customer Name col) and legal_name
    * (Company col) in preference to the raw sender_* lead text. */
-  customer?:         { id: number; company_name: string | null; legal_name: string | null } | null;
+  customer?:         { id: number; company_name: string | null; legal_name: string | null; primary_email?: string | null } | null;
 };
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -198,7 +198,11 @@ const mapServerToLead = (r: ServerLead): Lead => {
     // lead sender name for leads not yet mapped to a customer).
     customer: r.customer?.company_name || r.sender_name || '—',
     phone:    r.sender_mobile || '—',
-    email:    r.sender_email || '—',
+    // Email → mapped customer.primary_email (falls back to the raw inquiry
+    // sender_email for un-mapped leads), matching the Customer Name/Company
+    // columns which already prefer the mapped customer. Without this the row
+    // showed the mapped customer's NAME beside the raw buyer's EMAIL.
+    email:    r.customer?.primary_email || r.sender_email || '—',
     product:  r.query_product_name || '—',
     // Company → linked customer.legal_name (falls back to raw sender_company).
     company:  r.customer?.legal_name || r.sender_company || '—',
@@ -304,6 +308,9 @@ export default function SalesLeadWorksheet() {
      * mode this only kicks in when every selected row shares the same
      * owner — mixed selections leave the field blank. */
     initialSalespersonId?: number | null;
+    /* Current owner's display NAME — shown as the dropdown's current value
+     * (the owner is excluded from the pickable list) instead of the raw id. */
+    initialSalespersonName?: string | null;
   }>({ open: false, mode: 'filters' });
   // Lead Distribution lives at /sales/lead-distribution now. The salesperson
   // pick comes back as ?sp=<id> on the URL and is applied below in useEffect.
@@ -688,6 +695,7 @@ export default function SalesLeadWorksheet() {
     customerName: l.customer,
     oppCode: l.oppId,
     initialSalespersonId: l.salespersonId,
+    initialSalespersonName: l.salespersonId ? l.assigned : null,
   });
   const onOpenLead      = (l: Lead) => openMatrixDetail(l);
   const onOpenOpp       = (oppId: string) => {
@@ -719,6 +727,7 @@ export default function SalesLeadWorksheet() {
       mode: 'selection',
       leadIds: ids,
       initialSalespersonId: shared,
+      initialSalespersonName: shared ? picked[0].assigned : null,
     });
   };
   const onBulkCTQ       = async () => {
@@ -857,7 +866,7 @@ export default function SalesLeadWorksheet() {
           <div className="lwp-export-wrap">
             <button
               ref={exportBtnRef}
-              className={`lwp-bact lwp-bact-export ${exportOpen ? 'is-open' : ''}`}
+              className={`lwp-bact lwp-bact-export ${exportOpen ? 'is-open' : ''}${exporting ? ' is-exporting' : ''}`}
               title="Export Leads"
               onClick={toggleExportMenu}
               disabled={!!exporting}
@@ -1336,6 +1345,7 @@ export default function SalesLeadWorksheet() {
         customerName={assignModal.customerName ?? null}
         oppCode={assignModal.oppCode ?? null}
         initialSalespersonId={assignModal.initialSalespersonId ?? null}
+        initialSalespersonName={assignModal.initialSalespersonName ?? null}
         /* Account list comes from the .env-configured IndiaMart key labels
          * for this branch (via /sales/leads/sync/config). If nothing is
          * configured for the branch, the Account field hides itself. */
@@ -1607,6 +1617,10 @@ const SCOPED_CSS = `
 }
 .lwp-root .lwp-bact-sync.is-syncing { cursor: progress; }
 .lwp-root .lwp-bact-sync.is-syncing svg { animation: lwp-spin 1s linear infinite; }
+/* Export in progress — spin the leading download icon so there's a visible
+   loader, not just the "Exporting…" text. */
+.lwp-root .lwp-bact-export.is-exporting { cursor: progress; }
+.lwp-root .lwp-bact-export.is-exporting svg:first-of-type { animation: lwp-spin 1s linear infinite; }
 @keyframes lwp-spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
@@ -1951,10 +1965,13 @@ const SCOPED_CSS = `
 }
 
 /* ─── Row sub-elements ─── */
-.lwp-root .lwp-opp-cell { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: 100%; }
-.lwp-root .lwp-opp-link { color: #0891b2; font-weight: 600; cursor: pointer; text-align: center; }
+/* Left-align so every OPP-#### starts at the same edge — with justify-content
+   center, Key-Opportunity rows (which add a star) shifted the id left of the
+   plain rows, so the column didn't line up vertically. */
+.lwp-root .lwp-opp-cell { display: flex; align-items: center; justify-content: flex-start; gap: 5px; width: 100%; }
+.lwp-root .lwp-opp-link { color: #0891b2; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .lwp-root .lwp-opp-link:hover { text-decoration: underline; color: #0e7490; }
-.lwp-root .lwp-key-star { color: #f59e0b; flex: 0 0 auto; }
+.lwp-root .lwp-key-star { color: #f59e0b; flex: 0 0 auto; margin-left: auto; }
 .lwp-root .lwp-cust-name { font-weight: 600; color: #0f172a; }
 .lwp-root .lwp-wa-badge {
   display: inline-flex; align-items: center; gap: 3px;

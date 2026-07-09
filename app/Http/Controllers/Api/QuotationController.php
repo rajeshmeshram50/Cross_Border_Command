@@ -47,10 +47,24 @@ class QuotationController extends Controller
         $page    = max((int) $request->query('page', 1), 1);
         $paginator = $q->paginate($perPage, ['*'], 'page', $page);
 
+        // Sales Manager column = the OWNER's REPORTING MANAGER, not the owner.
+        // Owner = sales_manager_id (the lead's salesperson) or created_by. The
+        // stored sales_manager_name holds the owner's name, so override it at
+        // read time with the owner's manager. Resolve all managers in ONE query
+        // (owner user id → Employee → reportingManager/reportingManagerUser).
+        $items    = collect($paginator->items());
+        $ownerIds = $items->map(fn ($r) => (int) ($r->sales_manager_id ?: $r->created_by))
+            ->filter()->unique()->values()->all();
+        $mgrByOwner = empty($ownerIds) ? collect() : \App\Models\Employee::query()
+            ->whereIn('user_id', $ownerIds)
+            ->with(['reportingManager.user:id,name', 'reportingManagerUser:id,name'])
+            ->get(['id', 'user_id', 'reporting_manager_id', 'reporting_manager_user_id'])
+            ->keyBy('user_id');
+
         // Stamp a per-row `can_modify` flag so the frontend can dim
         // edit / delete / email / reminder buttons on rows the user
         // is only allowed to read (rows outside their own branch).
-        $rows = collect($paginator->items())->map(function ($r) use ($user) {
+        $rows = $items->map(function ($r) use ($user, $mgrByOwner) {
             $r->can_modify = $this->userCanModify($r, $user);
             // Flatten the eager-loaded creator + creator's branch into
             // top-level fields so the frontend can read them without
@@ -58,6 +72,11 @@ class QuotationController extends Controller
             // shape).
             $r->creator_name      = $r->creator?->name;
             $r->creator_user_type = $r->creator?->user_type;
+            // Reporting-manager override for the Sales Manager column. Falls
+            // back to the stored owner name when the owner has no manager.
+            $emp     = $mgrByOwner->get((int) ($r->sales_manager_id ?: $r->created_by));
+            $mgrName = $emp?->reportingManager?->user?->name ?? $emp?->reportingManagerUser?->name;
+            if ($mgrName) $r->sales_manager_name = $mgrName;
             return $r;
         })->all();
 
@@ -125,7 +144,7 @@ class QuotationController extends Controller
         $row = DB::transaction(function () use ($user, $data, $items, $totals) {
             // Lock the client row to serialize concurrent code allocations.
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = $this->nextCode($user->client_id);
+            $code = $this->nextCode($user->client_id, $user->branch_id);
 
             // Resolve cached display labels so listings don't N+1 later.
             // resolveCachedLabels mutates $data to inject sales_manager_id
@@ -332,7 +351,9 @@ class QuotationController extends Controller
 
         $clone = DB::transaction(function () use ($user, $src) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $newCode = $this->nextCode($user->client_id);
+            // The clone keeps the source's branch_id (replicate copies it), so
+            // allocate its code from that branch's sequence.
+            $newCode = $this->nextCode($user->client_id, $src->branch_id);
 
             $copy = $src->replicate(['code', 'status', 'version', 'created_by', 'updated_by']);
             $copy->code        = $newCode;
@@ -582,7 +603,13 @@ class QuotationController extends Controller
         $code = null;
         if ($user && $user->client_id) {
             $fy = $this->currentFinancialYear();
+            // Mirror what store() allocates — the sequence is PER BRANCH, and
+            // store stamps $user->branch_id, so preview against the same branch
+            // (null for client-level users) or the row won't match the pill.
+            $branchId = $user->branch_id;
             $codes = Quotation::where('client_id', $user->client_id)
+                ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+                ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
                 ->where('code', 'like', "QT/{$fy}/%")
                 ->pluck('code')->all();
             $max = 0;
@@ -597,21 +624,25 @@ class QuotationController extends Controller
         return response()->json(['status' => true, 'data' => ['code' => $code]]);
     }
 
-    private function nextCode(int $clientId): string
+    private function nextCode(int $clientId, ?int $branchId): string
     {
         $fy = $this->currentFinancialYear();
 
-        // Advisory-lock key: hashed (clientId, FY) → 32-bit int. Released
-        // automatically at session end or when explicitly unlocked.
-        $lockKey = crc32("qt-code:{$clientId}:{$fy}");
+        // Advisory-lock key: hashed (clientId, branchId, FY) → 32-bit int. The
+        // branch is in the key so each branch's QT sequence serializes on its
+        // own lock. Released automatically at transaction end.
+        $lockKey = crc32("qt-code:{$clientId}:" . ($branchId ?? 0) . ":{$fy}");
         if (DB::getDriverName() === 'pgsql') {
             DB::statement('SELECT pg_advisory_xact_lock(?)', [$lockKey]);
         }
 
-        // Walk through existing codes for this client + FY and find the
-        // highest SEQ. Increment past any gap so we never collide with
-        // an existing row even if rows were deleted in the middle.
+        // Walk through existing codes for this client + BRANCH + FY and find the
+        // highest SEQ. Numbering restarts per branch (each branch gets its own
+        // QT/<FY>/1..N), so scope the scan to the branch. Increment past any gap
+        // so we never collide with an existing row even if rows were deleted.
         $codes = Quotation::where('client_id', $clientId)
+            ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
             ->where('code', 'like', "QT/{$fy}/%")
             ->pluck('code')
             ->all();

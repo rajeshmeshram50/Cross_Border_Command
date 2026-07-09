@@ -99,6 +99,12 @@ export type OppHeaderData = {
   customerRow?:       Record<string, unknown> | null;
   consigneeId?:       number | null;
   consigneeRow?:      Record<string, unknown> | null;
+  /* Lead's furthest-reached pipeline stage (leads.lead_stage_id, 1..6).
+   * Stages read this to tell whether they're being revisited AFTER the
+   * lead already advanced past them — e.g. Stage 4 skips its "share a
+   * price first" gate when the deal is already at Stage 5+ (revisiting a
+   * completed stage must not re-run forward-advance validation). */
+  leadStageId?:       number;
   /* Owner + ad-hoc notes — drive the Change Owner / Remark modals. */
   salespersonId?:     number | null;
   salespersonName?:   string;
@@ -650,6 +656,7 @@ export default function SalesMatrixDetail() {
     customer:           (serverHeader.customerRow?.company_name as string | undefined)?.trim()
                           || seedHeader.customer,
     leadId:             resolvedLeadId,
+    leadStageId:        serverHeader.leadStageId,
     qualified:          serverHeader.qualified,
     disqualified:       serverHeader.disqualified,
     taskManager:        serverHeader.taskManager,

@@ -47,7 +47,7 @@ type ServerLead = {
   has_whatsapp:        boolean;
   whatsapp_status:     string | null;
   salesperson:         { id: number; name: string } | null;
-  customer:            { id: number; company_name: string; customer_code: string } | null;
+  customer:            { id: number; company_name: string; customer_code: string; primary_email?: string | null } | null;
   consignee:           { id: number; company_name: string } | null;
   ackReason?:          { id: number; reason: string } | null;
 };
@@ -229,9 +229,15 @@ export default function LeadDetailsModal({ open, leadId, onClose }: Props) {
                   <polyline points="22,6 12,13 2,6" />
                 </svg>
               }>
-                {lead.sender_email
-                  ? <a className="ldv-link" href={`mailto:${lead.sender_email}`}>{lead.sender_email}</a>
-                  : <span className="ldv-value-muted">—</span>}
+                {(() => {
+                  // Prefer the mapped customer's email so this matches the
+                  // Customer Name shown above (and the worksheet list); fall
+                  // back to the raw inquiry sender_email for un-mapped leads.
+                  const mail = lead.customer?.primary_email || lead.sender_email;
+                  return mail
+                    ? <a className="ldv-link" href={`mailto:${mail}`}>{mail}</a>
+                    : <span className="ldv-value-muted">—</span>;
+                })()}
               </Card>
 
               <Card iconBg="#fef3c7" iconColor="#d97706" label="COMPANY" icon={

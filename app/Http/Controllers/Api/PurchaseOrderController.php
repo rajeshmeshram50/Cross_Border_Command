@@ -164,6 +164,69 @@ class PurchaseOrderController extends Controller
         return response()->json(['status' => true, 'data' => ['code' => $code]]);
     }
 
+    /* ══════════════════════════ PDF PREVIEW (unsaved form) ══════════════════════════ */
+
+    /**
+     * Render the PO PDF from the CURRENT (unsaved) wizard form data — so the
+     * "View" button previews the document during Add-PO before the row exists.
+     * Builds a transient PurchaseOrder + items in memory (same math as store),
+     * never touches the DB, and hands off to SalesPdfController for rendering.
+     */
+    public function previewPdf(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
+
+        $data = $this->validatePayload($request);
+
+        $header = $this->buildHeader($user, $data);
+        $header['client_id'] = $user->client_id;
+        $header['branch_id'] = $user->branch_id;
+        $header['code'] = $request->input('code') ?: $this->peekCode($user->client_id);
+        $po = new PurchaseOrder($header);
+
+        $intra = $data['_intra'];
+        $items = collect($data['items'] ?? [])->values()->map(function ($it, $i) use ($intra) {
+            $qty = (float) ($it['quantity'] ?? 0);
+            $rate = (float) ($it['rate'] ?? 0);
+            $gst = (float) ($it['gst_pct'] ?? 0);
+            $cgstP = $intra ? 9 : $gst / 2;
+            $sgstP = $intra ? 9 : $gst / 2;
+            $base = $qty * $rate;
+            $cgstA = $base * $cgstP / 100;
+            $sgstA = $base * $sgstP / 100;
+            return new PurchaseOrderItem([
+                'product_id' => $it['product_id'] ?? null,
+                'product_code' => $it['product_code'] ?? null,
+                'pi_product_name' => $it['pi_product_name'] ?? null,
+                'product_name' => $it['product_name'] ?? null,
+                'quantity' => $qty,
+                'rate' => $rate,
+                'gst_pct' => $gst,
+                'cgst_pct' => $cgstP,
+                'sgst_pct' => $sgstP,
+                'cgst_amount' => round($cgstA, 2),
+                'sgst_amount' => round($sgstA, 2),
+                'cost' => round($base + $cgstA + $sgstA, 2),
+                'line_no' => $i + 1,
+            ]);
+        });
+
+        $prod = (float) $items->sum('cost');
+        $addl = (float) ($data['shipping_charges'] ?? 0) + (float) ($data['packaging_charges'] ?? 0) + (float) ($data['other_charges'] ?? 0);
+        $po->total_product_cost = round($prod, 2);
+        $po->total_cgst = round((float) $items->sum('cgst_amount'), 2);
+        $po->total_sgst = round((float) $items->sum('sgst_amount'), 2);
+        $po->additional_charges = round($addl, 2);
+        $po->grand_total = round($prod + $addl, 2);
+        $po->setRelation('items', $items);
+
+        $vendor = $data['_vendor'] ?? null; // already loaded with primaryAddress in validatePayload
+        return app(\App\Http\Controllers\Api\SalesPdfController::class)
+            ->streamPoPdf($po, $request->boolean('signature', true), $vendor);
+    }
+
     /* ══════════════════════════ SUPPLIER DROPDOWN + DETAIL ══════════════════════════ */
 
     /** All suppliers (vendors) for the Stage-1 "Select Supplier" dropdown. */

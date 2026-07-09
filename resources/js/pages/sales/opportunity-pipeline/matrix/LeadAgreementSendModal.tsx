@@ -1291,19 +1291,31 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             )}
                           </td>
                           <td>
-                            {/* Applicable party CSV (e.g. "Buyer, Consignee") split
-                                into individual pills so the signer set is clear. */}
+                            {/* Applicable party CSV (e.g. "Buyer, Consignee") — show the
+                                first party as a pill and collapse the rest into a "+N"
+                                badge so the cell stays compact. */}
                             <div className="lasm-party-cell">
-                              {String(a.party ?? '').split(',').map(p => p.trim()).filter(Boolean).map((p, pi) => (
-                                <span key={pi} className="lasm-party-pill lasm-party-agr">{/^buyer$/i.test(p) ? 'Customer' : p}</span>
-                              ))}
-                              {!String(a.party ?? '').trim() && <span className="lasm-td-dash">—</span>}
+                              {(() => {
+                                const parties = String(a.party ?? '').split(',').map(p => p.trim()).filter(Boolean)
+                                  .map(p => /^buyer$/i.test(p) ? 'Customer' : p);
+                                if (parties.length === 0) return <span className="lasm-td-dash">—</span>;
+                                return (
+                                  <>
+                                    <span className="lasm-party-pill lasm-party-agr">{parties[0]}</span>
+                                    {parties.length > 1 && (
+                                      <span className="lasm-party-pill lasm-party-agr" title={parties.slice(1).join(', ')}>
+                                        +{parties.length - 1}
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </div>
                           </td>
                           <td>
                             <span className={`lasm-pill ${a.required === 'REQ' ? 'lasm-pill-req' : 'lasm-pill-opt'}`}>{a.required}</span>
                           </td>
-                          <td className="lasm-mono">{a.updated_at ?? '—'}</td>
+                          <td className="lasm-mono">{fmtDmyLong(a.updated_at)}</td>
                           <td>
                             <StatusPill status={sigStatus} />
                           </td>
@@ -1556,6 +1568,17 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   );
 }
 
+/* DD-Month-YYYY (e.g. 08-July-2026) — full month name, for the agreement
+ * popup's "Updated On" column. Backend sends a bare Y-m-d string. */
+const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function fmtDmyLong(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? '—'
+    : `${String(d.getDate()).padStart(2, '0')}-${MONTHS_FULL[d.getMonth()]}-${d.getFullYear()}`;
+}
+
 function StatusPill({ status }: { status: string }) {
   const s = status.toLowerCase();
   // Class-based (not inline) so dark mode can re-tint — inline styles would
@@ -1566,7 +1589,9 @@ function StatusPill({ status }: { status: string }) {
     : s === 'declined'   ? { cls: 'lasm-st-declined', mark: '✕', label: 'Declined' }
     : s === 'recalled'   ? { cls: 'lasm-st-recalled', mark: '⤺', label: 'Recalled' }
     : s === 'expired'    ? { cls: 'lasm-st-expired',  mark: '⌛', label: 'Expired' }
-    :                      { cls: 'lasm-st-draft',    mark: '●', label: 'Draft' };
+    // No signature request yet (or a saved-but-unsent 'draft') reads as
+    // "Pending" — nothing has been sent for signature at this point.
+    :                      { cls: 'lasm-st-draft',    mark: '●', label: 'Pending' };
   return (
     <span className={`lasm-status-pill ${tone.cls}`}>
       {tone.mark} {tone.label}

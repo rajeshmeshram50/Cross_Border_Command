@@ -18,12 +18,18 @@ export function MasterSelect({
   onScrollEnd,
   onSearchChange,
   loadingMore,
+  currentValueLabel,
 }: {
   name?: string;
   value?: string;
   defaultValue?: string;
   options: { value: string; label: string; badge?: { text: string; tone?: 'green' | 'red' | 'gray' } }[];
   placeholder?: string;
+  /* Label to show for the current value when it is NOT among `options`
+   * (e.g. the option was deliberately excluded from the pickable list, or an
+   * async list hasn't loaded it). Prevents the toggle from falling back to
+   * printing the raw value/id. */
+  currentValueLabel?: string;
   disabled?: boolean;
   invalid?: boolean;
   /* When true, the toggle renders a shimmer block instead of the
@@ -167,9 +173,10 @@ export function MasterSelect({
             <span className="master-select-value">{selected.label}{selected.badge && <OptBadge b={selected.badge} />}</span>
           ) : currentValue ? (
             /* Value set but not in the currently-loaded options (e.g. a
-               paginated/async list before its page loads) — show the raw
-               value so the field isn't blank on edit. */
-            <span className="master-select-value">{currentValue}</span>
+               paginated/async list before its page loads, or an owner
+               excluded from the pickable list). Prefer a caller-supplied
+               label so the field shows a NAME, not the raw value/id. */
+            <span className="master-select-value">{currentValueLabel || currentValue}</span>
           ) : loading ? (
             <span className="master-select-shimmer" aria-label="Loading" />
           ) : (

@@ -11,6 +11,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../master/masterFormKit';
+import AuthorityBadges from './AuthorityBadges';
 import { KycModal } from './ClmKycPage';
 import { DdModal } from './ClmDdPage';
 import { QcModal } from './ClmQcPage';
@@ -95,7 +96,7 @@ const DCP_TABS_CSS = `
   display: flex; align-items: center; gap: 4px;
   background: linear-gradient(110deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%);
   padding: 5px; border-radius: 14px;
-  border: 1.5px solid #a5f3fc;
+  border: 1.5px solid #22d3ee;
   box-shadow: 0 2px 10px rgba(8,145,178,.12), 0 1px 0 rgba(255,255,255,.9) inset;
   flex-shrink: 0; flex-wrap: wrap;
 }
@@ -143,21 +144,6 @@ export default function ClmDcpPage() {
   const [editing, setEditing] = useState<SegRule | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [viewDocs, setViewDocs] = useState<{ rule: SegRule; cat: keyof DocSelections | 'all' } | null>(null);
-  // All-authorities popover — opened from the +N badge in the AUTHORITIES column.
-  // `flipUp` opens it above the badge when there isn't room below (bottom rows),
-  // so the last entries aren't clipped off the bottom of the viewport. `y` is the
-  // badge's bottom edge when opening down, or its top edge when flipping up.
-  const [authOpen, setAuthOpen] = useState<{ id: number; names: string[]; x: number; y: number; flipUp: boolean } | null>(null);
-  // Close the fixed-positioned authorities popover on scroll/resize so it can't
-  // drift away from its badge (capture:true catches ancestor + table scrolls).
-  useEffect(() => {
-    if (!authOpen) return;
-    const close = () => setAuthOpen(null);
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
-  }, [authOpen]);
-
   const reload = () => {
     setLoading(true);
     Promise.all([
@@ -358,18 +344,6 @@ export default function ClmDcpPage() {
             </div>
           </div>
           <div className="dcp-toolbar">
-            <div className="dcp-filter-ms" style={{ width: 172 }}>
-              <MasterSelect
-                value={tab}
-                placeholder="Regulatory"
-                options={[
-                  { value: 'all',    label: 'Regulatory: All' },
-                  { value: 'highly', label: 'Highly Regulated' },
-                  { value: 'less',   label: 'Less Regulated' },
-                ]}
-                onChange={(v) => { setTab((v || 'all') as 'all'|'highly'|'less'); setPage(1); }}
-              />
-            </div>
             <div className="dcp-filter-ms" style={{ width: 216 }}>
               <MasterSelect
                 value={bcFilter}
@@ -432,34 +406,7 @@ export default function ClmDcpPage() {
                             : <span style={{ color: '#dc2626', fontWeight: 700, fontSize: 12 }}>✗ No</span>}
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          {(() => {
-                            const auths = authsForRule(r);
-                            if (auths.length === 0) return <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>;
-                            const extra = auths.length - 1;
-                            return (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
-                                <span className="clm-code-pill">{auths[0]}</span>
-                                {extra > 0 && (
-                                  <Tooltip label="View all authorities"><button
-                                    type="button"
-                                    onClick={e => {
-                                      if (authOpen?.id === r.id) { setAuthOpen(null); return; }
-                                      const b = e.currentTarget.getBoundingClientRect();
-                                      // Estimate the popover height (header + a row per authority, capped at
-                                      // the 280px max-height) and flip it above the badge when there's not
-                                      // enough room below — otherwise the bottom rows clip off-screen.
-                                      const estH = Math.min(280, 34 + auths.length * 34);
-                                      const spaceBelow = window.innerHeight - b.bottom;
-                                      const flipUp = spaceBelow < estH + 12 && b.top > spaceBelow;
-                                      setAuthOpen({ id: r.id, names: auths, x: b.left, y: flipUp ? b.top - 4 : b.bottom + 4, flipUp });
-                                    }}
-                                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
-                                    +{extra}
-                                  </button></Tooltip>
-                                )}
-                              </span>
-                            );
-                          })()}
+                          <AuthorityBadges value={authsForRule(r)} />
                         </td>
                         {CAT_KEYS.map(c => {
                           const n = segCount(c);
@@ -515,21 +462,6 @@ export default function ClmDcpPage() {
         />
       )}
 
-      {/* All-authorities popover (opened from the +N badge in the AUTHORITIES column) */}
-      {authOpen && createPortal(
-        <>
-          <div onClick={() => setAuthOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(authOpen.x, window.innerWidth - 340), top: authOpen.flipUp ? undefined : authOpen.y, bottom: authOpen.flipUp ? (window.innerHeight - authOpen.y) : undefined, zIndex: 601, width: 320, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
-            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Authorities ({authOpen.names.length})</div>
-            {authOpen.names.map((name, i) => (
-              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
-                <span className="clm-code-pill" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{name}</span>
-              </div>
-            ))}
-          </div>
-        </>,
-        document.body
-      )}
     </div>
   );
 }
@@ -877,8 +809,8 @@ function SegmentRuleModal(props: {
                   <table className="clm-table">
                     <thead>
                       <tr className="dcp-thead-row" style={{ background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1.5px solid rgba(6,182,212,.12)' }}>
-                        <th style={{ width: 36, padding: '9px 4px 9px 14px', textAlign: 'left' }}></th>
-                        <th style={{ width: 36, padding: '9px 4px', textAlign: 'center' }}></th>
+                        <th style={{ width: 36, padding: '9px 4px 9px 14px', textAlign: 'center' }}></th>
+                        <th style={{ width: 44, padding: '9px 8px', textAlign: 'left' }}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2', whiteSpace: 'nowrap' }}>Sr. No</span></th>
                         <th style={{ width: 100, padding: '9px 8px', textAlign: 'left' }}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2' }}>Code</span></th>
                         <th style={{ padding: '9px 12px', textAlign: 'left' }}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2' }}>Document Name</span></th>
                         <th style={{ padding: '9px 12px', textAlign: 'left' }}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2' }}>Authority / Type</span></th>
@@ -892,8 +824,7 @@ function SegmentRuleModal(props: {
                         const checked = isM || isO;
                         return (
                           <tr key={d.id}>
-                            <td className="clm-td-num">{String(i + 1).padStart(2, '0')}</td>
-                            <td style={{ width: 36, textAlign: 'center', padding: '6px 4px' }}>
+                            <td style={{ width: 36, textAlign: 'center', padding: '6px 4px 6px 14px' }}>
                               <label className="clm-doc-check">
                                 <input
                                   type="checkbox"
@@ -907,6 +838,7 @@ function SegmentRuleModal(props: {
                                 </span>
                               </label>
                             </td>
+                            <td className="clm-td-num">{String(i + 1).padStart(2, '0')}</td>
                             <td style={{ width: 100 }}><span className="clm-code-pill">{d.code}</span></td>
                             <td className="clm-td-name">{d.title || d.name}</td>
                             <td className="clm-td-desc">{d.authority || d.issued_by || '—'}</td>

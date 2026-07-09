@@ -102,15 +102,20 @@ export default function AddNewLeadModal(props: {
   // creating duplicate leads.
   const [saving, setSaving] = useState(false);
 
-  /* Live customer list — fetched once when the modal opens (and only
-     if it hasn't been fetched yet). Cached in state so reopening the
-     modal in the same session doesn't refetch. */
+  /* Live customer list — refetched EVERY time the modal opens (and cleared
+     on close). It must NOT be cached across the session: the /customers GET
+     is scoped to the active branch (the Axios interceptor injects the
+     BranchSwitcher's branch_id), so a stale list captured under one branch
+     would leak that branch's customers into the picker after the user
+     switches branches. */
   const [customerOpts, setCustomerOpts] = useState<CustomerOption[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
   const [customerFetching, setCustomerFetching] = useState(false);
 
   useEffect(() => {
-    if (!open || customerOpts.length > 0) return;
+    // Clear any previous-branch list when the modal closes so it can't flash
+    // stale rows on the next open before the fresh fetch resolves.
+    if (!open) { setCustomerOpts([]); return; }
     setCustomersLoading(true);
     api
       // tab=all → every customer. Without it the endpoint defaults to

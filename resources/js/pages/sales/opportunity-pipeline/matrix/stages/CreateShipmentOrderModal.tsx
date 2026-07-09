@@ -148,7 +148,9 @@ export default function CreateShipmentOrderModal({
       return;
     }
     if (!validate()) {
-      toast.warning('Fill required fields', 'Every field marked * is mandatory.');
+      // validate() already set the inline red errors under each field (incl.
+      // the ZIP "Must be 12 characters or fewer" message). Show them inline
+      // only — no top-right toast — to match the other forms (QA #34).
       return;
     }
     setSubmitting(true);

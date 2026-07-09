@@ -111,6 +111,18 @@ export default function SalesConsignee() {
   const [custMapId, setCustMapId] = useState('');
   const [custMapping, setCustMapping] = useState(false);
 
+  // Freeze the page behind the Mapped Customers popup so the parent body can't
+  // scroll while it's open (lock both <html> and <body> to cover whichever owns
+  // the viewport scroll).
+  useEffect(() => {
+    if (!mappedTarget) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [mappedTarget]);
+
   const openCustMap = async () => {
     setCustMapId('');
     setCustMapOpen(true);

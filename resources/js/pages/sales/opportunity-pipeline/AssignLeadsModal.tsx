@@ -54,13 +54,19 @@ type AssignProps = {
    * already with X" and by the bulk flow when every selected lead shares
    * the same owner. Null = leave the dropdown empty. */
   initialSalespersonId?: number | null;
+  /* Display name of the currently-assigned salesperson. Shown as the field's
+   * current value even though that person is EXCLUDED from the pickable list
+   * (you don't reassign a lead to its current owner). Also covers inactive /
+   * deleted owners that the salespeople endpoint omits — without it the field
+   * fell back to printing the raw id. */
+  initialSalespersonName?: string | null;
   /* Account options — the .env-configured IndiaMart key labels for the
    * caller's branch. Empty array hides the Account field entirely. */
   accountLabels?: string[];
 };
 
 export default function AssignLeadsModal({
-  open, onClose, onAssigned, mode, leadId, leadIds, customerName = null, oppCode = null, accountLabels = [], initialSalespersonId = null,
+  open, onClose, onAssigned, mode, leadId, leadIds, customerName = null, oppCode = null, accountLabels = [], initialSalespersonId = null, initialSalespersonName = null,
 }: AssignProps) {
   const toast = useToast();
 
@@ -117,15 +123,27 @@ export default function AssignLeadsModal({
   }, [accountLabels]);
   const accountAvailable = accountOptions.length > 0;
 
+  const fmtSp = (sp: Salesperson) =>
+    sp.subtitle ? `${sp.code} · ${sp.name} — ${sp.subtitle}` : `${sp.code} · ${sp.name}`;
+
   const spOptions = useMemo(
-    () => salespeople.map(sp => ({
-      value: String(sp.id),
-      label: sp.subtitle
-        ? `${sp.code} · ${sp.name} — ${sp.subtitle}`
-        : `${sp.code} · ${sp.name}`,
-    })),
-    [salespeople],
+    // Exclude the lead's CURRENT owner — reassigning a lead to the same person
+    // is redundant, so they shouldn't appear as a pickable target.
+    () => salespeople
+      .filter(sp => String(sp.id) !== String(initialSalespersonId ?? ''))
+      .map(sp => ({ value: String(sp.id), label: fmtSp(sp) })),
+    [salespeople, initialSalespersonId],
   );
+
+  // Label for the current owner (shown as the field's default value even though
+  // they're excluded from the list). Prefer the formatted "code · name" when
+  // the owner is in the loaded list, else the name passed from the row (covers
+  // inactive/deleted owners the endpoint omits) — never the raw id.
+  const currentOwnerLabel = useMemo(() => {
+    if (!initialSalespersonId) return undefined;
+    const sp = salespeople.find(s => String(s.id) === String(initialSalespersonId));
+    return sp ? fmtSp(sp) : (initialSalespersonName ?? undefined);
+  }, [salespeople, initialSalespersonId, initialSalespersonName]);
 
   const validate = (): boolean => {
     const next: Record<string, string> = {};
@@ -343,6 +361,7 @@ export default function AssignLeadsModal({
               value={spId}
               onChange={setSpId}
               options={spOptions}
+              currentValueLabel={currentOwnerLabel}
               placeholder={loadingSp ? 'Loading…' : 'Search by name or EMP code…'}
               disabled={loadingSp}
               invalid={!!errors.spId}
