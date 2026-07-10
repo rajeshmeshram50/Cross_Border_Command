@@ -180,8 +180,12 @@ function TypesPane({ rows, loading, reload }: { rows: AgrType[]; loading: boolea
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <td className="clm-td-name">{r.name}</td>
-                    <td className="clm-td-desc">{r.description}</td>
+                    <Tooltip label={r.name}>
+                      <td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td>
+                    </Tooltip>
+                    <Tooltip label={r.description}>
+                      <td className="clm-td-desc clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.description}</div></td>
+                    </Tooltip>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
                         {r.in_use ? (
@@ -237,6 +241,8 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   // Blocked-action popup state — set when the user clicks Edit/Delete on an
   // agreement that has already been signed.
   const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: AgrLib } | null>(null);
+  // Row whose PDF is currently downloading — drives the per-row spinner.
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return rows;
@@ -305,6 +311,8 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   // Download the sample agreement as a PDF — rendered server-side with the
   // saved page-shell header/footer (logo, name, footer text, pagination).
   const onDownload = async (r: AgrLib) => {
+    if (downloadingId) return;
+    setDownloadingId(r.id);
     try {
       const resp = await api.get(`/clm/agreement-library/${r.id}/download-pdf`, { responseType: 'blob' });
       const url  = URL.createObjectURL(resp.data as Blob);
@@ -318,6 +326,8 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
     } catch (e) {
       const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
       toast.error('Download failed', msg || 'Please try again.');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -368,8 +378,12 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                           <span className="clm-code-pill">{r.code}</span>
                         </Tooltip>
                       </td>
-                      <td className="clm-td-name">{r.title}</td>
-                      <td className="clm-td-desc">{r.agreement_type}</td>
+                      <Tooltip label={r.title}>
+                        <td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.title}</div></td>
+                      </Tooltip>
+                      <Tooltip label={r.agreement_type}>
+                        <td className="clm-td-desc clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.agreement_type}</div></td>
+                      </Tooltip>
                       <td style={{ textAlign: 'center' }}>
                         <Tooltip label={isHigh ? 'Highly Regulated — needs segment-specific compliance' : 'Less Regulated — applies to all standard segments'}>
                           <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-emerald'}`}>
@@ -436,8 +450,8 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                           <Tooltip label={r.is_signed ? 'Signed — cannot edit' : `Edit — ${r.title}`}>
                             <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { if (r.is_signed) { setLocked({ mode: 'edit', row: r }); return; } setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                           </Tooltip>
-                          <Tooltip label={`Download ${r.code} as PDF`}>
-                            <button className="clm-act clm-act-dl" aria-label="Download" onClick={() => onDownload(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+                          <Tooltip label={downloadingId === r.id ? 'Generating the PDF…' : `Download ${r.code} as PDF`}>
+                            <button className="clm-act clm-act-dl" aria-label="Download" disabled={downloadingId === r.id} onClick={() => onDownload(r)}>{downloadingId === r.id ? (<svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>) : (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>)}</button>
                           </Tooltip>
                           <Tooltip label={r.is_signed ? 'Signed — cannot delete' : `Delete — ${r.title}`}>
                             <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => { if (r.is_signed) { setLocked({ mode: 'delete', row: r }); return; } setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>

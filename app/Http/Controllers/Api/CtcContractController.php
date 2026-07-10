@@ -88,28 +88,17 @@ class CtcContractController extends Controller
         ], $extra);
         $c->versions = $versions;
     }
-
-    /**
-     * Fire the approval broadcast as best-effort. A real-time update failing
-     * (e.g. Reverb unreachable) must NEVER break the underlying save/approve —
-     * the frontend degrades to focus/manual refresh. Log and move on.
-     */
     private function broadcastApproval(CtcContract $c): void
     {
-        try {
-            broadcast(new CtcApprovalUpdated($c));
-        } catch (\Throwable $e) {
-            report($e);
-        }
+        app()->terminating(function () use ($c) {
+            try {
+                broadcast(new CtcApprovalUpdated($c));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        });
     }
 
-    /**
-     * THIS approver's own decision on the current round, or null if they
-     * haven't acted / aren't an approver. The "Agreements To Approve" page is a
-     * personal inbox: once I approve my slot the row should move to my Approved
-     * tab even while other approvers are still pending (the all-must-approve
-     * gate that advances the whole contract is tracked separately, sender-side).
-     */
     private function myApproverStatus(CtcContract $c, string $email): ?string
     {
         $email = strtolower(trim($email));
@@ -226,6 +215,34 @@ class CtcContractController extends Controller
     private function cpNames(CtcContract $c): array
     {
         return collect($this->resolveCounterparties($c))->map(fn ($x) => $x['name'] ?? '')->filter()->values()->all();
+    }
+
+    /**
+     * Same as cpNames() but each name is suffixed with its entity type —
+     * "Royal Cashews (Customer)" — so the +N counterparty popover tells the
+     * user whether a company is the Customer, Consignee or Supplier (a company
+     * can appear as more than one role on the same agreement).
+     */
+    private function cpNamesLabeled(CtcContract $c): array
+    {
+        return collect($this->resolveCounterparties($c))
+            ->map(function ($x) {
+                $name = trim((string) ($x['name'] ?? ''));
+                if ($name === '') return '';
+                $role = $this->cpRoleLabel($x);
+                return $role !== '' ? "{$name} ({$role})" : $name;
+            })
+            ->filter()->values()->all();
+    }
+
+    /** Map a counterparty's source_type / role to a display label. */
+    private function cpRoleLabel(array $cp): string
+    {
+        $type = strtolower((string) ($cp['source_type'] ?? $cp['role'] ?? ''));
+        if (str_contains($type, 'consignee')) return 'Consignee';
+        if (str_contains($type, 'supplier') || str_contains($type, 'vendor')) return 'Supplier';
+        if (str_contains($type, 'customer') || str_contains($type, 'buyer')) return 'Customer';
+        return '';
     }
 
     /**
@@ -420,6 +437,7 @@ class CtcContractController extends Controller
             'dbId'      => $c->id,
             'title'     => $c->title,
             'cp'        => $this->cpNames($c) ?: ['—'],
+            'cpLabeled' => $this->cpNamesLabeled($c) ?: ['—'],
             'org'       => $c->org_name ?: '—',
             'date'      => $this->fmt($c->submitted_at ?: $c->created_at),
             'effDate'   => $this->fmt($c->eff_date),

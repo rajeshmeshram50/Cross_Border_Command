@@ -310,7 +310,12 @@
                   : ($pnFormat === "N / M"      ? "{PAGE_NUM} / {PAGE_COUNT}"
                   :                                "Page {PAGE_NUM} of {PAGE_COUNT}"));
 
-          $pnw = $fontMetrics->getTextWidth($pnText, $font, $size);
+          // Measure the RENDERED text, not the literal {PAGE_NUM}/{PAGE_COUNT}
+          // tokens: dompdf swaps those for real digits at paint time, so a
+          // token-width measurement is far too wide and a right-aligned number
+          // starts too far left — ending up mid-page instead of flush right.
+          $pnSample = str_replace(array("{PAGE_NUM}", "{PAGE_COUNT}"), array("1", "1"), $pnText);
+          $pnw = $fontMetrics->getTextWidth($pnSample, $font, $size);
           if ($pnAlign === "left")        $px = $sideMargin;
           elseif ($pnAlign === "right")   $px = $pageWidth - $pnw - $sideMargin;
           else                            $px = ($pageWidth - $pnw) / 2;

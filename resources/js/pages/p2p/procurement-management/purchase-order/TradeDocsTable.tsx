@@ -114,7 +114,9 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
     setSendKind(parsed[0].kind);
     setSendDocIds(parsed.map(p => p.libId));
   };
-  const sendDoc = (id: string) => launchSign([id]);
+  // The "Purchase Order" row isn't a CLM library doc, so "Send for Sign" can't
+  // route it through Zoho — open its PDF preview instead.
+  const sendDoc = (id: string) => { if (id === 'po') { openPoPdf(false); return; } launchSign([id]); };
   const sendSelected = () => { const ids = visible.filter(d => d.status === 'pending' && sel[d.id]).map(d => d.id); if (ids.length) launchSign(ids); };
   const onSigSent = () => {
     setDocs(ds => ds.map(x => sentBatch.includes(x.id) ? { ...x, status: 'sent' } : x));
@@ -172,7 +174,7 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
               <td className="cptd-cbcol"><input type="checkbox" className="cptd-check" checked={checked} disabled={sent} onChange={e => toggleDoc(d.id, e.target.checked)} aria-label={`Select ${d.name}`} /></td>
               <td>{i + 1}</td>
               <td className="cptd-l"><div className="cptd-docname">{d.name}</div><div className="cptd-docsub">{d.sub}</div></td>
-              <td>{d.required ? <span className="cptd-req">Req</span> : <span className="cptd-opt">Opt</span>}</td>
+              <td>{d.required ? <span className="cptd-req">Mandatory</span> : <span className="cptd-opt">Optional</span>}</td>
               <td className="cptd-date">{d.generated}</td>
               <td><span className={`cptd-status cptd-status--${d.status}`}><span className="cptd-dot" />{d.status === 'pending' ? 'Pending' : d.status === 'sent' ? 'Sent' : 'Signed'}</span></td>
               <td><div className="cptd-actions">

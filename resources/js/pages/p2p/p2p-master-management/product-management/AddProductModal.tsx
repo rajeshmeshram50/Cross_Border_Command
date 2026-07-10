@@ -269,9 +269,9 @@ export default function AddProductModal(props: {
    *     `<script>alert(1)</script>`, `<img onerror=…>`, etc.)
    *   • SQL injection — block common attack signatures (`' OR 1=1 --`,
    *     `; DROP …`, `UNION SELECT …`, `javascript:`, inline event handlers)
-   * Also caps the field at 256 chars to match the backend column width and
-   * keep the printed PDF from overflowing the description box. */
-  const DESCRIPTION_MAX = 256;
+   * Also caps the field at 2000 chars to keep the printed PDF from overflowing
+   * the description box (backend column is TEXT, so it imposes no limit). */
+  const DESCRIPTION_MAX = 2000;
   const HAS_ANGLE_BRACKET_RE = /[<>]/;
   const SQL_INJECTION_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i;
   const handleDescriptionChange = (raw: string) => {

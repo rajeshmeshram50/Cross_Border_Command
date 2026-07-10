@@ -445,7 +445,7 @@ class AnnouncementController extends Controller
             ->where('publish_at', '<=', now());
         $this->applyScope($p, $user);
         $p->update(['status' => 'Active']);
-    }
+    } 
 
     /**
      * Audience count — best-effort estimate of how many employees a

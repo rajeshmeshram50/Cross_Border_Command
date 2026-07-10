@@ -11,6 +11,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { SimpleDescModal } from '../shared/clmCommon';
 import ClmInsertTableModal from './ClmInsertTableModal';
 import ClmInsertHrModal from './ClmInsertHrModal';
+import ClmInsertPlaceholderModal from './ClmInsertPlaceholderModal';
 import ClmClauseInsertPanel from './ClmClauseInsertPanel';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
@@ -136,6 +137,10 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   // True while a Word doc is being uploaded/converted — drives the button
   // spinner so a slow (large-file) conversion shows progress.
   const [uploadingDocx, setUploadingDocx] = useState(false);
+  // True while the DOCX is being generated/downloaded — drives the Download
+  // DOCX button spinner (a table-rich agreement can take a few seconds to
+  // render server-side).
+  const [downloadingDocx, setDownloadingDocx] = useState(false);
 
   /* Stage 2 page-shell — same UX as Trade Document modal. Defaults pre-
    * fill the header with the user's branch (or client) logo + name so
@@ -171,7 +176,13 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   };
   const exec = (cmd: string, value?: string) => {
     editorRef.current?.focus();
+    // indent/outdent otherwise wrap the block in a <blockquote>, which the
+    // editor styles as an italic quote. Force styleWithCSS so the browser
+    // applies a plain margin-left instead, keeping the text's own styling.
+    const needsCss = cmd === 'indent' || cmd === 'outdent';
+    if (needsCss) { try { document.execCommand('styleWithCSS', false, 'true'); } catch { /* not supported */ } }
     document.execCommand(cmd, false, value);
+    if (needsCss) { try { document.execCommand('styleWithCSS', false, 'false'); } catch { /* not supported */ } }
     syncContent();
   };
   const applyFontSize = (px: string) => {
@@ -254,6 +265,8 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       toast.error('Save first', 'Save the agreement before downloading as DOCX.');
       return;
     }
+    if (downloadingDocx) return;
+    setDownloadingDocx(true);
     try {
       const resp = await api.get(`/clm/agreement-library/${editingId}/download`, { responseType: 'blob' });
       const url  = URL.createObjectURL(new Blob([resp.data]));
@@ -277,6 +290,8 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
         }
       } catch { /* keep the default message */ }
       toast.error('Download failed', msg);
+    } finally {
+      setDownloadingDocx(false);
     }
   };
   const uploadDocx = async (file: File) => {
@@ -797,6 +812,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                 syncContent={syncContent}
                 docxRef={docxRef}
                 uploadingDocx={uploadingDocx}
+                downloadingDocx={downloadingDocx}
                 onDownloadDocx={() => void downloadDocx()}
                 onUploadDocx={(f) => void uploadDocx(f)}
                 onOpenPlaceholder={() => { stashSelection(); setPlaceholderOpen(true); setClauseOpen(false); }}
@@ -837,7 +853,11 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
               </button>
             ) : (
               <button type="button" className="agw-btn agw-btn-save" onClick={() => void handleSave()} disabled={saving}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                {saving ? (
+                  <svg className="agw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                )}
                 {saving ? 'Saving…' : 'Submit & Save Agreement'}
               </button>
             )}
@@ -859,13 +879,16 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
           />
         )}
 
-        {/* Insert Placeholder picker */}
-        {placeholderOpen && (
-          <PlaceholderPicker
-            onClose={() => setPlaceholderOpen(false)}
-            onPick={(token) => { if (/^\s*</.test(token)) insertHtmlAtCaret(token); else insertPlaceholderToken(token); setPlaceholderOpen(false); }}
-          />
-        )}
+        {/* Insert Placeholder picker — the SAME shared modal the Trade Document
+            draft uses, so Customer / Consignee / Supplier / Product placeholder
+            tokens are identical across both editors. The backend token
+            substitution resolves {{customer.*}} and the legacy {{buyer.*}}
+            names to the same values, so switching catalogs is safe. */}
+        <ClmInsertPlaceholderModal
+          open={placeholderOpen}
+          onClose={() => setPlaceholderOpen(false)}
+          onInsert={(token) => { if (/^\s*</.test(token)) insertHtmlAtCaret(token); else insertPlaceholderToken(token); setPlaceholderOpen(false); }}
+        />
 
         {/* Insert Table picker — same component the Trade Doc draft uses
             so generated table markup stays consistent across CLM. */}
@@ -909,6 +932,7 @@ function AgrEditor({
   syncContent,
   docxRef,
   uploadingDocx,
+  downloadingDocx,
   onDownloadDocx,
   onUploadDocx,
   onOpenPlaceholder,
@@ -939,6 +963,7 @@ function AgrEditor({
   syncContent: () => void;
   docxRef: React.MutableRefObject<HTMLInputElement | null>;
   uploadingDocx: boolean;
+  downloadingDocx: boolean;
   onDownloadDocx: () => void;
   onUploadDocx: (file: File) => void;
   onOpenPlaceholder: () => void;
@@ -966,10 +991,19 @@ function AgrEditor({
         <div className="agw-editor-actions">
           <input ref={docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
                  onChange={e => { const f = e.target.files?.[0]; if (f) onUploadDocx(f); e.currentTarget.value = ''; }} />
-          <Tooltip label={editingId ? 'Download as DOCX' : 'Save the agreement first'}>
-            <button type="button" className="agw-editor-btn" onClick={onDownloadDocx}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-              Download DOCX
+          <Tooltip label={downloadingDocx ? 'Generating the DOCX…' : (editingId ? 'Download as DOCX' : 'Save the agreement first')}>
+            <button type="button" className="agw-editor-btn" disabled={downloadingDocx} onClick={onDownloadDocx}>
+              {downloadingDocx ? (
+                <>
+                  <svg className="agw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                  Downloading…
+                </>
+              ) : (
+                <>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                  Download DOCX
+                </>
+              )}
             </button>
           </Tooltip>
           <Tooltip label={uploadingDocx ? 'Converting the document…' : (editingId ? 'Upload a revised Word file' : 'Upload a Word file to draft from')}>
@@ -1044,12 +1078,12 @@ function AgrEditor({
           <option value="blockquote">Quote</option>
           <option value="pre">Code</option>
         </select>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('bold')}          title="Bold (Ctrl+B)"><b>B</b></button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('italic')}        title="Italic (Ctrl+I)"><i>I</i></button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('underline')}     title="Underline (Ctrl+U)"><u>U</u></button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('strikeThrough')} title="Strikethrough"><s>S</s></button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('superscript')}   title="Superscript">X²</button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('subscript')}     title="Subscript">X₂</button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('bold')}          title="Bold (Ctrl+B)"><b>B</b></button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('italic')}        title="Italic (Ctrl+I)"><i>I</i></button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('underline')}     title="Underline (Ctrl+U)"><u>U</u></button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('strikeThrough')} title="Strikethrough"><s>S</s></button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('superscript')}   title="Superscript">X²</button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('subscript')}     title="Subscript">X₂</button>
         <label className="agw-toolbar-btn agw-toolbar-color" title="Text color" style={{ position: 'relative' }}>
           T
           <input type="color" defaultValue="#0c4a6e" onChange={e => exec('foreColor', e.target.value)}
@@ -1076,15 +1110,15 @@ function AgrEditor({
           >&nbsp;</button>
         ))}
         <span className="agw-toolbar-sep" />
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('justifyLeft')}    title="Align left">≡</button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('justifyCenter')}  title="Align center">≡</button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('justifyRight')}   title="Align right">≡</button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('justifyFull')}    title="Justify">≡</button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('justifyLeft')}    title="Align left">≡</button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('justifyCenter')}  title="Align center">≡</button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('justifyRight')}   title="Align right">≡</button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('justifyFull')}    title="Justify">≡</button>
         <span className="agw-toolbar-sep" />
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('insertUnorderedList')} title="Bullet list">•≡</button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('insertOrderedList')}   title="Numbered list">1≡</button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('outdent')} title="Outdent">⇤</button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('indent')}  title="Indent">⇥</button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertUnorderedList')} title="Bullet list">•≡</button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertOrderedList')}   title="Numbered list">1≡</button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('outdent')} title="Outdent">⇤</button>
+        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('indent')}  title="Indent">⇥</button>
         <span className="agw-toolbar-sep" />
         {/* Insert HR opens the styled-line picker (colour / height /
             style) instead of dropping a plain <hr> — same UX as the
@@ -1170,8 +1204,8 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
     { label: 'Risk Level',     token: '{{buyer.risk_level}}' },
   ] },
   { id: 'consignee', label: 'Consignee', iconEmoji: '🚚', iconColor: '#f59e0b', fields: [
-    { label: 'Consignee Name',   token: '{{consignee.consignee_name}}' },
-    { label: 'Consignee Code',   token: '{{consignee.consignee_code}}' },
+    { label: 'Consignee Name',   token: '{{consignee.name}}' },
+    { label: 'Consignee Code',   token: '{{consignee.code}}' },
     { label: 'Company',          token: '{{consignee.company}}' },
     { label: 'Contact Person',   token: '{{consignee.contact_person}}' },
     { label: 'Phone',            token: '{{consignee.phone}}' },
@@ -1656,12 +1690,17 @@ const AGW_CSS = `
 .agw-toolbar { display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow-x: auto; padding: 6px 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
 .agw-toolbar::-webkit-scrollbar { height: 6px; }
 .agw-toolbar::-webkit-scrollbar-thumb { background: rgba(6,182,212,.30); border-radius: 999px; }
-.agw-toolbar-sel, .agw-toolbar-btn { height: 26px; min-width: 26px; padding: 0 6px; flex-shrink: 0; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: #475569; font-size: 11px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .15s ease, border-color .15s ease, color .15s ease; }
-.agw-toolbar-sel { min-width: auto; }
+/* box-sizing + line-height:1 + vertical-align keep every control the same
+   26px box regardless of its content (native <select> vs icon button vs text
+   glyph like ≡ / ⇤ / X²), so the toolbar reads as one clean row. */
+.agw-toolbar-sel, .agw-toolbar-btn { height: 26px; min-width: 26px; margin: 0; padding: 0 6px; flex-shrink: 0; box-sizing: border-box; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; color: #475569; font-size: 12px; line-height: 1; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; transition: background .15s ease, border-color .15s ease, color .15s ease; }
+.agw-toolbar-sel { min-width: auto; font-size: 11px; }
+/* Block-level SVGs drop the baseline gap that nudged icon buttons off-centre. */
+.agw-toolbar-btn svg { display: block; flex-shrink: 0; }
 .agw-toolbar-btn:hover { background: #f0fdff; border-color: #67e8f9; color: #0891b2; }
 .agw-toolbar-btn.is-on { background: #cffafe; border-color: #0891b2; color: #0c4a6e; box-shadow: inset 0 1px 2px rgba(8,145,178,.18); }
 .agw-toolbar-btn:disabled { opacity: .4; cursor: not-allowed; }
-.agw-toolbar-sep { width: 1px; height: 18px; flex-shrink: 0; background: #cbd5e1; }
+.agw-toolbar-sep { width: 1px; height: 18px; flex-shrink: 0; background: #cbd5e1; align-self: center; }
 
 .agw-editor-area { position: relative; }
 .agw-editor { min-height: 280px; padding: 18px 22px; background: #fff; outline: none; font-size: 13.5px; line-height: 1.6; color: #0c4a6e; }
@@ -1672,8 +1711,21 @@ const AGW_CSS = `
 .agw-editor h1 { font-size: 22px; }
 .agw-editor h2 { font-size: 18px; }
 .agw-editor h3 { font-size: 15.5px; }
-.agw-editor ul, .agw-editor ol { padding-left: 22px; margin: 0 0 .6em 0; }
+/* Restore list markers — Tailwind's Preflight resets ul/ol to list-style:none,
+   so execCommand insert(Un)orderedList produced lists with no visible bullet or
+   number. Re-assert the marker type + position explicitly. */
+.agw-editor ul, .agw-editor ol { padding-left: 26px; margin: 0 0 .6em 0; list-style-position: outside; }
+.agw-editor ul { list-style-type: disc; }
+.agw-editor ol { list-style-type: decimal; }
+.agw-editor ul ul { list-style-type: circle; }
+.agw-editor ol ol { list-style-type: lower-alpha; }
+.agw-editor li { margin: .15em 0; }
 .agw-editor blockquote { border-left: 3px solid #67e8f9; padding-left: 12px; margin: .4em 0; color: #475569; font-style: italic; }
+/* Indent (execCommand) used to wrap blocks in <blockquote style="margin…">, so
+   already-saved indented text renders as an italic quote. A blockquote carrying
+   an inline style is an indent artefact, not a real Quote block — strip the
+   quote look so it reads as plain indented text. New indents use a margin <div>. */
+.agw-editor blockquote[style] { border-left: none; padding-left: 0; color: inherit; font-style: normal; }
 .agw-editor code { background: #f0fdff; padding: 1px 5px; border-radius: 4px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; color: #0e7490; }
 .agw-editor pre { background: #f0fdff; border: 1px solid #cffafe; border-radius: 6px; padding: 10px 12px; margin: .6em 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; color: #0e7490; overflow-x: auto; }
 .agw-editor hr { border: 0; border-top: 1px dashed #94a3b8; margin: 14px 0; }

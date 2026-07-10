@@ -32,10 +32,13 @@ use Illuminate\Database\Seeder;
  */
 class ClmTncCategorySeeder extends Seeder
 {
-    /** name => short_code (≤ 12 chars). */
+    /** name => short_code (≤ 12 chars).
+     *  Quotation and Proforma Invoice now SHARE one T&C set, so only the two
+     *  Proforma Invoice categories are seeded — a Quotation PDF reuses them
+     *  (see SalesPdfController::fetchSegmentTncs). The retired Quotation
+     *  categories are removed + their T&Cs re-filed onto these by migration
+     *  2026_07_09_000001_merge_tnc_quotation_into_proforma_invoice. */
     private const CATEGORIES = [
-        'International Quotation'        => 'IQ',
-        'Domestic Quotation'            => 'DQ',
         'International Proforma Invoice' => 'IPI',
         'Domestic Proforma Invoice'     => 'DPI',
         // Purchase Order categories live in their own ClmTncPurchaseOrderSeeder.

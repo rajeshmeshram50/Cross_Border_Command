@@ -39,7 +39,7 @@ class ClmTncController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = $this->nextCode(ClmTncCategory::class, $user->client_id, 'DC-');
+            $code = $this->nextCode(ClmTncCategory::class, $user->client_id, $user->branch_id, 'DC-');
             return ClmTncCategory::create([
                 'client_id'  => $user->client_id,
                 'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
@@ -118,7 +118,7 @@ class ClmTncController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = $this->nextCode(ClmTncLibrary::class, $user->client_id, 'TNC-');
+            $code = $this->nextCode(ClmTncLibrary::class, $user->client_id, $user->branch_id, 'TNC-');
             return ClmTncLibrary::create([
                 'client_id'  => $user->client_id,
                 'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
@@ -180,9 +180,15 @@ class ClmTncController extends Controller
      *
      * @param class-string<\Illuminate\Database\Eloquent\Model> $modelClass
      */
-    private function nextCode(string $modelClass, int $clientId, string $prefix): string
+    private function nextCode(string $modelClass, int $clientId, ?int $branchId, string $prefix): string
     {
-        $codes = $modelClass::where('client_id', $clientId)->pluck('code')->all();
+        // Branch-scoped so each branch restarts its own sequence from 001
+        // (DC-001 / TNC-001) rather than continuing another branch's tally —
+        // the T&C master is branch-isolated via MasterVisibility. A client-
+        // level creator ($branchId null) sequences the shared rows.
+        $query = $modelClass::where('client_id', $clientId);
+        $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
+        $codes = $query->pluck('code')->all();
         $maxN  = 0;
         $taken = [];
         $re    = '/^' . preg_quote($prefix, '/') . '(\d+)$/';

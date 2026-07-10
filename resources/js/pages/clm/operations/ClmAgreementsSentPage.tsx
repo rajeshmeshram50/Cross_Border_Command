@@ -56,6 +56,19 @@ export default function ClmAgreementsSentPage() {
   const [dlOpen, setDlOpen] = useState<string | null>(null);
   const [respondId, setRespondId] = useState<string | null>(null);
   const [cpOpen, setCpOpen] = useState<{ id: string; names: string[]; x: number; y: number } | null>(null);   // counterparties popover
+  // Auto-close the +N counterparty popover on page scroll/resize so it can't
+  // drift away from its badge — but ignore scrolls INSIDE the popover's own
+  // list (its overflowY:auto), otherwise scrolling the list would dismiss it.
+  useEffect(() => {
+    if (!cpOpen) return;
+    const close = (e: Event) => {
+      if (e.type === 'scroll' && e.target instanceof Element && e.target.closest('.aws-cp-pop')) return;
+      setCpOpen(null);
+    };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
+  }, [cpOpen]);
 
   const [sent, setSent] = useState<SentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -269,7 +282,7 @@ export default function ClmAgreementsSentPage() {
       {cpOpen && (
         <>
           <div onClick={() => setCpOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div style={{ position: 'fixed', left: Math.min(cpOpen.x, window.innerWidth - 240), top: cpOpen.y, zIndex: 601, width: 220, maxHeight: 280, overflowY: 'auto', background: t.surface, borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.35)' : '#A5F3FC'}`, boxShadow: '0 16px 40px rgba(0,0,0,.28)', padding: 8, fontFamily: 'var(--font-sans)' }}>
+          <div className="aws-cp-pop" style={{ position: 'fixed', left: Math.min(cpOpen.x, window.innerWidth - 240), top: cpOpen.y, zIndex: 601, width: 220, maxHeight: 280, overflowY: 'auto', background: t.surface, borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.35)' : '#A5F3FC'}`, boxShadow: '0 16px 40px rgba(0,0,0,.28)', padding: 8, fontFamily: 'var(--font-sans)' }}>
             <div style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.dark ? '#67e8f9' : '#0e7490', padding: '4px 8px 7px' }}>Counterparties ({cpOpen.names.length})</div>
             {cpOpen.names.map((name, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', borderRadius: 8, background: i % 2 ? (t.dark ? 'rgba(255,255,255,.03)' : '#F0FDFF') : 'transparent' }}>
@@ -458,7 +471,7 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, cpOpen, se
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                           <Avatar name={c.cp[0]} grad="#0891b2,#0e7490" />
                           <Tooltip label={c.cp.join(', ')}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.cp[0]}</span></Tooltip>
-                          {extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 9, fontWeight: 800, flexShrink: 0, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}
+                          {extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 9, fontWeight: 800, flexShrink: 0, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}
                         </div>
                       </td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A7F3D0,#7DD3FC)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #B2EBF2' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0891b2' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>

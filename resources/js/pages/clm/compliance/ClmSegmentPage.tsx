@@ -190,11 +190,13 @@ export default function ClmSegmentPage() {
         .clm-root .clm-tabs-bar .seg-toolbar {
           margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
         }
+        /* Fixed width — no focus-expand. The search used to grow to 340px on
+           focus-within, which shifted the toolbar every time it was focused /
+           blurred. Keep it a steady 300px so the bar stays put. */
         .clm-root .clm-tabs-bar .seg-search {
           flex: 0 0 auto; width: 300px; max-width: 100%;
-          transition: width .18s ease, border-color .15s ease, box-shadow .15s ease;
+          transition: border-color .15s ease, box-shadow .15s ease;
         }
-        .clm-root .clm-tabs-bar .seg-search:focus-within { width: 340px; }
         .clm-root .seg-filter-ms { flex: 0 0 auto; }
         @media (max-width: 1280px) { .clm-root .clm-tabs-bar .seg-search { width: 220px; } }
         @media (max-width: 760px)  {
@@ -394,7 +396,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
        These rules mirror MasterPage.validateForm so a segment added here,
        from the product quick-add, or from the segments master all reject
        the same input. */
-    else if (trimmed.length > 50) next.name = 'Segment Name must be 50 characters or fewer';
+    else if (trimmed.length > 255) next.name = 'Segment Name must be 255 characters or fewer';
     else if (/[<>]/.test(trimmed)) next.name = 'Segment Name cannot contain HTML characters (< or >)';
     else if (/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i.test(trimmed)) {
       next.name = 'Segment Name contains disallowed patterns (possible SQL/JS injection)';

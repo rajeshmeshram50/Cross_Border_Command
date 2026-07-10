@@ -8,10 +8,10 @@
 .prd-root {
   font-family: var(--font-sans);
   background: #ffffff;
-  padding: 14px 18px 24px;
+  padding: 14px 10px 24px;
   margin: -1rem -0.75rem;
   color: #1e1b4b;
-  display: flex; flex-direction: column; gap: 14px;
+  display: flex; flex-direction: column; gap: 6px;
 }
 .prd-root *, .prd-root *::before, .prd-root *::after { box-sizing: border-box; }
 
@@ -107,12 +107,12 @@
 
 /* ═══ Container 3 — PANEL (.pl-panel: toolbar + card grid + pager in ONE box) ═══ */
 .prd-panel { display: flex; flex-direction: column; background: #fff; border: 1px solid #c4b5fd; border-radius: 16px; overflow: hidden; box-shadow: 0 2px 0 rgba(255,255,255,.85) inset, 0 8px 28px rgba(139,92,246,.16), 0 2px 8px rgba(0,0,0,.05); }
-.prd-panel .prd-grid, .prd-panel .prd-list { padding: 16px; margin: 0; align-content: start; }
+.prd-panel .prd-grid, .prd-panel .prd-list { padding: 16px; padding-top:10px ; align-content: start; }
 .prd-panel .prd-meta { padding: 10px 16px 0; }
 .prd-panel .prd-vendor-banner { margin: 12px 16px 0; }
 .prd-panel .prd-empty { margin: 16px 16px 24px; }
 /* Toolbar — the panel's top strip (borderless, divider below) */
-.prd-toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #ece7f8; flex-wrap: wrap; }
+.prd-toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 12px; padding-bottom:10px; border-bottom: 1px solid #ece7f8; flex-wrap: wrap; }
 
 /* ═══ Product detail popup — renders ProductView over the list ═══ */
 .prd-detail-overlay {
@@ -210,7 +210,7 @@
 .prd-pcard-status--active .prd-pcard-status-dot { background: #16a34a; box-shadow: 0 0 0 3px rgba(34,197,94,.25); }
 .prd-pcard-status--inactive { color: #b91c1c; background: rgba(254,242,242,.96); border: 1px solid #fecaca; }
 .prd-pcard-status--inactive .prd-pcard-status-dot { background: #ef4444; box-shadow: 0 0 0 3px rgba(239,68,68,.2); }
-.prd-pcard-body { flex: 1; display: flex; flex-direction: column; gap: 10px; padding: 13px 13px 11px; }
+.prd-pcard-body { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 13px 13px 5px; }
 .prd-pcard-title { font-size: 13px; font-weight: 800; color: #7c3aed; line-height: 1.34; letter-spacing: -.25px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .prd-pcard-code { font-weight: 800; color: #7c3aed; letter-spacing: .01em; }
 .prd-pcard-sep { color: #cbd5e1; font-weight: 600; margin: 0 6px; }
@@ -230,7 +230,7 @@
 .prd-pcard-haz-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .prd-pcard-haz--no { color: #15803d; background: linear-gradient(135deg,#f0fdf4,#dcfce7); border: 1px solid #bbf7d0; }
 .prd-pcard-haz--yes { color: #b45309; background: linear-gradient(135deg,#fffbeb,#fef3c7); border: 1px solid #fde68a; }
-.prd-pcard-foot { display: flex; align-items: center; gap: 8px; padding: 9px 13px 11px; border-top: 1px dashed #ece7f8; margin-top: auto; background: linear-gradient(180deg,transparent,rgba(245,241,254,.45)); }
+.prd-pcard-foot { display: flex; align-items: center; gap: 8px; padding: 6px 13px 6px; border-top: 1px dashed #ece7f8; margin-top: auto; background: linear-gradient(180deg,transparent,rgba(245,241,254,.45)); }
 .prd-pcard-cta { flex: 1; justify-content: center; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 11.5px; font-weight: 800; color: #fff; border: none; border-radius: 11px; padding: 8px 13px; cursor: pointer; white-space: nowrap; transition: transform .15s, box-shadow .15s, background .15s; }
 .prd-pcard-cta svg { flex-shrink: 0; }
 .prd-pcard-cta--wish { background: #fff; color: #7c3aed; border: 1.5px solid #d8cef0; box-shadow: 0 2px 6px rgba(124,58,237,.1); }

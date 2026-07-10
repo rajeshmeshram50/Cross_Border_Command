@@ -482,10 +482,10 @@ class SegmentDocUploadController extends Controller
      * then surfaces two views over those deals:
      *   - with_shipment    → one row per shipment on those leads (SHP-xxx) +
      *                        customer / consignee
-     *   - without_shipment → one row per procurement (PROC-xxx) — ALL of them,
-     *                        the procurement-stage view (a deal can appear in
-     *                        both views; "Without Shipment ID" is the procurement
-     *                        lens, not "procurements lacking a shipment").
+     *   - without_shipment → one row per procurement (PROC-xxx) whose lead has
+     *                        NO shipment yet. Strict either/or split: a deal
+     *                        whose lead already has a shipment appears only under
+     *                        with_shipment, never here (no overlap).
      * Compliance ratios (KYC/DD/TL/TD) are the vendor's overall verified-vs-total
      * (no per-shipment document tracking exists in the schema), so the same
      * ratios ride on every row.
@@ -783,6 +783,26 @@ class SegmentDocUploadController extends Controller
 
             $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;
             $buyerIsConsignee = !$cons || (bool) ($cons->same_as_customer ?? false);
+
+            // Customer = Consignee → the vault shows only the buyer tab
+            // (Consignee/Both are hidden). Per requirement that tab must list
+            // documents whose applicable party is the BUYER ALONE, so drop any
+            // buyer-list doc that ALSO appears on the consignee side (a
+            // Buyer+Consignee doc is emitted into both lists with the same
+            // db_id) — those belong to the hidden consignee/both view. Keyed the
+            // same way dedupe() keys rows. Applies to the customer vault AND the
+            // Sales-Matrix lead vault (same builder) so both read identically.
+            if ($type !== 'consignee' && $buyerIsConsignee) {
+                $keyOf = fn (array $r) => !empty($r['db_id'])
+                    ? (($r['doc_type'] ?? '') . '#' . $r['db_id'])
+                    : ('n#' . ($r['name'] ?? ''));
+                $consTradeKeys = [];
+                foreach ($tradeCons as $r) { $consTradeKeys[$keyOf($r)] = true; }
+                $tradeBuyer = array_values(array_filter($tradeBuyer, fn ($r) => !isset($consTradeKeys[$keyOf($r)])));
+                $consAgrKeys = [];
+                foreach ($agrCons as $r) { $consAgrKeys[$keyOf($r)] = true; }
+                $agrBuyer = array_values(array_filter($agrBuyer, fn ($r) => !isset($consAgrKeys[$keyOf($r)])));
+            }
 
             // The ratio must count exactly what the expanded panel displays:
             //   • Consignee vault → always the consignee side (forceParty).

@@ -1017,7 +1017,7 @@ export default function ClmBuyerProfilePage() {
               </div>
             </div>
             <div style={{ maxHeight: txnAnalyticsOpen ? '200px' : '0px', opacity: txnAnalyticsOpen ? 1 : 0, padding: txnAnalyticsOpen ? '6px 8px 8px' : '0 8px', background: 'linear-gradient(180deg,#f0fdff,#f4feff)', overflow: 'hidden', transition: 'max-height .32s cubic-bezier(.22,1,.36,1),opacity .22s,padding .22s' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(130px, 100%), 1fr))', gap: '6px' }}>
                 {[
                   { num: pad(txnTotal), label: 'Total Transactions', tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg> },
                   { num: pad(txnCompliant), label: 'Fully Compliant', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
@@ -1099,7 +1099,7 @@ export default function ClmBuyerProfilePage() {
                       </tbody>
                     </table>
                     <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
-                      <TxnPager page={wsEqPageSafe} total={wsEqData.length} perPage={txnPerPage} noun="shipment" onPage={setWsEqPage} onPageSize={(n) => { setTxnManualSize(n); setWsEqPage(1); }} />
+                      <WorklistPager page={wsEqPageSafe} total={wsEqData.length} pageSize={txnPerPage} onPage={setWsEqPage} onPageSize={(n) => { setTxnManualSize(n); setWsEqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
                 )}
@@ -1140,7 +1140,7 @@ export default function ClmBuyerProfilePage() {
                       </tbody>
                     </table>
                     <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
-                      <TxnPager page={wsNeqPageSafe} total={wsNeqData.length} perPage={txnPerPage} noun="shipment" onPage={setWsNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWsNeqPage(1); }} />
+                      <WorklistPager page={wsNeqPageSafe} total={wsNeqData.length} pageSize={txnPerPage} onPage={setWsNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWsNeqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
                 )}
@@ -1187,7 +1187,7 @@ export default function ClmBuyerProfilePage() {
                       </tbody>
                     </table>
                     <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
-                      <TxnPager page={wosEqPageSafe} total={wosEqData.length} perPage={txnPerPage} noun="transaction" onPage={setWosEqPage} onPageSize={(n) => { setTxnManualSize(n); setWosEqPage(1); }} />
+                      <WorklistPager page={wosEqPageSafe} total={wosEqData.length} pageSize={txnPerPage} onPage={setWosEqPage} onPageSize={(n) => { setTxnManualSize(n); setWosEqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
                 )}
@@ -1231,7 +1231,7 @@ export default function ClmBuyerProfilePage() {
                       </tbody>
                     </table>
                     <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
-                      <TxnPager page={wosNeqPageSafe} total={wosNeqData.length} perPage={txnPerPage} noun="transaction" onPage={setWosNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWosNeqPage(1); }} />
+                      <WorklistPager page={wosNeqPageSafe} total={wosNeqData.length} pageSize={txnPerPage} onPage={setWosNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWosNeqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
                 )}
@@ -1275,7 +1275,7 @@ export default function ClmBuyerProfilePage() {
               </div>
               <div className="bpa-cards-wrap" style={{ maxHeight: partyAnalyticsOpen ? '200px' : '0px', opacity: partyAnalyticsOpen ? 1 : 0, padding: partyAnalyticsOpen ? '6px 8px 8px' : '0 8px', background: 'linear-gradient(180deg,#f0fdff,#f4feff)' }}>
                 {bpaTab === 'buyer' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(130px, 100%), 1fr))', gap: '6px' }}>
                     {[
                       { num: pad(buyerTotal), label: `Total ${buyerScope === 'domestic' ? 'Domestic' : 'International'} Customers`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
                       { num: pad(buyerCompliant), label: 'Compliant Customers', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
@@ -1298,7 +1298,7 @@ export default function ClmBuyerProfilePage() {
                   </div>
                 )}
                 {bpaTab === 'consignee' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(130px, 100%), 1fr))', gap: '6px' }}>
                     {[
                       { num: pad(consTotal), label: `Total ${consScope === 'domestic' ? 'Domestic' : 'International'} Consignees`, tag: 'TOTAL', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> },
                       { num: pad(consCompliant), label: 'Compliant Consignees', tag: 'OK', tagC: '#0891b2', ico: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></svg> },
@@ -1378,7 +1378,7 @@ export default function ClmBuyerProfilePage() {
                             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(224,249,253,.7)'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = bg; }}>
                             <td style={{ padding: '9px 12px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{(buyerPageSafe - 1) * bpPerPage + i + 1}</span></td>
-                            <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px' }}>{r.id}</span></td>
+                            <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
                             <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
                             <td style={{ padding: '9px 11px', textAlign: 'center', verticalAlign: 'middle', minWidth: '140px' }}>
                               <div style={{ display: 'inline-flex', flexWrap: 'nowrap', gap: '4px', justifyContent: 'center', alignItems: 'center' }}>
@@ -1470,7 +1470,7 @@ export default function ClmBuyerProfilePage() {
                             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(224,249,253,.7)'; }}
                             onMouseLeave={(e) => { e.currentTarget.style.background = bg; }}>
                             <td style={{ padding: '9px 12px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{(consPageSafe - 1) * consPerPage + i + 1}</span></td>
-                            <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0e7490', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px' }}>{r.id}</span></td>
+                            <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0e7490', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
                             <td style={{ padding: '9px 11px', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.06)', border: '1px solid rgba(6,182,212,.14)', padding: '2px 7px', borderRadius: '5px' }}>{r.cid}</span></td>
                             <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
                             <td style={{ padding: '9px 11px', textAlign: 'center', verticalAlign: 'middle', minWidth: '140px' }}>
@@ -1637,7 +1637,7 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
               ) : rows.map((r, i) => (
                 <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : 'rgba(240,253,255,.45)', borderBottom: '1px solid rgba(6,182,212,.07)' }}>
                   <td style={{ padding: '9px 12px', textAlign: 'center' }}><span style={{ fontSize: '11px', fontWeight: 700, color: '#0891b2' }}>{i + 1}</span></td>
-                  <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0e7490', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px' }}>{r.id}</span></td>
+                  <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0e7490', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{r.id}</span></td>
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.06)', border: '1px solid rgba(6,182,212,.14)', padding: '2px 7px', borderRadius: '5px' }}>{r.cid}</span></td>
                   <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{r.name}</td>
                   <td style={{ padding: '9px 11px', textAlign: 'center', minWidth: '140px' }}>

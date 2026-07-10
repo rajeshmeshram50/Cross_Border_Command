@@ -22,7 +22,7 @@ use PhpOffice\PhpWord\Shared\Html;
  * Trade Documents master — covers both tabs:
  *
  *   - /clm/trade-docs/names    (lightweight catalog: TDN-NNN + name)
- *   - /clm/trade-docs/library  (rich library: TD-NNN + title, type, purpose, party, file)
+ *   - /clm/trade-docs/library  (rich library: TDL-NNN + title, type, purpose, party, file)
  *
  * Combined into a single controller because the two tabs render on the
  * same page and share validation patterns.
@@ -86,7 +86,7 @@ class ClmTradeDocumentController extends Controller
                 return ['dupe' => true];
             }
 
-            $code = $this->nextCode(ClmTradeDocName::class, $user->client_id, 'TDN-');
+            $code = $this->nextCode(ClmTradeDocName::class, $user->client_id, $user->branch_id, 'TDN-');
             return ['row' => ClmTradeDocName::create([
                 'client_id'  => $user->client_id,
                 'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
@@ -231,7 +231,10 @@ class ClmTradeDocumentController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = $this->nextCode(ClmTradeDocLibrary::class, $user->client_id, 'TD-');
+            // Library codes use the TDL- prefix (matching the create-popup
+            // preview + the Trade Document Library list). Legacy TD- rows were
+            // renamed to TDL- by migration so this sequence stays continuous.
+            $code = $this->nextCode(ClmTradeDocLibrary::class, $user->client_id, $user->branch_id, 'TDL-');
             return ClmTradeDocLibrary::create($data + [
                 'client_id'  => $user->client_id,
                 'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
@@ -329,9 +332,15 @@ class ClmTradeDocumentController extends Controller
      *
      * @param class-string<\Illuminate\Database\Eloquent\Model> $modelClass
      */
-    private function nextCode(string $modelClass, int $clientId, string $prefix): string
+    private function nextCode(string $modelClass, int $clientId, ?int $branchId, string $prefix): string
     {
-        $codes = $modelClass::where('client_id', $clientId)->pluck('code')->all();
+        // Branch-scoped so each branch restarts its own sequence from 001
+        // (TD-001 / TDN-001) rather than continuing another branch's tally —
+        // the trade-document master is branch-isolated via MasterVisibility.
+        // A client-level creator ($branchId null) sequences the shared rows.
+        $query = $modelClass::where('client_id', $clientId);
+        $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
+        $codes = $query->pluck('code')->all();
         $maxN  = 0;
         $taken = [];
         $re    = '/^' . preg_quote($prefix, '/') . '(\d+)$/';

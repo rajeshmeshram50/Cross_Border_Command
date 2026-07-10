@@ -202,28 +202,16 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
     return () => clearInterval(t);
   }, [images.length, galleryPaused]);
 
-  // Thumbnail strip scroll indicator — dots (one per scrollable page) replace
-  // the native horizontal scrollbar. Track scroll position to light the dot.
+  // Keep the active thumbnail scrolled into view as the hero gallery
+  // auto-advances (or the user clicks a dot), so the highlighted thumb
+  // never hides off the edge of the strip.
   const thumbsRef = useRef<HTMLDivElement>(null);
-  const [thumbPages, setThumbPages] = useState(0);
-  const [thumbPage, setThumbPage] = useState(0);
   useEffect(() => {
     const el = thumbsRef.current;
     if (!el) return;
-    const recalc = () => {
-      const pages = el.clientWidth > 0 ? Math.ceil((el.scrollWidth - 1) / el.clientWidth) : 0;
-      setThumbPages(pages);
-      setThumbPage(Math.round(el.scrollLeft / el.clientWidth));
-    };
-    recalc();
-    el.addEventListener('scroll', recalc, { passive: true });
-    window.addEventListener('resize', recalc);
-    return () => { el.removeEventListener('scroll', recalc); window.removeEventListener('resize', recalc); };
-  }, [images.length]);
-  const scrollThumbsToPage = (p: number) => {
-    const el = thumbsRef.current;
-    if (el) el.scrollTo({ left: p * el.clientWidth, behavior: 'smooth' });
-  };
+    const active = el.children[activeImg] as HTMLElement | undefined;
+    active?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+  }, [activeImg]);
 
   if (loading) {
     // Shimmer placeholder that mirrors the actual layout: image strip
@@ -367,15 +355,15 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
             <span className={`pv2pd-chip pv2pd-chip--onimg pv2pd-chip--${isActive ? 'active' : 'inactive'}`}>
               <span className="pv2pd-chip-dot" />{statusText}
             </span>
-            {thumbPages > 1 && (
+            {images.length > 1 && (
               <div className="pv2pd-thumb-dots pv2pd-thumb-dots--onimg">
-                {Array.from({ length: thumbPages }).map((_, p) => (
+                {images.map((_, p) => (
                   <button
                     key={p}
                     type="button"
-                    className={`pv2pd-thumb-dot ${p === thumbPage ? 'is-active' : ''}`}
-                    onClick={() => scrollThumbsToPage(p)}
-                    aria-label={`Thumbnail page ${p + 1}`}
+                    className={`pv2pd-thumb-dot ${p === activeImg ? 'is-active' : ''}`}
+                    onClick={() => setActiveImg(p)}
+                    aria-label={`Image ${p + 1}`}
                   />
                 ))}
               </div>
@@ -462,29 +450,29 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
                   (or alert-triangle when hazardous) / box / tag / package. */}
                 <div className="pv2pd-hl pv2pd-hl--v">
                   <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg></span>
-                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">HSN Code</span><span className="pv2pd-hl__v" title={hsnCode}>{hsnCode}</span></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">HSN Code</span><Tooltip label={hsnCode}><span className="pv2pd-hl__v">{hsnCode}</span></Tooltip></span>
                 </div>
                 <div className="pv2pd-hl pv2pd-hl--g">
                   <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg></span>
-                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Segment</span><span className="pv2pd-hl__v" title={segmentName}>{segmentName}</span></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Segment</span><Tooltip label={segmentName}><span className="pv2pd-hl__v">{segmentName}</span></Tooltip></span>
                 </div>
                 <div className={`pv2pd-hl ${isHaz ? 'pv2pd-hl--h' : 'pv2pd-hl--c'}`}>
                   <span className="pv2pd-hl__ico">{isHaz
                     ? <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
                     : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></svg>}</span>
-                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">{isHaz ? 'Hazardous' : 'Non-Hazardous'}</span><span className="pv2pd-hl__v" title={isHaz ? hazClassName : 'No'}>{isHaz ? (hazClassName !== '—' ? hazClassName : 'Yes') : 'No'}</span></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">{isHaz ? 'Hazardous' : 'Non-Hazardous'}</span><Tooltip label={isHaz ? hazClassName : 'No'}><span className="pv2pd-hl__v">{isHaz ? (hazClassName !== '—' ? hazClassName : 'Yes') : 'No'}</span></Tooltip></span>
                 </div>
                 <div className="pv2pd-hl pv2pd-hl--c">
                   <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg></span>
-                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">UOM</span><span className="pv2pd-hl__v" title={uomName}>{uomName}</span></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">UOM</span><Tooltip label={uomName}><span className="pv2pd-hl__v">{uomName}</span></Tooltip></span>
                 </div>
                 <div className="pv2pd-hl pv2pd-hl--a">
                   <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></svg></span>
-                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Condition</span><span className="pv2pd-hl__v" title={conditionName}>{conditionName}</span></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Condition</span><Tooltip label={conditionName}><span className="pv2pd-hl__v">{conditionName}</span></Tooltip></span>
                 </div>
                 <div className="pv2pd-hl pv2pd-hl--p">
                   <span className="pv2pd-hl__ico"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m7.5 4.27 9 5.15" /><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="m3.3 7 8.7 5 8.7-5" /><path d="M12 22V12" /></svg></span>
-                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Packaging Material</span><span className="pv2pd-hl__v" title={packagingName}>{packagingName}</span></span>
+                  <span className="pv2pd-hl__txt"><span className="pv2pd-hl__k">Packaging Material</span><Tooltip label={packagingName}><span className="pv2pd-hl__v">{packagingName}</span></Tooltip></span>
                 </div>
               </div>
             </div>
