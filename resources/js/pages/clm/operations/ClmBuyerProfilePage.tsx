@@ -5,6 +5,7 @@ import CustomerEvidenceVaultModal, { type CustomerVaultTarget, type TabKey as Va
 import ConsigneeEvidenceVaultModal, { type ConsigneeVaultTarget } from '../../sales/core-masters/consignee/ConsigneeEvidenceVaultModal';
 import ClmDocsPopup, { type DocCategory } from '../shared/ClmDocsPopup';
 import Tooltip from '../../../components/ui/Tooltip';
+import { useScrollLock } from '../../../hooks/useScrollLock';
 import { ShimmerTableRows } from '../../../components/ui/Shimmer';
 import WorklistPager from '../../../components/ui/WorklistPager';
 
@@ -1587,6 +1588,7 @@ function SegCell({ names, sc, sb }: { names: string[]; sc: string; sb: string })
  * already-loaded consignee dataset) in the same column layout.
  * ────────────────────────────────────────────────────────────────────────── */
 function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows: ConsRow[]; onClose: () => void }) {
+  useScrollLock(true);   // freeze background page scroll while the modal is open
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);

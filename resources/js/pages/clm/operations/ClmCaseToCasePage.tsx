@@ -67,6 +67,19 @@ export default function ClmCaseToCasePage() {
   const [search, setSearch] = useState('');
   const [infoOpen, setInfoOpen] = useState(false);   // "What We Are Doing Here" starts collapsed
   const [cpOpen, setCpOpen] = useState<{ id: string; names: string[]; x: number; y: number } | null>(null);   // counterparties popover
+  // The counterparties popover is fixed-positioned to the +N badge's rect at
+  // click time, so any scroll detaches it from its row (CBC-568). Auto-close on
+  // scroll (capture phase catches inner scroll containers too) + on resize.
+  useEffect(() => {
+    if (!cpOpen) return;
+    const close = () => setCpOpen(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [cpOpen]);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CtcContract | null>(null);
   const [rows, setRows] = useState<CtcContract[]>([]);
