@@ -6,6 +6,7 @@ import SpiDetail from './SpiDetail';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { useToast } from '../../../../contexts/ToastContext';
+import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import api from '../../../../api';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -300,7 +301,7 @@ export default function SupplierPurchaseInvoice() {
                   <td className="spi-c-r spi-amt">{inr(r.netPayable)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.totalPaid)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.balance)}</td>
-                  <td>{r.attach ? <a className="spi-attach" href={r.attach} target="_blank" rel="noreferrer"><IcoClip />{r.attach.split('/').pop()}</a> : <span className="spi-date-sub">—</span>}</td>
+                  <td>{r.attach ? <a className="spi-attach" href={resolveFileUrl(r.attach)} target="_blank" rel="noreferrer" title={r.attach.split('/').pop()}><IcoClip /><span className="spi-attach-name">{r.attach.split('/').pop()}</span></a> : <span className="spi-date-sub">—</span>}</td>
                   <td className="spi-c-c">
                     <span className={`spi-zb ${r.zoho === 'sync' ? 'spi-zb-sync' : 'spi-zb-not'}`}><span className="spi-zb-dot" />{r.zoho === 'sync' ? 'Sync' : 'Not Sync'}</span>
                   </td>
@@ -347,7 +348,7 @@ export default function SupplierPurchaseInvoice() {
             </div>
             <div className="spi-menu-items">
               <button type="button" className="spi-menu-item is-teal" onClick={() => syncRow(menu.row)}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
-              <button type="button" className="spi-menu-item" onClick={() => { const a = menu.row.attach; setMenu(null); if (a) window.open(a, '_blank', 'noopener'); else toast.info('Download SPI', 'No attachment on this invoice.'); }}><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> Download SPI</button>
+              <button type="button" className="spi-menu-item" onClick={() => { const a = menu.row.attach; setMenu(null); if (a) window.open(resolveFileUrl(a), '_blank', 'noopener'); else toast.info('Download SPI', 'No attachment on this invoice.'); }}><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> Download SPI</button>
               <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); toast.info('SPI Payment', 'Payment recording is coming soon.'); }}><span className="spi-menu-item-ico spi-menu-item-ico-pay"><IcoCard /></span> SPI Payment</button>
             </div>
           </div>

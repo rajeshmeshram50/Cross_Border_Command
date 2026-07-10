@@ -336,7 +336,7 @@ class SupplierPurchaseInvoiceController extends Controller
         if (!$user) abort(401);
 
         $request->validate([
-            'file' => 'required|file|max:10240|mimes:pdf,jpg,jpeg,png,webp',
+            'file' => 'required|file|max:2048|mimes:pdf,jpg,jpeg,png,webp',
         ]);
 
         $path = $request->file('file')->store('spi/' . ($user->client_id ?: 'x'), 'public');
