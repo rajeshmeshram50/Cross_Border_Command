@@ -120,6 +120,9 @@ export default function SupplierPurchaseInvoice() {
     const recompute = () => {
       const el = scrollRef.current;
       if (!el) return;
+      // On mobile the natural (scrolling) layout is correct — don't auto-fit or
+      // stretch the card, which otherwise leaves a big empty gap.
+      if (window.innerWidth <= 768) { setFillH(undefined); return; }
       const top = el.getBoundingClientRect().top;   // viewport-relative top of the table
       const THEAD = 44, ROW = 58, FOOTER = 96;        // header + reserve for the pager/footer
       const avail = window.innerHeight - top - THEAD - FOOTER;

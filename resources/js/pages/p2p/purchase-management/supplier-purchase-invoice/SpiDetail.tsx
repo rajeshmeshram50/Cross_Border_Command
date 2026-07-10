@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
+import SupplierEvidenceVaultModal from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import api from '../../../../api';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -36,6 +37,7 @@ type SpiPoDetail = {
   currency?: string | null; exchange_rate?: number | null; inco_term?: string | null;
   port_of_loading?: string | null; port_of_discharge?: string | null; final_destination?: string | null; country_of_origin?: string | null;
   supplier_name: string | null; pi_number: string | null; next_spi_code: string | null;
+  vendor_id?: number | null;
   supplier: SpiSupplier | null; items: SpiPoItem[];
 };
 
@@ -57,6 +59,17 @@ function formatProductCode(raw: string): string {
   if (!m) return raw;
   return `${m[1] || 'P-'}${m[2].padStart(3, '0')}`;
 }
+
+// GST scrutiny is "old" when the last scrutiny date is older than this many months (mirrors the PO wizard).
+const SCRUTINY_STALE_MONTHS = 3;
+const isScrutinyOld = (iso?: string | null) => {
+  if (!iso) return false;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return false;
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - SCRUTINY_STALE_MONTHS);
+  return d < cutoff;
+};
 
 /* Basic-detail option lists — mirror the PO wizard (hardcoded constants, not masters). */
 const PO_TYPES = ['Material / Goods', 'Services', 'FFD / Transporter'];
@@ -147,6 +160,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   const [showMissing, setShowMissing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nexting, setNexting] = useState(false); // brief loader on Save & Next
+  const [vaultOpen, setVaultOpen] = useState(false); // Supplier Evidence Vault modal
 
   // Fetch the linked PO's detail to pre-fill Step 1 + seed the product rows.
   useEffect(() => {
@@ -293,6 +307,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
 
   // In the Without-PO flow the supplier comes from the picker, not a linked PO.
   const sup = po?.supplier ?? stdSup;
+  const scrutinyOld = isScrutinyOld(sup?.scrutiny);
+  const vendorDbId = po?.vendor_id ?? stdVendorId ?? undefined; // real vendor id → live Evidence-Vault fetch
 
   // Pull the vendor's real 5-parameter Evidence-Vault breakdown for the legal card.
   const loadSupplierLegal = (vendorId: number) => {
@@ -314,7 +330,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
     loadSupplierLegal(s.id);
     try {
       const r = await api.get(`/p2p/supplier-purchase-invoices/suppliers/${s.id}`);
-      setStdSup((r.data?.data ?? null) as SpiSupplier | null);
+      const d = (r.data?.data ?? null) as SpiSupplier | null;
+      setStdSup(d);
+      if (isScrutinyOld(d?.scrutiny)) toast.warning('GST scrutiny date is old', `It is more than ${SCRUTINY_STALE_MONTHS} months old — do the scrutiny for this supplier.`);
     } catch { setStdSup(null); }
   };
 
@@ -606,7 +624,15 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                   <span className="spi-dt-card-ico spi-dt-card-ico-2"><IcoShield /></span> Supplier Legal Status
                   {supLegal && <span className={`spi-dt-legal-badge ${supLegal.p === 100 ? 'ok' : 'warn'}`}>{supLegal.p === 100 ? '100% Compliant' : `${supLegal.p}% · Needs Review`}</span>}
                 </div>
-                <span className="spi-dt-minus">{legalOpen ? '–' : '+'}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {vendorDbId && sup && (
+                    <button type="button" className="spi-dt-vault-btn" onClick={e => { e.stopPropagation(); setVaultOpen(true); }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg>
+                      <span>Supplier Legal Status</span>
+                    </button>
+                  )}
+                  <span className="spi-dt-minus">{legalOpen ? '–' : '+'}</span>
+                </div>
               </div>
               {legalOpen && (
                 <div className="spi-dt-legal">
@@ -653,9 +679,14 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
             {/* GST Scrutiny Details */}
             <div className="spi-dt-card">
               <div className="spi-dt-card-head">
-                <div className="spi-dt-card-title"><span className="spi-dt-card-ico spi-dt-card-ico-4"><IcoDocSm /></span> GST Scrutiny Details</div>
+                <div className="spi-dt-card-title"><span className="spi-dt-card-ico spi-dt-card-ico-4"><IcoDocSm /></span> GST Scrutiny Details
+                  {scrutinyOld && <span className="spi-dt-scrutiny-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg> Scrutiny Overdue</span>}
+                </div>
                 <span className="spi-dt-fields-badge">5 FIELDS</span>
               </div>
+              {scrutinyOld && (
+                <div className="spi-dt-scrutiny-warn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg><span><b>GST scrutiny date is old</b> (more than {SCRUTINY_STALE_MONTHS} months). Please do the scrutiny for this supplier before raising the invoice.</span></div>
+              )}
               <div className="spi-dt-grid4">
                 <Field label="SCRUTINY DATE"><input className="spi-dt-inp" value={sup?.scrutiny ?? ''} placeholder="—" readOnly /></Field>
                 <Field label="GST NUMBER"><input className="spi-dt-inp" value={sup?.gstNo ?? ''} placeholder="15-digit GSTIN" readOnly /></Field>
@@ -1038,6 +1069,21 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
       </div>
       )}
     </div>
+
+    <SupplierEvidenceVaultModal
+      open={vaultOpen}
+      supplier={{
+        id: sup?.code || 'S-000',
+        db_id: vendorDbId,
+        company: sup?.name || stdSupName || 'Supplier',
+        country: sup?.country || 'India',
+        contact: sup?.contact || undefined,
+        contactCity: sup?.city || undefined,
+        email: sup?.email && sup.email !== '—' ? sup.email : undefined,
+        risk: 'Compliant',
+      }}
+      onClose={() => setVaultOpen(false)}
+    />
     </div>,
     document.body,
   );

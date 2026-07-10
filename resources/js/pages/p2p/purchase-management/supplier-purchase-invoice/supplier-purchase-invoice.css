@@ -141,6 +141,22 @@
 .spi-search input { flex:1; height:100%; border:0; outline:0; background:transparent; font-family:inherit; font-size:12.5px; font-weight:600; color:#0c4a6e; }
 .spi-search input::placeholder { color:#9fb2c0; font-weight:500; }
 
+/* ── Mobile / narrow-screen responsive ─────────────────────────────────── */
+@media (max-width: 768px) {
+  .spi-head { flex-direction:column; align-items:stretch; gap:10px; }
+  .spi-head-btn { align-self:flex-start; }
+  .spi-seg { width:auto; margin:12px 12px 0; flex-wrap:wrap; }
+  .spi-seg-btn { font-size:11px; padding:7px 11px; }
+  .spi-sub { flex-direction:column; align-items:stretch; gap:10px; padding:0 12px; }
+  .spi-subtabs { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .spi-subtabs::-webkit-scrollbar { display:none; }
+  .spi-subtab { white-space:nowrap; }
+  .spi-search { flex:1 1 auto; width:100%; max-width:none; min-width:0; }
+  /* Natural (scrolling) layout on mobile — the card must not be force-stretched. */
+  .spi-card { min-height:0 !important; }
+  .spi-tablewrap { flex:0 1 auto; }
+}
+
 /* ── Wide table ────────────────────────────────────────────────────────── */
 .spi-tablewrap { overflow-x:auto; }
 /* Shimmer skeleton rows (list loading) */
@@ -365,6 +381,15 @@
 @keyframes spi-shimmer { 100% { transform:translateX(100%); } }
 .spi-dt-spin { animation:spi-rot .7s linear infinite; flex-shrink:0; }
 @keyframes spi-rot { 100% { transform:rotate(360deg); } }
+
+/* GST scrutiny overdue — badge + warning banner */
+.spi-dt-scrutiny-badge { display:inline-flex; align-items:center; gap:5px; margin-left:9px; font-size:9px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#9a3412; background:#ffedd5; border:1px solid #fed7aa; border-radius:20px; padding:3px 9px; vertical-align:middle; }
+.spi-dt-scrutiny-warn { display:flex; align-items:flex-start; gap:9px; margin:10px 0 2px; padding:10px 13px; border-radius:10px; background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; font-size:12px; line-height:1.5; }
+.spi-dt-scrutiny-warn svg { flex-shrink:0; margin-top:1px; color:#ea580c; }
+.spi-dt-scrutiny-warn b { color:#7c2d12; }
+[data-bs-theme="dark"] .spi-dt-scrutiny-badge { color:#fdba74; background: rgba(245,158,11,.14); border-color: rgba(245,158,11,.34); }
+[data-bs-theme="dark"] .spi-dt-scrutiny-warn { background: rgba(245,158,11,.1); border-color: rgba(245,158,11,.3); color:#fdba74; }
+[data-bs-theme="dark"] .spi-dt-scrutiny-warn b { color:#fed7aa; }
 .spi-dt-sk-ico { width:36px; height:36px; border-radius:11px; flex-shrink:0; }
 .spi-dt-sk-line { height:11px; border-radius:6px; }
 .spi-dt-sk-field { height:40px; border-radius:9px; }
@@ -632,6 +657,14 @@
 .spi-dt-inp:focus { border-color:#22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.15); background:#fff; }
 .spi-dt-inp::placeholder { color:#94a3b8; font-weight:500; }
 .spi-dt-inp-hl { border-color:#22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.12); background:#f0fdff; }
+/* Read-only fields: keep the WHITE box (like the toggle) — only the VALUE text is
+   greyed so it reads as non-editable. Empty-field placeholder stays light. */
+.spi-dt-inp[readonly], .spi-dt-textarea[readonly] { background:#fff; color:#64748b; cursor:default; box-shadow:none; }
+.spi-dt-inp[readonly]:focus, .spi-dt-textarea[readonly]:focus { border-color:#e6eef3; box-shadow:none; background:#fff; }
+.spi-dt-inp[readonly]::placeholder, .spi-dt-textarea[readonly]::placeholder { color:#c3cdd8; font-weight:500; }
+.spi-dt-select:not(.spi-dt-select-edit) { background:#fff; color:#64748b; cursor:default; }
+.spi-dt-select:not(.spi-dt-select-edit) svg { opacity:.5; }
+[data-bs-theme="dark"] .spi-dt-inp[readonly], [data-bs-theme="dark"] .spi-dt-textarea[readonly], [data-bs-theme="dark"] .spi-dt-select:not(.spi-dt-select-edit) { color:#94a3b8; }
 /* Align the shared date-picker with the SPI inputs/selects (40px, teal accent). */
 .spi-dt .master-datepicker-toggle { height:40px; padding:0 12px; border:1.5px solid #e6eef3; border-radius:9px; background:#fff; font-family:inherit; font-size:12.5px; font-weight:600; color:#0f172a; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
 .spi-dt .master-datepicker-toggle:hover:not([aria-disabled="true"]) { border-color:#7cd4e6; box-shadow: 0 2px 6px rgba(34,211,238,.1); }
@@ -708,6 +741,8 @@
 /* status badge next to the card title */
 .spi-dt-legal-badge { margin-left:9px; font-size:9px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; padding:4px 10px; border-radius:20px; vertical-align:middle; }
 .spi-dt-legal-badge.ok { color:#15803d; background:#dcfce7; }
+.spi-dt-vault-btn { display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border:none; border-radius:9px; background:linear-gradient(135deg,#0e7490,#0891b2 60%,#06b6d4); color:#fff; font-family:inherit; font-size:11px; font-weight:800; letter-spacing:.01em; cursor:pointer; box-shadow:0 3px 10px rgba(8,145,178,.28); transition:transform .15s, box-shadow .15s, filter .15s; white-space:nowrap; }
+.spi-dt-vault-btn:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(8,145,178,.4); filter:brightness(1.04); }
 .spi-dt-legal-badge.warn { color:#9a3412; background:#ffedd5; }
 .spi-dt-legal-summary { font-size:11.5px; color:#52708a; margin-top:9px; }
 .spi-dt-legal-summary strong { color:#0f172a; font-weight:800; }
