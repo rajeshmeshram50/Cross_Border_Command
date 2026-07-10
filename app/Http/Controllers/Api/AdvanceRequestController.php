@@ -512,6 +512,7 @@ class AdvanceRequestController extends Controller
         }
         return 'ADV-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
     }
+    
 
    
     private function serialize(AdvanceRequest $row): array
@@ -567,4 +568,4 @@ class AdvanceRequestController extends Controller
         ];
     }
     
-}
+} 

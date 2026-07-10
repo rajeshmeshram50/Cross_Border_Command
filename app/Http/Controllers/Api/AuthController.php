@@ -18,7 +18,7 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
-    use PasswordHistory;
+    use PasswordHistory; 
 
     private const BF_MAX_ATTEMPTS = 5;
     private const BF_WINDOW_MIN   = 15;
