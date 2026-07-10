@@ -344,8 +344,8 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>
                 </div>
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 500, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.35px', lineHeight: 1.2 }}>{editing ? `Edit CTC Agreement — ${editing.id}` : 'Case-to-Case Contract'}</div>
-                  <div style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', marginTop: 2, opacity: .9 }}>Create one-time operational agreement with a counterparty</div>
+                  <div style={{ fontSize: 16, fontWeight: 500, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.35px', lineHeight: 1.2 }}>{editing ? `${editLock ? 'View' : 'Edit'} CTC Agreement — ${editing.id}` : 'Case-to-Case Contract'}</div>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', marginTop: 2, opacity: .9 }}>{editing && editLock ? 'View this operational agreement and its lifecycle' : 'Create one-time operational agreement with a counterparty'}</div>
                 </div>
               </div>
               <button onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', border: 'none', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', background: 'linear-gradient(135deg,#8B5CF6,#6D28D9,#5B21B6)', boxShadow: '0 3px 12px rgba(91,33,182,.38)' }}>
