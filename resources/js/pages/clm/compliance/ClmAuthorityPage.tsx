@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
-import { CLM_CSS, paginate } from '../shared/clmShared';
+import { CLM_CSS, paginate, PER_PAGE } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
@@ -57,8 +57,11 @@ export default function ClmAuthorityPage() {
   const [loading, setLoading] = useState(true); // start true so the shimmer shows from frame 1 (not the empty-state icon)
   const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
-  // Fixed pagination — exactly 5 rows per page, consistent across next/back.
-  const rpp = 5;
+  // Dynamic pagination: rows-per-page auto-fits the visible table height and
+  // the Rows-per-page dropdown lets the user override it (matches the other
+  // CLM masters — KYC/DD/QC/Segment/TradeLicense).
+  const [rpp, setRpp]         = useState(PER_PAGE);
+  const autoFitRef            = useRef(true);
   // fillH stretches the table card to fill the viewport so the table footer
   // (pagination) sits at the bottom of the card, like the other CLM masters.
   const [fillH, setFillH]     = useState<number | undefined>(undefined);
@@ -87,13 +90,19 @@ export default function ClmAuthorityPage() {
   }, [rows, search]);
   const { slice, start, pageCount, safePage } = paginate(filtered, page, rpp);
 
-  // Stretch the table card to fill the viewport — pushes the table footer
-  // (pagination) to the bottom of the card even with few rows. Rows stay fixed.
+  // Dynamic pagination: pick the rows-per-page that fits between the table's
+  // top and the bottom of the viewport (until the user overrides it via the
+  // Rows-per-page dropdown), and stretch the card to cover the page. Mirrors
+  // the KYC / QC / Segment pages.
   useEffect(() => {
     const recompute = () => {
       const el = scrollRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
+      const THEAD = 40, ROW = 46, FOOTER = 96;
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       const fh = Math.max(0, window.innerHeight - top - 64);
       setFillH(prev => (prev === fh ? prev : fh));
     };
@@ -141,9 +150,10 @@ export default function ClmAuthorityPage() {
            Total badge stays right via the toolbar's space-between. */
         .clm-root .clm-tabs-bar .auth-search {
           flex: 0 0 auto; width: 500px; max-width: 100%;
-          transition: width .18s ease, border-color .15s ease, box-shadow .15s ease;
+          transition: border-color .15s ease, box-shadow .15s ease;
         }
-        .clm-root .clm-tabs-bar .auth-search:focus-within { width: 580px; }
+        /* Width stays fixed on focus — only the border/shadow change — so the
+           search bar never shifts position when it gains or loses focus. */
         @media (max-width: 1280px) { .clm-root .clm-tabs-bar .auth-search { width: 360px; } }
         @media (max-width: 760px)  { .clm-root .clm-tabs-bar .auth-search { width: 100%; } }
       `}</style>
@@ -235,7 +245,7 @@ export default function ClmAuthorityPage() {
                 </tbody>
               </table>
               {!loading && filtered.length > 0 && (
-                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} />
+                <WorklistPager total={filtered.length} page={safePage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} />
               )}
             </div>
           )}

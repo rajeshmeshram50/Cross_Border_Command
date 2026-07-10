@@ -155,7 +155,7 @@ class ClmSegmentController extends Controller
             return ClmSegment::create([
                 'client_id'         => $user->client_id,
                 'branch_id'         => $user->branch_id,   // branch-owned; null for client-level users → shared
-                'code'              => $this->nextCode($user->client_id),
+                'code'              => $this->nextCode($user->client_id, $user->branch_id),
                 'name'              => trim($data['name']),
                 'regulatory_status' => $data['regulatory_status'],
                 'buyer_consignee'   => $data['buyer_consignee'],
@@ -322,7 +322,7 @@ class ClmSegmentController extends Controller
      * the middle of the sequence don't cause the next allocation to clash
      * with an existing code.
      */
-    private function nextCode(int $clientId): string
+    private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
         // Don't rely on count(+1) — the sequence can have gaps (e.g. after
@@ -330,7 +330,13 @@ class ClmSegmentController extends Controller
         // master_segments table, or when a user has deleted+re-added).
         // Pull the actual max S-NNN and increment past it; skip any
         // collisions just to be doubly safe.
-        $codes = ClmSegment::where('client_id', $clientId)->pluck('code')->all();
+        // Branch-scoped so each branch restarts from SG-001 rather than
+        // continuing another branch's tally — the segment master is branch-
+        // isolated via MasterVisibility. A client-level creator ($branchId
+        // null) sequences the shared rows.
+        $segQuery = ClmSegment::where('client_id', $clientId);
+        $branchId === null ? $segQuery->whereNull('branch_id') : $segQuery->where('branch_id', $branchId);
+        $codes = $segQuery->pluck('code')->all();
         $maxN  = 0;
         $taken = [];
         foreach ($codes as $c) {

@@ -1170,8 +1170,8 @@ const PLACEHOLDER_GROUPS: PhGroup[] = [
     { label: 'Risk Level',     token: '{{buyer.risk_level}}' },
   ] },
   { id: 'consignee', label: 'Consignee', iconEmoji: '🚚', iconColor: '#f59e0b', fields: [
-    { label: 'Consignee Name',   token: '{{consignee.consignee_name}}' },
-    { label: 'Consignee Code',   token: '{{consignee.consignee_code}}' },
+    { label: 'Consignee Name',   token: '{{consignee.name}}' },
+    { label: 'Consignee Code',   token: '{{consignee.code}}' },
     { label: 'Company',          token: '{{consignee.company}}' },
     { label: 'Contact Person',   token: '{{consignee.contact_person}}' },
     { label: 'Phone',            token: '{{consignee.phone}}' },

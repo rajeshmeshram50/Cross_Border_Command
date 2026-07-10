@@ -93,7 +93,7 @@ class ClmAgreementController extends Controller
 
         $row = DB::transaction(function () use ($user, $data, $name) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = $this->nextCode(ClmAgreementType::class, $user->client_id, 'AT-');
+            $code = $this->nextCode(ClmAgreementType::class, $user->client_id, $user->branch_id, 'AT-');
             return ClmAgreementType::create([
                 'client_id'   => $user->client_id,
                 'branch_id'   => $user->branch_id,   // branch-owned; null for client-level users → shared
@@ -196,9 +196,16 @@ class ClmAgreementController extends Controller
      *
      * @param class-string<\Illuminate\Database\Eloquent\Model> $modelClass
      */
-    private function nextCode(string $modelClass, int $clientId, string $prefix): string
+    private function nextCode(string $modelClass, int $clientId, ?int $branchId, string $prefix): string
     {
-        $codes = $modelClass::where('client_id', $clientId)->pluck('code')->all();
+        // Branch-scoped so each branch restarts its own sequence from
+        // 001 (AT-001 / A-001) rather than continuing another branch's
+        // tally — the agreement master is branch-isolated via
+        // MasterVisibility. A client-level creator ($branchId null)
+        // sequences the shared rows.
+        $query = $modelClass::where('client_id', $clientId);
+        $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
+        $codes = $query->pluck('code')->all();
         $maxN  = 0;
         $taken = [];
         $re    = '/^' . preg_quote($prefix, '/') . '(\d+)$/';
@@ -261,7 +268,7 @@ class ClmAgreementController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = $this->nextCode(ClmAgreementLibrary::class, $user->client_id, 'A-');
+            $code = $this->nextCode(ClmAgreementLibrary::class, $user->client_id, $user->branch_id, 'A-');
             return ClmAgreementLibrary::create([
                 'client_id'      => $user->client_id,
                 'branch_id'      => $user->branch_id,   // branch-owned; null for client-level users → shared

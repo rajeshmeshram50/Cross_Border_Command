@@ -76,7 +76,7 @@ class ClmAuthorityController extends Controller
             return ClmAuthority::create([
                 'client_id'   => $user->client_id,
                 'branch_id'   => $user->branch_id,   // branch-owned; null for client-level users → shared
-                'code'        => $this->nextCode($user->client_id),
+                'code'        => $this->nextCode($user->client_id, $user->branch_id),
                 'name'        => $name,
                 'description' => trim($data['description']),
                 'status'      => $data['status'] ?? ClmAuthority::STATUS_ACTIVE,
@@ -303,12 +303,18 @@ class ClmAuthorityController extends Controller
         return $used;
     }
 
-    private function nextCode(int $clientId): string
+    private function nextCode(int $clientId, ?int $branchId): string
     {
         DB::table('clients')->where('id', $clientId)->lockForUpdate()->first();
         // Walk past max + any taken codes — count(+1) breaks when the
-        // sequence has gaps (e.g. after deletes).
-        $codes = ClmAuthority::where('client_id', $clientId)->pluck('code')->all();
+        // sequence has gaps (e.g. after deletes). Branch-scoped so each
+        // branch restarts from AUTH-001 rather than continuing another
+        // branch's tally (the authority master is branch-isolated via
+        // MasterVisibility); a client-level creator ($branchId null)
+        // sequences the shared rows.
+        $query = ClmAuthority::where('client_id', $clientId);
+        $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
+        $codes = $query->pluck('code')->all();
         $maxN = 0;
         $taken = [];
         foreach ($codes as $c) {

@@ -518,6 +518,19 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     setErrors(p => ({ ...p, party: '' }));
   };
 
+  const allPartyValues = useMemo(
+    () => [...PARTY_BUYER_CONSIGNEE, ...PARTY_SUPPLIER].map(p => p.value),
+    [],
+  );
+  const allPartiesSelected = useMemo(
+    () => allPartyValues.every(v => parties.has(v)),
+    [parties, allPartyValues],
+  );
+  const toggleAllParties = () => {
+    setParties(allPartiesSelected ? new Set() : new Set(allPartyValues));
+    setErrors(p => ({ ...p, party: '' }));
+  };
+
   const validateStep1 = () => {
     const next: Record<string, string> = {};
     if (!name.trim())    next.name    = 'Document type is required';
@@ -788,11 +801,17 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
               </div>
 
               <div className="tdw-party">
-                <div className="tdw-party-head">
-                  <span className="tdw-party-ico">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-                  </span>
-                  Applicable Party <span className="tdw-req">*</span>
+                <div className="tdw-party-top">
+                  <div className="tdw-party-head">
+                    <span className="tdw-party-ico">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+                    </span>
+                    Applicable Party <span className="tdw-req">*</span>
+                  </div>
+                  <label className={`tdw-checkbox tdw-checkbox-all ${allPartiesSelected ? 'is-on' : ''}`}>
+                    <input type="checkbox" checked={allPartiesSelected} onChange={toggleAllParties} />
+                    <span className="tdw-checkbox-label">ALL</span>
+                  </label>
                 </div>
                 <div className="tdw-party-row">
                   <div className="tdw-party-label">CUSTOMER & CONSIGNEE</div>
@@ -1290,6 +1309,7 @@ const TDW_CSS = `
   background: linear-gradient(180deg, #ffffff 0%, #f7feff 100%);
   display: flex; flex-direction: column; gap: 14px;
 }
+.tdw-party-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .tdw-party-head {
   display: inline-flex; align-items: center; gap: 7px;
   font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
@@ -1330,6 +1350,7 @@ const TDW_CSS = `
   color: #0e7490;
   box-shadow: 0 2px 8px rgba(8,145,178,.18);
 }
+.tdw-checkbox-all { padding: 6px 12px; font-size: 12px; letter-spacing: .04em; font-weight: 800; }
 .tdw-party-hint { font-size: 11.5px; color: #94a3b8; }
 
 /* ── Editor (step 2) ── */

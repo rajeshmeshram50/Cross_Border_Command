@@ -486,6 +486,11 @@
 .pom .pof-sub__ico{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#06b6d4,#0891b2 60%,#0e7490);color:#fff;flex-shrink:0;box-shadow:0 2px 6px rgba(8,145,178,.35);}
 .pom .pof-sub__t{font-size:12px;font-weight:800;color:#0c4a6e;letter-spacing:.01em;}
 .pom .pof-sub__n{margin-left:auto;font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#0e7490;background:#e0f7fb;border:1px solid #c2ecf3;border-radius:20px;padding:3px 9px;white-space:nowrap;}
+/* GST scrutiny overdue — warning badge (header) + banner (body). */
+.pom .pof-scrutiny-badge{display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#b45309;background:#fef3c7;border:1px solid #fde68a;border-radius:20px;padding:3px 9px;white-space:nowrap;}
+.pom .pof-scrutiny-warn{display:flex;align-items:flex-start;gap:8px;margin-bottom:12px;padding:10px 13px;border-radius:11px;background:linear-gradient(110deg,#fffbeb,#fff7e6);border:1px solid #fde68a;color:#92400e;font-size:11px;font-weight:600;line-height:1.45;}
+.pom .pof-scrutiny-warn svg{color:#d97706;flex-shrink:0;margin-top:1px;}
+.pom .pof-scrutiny-warn b{color:#b45309;font-weight:800;}
 .pom .pof-sub__bd{padding:14px;}
 @media (max-width:1180px){.pom .pof-grid--4{grid-template-columns:repeat(2,1fr);}}
 @media (max-width:760px){.pom .pof-grid{grid-template-columns:1fr;}}
@@ -533,6 +538,7 @@
 .pom .cpd-r{text-align:center;font-variant-numeric:tabular-nums;}
 .pom .cpd-code{font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace;font-size:10px;font-weight:700;color:#0c4a6e;background:#ecfeff;border:1px solid #cffafe;border-radius:5px;padding:2px 6px;white-space:nowrap;}
 .pom .cpd-name{font-weight:700;color:#0f2a38;}
+.pom .cpd-name__txt{display:block;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;}
 .pom .cpd-in{font-family:inherit;font-size:11.5px;font-weight:600;color:#0f172a;padding:6px 8px;border:1.5px solid #e6eef3;border-radius:7px;background:#f9fdfe;box-sizing:border-box;transition:border-color .15s,box-shadow .15s,background .15s;text-align:left;}
 .pom .cpd-in--name{width:100%;min-width:170px;}
 .pom .cpd-in--num{width:82px;text-align:center;-moz-appearance:textfield;}
@@ -779,3 +785,93 @@ body.pom-dp .master-datepicker-footer .today-btn:hover{background:rgba(8,145,178
 .pom .master-datepicker-toggle.open{border-color:#22d3ee;box-shadow:0 0 0 4px rgba(34,211,238,.12);}
 .pom .master-datepicker-toggle:hover:not([aria-disabled="true"]){border-color:rgba(8,145,178,.55);}
 .pom .master-datepicker-icon{color:#0891b2;}
+
+/* ═══════════════════════ RESPONSIVE — tablet / mobile ═══════════════════════
+ * The wide data tables (.cpd-scroll / .cptd-scroll / .polist-scroll) already
+ * scroll horizontally, and the form grids (.pof-grid / .cpd-sum / .cposum-grid)
+ * already collapse via their own media queries above. These rules fix the
+ * remaining fixed-width chrome — the wizard header strip, the 4-stage arrow
+ * grid, the footer, the choice modal and the list header/tools. */
+
+/* ── Tablet (≤ 992px) ── */
+@media (max-width:992px){
+  /* List: relax the 100vh lock so the collapsible reference box + wrapping
+     tools don't crush the table; the scroll area gets a viewport-based cap. */
+  .pom.polist-page{height:auto;min-height:0;}
+  .pom.polist-page .polist-wrap{flex:0 1 auto;}
+  .pom.polist-page .polist-scroll{max-height:62vh;}
+
+  /* Wizard header strip — let the ref pills row wrap under the title. */
+  .pom .p2pj-headerstrip .cstrip{flex-wrap:wrap;row-gap:8px;column-gap:12px;padding:10px 14px;}
+  .pom .p2pj-headerstrip .cstrip__right{flex:1 1 100%;justify-content:flex-start;min-width:0;}
+
+  /* Stages: horizontal scroll instead of squeezing 4 arrows into the width. */
+  .pom .p2pj-stages-grid{overflow-x:auto;gap:6px;padding-bottom:4px;scrollbar-width:thin;}
+  .pom .p2sc{flex:0 0 auto;min-width:172px;clip-path:none;padding:10px 14px;min-height:82px;}
+  .pom .p2sc:last-child{padding-right:14px;}
+}
+
+/* ── Mobile (≤ 640px) ── */
+@media (max-width:640px){
+  /* List hero + Create button stack full-width. */
+  .pom .cstrip{flex-wrap:wrap;row-gap:10px;min-height:0;padding:12px 14px;}
+  .pom .cstrip__right{flex:1 1 100%;justify-content:stretch;}
+  .pom .cstrip__action-btn{flex:1;justify-content:center;}
+  .pom .cstrip__sub{display:none;}
+
+  /* List tools: filters + search each take a full row, search grows. */
+  .pom .polist-top{padding:12px;gap:10px;}
+  /* Segmented tabs stack full-width (the labels are too long to sit side-by-side
+     on a phone — they were overflowing/clipping before). */
+  .pom .polist-seg{width:100%;flex-direction:column;gap:5px;}
+  .pom .polist-seg__tab{width:100%;justify-content:center;padding:10px 12px;font-size:12.5px;}
+  .pom .polist-tools{width:100%;flex-wrap:wrap;gap:8px;}
+  .pom .polist-search{flex:1 1 100%;}
+  .pom .polist-filter{flex:1 1 45%;}
+  .pom .polist-filtersel{width:100%;}
+  /* Wide 12-column table: give it a legible min-width and let the container
+     scroll horizontally instead of crushing every column into 375px. Cap the
+     height so the table scrolls within view and auto-fit picks a sane count. */
+  .pom.polist-page .polist-scroll{max-height:56vh;}
+  .pom .polist-tbl{min-width:760px;}
+  /* Pager: centre the "Showing…" line over the controls so it doesn't look
+     stranded on a narrow band. */
+  .pom .wl-pager{justify-content:center;gap:10px 8px;}
+  .pom .wl-pager .tc-wl-info{flex:1 1 100%;text-align:center;}
+  .pom .wl-pager .tc-wl-right{width:100%;justify-content:center;}
+
+  /* Wizard body / footer tighten and wrap. */
+  .pom .p2pj-detail-wrap{padding:8px;}
+  .pom .p2pj-nav{padding:8px 8px 0;}
+  .pom .p2pj-footer{flex-wrap:wrap;gap:10px;padding:10px 12px;}
+  .pom .p2pj-footer__title{font-size:12px;}
+  .pom .p2pj-footer__dots{order:3;}
+  .pom .p2pj-footer__btns{margin-left:auto;gap:8px;}
+  .pom .p2pj-fbtn{padding:9px 14px;font-size:11.5px;}
+
+  /* Wizard header buttons drop their labels to save width (icons remain). */
+  .pom .cpo-paysum-btn{padding:8px 10px;font-size:0;gap:0;}
+  .pom .cpo-paysum-btn svg{width:16px;height:16px;}
+  .pom .cstrip__back-btn{padding:8px 12px;}
+
+  /* Section cards + field padding tighten. */
+  .pom .bref-box__body--cpo>div,.pom .pof-sub__bd{padding:10px!important;}
+
+  /* Choice modal — full-bleed padding, smaller header. */
+  .pom .cpo-ov{padding:10px;}
+  .pom .cpo-hd{padding:12px 14px;gap:10px;}
+  .pom .cpo-hd__ico{width:36px;height:36px;}
+  .pom .cpo-hd__t{font-size:15px;}
+  .pom .cpo-bd{padding:14px;}
+  .pom .cpo-ft{gap:10px;}
+  .pom .cpo-ft__b{width:100%;}
+  .pom .cpo-ft__b .cpo-btn{flex:1;justify-content:center;}
+
+  /* Stages: 2-per-view compact scroll. */
+  .pom .p2sc{min-width:150px;min-height:74px;padding:9px 12px;}
+  .pom .p2sc-num{font-size:22px;}
+  .pom .p2sc-ghost{display:none;}
+
+  /* Supplier legal cards stack one per row. */
+  .pom .splegal-grid{grid-template-columns:1fr;}
+}
