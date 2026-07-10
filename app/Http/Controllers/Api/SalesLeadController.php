@@ -467,6 +467,12 @@ class SalesLeadController extends Controller
             return Lead::create(array_merge($data, [
                 'client_id'       => $user->client_id,
                 'branch_id'       => $user->branch_id,
+                // Auto-assign the lead to the creating EMPLOYEE so it shows in
+                // THEIR Lead Worksheet by default (QA #71). The worksheet scopes
+                // an employee's leads to salesperson_id = self, so an unassigned
+                // lead would only surface at the branch level. Admin / branch
+                // creators are left unassigned so they can still distribute.
+                'salesperson_id'  => (($user->user_type ?? null) === 'employee') ? $user->id : null,
                 'opp_code'        => $this->nextOppCode($user->client_id, $user->branch_id),
                 'unique_query_id' => (string) mt_rand(100000000, 999999999),
                 'platform'        => 'Offline',

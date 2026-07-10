@@ -1147,6 +1147,12 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
       toast.error('Unsupported file type', 'Only PDF, JPG or PNG files are allowed. Word / Excel files are not supported.');
       return;
     }
+    // Size guard (server caps at 2048 KB) — validate up front so the user gets
+    // an immediate toast instead of a round-trip 422.
+    if (f.size > 2048 * 1024) {
+      toast.error('File too large', 'The file must be 2048 KB (2 MB) or smaller.');
+      return;
+    }
     setBusy(true);
     try {
       const fd = new FormData();
