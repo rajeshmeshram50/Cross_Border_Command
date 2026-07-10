@@ -44,6 +44,9 @@ export type AwsStatus = 'approved' | 'pending' | 'rejected' | 'clarify';
 export type AwsContract = {
   id: string; title: string; cp: string[]; org: string; date: string;
   effDate: string; endDate: string; createdBy: string; approval: Approval; status: AwsStatus;
+  /* Same counterparties as `cp`, each suffixed with its entity type —
+     "Royal Cashews (Customer)" — for the +N popover list. */
+  cpLabeled?: string[];
 };
 
 /* ── Agreements We Sent (sender's view of contracts) ── */

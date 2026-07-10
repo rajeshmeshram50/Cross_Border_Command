@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
+import { useScrollLock } from '../../../hooks/useScrollLock';
 import type { OpsTokens } from './useOpsTheme';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -18,6 +19,7 @@ export type CtcSigner = { name: string; email: string; role: string; contact: st
 
 /* ── Version History — per-version PDF download (timeline-card design) ── */
 export function VersionHistoryModal({ t, code, workingId, versions, onClose }: { t: OpsTokens; code: string; workingId: number | null; versions: CtcVersion[]; onClose: () => void }) {
+  useScrollLock(true);   // freeze background scroll while the modal is open
   const toast = useToast();
   const [busy, setBusy] = useState<number | null>(null);
   const [activeVer, setActiveVer] = useState<number | null>(null);
@@ -143,6 +145,7 @@ type TStatus = 'done' | 'rejected' | 'pending';
 type TStep = { title: string; desc: string; status: TStatus; by: string; date: string; icon: React.ReactNode };
 
 export function AgreementTimelineModal({ t, code, title, stage, versions, signers, onClose }: { t: OpsTokens; code: string; title: string; stage: number; versions: CtcVersion[]; signers: CtcSigner[]; onClose: () => void }) {
+  useScrollLock(true);   // freeze background scroll while the modal is open
   const last = (pred: (v: CtcVersion) => boolean) => [...versions].reverse().find(pred) || null;
   const v1 = versions.find(v => v.v === 1) || versions[0] || null;
   const approvedV = last(v => v.status === 'Approved');
