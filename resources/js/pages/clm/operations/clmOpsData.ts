@@ -19,6 +19,9 @@ export type CtcContract = {
   id: string; dbId?: number; title: string; cp: string[]; org: string; stage: number;
   status: CtcStatus; date: string; type: string; effDate: string; endDate: string;
   createdBy: string; approval: Approval; cpSignedDate: string;
+  /* `cp` names each suffixed with its role — "Royal Cashews (Customer)" — for
+     the +N counterparty popover list. */
+  cpLabeled?: string[];
 };
 
 /* ── CTC contracts (Case to Case list) ── */
