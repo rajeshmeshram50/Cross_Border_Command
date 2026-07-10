@@ -793,7 +793,11 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 <div className={`spi-dt-file ${errs.file ? 'is-invalid' : ''}`}>
                   <span className="spi-dt-file-txt"><IcoClip /> {file ? file.name : (existingAttach ? (existingAttach.split('/').pop() || 'Attached file') : 'Choose file…')}</span>
                   <button type="button" className="spi-dt-file-btn" onClick={() => fileRef.current?.click()}>Browse</button>
-                  <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={e => { setFile(e.target.files?.[0] ?? null); setErrs(x => ({ ...x, file: false })); }} />
+                  <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={e => {
+                    const f = e.target.files?.[0] ?? null;
+                    if (f && f.size > 2 * 1024 * 1024) { toast.error('File too large', 'The attachment must be 2 MB or smaller.'); e.target.value = ''; return; }
+                    setFile(f); setErrs(x => ({ ...x, file: false }));
+                  }} />
                 </div>
               </Field>
             </div>

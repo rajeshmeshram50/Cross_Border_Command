@@ -188,9 +188,11 @@
 .spi-date-sub { display:block; text-align:center; font-size:9.5px; color:#8AA0AD; margin-top:4px; font-family:'DM Sans',system-ui,sans-serif; }
 .spi-strong { font-weight:700; color:#0f172a; }
 .spi-amt { font-weight:600; font-variant-numeric:tabular-nums; }
-.spi-attach { display:inline-flex; align-items:center; gap:6px; max-width:170px; padding:5px 10px; border-radius:8px; background:#eafcff;
-  color:#0e7490; font-size:11px; font-weight:700; border:1.5px solid #c8eef6; cursor:pointer; text-decoration:none; overflow:hidden; }
+.spi-attach { display:inline-flex; align-items:center; gap:6px; max-width:150px; padding:5px 10px; border-radius:8px; background:#eafcff;
+  color:#0e7490; font-size:11px; font-weight:700; border:1.5px solid #c8eef6; cursor:pointer; text-decoration:none; overflow:hidden; vertical-align:middle; }
 .spi-attach:hover { background:#e0f7fb; border-color:#22d3ee; }
+.spi-attach svg { flex-shrink:0; }
+.spi-attach-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
 .spi-zb { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:999px; font-size:11px; font-weight:700; }
 .spi-zb-dot { width:6px; height:6px; border-radius:50%; }
 .spi-zb-sync { background:#ecfdf5; color:#059669; } .spi-zb-sync .spi-zb-dot { background:#10b981; }
@@ -570,6 +572,7 @@
 [data-bs-theme="dark"] .spi-dt-misstbl-wrap { border-color: rgba(34,211,238,.16); }
 [data-bs-theme="dark"] .spi-dt-misstbl tbody td { color:#cbd5e1; border-bottom-color: rgba(148,163,184,.12); }
 [data-bs-theme="dark"] .spi-dt-misstbl tbody tr:nth-child(even) { background:#0f2731; }
+[data-bs-theme="dark"] .spi-dt-misstbl tbody tr:hover { background: rgba(34,211,238,.11); }
 [data-bs-theme="dark"] .spi-dt-mcode { color:#67e8f9; background:rgba(34,211,238,.12); border-color:rgba(34,211,238,.3); }
 [data-bs-theme="dark"] .spi-dt-misscount { color:#fdba74; background:rgba(245,158,11,.14); border-color:rgba(245,158,11,.34); }
 [data-bs-theme="dark"] .spi-dt-misscount.is-zero { color:#86efac; background:rgba(34,197,94,.14); border-color:rgba(34,197,94,.34); }
@@ -582,6 +585,8 @@
 @media (max-width:820px) { .spi-dt-sum { grid-template-columns:1fr; } .spi-dt-chg-grid { grid-template-columns:1fr; } .spi-dt-sumleft .spi-dt-save-btn { align-self:stretch; justify-content:center; } }
 [data-bs-theme="dark"] .spi-dt-mtable-wrap { border-color: rgba(34,211,238,.16); }
 [data-bs-theme="dark"] .spi-dt-mtable tbody td { color:#cbd5e1; border-bottom-color: rgba(148,163,184,.12); }
+[data-bs-theme="dark"] .spi-dt-mtable tbody tr:nth-child(even) { background: rgba(34,211,238,.045); }
+[data-bs-theme="dark"] .spi-dt-mtable tbody tr:hover { background: rgba(34,211,238,.11); }
 [data-bs-theme="dark"] .spi-dt-minp { background:#0c1c24; border-color: rgba(34,211,238,.22); color:#e2e8f0; }
 /* Dark-mode fills for recently-restyled detail elements */
 [data-bs-theme="dark"] .spi-dt-toggle,
@@ -657,18 +662,21 @@
 .spi-dt-inp:focus { border-color:#22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.15); background:#fff; }
 .spi-dt-inp::placeholder { color:#94a3b8; font-weight:500; }
 .spi-dt-inp-hl { border-color:#22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.12); background:#f0fdff; }
-/* Read-only fields: keep the WHITE box (like the toggle) — only the VALUE text is
-   greyed so it reads as non-editable. Empty-field placeholder stays light. */
-.spi-dt-inp[readonly], .spi-dt-textarea[readonly] { background:#fff; color:#64748b; cursor:default; box-shadow:none; }
-.spi-dt-inp[readonly]:focus, .spi-dt-textarea[readonly]:focus { border-color:#e6eef3; box-shadow:none; background:#fff; }
-.spi-dt-inp[readonly]::placeholder, .spi-dt-textarea[readonly]::placeholder { color:#c3cdd8; font-weight:500; }
-.spi-dt-select:not(.spi-dt-select-edit) { background:#fff; color:#64748b; cursor:default; }
+/* Read-only fields — light-grey box + grey text, exactly like the PO wizard's
+   read-only fields (.pof-ro). Signals non-editable without going too dark. */
+.spi-dt-inp[readonly], .spi-dt-textarea[readonly] { background:#f1f6f9; color:#3f566a; cursor:default; border-color:#e3ebf0; box-shadow:none; }
+.spi-dt-inp[readonly]:focus, .spi-dt-textarea[readonly]:focus { border-color:#e3ebf0; box-shadow:none; background:#f1f6f9; }
+.spi-dt-inp[readonly]::placeholder, .spi-dt-textarea[readonly]::placeholder { color:#aeb9c4; font-weight:500; }
+.spi-dt-select:not(.spi-dt-select-edit) { background:#f1f6f9; color:#3f566a; cursor:default; border-color:#e3ebf0; }
 .spi-dt-select:not(.spi-dt-select-edit) svg { opacity:.5; }
-[data-bs-theme="dark"] .spi-dt-inp[readonly], [data-bs-theme="dark"] .spi-dt-textarea[readonly], [data-bs-theme="dark"] .spi-dt-select:not(.spi-dt-select-edit) { color:#94a3b8; }
+[data-bs-theme="dark"] .spi-dt-inp[readonly], [data-bs-theme="dark"] .spi-dt-textarea[readonly], [data-bs-theme="dark"] .spi-dt-select:not(.spi-dt-select-edit) { background:#0b1e27; border-color:#1c4553; color:#9db3c1; }
 /* Align the shared date-picker with the SPI inputs/selects (40px, teal accent). */
 .spi-dt .master-datepicker-toggle { height:40px; padding:0 12px; border:1.5px solid #e6eef3; border-radius:9px; background:#fff; font-family:inherit; font-size:12.5px; font-weight:600; color:#0f172a; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
 .spi-dt .master-datepicker-toggle:hover:not([aria-disabled="true"]) { border-color:#7cd4e6; box-shadow: 0 2px 6px rgba(34,211,238,.1); }
 .spi-dt .master-datepicker-toggle.open { border-color:#22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.15); }
+[data-bs-theme="dark"] .spi-dt .master-datepicker-toggle { background:#0c1c24; border-color: rgba(34,211,238,.22); color:#e2e8f0; box-shadow:none; }
+[data-bs-theme="dark"] .spi-dt .master-datepicker-toggle .master-datepicker-value { color:#e2e8f0; }
+[data-bs-theme="dark"] .spi-dt .master-datepicker-toggle .master-datepicker-placeholder { color:#7c93a8; }
 .spi-dt-select { display:flex; align-items:center; justify-content:space-between; gap:8px; height:40px; padding:0 9px 0 13px; border-radius:9px;
   border:1.5px solid #e6eef3; background:#fff; font-size:12.5px; font-weight:600; color:#0f172a; cursor:pointer; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
 .spi-dt-select.is-muted { color:#94a3b8; }
@@ -817,7 +825,32 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 [data-bs-theme="dark"] .spi-dt-card { background:#13242e; border-color: rgba(34,211,238,.16); }
 
 @media (max-width: 1100px) { .spi-dt-grid4 { grid-template-columns: repeat(2,1fr); } .spi-dt-steps { grid-template-columns:1fr; } }
-@media (max-width: 640px)  { .spi-dt-grid4 { grid-template-columns:1fr; } .spi-dt-pills { display:none; } }
+/* ── SPI detail wizard — mobile / narrow screens ── */
+@media (max-width: 760px) {
+  .spi-dt-steps { grid-template-columns:1fr; gap:10px; padding:10px; }
+  /* stacked step cards must drop the sideways arrow clip or they look broken */
+  .spi-dt-step, .spi-dt-step:last-child { clip-path:none; padding:12px 14px; min-height:auto; }
+  .spi-dt-step-ghost { font-size:52px; right:4px; bottom:-8px; }
+  /* section-header pills (supplier code / state / PO / PI) overflow — hide on mobile */
+  .spi-dt-secpills { display:none; }
+  .spi-dt-sec-head { gap:9px; padding:8px 12px; }
+  .spi-dt-sec-toggle { margin-left:auto; }
+  .spi-dt-sec-body { padding:12px; }
+  .spi-dt-grid3 { grid-template-columns:1fr; }
+  /* header: title + action buttons wrap cleanly (pills already hidden at 640) */
+  .spi-dt-head { column-gap:12px; row-gap:8px; padding:8px 14px; }
+  .spi-dt-head-r { margin-left:auto; }
+  .spi-dt-divider { display:none; }
+  .spi-dt-btn-pay, .spi-dt-btn-close { padding:8px 12px; font-size:11px; }
+  /* footer buttons stay reachable */
+  .spi-dt-foot { padding:8px 12px; gap:8px; }
+  .spi-dt-foot-l { min-width:0; }
+}
+@media (max-width: 640px)  {
+  .spi-dt-grid4 { grid-template-columns:1fr; }
+  .spi-dt-pills { display:none; }
+  .spi-dt-head-title { font-size:14px; }
+}
 
 /* ── Map SPI modal ─────────────────────────────────────────────────────── */
 .spi-mdl-backdrop { position:fixed; inset:0; z-index:3000; display:flex; align-items:center; justify-content:center; padding:16px;
@@ -954,3 +987,52 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 }
 @media (max-width: 760px)  { .spi-bref-body { grid-template-columns: repeat(2,1fr); } }
 @media (max-width: 480px)  { .spi-bref-body { grid-template-columns: 1fr; } .spi-head-title { font-size: 14px; } }
+
+/* ── Dark-mode readability for the SPI detail wizard (text on dark cards) ── */
+[data-bs-theme="dark"] .spi-dt-head-title { color:#e8f2f6; }
+[data-bs-theme="dark"] .spi-dt-head-sub { color:#7dd3e8; }
+[data-bs-theme="dark"] .spi-dt-pill { background: rgba(12,38,48,.55); border-color: rgba(34,211,238,.28); box-shadow: 0 2px 8px rgba(0,0,0,.3), inset 0 1px 0 rgba(34,211,238,.08); }
+[data-bs-theme="dark"] .spi-dt-pill-val { color:#e8f2f6; }
+[data-bs-theme="dark"] .spi-dt-pill-lbl { color:#38d6f0; }
+[data-bs-theme="dark"] .spi-dt-sec-title { color:#e8f2f6; }
+[data-bs-theme="dark"] .spi-dt-sec-lbl { color:#38d6f0; }
+[data-bs-theme="dark"] .spi-dt-sec-sub { color:#7dd3e8; }
+[data-bs-theme="dark"] .spi-dt-sec-sep { background: rgba(34,211,238,.32); }
+/* Completed (is-done) step card → dark surface + readable text */
+/* ACTIVE step keeps the bright teal fill in dark mode too (the generic
+   .spi-dt-step dark rule above would otherwise flatten it) — so it clearly
+   stands out as the selected stage. */
+[data-bs-theme="dark"] .spi-dt-step.is-active { background: linear-gradient(140deg,#0e7490 0%,#0891b2 45%,#06b6d4 100%); border-color:transparent; box-shadow: 0 4px 18px rgba(8,145,178,.5); }
+[data-bs-theme="dark"] .spi-dt-step.is-done { background: linear-gradient(135deg,#0b2029,#0c2731 60%,#0a232d); border-color: rgba(34,211,238,.18); box-shadow:0 2px 8px rgba(0,0,0,.3); }
+[data-bs-theme="dark"] .spi-dt-step.is-done .spi-dt-step-title { color:#dbe6ec; }
+[data-bs-theme="dark"] .spi-dt-step.is-done .spi-dt-step-lbl { color:#5fb8cc; }
+[data-bs-theme="dark"] .spi-dt-step.is-done .spi-dt-step-big { color:#2f7d92; }
+[data-bs-theme="dark"] .spi-dt-step.is-done .spi-dt-step-desc { color:#8ba3b3; }
+[data-bs-theme="dark"] .spi-dt-step.is-done .spi-dt-step-ghost { color: rgba(34,211,238,.07); }
+/* Inactive (not-yet-reached) step text */
+[data-bs-theme="dark"] .spi-dt-step-title { color:#8ea0b2; }
+[data-bs-theme="dark"] .spi-dt-step-desc { color:#71818f; }
+[data-bs-theme="dark"] .spi-dt-step-big { color:#33475a; }
+[data-bs-theme="dark"] .spi-dt-step-lbl { color:#71818f; }
+[data-bs-theme="dark"] .spi-dt-step-badge-done { background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.32); color:#7fe6f8; }
+/* Card headers + field labels + toggles inside the wizard body */
+[data-bs-theme="dark"] .spi-dt-card-title { color:#e8f2f6; }
+[data-bs-theme="dark"] .spi-dt-fields-badge { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.28); color:#7fe6f8; }
+[data-bs-theme="dark"] .spi-dt-minus { color:#38d6f0; background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.28); }
+[data-bs-theme="dark"] .spi-dt-toggle-txt { color:#cbd5e1; }
+[data-bs-theme="dark"] .spi-dt-auto { color:#7dd3e8; }
+[data-bs-theme="dark"] .spi-dt-chg-f label, [data-bs-theme="dark"] .spi-dt-sum-hd { color:#8ea8b8; }
+/* Footer (both steps) */
+[data-bs-theme="dark"] .spi-dt-foot-name { color:#e8f2f6; }
+[data-bs-theme="dark"] .spi-dt-foot-step { color:#38d6f0; }
+[data-bs-theme="dark"] .spi-dt-btn-ghost { background: rgba(12,38,48,.5); border-color: rgba(34,211,238,.3); color:#cbd5e1; }
+[data-bs-theme="dark"] .spi-dt-btn-ghost:hover { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.5); }
+/* Step-2 read-only recap (summary of Step 1) */
+[data-bs-theme="dark"] .spi-dt-rogroup-hd { color:#38d6f0; }
+[data-bs-theme="dark"] .spi-dt-sumstep-title { color:#e8f2f6; }
+[data-bs-theme="dark"] .spi-dt-sumstep-done { background: rgba(16,185,129,.16); color:#6ee7b7; }
+[data-bs-theme="dark"] .spi-dt-legal-note { color:#7c93a8; }
+/* Amounts / product names in the standalone table */
+[data-bs-theme="dark"] .spi-dt-amt { color:#cbd5e1; }
+[data-bs-theme="dark"] .spi-dt-mname { color:#dbe6ec; }
+[data-bs-theme="dark"] .spi-dt-toggle-sw { background: rgba(148,163,184,.32); }
