@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './supplier-purchase-invoice.css';
-import MapSupplierPurchaseInvoiceModal from './MapSupplierPurchaseInvoiceModal';
+import MapSupplierPurchaseInvoiceModal, { type MapConfirmPayload } from './MapSupplierPurchaseInvoiceModal';
 import SpiDetail from './SpiDetail';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { useToast } from '../../../../contexts/ToastContext';
+import api from '../../../../api';
 
 /* ─────────────────────────────────────────────────────────────────────────
- * Supplier Purchase Invoice (SPI) — DESIGN-ONLY static page (teal theme).
- * Faithful port of the P2P_Main SPI prototype. Uses hard-coded demo data;
- * real data / Map-SPI submit / Zoho sync are wired in a later phase.
+ * Supplier Purchase Invoice (SPI) list — server-driven (teal theme).
+ * Rows, tab counts, search, pagination and row actions all hit the SPI API.
  * All classes are `spi-` prefixed → does not affect any other page.
  * ───────────────────────────────────────────────────────────────────────── */
 
@@ -17,54 +18,14 @@ type PoTab = 'with' | 'without';
 type ShipTab = 'with' | 'without';
 
 interface SpiRow {
+  id: number;
   spiNo: string; spiDate: string;
-  poNo: string;  poDate: string; poType: string;
+  poNo: string;  poDate?: string; poType: string;
   shipId: string; piNo: string; procId: string;
   customer: string; supplier: string;
   totalPo: number; netPayable: number; totalPaid: number; balance: number;
-  attach: string; zoho: 'sync' | 'not';
+  attach: string | null; zoho: 'sync' | 'not';
 }
-
-const SUPPLIERS = ['Reliance Industries', 'Adani Enterprises', 'Mahindra Logistics', 'JSW Steel', 'Vedanta Ltd', 'Bharat Forge', 'Infosys Ltd', 'Tata Steel', 'Wipro Ltd', 'L&T', 'Hindalco', 'UltraTech', 'Godrej', 'Cipla', 'Dabur'];
-const CUSTOMERS = ['Apollo Hospitals', 'Fortis Healthcare', 'Max Healthcare', 'Manipal Hospitals', 'Narayana Health', 'Medanta Medicity', 'Aster DM Healthcare', 'Medanta', 'Columbia Asia', 'KIMS', 'AIIMS', 'CMC Vellore', 'Ruby Hall', 'Lilavati', 'Kokilaben'];
-const PO_TYPES = ['Material / Goods', 'Services', 'FFD / Transporter'];
-
-/* Build 15 demo rows for a given (withPO, withShipment) combo, with number
- * ranges that mirror the prototype (With-PO 001.., Direct 051/066..). */
-function buildRows(withPo: boolean, withShip: boolean): SpiRow[] {
-  const base = withPo ? (withShip ? 1 : 16) : (withShip ? 51 : 66);
-  const procBase = withPo ? (withShip ? 1 : 16) : (withShip ? 101 : 116);
-  const shpBase = withShip ? (withPo ? 1 : 101) : 0;
-  return Array.from({ length: 15 }, (_, i) => {
-    const n = base + i;
-    const nn = String(n).padStart(3, '0');
-    const totalPo = 15000 + i * 2750;
-    const netPayable = Math.round(totalPo * 0.98);
-    const paid = i % 3 === 1 ? Math.round(netPayable * 0.5) : (i % 3 === 0 ? netPayable : 0);
-    return {
-      spiNo: `SPI/2025-26/${nn}`,
-      spiDate: `2026-06-${String((i % 28) + 1).padStart(2, '0')}`,
-      poNo: `PO/2025-26/${nn}`,
-      poDate: `2026-05-${String((i % 28) + 1).padStart(2, '0')}`,
-      poType: PO_TYPES[i % PO_TYPES.length],
-      shipId: `SHP-${String(shpBase + i).padStart(3, '0')}`,
-      piNo: `PI/2025-26/${nn}`,
-      procId: `PROC-${String(procBase + i).padStart(3, '0')}`,
-      customer: CUSTOMERS[i % CUSTOMERS.length],
-      supplier: SUPPLIERS[i % SUPPLIERS.length],
-      totalPo, netPayable, totalPaid: paid, balance: netPayable - paid,
-      attach: `SPI-${nn}.pdf`,
-      zoho: i % 2 === 1 ? 'not' : 'sync',
-    };
-  });
-}
-
-const DATA: Record<string, SpiRow[]> = {
-  'with:with':       buildRows(true, true),
-  'with:without':    buildRows(true, false),
-  'without:with':    buildRows(false, true),
-  'without:without': buildRows(false, false),
-};
 
 const STEPS = [
   { n: 'STEP 01', title: 'PO Link Supplier Details', desc: 'Link the purchase order and confirm supplier details.', ico: <IcoLink /> },
@@ -85,9 +46,24 @@ export default function SupplierPurchaseInvoice() {
   const [rpp, setRpp] = useState(10);
   const [mapOpen, setMapOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  // Context chosen in the Map modal (with/without PO + the picked PO/supplier).
+  const [mapCtx, setMapCtx] = useState<MapConfirmPayload | null>(null);
+  const [editId, setEditId] = useState<number | null>(null); // set when editing an existing SPI
   const [menu, setMenu] = useState<{ row: SpiRow; x: number; y: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const autoFitRef = useRef(true); // false once the user picks a rows-per-page manually
+  const [fillH, setFillH] = useState<number | undefined>(undefined); // stretch the card to the viewport
+  const toast = useToast();
+
+  // Server-driven list state.
+  const [rows, setRows] = useState<SpiRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [counts, setCounts] = useState({ poWith: 0, poWithout: 0, shipWith: 0, shipWithout: 0 });
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = () => setReloadKey(k => k + 1);
+  const [debQ, setDebQ] = useState('');
 
   const openMenu = (e: React.MouseEvent, r: SpiRow) => {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -107,28 +83,82 @@ export default function SupplierPurchaseInvoice() {
   const withPo = poTab === 'with';
   const withShip = shipTab === 'with';
 
-  const rows = DATA[`${poTab}:${shipTab}`];
-  const filtered = useMemo(() => {
-    const lo = q.trim().toLowerCase();
-    if (!lo) return rows;
-    return rows.filter(r =>
-      r.spiNo.toLowerCase().includes(lo) || r.supplier.toLowerCase().includes(lo) ||
-      r.poNo.toLowerCase().includes(lo) || r.procId.toLowerCase().includes(lo) ||
-      r.customer.toLowerCase().includes(lo) || r.zoho.includes(lo));
-  }, [rows, q]);
+  // Debounce the search box so we don't hit the API on every keystroke.
+  useEffect(() => { const t = setTimeout(() => { setDebQ(q); setPage(1); }, 300); return () => clearTimeout(t); }, [q]);
 
-  const totalRows = filtered.length;
+  // Fetch the current page of invoices.
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    api.get('/p2p/supplier-purchase-invoices', {
+      params: { po_tab: poTab, ship_tab: shipTab, page, per_page: rpp, q: debQ || undefined },
+    })
+      .then(r => { if (!alive) return; setRows((r.data?.data ?? []) as SpiRow[]); setTotal(r.data?.pagination?.total ?? 0); })
+      .catch(() => { if (alive) { setRows([]); setTotal(0); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [poTab, shipTab, page, rpp, debQ, reloadKey]);
+
+  // Tab counts (tiny per_page=1 calls; refresh on PO-tab change or after a save).
+  useEffect(() => {
+    let alive = true;
+    const c = (params: Record<string, string>) =>
+      api.get('/p2p/supplier-purchase-invoices', { params: { ...params, per_page: 1 } })
+        .then(r => r.data?.pagination?.total ?? 0).catch(() => 0);
+    Promise.all([
+      c({ po_tab: 'with' }), c({ po_tab: 'without' }),
+      c({ po_tab: poTab, ship_tab: 'with' }), c({ po_tab: poTab, ship_tab: 'without' }),
+    ]).then(([poWith, poWithout, shipWith, shipWithout]) => {
+      if (alive) setCounts({ poWith, poWithout, shipWith, shipWithout });
+    });
+    return () => { alive = false; };
+  }, [poTab, reloadKey]);
+
+  // Auto-fit rows-per-page to the viewport so the pagination footer always sits
+  // at the bottom of the screen without scrolling (mirrors the CLM Segment page).
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;   // viewport-relative top of the table
+      const THEAD = 44, ROW = 58, FOOTER = 96;        // header + reserve for the pager/footer
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
+      // Stretch the list card down to the viewport bottom so the pager sits at the bottom.
+      const card = scrollRef.current?.closest('.spi-card') as HTMLElement | null;
+      if (card) {
+        const fh = Math.max(0, window.innerHeight - card.getBoundingClientRect().top - 20);
+        setFillH(prev => (prev === fh ? prev : fh));
+      }
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
+    const recomputeDebounced = () => { if (settleTimer) clearTimeout(settleTimer); settleTimer = setTimeout(recompute, 140); };
+    window.addEventListener('resize', recomputeDebounced);
+    return () => { if (settleTimer) clearTimeout(settleTimer); window.removeEventListener('resize', recomputeDebounced); cancelAnimationFrame(raf); };
+  }, [poTab, shipTab, stepsOpen]);
+
+  const totalRows = total;
   const pageCount = Math.max(1, Math.ceil(totalRows / rpp));
   const safePage = Math.min(page, pageCount);
   const start = (safePage - 1) * rpp;
-  const pageRows = filtered.slice(start, start + rpp);
+  const pageRows = rows;
 
-
-  const switchPo = (t: PoTab) => { setPoTab(t); setPage(1); setQ(''); };
+  const switchPo = (t: PoTab) => { setPoTab(t); setPage(1); setQ(''); setDebQ(''); };
   const switchShip = (t: ShipTab) => { setShipTab(t); setPage(1); };
-  const onSearch = (v: string) => { setQ(v); setPage(1); };
+  const onSearch = (v: string) => setQ(v);
 
-  if (detailOpen) return <SpiDetail withPo={withPo} onClose={() => setDetailOpen(false)} />;
+  // Zoho-sync one invoice.
+  const syncRow = async (r: SpiRow) => {
+    setMenu(null);
+    try { await api.post(`/p2p/supplier-purchase-invoices/${r.id}/sync`); toast.success(`${r.spiNo} synced with Zohobook`); reload(); }
+    catch { toast.error('Sync failed', 'Could not sync this invoice.'); }
+  };
+
+  // The detail wizard's mode comes from the Map modal choice (falls back to the active list tab).
+  if (detailOpen) return <SpiDetail editId={editId ?? undefined} withPo={mapCtx ? mapCtx.mode === 'with' : withPo} poId={mapCtx?.mode === 'with' ? mapCtx.poId : undefined} supplierId={mapCtx?.mode === 'without' ? mapCtx.supplierId : undefined} onSaved={reload} onClose={() => { setDetailOpen(false); setMapCtx(null); setEditId(null); }} onChangeSelection={() => { setDetailOpen(false); setMapCtx(null); setEditId(null); setMapOpen(true); }} />;
 
   return (
     <div className="spi-root" ref={rootRef}>
@@ -172,16 +202,16 @@ export default function SupplierPurchaseInvoice() {
       </div>
 
       {/* ── List card ── */}
-      <div className="spi-card">
+      <div className="spi-card" style={{ minHeight: fillH }}>
         {/* Segment pills: With / Without PO */}
         <div className="spi-seg">
           <button type="button" className={`spi-seg-btn ${withPo ? 'is-active' : ''}`} onClick={() => switchPo('with')}>
             <span className="spi-seg-ico"><IcoLink size={15} /></span> With Purchase Order SPI
-            <span className="spi-seg-c">30</span>
+            <span className="spi-seg-c">{counts.poWith}</span>
           </button>
           <button type="button" className={`spi-seg-btn ${!withPo ? 'is-active' : ''}`} onClick={() => switchPo('without')}>
             <span className="spi-seg-ico"><IcoBox size={15} /></span> Without Purchase Order SPI (Direct SPI)
-            <span className="spi-seg-c">30</span>
+            <span className="spi-seg-c">{counts.poWithout}</span>
           </button>
         </div>
 
@@ -189,10 +219,10 @@ export default function SupplierPurchaseInvoice() {
         <div className="spi-sub">
           <div className="spi-subtabs">
             <button type="button" className={`spi-subtab ${withShip ? 'is-active' : ''}`} onClick={() => switchShip('with')}>
-              <IcoTruck /> With Shipment ID <span className="spi-subtab-c">15</span>
+              <IcoTruck /> With Shipment ID <span className="spi-subtab-c">{counts.shipWith}</span>
             </button>
             <button type="button" className={`spi-subtab ${!withShip ? 'is-active' : ''}`} onClick={() => switchShip('without')}>
-              <IcoBox size={13} /> Without Shipment ID <span className="spi-subtab-c">15</span>
+              <IcoBox size={13} /> Without Shipment ID <span className="spi-subtab-c">{counts.shipWithout}</span>
             </button>
           </div>
           <div className="spi-search">
@@ -225,12 +255,33 @@ export default function SupplierPurchaseInvoice() {
               </tr>
             </thead>
             <tbody>
-              {pageRows.length === 0 ? (
+              {loading ? (
+                Array.from({ length: Math.max(3, Math.min(rpp, 10)) }).map((_, i) => (
+                  <tr key={`sk-${i}`} className="spi-sk-row">
+                    <td className="spi-c-sr"><span className="spi-sk-bar" style={{ width: 18 }} /></td>
+                    <td><span className="spi-sk-bar" style={{ width: 96 }} /></td>
+                    {withPo && <td><span className="spi-sk-bar" style={{ width: 84 }} /></td>}
+                    {withPo && <td><span className="spi-sk-bar" style={{ width: 88 }} /></td>}
+                    {withShip && <td><span className="spi-sk-bar" style={{ width: 58 }} /></td>}
+                    {withShip && <td><span className="spi-sk-bar" style={{ width: 68 }} /></td>}
+                    <td><span className="spi-sk-bar" style={{ width: 40 }} /></td>
+                    {withShip && <td><span className="spi-sk-bar" style={{ width: 78 }} /></td>}
+                    <td><span className="spi-sk-bar" style={{ width: 120 }} /></td>
+                    <td className="spi-c-r"><span className="spi-sk-bar" style={{ width: 72, marginLeft: 'auto' }} /></td>
+                    <td className="spi-c-r"><span className="spi-sk-bar" style={{ width: 72, marginLeft: 'auto' }} /></td>
+                    <td className="spi-c-r"><span className="spi-sk-bar" style={{ width: 48, marginLeft: 'auto' }} /></td>
+                    <td className="spi-c-r"><span className="spi-sk-bar" style={{ width: 72, marginLeft: 'auto' }} /></td>
+                    <td><span className="spi-sk-bar" style={{ width: 104 }} /></td>
+                    <td className="spi-c-c"><span className="spi-sk-bar" style={{ width: 72, margin: '0 auto' }} /></td>
+                    <td className="spi-c-c"><span className="spi-sk-bar" style={{ width: 130, margin: '0 auto' }} /></td>
+                  </tr>
+                ))
+              ) : pageRows.length === 0 ? (
                 <tr><td colSpan={16}>
-                  <div className="spi-empty"><div className="spi-empty-t">No supplier invoices found</div><div className="spi-empty-s">Try a different search term.</div></div>
+                  <div className="spi-empty"><div className="spi-empty-t">No supplier invoices found</div><div className="spi-empty-s">Map a supplier invoice to get started, or try a different search.</div></div>
                 </td></tr>
               ) : pageRows.map((r, i) => (
-                <tr key={r.spiNo}>
+                <tr key={r.id}>
                   <td className="spi-c-sr"><span className="spi-sr">{start + i + 1}</span></td>
                   <td>
                     <span className="spi-idstack"><span className="spi-pill spi-pill-spi">{r.spiNo}</span><span className="spi-date-sub">{r.spiDate}</span></span>
@@ -241,12 +292,12 @@ export default function SupplierPurchaseInvoice() {
                   {withShip && <td><span className="spi-pill spi-pill-pi">{r.piNo}</span></td>}
                   <td><span className="spi-pill spi-pill-proc">{r.procId}</span></td>
                   {withShip && <td>{r.customer}</td>}
-                  <td>{r.supplier}</td>
+                  <td title={r.supplier}>{r.supplier && r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier}</td>
                   <td className="spi-c-r spi-amt">{inr(r.totalPo)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.netPayable)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.totalPaid)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.balance)}</td>
-                  <td><a className="spi-attach" onClick={e => e.preventDefault()} href="#"><IcoClip />{r.attach}</a></td>
+                  <td>{r.attach ? <a className="spi-attach" href={r.attach} target="_blank" rel="noreferrer"><IcoClip />{r.attach.split('/').pop()}</a> : <span className="spi-date-sub">—</span>}</td>
                   <td className="spi-c-c">
                     <span className={`spi-zb ${r.zoho === 'sync' ? 'spi-zb-sync' : 'spi-zb-not'}`}><span className="spi-zb-dot" />{r.zoho === 'sync' ? 'Sync' : 'Not Sync'}</span>
                   </td>
@@ -254,9 +305,9 @@ export default function SupplierPurchaseInvoice() {
                     <span className="spi-acts">
                       {r.zoho === 'sync'
                         ? <Tooltip label="Already synced to Zohobook"><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
-                        : <Tooltip label="Sync this invoice to Zohobook"><button type="button" className="spi-zohobtn"><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
-                      <Tooltip label="Edit invoice"><button type="button" className="spi-iconbtn"><IcoEdit /></button></Tooltip>
-                      <Tooltip label="Record payment"><button type="button" className="spi-iconbtn"><IcoRupee /></button></Tooltip>
+                        : <Tooltip label="Sync this invoice to Zohobook"><button type="button" className="spi-zohobtn" onClick={() => syncRow(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
+                      <Tooltip label="Edit invoice"><button type="button" className="spi-iconbtn" onClick={() => { setEditId(r.id); setMapCtx(null); setDetailOpen(true); }}><IcoEdit /></button></Tooltip>
+                      <Tooltip label="Record payment"><button type="button" className="spi-iconbtn" onClick={() => toast.info('Record payment', 'Payment recording is coming soon.')}><IcoRupee /></button></Tooltip>
                       <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => openMenu(e, r)}><IcoMore /></button></Tooltip>
                     </span>
                   </td>
@@ -272,12 +323,12 @@ export default function SupplierPurchaseInvoice() {
           page={safePage}
           pageSize={rpp}
           onPage={setPage}
-          onPageSize={n => { setRpp(n); setPage(1); }}
+          onPageSize={n => { autoFitRef.current = false; setRpp(n); setPage(1); }}
           pageSizeOptions={[5, 10, 15]}
         />
       </div>
 
-      {mapOpen && <MapSupplierPurchaseInvoiceModal onClose={() => setMapOpen(false)} onConfirm={() => { setMapOpen(false); setDetailOpen(true); }} />}
+      {mapOpen && <MapSupplierPurchaseInvoiceModal onClose={() => setMapOpen(false)} onConfirm={(payload) => { setMapCtx(payload); setMapOpen(false); setDetailOpen(true); }} />}
 
       {/* ── More Actions dropdown (3-dot) ── */}
       {menu && createPortal(
@@ -292,9 +343,9 @@ export default function SupplierPurchaseInvoice() {
               <div className="spi-menu-sup">Supplier: {menu.row.supplier}</div>
             </div>
             <div className="spi-menu-items">
-              <button type="button" className="spi-menu-item is-teal"><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
-              <button type="button" className="spi-menu-item"><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> Download SPI</button>
-              <button type="button" className="spi-menu-item"><span className="spi-menu-item-ico spi-menu-item-ico-pay"><IcoCard /></span> SPI Payment</button>
+              <button type="button" className="spi-menu-item is-teal" onClick={() => syncRow(menu.row)}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
+              <button type="button" className="spi-menu-item" onClick={() => { const a = menu.row.attach; setMenu(null); if (a) window.open(a, '_blank', 'noopener'); else toast.info('Download SPI', 'No attachment on this invoice.'); }}><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> Download SPI</button>
+              <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); toast.info('SPI Payment', 'Payment recording is coming soon.'); }}><span className="spi-menu-item-ico spi-menu-item-ico-pay"><IcoCard /></span> SPI Payment</button>
             </div>
           </div>
         </div>,

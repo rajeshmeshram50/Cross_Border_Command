@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\ProcurementController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PurchaseOrderController;
+use App\Http\Controllers\Api\SupplierPurchaseInvoiceController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
 use App\Http\Controllers\Api\HrDocumentSignatureController;
@@ -518,6 +519,20 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/p2p/purchase-orders/{id}/sync',               [PurchaseOrderController::class, 'sync'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/email',              [SalesPdfController::class, 'emailPurchaseOrder'])->whereNumber('id');
     Route::get   ('/p2p/purchase-orders/{id}/pdf',                [SalesPdfController::class, 'viewPurchaseOrderPdf'])->whereNumber('id');
+
+    // ── Supplier Purchase Invoices (P2P) ──
+    Route::get   ('/p2p/supplier-purchase-invoices/preview-code',        [SupplierPurchaseInvoiceController::class, 'previewCode']);
+    Route::get   ('/p2p/supplier-purchase-invoices/purchase-orders',     [SupplierPurchaseInvoiceController::class, 'purchaseOrders']);
+    Route::get   ('/p2p/supplier-purchase-invoices/purchase-orders/{id}',[SupplierPurchaseInvoiceController::class, 'purchaseOrder'])->whereNumber('id');
+    Route::get   ('/p2p/supplier-purchase-invoices/suppliers',           [SupplierPurchaseInvoiceController::class, 'suppliers']);
+    Route::get   ('/p2p/supplier-purchase-invoices/suppliers/{id}',       [SupplierPurchaseInvoiceController::class, 'supplier'])->whereNumber('id');
+    Route::post  ('/p2p/supplier-purchase-invoices/upload',              [SupplierPurchaseInvoiceController::class, 'upload']);
+    Route::get   ('/p2p/supplier-purchase-invoices',                     [SupplierPurchaseInvoiceController::class, 'index']);
+    Route::post  ('/p2p/supplier-purchase-invoices',                     [SupplierPurchaseInvoiceController::class, 'store']);
+    Route::get   ('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'show'])->whereNumber('id');
+    Route::put   ('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'update'])->whereNumber('id');
+    Route::delete('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'destroy'])->whereNumber('id');
+    Route::post  ('/p2p/supplier-purchase-invoices/{id}/sync',           [SupplierPurchaseInvoiceController::class, 'sync'])->whereNumber('id');
 
   
     Route::get   ('/sales/reminders',                 [SalesTodoController::class, 'listReminders']);
