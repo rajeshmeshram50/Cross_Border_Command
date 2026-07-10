@@ -251,8 +251,9 @@
 [data-bs-theme="dark"] .pom .polist-wrap{background:#0f2731;border-color:#173947;box-shadow:none;}
 [data-bs-theme="dark"] .pom .polist-top{background:#0f2731;}
 [data-bs-theme="dark"] .pom .polist-seg{background:#0b1e27;border-color:#173947;}
-[data-bs-theme="dark"] .pom .polist-seg__tab{color:#7fa3b1;}
-[data-bs-theme="dark"] .pom .polist-seg__cnt{background:#173947;color:#67e8f9;}
+[data-bs-theme="dark"] .pom .polist-seg__tab{color:#b7d3dd;}
+[data-bs-theme="dark"] .pom .polist-seg__tab:hover{color:#cffafe;}
+[data-bs-theme="dark"] .pom .polist-seg__cnt{background:#3485a7;color:#67e8f9;}
 [data-bs-theme="dark"] .pom .polist-search input{background:#0b1e27;border-color:#173947;color:#cffafe;}
 [data-bs-theme="dark"] .pom .polist-filtersel{background:#0b1e27;border-color:#173947;color:#cffafe;}
 [data-bs-theme="dark"] .pom .polist-filtersel option{background:#0f2731;color:#cffafe;}
