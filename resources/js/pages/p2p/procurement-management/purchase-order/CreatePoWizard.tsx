@@ -806,7 +806,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                 <div><div className="cstrip__title">Purchase Order</div><div className="cstrip__sub">{isEdit ? `Editing ${editRow!.po}` : 'Draft · not yet issued'}</div></div>
               </div>
               <div className="cstrip__right">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0, overflowX: 'auto' }}>
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', rowGap: 8, gap: 7, minWidth: 0, justifyContent: 'flex-end' }}>
                   {refPills.map((p, i) => (
                     <span key={i} style={{ display: 'contents' }}>
                       <div className="cpd-ref__pill">
