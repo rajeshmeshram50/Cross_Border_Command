@@ -251,16 +251,16 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
 }
 .clm-tab {
   display: inline-flex; align-items: center; gap: 7px;
-  padding: 8px 16px; border-radius: 8px;
+  padding: 8px 16px; border-radius: 8px; box-sizing: border-box;
   font-size: 13px; font-weight: 600; color: #475569;
-  cursor: pointer; border: none; background: transparent;
-  font-family: inherit; transition: background .15s ease, color .15s ease, box-shadow .22s ease;
+  cursor: pointer; border: 1.5px solid #d5e7ef; background: #fff;
+  font-family: inherit; transition: background .15s ease, color .15s ease, box-shadow .22s ease, border-color .15s ease;
   white-space: nowrap; position: relative; z-index: 1;
 }
-.clm-tab:hover { background: rgba(6,182,212,.08); color: #0891b2; }
+.clm-tab:hover { background: rgba(6,182,212,.08); color: #0891b2; border-color: rgba(6,182,212,.45); }
 .clm-tab.active {
   background: linear-gradient(135deg, #06b6d4 0%, #0891b2 45%, #0e7490 100%);
-  color: #fff; font-weight: 600;
+  color: #fff; font-weight: 600; border-color: transparent;
   box-shadow: 0 3px 10px rgba(8,145,178,.32), inset 0 1px 0 rgba(255,255,255,.18);
 }
 .clm-tab.active:hover { opacity: .95; }
@@ -1183,9 +1183,9 @@ body > .dropdown-menu.master-select-menu,
  * this rule was clobbering .clm-tab.active's white text (same specificity,
  * later in the cascade wins), leaving the active tab readable as a muddy
  * grey-blue against the teal gradient. */
-[data-bs-theme="dark"] .clm-tab:not(.active) { color: #94a3b8; }
-[data-bs-theme="dark"] .clm-tab.active { color: #fff; }
-[data-bs-theme="dark"] .clm-tab:not(.active):hover { color: #67e8f9; }
+[data-bs-theme="dark"] .clm-tab:not(.active) { color: #94a3b8; background: #0f172a; border-color: rgba(6,182,212,.28); }
+[data-bs-theme="dark"] .clm-tab.active { color: #fff; border-color: transparent; }
+[data-bs-theme="dark"] .clm-tab:not(.active):hover { color: #67e8f9; border-color: rgba(6,182,212,.5); }
 [data-bs-theme="dark"] .clm-tab:not(.active) .clm-tab-count { background: #1e293b; color: #94a3b8; border-color: rgba(148,163,184,.18); }
 [data-bs-theme="dark"] .clm-search { background: #1e293b; border-color: rgba(6,182,212,.25); }
 [data-bs-theme="dark"] .clm-search input { color: #e2e8f0; }
