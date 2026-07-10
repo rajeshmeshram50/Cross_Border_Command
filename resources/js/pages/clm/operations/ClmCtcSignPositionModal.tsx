@@ -48,7 +48,7 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [expiryDays, setExpiryDays] = useState(14);
+  const [expiryDays, setExpiryDays] = useState(30);   // Zoho Sign default validity — 30 days
   const [notes, setNotes] = useState('Please review and sign this agreement.');
   const [wrapW, setWrapW] = useState(0);
   // Page count of the preview PDF + a flag that flips once the blob has
@@ -69,6 +69,14 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
 
   const active = boxes[activeKey];
   const activePage = active?.page ?? 0;
+
+  // Local string state for the "Page" input so it can be CLEARED (backspaced to
+  // empty) and freely retyped — the old `value={active.page + 1}` with a
+  // `Number(x) || 1` fallback snapped an empty field back to 1, so you could
+  // never clear it or jump to page 6 (CBC-576). The page only commits on a
+  // valid in-range number; on blur / signer-switch it resyncs to the real page.
+  const [pageInput, setPageInput] = useState('1');
+  useEffect(() => { setPageInput(String((active?.page ?? 0) + 1)); }, [active?.page, activeKey]);
 
   // Load the contract preview PDF (page-shell + org signature applied)
   // and parse it into a pdf.js document for the canvas renderer.
@@ -271,13 +279,13 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
                   {([['X', 'x', A4_W], ['Y', 'y', A4_H], ['Width', 'width', A4_W], ['Height', 'height', A4_H]] as const).map(([lbl, k, max]) => (
                     <div key={k}><div style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', marginBottom: 3 }}>{lbl}</div><input type="number" value={Math.round(active[k])} onChange={e => setActive({ [k]: clamp(Number(e.target.value) || 0, 0, max) } as Partial<Box>)} style={ipt} /></div>
                   ))}
-                  <div><div style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', marginBottom: 3 }}>Page</div><input type="number" min={1} value={active.page + 1} onChange={e => setActive({ page: Math.max(0, (Number(e.target.value) || 1) - 1) })} style={ipt} /></div>
+                  <div><div style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', marginBottom: 3 }}>Page</div><input type="number" min={1} max={pageCount} value={pageInput} onChange={e => { setPageInput(e.target.value); const n = parseInt(e.target.value, 10); if (!isNaN(n) && n >= 1 && n <= pageCount) setActive({ page: n - 1 }); }} onBlur={() => setPageInput(String((active?.page ?? 0) + 1))} style={ipt} /></div>
                 </div>
               </div>
             )}
             {/* send options */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
-              <div><div style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', marginBottom: 3 }}>Days to Sign</div><input type="number" min={1} max={180} value={expiryDays} onChange={e => setExpiryDays(Number(e.target.value) || 14)} style={ipt} /></div>
+              <div><div style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', marginBottom: 3 }}>Days to Sign</div><input type="number" min={1} max={180} value={expiryDays} onChange={e => setExpiryDays(Number(e.target.value) || 30)} style={ipt} /></div>
               <div><div style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', marginBottom: 3 }}>Note to Signers</div><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...ipt, height: 'auto', padding: '7px 9px', resize: 'vertical' }} /></div>
             </div>
           </div>

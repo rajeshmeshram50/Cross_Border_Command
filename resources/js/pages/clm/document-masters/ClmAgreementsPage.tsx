@@ -12,6 +12,22 @@ import ClmAgreementWizardModal from './ClmAgreementWizardModal';
 
 /* Central CLM → Agreements Master (two tabs: Types + Library). */
 
+/* Applicable-party values are STORED as "Buyer" / "Supplier-Material" etc.
+   (the agreement wizard's PARTY_* value set) but the user picks — and should
+   see — the friendly labels ("Customer", "Material"). Map value → label for the
+   Applicable Party column so it never shows "Buyer" instead of "Customer"
+   (CBC-436). Unknown values fall through unchanged. */
+const PARTY_LABELS: Record<string, string> = {
+  'Buyer': 'Customer',
+  'Consignee': 'Consignee',
+  'Supplier-Material': 'Material',
+  'Supplier-Logistic': 'Logistic',
+  'Supplier-Tech': 'Tech',
+  'Supplier-Advisory': 'Advisory',
+  'Supplier-Strategic Risk': 'Strategic Risk',
+};
+const partyLabel = (v: string): string => PARTY_LABELS[v] ?? v;
+
 type AgrType = { id: number; code: string; name: string; description: string; in_use?: number };
 type AgrLib = {
   id: number; code: string; agreement_type: string; title: string; purpose?: string | null; party: string;
@@ -423,7 +439,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                       <td style={{ textAlign: 'center' }}>
                         
                         {(() => {
-                          const partyList = r.party ? r.party.split(',').map(s => s.trim()).filter(Boolean) : [];
+                          const partyList = r.party ? r.party.split(',').map(s => s.trim()).filter(Boolean).map(partyLabel) : [];
                           if (partyList.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All parties</span>;
                           const extra = partyList.length - 1;
                           return (
