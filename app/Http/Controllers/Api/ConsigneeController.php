@@ -554,6 +554,9 @@ class ConsigneeController extends Controller
             'website'         => $c->website,
             'status'          => $c->status,
             'country'         => $primary?->country,
+            // Compact ISO code for the aligned Country column (QA #20); null
+            // when the stored value matches no master country → UI keeps raw.
+            'country_iso'     => \App\Models\Masters\Countries::isoFor($primary?->country),
             'countryDetail'   => trim(implode(', ', array_filter([$primary?->city, $primary?->state, $primary?->country]))),
             'state'           => $primary?->state,
             'city'            => $primary?->city,

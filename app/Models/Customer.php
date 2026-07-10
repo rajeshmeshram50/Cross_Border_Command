@@ -103,6 +103,15 @@ class Customer extends Model
      */
     public function scopeForUser(Builder $q, $user, ?int $branchFilter = null): Builder
     {
+        // Sales-department employees share the WHOLE branch's customer book —
+        // every Sales employee (not just the branch admin or HOD) sees all the
+        // branch's customers, not only the rows they created (QA #14). Other
+        // employees stay peer-isolated via applyReadScope below.
+        if (\App\Support\SalesVisibility::isSalesDepartmentEmployee($user)) {
+            \App\Support\MasterVisibility::applyBranchScope($q, $user);
+            return $q;
+        }
+
         // $branchFilter is the BranchSwitcher's narrowing — only honoured for
         // client admins inside applyReadScope; silently ignored for branch
         // users & employees.

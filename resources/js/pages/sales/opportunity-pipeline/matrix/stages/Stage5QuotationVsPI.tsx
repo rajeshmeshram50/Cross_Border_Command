@@ -239,33 +239,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     }
   };
 
-  /* Download the Zoho Sign completion certificate (the audit-trail PDF).
-   * Only meaningful once the document is signed — `sigByRow` carries the
-   * signature-request id + 'completed' status that the certificate endpoint
-   * keys off. */
-  const onDownloadCertificate = async (kind: DocType, id: number, code: string | null) => {
-    const sig = sigByRow[`${kind}:${id}`];
-    if (!sig || sig.status !== 'completed') {
-      toast.warning('Certificate not ready', 'The signing certificate is available only after the document has been signed.');
-      return;
-    }
-    setActingId(id);
-    try {
-      const res = await api.get(`/clm/signature-requests/${sig.id}/certificate`, { responseType: 'blob' });
-      const blob = new Blob([res.data as BlobPart], { type: 'application/pdf' });
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = `${(code ?? `${kind}-${id}`).replace(/[^a-z0-9\-_.]/gi, '_')}_certificate.pdf`;
-      a.click();
-      URL.revokeObjectURL(blobUrl);
-    } catch (e: any) {
-      toast.error('Certificate failed', e?.response?.data?.message ?? 'Could not download the signing certificate.');
-    } finally {
-      setActingId(null);
-    }
-  };
-
   /* Auto-unlock the left CLM "Segment Details" card whenever this lead
    * ALREADY has at least one quotation or PI in the list — the user
    * shouldn't have to open (or submit) the Create/Edit form to trigger
@@ -814,7 +787,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                                         would otherwise bounce every in-progress row with a
                                         "Not signed yet" toast and open nothing). */}
                                     <button type="button" className="s5-icn" onClick={() => void onViewPdf(docType, r.id, false)} disabled={anyActing}>
-                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                      {/* Spinner while the sent document is being fetched/opened
+                                          so the click isn't silent on slow networks (QA #66). */}
+                                      {actingId === r.id
+                                        ? <span className="s5-sig-spin" role="status" aria-label="Opening document…" />
+                                        : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
                                     </button>
                                   </Tooltip>
                                   <Tooltip label="Send signing reminder">
@@ -827,7 +804,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             }
                             if (st === 'completed') {
                               // Signed → green "Signed" pill (locked). View/Download
-                              // the signed copy + certificate live in the 3-dot menu.
+                              // the signed copy lives in the 3-dot menu.
                               return (
                                 <button type="button" className="s5-convert2" title="Document already signed — open More Actions to view it" disabled
                                   style={{ background: 'linear-gradient(135deg,#16a34a,#15803d)', boxShadow: '0 2px 8px rgba(22,163,74,.3)', opacity: 1, cursor: 'not-allowed' }}>
@@ -954,7 +931,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         <MoreActionsMenu
           anchorEl={moreMenu.anchor}
           kind={moreMenu.kind}
-          signed={sigByRow[`${moreMenu.kind}:${moreMenu.id}`]?.status === 'completed'}
           busy={menuBusy}
           // Don't let an outside-click / scroll close the menu while an action
           // is still loading — the spinner must stay visible until it finishes.
@@ -967,18 +943,6 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             try {
               if (action === 'download') await onDownloadPdf(kind, id, code, signature);
               else                        await onViewPdf(kind, id, signature);
-            } finally {
-              setMenuBusy(null);
-              setMoreMenu(null);
-            }
-          }}
-          onCertificate={async () => {
-            if (menuBusy) return;
-            const id = moreMenu.id, kind = moreMenu.kind;
-            const code = (kind === 'quotation' ? quotations : pis).find(x => x.id === id)?.code ?? null;
-            setMenuBusy({ action: 'certificate', signature: false });
-            try {
-              await onDownloadCertificate(kind, id, code);
             } finally {
               setMenuBusy(null);
               setMoreMenu(null);
@@ -1089,12 +1053,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
 /* ─── More Actions menu — fixed-position portal anchored to the 3-dot
  *      button. Download / View, each With / Without Signature. */
-function MoreActionsMenu({ anchorEl, onClose, onPick, signed, onCertificate, busy, kind }: {
+function MoreActionsMenu({ anchorEl, onClose, onPick, busy, kind }: {
   anchorEl: HTMLElement;
   onClose: () => void;
   onPick: (action: 'download' | 'view', signature: boolean) => void;
-  signed: boolean;
-  onCertificate: () => void;
   busy: { action: 'download' | 'view' | 'certificate'; signature: boolean } | null;
   kind: DocType;
 }) {
@@ -1104,43 +1066,52 @@ function MoreActionsMenu({ anchorEl, onClose, onPick, signed, onCertificate, bus
     return { top: a.bottom + 6, left: a.right - 210 };
   });
 
-  // Re-measure the button's LIVE position (not a frozen rect) so the menu
-  // stays glued to it while the stage body / embed popup scrolls or the
-  // window resizes.
-  const reposition = useCallback(() => {
-    const a = anchorEl.getBoundingClientRect();
-    const w = ref.current?.offsetWidth ?? 210;
-    const h = ref.current?.offsetHeight ?? 230;
-    let left = a.right - w;
-    let top = a.bottom + 6;
-    if (left < 8) left = 8;
-    if (top + h > window.innerHeight - 8) top = a.top - h - 6;   // flip above
-    setPos({ top, left });
+  // Keep the menu GLUED to the 3-dot button under ANY layout change — page or
+  // nested-container scroll, resize, table reflow, the background signature
+  // refresh, even the open animation settling — by re-measuring the LIVE anchor
+  // rect every animation frame while open. Scroll/resize listeners alone missed
+  // reflows that move the row without a scroll event, so the menu drifted off
+  // the button (QA #44). setPos only fires when the position actually changes,
+  // so idle frames cost a single measurement.
+  useLayoutEffect(() => {
+    let raf = 0;
+    let last = { top: NaN, left: NaN };
+    const tick = () => {
+      const a = anchorEl.getBoundingClientRect();
+      // A background re-render can detach the captured button node; its rect
+      // then collapses to 0×0. Hold the last good spot on those frames instead
+      // of snapping the menu to the corner.
+      if (a.width || a.height) {
+        const w = ref.current?.offsetWidth ?? 210;
+        const h = ref.current?.offsetHeight ?? 230;
+        let left = a.right - w;
+        let top = a.bottom + 6;
+        if (left < 8) left = 8;
+        if (top + h > window.innerHeight - 8) top = a.top - h - 6;   // flip above
+        if (top !== last.top || left !== last.left) {
+          last = { top, left };
+          setPos({ top, left });
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [anchorEl]);
-
-  useLayoutEffect(() => { reposition(); }, [reposition]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    // Follow the button on scroll/resize instead of closing, so the menu
-    // never detaches from the 3-dot trigger.
-    const onScroll = () => reposition();
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', onScroll);
     return () => {
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', onScroll);
     };
-  }, [onClose, reposition]);
+  }, [onClose]);
 
   const dl = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>;
   const eye = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>;
-  const cert = <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/></svg>;
   const spin = <span className="s5-menu-spin" />;
 
   const anyBusy = !!busy;
@@ -1177,15 +1148,6 @@ function MoreActionsMenu({ anchorEl, onClose, onPick, signed, onCertificate, bus
             <div className="s5-menu-sec s5-menu-sec-vw">👁 View</div>
             <button type="button" className="s5-menu-item s5-mi-vw" disabled={anyBusy} onClick={() => onPick('view', true)}><span className="s5-mi-ico">{isBusy('view', true) ? spin : eye}</span>With Signature</button>
             <button type="button" className="s5-menu-item s5-mi-vw" disabled={anyBusy} onClick={() => onPick('view', false)}><span className="s5-mi-ico">{isBusy('view', false) ? spin : eye}</span>Without Signature</button>
-          </>
-        )}
-        {/* Certificate — the Zoho Sign completion/audit certificate, shown
-            only once the document has been signed (status = completed). */}
-        {signed && (
-          <>
-            <div className="s5-menu-div" />
-            <div className="s5-menu-sec s5-menu-sec-ct">🏅 Certificate</div>
-            <button type="button" className="s5-menu-item s5-mi-ct" disabled={anyBusy} onClick={onCertificate}><span className="s5-mi-ico">{isBusy('certificate', false) ? spin : cert}</span>Download Signed Certificate</button>
           </>
         )}
       </div>

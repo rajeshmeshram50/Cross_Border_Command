@@ -38,10 +38,13 @@ class ShipmentOrderController extends Controller
             'freight_cost'        => 'nullable|numeric|gt:0',
             'shipping_mode'       => 'nullable|string|max:64',
             'inco_term'           => 'nullable|string|max:100',
-            // B17: port_of_loading is required — a shipment without an
-            // origin port is operationally meaningless and breaks the
-            // logistics handoff (carriers ask for it first).
-            'port_of_loading'     => 'required|string|max:128',
+            // Port of Loading / Unloading are mandatory for INTERNATIONAL
+            // shipments and optional for DOMESTIC ones. The type-based
+            // requirement is enforced on the frontend (CreateShipmentOrderModal,
+            // gated on the PI's doc_type); server-side they stay nullable — same
+            // pattern as inco_term / port_of_unloading — so a Domestic shipment
+            // can be created without a port. (Supersedes the old B17 hard-require.)
+            'port_of_loading'     => 'nullable|string|max:128',
             'port_of_unloading'   => 'nullable|string|max:128',
             'final_destination'   => 'nullable|string|max:128',
             // origin_country accepts either a full name (e.g. "India") or
@@ -283,7 +286,9 @@ class ShipmentOrderController extends Controller
             'freight_cost'        => 'nullable|numeric|gt:0',
             'shipping_mode'       => 'nullable|string|max:64',
             'inco_term'           => 'nullable|string|max:100',
-            'port_of_loading'     => 'sometimes|required|string|max:128',
+            // Nullable server-side (International-vs-Domestic requirement is
+            // enforced on the frontend) — mirrors store().
+            'port_of_loading'     => 'nullable|string|max:128',
             'port_of_unloading'   => 'nullable|string|max:128',
             'final_destination'   => 'nullable|string|max:128',
             'origin_country'      => 'nullable|string|max:64',

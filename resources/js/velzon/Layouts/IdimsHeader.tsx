@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useDispatch } from 'react-redux';
+import { changeLayoutMode } from '../slices/thunks';
 import { useAuth } from '../../contexts/AuthContext';
 import { moduleVisible } from '../../utils/menuAccess';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -179,6 +181,21 @@ export default function IdimsHeader() {
   const { user, logout, tenantThemeEnabled, toggleTenantTheme } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
   const { selectedBranch } = useBranchSwitcher();
+  const dispatch = useDispatch();
+
+  /* Toggle dark/light through BOTH theme authorities at once. ThemeContext
+   * drives the CSS-var pages; Velzon's Redux `layoutModeType` drives the shell
+   * + `data-bs-theme`. Flipping only ThemeContext left Redux stale, so a later
+   * structural layout effect would re-dispatch changeLayoutMode(staleMode),
+   * revert data-bs-theme, and the ThemeContext MutationObserver would flip React
+   * state back — the rapid theme shake/flash (QA #56). Keeping them in lockstep
+   * removes the disagreement. changeLayoutMode is excluded from the shell
+   * effect's deps, so this dispatch does NOT fire a synthetic resize/reflow. */
+  const toggleThemeSynced = () => {
+    const next = theme === 'light' ? 'dark' : 'light';
+    dispatch(changeLayoutMode(next));
+    toggleTheme();
+  };
 
   const [openDD, setOpenDD] = useState<DD | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -633,7 +650,7 @@ export default function IdimsHeader() {
               </div>
 
               <div className="idims-actions">
-                <button type="button" className="idims-action-btn" title="Toggle theme" onClick={() => { closeMenus(); toggleTheme(); }}>
+                <button type="button" className="idims-action-btn" title="Toggle theme" onClick={() => { closeMenus(); toggleThemeSynced(); }}>
                   {theme === 'dark' ? IC.sun : IC.moon}
                 </button>
                 <button type="button" className="idims-action-btn idims-fs-btn" title="Fullscreen" onClick={() => { closeMenus(); toggleFs(); }}>

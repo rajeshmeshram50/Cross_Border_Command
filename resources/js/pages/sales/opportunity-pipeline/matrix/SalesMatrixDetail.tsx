@@ -732,6 +732,13 @@ export default function SalesMatrixDetail() {
       const row = serverHeader.customerRow as unknown as Record<string, unknown>;
       setCustomerEditing({
         ...row,
+        // The eager-loaded server row uses `company_name` + a numeric pk `id`.
+        // Map them to the EditCustomer shape (display name + C-### code) so the
+        // popup title reads the company name / customer code — not the raw pk,
+        // which showed up as "Edit Customer — 160" (QA #47). Mirrors the
+        // consignee / CLM edit paths below.
+        company: (row.company_name as string | undefined) || header.customer || '',
+        id: (row.customer_code as string | undefined) || header.customerCode || `C-${String(serverHeader.customerId).padStart(3, '0')}`,
         db_id: typeof row.id === 'number' ? (row.id as number) : serverHeader.customerId,
       } as unknown as EditCustomer);
       setCustomerAddOpen(true);

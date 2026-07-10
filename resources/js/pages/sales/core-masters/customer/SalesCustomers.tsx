@@ -20,7 +20,7 @@ const CustomerEvidenceVaultModal = lazy(() => import('./CustomerEvidenceVaultMod
 type Customer = {
   id: string; db_id?: number;
   company: string; type: string; segment: string;
-  country: string; contact: string; phone: string; email: string;
+  country: string; country_iso?: string | null; contact: string; phone: string; email: string;
   whatsapp: 'Yes' | 'No'; consignees: number;
   hasSameAsCustomerConsignees?: boolean;
   sameAsCustomerConsigneeCount?: number;
@@ -236,7 +236,7 @@ export default function SalesCustomers() {
     {
       header: 'Customer Type',
       accessorKey: 'type',
-      meta: { align: 'center' },
+      meta: { align: 'start' },
       cell: (info: any) => {
         const v = info.getValue() as string | null;
         if (!v) return <span className="text-muted">—</span>;
@@ -251,7 +251,7 @@ export default function SalesCustomers() {
     {
       header: 'Segment',
       accessorKey: 'segment',
-      meta: { align: 'center' },
+      meta: { align: 'start' },
       cell: (info: any) => {
         const segList = String(info.getValue() ?? '').split(',').map((s: string) => s.trim()).filter(Boolean);
         if (segList.length === 0) return <span className="text-muted">—</span>;
@@ -272,7 +272,14 @@ export default function SalesCustomers() {
         );
       },
     },
-    { header: 'Country',        accessorKey: 'country', meta: { align: 'center' }, cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-country" max={16} /> },
+    { header: 'Country',        accessorKey: 'country', meta: { align: 'center' }, cell: (i: any) => {
+        // Show the short ISO code (aligned, compact) with the full name on
+        // hover; fall back to the raw name when the master has no match (QA #20).
+        const name = i.getValue() as string | null;
+        const iso  = (i.row.original as Customer).country_iso;
+        if (iso) return <span className="smc-country" title={name || undefined}>{iso}</span>;
+        return <TruncatedCell value={name} className="smc-country" max={16} />;
+      } },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-contact" max={16} /> },
     { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'center' }, cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
     { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-email" max={18} caseSensitive /> },
@@ -529,20 +536,34 @@ export default function SalesCustomers() {
         </div>
       )}
 
-      {segOpen && createPortal(
-        <>
-          <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
-          <div className="smc-seg-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 1091, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
-            <div className="smc-seg-pop-title">Segments ({segOpen.names.length})</div>
-            {segOpen.names.map((name, i) => (
-              <div key={i} className={`smc-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                <span className="smc-seg">{name}</span>
+      {segOpen && (() => {
+        // Keep the popover fully on-screen — clamp its anchor so it never bleeds
+        // below the fold when the "+N" is near the bottom of the list. The box
+        // is at most 280px tall (maxHeight, then it scrolls); reserve the real
+        // height (short lists) or that cap so the bottom rows stay visible.
+        // Show ~3 segment rows at a time; the rest go behind the scrollbar.
+        // Title stays pinned — only the rows list scrolls.
+        const ROWS_MAX_H = 108;            // ≈ 3 rows (~34px each)
+        const estH = Math.min(24 + ROWS_MAX_H + 16, 40 + segOpen.names.length * 34);
+        const left = Math.max(8, Math.min(segOpen.x, window.innerWidth - 230));
+        const top  = Math.max(8, Math.min(segOpen.y, window.innerHeight - estH - 8));
+        return createPortal(
+          <>
+            <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
+            <div className="smc-seg-pop" style={{ position: 'fixed', left, top, zIndex: 1091, width: 210, borderRadius: 12, padding: 8 }}>
+              <div className="smc-seg-pop-title">Segments ({segOpen.names.length})</div>
+              <div style={{ maxHeight: ROWS_MAX_H, overflowY: 'auto' }}>
+                {segOpen.names.map((name, i) => (
+                  <div key={i} className={`smc-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                    <span className="smc-seg">{name}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </>,
-        document.body
-      )}
+            </div>
+          </>,
+          document.body
+        );
+      })()}
     </div>
   );
 }

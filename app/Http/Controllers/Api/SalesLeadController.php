@@ -99,7 +99,9 @@ class SalesLeadController extends Controller
             ])
             ->orderByDesc('id');
 
-        $this->applyScope($q, $user, $request->integer('branch_id') ?: null);
+        // Include former-owned leads (read-only) so a transferred lead doesn't
+        // vanish from the previous owner's list (QA #63).
+        $this->applyScope($q, $user, $request->integer('branch_id') ?: null, true);
 
         $status = $request->query('status');
         if ($status === 'qualified') {
@@ -187,6 +189,16 @@ class SalesLeadController extends Controller
 
         $paginator = $q->paginate($perPage, ['*'], 'page', $page);
 
+        // Flag leads the user can only VIEW (transferred away from them) so the
+        // worksheet renders them read-only instead of offering edit/assign
+        // actions (QA #63). Owner-editable leads get read_only = false.
+        foreach ($paginator->items() as $lead) {
+            $lead->setAttribute('read_only', \App\Support\SalesVisibility::isReadOnlyLead(
+                $user,
+                $lead->salesperson_id ? (int) $lead->salesperson_id : null,
+            ));
+        }
+
         // ── Tab counters — single round-trip via conditional aggregation.
         // Active filters (platform / type / country / date / search) DO
         // apply here so each pill shows the filtered total; only the
@@ -197,8 +209,9 @@ class SalesLeadController extends Controller
         if ((int) $request->query('with_counts', 1) === 1) {
             $countsQ = Lead::query();
             // Same BranchSwitcher narrowing as the list above, so the tab
-            // pill counts match the rows actually shown.
-            $this->applyScope($countsQ, $user, $request->integer('branch_id') ?: null);
+            // pill counts match the rows actually shown — including former-owned
+            // (read-only) leads so a transferred lead is still counted (QA #63).
+            $this->applyScope($countsQ, $user, $request->integer('branch_id') ?: null, true);
             $this->applyListFilters($countsQ, $request);
 
             // NOTE: comparing booleans with `= 1`/`= 0` works on MySQL but
@@ -516,8 +529,18 @@ class SalesLeadController extends Controller
             // hasMany scope on the relation.
             'acknowledgements',
         ]);
-        $this->applyScope($q, $user);
+        // Read-only detail access for a former owner too (QA #63) — they can
+        // open a transferred lead to track its history, but edits stay blocked
+        // (update/destroy/reassign keep the owner-only scope).
+        $this->applyScope($q, $user, null, true);
         $lead = $q->findOrFail($id);
+
+        // Flag whether THIS user may only view the lead (transferred away) so the
+        // detail page renders read-only (QA #63).
+        $lead->setAttribute('read_only', \App\Support\SalesVisibility::isReadOnlyLead(
+            $user,
+            $lead->salesperson_id ? (int) $lead->salesperson_id : null,
+        ));
 
         // Resolve the WhatsApp proof screenshot to a real public URL using the
         // SAME helper as product/QC attachments. Previously only the raw disk
@@ -527,6 +550,16 @@ class SalesLeadController extends Controller
         // dashboard instead of the file. file_url() also returns null for
         // malformed/legacy paths so we don't surface a broken "View" link.
         $lead->setAttribute('whatsapp_screenshot_url', file_url($lead->whatsapp_screenshot));
+
+        // Task-manager attachment — same treatment as the WhatsApp screenshot
+        // above. The Deal Execution "View" button used to rebuild the URL from
+        // the bare disk path on the client, which resolved against the SPA origin
+        // and bounced the user to the dashboard via the router catch-all (QA #55).
+        // file_url() returns an absolute, storage-host-correct URL (null for
+        // missing/legacy paths so we never surface a broken link).
+        if ($lead->taskManager) {
+            $lead->taskManager->setAttribute('attachment_url', file_url($lead->taskManager->attachment));
+        }
 
         // When the opportunity's Proforma Invoice has been e-signed (a completed
         // signature request), the deal is locked: the matrix detail becomes
@@ -1057,10 +1090,16 @@ class SalesLeadController extends Controller
             ? tap($existing)->update($payload)
             : LeadTaskManager::create($payload);
 
+        $fresh = $row->fresh();
+        // Absolute URL for the "View" button (mirrors the lead-detail response) —
+        // a bare disk path resolves against the SPA origin and bounces to the
+        // dashboard via the router catch-all (QA #55).
+        $fresh->setAttribute('attachment_url', file_url($fresh->attachment));
+
         return response()->json([
             'status'  => true,
             'message' => $existing ? 'Task manager updated' : 'Task manager saved',
-            'data'    => $row->fresh(),
+            'data'    => $fresh,
         ], $existing ? 200 : 201);
     }
 
@@ -2115,7 +2154,7 @@ class SalesLeadController extends Controller
      * pinned to their own branch (every branch is an isolated peer).
      * Mirror of SalesTodoController::applyScope tailored for leads.
      */
-    private function applyScope($q, $user, ?int $branchFilter = null): void
+    private function applyScope($q, $user, ?int $branchFilter = null, bool $includeFormerOwned = false): void
     {
         if ($user->user_type === 'super_admin') {
             if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
@@ -2126,6 +2165,16 @@ class SalesLeadController extends Controller
             $q->where('client_id', $user->client_id);
         }
 
+        // Read paths (list + detail) pass $includeFormerOwned = true so a lead
+        // transferred AWAY from the user still shows (read-only — QA #63). Edit
+        // paths keep the owner-only filter, so this only widens what the user can
+        // SEE, never what they can change.
+        $applyVisibility = function ($qq) use ($user, $includeFormerOwned) {
+            $includeFormerOwned
+                ? \App\Support\SalesVisibility::applyToLeadsIncludingFormerOwned($qq, $user)
+                : \App\Support\SalesVisibility::applyToLeads($qq, $user);
+        };
+
         if ($user->user_type === 'branch_user') {
             // Branch users are locked to their own branch — every branch is an
             // isolated peer; they can't use the BranchSwitcher, so
@@ -2135,7 +2184,7 @@ class SalesLeadController extends Controller
             });
             // Role-based narrowing: a Sales Employee/Intern sees only their own
             // assigned leads; a Sales Manager sees self + reports (+ unassigned).
-            \App\Support\SalesVisibility::applyToLeads($q, $user);
+            $applyVisibility($q);
             return;
         }
 
@@ -2143,7 +2192,7 @@ class SalesLeadController extends Controller
         // narrowing when a specific branch is picked.
         $this->applySwitcherBranchFilter($q, $user, $branchFilter);
         // Same role-based narrowing (no-op for admins / Branch-Admin tiers).
-        \App\Support\SalesVisibility::applyToLeads($q, $user);
+        $applyVisibility($q);
     }
 
     /** Narrow an already-tenant-scoped query when the BranchSwitcher injects

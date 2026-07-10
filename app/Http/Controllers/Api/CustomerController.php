@@ -533,6 +533,12 @@ class CustomerController extends Controller
             'website'         => $c->website,
             'status'          => $c->status,
             'country'         => $primary?->country,
+            // Short ISO code (e.g. "United Arab Emirates" → "AE") resolved from
+            // the countries master, so the list can show a compact, aligned
+            // Country column instead of long full names (QA #20). Null when the
+            // stored value doesn't match any master country — the UI then falls
+            // back to the raw value.
+            'country_iso'     => \App\Models\Masters\Countries::isoFor($primary?->country),
             'state'           => $primary?->state,
             'city'            => $primary?->city,
             'pin'             => $primary?->pin,

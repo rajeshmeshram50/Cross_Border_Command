@@ -28,6 +28,9 @@ export type ShipmentInitialContext = {
   piDate?:         string | null;
   piId?:           number | null;
   piCurrency?:     string | null;   // currency from the PI — drives the Freight Cost prefix
+  /* PI's Domestic / International type. Domestic hides INCO Term and makes the
+   * ports optional; International keeps INCO + both ports mandatory. */
+  docType?:        string | null;
   customerCode?:   string | null;
   customerName?:   string | null;
   consigneeCode?:  string | null;
@@ -105,6 +108,13 @@ export default function CreateShipmentOrderModal({
   const [errors, setErrors]               = useState<Record<string, string>>({});
   const [submitting, setSubmitting]       = useState(false);
 
+  /* Domestic PIs get a lighter logistics form: INCO Term is hidden, and Port
+   * of Loading / Port of Unloading are optional. International keeps INCO +
+   * both ports mandatory. Anything other than an explicit "Domestic" (incl.
+   * a missing type) is treated as International so behaviour never silently
+   * loosens. */
+  const isDomestic = (context.docType ?? '').trim().toLowerCase() === 'domestic';
+
   /* Reset + seed every time modal opens */
   useEffect(() => {
     if (!open) return;
@@ -135,8 +145,11 @@ export default function CreateShipmentOrderModal({
     if (!freightCost || !Number.isFinite(Number(freightCost)) || Number(freightCost) < 0)
       e.freightCost = 'Positive number required';
     if (!shippingMode)      e.shippingMode      = 'Required';
-    if (!incoTerm.trim())   e.incoTerm          = 'Required';
-    if (!portOfUnloading.trim()) e.portOfUnloading = 'Required';
+    // INCO Term + both ports are International-only requirements. For a
+    // Domestic PI the INCO field is hidden and the two ports are optional.
+    if (!isDomestic && !incoTerm.trim())        e.incoTerm        = 'Required';
+    if (!isDomestic && !portOfLoading.trim())   e.portOfLoading   = 'Required';
+    if (!isDomestic && !portOfUnloading.trim()) e.portOfUnloading = 'Required';
     if (!finalDestination.trim()) e.finalDestination = 'Required';
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -163,9 +176,10 @@ export default function CreateShipmentOrderModal({
       fd.append('zip_code',           zipCode.trim());
       fd.append('freight_cost',       freightCost);
       fd.append('shipping_mode',      shippingMode);
-      fd.append('inco_term',          incoTerm.trim());
-      if (portOfLoading.trim())   fd.append('port_of_loading',   portOfLoading.trim());
-      fd.append('port_of_unloading', portOfUnloading.trim());
+      // INCO Term is International-only (hidden for Domestic) → send only when set.
+      if (!isDomestic && incoTerm.trim()) fd.append('inco_term', incoTerm.trim());
+      if (portOfLoading.trim())    fd.append('port_of_loading',   portOfLoading.trim());
+      if (portOfUnloading.trim())  fd.append('port_of_unloading', portOfUnloading.trim());
       fd.append('final_destination', finalDestination.trim());
       if (originCountry.trim())   fd.append('origin_country',    originCountry.trim());
       if (remarks.trim())         fd.append('remarks',           remarks.trim());
@@ -332,6 +346,8 @@ export default function CreateShipmentOrderModal({
                 placeholder="— Select —"
               />
             </Field>
+            {/* INCO Term is International-only — hidden entirely for Domestic PIs. */}
+            {!isDomestic && (
             <Field label="INCO Term" required error={errors.incoTerm}>
               <MasterSelect
                 key={`inco-${masters.incoterms.length}`}
@@ -342,18 +358,20 @@ export default function CreateShipmentOrderModal({
                 onChange={(v) => { setIncoTerm(String(v)); if (errors.incoTerm) setErrors(p => ({ ...p, incoTerm: '' })); }}
               />
             </Field>
+            )}
 
-            <Field label="Port of Loading">
+            {/* Ports are mandatory (*) for International, optional for Domestic. */}
+            <Field label="Port of Loading" required={!isDomestic} error={errors.portOfLoading}>
               <MasterSelect
                 key={`pol-${masters.ports.length}`}
                 value={portOfLoading}
                 loading={masters.loading}
                 placeholder="— Select Port —"
                 options={withCurrent(masters.ports, portOfLoading)}
-                onChange={(v) => setPOL(String(v))}
+                onChange={(v) => { setPOL(String(v)); if (errors.portOfLoading) setErrors(p => ({ ...p, portOfLoading: '' })); }}
               />
             </Field>
-            <Field label="Port of Unloading" required error={errors.portOfUnloading}>
+            <Field label="Port of Unloading" required={!isDomestic} error={errors.portOfUnloading}>
               <MasterSelect
                 key={`pou-${masters.ports.length}`}
                 value={portOfUnloading}

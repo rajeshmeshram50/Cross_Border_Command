@@ -72,11 +72,12 @@ class QuotationController extends Controller
             // shape).
             $r->creator_name      = $r->creator?->name;
             $r->creator_user_type = $r->creator?->user_type;
-            // Reporting-manager override for the Sales Manager column. Falls
-            // back to the stored owner name when the owner has no manager.
+            // Sales Manager column = strictly the owner's Reporting Manager —
+            // never the owner's own name. Null when the owner has no manager so
+            // the column renders "—" instead of the employee's name (QA #4).
             $emp     = $mgrByOwner->get((int) ($r->sales_manager_id ?: $r->created_by));
             $mgrName = $emp?->reportingManager?->user?->name ?? $emp?->reportingManagerUser?->name;
-            if ($mgrName) $r->sales_manager_name = $mgrName;
+            $r->sales_manager_name = $mgrName ?: null;
             return $r;
         })->all();
 

@@ -83,7 +83,10 @@ class ProformaInvoiceController extends Controller
             // back to the stored owner name when the owner has no manager).
             $emp     = $mgrByOwner->get((int) ($r->sales_manager_id ?: $r->created_by));
             $mgrName = $emp?->reportingManager?->user?->name ?? $emp?->reportingManagerUser?->name;
-            if ($mgrName) $r->sales_manager_name = $mgrName;
+            // Strictly the owner's Reporting Manager — never fall back to the
+            // owner's own name. Null when the owner has no manager so the column
+            // renders "—" instead of the employee's name (QA #4).
+            $r->sales_manager_name = $mgrName ?: null;
             // Victory-stage gate — the opportunity behind this PI has
             // crossed Stage 6 (Victory Stage) when EITHER lead_stage_id
             // is at-or-past 6, OR won_at is stamped. Either signal flips

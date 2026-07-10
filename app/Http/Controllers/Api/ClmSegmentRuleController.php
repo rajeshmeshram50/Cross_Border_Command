@@ -259,9 +259,14 @@ class ClmSegmentRuleController extends Controller
                         $base[$opt] = $r->getAttribute($opt);
                     }
                 }
-                // `authority` is stored as ids — surface the resolved names.
+                // `authority` is stored as ids — surface the resolved names AND
+                // the individual-name list. The frontend shows the first
+                // authority + a "+N" popup for the rest (QA #68); it needs the
+                // array because a joined string can't be split reliably (an
+                // authority name may itself contain a comma).
                 if (isset($base['authority'])) {
-                    $base['authority'] = ClmAuthority::displayNames($base['authority'], $authMap);
+                    $base['authority_list'] = ClmAuthority::displayNamesList($base['authority'], $authMap);
+                    $base['authority']      = ClmAuthority::displayNames($base['authority'], $authMap);
                 }
                 $base['requirement'] = $entries[$r->code] ?? 'O';
                 return $base;

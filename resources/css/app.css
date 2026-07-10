@@ -1097,60 +1097,81 @@ tbody tr:nth-child(10) {
 
 /* ── TableContainer "worklist" pagination footer ───────────────────────
    Same pill / round-button shapes as the My Workplace (.lwp-pagination)
-   footer, themed violet to match the list pages. Full-bleed band assumes
-   the table sits inside a `p-3` wrapper (Clients / Branches / Payments). */
+   footer. Full-bleed band assumes the table sits inside a `p-3` wrapper
+   (Clients / Branches / Payments).
+
+   THEMEABLE: every colour is a CSS variable with the default VIOLET as its
+   fallback, so nothing changes unless a caller overrides them. To recolour
+   the footer for a specific table, set the `--tcwl-*` vars on any ancestor
+   of the table (e.g. its `.xxx-table-wrap`) — see the Consignee green
+   override in SalesConsignee.css. Vars:
+     --tcwl-band       footer band background       (light)
+     --tcwl-border     pill / button / top border   (light)
+     --tcwl-text       muted label text             (light)
+     --tcwl-accent     strong accent + button glyph (light)
+     --tcwl-range-bg   filled "page / pages" pill    (light)
+     --tcwl-glow       accent shadow colour          (light)
+     --tcwl-band-dark / --tcwl-border-dark / --tcwl-text-dark / --tcwl-btn-bg-dark  (dark mode) */
 .tc-wl-pag {
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 8px;
   margin: 10px -16px -16px;
   padding: 10px 16px;
-  border-top: 2px solid #ddd6fe;
-  background: linear-gradient(90deg, #faf7ff 0%, #f1ecfd 40%, #faf7ff 100%);
+  border-top: 2px solid var(--tcwl-border, #ddd6fe);
+  background: var(--tcwl-band, linear-gradient(90deg, #faf7ff 0%, #f1ecfd 40%, #faf7ff 100%));
 }
 .tc-wl-info {
   display: inline-flex; align-items: center; gap: 5px;
-  font-size: 11.5px; font-weight: 500; color: #6d28d9;
-  background: rgba(255, 255, 255, .85); border: 1.5px solid #ddd6fe;
+  font-size: 11.5px; font-weight: 500; color: var(--tcwl-text, #6d28d9);
+  background: rgba(255, 255, 255, .85); border: 1.5px solid var(--tcwl-border, #ddd6fe);
   padding: 5px 14px; border-radius: 20px;
   box-shadow: 0 1px 4px rgba(124, 58, 237, .10), 0 1px 0 rgba(255, 255, 255, .9) inset;
 }
-.tc-wl-info .tc-wl-hl { color: #7c3aed; font-weight: 800; font-size: 12px; }
+.tc-wl-info .tc-wl-hl { color: var(--tcwl-accent, #7c3aed); font-weight: 800; font-size: 12px; }
 .tc-wl-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tc-wl-rows {
   display: flex; align-items: center; gap: 5px;
-  font-size: 11.5px; color: #6d28d9; font-weight: 500;
-  background: rgba(255, 255, 255, .85); border: 1.5px solid #ddd6fe;
+  font-size: 11.5px; color: var(--tcwl-text, #6d28d9); font-weight: 500;
+  background: rgba(255, 255, 255, .85); border: 1.5px solid var(--tcwl-border, #ddd6fe);
   padding: 4px 12px; border-radius: 20px;
 }
-.tc-wl-rows select { border: none; background: transparent; font-family: inherit; font-size: 11.5px; color: #7c3aed; font-weight: 700; cursor: pointer; outline: none; }
+.tc-wl-rows select { border: none; background: transparent; font-family: inherit; font-size: 11.5px; color: var(--tcwl-accent, #7c3aed); font-weight: 700; cursor: pointer; outline: none; }
 .tc-wl-range {
   font-size: 11.5px; font-weight: 800; color: #fff;
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #5b21b6 100%);
+  background: var(--tcwl-range-bg, linear-gradient(135deg, #8b5cf6 0%, #7c3aed 55%, #5b21b6 100%));
   padding: 5px 18px; border-radius: 20px; white-space: nowrap;
-  box-shadow: 0 3px 12px rgba(124, 58, 237, .4), 0 1px 0 rgba(255, 255, 255, .2) inset;
+  box-shadow: 0 3px 12px var(--tcwl-glow, rgba(124, 58, 237, .4)), 0 1px 0 rgba(255, 255, 255, .2) inset;
 }
 .tc-wl-nav { display: flex; gap: 5px; }
 .tc-wl-btn {
   width: 32px; height: 32px; border-radius: 50%; padding: 0;
-  border: 1.5px solid #ddd6fe; background: rgba(255, 255, 255, .85);
+  border: 1.5px solid var(--tcwl-border, #ddd6fe); background: rgba(255, 255, 255, .85);
   cursor: pointer; display: flex; align-items: center; justify-content: center;
-  color: #7c3aed; transition: all .18s;
+  color: var(--tcwl-accent, #7c3aed); transition: all .18s;
 }
-.tc-wl-btn:hover:not(:disabled) { background: #fff; border-color: #7c3aed; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124, 58, 237, .25); }
+.tc-wl-btn:hover:not(:disabled) { background: #fff; border-color: var(--tcwl-accent, #7c3aed); transform: translateY(-1px); box-shadow: 0 4px 12px var(--tcwl-glow, rgba(124, 58, 237, .25)); }
 .tc-wl-btn:disabled { opacity: .4; cursor: not-allowed; }
-[data-bs-theme="dark"] .tc-wl-pag { background: linear-gradient(90deg, rgba(124, 58, 237, .08), rgba(124, 58, 237, .14), rgba(124, 58, 237, .08)); border-top-color: rgba(167, 139, 250, .30); }
+[data-bs-theme="dark"] .tc-wl-pag { background: var(--tcwl-band-dark, linear-gradient(90deg, rgba(124, 58, 237, .08), rgba(124, 58, 237, .14), rgba(124, 58, 237, .08))); border-top-color: var(--tcwl-border-dark, rgba(167, 139, 250, .30)); }
 [data-bs-theme="dark"] .tc-wl-info,
 [data-bs-theme="dark"] .tc-wl-rows,
-[data-bs-theme="dark"] .tc-wl-btn { background: rgba(255, 255, 255, .06); border-color: rgba(167, 139, 250, .30); color: #c4b5fd; }
+[data-bs-theme="dark"] .tc-wl-btn { background: rgba(255, 255, 255, .06); border-color: var(--tcwl-border-dark, rgba(167, 139, 250, .30)); color: var(--tcwl-text-dark, #c4b5fd); }
 /* The arrow buttons are small circles, so the white-tinted (.06) fill above
    read as a glaring pale disc on the dark band ("not dark-mode"). Give them a
    purple-tinted dark surface + lavender glyph so they match the rest of the
    pager. */
-[data-bs-theme="dark"] .tc-wl-btn { background: rgba(124, 58, 237, .18); border-color: rgba(167, 139, 250, .42); color: #ddd6fe; }
+[data-bs-theme="dark"] .tc-wl-btn { background: var(--tcwl-btn-bg-dark, rgba(124, 58, 237, .18)); border-color: var(--tcwl-border-dark, rgba(167, 139, 250, .42)); color: var(--tcwl-text-dark, #ddd6fe); }
 /* The base hover fills the arrow white — a glaring disc in dark mode. Use a
    translucent violet hover with light glyph so it stays on-theme. */
 [data-bs-theme="dark"] .tc-wl-btn:hover:not(:disabled) { background: rgba(124, 92, 252, .28); border-color: #a78bfa; color: #ffffff; box-shadow: 0 4px 12px rgba(124, 58, 237, .35); }
 [data-bs-theme="dark"] .tc-wl-info .tc-wl-hl { color: #ddd6fe; }
+
+/* Mobile — stack the footer cleanly: the "Showing X–Y of Z" pill on its own
+   centred row, then the rows-per-page + page pill + arrows centred below.
+   Avoids the cramped left/right wrap on narrow screens. */
+@media (max-width: 640px) {
+  .tc-wl-pag { flex-direction: column; align-items: center; gap: 9px; }
+  .tc-wl-right { width: 100%; justify-content: center; flex-wrap: wrap; }
+}
 [data-bs-theme="dark"] .tc-wl-rows select { color: #ddd6fe; }
 /* The native dropdown popup ignores the translucent pill background, so the
    10 / 25 / 50 options render light-on-light. Pin a solid dark surface +

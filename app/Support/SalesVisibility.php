@@ -167,6 +167,26 @@ class SalesVisibility
         return $q->pluck('user_id')->map(fn ($v) => (int) $v)->unique()->values()->all();
     }
 
+    /**
+     * True when the user is an EMPLOYEE whose department is Sales. Sales-team
+     * employees share the WHOLE branch's customer / consignee book — every
+     * Sales employee (not just the branch admin or the HOD) sees all the
+     * customers in their branch scope, not only the rows they created (QA #14).
+     * Every other account type keeps the standard creator-hierarchy visibility.
+     */
+    public static function isSalesDepartmentEmployee($user): bool
+    {
+        if (!$user || ($user->user_type ?? null) !== 'employee') {
+            return false;
+        }
+        $deptIds = self::salesDepartmentIds();
+        if (empty($deptIds)) {
+            return false;
+        }
+        $deptId = Employee::where('user_id', $user->id)->value('department_id');
+        return $deptId !== null && in_array((int) $deptId, $deptIds, true);
+    }
+
     /** Master-department ids whose name is "Sales" (case-insensitive). Empty
      *  array = no Sales department defined at all. */
     public static function salesDepartmentIds(): array
@@ -191,6 +211,48 @@ class SalesVisibility
             $w->whereIn($salespersonColumn, $ids);
             if ($unassigned) $w->orWhereNull($salespersonColumn);
         });
+    }
+
+    /**
+     * Like applyToLeads(), but ALSO keeps leads that were reassigned AWAY from
+     * this user visible — in READ-ONLY mode. A former owner should still see a
+     * transferred lead so they can track its history/progress instead of it
+     * vanishing from their list (QA #63). "Former owner" = any
+     * lead_assignment_histories row whose previous_user_id is this user.
+     *
+     * VIEW-ONLY: this is used only by the leads list + detail read paths. The
+     * edit/reassign/delete endpoints keep using applyToLeads() (owner-scoped),
+     * so this widens what a user can SEE, never what they can change. No-op for
+     * unrestricted tiers (they already see everything).
+     */
+    public static function applyToLeadsIncludingFormerOwned($q, User $user, string $salespersonColumn = 'salesperson_id', string $idColumn = 'id'): void
+    {
+        $scope = self::resolveScope($user);
+        if ($scope === null) return;
+        [$ids, $unassigned] = $scope;
+        $q->where(function ($w) use ($ids, $unassigned, $salespersonColumn, $user, $idColumn) {
+            $w->whereIn($salespersonColumn, $ids);
+            if ($unassigned) $w->orWhereNull($salespersonColumn);
+            $w->orWhereIn($idColumn, function ($sub) use ($user) {
+                $sub->select('lead_id')->from('lead_assignment_histories')
+                    ->where('previous_user_id', $user->id);
+            });
+        });
+    }
+
+    /**
+     * True when a lead is only VISIBLE to this user (via former ownership) but
+     * NOT in their editable scope — i.e. it should render read-only. Drives the
+     * `read_only` flag on the list/detail response (QA #63).
+     */
+    public static function isReadOnlyLead(User $user, ?int $salespersonId): bool
+    {
+        $scope = self::resolveScope($user);
+        if ($scope === null) return false;              // unrestricted tier → can edit
+        [$ids, $unassigned] = $scope;
+        if ($salespersonId !== null && in_array((int) $salespersonId, $ids, true)) return false;
+        if ($salespersonId === null && $unassigned) return false;
+        return true;                                    // visible but not owned → read-only
     }
 
     /**

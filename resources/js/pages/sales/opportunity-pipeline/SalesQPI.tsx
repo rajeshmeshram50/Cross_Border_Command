@@ -662,7 +662,10 @@ export default function SalesQPI() {
           docType:      (r.doc_type ?? 'International') as 'International' | 'Domestic',
           currency:     r.currency ?? '',
           grandTotal:   r.grand_total != null ? Number(r.grand_total) : null,
-          salesManager: r.sales_manager_name ?? r.salesManager?.name ?? '—',
+          // Strictly the owner's Reporting Manager (backend-resolved). Do NOT
+          // fall back to r.salesManager (the owner) — that reintroduced the
+          // employee's own name in this column (QA #4).
+          salesManager: r.sales_manager_name ?? '—',
           status:       r.status ?? 'draft',
           emailedAt:    r.emailed_at ?? null,
           reminderCount: Number(r.reminder_count ?? 0),
@@ -708,7 +711,10 @@ export default function SalesQPI() {
           consignee:   r.consignee_name ?? r.consignee?.company_name ?? '',
           docType:     (r.doc_type ?? 'International') as 'International' | 'Domestic',
           currency:    r.currency ?? '',
-          salesManager: r.sales_manager_name ?? r.salesManager?.name ?? '—',
+          // Strictly the owner's Reporting Manager (backend-resolved). Do NOT
+          // fall back to r.salesManager (the owner) — that reintroduced the
+          // employee's own name in this column (QA #4).
+          salesManager: r.sales_manager_name ?? '—',
           emailedAt:   r.emailed_at ?? null,
           reminderCount: Number(r.reminder_count ?? 0),
           canModify:   r.can_modify !== false,
@@ -1182,6 +1188,9 @@ export default function SalesQPI() {
     title: string;
     icon: React.ReactNode;
     color: string;
+    // While true, the icon is swapped for a spinner so the action clearly reads
+    // as in-flight (e.g. Email "Sending…") instead of just going quiet (QA #11).
+    loading?: boolean;
     onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
     ariaLabel?: string;
     disabled?: boolean;
@@ -1202,7 +1211,9 @@ export default function SalesQPI() {
            own title is the reason). */
         onClick={(e) => { if (p.disabled) { toast.info(p.title); return; } p.onClick(e); }}
       >
-        {p.icon}
+        {p.loading
+          ? <span aria-label="Working…" role="status" style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid currentColor', borderTopColor: 'transparent', borderRadius: '50%', animation: 'qpi-moremenu-spin .7s linear infinite' }} />
+          : p.icon}
         {p.badge !== undefined && p.badge > 0 && (
           <span style={{
             position: 'absolute', top: -6, right: -6,
@@ -1416,6 +1427,7 @@ export default function SalesQPI() {
               icon={<IconMail />}
               color="#2563eb"
               disabled={readOnly || (isEmailing('quotation', r.id))}
+              loading={isEmailing('quotation', r.id)}
               cooling={!!r.id && cooldownLeft('quotation', r.id) > 0}
               onClick={() => r.id && sendDocEmail('quotation', r.id, r.qtNo)}
             />
@@ -1596,6 +1608,7 @@ export default function SalesQPI() {
               icon={<IconMail />}
               color="#2563eb"
               disabled={readOnly || (isEmailing('pi', r.id))}
+              loading={isEmailing('pi', r.id)}
               cooling={!!r.id && cooldownLeft('pi', r.id) > 0}
               onClick={() => r.id && sendDocEmail('pi', r.id, r.piNo)}
             />

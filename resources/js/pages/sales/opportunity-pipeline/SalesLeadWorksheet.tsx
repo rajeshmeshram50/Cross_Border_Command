@@ -38,6 +38,9 @@ type ServerLead = {
    * matrix detail at this stage so users pick up where they left off. */
   lead_stage_id?:    number | null;
   key_opportunity?:  boolean;
+  /* True when the lead was transferred AWAY from the current user — visible
+   * for history tracking but read-only (no edit/assign/delete). QA #63. */
+  read_only?:        boolean;
   salesperson?:      { id: number; name: string } | null;
   /* Linked buyer entity. When a lead is mapped to a customer the worksheet
    * shows the customer's company_name (Customer Name col) and legal_name
@@ -91,6 +94,9 @@ type Lead = {
   /* High-priority flag set from the matrix detail's "Key Opportunity"
    * action; surfaced in the list as a star badge on the Opp Id. */
   keyOpportunity: boolean;
+  /* Transferred away from this user → view-only row (QA #63): edit/assign/
+   * delete/select are disabled and a "View only" badge is shown. */
+  readOnly: boolean;
 };
 
 const TAB_LABELS: Record<TabKey, string> = {
@@ -211,6 +217,7 @@ const mapServerToLead = (r: ServerLead): Lead => {
     whatsappStatus: r.whatsapp_status ?? null,
     leadStageId: Math.min(6, Math.max(1, Number(r.lead_stage_id) || 1)),
     keyOpportunity: !!r.key_opportunity,
+    readOnly: !!r.read_only,
   };
 };
 
@@ -481,8 +488,10 @@ export default function SalesLeadWorksheet() {
   const safePage = Math.min(page, pages);
   const startIdx = (safePage - 1) * rpp;
 
-  // Page-level select-all checkbox state
-  const pageIds = rows.map(r => r.oppId);
+  // Page-level select-all checkbox state. Read-only (transferred-away) rows are
+  // excluded so bulk Assign / Delete never target a lead the user no longer owns
+  // (QA #63) — their per-row checkbox is disabled too.
+  const pageIds = rows.filter(r => !r.readOnly).map(r => r.oppId);
   const allChecked = pageIds.length > 0 && pageIds.every(id => selected.has(id));
   const someChecked = pageIds.some(id => selected.has(id));
 
@@ -1066,7 +1075,9 @@ export default function SalesLeadWorksheet() {
                         type="checkbox"
                         className="lwp-chk"
                         checked={isChecked}
-                        onChange={() => toggleRow(l.oppId)}
+                        disabled={l.readOnly}
+                        title={l.readOnly ? 'Transferred to another user — view only' : undefined}
+                        onChange={() => { if (!l.readOnly) toggleRow(l.oppId); }}
                       />
                     </td>
                     <td style={{ color: '#64748b' }}>{l.type}</td>
@@ -1099,6 +1110,12 @@ export default function SalesLeadWorksheet() {
                                  fill="currentColor" aria-label="Key Opportunity" role="img">
                               <path d="M12 2l2.95 5.98 6.6.96-4.78 4.66 1.13 6.57L12 17.98 6.1 20.17l1.13-6.57L2.45 8.94l6.6-.96L12 2z" />
                             </svg>
+                          </Tooltip>
+                        )}
+                        {/* Transferred away from this user → view-only marker (QA #63). */}
+                        {l.readOnly && (
+                          <Tooltip label="Transferred to another user — view only. You can still track its history & progress.">
+                            <span style={{ fontSize: 9, fontWeight: 700, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6, padding: '1px 6px', marginLeft: 4, whiteSpace: 'nowrap' }}>View only</span>
                           </Tooltip>
                         )}
                       </span>
@@ -1162,7 +1179,7 @@ export default function SalesLeadWorksheet() {
                             (Sales Manager) / Branch Admin / admins can hand a
                             lead to someone. Other employees just hold what's
                             assigned to them, so the button is hidden for them. */}
-                        {canAssign && canDistribute && (
+                        {canAssign && canDistribute && !l.readOnly && (
                           <Tooltip label="Assign Lead">
                             <button
                               className="lwp-ab lwp-ab-assign"
@@ -1173,7 +1190,7 @@ export default function SalesLeadWorksheet() {
                             </button>
                           </Tooltip>
                         )}
-                        {l.status === 'disqualified' && (
+                        {l.status === 'disqualified' && !l.readOnly && (
                           <Tooltip label="Convert to Qualified">
                             <button
                               className="lwp-ab-ctq"

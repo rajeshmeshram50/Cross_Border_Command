@@ -98,24 +98,43 @@ class MasterVisibility
         if (($user->user_type ?? null) === 'branch_user') {
             // Branch admin: globals + client-level rows + own branch rows.
             // Every branch is an isolated peer — sibling branches stay hidden.
-            $branchId = $user->branch_id;
-
-            $q->where(function ($w) use ($clientId, $branchId) {
-                $w->whereNull('client_id')
-                  ->orWhere(function ($ww) use ($clientId, $branchId) {
-                      $ww->where('client_id', $clientId)
-                         ->where(function ($wb) use ($branchId) {
-                             $wb->whereNull('branch_id')
-                                ->orWhere('branch_id', $branchId);
-                         });
-                  });
-            });
             // Branch users can't use the switcher — branchFilter ignored.
+            self::applyBranchScope($q, $user);
             return;
         }
 
         // Unknown user_type → see nothing.
         $q->whereRaw('1 = 0');
+    }
+
+    /**
+     * Branch-wide READ scope: globals + client-level rows + the user's OWN
+     * branch rows (sibling branches stay hidden). This is the branch-admin
+     * view, and is ALSO granted to Sales-department employees for the
+     * Customer / Consignee books so the whole Sales team shares one branch
+     * customer list instead of each employee seeing only their own rows
+     * (QA #14). Ignores the BranchSwitcher — the user is locked to their own
+     * branch.
+     */
+    public static function applyBranchScope(Builder $q, $user): void
+    {
+        if (!$user) {
+            $q->whereRaw('1 = 0');
+            return;
+        }
+        $clientId = $user->client_id ?? optional($user->branch ?? null)->client_id;
+        $branchId = $user->branch_id;
+
+        $q->where(function ($w) use ($clientId, $branchId) {
+            $w->whereNull('client_id')
+              ->orWhere(function ($ww) use ($clientId, $branchId) {
+                  $ww->where('client_id', $clientId)
+                     ->where(function ($wb) use ($branchId) {
+                         $wb->whereNull('branch_id')
+                            ->orWhere('branch_id', $branchId);
+                     });
+              });
+        });
     }
 
     /**

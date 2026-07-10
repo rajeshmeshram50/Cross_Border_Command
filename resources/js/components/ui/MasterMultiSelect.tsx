@@ -26,6 +26,10 @@ export function MasterMultiSelect({
   addMorePlaceholder: _addMorePlaceholder,
   disabled,
   invalid,
+  collapse,
+  collapseNoun,
+  loading,
+  showDone,
   onChange,
 }: {
   values: string[];
@@ -35,6 +39,18 @@ export function MasterMultiSelect({
   addMorePlaceholder?: string;
   disabled?: boolean;
   invalid?: boolean;
+  /** When true the toggle shows only the FIRST chip plus a "View all N" pill
+   *  (the rest live in the dropdown), so the field stays one row tall on dense
+   *  forms — same pattern as the Consignee segment field. Opt-in so the other
+   *  wizards that share this widget keep their full chip layout. */
+  collapse?: boolean;
+  /** Noun for the collapsed "View all N <noun>" pill, e.g. "segments". */
+  collapseNoun?: string;
+  /** Show shimmer rows in the dropdown instead of "No options" while the
+   *  option master is still loading. */
+  loading?: boolean;
+  /** Render a "Done" button in the dropdown footer that closes the menu. */
+  showDone?: boolean;
   onChange: (next: string[]) => void;
 }) {
   void _addMorePlaceholder;
@@ -120,10 +136,10 @@ export function MasterMultiSelect({
         aria-disabled={disabled}
         aria-expanded={open}
         onClick={() => { if (!disabled) setOpen(o => !o); }}
-        className={`mms-toggle ${open ? 'is-open' : ''} ${disabled ? 'is-disabled' : ''} ${invalid ? 'is-invalid' : ''}`}
+        className={`mms-toggle ${open ? 'is-open' : ''} ${disabled ? 'is-disabled' : ''} ${invalid ? 'is-invalid' : ''} ${collapse ? 'mms-collapsed' : ''}`}
       >
         {values.length === 0 && <span className="mms-placeholder">{placeholder}</span>}
-        {values.map(v => (
+        {(collapse && values.length > 1 ? values.slice(0, 1) : values).map(v => (
           <span key={v} className="mms-chip" title={labelFor(v)}>
             <span className="mms-chip-label">{labelFor(v)}</span>
             {!disabled && (
@@ -138,6 +154,15 @@ export function MasterMultiSelect({
             )}
           </span>
         ))}
+        {collapse && values.length > 1 && (
+          <span
+            role="button"
+            className="mms-more"
+            onClick={(e) => { e.stopPropagation(); if (!disabled) setOpen(o => !o); }}
+          >
+            {open ? 'Hide' : `View all ${values.length}${collapseNoun ? ` ${collapseNoun}` : ''}`}
+          </span>
+        )}
         <svg
           className="mms-chev"
           width="14"
@@ -176,7 +201,16 @@ export function MasterMultiSelect({
             />
           </div>
           <div className="mms-list">
-            {options.length === 0 ? (
+            {loading && options.length === 0 ? (
+              <div className="mms-skel-wrap" aria-busy="true" aria-label="Loading options">
+                {[0, 1, 2, 3, 4].map(i => (
+                  <div key={i} className="mms-skel-row">
+                    <span className="mms-skel-check" />
+                    <span className="mms-skel-bar" style={{ width: `${70 - i * 8}%` }} />
+                  </div>
+                ))}
+              </div>
+            ) : options.length === 0 ? (
               <div className="mms-empty">No options</div>
             ) : filtered.length === 0 ? (
               <div className="mms-empty">No matches for “{query}”</div>
@@ -200,6 +234,13 @@ export function MasterMultiSelect({
               );
             })}
           </div>
+          {showDone && (
+            <div className="mms-foot">
+              <button type="button" className="mms-done" onClick={(e) => { e.stopPropagation(); setOpen(false); }}>
+                Done{values.length ? ` (${values.length})` : ''}
+              </button>
+            </div>
+          )}
         </div>,
         document.body
       )}
@@ -232,6 +273,25 @@ const MMS_CSS = `
 .mms-toggle.is-invalid { border-color: #ef4444; }
 .mms-toggle.is-invalid.is-open { box-shadow: 0 0 0 3px rgba(239,68,68,0.18); }
 .mms-toggle.is-disabled { background: #f9fafb; cursor: not-allowed; opacity: 0.85; }
+
+/* Collapsed variant (opt-in via collapse). Shows the first chip + a "View all
+ * N" pill so the field stays a single row on dense forms — the rest of the
+ * chips are managed in the dropdown. Same pattern as the Consignee segment
+ * field; keeps this widget's own violet palette. */
+.mms-toggle.mms-collapsed { flex-wrap: nowrap; }
+.mms-toggle.mms-collapsed .mms-chip { flex-shrink: 1; min-width: 0; }
+.mms-more {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  font-size: 11px; font-weight: 700; color: #6d28d9;
+  cursor: pointer; white-space: nowrap;
+  transition: background .15s ease, border-color .15s ease;
+}
+.mms-more:hover { background: #ede9fe; border-color: #c4b5fd; }
 
 .mms-placeholder {
   color: #9ca3af;
@@ -345,6 +405,43 @@ const MMS_CSS = `
 }
 .mms-item-label { flex: 1; }
 
+/* Loading shimmer rows (shown instead of "No options" while the master loads). */
+.mms-skel-wrap { padding: 4px 2px; }
+.mms-skel-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+}
+.mms-skel-check {
+  width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0;
+}
+.mms-skel-bar { height: 10px; border-radius: 5px; }
+.mms-skel-check, .mms-skel-bar {
+  background: linear-gradient(90deg, #eef0f3 25%, #e2e6ea 37%, #eef0f3 63%);
+  background-size: 400% 100%;
+  animation: mms-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes mms-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+/* Done footer — pinned below the option list. */
+.mms-foot {
+  flex-shrink: 0;
+  padding: 6px 2px 2px;
+  margin-top: 6px;
+  border-top: 1px solid #e5e7eb;
+  display: flex; justify-content: flex-end;
+}
+.mms-done {
+  border: none; cursor: pointer;
+  padding: 6px 18px; border-radius: 7px;
+  background: #6366f1; color: #fff;
+  font-size: 12.5px; font-weight: 700;
+  transition: background .15s ease;
+}
+.mms-done:hover { background: #4f46e5; }
+
 /* Dark mode parity. */
 [data-bs-theme="dark"] .mms-toggle,
 [data-layout-mode="dark"] .mms-toggle {
@@ -396,5 +493,27 @@ const MMS_CSS = `
 [data-layout-mode="dark"] .mms-chip-x:hover {
   background: #7c3aed;
   color: #fff;
+}
+
+/* Loading shimmer + Done footer — dark parity. */
+[data-bs-theme="dark"] .mms-skel-check, [data-bs-theme="dark"] .mms-skel-bar,
+[data-layout-mode="dark"] .mms-skel-check, [data-layout-mode="dark"] .mms-skel-bar {
+  background: linear-gradient(90deg, #2a2f34 25%, #363b41 37%, #2a2f34 63%);
+  background-size: 400% 100%;
+}
+[data-bs-theme="dark"] .mms-foot,
+[data-layout-mode="dark"] .mms-foot { border-top-color: rgba(255,255,255,0.08); }
+
+/* "View all N" pill — dark parity. */
+[data-bs-theme="dark"] .mms-more,
+[data-layout-mode="dark"] .mms-more {
+  background: rgba(124,58,237,0.20);
+  border-color: rgba(124,58,237,0.45);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .mms-more:hover,
+[data-layout-mode="dark"] .mms-more:hover {
+  background: rgba(124,58,237,0.30);
+  border-color: rgba(196,181,253,0.5);
 }
 `;

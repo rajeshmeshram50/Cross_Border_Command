@@ -42,6 +42,9 @@ type DealDoc = {
   currency:   string | null;
   grand_total:number | string | null;
   created_at: string;
+  // Domestic / International — drives the Create-Shipment form's conditional
+  // fields (INCO Term hidden + ports optional for Domestic).
+  doc_type?:          string | null;
   // Logistics fields carried over to the Create-Shipment form (PI rows
   // return the full model, so these are present on the latest PI).
   inco_term?:         string | null;
@@ -54,6 +57,9 @@ type DealDoc = {
 
 type Shipment = {
   id:                   number;
+  // Real, per-client sequential Shipment ID (e.g. "SHP-258"). Display THIS —
+  // never fabricate one from the primary key `id`, which gives the wrong code.
+  shipment_code:        string | null;
   lead_id:              number;
   proforma_invoice_id:  number | null;
   shipping_liability:   string | null;
@@ -249,6 +255,8 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
     piDate:          latestPi?.created_at ?? null,
     piId:            latestPi?.id ?? null,
     piCurrency:      latestPi?.currency ?? null,
+    // Domestic / International — gates the shipment form's INCO Term + ports.
+    docType:         latestPi?.doc_type ?? null,
     customerCode:    lead?.customer?.customer_code ?? null,
     customerName:    lead?.customer?.company_name ?? header.customer,
     consigneeCode:   lead?.consignee?.consignee_code ?? null,
@@ -367,7 +375,7 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
                   <div className="s6-success-sub">Shipment ID created and saved</div>
                 </div>
               </div>
-              <span className="s6-shp-code">SHP-{String(shipment.id).padStart(3, '0')}</span>
+              <span className="s6-shp-code">{shipment.shipment_code || `SHP-${String(shipment.id).padStart(3, '0')}`}</span>
             </div>
 
             {/* SHIPMENT DETAILS */}
@@ -377,7 +385,7 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
                 SHIPMENT DETAILS
               </div>
               <div className="s6-shp-grid s6-shp-grid-4">
-                <Cell label="SHIPMENT ID"      value={`SHP-${String(shipment.id).padStart(3, '0')}`} amber />
+                <Cell label="SHIPMENT ID"      value={shipment.shipment_code || `SHP-${String(shipment.id).padStart(3, '0')}`} amber />
                 <Cell label="SHIPMENT DATE"    value={fmtDate(shipment.created_at)} />
                 <Cell label="OPPORTUNITY ID"   value={header.oppId} amber />
                 <Cell label="OPPORTUNITY DATE" value={oppDateText} />

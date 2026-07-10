@@ -1029,6 +1029,12 @@
   background:#fff; border-radius:16px;
   box-shadow: 0 24px 70px rgba(2,44,40,.28), 0 6px 24px rgba(0,0,0,.10);
   min-width:340px; max-width:380px;
+  /* Never taller than the viewport — the header stays pinned and the list
+     below scrolls. The list itself caps at 3 rows (see .td-cal-popover-list),
+     so the popover stays compact and extra entries go behind the scrollbar
+     (QA 15/16/17). */
+  max-height: calc(100vh - 24px);
+  display:flex; flex-direction:column;
   overflow:hidden; border:1px solid rgba(13,148,136,.18);
   font-family: var(--font-sans);
   animation: td-pop-in .16s cubic-bezier(.16,1,.3,1);
@@ -1042,6 +1048,7 @@
   padding:12px 14px 12px 12px;
   display:flex; align-items:flex-start; gap:9px;
   cursor: grab; user-select:none; position:relative; overflow:hidden;
+  flex-shrink:0;   /* header stays pinned; the list below is what scrolls */
 }
 .td-cal-popover-hdr::after {
   content:''; position:absolute; right:-30px; top:-34px;
@@ -1073,7 +1080,9 @@
   transition: background .12s; position:relative; z-index:1;
 }
 .td-cal-popover-close:hover { background: rgba(255,255,255,.34); }
-.td-cal-popover-list { max-height:320px; overflow-y:auto; padding:4px 0; }
+/* Show only ~3 rows at a time (each row ≈ 60px); everything else is reached
+   via the scrollbar so the popover never grows tall (QA 15/16/17). */
+.td-cal-popover-list { flex:1 1 auto; min-height:0; max-height:188px; overflow-y:auto; padding:4px 0; }
 .td-cal-popover-list::-webkit-scrollbar { width:7px; }
 .td-cal-popover-list::-webkit-scrollbar-thumb { background:#5eead4; border-radius:4px; border:2px solid #fff; }
 .td-cal-popover-row {

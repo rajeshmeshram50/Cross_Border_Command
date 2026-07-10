@@ -1047,6 +1047,29 @@ export const SALES_MATRIX_DETAIL_CSS = `
   }
 }
 
+/* Phones (QA #69): the opportunity header + 6-stage stepper overflowed /
+   overlapped because the header meta row was flex-nowrap (forcing horizontal
+   scroll) and the stepper stayed at 3 cramped columns. Stack the header and
+   let its meta wrap; drop the stepper to 2 columns. */
+@media (max-width: 640px) {
+  .smd-cust-banner {
+    flex-direction: column; align-items: stretch;
+    min-height: auto; padding: 12px 14px 12px 18px; gap: 10px;
+  }
+  .smd-cust-left { padding-left: 0; }
+  .smd-cust-name { white-space: normal; overflow-wrap: anywhere; }
+  /* Meta wraps onto multiple lines instead of scrolling off-screen; the
+     decorative single-line dividers are hidden once items wrap. */
+  .smd-cust-meta { flex-wrap: wrap; justify-content: flex-start; gap: 8px 12px; width: 100%; }
+  .smd-cust-sep, .smd-cust-line { display: none; }
+  .smd-back-btn { margin-left: auto; }
+
+  /* 2 columns × 3 rows fits a phone cleanly; 3 columns squeezed the labels. */
+  .smd-stepper { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .smd-stepper-card { padding: 8px; }
+  .smd-step, .smd-step:first-child, .smd-step:last-child { padding: 7px 9px; }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    Dark mode — every surface flips against the slate base so the page
    reads as part of the dark theme instead of glowing white panels.

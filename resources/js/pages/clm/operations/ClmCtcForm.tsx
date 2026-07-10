@@ -67,6 +67,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   const [picker, setPicker] = useState(false);
   const [resubmitting, setResubmitting] = useState(false);   // in-flight guard for "Resubmit for Review"
   const [moving, setMoving] = useState(false);               // in-flight guard for "Move to Final Repository"
+  const [submittingApproval, setSubmittingApproval] = useState(false);   // in-flight guard for Submit/Resubmit for Approval
   const [agTitle, setAgTitle] = useState(editing?.title ?? '');
   const [agType, setAgType] = useState(editing?.type ?? '');
   const [effDate, setEffDate] = useState('');
@@ -223,7 +224,9 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
 
   // Persist the agreement + push it into the approval queue (Submit & Send for Approval).
   const submitForApproval = async (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }): Promise<boolean> => {
+    if (submittingApproval) return false;   // guard against double-submit → duplicate audit-log versions
     if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title in Step 2.'); return false; }
+    setSubmittingApproval(true);
     const payload = {
       title: agTitle, agreement_type: agType || null,
       org_name: org?.name ?? null, org_short_code: org?.shortCode ?? null, org_state: org?.state ?? null, org_country: org?.country ?? null,
@@ -256,6 +259,8 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     } catch (e) {
       toast.error('Could not submit', errMsg(e) || 'Please try again.');
       return false;
+    } finally {
+      setSubmittingApproval(false);
     }
   };
 
@@ -339,8 +344,8 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>
                 </div>
                 <div>
-                  <div style={{ fontSize: 16, fontWeight: 500, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.35px', lineHeight: 1.2 }}>{editing ? `Edit CTC Agreement — ${editing.id}` : 'Case-to-Case Contract'}</div>
-                  <div style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', marginTop: 2, opacity: .9 }}>Create one-time operational agreement with a counterparty</div>
+                  <div style={{ fontSize: 16, fontWeight: 500, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.35px', lineHeight: 1.2 }}>{editing ? `${editLock ? 'View' : 'Edit'} CTC Agreement — ${editing.id}` : 'Case-to-Case Contract'}</div>
+                  <div style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', marginTop: 2, opacity: .9 }}>{editing && editLock ? 'View this operational agreement and its lifecycle' : 'Create one-time operational agreement with a counterparty'}</div>
                 </div>
               </div>
               <button onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', border: 'none', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', background: 'linear-gradient(135deg,#8B5CF6,#6D28D9,#5B21B6)', boxShadow: '0 3px 12px rgba(91,33,182,.38)' }}>
@@ -1434,12 +1439,23 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                     if (c.response) items.push({ tone: 'done', title: 'Clarification Answered', badge: 'Responded', sub: c.response, date: c.response_date || c.date });
                     return items;
                   });
-                  // Clarifications happen during review, between submission and the
-                  // final approve/reject outcome — slot them in just before the
-                  // last (terminal) version item.
-                  const tl: TL[] = clarItems.length === 0 || base.length <= 1
-                    ? [...base, ...clarItems]
-                    : [...base.slice(0, base.length - 1), ...clarItems, base[base.length - 1]];
+                  // Merge versions + clarifications in true chronological order
+                  // by their stored timestamp (not by position). The old approach
+                  // dumped every clarification just before the last version, so a
+                  // clarification from a later round showed BEFORE an earlier
+                  // reject. Ties keep versions ahead of clarifications, and fall
+                  // back to insertion order for a stable result.
+                  const MONTHS: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+                  const parseTs = (d?: string): number => {
+                    if (!d) return 0;
+                    const m = /^(\d{1,2})\s+([A-Za-z]{3,})\s+(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/.exec(d.trim());
+                    if (!m) { const t = Date.parse(d); return isNaN(t) ? 0 : t; }
+                    return new Date(+m[3], MONTHS[m[2].slice(0, 3)] ?? 0, +m[1], m[4] ? +m[4] : 0, m[5] ? +m[5] : 0).getTime();
+                  };
+                  const tl: TL[] = [...base, ...clarItems]
+                    .map((it, i) => ({ it, i, ts: parseTs(it.date) }))
+                    .sort((a, b) => (a.ts - b.ts) || (a.i - b.i))
+                    .map(x => x.it);
                   return tl.map((it, i) => (
                     <TimelineItem key={i} t={t} tone={it.tone} title={it.title} badge={it.badge} sub={it.sub} date={it.date} by={it.by} last={i === tl.length - 1} />
                   ));
