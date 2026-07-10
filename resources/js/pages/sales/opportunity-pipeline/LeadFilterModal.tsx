@@ -216,7 +216,13 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
       case 'platform': return options.platforms;
       case 'leadType': return options.queryTypes;
       case 'country':  return options.countries;
-      case 'customer': return options.customers;
+      // Order customers by their code SERIES (C-013, C-012 … C-001), newest
+      // first — not by company name (QA CBC-92). Falls back to 0 for codes
+      // without a trailing number so they sort last.
+      case 'customer': {
+        const seq = (o: Opt) => { const m = /(\d+)\s*$/.exec(o.code ?? ''); return m ? parseInt(m[1], 10) : 0; };
+        return [...options.customers].sort((a, b) => seq(b) - seq(a));
+      }
       default:         return [];
     }
   };
@@ -252,9 +258,10 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
   };
 
   const onClear = () => {
+    // Reset removes the applied filters but keeps the modal OPEN so the user
+    // can immediately pick new ones (QA: "don't close the popup on reset").
     setFilters(EMPTY_FILTERS);
     onApply(EMPTY_FILTERS);
-    onClose();
   };
 
   if (!open) return null;

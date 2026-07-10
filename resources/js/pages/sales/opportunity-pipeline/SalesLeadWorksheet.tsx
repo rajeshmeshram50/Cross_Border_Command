@@ -336,6 +336,20 @@ export default function SalesLeadWorksheet() {
   const exportBtnRef = useRef<HTMLButtonElement>(null);
   const [exportPos, setExportPos] = useState<{ top: number; right: number } | null>(null);
 
+  // The menu is pinned to a fixed viewport position captured on open, so any
+  // scroll (page or the table body) or resize leaves it floating detached from
+  // its button. Close it on either so it never lingers over the content.
+  useEffect(() => {
+    if (!exportOpen) return;
+    const close = () => setExportOpen(false);
+    window.addEventListener('scroll', close, true);   // capture → catches inner scrollers too
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [exportOpen]);
+
   // Salesperson chip-label resolver — when "View Leads" applies a
   // salesperson_id filter we want the chip strip to read "Salesperson:
   // John Doe", not "Salesperson: 42". Stash the picked person's name

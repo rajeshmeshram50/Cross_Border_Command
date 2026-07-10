@@ -10,6 +10,7 @@ import { useScrollLock } from '../../../hooks/useScrollLock';
 import { useSelectionLock } from '../../../hooks/useSelectionLock';
 import Tooltip from '../../../components/ui/Tooltip';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
+import WorklistPager from '../../../components/ui/WorklistPager';
 import TableContainer from '../../../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import SalesDocSendForSignatureModal from './matrix/stages/SalesDocSendForSignatureModal';
@@ -121,6 +122,10 @@ type PI = {
 // Default page size — 10 to match the Customer page. The dynamic page-size
 // effect grows this on taller screens (and never drops below this floor).
 const ROWS_PER_PAGE = 10;
+// Fixed rows-per-page options for the pagination footer (QA CBC-547). The
+// auto-fit snaps to the nearest of these so the selected value is always a
+// listed option.
+const QPI_ROWS_OPTIONS = [10, 25, 50, 100];
 
 /**
  * Render the "Created By" cell as a colored pill with a small sub-label.
@@ -806,10 +811,13 @@ export default function SalesQPI() {
    * remaining rows spill onto the next page (no internal scroll). */
   const tableHostRef = useRef<HTMLDivElement>(null);
   const [rpp, setRpp] = useState(ROWS_PER_PAGE);
+  // Once the user picks a Rows-per-page value the auto-fit stops overriding it.
+  const rppManualRef = useRef(false);
   useEffect(() => {
     const host = tableHostRef.current;
     if (!host) return;
     const fit = () => {
+      if (rppManualRef.current) return;   // user chose a value — respect it
       const top    = host.getBoundingClientRect().top;
       const theadH = (host.querySelector('thead') as HTMLElement | null)?.offsetHeight || 44;
       const rowH   = (host.querySelector('tbody tr') as HTMLElement | null)?.offsetHeight || 48;
@@ -817,7 +825,13 @@ export default function SalesQPI() {
       const HOSTPAD = 26;   // .qpi-table-host vertical padding (14 top + 12 bottom)
       const avail   = window.innerHeight - top - theadH - FOOTER - HOSTPAD - 16;
       const rowsFit = Math.max(ROWS_PER_PAGE, Math.floor(avail / rowH));
-      setRpp(prev => (prev === rowsFit ? prev : rowsFit));
+      // Snap to the nearest FIXED option so the dropdown value always matches
+      // a listed option (QA CBC-547).
+      const snapped = QPI_ROWS_OPTIONS.reduce(
+        (best, o) => (Math.abs(o - rowsFit) < Math.abs(best - rowsFit) ? o : best),
+        QPI_ROWS_OPTIONS[0],
+      );
+      setRpp(prev => (prev === snapped ? prev : snapped));
     };
     fit();
     // Re-fit after the layout settles (banner animation / async rows).
@@ -1884,42 +1898,19 @@ export default function SalesQPI() {
           )}
         </div>
 
-        {/* ─── Pagination footer (our own) — Showing X–Y of Z on the left,
-            numbered chips + prev/next on the right. Hidden while loading or
-            when the active dataset is empty. */}
+        {/* ─── Pagination footer — the shared WorklistPager (Showing X–Y of Z
+            pill + Rows-per-page selector + page pill + ‹ › arrows). Themed
+            violet by the global .tc-wl-* defaults, matching the QPI palette.
+            Hidden while loading or when the active dataset is empty. */}
         {!(tab === 'quotation' ? loadingQt : loadingPi) && totalRows > 0 && (
-          <div className="qpi-pag">
-            <span className="qpi-pag-info">
-              Showing <b>{pageStart + 1}–{pageStart + pageRows.length}</b> of <b>{totalRows}</b>
-            </span>
-            <div className="qpi-pag-btns">
-              <button
-                className="qpi-pag-btn qpi-pag-arrow"
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={safePage === 1}
-                aria-label="Previous page"
-              >
-                <IconChevronLeft />
-              </button>
-              {Array.from({ length: pageCount }, (_, i) => i + 1).map(p => (
-                <button
-                  key={p}
-                  onClick={() => setPage(p)}
-                  className={`qpi-pag-btn ${p === safePage ? 'on' : ''}`}
-                >
-                  {p}
-                </button>
-              ))}
-              <button
-                className="qpi-pag-btn qpi-pag-arrow"
-                onClick={() => setPage(p => Math.min(pageCount, p + 1))}
-                disabled={safePage === pageCount}
-                aria-label="Next page"
-              >
-                <IconChevronRight />
-              </button>
-            </div>
-          </div>
+          <WorklistPager
+            total={totalRows}
+            page={safePage}
+            pageSize={rpp}
+            onPage={setPage}
+            onPageSize={(n) => { rppManualRef.current = true; setRpp(n); setPage(1); }}
+            pageSizeOptions={QPI_ROWS_OPTIONS}
+          />
         )}
 
         {/* Portal'd More-Options menu — rendered once outside the table
@@ -4384,11 +4375,6 @@ const IconChevronRight = () => (
     <polyline points="9 18 15 12 9 6" />
   </svg>
 );
-const IconChevronLeft = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-    <polyline points="15 18 9 12 15 6" />
-  </svg>
-);
 const IconPlus = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8">
     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -4527,9 +4513,13 @@ const SCOPED_CSS = `
 
 .qpi-tab-switch {
   display: flex; gap: 4px; padding: 4px;
-  background: rgba(255,255,255,.7);
+  /* Opaque (was rgba white .7) + positioned so the decorative header glow
+     (.qpi-glow) can't bleed through onto the tabs as a "half-curve" overlay
+     (QA CBC-558). z-index only applies to positioned elements. */
+  background: #ffffff;
   border: 1px solid rgba(124,58,237,.2);
-  border-radius: 10px; z-index: 1;
+  border-radius: 10px;
+  position: relative; z-index: 2;
 }
 .qpi-tab {
   display: inline-flex; align-items: center; gap: 6px;
@@ -4786,7 +4776,7 @@ const SCOPED_CSS = `
 .qpi-create-btn {
   display: inline-flex; align-items: center; gap: 8px;
   padding: 0 22px; height: 42px;
-  border: 0; border-radius: 999px;
+  border: 0; border-radius: 15px;
   background: linear-gradient(135deg, #7c3aed, #6d28d9);
   color: #fff;
   font-family: inherit; font-size: 13px; font-weight: 600;
@@ -6000,7 +5990,7 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .qpi-online-dot   { border-color: #1a1530; }
 [data-bs-theme="dark"] .qpi-tab-switch {
-  background: rgba(255,255,255,.04);
+  background: #221b36;   /* opaque so the glow can't bleed through (QA CBC-558) */
   border-color: rgba(167,139,250,.25);
 }
 [data-bs-theme="dark"] .qpi-tab        { color: #ede9fe; }

@@ -264,11 +264,15 @@ export default function SalesTodo() {
       const avail = el.clientHeight;
       if (avail <= 0) return;
       const THEAD = 36, ROW = 40;   // todo table header + row heights (px)
-      const fit = Math.max(5, Math.floor((avail - THEAD) / ROW));
-      // Snap to a FIXED option (5 / 10 / 25) so the rows-per-page dropdown
-      // never shows an odd auto-fit number like 7 (QA #21). Pick the largest
-      // option that still fits; fall back to the smallest.
-      const snapped = [...ROWS_OPTIONS].reverse().find(o => o <= fit) ?? ROWS_OPTIONS[0];
+      const fit = Math.max(1, Math.floor((avail - THEAD) / ROW));
+      // The dropdown always offers the same FIXED options (5 / 10 / 25 — QA #21).
+      // Auto-fit still fills the screen: it snaps the computed fit to the
+      // NEAREST fixed option, so the selected value is always one that's in the
+      // list (never an odd 7) AND the table fills without a big gap.
+      const snapped = ROWS_OPTIONS.reduce(
+        (best, o) => (Math.abs(o - fit) < Math.abs(best - fit) ? o : best),
+        ROWS_OPTIONS[0],
+      );
       setRpp(prev => (prev === snapped ? prev : snapped));
     };
     const ro = new ResizeObserver(recompute);

@@ -504,6 +504,22 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
 
   const onPick = async (f: File | undefined) => {
     if (!f || !ownerId || !doc.doc_code) return;
+
+    // Validate on the FRONTEND before uploading so the user gets an immediate
+    // toast instead of a silent 422 (the server enforces the same rules:
+    // pdf/jpg/jpeg/png, max 2048 KB). Mirrors the backend attachment rule.
+    const VAULT_ALLOWED = ['pdf', 'jpg', 'jpeg', 'png'];
+    const VAULT_MAX_KB = 2048;
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    if (!VAULT_ALLOWED.includes(ext)) {
+      toast.error('Invalid file type', 'Please upload a PDF, JPG, JPEG or PNG file.');
+      return;
+    }
+    if (f.size > VAULT_MAX_KB * 1024) {
+      toast.error('File too large', `The file must be ${VAULT_MAX_KB} KB (2 MB) or smaller.`);
+      return;
+    }
+
     setBusy(true);
     try {
       const fd = new FormData();
@@ -513,8 +529,12 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
       fd.append('attachment', f);
       await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       await onReload();
-    } catch {
-      /* silent — surface via reload */
+      toast.success('Uploaded', `${f.name} attached.`);
+    } catch (e: any) {
+      // Surface the server error too (belt-and-suspenders) instead of failing silently.
+      const errs = e?.response?.data?.errors as Record<string, string[]> | undefined;
+      const msg = errs?.attachment?.[0] || e?.response?.data?.message || 'Could not upload the file. Please try again.';
+      toast.error('Upload failed', msg);
     } finally {
       setBusy(false);
     }
@@ -522,7 +542,7 @@ function LeadVaultRowActions({ doc, ownerType, ownerId, tab, onReload, sameAsCus
 
   return (
     <div className="lev-row-actions">
-      <input ref={fileRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
+      <input ref={fileRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png"
              onChange={e => { void onPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }} />
       <Tooltip label={canViewOrDownload ? `View ${doc.attachment}` : 'No attachment yet'}>
         <a href={canViewOrDownload ? doc.attachment_url! : undefined} target={canViewOrDownload ? '_blank' : undefined} rel="noreferrer"
