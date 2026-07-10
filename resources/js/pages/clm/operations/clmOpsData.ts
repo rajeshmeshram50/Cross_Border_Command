@@ -19,6 +19,9 @@ export type CtcContract = {
   id: string; dbId?: number; title: string; cp: string[]; org: string; stage: number;
   status: CtcStatus; date: string; type: string; effDate: string; endDate: string;
   createdBy: string; approval: Approval; cpSignedDate: string;
+  /* `cp` names each suffixed with its role — "Royal Cashews (Customer)" — for
+     the +N counterparty popover list. */
+  cpLabeled?: string[];
 };
 
 /* ── CTC contracts (Case to Case list) ── */
@@ -44,6 +47,9 @@ export type AwsStatus = 'approved' | 'pending' | 'rejected' | 'clarify';
 export type AwsContract = {
   id: string; title: string; cp: string[]; org: string; date: string;
   effDate: string; endDate: string; createdBy: string; approval: Approval; status: AwsStatus;
+  /* Same counterparties as `cp`, each suffixed with its entity type —
+     "Royal Cashews (Customer)" — for the +N popover list. */
+  cpLabeled?: string[];
 };
 
 /* ── Agreements We Sent (sender's view of contracts) ── */

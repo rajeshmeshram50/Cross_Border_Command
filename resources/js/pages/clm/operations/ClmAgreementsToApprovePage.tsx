@@ -64,6 +64,9 @@ export default function ClmAgreementsToApprovePage() {
   const [reviewId, setReviewId] = useState<string | null>(null);
   const [ata, setAta]   = useState<AtaRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // True while an approve / reject / clarify request is in flight — keeps the
+  // modal open with a spinner so the user knows the action is processing.
+  const [submitting, setSubmitting] = useState(false);
   const load = () => {
     setLoading(true);
     api.get('/clm/ctc-contracts/to-approve')
@@ -104,18 +107,25 @@ export default function ClmAgreementsToApprovePage() {
   const reviewContract = ata.find(c => c.id === reviewId) || null;
 
   const doApprove = async (id: string) => {
-    const row = ata.find(c => c.id === id); if (!row?.dbId) return;
-    try { await api.post(`/clm/ctc-contracts/${row.dbId}/approve`); toast.success('Agreement approved', 'Approved successfully'); load(); }
+    const row = ata.find(c => c.id === id); if (!row?.dbId || submitting) return;
+    // Keep the Review modal open with a spinner while the request is in flight;
+    // close it only once the action succeeds (on error the user can retry).
+    setSubmitting(true);
+    try { await api.post(`/clm/ctc-contracts/${row.dbId}/approve`); toast.success('Agreement approved', 'Approved successfully'); setReviewId(null); load(); }
     catch { toast.error('Could not approve', 'Please try again.'); }
+    finally { setSubmitting(false); }
   };
   const doAction = async (id: string, mode: 'clarification' | 'rejected', comment: string) => {
-    // Action submitted → close both the action popup AND the review PDF behind it.
-    const row = ata.find(c => c.id === id); setActionId(null); setActionChoice(null); setReviewId(null); if (!row?.dbId) return;
+    const row = ata.find(c => c.id === id); if (!row?.dbId || submitting) return;
+    setSubmitting(true);
     try {
       if (mode === 'rejected') { await api.post(`/clm/ctc-contracts/${row.dbId}/reject`, { reason: comment }); toast.error('Agreement rejected', 'Sent back to initiator'); }
       else { await api.post(`/clm/ctc-contracts/${row.dbId}/clarify`, { query: comment }); toast.info('Clarification raised', 'Sent to initiator'); }
+      // Success → close both the action popup AND the review PDF behind it.
+      setActionId(null); setActionChoice(null); setReviewId(null);
       load();
     } catch { toast.error('Action failed', 'Please try again.'); }
+    finally { setSubmitting(false); }
   };
 
   return (
@@ -198,15 +208,16 @@ export default function ClmAgreementsToApprovePage() {
         <ReviewApproveModal
           contract={reviewContract}
           onClose={() => setReviewId(null)}
-          onApprove={(id) => { setReviewId(null); doApprove(id); }}
+          onApprove={(id) => doApprove(id)}
           /* Keep the review modal mounted behind — the clarify/reject popup
              stacks ON TOP of the PDF, so cancelling returns to the document. */
           onClarify={(id) => { setActionChoice('clarify'); setActionId(id); }}
           onReject={(id) => { setActionChoice('reject'); setActionId(id); }}
+          submitting={submitting}
           t={t}
         />
       )}
-      {actionContract && <TakeActionModal contract={actionContract} initialChoice={actionChoice} onClose={() => { setActionId(null); setActionChoice(null); }} onSubmit={doAction} t={t} />}
+      {actionContract && <TakeActionModal contract={actionContract} initialChoice={actionChoice} onClose={() => { setActionId(null); setActionChoice(null); }} onSubmit={doAction} submitting={submitting} t={t} />}
     </div>
   );
 }
@@ -453,7 +464,7 @@ function ClarificationTable({ rows, page, setPage, onReview, onChat, t }: { rows
 }
 
 /* ── Take Action modal (Raise Clarification / Reject) ── */
-function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t }: { contract: AtaContract; onClose: () => void; onSubmit: (id: string, mode: 'clarification' | 'rejected', comment: string) => void; initialChoice?: 'clarify' | 'reject' | null; t: OpsTokens }) {
+function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, submitting = false, t }: { contract: AtaContract; onClose: () => void; onSubmit: (id: string, mode: 'clarification' | 'rejected', comment: string) => void; initialChoice?: 'clarify' | 'reject' | null; submitting?: boolean; t: OpsTokens }) {
   const [choice, setChoice] = useState<'clarify' | 'reject' | null>(initialChoice);
   const [comment, setComment] = useState('');
   const [err, setErr] = useState(false);
@@ -511,9 +522,11 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, t 
           <textarea value={comment} onChange={e => { setComment(e.target.value); setErr(false); if (choice === 'clarify') notifyTyping(); }} placeholder={choice === 'reject' ? 'Enter the reason for rejecting this agreement…' : choice === 'clarify' ? 'Enter your clarification query for the initiator…' : 'Enter your clarification query or rejection reason…'}
             style={{ width: '100%', height: 85, padding: '11px 13px', border: `1.5px solid ${err && !comment.trim() ? '#EF4444' : t.searchBorder}`, borderRadius: 11, fontFamily: 'inherit', fontSize: 12, color: t.text, resize: 'none', outline: 'none', lineHeight: 1.55, background: t.searchBg, boxSizing: 'border-box' }} />
           {err && !choice && <div style={{ fontSize: 9, color: '#EF4444', marginTop: 6, fontWeight: 600 }}>Please choose an action.</div>}
-          <button onClick={submit} style={{ width: '100%', marginTop: 12, padding: 13, borderRadius: 12, border: 'none', background: choice === 'reject' ? 'linear-gradient(135deg,#EF4444,#DC2626)' : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 16px rgba(6,182,212,.4)', letterSpacing: '-.1px' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>
-            {choice === 'reject' ? 'Confirm Rejection' : choice === 'clarify' ? 'Submit Clarification' : 'Submit Action'}
+          <button onClick={submit} disabled={submitting} style={{ width: '100%', marginTop: 12, padding: 13, borderRadius: 12, border: 'none', background: choice === 'reject' ? 'linear-gradient(135deg,#EF4444,#DC2626)' : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? .75 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 16px rgba(6,182,212,.4)', letterSpacing: '-.1px' }}>
+            {submitting
+              ? <svg className="ata-spin" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}
+            {submitting ? 'Submitting…' : (choice === 'reject' ? 'Confirm Rejection' : choice === 'clarify' ? 'Submit Clarification' : 'Submit Action')}
           </button>
         </div>
       </div>
@@ -579,8 +592,8 @@ function ClarificationThread({ contract, typingName, t }: { contract: AtaContrac
 /* ── Review & Approve modal — a page-by-page agreement reader. One page is
  *    shown at a time with prev/next navigation; the three action buttons stay
  *    locked until every page has been viewed (maxSeen reaches the last page). ── */
-function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject, t }: {
-  contract: AtaRow; onClose: () => void; onApprove: (id: string) => void; onClarify: (id: string) => void; onReject: (id: string) => void; t: OpsTokens;
+function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject, submitting = false, t }: {
+  contract: AtaRow; onClose: () => void; onApprove: (id: string) => void; onClarify: (id: string) => void; onReject: (id: string) => void; submitting?: boolean; t: OpsTokens;
 }) {
   const toast = useToast();
   const [loading, setLoading] = useState(true);
@@ -769,10 +782,12 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
             {!reachedEnd && <span style={{ fontSize: 10, fontWeight: 600, color: t.dark ? '#fcd34d' : '#b45309' }}>Read all pages to unlock actions</span>}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button onClick={() => guard(onClarify)} style={actBtn('#8B5CF6', '#6D28D9')}>Raise Clarification</button>
-            <button onClick={() => guard(onReject)} style={actBtn('#ef4444', '#dc2626')}>Reject</button>
-            <button onClick={() => guard(onApprove)} style={actBtn('#0891b2', '#0e7490')}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>Approve</span>
+            <button onClick={() => guard(onClarify)} disabled={submitting} style={{ ...actBtn('#8B5CF6', '#6D28D9'), opacity: submitting ? .55 : 1, cursor: submitting ? 'not-allowed' : 'pointer' }}>Raise Clarification</button>
+            <button onClick={() => guard(onReject)} disabled={submitting} style={{ ...actBtn('#ef4444', '#dc2626'), opacity: submitting ? .55 : 1, cursor: submitting ? 'not-allowed' : 'pointer' }}>Reject</button>
+            <button onClick={() => guard(onApprove)} disabled={submitting} style={{ ...actBtn('#0891b2', '#0e7490'), cursor: submitting ? 'wait' : 'pointer' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{submitting
+                ? <><svg className="ata-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>Approving…</>
+                : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>Approve</>}</span>
             </button>
           </div>
         </div>
@@ -783,6 +798,8 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
 
 const ATA_CSS = `
 @keyframes ataSlideUp { from { opacity:0; transform:translateY(18px) scale(.97); } to { opacity:1; transform:none; } }
+@keyframes ataSpin { to { transform: rotate(360deg); } }
+.ata-spin { animation: ataSpin .8s linear infinite; }
 `;
 
 const REVIEW_CSS = `

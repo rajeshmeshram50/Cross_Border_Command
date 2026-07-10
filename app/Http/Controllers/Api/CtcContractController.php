@@ -67,8 +67,9 @@ class CtcContractController extends Controller
     {
         return array_map(function ($e) {
             if (is_array($e)) {
-                if (!empty($e['date']))     $e['date']     = $this->istStr($e['date']);
-                if (!empty($e['acted_at'])) $e['acted_at'] = $this->istStr($e['acted_at']);
+                if (!empty($e['date']))          $e['date']          = $this->istStr($e['date']);
+                if (!empty($e['acted_at']))      $e['acted_at']      = $this->istStr($e['acted_at']);
+                if (!empty($e['response_date'])) $e['response_date'] = $this->istStr($e['response_date']);
             }
             return $e;
         }, array_values($arr ?? []));
@@ -88,28 +89,17 @@ class CtcContractController extends Controller
         ], $extra);
         $c->versions = $versions;
     }
-
-    /**
-     * Fire the approval broadcast as best-effort. A real-time update failing
-     * (e.g. Reverb unreachable) must NEVER break the underlying save/approve —
-     * the frontend degrades to focus/manual refresh. Log and move on.
-     */
     private function broadcastApproval(CtcContract $c): void
     {
-        try {
-            broadcast(new CtcApprovalUpdated($c));
-        } catch (\Throwable $e) {
-            report($e);
-        }
+        app()->terminating(function () use ($c) {
+            try {
+                broadcast(new CtcApprovalUpdated($c));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        });
     }
 
-    /**
-     * THIS approver's own decision on the current round, or null if they
-     * haven't acted / aren't an approver. The "Agreements To Approve" page is a
-     * personal inbox: once I approve my slot the row should move to my Approved
-     * tab even while other approvers are still pending (the all-must-approve
-     * gate that advances the whole contract is tracked separately, sender-side).
-     */
     private function myApproverStatus(CtcContract $c, string $email): ?string
     {
         $email = strtolower(trim($email));
@@ -229,6 +219,34 @@ class CtcContractController extends Controller
     }
 
     /**
+     * Same as cpNames() but each name is suffixed with its entity type —
+     * "Royal Cashews (Customer)" — so the +N counterparty popover tells the
+     * user whether a company is the Customer, Consignee or Supplier (a company
+     * can appear as more than one role on the same agreement).
+     */
+    private function cpNamesLabeled(CtcContract $c): array
+    {
+        return collect($this->resolveCounterparties($c))
+            ->map(function ($x) {
+                $name = trim((string) ($x['name'] ?? ''));
+                if ($name === '') return '';
+                $role = $this->cpRoleLabel($x);
+                return $role !== '' ? "{$name} ({$role})" : $name;
+            })
+            ->filter()->values()->all();
+    }
+
+    /** Map a counterparty's source_type / role to a display label. */
+    private function cpRoleLabel(array $cp): string
+    {
+        $type = strtolower((string) ($cp['source_type'] ?? $cp['role'] ?? ''));
+        if (str_contains($type, 'consignee')) return 'Consignee';
+        if (str_contains($type, 'supplier') || str_contains($type, 'vendor')) return 'Supplier';
+        if (str_contains($type, 'customer') || str_contains($type, 'buyer')) return 'Customer';
+        return '';
+    }
+
+    /**
      * Refresh each stored counterparty against its live source record
      * (Customer / Consignee / Vendor) by source_type + source_id, so edits made
      * in those masters flow through to the agreement. Only the factual fields
@@ -248,14 +266,30 @@ class CtcContractController extends Controller
         }, $cps);
     }
 
+    /**
+     * Resolve a party model from a stored source_id by: numeric PK → code column
+     * → the numeric id embedded in a "PREFIX-NNN" display-fallback code. That
+     * last step matters for consignees stored as "CN-014" whose consignee_code
+     * column is null (the code is the id-based fallback the UI shows), which
+     * would otherwise fail to resolve and surface as an empty / "Not Applicable"
+     * company name in Stage 2 and in the {{consignee.*}} placeholders.
+     */
+    private function resolvePartyRow($q, $id, string $codeCol)
+    {
+        if (is_numeric($id)) return $q->find($id);
+        $row = (clone $q)->where($codeCol, $id)->first();
+        if ($row) return $row;
+        return preg_match('/(\d+)\s*$/', (string) $id, $m) ? (clone $q)->find((int) $m[1]) : null;
+    }
+
     /** Current name/country/phone/email for a party reference, or null if it no longer exists. */
     private function liveParty(string $type, $id, int $clientId): ?array
     {
         if ($type === 'buyer' || $type === 'customer') {
             // source_id is the customer_code (e.g. "C-009"), not the numeric PK —
-            // resolve by code, falling back to id only when it's numeric.
+            // resolve by code, falling back to the id (numeric or "C-NNN" form).
             $q = \App\Models\Customer::where('client_id', $clientId)->with('primaryAddress');
-            $row = is_numeric($id) ? $q->find($id) : $q->where('customer_code', $id)->first();
+            $row = $this->resolvePartyRow($q, $id, 'customer_code');
             if (!$row) return null;
             $a = $row->primaryAddress;
             return [
@@ -267,7 +301,7 @@ class CtcContractController extends Controller
         }
         if ($type === 'consignee') {
             $q = \App\Models\Consignee::where('client_id', $clientId)->with('primaryAddress');
-            $row = is_numeric($id) ? $q->find($id) : $q->where('consignee_code', $id)->first();
+            $row = $this->resolvePartyRow($q, $id, 'consignee_code');
             if (!$row) return null;
             $a = $row->primaryAddress;
             return [
@@ -279,7 +313,7 @@ class CtcContractController extends Controller
         }
         if ($type === 'supplier' || $type === 'vendor') {
             $q = \App\Models\Vendor::where('client_id', $clientId)->with('primaryAddress');
-            $row = is_numeric($id) ? $q->find($id) : $q->where('vendor_code', $id)->first();
+            $row = $this->resolvePartyRow($q, $id, 'vendor_code');
             if (!$row) return null;
             $a = $row->primaryAddress;
             return [
@@ -303,17 +337,17 @@ class CtcContractController extends Controller
         $type = strtolower($type);
         if ($type === 'buyer' || $type === 'customer') {
             $q = \App\Models\Customer::where('client_id', $clientId)->with('primaryAddress');
-            $row = is_numeric($id) ? $q->find($id) : $q->where('customer_code', $id)->first();
+            $row = $this->resolvePartyRow($q, $id, 'customer_code');
             return $row ? [$row, 'Customer'] : [null, ''];
         }
         if ($type === 'consignee') {
             $q = \App\Models\Consignee::where('client_id', $clientId)->with('primaryAddress');
-            $row = is_numeric($id) ? $q->find($id) : $q->where('consignee_code', $id)->first();
+            $row = $this->resolvePartyRow($q, $id, 'consignee_code');
             return $row ? [$row, 'Consignee'] : [null, ''];
         }
         if ($type === 'supplier' || $type === 'vendor') {
             $q = \App\Models\Vendor::where('client_id', $clientId)->with('primaryAddress');
-            $row = is_numeric($id) ? $q->find($id) : $q->where('vendor_code', $id)->first();
+            $row = $this->resolvePartyRow($q, $id, 'vendor_code');
             return $row ? [$row, 'Vendor'] : [null, ''];
         }
         return [null, ''];
@@ -387,6 +421,7 @@ class CtcContractController extends Controller
             'dbId'         => $c->id,
             'title'        => $c->title,
             'cp'           => $this->cpNames($c) ?: ['—'],
+            'cpLabeled'    => $this->cpNamesLabeled($c) ?: ['—'],
             'org'          => $c->org_name ?: '—',
             'stage'        => $c->stage,
             'status'       => $this->listStatus($c),
@@ -420,6 +455,7 @@ class CtcContractController extends Controller
             'dbId'      => $c->id,
             'title'     => $c->title,
             'cp'        => $this->cpNames($c) ?: ['—'],
+            'cpLabeled' => $this->cpNamesLabeled($c) ?: ['—'],
             'org'       => $c->org_name ?: '—',
             'date'      => $this->fmt($c->submitted_at ?: $c->created_at),
             'effDate'   => $this->fmt($c->eff_date),
@@ -540,16 +576,16 @@ class CtcContractController extends Controller
         if ($id === null || $id === '') return response()->json(['status' => true, 'data' => []]);
 
         if ($type === 'buyer' || $type === 'customer') {
-            $row = \App\Models\Customer::where('client_id', $user->client_id)->with('addresses')->find($id);
+            $row = $this->resolvePartyRow(\App\Models\Customer::where('client_id', $user->client_id)->with('addresses'), $id, 'customer_code');
             return response()->json(['status' => true, 'data' => $this->mapCpAddresses($row)]);
         }
         if ($type === 'consignee') {
-            $row = \App\Models\Consignee::where('client_id', $user->client_id)->with('addresses')->find($id);
+            $row = $this->resolvePartyRow(\App\Models\Consignee::where('client_id', $user->client_id)->with('addresses'), $id, 'consignee_code');
             return response()->json(['status' => true, 'data' => $this->mapCpAddresses($row)]);
         }
         if ($type === 'supplier' || $type === 'vendor') {
             $q = \App\Models\Vendor::where('client_id', $user->client_id)->with('addresses');
-            $row = is_numeric($id) ? $q->find($id) : $q->where('vendor_code', $id)->first();
+            $row = $this->resolvePartyRow($q, $id, 'vendor_code');
             if (!$row) return response()->json(['status' => true, 'data' => []]);
             $contacts = collect($row->addresses ?? [])->map(fn ($a) => [
                 'name'        => $a->contact_name,
@@ -767,9 +803,17 @@ class CtcContractController extends Controller
         $primary = $approvers->first();
 
         $row = DB::transaction(function () use ($user, $data, $approvers, $primary) {
-            // Per-client sequential code under a row lock (same as Quotation/PI).
+            // Per-BRANCH sequential code under a client row lock (same locking as
+            // Quotation/PI). Branch-scoped so each branch restarts at CTC-001
+            // instead of continuing the client-wide tally — a fresh branch's
+            // first agreement is CTC-001, not CTC-007. withTrashed() keeps the
+            // count gap-free across soft-deletes. Client-level creators
+            // (branch_id null) share the unassigned-branch sequence.
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $seq  = CtcContract::withTrashed()->where('client_id', $user->client_id)->count() + 1;
+            $seq  = CtcContract::withTrashed()
+                ->where('client_id', $user->client_id)
+                ->when($user->branch_id, fn ($q) => $q->where('branch_id', $user->branch_id), fn ($q) => $q->whereNull('branch_id'))
+                ->count() + 1;
             $code = sprintf('CTC-%03d', $seq);
 
             $v1 = [[
@@ -971,7 +1015,14 @@ class CtcContractController extends Controller
         $data = $request->validate(['response' => 'required|string|max:2000']);
         $thread = $row->clarifications ?? [];
         for ($i = count($thread) - 1; $i >= 0; $i--) {
-            if (empty($thread[$i]['response'])) { $thread[$i]['response'] = $data['response']; break; }
+            if (empty($thread[$i]['response'])) {
+                $thread[$i]['response'] = $data['response'];
+                // Stamp WHEN the sender answered — distinct from the request's
+                // `date` so the review timeline shows the real answer time
+                // instead of reusing the "Clarification Requested" timestamp.
+                $thread[$i]['response_date'] = now()->format('d M Y H:i');
+                break;
+            }
         }
         $row->update(['clarifications' => $thread]);
         $this->broadcastApproval($row->fresh());

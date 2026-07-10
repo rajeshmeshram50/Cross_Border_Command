@@ -22,7 +22,7 @@ use PhpOffice\PhpWord\Shared\Html;
  * Trade Documents master — covers both tabs:
  *
  *   - /clm/trade-docs/names    (lightweight catalog: TDN-NNN + name)
- *   - /clm/trade-docs/library  (rich library: TD-NNN + title, type, purpose, party, file)
+ *   - /clm/trade-docs/library  (rich library: TDL-NNN + title, type, purpose, party, file)
  *
  * Combined into a single controller because the two tabs render on the
  * same page and share validation patterns.
@@ -231,7 +231,10 @@ class ClmTradeDocumentController extends Controller
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = $this->nextCode(ClmTradeDocLibrary::class, $user->client_id, $user->branch_id, 'TD-');
+            // Library codes use the TDL- prefix (matching the create-popup
+            // preview + the Trade Document Library list). Legacy TD- rows were
+            // renamed to TDL- by migration so this sequence stays continuous.
+            $code = $this->nextCode(ClmTradeDocLibrary::class, $user->client_id, $user->branch_id, 'TDL-');
             return ClmTradeDocLibrary::create($data + [
                 'client_id'  => $user->client_id,
                 'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared

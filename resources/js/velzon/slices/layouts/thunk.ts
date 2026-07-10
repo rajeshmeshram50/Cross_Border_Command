@@ -47,7 +47,29 @@ export const changeLayout = (layout : any) => async (dispatch : any) => {
  */
 export const changeLayoutMode = (layoutMode : any) => async (dispatch : any) => {
     try {
-        changeHTMLAttribute("data-bs-theme", layoutMode);
+        // Suppress CSS transitions for the duration of the theme flip. Many
+        // elements animate `background`/`all`, so without this they cross-fade
+        // THROUGH their light colour on the way to the dark value — a white
+        // flash (most visible on light-tinted surfaces like zebra rows and the
+        // bref-box arrow button). A tiny <style> kill-switch forces an instant
+        // switch; it's removed on the next paint so normal hover transitions
+        // resume immediately.
+        const KILL_ID = 'cbc-theme-transition-kill';
+        if (typeof document !== 'undefined' && !document.getElementById(KILL_ID)) {
+            const kill = document.createElement('style');
+            kill.id = KILL_ID;
+            kill.textContent = '*,*::before,*::after{transition:none !important;}';
+            document.head.appendChild(kill);
+            changeHTMLAttribute("data-bs-theme", layoutMode);
+            // Force a reflow so the new theme paints with transitions disabled,
+            // then drop the kill-switch after the browser has committed it.
+            void document.body.offsetHeight;
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                document.getElementById(KILL_ID)?.remove();
+            }));
+        } else {
+            changeHTMLAttribute("data-bs-theme", layoutMode);
+        }
         persist('cbc-layout-mode', layoutMode);
         dispatch(changeLayoutModeAction(layoutMode));
     } catch (error) { }
