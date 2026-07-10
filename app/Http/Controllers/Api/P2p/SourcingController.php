@@ -40,6 +40,20 @@ class SourcingController extends Controller
         return $s === 'manual' ? 'Manual Entry' : 'Product Master';
     }
 
+    /** Normalise a product code's trailing number to 3 digits for display,
+     *  e.g. "P-02" → "P-002", so bulk sourcing shows the same width as the
+     *  supplier codes (S-003). Codes already 3+ digits and values without a
+     *  trailing number are returned untouched. */
+    private function padCode(?string $code): ?string
+    {
+        if (!$code) return $code;
+        return preg_replace_callback(
+            '/(\d+)$/',
+            fn($m) => str_pad($m[1], 3, '0', STR_PAD_LEFT),
+            $code,
+        );
+    }
+
 
     private function row(SourcingTarget $t): array
     {
@@ -103,7 +117,7 @@ class SourcingController extends Controller
             ->orderBy('name')
             ->get()
             ->map(fn($p) => [
-                'code'    => $p->product_code,
+                'code'    => $this->padCode($p->product_code),
                 'name'    => $p->name,
                 'segment' => $p->segment->name ?? '',
                 'hsn'     => $p->hsn->hsn_code ?? '',
@@ -305,7 +319,7 @@ class SourcingController extends Controller
         $master = $t->products->where('source', 'master')->values()->map(fn($p) => [
             'id'      => $p->id,
             'mapped'  => $p->suppliers_count > 0,
-            'code'    => $p->code,
+            'code'    => $this->padCode($p->code),
             'name'    => $p->name,
             'segment' => $p->segment,
             'hsn'     => $p->hsn,
@@ -345,7 +359,7 @@ class SourcingController extends Controller
         $products = $t->products->map(fn($p) => [
             'id'            => $p->id,
             'type'          => $p->source,
-            'code'          => $p->code ?? '',
+            'code'          => $this->padCode($p->code) ?? '',
             'name'          => $p->name,
             'segment'       => $p->segment ?? '',
             'hsn'           => $p->hsn ?? '',
@@ -396,6 +410,9 @@ class SourcingController extends Controller
                 $addr = $v->addresses->first();
                 return [
                     'id'      => (string) $v->id,
+                    // Human-facing supplier code (e.g. "S-002"). The picker
+                    // shows this instead of the raw numeric id.
+                    'code'    => $v->vendor_code ?? '',
                     'name'    => $v->company_name,
                     'segment' => $v->segment->name ?? '',
                     'contact' => $addr->contact_name ?? '',

@@ -117,6 +117,86 @@ class ProductController extends Controller
             ->exists();
     }
 
+    /* ──────────────────────────────────────────────────────────────────
+     * Department information wall (read-side masking)
+     *
+     * Products carry BOTH a selling price (base_price / total_price / GST) and
+     * the sourcing side (vendor maps: who the supplier is + the purchase
+     * price). Two departments must never see the other half:
+     *   - PURCHASE department → selling price is hidden. They source; they
+     *     must not know the margin / what the product is sold for.
+     *   - SALES department    → vendor details are hidden. They quote; they
+     *     must not know who the supplier is or the purchase cost.
+     *
+     * This applies to EVERY employee in that department, the HOD included.
+     * Only cross-department accounts (branch_user / client_* / super_admin)
+     * carry no department and therefore see everything. It is READ-ONLY
+     * masking: the columns still store the data, the same GET endpoints just
+     * return a conditional shape depending on who is asking. Writes are not
+     * blocked here.
+     * ────────────────────────────────────────────────────────────── */
+
+    /** Selling-price fields hidden from the Purchase department. */
+    private const SELLING_FIELDS = ['base_price', 'gst_id', 'gst_amount', 'total_price', 'mark_bottom'];
+
+    /**
+     * Which product field groups must be stripped from responses for the
+     * caller, keyed by group. Only employees carry a department; every other
+     * account type sees the full payload.
+     *
+     * @return array{selling: bool, vendor: bool}
+     */
+    private function departmentHiddenGroups(Request $request): array
+    {
+        $hide = ['selling' => false, 'vendor' => false];
+        $user = $request->user();
+        if (!$user || ($user->user_type ?? null) !== 'employee') {
+            return $hide;
+        }
+
+        $deptId = \App\Models\Employee::where('user_id', $user->id)->value('department_id');
+        if (!$deptId) {
+            return $hide;
+        }
+
+        $deptName = strtolower(trim((string) \App\Models\Masters\Departments::whereKey($deptId)->value('name')));
+        if ($deptName === 'purchase') {
+            $hide['selling'] = true;
+        } elseif ($deptName === 'sales') {
+            $hide['vendor'] = true;
+        }
+        return $hide;
+    }
+
+    /**
+     * Apply the department mask to a product's array form. Selling-price fields
+     * are nulled (the key stays so the SPA form still binds); the vendor list
+     * is emptied so the Sales side sees "no suppliers" rather than the rows.
+     *
+     * @param array{selling: bool, vendor: bool} $hide
+     */
+    private function maskProductArray(array $payload, array $hide): array
+    {
+        if ($hide['selling']) {
+            foreach (self::SELLING_FIELDS as $field) {
+                if (\array_key_exists($field, $payload)) {
+                    $payload[$field] = null;
+                }
+            }
+            // The selling-GST relation (gst_id → gst_percentage) is part of the
+            // price picture — drop it too so the rate can't be reverse-read.
+            unset($payload['gst_percentage']);
+        }
+        if ($hide['vendor']) {
+            // Empty (not removed) so callers iterating vendor_maps still get a
+            // valid array; the Sales side simply sees zero suppliers.
+            if (\array_key_exists('vendor_maps', $payload)) {
+                $payload['vendor_maps'] = [];
+            }
+        }
+        return $payload;
+    }
+
     private function nextProductCode(?int $clientId): string
     {
         // Scan every code this client owns and pick the true numeric
@@ -198,6 +278,15 @@ class ProductController extends Controller
         $products = $query->orderByDesc('id')
             ->paginate((int) $request->query('per_page', 24));
 
+        // Department information wall — Purchase hides selling price, Sales hides
+        // vendor details. Transform each row into its masked array form.
+        $hide = $this->departmentHiddenGroups($request);
+        if ($hide['selling'] || $hide['vendor']) {
+            $products->setCollection(
+                $products->getCollection()->map(fn ($p) => $this->maskProductArray($p->toArray(), $hide))
+            );
+        }
+
         return response()->json($products);
     }
 
@@ -237,7 +326,7 @@ class ProductController extends Controller
             return (new SegmentDocUploadController())->index($request, 'product', $id);
         });
 
-        $payload = $product->toArray();
+        $payload = $this->maskProductArray($product->toArray(), $this->departmentHiddenGroups($request));
         $payload['segment_uploads'] = $segmentUploads ?: ['data' => [], 'by_category' => [], 'count' => 0];
 
         return response()->json($payload);
@@ -404,7 +493,9 @@ class ProductController extends Controller
 
         $product->save();
 
-        return response()->json($product->fresh());
+        return response()->json(
+            $this->maskProductArray($product->fresh()->toArray(), $this->departmentHiddenGroups($request))
+        );
     }
 
     /**
@@ -476,7 +567,9 @@ class ProductController extends Controller
         }
         $product->save();
 
-        return response()->json($product->fresh());
+        return response()->json(
+            $this->maskProductArray($product->fresh()->toArray(), $this->departmentHiddenGroups($request))
+        );
     }
 
     /* ──────────────────────────────────────────────────────────────────
@@ -554,7 +647,9 @@ class ProductController extends Controller
             }
         });
 
-        return response()->json($product->fresh(['qcRecords']));
+        return response()->json(
+            $this->maskProductArray($product->fresh(['qcRecords'])->toArray(), $this->departmentHiddenGroups($request))
+        );
     }
 
     /* ──────────────────────────────────────────────────────────────────
@@ -567,6 +662,13 @@ class ProductController extends Controller
     public function vendorMaps(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
+
+        // Department information wall — the Sales department must never see who
+        // the supplier is or the purchase price, so return an empty vendor list.
+        if ($this->departmentHiddenGroups($request)['vendor']) {
+            return response()->json(['status' => true, 'data' => [], 'count' => 0]);
+        }
+
         $maps = ProductVendorMap::where('product_id', $product->id)->orderBy('id')->get();
         return response()->json([
             'status' => true,
@@ -620,7 +722,12 @@ class ProductController extends Controller
             }
         });
 
-        return response()->json($product->fresh(['vendorMaps', 'vendorMaps.vendor:id,vendor_code', 'qcRecords']));
+        return response()->json(
+            $this->maskProductArray(
+                $product->fresh(['vendorMaps', 'vendorMaps.vendor:id,vendor_code', 'qcRecords'])->toArray(),
+                $this->departmentHiddenGroups($request)
+            )
+        );
     }
 
     /* ──────────────────────────────────────────────────────────────────
@@ -714,7 +821,9 @@ class ProductController extends Controller
             $product->save();
         });
 
-        return response()->json($product->fresh(['vendorMaps', 'qcRecords']));
+        return response()->json(
+            $this->maskProductArray($product->fresh(['vendorMaps', 'qcRecords'])->toArray(), $this->departmentHiddenGroups($request))
+        );
     }
 
     /* ──────────────────────────────────────────────────────────────────

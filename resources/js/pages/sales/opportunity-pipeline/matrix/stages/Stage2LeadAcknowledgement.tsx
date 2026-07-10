@@ -624,7 +624,8 @@ const STAGE2_CSS = `
   box-shadow: 0 2px 5px rgba(124,58,237,.28);
 }
 
-.smd-st2-table-wrap { max-height: 220px; overflow-y: auto; }
+/* Visible outer frame so the grid reads as a table, not floating text (QA #70). */
+.smd-st2-table-wrap { max-height: 220px; overflow-y: auto; border: 1.5px solid #cabffb; border-radius: 8px; }
 .smd-st2-table-wrap::-webkit-scrollbar { width: 4px; }
 .smd-st2-table-wrap::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 999px; }
 .smd-st2-table {
@@ -640,16 +641,22 @@ const STAGE2_CSS = `
   font-size: 7.5px; font-weight: 800; color: #a78bfa;
   letter-spacing: .12em; text-transform: uppercase;
   text-align: left;
-  border-bottom: 1px solid #e9d5ff;
+  /* Clearer header underline + column separators so rows/columns are easy to
+     distinguish (QA #70 — borders were near-invisible at #e9d5ff/#f5f0ff). */
+  border-bottom: 1.5px solid #b7a7f5;
+  border-right: 1px solid #ddd3fa;
   background: linear-gradient(135deg, #f8f5ff, #ede9fe);
 }
 .smd-st2-table thead th:first-child { padding-left: 12px; }
 .smd-st2-table tbody td {
   padding: 7px 8px;
   font-size: 10px; font-weight: 500; color: #7c6f9a;
-  border-bottom: 1px solid #f5f0ff;
+  border-bottom: 1px solid #e0d8f6;
+  border-right: 1px solid #ece7fa;
   white-space: nowrap;
 }
+.smd-st2-table thead th:last-child,
+.smd-st2-table tbody td:last-child { border-right: none; }
 .smd-st2-table tbody td:first-child { padding-left: 12px; }
 .smd-st2-table tbody tr { background: #fff; transition: background .12s; }
 .smd-st2-table tbody tr:hover { background: #fdfaff; }
@@ -756,7 +763,7 @@ const STAGE2_CSS = `
   display: flex; align-items: center; gap: 10px;
   padding: 8px 12px; border-radius: 8px; cursor: pointer;
   font-size: 12.5px; color: #1e293b;
-  background: #fff; border: 1px solid #e2e8f0;
+  background: #fff; border: 1.5px solid #cbd5e1;
   margin-bottom: 6px; transition: all .12s;
 }
 .st2-pick-row:hover { border-color: #c4b5fd; background: #faf5ff; }
@@ -765,7 +772,7 @@ const STAGE2_CSS = `
 
 .st2-pick-cols { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 0; }
 .st2-pick-cols .st2-pick-col { min-width: 0; }
-.st2-pick-cols .st2-pick-col:first-child { padding-right: 18px; border-right: 1.5px solid #e9d5ff; }
+.st2-pick-cols .st2-pick-col:first-child { padding-right: 18px; border-right: 1.5px solid #cabffb; }
 .st2-pick-cols .st2-pick-col:last-child  { padding-left: 18px; }
 .st2-pick-row > span { min-width: 0; overflow-wrap: anywhere; }
 /* Underlined section headers (Figma) — coloured dot + uppercase label
@@ -840,15 +847,18 @@ const STAGE2_CSS = `
 [data-bs-theme="dark"] .smd-st2-activity-title { color: #ede9fe; }
 [data-bs-theme="dark"] .smd-st2-activity-icon  { box-shadow: 0 2px 6px rgba(124,58,237,.45); }
 
-/* Table — sticky thead and rows on dark surfaces. */
+/* Table — sticky thead and rows on dark surfaces. Stronger separators mirror
+   the light-mode contrast bump (QA #70). */
+[data-bs-theme="dark"] .smd-st2-table-wrap { border-color: rgba(167,139,250,.32); }
 [data-bs-theme="dark"] .smd-st2-table thead th {
   background: linear-gradient(135deg, #20184a, #2a2150);
   color: #a78bfa;
-  border-bottom-color: rgba(167,139,250,.25);
+  border-bottom-color: rgba(167,139,250,.45);
+  border-right-color: rgba(167,139,250,.22);
 }
 [data-bs-theme="dark"] .smd-st2-table tbody tr   { background: #1a1538; }
 [data-bs-theme="dark"] .smd-st2-table tbody tr:hover { background: #20184a; }
-[data-bs-theme="dark"] .smd-st2-table tbody td   { color: #c4b5fd; border-bottom-color: rgba(167,139,250,.16); }
+[data-bs-theme="dark"] .smd-st2-table tbody td   { color: #c4b5fd; border-bottom-color: rgba(167,139,250,.30); border-right-color: rgba(167,139,250,.16); }
 [data-bs-theme="dark"] .smd-st2-row-reason       { color: #ede9fe; }
 [data-bs-theme="dark"] .smd-st2-row-num {
   background: linear-gradient(135deg, #2a2150, #3b2f6e);

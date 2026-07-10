@@ -221,7 +221,7 @@ export default function SalesTodo() {
   /* Real opportunities for the picker (code + its opportunity date), so
    * selecting an opportunity can auto-fill the Opportunity Date. Falls back
    * to the static OPP_ID_OPTIONS list if the fetch fails / returns none. */
-  const [oppOptions, setOppOptions] = useState<{ value: string; label: string; date: string; customer: string; email: string }[]>([]);
+  const [oppOptions, setOppOptions] = useState<{ value: string; label: string; date: string; customer: string; email: string; contact: string }[]>([]);
   // Admins (super_admin / client_admin / client_user) see the whole tenant
   // by default; everyone else (branch users + employees) sees their own rows.
   // Mirrors the controller's applyScope() — the SPA just hints at which scope
@@ -365,10 +365,13 @@ export default function SalesTodo() {
       value: l.opp_code as string,
       label: company ? `${l.opp_code} · ${company}` : (l.opp_code as string),
       date: raw ? isoToDisplay(raw) : '',
-      // Carried so selecting an opportunity can auto-fill the meeting's
-      // Customer Name + Email (prefer the mapped customer's email).
-      customer: company,
-      email: l.customer?.primary_email ?? '',
+      // Selecting an opportunity auto-fills the meeting's PRIMARY CONTACT
+      // PERSON — NOT the company. The person who owns the inquiry lives on the
+      // lead's sender_* fields (name / email / mobile); fall back to the mapped
+      // customer's email only when the contact person has none.
+      customer: (l.sender_name ?? '') as string,
+      email: (l.sender_email || l.customer?.primary_email || '') as string,
+      contact: (l.sender_mobile ?? '') as string,
     };
   };
 
@@ -414,6 +417,7 @@ export default function SalesTodo() {
   const oppDateFor = (code: string): string => oppOptions.find(o => o.value === code)?.date ?? '';
   const oppCustomerFor = (code: string): string => oppOptions.find(o => o.value === code)?.customer ?? '';
   const oppEmailFor    = (code: string): string => oppOptions.find(o => o.value === code)?.email ?? '';
+  const oppContactFor  = (code: string): string => oppOptions.find(o => o.value === code)?.contact ?? '';
 
   /* ── Reminder filtering ── */
   const filteredReminders = useMemo(() => {
@@ -1575,16 +1579,32 @@ export default function SalesTodo() {
                         onSearchChange={handleOppSearch}
                         onScrollEnd={handleOppScrollEnd}
                         loadingMore={oppLoadingMore}
-                        onChange={v => setForm(p => ({
-                          ...p,
-                          oppId: v,
-                          oppDate: oppDateFor(v),
-                          // Auto-fill customer name + email from the selected
-                          // opportunity; keep any manually-typed value when the
-                          // mapped customer is missing that field.
-                          customer: oppCustomerFor(v) || p.customer,
-                          email:    oppEmailFor(v)    || p.email,
-                        }))}
+                        onChange={v => {
+                          const name  = oppCustomerFor(v);
+                          const email = oppEmailFor(v);
+                          const phone = oppContactFor(v);
+                          const cp    = splitContact(phone);
+                          // Auto-fill the opportunity's PRIMARY CONTACT PERSON —
+                          // name, email AND phone (split into country-code +
+                          // number). Keep any manually-typed value when the
+                          // contact person is missing that field.
+                          setForm(p => ({
+                            ...p,
+                            oppId: v,
+                            oppDate: oppDateFor(v),
+                            customer:    name || p.customer,
+                            email:       email || p.email,
+                            contact:     phone ? cp.local : p.contact,
+                            countryCode: phone ? cp.code : (p.countryCode || '+91'),
+                          }));
+                          // Clear the inline error on any field we just filled.
+                          setMtgErr(e => ({
+                            ...e,
+                            ...(name  ? { customer: '' } : {}),
+                            ...(email ? { email: '' }    : {}),
+                            ...(phone ? { contact: '' }  : {}),
+                          }));
+                        }}
                       />
                     </Field>
                     <Field label="Opportunity Date">
@@ -1992,6 +2012,13 @@ function CalendarSection(props: {
   if (popover) {
     const list = calendarMap[popover.dateKey] || [];
     const parts = popover.dateKey.split('/');
+    // Clamp the popover's anchor so it never bleeds below the fold (QA
+    // 15/16/17). The list caps at 3 rows (~188px) + header (~68px), so the box
+    // is ~260px tall; reserve that here so the position math and the actual
+    // box agree regardless of screen size.
+    const POP_MAX_H = Math.min(280, window.innerHeight - 24);
+    const popLeft = dragPos ? dragPos.x : Math.max(8, Math.min(popover.x, window.innerWidth - 360));
+    const popTop  = dragPos ? dragPos.y : Math.max(12, Math.min(popover.y, window.innerHeight - POP_MAX_H - 12));
     const label = `${parts[0]} ${CAL_MONTH_NAMES[parseInt(parts[1], 10) - 1]} ${parts[2]}`;
     const inN = list.filter(i => i.status === 'In Progress').length;
     const dnN = list.filter(i => i.status === 'Done').length;
@@ -1999,10 +2026,7 @@ function CalendarSection(props: {
       <div
         id="td-cal-popover"
         className="td-cal-popover"
-        style={{
-          left: dragPos ? dragPos.x : Math.max(8, Math.min(popover.x, window.innerWidth - 360)),
-          top:  dragPos ? dragPos.y : Math.max(60, Math.min(popover.y, window.innerHeight - 340)),
-        }}
+        style={{ left: popLeft, top: popTop }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="td-cal-popover-hdr" onMouseDown={onDragStart}>

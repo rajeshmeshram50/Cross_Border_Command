@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useTheme } from '../../../../contexts/ThemeContext';
 import api from '../../../../api';
@@ -22,6 +23,50 @@ const truncFileName = (s: string | undefined | null, n = 25): string => {
   const v = String(s ?? '');
   return v.length > n ? v.slice(0, n) + '…' : v;
 };
+
+/* Issuing Authority cell — a document can list several issuing authorities.
+ * Show the FIRST one and collapse the rest behind a "+N" chip that opens a
+ * portalled popup listing them all (QA #68). Accepts either the backend
+ * `authority_list` array (preferred — reliable, since a name may contain a
+ * comma) or a single string for legacy/free-text authorities. */
+function AuthorityCell({ value }: { value?: string[] | string | null }) {
+  const { theme } = useTheme();
+  const dark = theme === 'dark';
+  const [pop, setPop] = useState<{ x: number; y: number } | null>(null);
+  const names = (Array.isArray(value) ? value : [value])
+    .map(s => String(s ?? '').trim())
+    .filter(n => n && n !== '—');
+  if (names.length === 0) return <span style={{ color: '#9ca3af' }}>—</span>;
+  const first = names[0];
+  const extra = names.length - 1;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
+      <Tooltip label={first}>
+        <span style={{ display: 'inline-block', maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>{first}</span>
+      </Tooltip>
+      {extra > 0 && (
+        <button
+          type="button"
+          aria-label={`Show ${extra} more issuing authorit${extra === 1 ? 'y' : 'ies'}`}
+          onClick={e => { e.stopPropagation(); const b = e.currentTarget.getBoundingClientRect(); setPop(p => (p ? null : { x: b.left, y: b.bottom + 6 })); }}
+          style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: '#0d9488', background: dark ? 'rgba(20,184,166,.18)' : '#ccfbf1', border: `1px solid ${dark ? 'rgba(20,184,166,.45)' : '#5eead4'}`, borderRadius: 10, padding: '1px 7px', cursor: 'pointer', lineHeight: 1.4 }}
+        >+{extra}</button>
+      )}
+      {pop && createPortal(
+        <>
+          <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
+          <div style={{ position: 'fixed', left: Math.min(pop.x, window.innerWidth - 260), top: pop.y, zIndex: 13001, width: 240, maxHeight: 300, overflowY: 'auto', background: dark ? '#0f1e2b' : '#fff', border: `1px solid ${dark ? 'rgba(148,197,255,.18)' : '#e2e8f0'}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.18)', padding: '8px 0' }}>
+            <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: dark ? '#7dd3fc' : '#64748b', padding: '4px 14px 6px' }}>Issuing Authorities ({names.length})</div>
+            {names.map((n, i) => (
+              <div key={i} style={{ fontSize: 12, color: dark ? '#e2e8f0' : '#0f172a', padding: '5px 14px', background: i % 2 ? (dark ? 'rgba(148,197,255,.05)' : '#f8fafc') : 'transparent' }}>{n}</div>
+            ))}
+          </div>
+        </>,
+        document.body,
+      )}
+    </span>
+  );
+}
 
 /* Stage 3 → Trade Documents → Send for Signature.
  * Same shape used by AddCustomerModal / AddVendorModal so the Zoho
@@ -525,7 +570,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * the segment chosen on Stage 1. Drives Stage 2's Trade Licence
    * reference list and the Company DD required-doc banner so the user
    * sees what's expected for the segment without manual lookup. */
-  type SegDocRow = { id:number; code:string; name:string; authority?:string|null; expiry?:string|null; status?:string; requirement:'M'|'O' };
+  type SegDocRow = { id:number; code:string; name:string; authority?:string|null; authority_list?:string[]|null; expiry?:string|null; status?:string; requirement:'M'|'O' };
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
@@ -3733,7 +3778,22 @@ const Stage2 = ({
         || (o.designation || '').toLowerCase().includes(q)
         || (o.official_email || '').toLowerCase().includes(q);
   });
-  const totalRows = isOwners ? filteredOwners.length : filteredDocs.length;
+  /* Count what the table ACTUALLY renders so the badge never lags behind the
+     list. It previously counted only real uploaded `docs`, so the default
+     segment-rule reference rows (Company DD / Trade Licence / Owner KYC) that
+     the table shows before any upload made the badge read "0 documents" even
+     though rows were visible (QA #67). Mirror the table's own row source:
+       • owner-kyc showing segment refs → segmentDocs.kyc
+       • owner-kyc with real owners      → filteredOwners
+       • dd/tl with real docs or a search→ filteredDocs
+       • dd/tl showing segment refs      → segmentDocs.dd / .tl */
+  const segRefDocs = sub === 'company-dd' ? (segmentDocs.dd || [])
+                   : sub === 'trade-licence' ? (segmentDocs.tl || [])
+                   : [];
+  const showingOwnerRefs = isOwners && filteredOwners.length === 0 && (segmentDocs.kyc?.length ?? 0) > 0;
+  const totalRows = isOwners
+    ? (showingOwnerRefs ? (segmentDocs.kyc?.length ?? 0) : filteredOwners.length)
+    : ((filteredDocs.length > 0 || q) ? filteredDocs.length : segRefDocs.length);
   const codeFor = (k: string, sr: number) => `${k.toUpperCase()}-${String(sr).padStart(3, '0')}`;
   const fmtMy = (s?: string) => {
     if (!s) return 'N/A';
@@ -3860,7 +3920,7 @@ const Stage2 = ({
                         <td>{String(i + 1).padStart(2, '0')}</td>
                         <td><span className="acm-kyc-code">{d.code}</span></td>
                         <td style={{ fontWeight: 700 }}>{d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}</td>
-                        <td>{d.authority ?? '—'}</td>
+                        <td><AuthorityCell value={d.authority_list ?? d.authority} /></td>
                         {/* Requirement — Mandatory / Optional, same as Company DD. */}
                         <td>
                           {d.requirement === 'M'
@@ -3963,8 +4023,8 @@ const Stage2 = ({
                   {(() => {
                     if (filteredDocs.length > 0 || q) return null;
                     let segSrc: any[] = [];
-                    if (sub === 'company-dd')   segSrc = (segmentDocs.dd || []).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
-                    if (sub === 'trade-licence') segSrc = (segmentDocs.tl || []).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
+                    if (sub === 'company-dd')   segSrc = (segmentDocs.dd || []).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', authority_list:d.authority_list, expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
+                    if (sub === 'trade-licence') segSrc = (segmentDocs.tl || []).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', authority_list:d.authority_list, expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
                     return segSrc.map((tl, i) => {
                       const refKey = `${sub}::${tl.code}`;
                       const uploaded = segmentRefUploads[refKey];
@@ -3975,7 +4035,7 @@ const Stage2 = ({
                           <td style={{ fontWeight: 700 }}>
                             {tl.name}{tl.isMandatory ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}
                           </td>
-                          <td>{tl.authority}</td>
+                          <td><AuthorityCell value={tl.authority_list ?? tl.authority} /></td>
                           {/* Requirement — Mandatory / Optional, shown up-front. */}
                           <td>
                             {tl.isMandatory
@@ -4017,7 +4077,7 @@ const Stage2 = ({
                         <td>{String(sr).padStart(2, '0')}</td>
                         <td><span className="acm-kyc-code">{codeFor(kind, sr)}</span></td>
                         <td style={{ fontWeight: 700 }}>{d.name}</td>
-                        <td>{d.issuing_authority || '—'}</td>
+                        <td><AuthorityCell value={d.issuing_authority} /></td>
                         <td style={{ color: '#9ca3af' }}>—</td>
                         <td><AttachmentLink url={d.attachment_url} path={d.attachment_path} /></td>
                         <td>
@@ -4769,7 +4829,7 @@ const VaultDocsTable = ({ docs, kind }: { docs: KycDocRow[]; kind: 'dd' | 'tl' }
                 <td>{String(i + 1).padStart(2, '0')}</td>
                 <td><span className="acm-kyc-code">{codeFor(kind, i + 1)}</span></td>
                 <td style={{ fontWeight: 700 }}>{d.name}</td>
-                <td>{d.issuing_authority || '—'}</td>
+                <td><AuthorityCell value={d.issuing_authority} /></td>
                 <td><AttachmentLink url={d.attachment_url} path={d.attachment_path} /></td>
               </tr>
             ))}

@@ -340,7 +340,6 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   const [data, setData]       = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useState<string | null>(null);
-  const [auditing, setAuditing] = useState(false);
   // Two-stage: compact summary card first → "View details" opens the full panel.
   const [view, setView] = useState<'compact' | 'expanded'>('compact');
 
@@ -380,23 +379,6 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   const isDone     = status === 'completed';
   const completedAt = data?.completed_at;
   const lastRem     = data?.last_reminder_sent_at;
-
-  /* Download the executed signed PDF (the agreement with signatures + Zoho's
-   * embedded audit page). This is a DIFFERENT artifact from the Completion
-   * Certificate that Stage 5's "Download Signed Certificate" streams — the
-   * two buttons previously both hit /certificate and returned the same file. */
-  const downloadAudit = () => {
-    setAuditing(true);
-    api.get(`/clm/signature-requests/${sigId}/view-file/0`, { responseType: 'blob' })
-      .then((res) => {
-        const url = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
-        const a = document.createElement('a');
-        a.href = url; a.download = `${(code || `sig-${sigId}`).replace(/[^a-z0-9\-_.]/gi, '_')}_audit.pdf`;
-        a.click(); URL.revokeObjectURL(url);
-      })
-      .catch(() => { /* signed document may not be ready until completed */ })
-      .finally(() => setAuditing(false));
-  };
 
   /* Download the customer-signed (Zoho-executed) PDF. */
   const [dlSigned, setDlSigned] = useState(false);
@@ -776,10 +758,6 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
           <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={downloadSignedPdf} disabled={dlSigned || !isDone}>
             {dlSigned ? <span className="qpi-moremenu-spinner" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
             Download signed PDF
-          </button>
-          <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={downloadAudit} disabled={auditing || !isDone}>
-            {auditing ? <span className="qpi-moremenu-spinner" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M9 12l2 2 4-4"/><path d="M21 12c.552 0 1.005-.449.95-.998a10 10 0 0 0-8.953-8.951c-.55-.055-.997.398-.997.95v0"/><path d="M12 2v0c0 .552-.449 1.005-.998.95A10 10 0 1 0 21.95 12.998c.055-.55-.398-.998-.95-.998v0"/></svg>}
-            Download audit
           </button>
           <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={() => void load()}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>

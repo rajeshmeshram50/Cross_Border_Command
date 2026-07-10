@@ -31,6 +31,10 @@ export type TaskManagerRow = {
   mobile_no?:          string | null;
   email?:              string | null;
   attachment?:         string | null;
+  /* Absolute, storage-host-correct URL built server-side via file_url(). Use
+   * this for the "View" button — rebuilding it from the bare `attachment` path
+   * on the client bounces to the dashboard (QA #55). */
+  attachment_url?:     string | null;
   attachment_original?: string | null;
 };
 
@@ -65,6 +69,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
 
   const [pickedFile, setPickedFile] = useState<File | null>(null);
   const [existingPath, setExistingPath] = useState<string | null>(null);
+  const [existingUrl, setExistingUrl] = useState<string | null>(null);
   const [existingName, setExistingName] = useState<string | null>(null);
 
   const [errors, setErrors] = useState<{ name?: string; mobile?: string; email?: string }>({});
@@ -79,6 +84,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
     setMobile(t?.mobile_no ?? '');
     setEmail(t?.email ?? '');
     setExistingPath(t?.attachment ?? null);
+    setExistingUrl(t?.attachment_url ?? null);
     setExistingName(t?.attachment_original ?? null);
     setPickedFile(null);
     setErrors({});
@@ -161,11 +167,12 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
       return;
     }
     if (existingPath) {
-      // existingPath is a disk-relative path (e.g. leads/task-manager/5/x.pdf).
-      // A bare "/storage/…" resolves against the SPA origin, where the router's
-      // catch-all serves index.html and bounces the user to the dashboard.
-      // resolveFileUrl prefixes the API/storage origin so the real file opens.
-      window.open(resolveFileUrl(existingPath), '_blank', 'noopener');
+      // Prefer the server-built absolute URL (file_url). Rebuilding it from the
+      // bare disk path on the client resolves against the SPA origin, where the
+      // router catch-all serves index.html and bounces the user to the dashboard
+      // (QA #55). resolveFileUrl stays only as a legacy fallback for rows saved
+      // before the backend started sending attachment_url.
+      window.open(existingUrl || resolveFileUrl(existingPath), '_blank', 'noopener');
     }
   };
 

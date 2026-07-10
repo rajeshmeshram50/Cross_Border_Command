@@ -17,7 +17,7 @@ import './bulk-sourcing.css';
  * On confirm → POST /p2p/sourcing-targets/{targetId}/products/{productId}/suppliers,
  * then onMapped(name). Static supplier data removed (see API.md). */
 
-export type SupplierMaster = { id: string; name: string; segment: string; contact: string; mobile: string; email: string };
+export type SupplierMaster = { id: string; code: string; name: string; segment: string; contact: string; mobile: string; email: string };
 // Master-backed dropdowns for the New Supplier form, from GET /p2p/form-masters.
 type FormMasters = {
   segments: { id: number; name: string }[];
@@ -61,6 +61,67 @@ function Header({ p, step }: { p: MapProduct; step?: string }) {
   );
 }
 
+/* Shimmer skeleton shaped like the New Supplier form — shown while the
+ * /p2p/form-masters dropdowns are loading, so the user sees the form's shape
+ * instead of empty inputs / "No options". */
+function NewSupplierSkeleton() {
+  const field = (w = '100%') => (
+    <div className="nss-field"><span className="nss-lbl" /><span className="nss-input" style={{ width: w }} /></div>
+  );
+  return (
+    <div className="smp-body snf-body">
+      <style>{NSS_CSS}</style>
+      <div className="snf-section">
+        <div className="nss-hdr"><span className="nss-ico" /><span className="nss-title" /></div>
+        <div className="nss-row nss-row-1">{field()}</div>
+        <div className="nss-row nss-row-3">{field()}{field()}{field()}</div>
+        <div className="nss-row nss-row-2">{field()}{field()}</div>
+      </div>
+      <div className="snf-section">
+        <div className="nss-hdr"><span className="nss-ico" /><span className="nss-title" /></div>
+        <div className="nss-row nss-row-1">{field()}</div>
+        <div className="nss-row nss-row-4">{field()}{field()}{field()}{field()}</div>
+      </div>
+      <div className="snf-section snf-last">
+        <div className="nss-hdr"><span className="nss-ico" /><span className="nss-title" /></div>
+        <span className="nss-upload" />
+      </div>
+      <div className="snf-foot">
+        <span className="nss-btn" style={{ width: 84 }} />
+        <span className="nss-btn nss-btn-primary" style={{ width: 138 }} />
+      </div>
+    </div>
+  );
+}
+
+const NSS_CSS = `
+.nss-row { display: grid; gap: 14px; margin-bottom: 14px; }
+.nss-row-1 { grid-template-columns: 1fr; }
+.nss-row-2 { grid-template-columns: 1fr 1fr; }
+.nss-row-3 { grid-template-columns: 1fr 1fr 1fr; }
+.nss-row-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+.nss-field { display: flex; flex-direction: column; gap: 7px; }
+.nss-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.nss-lbl { height: 9px; width: 90px; border-radius: 5px; }
+.nss-input { height: 38px; border-radius: 10px; }
+.nss-ico { width: 22px; height: 22px; border-radius: 6px; }
+.nss-title { height: 12px; width: 150px; border-radius: 6px; }
+.nss-upload { display: block; height: 74px; border-radius: 12px; }
+.nss-btn { height: 38px; border-radius: 9px; }
+.nss-lbl, .nss-input, .nss-ico, .nss-title, .nss-upload, .nss-btn {
+  background: linear-gradient(90deg, #eef0f3 25%, #e2e6ea 37%, #eef0f3 63%);
+  background-size: 400% 100%;
+  animation: nss-shimmer 1.3s ease-in-out infinite;
+}
+.nss-btn-primary { background: linear-gradient(90deg, #dfe0fb 25%, #c9cbf7 37%, #dfe0fb 63%); background-size: 400% 100%; }
+@keyframes nss-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+[data-bs-theme="dark"] .nss-lbl, [data-bs-theme="dark"] .nss-input, [data-bs-theme="dark"] .nss-ico,
+[data-bs-theme="dark"] .nss-title, [data-bs-theme="dark"] .nss-upload, [data-bs-theme="dark"] .nss-btn {
+  background: linear-gradient(90deg, #2a2f34 25%, #363b41 37%, #2a2f34 63%);
+  background-size: 400% 100%;
+}
+`;
+
 export default function MapSupplierModal({ product, targetId, productId, onClose, onMapped }: { product: MapProduct; targetId?: string; productId?: string | number; onClose: () => void; onMapped: (name: string) => void }) {
   const toast = useToast();
   const confirmDialog = useConfirm();
@@ -73,6 +134,9 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
   const [card, setCard] = useState(''); const [cardName, setCardName] = useState(''); const [cardUploading, setCardUploading] = useState(false);
   // Master-backed dropdowns + the selected country/state ids (names go to the API).
   const [masters, setMasters] = useState<FormMasters>({ segments: [], countries: [], states: [], stateCodes: [] });
+  // True while /p2p/form-masters is in flight — drives the New Supplier form
+  // shimmer + the segment dropdown's loading rows (instead of "No options").
+  const [mastersLoading, setMastersLoading] = useState(true);
   const [countryId, setCountryId] = useState<number | ''>(''); const [stateId, setStateId] = useState<number | ''>('');
   const [suppliers, setSuppliers] = useState<SupplierMaster[]>([]);
   const [saving, setSaving] = useState(false);
@@ -80,13 +144,14 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
 
   useEffect(() => { api.get<{ data: SupplierMaster[] }>('/p2p/suppliers').then(r => setSuppliers(r.data?.data ?? [])).catch(() => {}); }, []);
   useEffect(() => {
+    setMastersLoading(true);
     api.get<{ data: FormMasters }>('/p2p/form-masters').then(r => {
       const d = r.data?.data; if (!d) return;
       setMasters(d);
       // No default country — the user must pick one (which then enables the
       // State dropdown and drives the auto State Code). Avoids a misleading
       // pre-selected India with an empty/irrelevant state code.
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setMastersLoading(false));
   }, []);
 
   // country_id / state_id come back from the API as strings (FK columns aren't
@@ -198,7 +263,7 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
               <MasterSelect
                 value={sel}
                 placeholder="Select supplier..."
-                options={suppliers.map(s => ({ value: s.id, label: `${s.id} — ${s.name}` }))}
+                options={suppliers.map(s => ({ value: s.id, label: `${s.code || s.id} — ${s.name}` }))}
                 onChange={setSel}
               />
             </div>
@@ -208,7 +273,7 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
                 <div className="smp-sc-main">
                   <div className="smp-sc-top">
                     <div className="smp-sc-name">{supplier.name}</div>
-                    <div className="smp-sc-tags"><span className="smp-sc-tag id-tag">{supplier.id}</span><SegmentTags segment={supplier.segment} tagClassName="smp-sc-tag seg-tag" /></div>
+                    <div className="smp-sc-tags"><span className="smp-sc-tag id-tag">{supplier.code || supplier.id}</span><SegmentTags segment={supplier.segment} tagClassName="smp-sc-tag seg-tag" /></div>
                   </div>
                   <div className="smp-sc-contacts">
                     {[['Contact', supplier.contact], ['Mobile', supplier.mobile], ['Email', supplier.email]].map(([l, v]) => (
@@ -228,7 +293,8 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
           </div>
         )}
 
-        {step === 'new' && (
+        {step === 'new' && mastersLoading && <NewSupplierSkeleton />}
+        {step === 'new' && !mastersLoading && (
           <div className="smp-body snf-body">
             <div className="snf-section">
               <div className="snf-sec-hdr"><div className="snf-sec-icon teal-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg></div><span>Supplier Information</span></div>
@@ -236,7 +302,7 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
               <div className="snf-row snf-row-3">
                 <div className="snf-field"><label className="snf-lbl">Contact Person <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.contact)} value={contact} onChange={e => setContact(e.target.value)} placeholder="Full name" />{errMsg(errs.contact)}</div>
                 <div className="snf-field"><label className="snf-lbl">Mobile Number <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.mobile)} value={mobile} onChange={e => setMobile(e.target.value)} placeholder="10-digit mobile" />{errMsg(errs.mobile)}</div>
-                <div className="snf-field"><label className="snf-lbl">Segment <span className="snf-req">*</span></label><MasterMultiSelect values={seg} invalid={!!errs.seg} placeholder="Select segment(s)..." options={masters.segments.map(s => ({ value: s.name, label: s.name }))} onChange={setSeg} />{errMsg(errs.seg)}</div>
+                <div className="snf-field"><label className="snf-lbl">Segment <span className="snf-req">*</span></label><MasterMultiSelect values={seg} invalid={!!errs.seg} collapse collapseNoun="segments" loading={mastersLoading} showDone placeholder="Select segment(s)..." options={masters.segments.map(s => ({ value: s.name, label: s.name }))} onChange={setSeg} />{errMsg(errs.seg)}</div>
               </div>
               <div className="snf-row snf-row-2">
                 <div className="snf-field"><label className="snf-lbl">Email ID <span className="snf-req">*</span></label><input className="snf-inp" type="email" style={invStyle(errs.email)} value={email} onChange={e => setEmail(e.target.value)} placeholder="supplier@company.com" />{errMsg(errs.email)}</div>
