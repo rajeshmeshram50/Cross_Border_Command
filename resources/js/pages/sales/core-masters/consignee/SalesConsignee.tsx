@@ -74,7 +74,10 @@ export default function SalesConsignee() {
   // "Same as Customer" filter (Yes / No / All).
   const [sacFilter, setSacFilter] = useState<'all'|'yes'|'no'>('all');
   const [wdhOpen, setWdhOpen] = useState(false);
-  const [segOpen, setSegOpen] = useState<{ id: string | number; names: string[]; x: number; y: number } | null>(null);
+  // Shared "chips overflow" popover — used by BOTH the Segment "+N" and the
+  // Customer ID "+N" (the latter shows only the mapped customer IDs, not the
+  // full Map-Customer popup — QA #22). `title` labels the popover header.
+  const [segOpen, setSegOpen] = useState<{ id: string | number; names: string[]; x: number; y: number; title?: string } | null>(null);
   // The segments popover is pinned to fixed x/y captured on click; a resize
   // (maximize/minimize/zoom) or scroll makes those coords stale and the popover
   // drifts away from its badge. Close it on either so it never shows stranded.
@@ -208,6 +211,7 @@ export default function SalesConsignee() {
         email:          d.email ?? '',
         phone:          d.phone ?? '',
         country:        d.country ?? '',
+        country_iso:    d.country_iso ?? null,
         countryDetail:  d.countryDetail ?? d.city ?? '',
         same_as_customer: !!d.same_as_customer,
       })));
@@ -330,18 +334,24 @@ export default function SalesConsignee() {
         // many-to-many payload existed.
         const chips = list.length > 0 ? list : [String(info.getValue() ?? '')].filter(Boolean);
         if (chips.length === 0) return <span className="text-muted">—</span>;
-        // Show the first customer + a "+N" chip; clicking "+N" opens the same
-        // Mapped Customers popup as the Actions-column button (both ways).
+        // Show the first customer + a "+N" chip; clicking "+N" reveals a compact
+        // popover of just the mapped customer IDs (QA #22) — it no longer opens
+        // the full Map-Customer popup (still reachable from the Actions column).
+        const custPopId = `cust-${row.id}`;
         return (
           <span className="d-inline-flex align-items-center" style={{ gap: 4, justifyContent: 'center' }}>
             <span className="smcg-cust-chip">{chips[0]}</span>
             {chips.length > 1 && (
               <span
                 role="button"
-                onClick={(e) => { e.stopPropagation(); setMappedTarget(row); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setSegOpen(prev => prev?.id === custPopId ? null : { id: custPopId, names: chips, x: b.left, y: b.bottom + 4, title: 'Customer IDs' });
+                }}
                 className="smcg-cust-chip"
                 style={{ cursor: 'pointer', background: '#ede9fe', color: '#5b21b6', fontWeight: 700 }}
-                title="View all mapped customers"
+                title="View all mapped customer IDs"
               >
                 +{chips.length - 1}
               </span>
@@ -358,7 +368,7 @@ export default function SalesConsignee() {
     {
       header: 'Segment',
       accessorKey: 'segment',
-      meta: { align: 'center' },
+      meta: { align: 'start' },
       cell: (info: any) => {
         const segList = String(info.getValue() ?? '').split(',').map((s: string) => s.trim()).filter(Boolean);
         if (segList.length === 0) return <span className="text-muted">—</span>;
@@ -382,7 +392,7 @@ export default function SalesConsignee() {
     {
       header: 'Risk Level',
       accessorKey: 'risk',
-      meta: { align: 'center' },
+      meta: { align: 'start' },
       cell: (info: any) => {
         const v = String(info.getValue() ?? '');
         const r = RISK_COLORS[v] || RISK_COLORS['Low'];
@@ -415,9 +425,12 @@ export default function SalesConsignee() {
         const c = info.row.original as Consignee;
         const country = (c.country ?? '').trim();
         if (!country) return <span className="text-muted">—</span>;
+        // Show the short ISO code (aligned) with the full name on hover; fall
+        // back to the raw name when the master has no match (QA #20).
+        const iso = c.country_iso;
         return (
-          <span className="smcg-country" style={{ whiteSpace: 'nowrap' }}>
-            {country}
+          <span className="smcg-country" style={{ whiteSpace: 'nowrap' }} title={iso ? country : undefined}>
+            {iso || country}
           </span>
         );
       },
@@ -575,6 +588,7 @@ export default function SalesConsignee() {
             <MasterSelect
               value={sacFilter}
               placeholder="Same as Customer"
+              searchable={false}
               options={[
                 { value: 'all', label: 'Same as Customer: All' },
                 { value: 'yes', label: 'Same as Customer: Yes' },
@@ -651,20 +665,36 @@ export default function SalesConsignee() {
         </Suspense>
       )}
 
-      {segOpen && createPortal(
-        <>
-          <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
-          <div className="smcg-seg-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 1091, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
-            <div className="smcg-seg-pop-title">Segments ({segOpen.names.length})</div>
-            {segOpen.names.map((name, i) => (
-              <div key={i} className={`smcg-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                <span className="smcg-seg">{name}</span>
+      {segOpen && (() => {
+        // Keep the popover fully on-screen — clamp its anchor so it never bleeds
+        // below the fold when the "+N" is near the bottom of the list (mirrors
+        // the customer list fix). Reserve the real height (short lists) or the
+        // 280px scroll cap so the bottom rows stay visible.
+        // Show ~3 segment rows at a time; the rest go behind the scrollbar.
+        // Title stays pinned — only the rows list scrolls.
+        const ROWS_MAX_H = 108;            // ≈ 3 rows (~34px each)
+        const estH = Math.min(24 + ROWS_MAX_H + 16, 40 + segOpen.names.length * 34);
+        const left = Math.max(8, Math.min(segOpen.x, window.innerWidth - 230));
+        const top  = Math.max(8, Math.min(segOpen.y, window.innerHeight - estH - 8));
+        return createPortal(
+          <>
+            <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
+            <div className="smcg-seg-pop" style={{ position: 'fixed', left, top, zIndex: 1091, width: 210, borderRadius: 12, padding: 8 }}>
+              <div className="smcg-seg-pop-title">{segOpen.title ?? 'Segments'} ({segOpen.names.length})</div>
+              <div style={{ maxHeight: ROWS_MAX_H, overflowY: 'auto' }}>
+                {segOpen.names.map((name, i) => (
+                  <div key={i} className={`smcg-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                    {/* Customer-ID chips keep the violet customer palette;
+                        segment chips stay green. */}
+                    <span className={segOpen.title === 'Customer IDs' ? 'smcg-cust-chip' : 'smcg-seg'}>{name}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </>,
-        document.body
-      )}
+            </div>
+          </>,
+          document.body
+        );
+      })()}
 
       {/* Mapped Customers — table modal styled like the customer module
           (purple palette), full column set. */}

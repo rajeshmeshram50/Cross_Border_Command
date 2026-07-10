@@ -216,6 +216,7 @@ export type ConsigneeRow = {
   email: string;
   phone: string;
   country: string;
+  country_iso?: string | null;
   countryDetail: string;
   /* True iff this consignee was created with "Same as Customer" on.
    * Lets the edit flow keep the toggle ticked + lets the front-end

@@ -167,6 +167,26 @@ class SalesVisibility
         return $q->pluck('user_id')->map(fn ($v) => (int) $v)->unique()->values()->all();
     }
 
+    /**
+     * True when the user is an EMPLOYEE whose department is Sales. Sales-team
+     * employees share the WHOLE branch's customer / consignee book — every
+     * Sales employee (not just the branch admin or the HOD) sees all the
+     * customers in their branch scope, not only the rows they created (QA #14).
+     * Every other account type keeps the standard creator-hierarchy visibility.
+     */
+    public static function isSalesDepartmentEmployee($user): bool
+    {
+        if (!$user || ($user->user_type ?? null) !== 'employee') {
+            return false;
+        }
+        $deptIds = self::salesDepartmentIds();
+        if (empty($deptIds)) {
+            return false;
+        }
+        $deptId = Employee::where('user_id', $user->id)->value('department_id');
+        return $deptId !== null && in_array((int) $deptId, $deptIds, true);
+    }
+
     /** Master-department ids whose name is "Sales" (case-insensitive). Empty
      *  array = no Sales department defined at all. */
     public static function salesDepartmentIds(): array

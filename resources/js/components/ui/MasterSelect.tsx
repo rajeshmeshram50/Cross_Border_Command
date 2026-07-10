@@ -19,6 +19,7 @@ export function MasterSelect({
   onSearchChange,
   loadingMore,
   currentValueLabel,
+  searchable = true,
 }: {
   name?: string;
   value?: string;
@@ -56,6 +57,10 @@ export function MasterSelect({
   /* Shows a "Loading…" row at the bottom of the list while the parent fetches
    * the next page. */
   loadingMore?: boolean;
+  /* Set false to hide the in-menu search input entirely. Use on short, fixed
+   * option lists (e.g. a 3-value filter) so opening the dropdown on mobile
+   * doesn't auto-focus the search field and pop up the on-screen keyboard. */
+  searchable?: boolean;
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
   useEffect(() => {
@@ -118,13 +123,12 @@ export function MasterSelect({
     };
   }, [open]);
   const selected = options.find(o => o.value === currentValue);
-  /* Always show the search input — keeps every MasterSelect across
-   * the project visually consistent (Risk Level / Active-Inactive /
-   * Customer Segment all look the same). Was previously gated at
-   * `options.length > 4` which made short dropdowns look like a
-   * different component. The search is functionally harmless on
-   * short lists; it just becomes a no-op. */
-  const showSearch = true;
+  /* Show the search input by default — keeps every MasterSelect across the
+   * project visually consistent (Risk Level / Active-Inactive / Customer
+   * Segment all look the same). Callers with a short, fixed option list can
+   * pass `searchable={false}` to hide it (avoids the mobile keyboard popping
+   * up on a 3-option filter). */
+  const showSearch = searchable;
   // Server-search mode (onSearchChange provided): the parent owns filtering +
   // paging, so render `options` as-is. Otherwise keep the client-side filter.
   const serverMode = typeof onSearchChange === 'function';

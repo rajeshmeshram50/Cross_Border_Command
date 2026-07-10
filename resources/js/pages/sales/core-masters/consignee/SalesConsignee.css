@@ -419,6 +419,12 @@
 .smcg-sac-filter .master-select-value,
 .smcg-sac-filter .master-select-placeholder,
 .smcg-sac-filter .master-select-chev { color: #fff !important; }
+/* Truncate the long label so it never overflows the compact filter width
+   (kicks in on mobile where the field sits beside the search box). */
+.smcg-sac-filter .master-select-value,
+.smcg-sac-filter .master-select-placeholder {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
 
 .smcg-table-card {
   position: relative;
@@ -1074,11 +1080,18 @@
   .smcg-cstrip-sub   { font-size: 12px; }
 
   .smcg-wdh-body .smcg-step { flex: 1 1 100%; }
-  .smcg-wdh-toggle-row { flex-wrap: wrap; gap: 8px; }
+  /* Keep the heading + chevron on ONE row on mobile — the heading flexes and
+     its title wraps, while the dropdown chevron stays pinned on the right
+     (was wrapping to the bottom-centre). */
+  .smcg-wdh-toggle-row { flex-wrap: nowrap; gap: 10px; align-items: center; }
+  .smcg-wdh-heading { flex: 1 1 auto; min-width: 0; align-items: flex-start; }
+  .smcg-wdh-chev { flex-shrink: 0; }
 
-  .smcg-toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
-  .smcg-toolbar .smcg-search { min-width: 100%; max-width: 100%; }
-  .smcg-toolbar .smcg-sac-filter { width: 100% !important; }
+  /* Keep the search box and the "Same as Customer" filter SIDE BY SIDE on
+     mobile — search flexes to fill, the filter takes a fixed compact width. */
+  .smcg-toolbar { flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 8px; }
+  .smcg-toolbar .smcg-search { flex: 1 1 auto; min-width: 0; max-width: none; }
+  .smcg-toolbar .smcg-sac-filter { width: 150px !important; flex-shrink: 0; }
 }
 @media (max-width: 480px) {
   .smcg-root { padding: 0; }
@@ -1098,4 +1111,27 @@
   .smcg-table-wrap { padding: 8px !important; }
   .smcg-table-wrap .table thead.table-light th { padding: 8px 10px !important; font-size: 10.5px !important; }
   .smcg-table-wrap .table tbody td { padding: 8px 10px !important; font-size: 12px !important; }
+}
+
+/* ── Worklist pagination footer — CONSIGNEE GREEN ──────────────────────
+   The shared TableContainer footer (.tc-wl-*, app.css) defaults to violet
+   (the Customer theme). Consignee is emerald-themed, so we recolour ONLY
+   this table's footer by setting the themeable `--tcwl-*` variables on the
+   table wrapper — they cascade down to the footer inside it. This keeps the
+   Consignee and Customer tables identical in structure, differing only in
+   colour (QA #13). Change these six values to re-theme the footer. */
+.smcg-table-wrap {
+  --tcwl-band: linear-gradient(90deg, #f0fdf9 0%, #e7fbf3 40%, #f0fdf9 100%);
+  --tcwl-border: #a7f3d0;
+  --tcwl-text: #047857;
+  --tcwl-accent: #059669;
+  --tcwl-range-bg: linear-gradient(135deg, #34d399 0%, #10b981 55%, #047857 100%);
+  --tcwl-glow: rgba(16, 185, 129, .38);
+}
+[data-bs-theme="dark"] .smcg-table-wrap {
+  --tcwl-band-dark: linear-gradient(90deg, rgba(16, 185, 129, .08), rgba(16, 185, 129, .14), rgba(16, 185, 129, .08));
+  --tcwl-border-dark: rgba(52, 211, 153, .32);
+  --tcwl-text-dark: #6ee7b7;
+  --tcwl-btn-bg-dark: rgba(16, 185, 129, .18);
+  --tcwl-glow: rgba(16, 185, 129, .30);
 }

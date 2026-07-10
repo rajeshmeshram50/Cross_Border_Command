@@ -154,7 +154,10 @@ const PHYSICAL_PLATFORMS = ['Office Visit', 'Client Site', 'Trade Fair', 'Confer
 // Common ISD dialing codes for the Contact No dropdown. India first since it's
 // the primary market; the rest cover the app's frequent trade corridors.
 const COUNTRY_CODES = ['+91', '+1', '+44', '+971', '+65', '+86', '+81', '+49', '+33', '+61', '+92', '+880', '+94', '+27'];
-const ROWS_OPTIONS = [10, 25];
+// FIXED rows-per-page options — the dropdown always offers exactly these
+// (QA #21: options must not change dynamically). The auto-fit snaps to one of
+// these so the selected value is always a listed option.
+const ROWS_OPTIONS = [5, 10, 25];
 
 /* Loose shape — the modal renders one of two field-sets at a time, so the
  * union of every possible field is the simplest accurate type. Using
@@ -262,7 +265,11 @@ export default function SalesTodo() {
       if (avail <= 0) return;
       const THEAD = 36, ROW = 40;   // todo table header + row heights (px)
       const fit = Math.max(5, Math.floor((avail - THEAD) / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      // Snap to a FIXED option (5 / 10 / 25) so the rows-per-page dropdown
+      // never shows an odd auto-fit number like 7 (QA #21). Pick the largest
+      // option that still fits; fall back to the smallest.
+      const snapped = [...ROWS_OPTIONS].reverse().find(o => o <= fit) ?? ROWS_OPTIONS[0];
+      setRpp(prev => (prev === snapped ? prev : snapped));
     };
     const ro = new ResizeObserver(recompute);
     ro.observe(el);
@@ -1326,7 +1333,7 @@ export default function SalesTodo() {
             <span className="td-pag-rows">
               Rows:
               <select value={rpp} onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}>
-                {[...new Set([rpp, ...ROWS_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
+                {ROWS_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
               </select>
             </span>
             <span className="td-pag-range">{safePage} / {pages}</span>
