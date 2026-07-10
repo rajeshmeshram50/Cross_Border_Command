@@ -382,6 +382,13 @@
 .pom .p2pj-headerstrip .cstrip{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;column-gap:22px;min-height:58px;padding:0 20px;border:none;border-radius:0;flex:none;background:linear-gradient(110deg,#f0fdff 0%,#e8fbfd 25%,#cffafe 55%,#bff0f7 85%,#a5e9f3 100%);box-shadow:inset 0 -1px 0 rgba(8,145,178,.12);}
 .pom .p2pj-headerstrip .cstrip__accent{display:none;}
 .pom .p2pj-headerstrip .cstrip__right{display:flex;align-items:center;gap:7px;z-index:1;min-width:0;flex:1 1 auto;justify-content:flex-end;}
+/* Compact reference chips so the whole header fits on one row at 100% zoom (falls back to wrapping on narrow windows). */
+.pom .p2pj-headerstrip .cpd-ref__pill{gap:6px;padding:5px 9px;border-radius:10px;}
+.pom .p2pj-headerstrip .cpd-ref__ico{width:21px;height:21px;border-radius:7px;}
+.pom .p2pj-headerstrip .cpd-ref__ico svg{width:12px;height:12px;}
+.pom .p2pj-headerstrip .cpd-ref__l{font-size:6.5px;margin-bottom:2px;}
+.pom .p2pj-headerstrip .cpd-ref__v{font-size:11.5px;}
+.pom .p2pj-headerstrip .cpd-ref__dots{padding:0 2px;}
 .pom .p2pj-steps-row{padding:14px 16px;background:linear-gradient(180deg,#fbfeff,#ffffff);overflow:hidden;}
 .pom .cstrip__divider{width:1px;height:30px;margin:0 3px;flex-shrink:0;background:linear-gradient(to bottom,transparent,rgba(8,145,178,.3) 40%,rgba(8,145,178,.3) 60%,transparent);}
 .pom .cstrip__back-btn{position:relative;overflow:hidden;display:flex;align-items:center;gap:7px;padding:9px 18px;border:none;border-radius:12px;font-family:inherit;font-size:11.5px;font-weight:700;color:#fff;letter-spacing:.02em;white-space:nowrap;cursor:pointer;flex-shrink:0;background:linear-gradient(135deg,#06b6d4 0%,#0891b2 50%,#0e7490 100%);box-shadow:0 4px 16px rgba(8,145,178,.5),0 1px 3px rgba(14,116,144,.3),0 1px 0 rgba(255,255,255,.2) inset;text-shadow:0 1px 2px rgba(0,0,0,.2);transition:background .2s,transform .2s,box-shadow .2s;}
