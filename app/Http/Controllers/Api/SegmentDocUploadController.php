@@ -784,6 +784,26 @@ class SegmentDocUploadController extends Controller
             $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;
             $buyerIsConsignee = !$cons || (bool) ($cons->same_as_customer ?? false);
 
+            // Customer = Consignee → the vault shows only the buyer tab
+            // (Consignee/Both are hidden). Per requirement that tab must list
+            // documents whose applicable party is the BUYER ALONE, so drop any
+            // buyer-list doc that ALSO appears on the consignee side (a
+            // Buyer+Consignee doc is emitted into both lists with the same
+            // db_id) — those belong to the hidden consignee/both view. Keyed the
+            // same way dedupe() keys rows. Applies to the customer vault AND the
+            // Sales-Matrix lead vault (same builder) so both read identically.
+            if ($type !== 'consignee' && $buyerIsConsignee) {
+                $keyOf = fn (array $r) => !empty($r['db_id'])
+                    ? (($r['doc_type'] ?? '') . '#' . $r['db_id'])
+                    : ('n#' . ($r['name'] ?? ''));
+                $consTradeKeys = [];
+                foreach ($tradeCons as $r) { $consTradeKeys[$keyOf($r)] = true; }
+                $tradeBuyer = array_values(array_filter($tradeBuyer, fn ($r) => !isset($consTradeKeys[$keyOf($r)])));
+                $consAgrKeys = [];
+                foreach ($agrCons as $r) { $consAgrKeys[$keyOf($r)] = true; }
+                $agrBuyer = array_values(array_filter($agrBuyer, fn ($r) => !isset($consAgrKeys[$keyOf($r)])));
+            }
+
             // The ratio must count exactly what the expanded panel displays:
             //   • Consignee vault → always the consignee side (forceParty).
             //   • Customer vault, Customer = Consignee → buyer only (the
