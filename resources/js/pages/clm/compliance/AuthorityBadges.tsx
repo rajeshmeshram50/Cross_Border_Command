@@ -20,13 +20,20 @@ export default function AuthorityBadges({ value }: { value?: string | string[] |
   // from its badge as the table scrolls.
   useEffect(() => {
     if (!pop) return;
+    // Close when the PAGE/table scrolls, but NOT when the user scrolls inside the
+    // popover itself (that scroll used to close it, so its list was unscrollable).
+    const onScroll = (e: Event) => {
+      const t = e.target as Element | null;
+      if (t && typeof t.closest === 'function' && t.closest('.clm-pop')) return;
+      setPop(null);
+    };
     const close = () => setPop(null);
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPop(null); };
-    document.addEventListener('scroll', close, true);
+    document.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', close);
     document.addEventListener('keydown', onKey);
     return () => {
-      document.removeEventListener('scroll', close, true);
+      document.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', close);
       document.removeEventListener('keydown', onKey);
     };
@@ -78,7 +85,7 @@ export default function AuthorityBadges({ value }: { value?: string | string[] |
               position: 'fixed', left: Math.min(pop.x, window.innerWidth - 340),
               top: pop.flipUp ? undefined : pop.y,
               bottom: pop.flipUp ? (window.innerHeight - pop.y) : undefined,
-              zIndex: 601, width: 320, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8,
+              zIndex: 601, width: 320, maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', borderRadius: 12, padding: 8,
             }}
           >
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Issuing Authorities ({list.length})</div>
