@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
+import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
@@ -15,6 +16,62 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { SimpleNameModal } from '../shared/clmCommon';
 import { deriveShortCode } from './ClmTncPage';
 import ClmClauseInsertPanel from './ClmClauseInsertPanel';
+
+/* Block-indent extension — StarterKit's list sink/lift only work *inside* a
+ * list, so the Indent/Outdent toolbar buttons did nothing on plain paragraphs
+ * or headings. This adds an `indent` level attribute (rendered as margin-left)
+ * to those block types plus indent/outdent commands that clamp to [0, MAX].
+ * The toolbar buttons route to list sink/lift when the caret is in a list and
+ * fall back to these commands otherwise, so indent works everywhere. */
+const INDENT_MAX = 8;
+const INDENT_EM = 2.5; // em per level
+
+const BlockIndent = Extension.create({
+  name: 'blockIndent',
+  addOptions() {
+    return { types: ['paragraph', 'heading'] };
+  },
+  addGlobalAttributes() {
+    return [{
+      types: this.options.types as string[],
+      attributes: {
+        indent: {
+          default: 0,
+          parseHTML: (element: HTMLElement) => {
+            const ml = parseFloat(element.style.marginLeft || '0');
+            return ml ? Math.min(INDENT_MAX, Math.round(ml / INDENT_EM)) : 0;
+          },
+          renderHTML: (attributes: { indent?: number }) => {
+            if (!attributes.indent) return {};
+            return { style: `margin-left: ${attributes.indent * INDENT_EM}em;` };
+          },
+        },
+      },
+    }];
+  },
+  addCommands() {
+    const shift = (delta: number) => ({ state, tr, dispatch }: any) => {
+      const { from, to } = state.selection;
+      const types = this.options.types as string[];
+      let changed = false;
+      state.doc.nodesBetween(from, to, (node: any, pos: number) => {
+        if (!types.includes(node.type.name)) return;
+        const cur = node.attrs.indent || 0;
+        const next = Math.min(INDENT_MAX, Math.max(0, cur + delta));
+        if (next !== cur) {
+          tr.setNodeMarkup(pos, undefined, { ...node.attrs, indent: next });
+          changed = true;
+        }
+      });
+      if (changed && dispatch) dispatch(tr);
+      return changed;
+    };
+    return {
+      indentBlock:  () => shift(1),
+      outdentBlock: () => shift(-1),
+    } as any;
+  },
+});
 
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → T&C Master → Library → "Add New T&C" (2-step wizard modal)
@@ -100,6 +157,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       StarterKit,
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      BlockIndent,
     ],
     content: '<p></p>',
     onUpdate({ editor }) {
@@ -810,10 +868,16 @@ function TncEditor({
           </button>
         </Tooltip>
         <Tooltip label="Decrease indent / lift">
-          <button type="button" className="tnw-toolbar-btn" onClick={() => editor.chain().focus().liftListItem('listItem').run()} aria-label="Outdent">⇤</button>
+          <button type="button" className="tnw-toolbar-btn" onClick={() => {
+            const c = editor.chain().focus();
+            (editor.isActive('listItem') ? c.liftListItem('listItem') : (c as any).outdentBlock()).run();
+          }} aria-label="Outdent">⇤</button>
         </Tooltip>
         <Tooltip label="Increase indent / sink">
-          <button type="button" className="tnw-toolbar-btn" onClick={() => editor.chain().focus().sinkListItem('listItem').run()} aria-label="Indent">⇥</button>
+          <button type="button" className="tnw-toolbar-btn" onClick={() => {
+            const c = editor.chain().focus();
+            (editor.isActive('listItem') ? c.sinkListItem('listItem') : (c as any).indentBlock()).run();
+          }} aria-label="Indent">⇥</button>
         </Tooltip>
 
         <span className="tnw-toolbar-sep" />
@@ -1594,7 +1658,16 @@ const TNW_CSS = `
 .tnw-editor .ProseMirror h1 { font-size: 22px; }
 .tnw-editor .ProseMirror h2 { font-size: 18px; }
 .tnw-editor .ProseMirror h3 { font-size: 15.5px; }
-.tnw-editor .ProseMirror ul, .tnw-editor .ProseMirror ol { padding-left: 22px; margin: 0 0 .6em 0; }
+/* Restore list markers — Tailwind's Preflight resets ul/ol to list-style:none,
+   so toggling Bullet/Numbered list produced list nodes with no visible marker.
+   Re-assert the marker type + position explicitly. */
+.tnw-editor .ProseMirror ul, .tnw-editor .ProseMirror ol { padding-left: 26px; margin: 0 0 .6em 0; list-style-position: outside; }
+.tnw-editor .ProseMirror ul { list-style-type: disc; }
+.tnw-editor .ProseMirror ol { list-style-type: decimal; }
+.tnw-editor .ProseMirror ul ul { list-style-type: circle; }
+.tnw-editor .ProseMirror ol ol { list-style-type: lower-alpha; }
+.tnw-editor .ProseMirror li { margin: .15em 0; }
+.tnw-editor .ProseMirror li > p { margin: 0; }
 .tnw-editor .ProseMirror blockquote { border-left: 3px solid #67e8f9; padding-left: 12px; margin: .4em 0; color: #475569; font-style: italic; }
 .tnw-editor .ProseMirror code { background: #f0fdff; padding: 1px 5px; border-radius: 4px; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; color: #0e7490; }
 .tnw-editor .ProseMirror hr { border: 0; border-top: 1px dashed #94a3b8; margin: 14px 0; }

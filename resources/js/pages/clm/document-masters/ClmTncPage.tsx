@@ -380,7 +380,11 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                         {r.regulatory === 'less' ? 'Less Regulatory' : 'Highly Regulatory'}
                       </span>
                     </td>
-                    <td className="clm-td-name">{r.category}</td>
+                    <td className="clm-td-name">
+                      <Tooltip label={r.category}>
+                        <span>{r.category}</span>
+                      </Tooltip>
+                    </td>
                     <td className="clm-td-desc">
                       {(() => {
                         const list = partyLabels(r.party);
