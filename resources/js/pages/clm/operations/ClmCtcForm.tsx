@@ -65,6 +65,8 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   const [agTypesLoading, setAgTypesLoading] = useState(true);
   const [orgOpen, setOrgOpen] = useState(false);
   const [picker, setPicker] = useState(false);
+  const [resubmitting, setResubmitting] = useState(false);   // in-flight guard for "Resubmit for Review"
+  const [moving, setMoving] = useState(false);               // in-flight guard for "Move to Final Repository"
   const [agTitle, setAgTitle] = useState(editing?.title ?? '');
   const [agType, setAgType] = useState(editing?.type ?? '');
   const [effDate, setEffDate] = useState('');
@@ -273,14 +275,16 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   // ── Lifecycle transitions (sender side) ──
   // After a rejection: push the corrected draft back for internal review.
   const resubmitDraft = async () => {
-    if (!workingId) return;
+    if (!workingId || resubmitting) return;
     if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title in Step 2.'); setStage(1); return; }
+    setResubmitting(true);
     try {
       await api.post(`/clm/ctc-contracts/${workingId}/resubmit`, { content: draft || null, title: agTitle, header_config: header, footer_config: footer });
       toast.success('Resubmitted', 'Revised draft sent back for internal review.');
       await refreshRecord();
       goStage(2);
     } catch (e) { toast.error('Could not resubmit', errMsg(e) || 'Please try again.'); }
+    finally { setResubmitting(false); }
   };
 
   // Approved → after choosing signers, open the positioning step where the
@@ -307,13 +311,15 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
 
   // All parties signed → store in the Final Contract Repository.
   const moveToRepository = async () => {
-    if (!workingId) return;
+    if (!workingId || moving) return;
+    setMoving(true);
     try {
       await api.post(`/clm/ctc-contracts/${workingId}/move-to-repository`, {});
       toast.success('Moved', 'Stored in the final contract repository.');
       await refreshRecord();
       goStage(4);
     } catch (e) { toast.error('Could not move', errMsg(e) || 'Please try again.'); }
+    finally { setMoving(false); }
   };
 
   return (
@@ -407,12 +413,12 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               isEditing={!!editing?.dbId} onUpdate={saveEdit}
               onSubmitForApproval={submitForApproval}
               editLock={editLock} lockReason={lockReason} signedUrl={signedDocUrl}
-              resubmitMode={!!workingId && (approval === 'rejected' || !!signDecline)} onResubmit={resubmitDraft}
+              resubmitMode={!!workingId && (approval === 'rejected' || !!signDecline)} onResubmit={resubmitDraft} resubmitting={resubmitting}
               declineReason={signDecline?.reason} declinedBy={signDecline?.by}
               onNext={() => goStage(2)}
             />
           )}
-          {!hydrating && stage > 1 && <StageReview t={t} stage={stage} cps={cps} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} draft={draft} header={header} footer={footer} sentForApproval={sentForApproval} workingId={workingId} record={record} approval={approval} onResubmitEdit={() => goStage(1)} onSendForSigning={sendForSigning} onRecordSignature={recordSignature} onMoveToRepository={moveToRepository} onRefresh={refreshRecord} onRemind={remindSigning} onRespondClarification={respondToClarification} onExit={onClose} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
+          {!hydrating && stage > 1 && <StageReview t={t} stage={stage} cps={cps} org={org} agTitle={agTitle} agType={agType} effDate={effDate} endDate={endDate} draft={draft} header={header} footer={footer} sentForApproval={sentForApproval} workingId={workingId} record={record} approval={approval} onResubmitEdit={() => goStage(1)} onSendForSigning={sendForSigning} onRecordSignature={recordSignature} onMoveToRepository={moveToRepository} moving={moving} onRefresh={refreshRecord} onRemind={remindSigning} onRespondClarification={respondToClarification} onExit={onClose} onBack={() => goStage(stage - 1)} onNext={() => goStage(stage + 1)} onSave={save} />}
         </div>
       </div>
 
@@ -421,6 +427,10 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
           t={t}
           slot={cps.length + 1}
           usedTypes={cps.map(c => (c.sourceType || c.badge || '').toLowerCase())}
+          taken={{
+            buyer: cps.find(c => (c.sourceType || c.badge || '').toLowerCase() === 'buyer')?.name,
+            consignee: cps.find(c => (c.sourceType || c.badge || '').toLowerCase() === 'consignee')?.name,
+          }}
           onClose={() => setPicker(false)}
           onPick={(cp) => {
             // One of each only: at most a single Customer (buyer), Consignee and
@@ -487,7 +497,7 @@ function Stage1(p: {
   header: HeaderConfig; setHeader: (h: HeaderConfig) => void; footer: FooterConfig; setFooter: (f: FooterConfig) => void;
   isEditing: boolean; onUpdate: () => void;
   onSubmitForApproval: (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean>;
-  resubmitMode: boolean; onResubmit: () => void;
+  resubmitMode: boolean; onResubmit: () => void; resubmitting?: boolean;
   declineReason?: string; declinedBy?: string;
   // Draft is view-only unless it's fresh / internally-rejected / counterparty-
   // declined. lockReason explains why (awaiting approval, out for signature, signed).
@@ -502,8 +512,6 @@ function Stage1(p: {
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [midStep, setMidStep] = useState<1 | 2 | 3>(1);          // inner Step 01 / 02 / 03
-  const [renewal, setRenewal] = useState<'yes' | 'no'>('yes');
-  const [renewalType, setRenewalType] = useState<'manual' | 'auto'>('manual');
   const [editorFs, setEditorFs] = useState(false);              // draft editor full-screen
   const [linkOpen, setLinkOpen] = useState(false);              // themed "insert link" dialog
   const [linkUrl, setLinkUrl] = useState('');
@@ -531,7 +539,24 @@ function Stage1(p: {
     document.addEventListener('selectionchange', onSel);
     return () => document.removeEventListener('selectionchange', onSel);
   }, []);
-  const syncDraft = () => { if (editorRef.current) p.setDraft(editorRef.current.innerHTML); };
+  // Push the editor's HTML up to the parent draft state. The editor is
+  // uncontrolled (seeded once via innerHTML above), so execCommand formatting
+  // applies to the DOM instantly — but setDraft() re-renders the whole (large)
+  // Stage-1 tree, which on a long agreement blocked the UI after EVERY
+  // keystroke / format and read as "the editor is loading". Debounce it so
+  // rapid edits coalesce into one re-render ~250ms after the user pauses; the
+  // formatting itself is never delayed. flushDraft() forces an immediate sync
+  // (on blur / before the parent reads the draft) so nothing is ever lost.
+  const syncTimer = useRef<number | null>(null);
+  const flushDraft = () => {
+    if (syncTimer.current) { window.clearTimeout(syncTimer.current); syncTimer.current = null; }
+    if (editorRef.current) p.setDraft(editorRef.current.innerHTML);
+  };
+  const syncDraft = () => {
+    if (syncTimer.current) window.clearTimeout(syncTimer.current);
+    syncTimer.current = window.setTimeout(flushDraft, 250);
+  };
+  useEffect(() => () => { if (syncTimer.current) window.clearTimeout(syncTimer.current); }, []);
   const restoreCaret = () => {
     const el = editorRef.current; if (!el) return; el.focus();
     const sel = window.getSelection(); if (!sel) return;
@@ -543,7 +568,26 @@ function Stage1(p: {
   const exec = (cmd: string, val?: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); syncDraft(); };
   // Apply the link from the themed dialog. restoreCaret() puts the stashed editor
   // selection back (the dialog input stole focus) so createLink wraps the right text.
-  const applyLink = () => { const url = linkUrl.trim(); setLinkOpen(false); if (!url) return; restoreCaret(); document.execCommand('createLink', false, url); syncDraft(); };
+  const applyLink = () => {
+    const url = linkUrl.trim();
+    if (!url) { setLinkOpen(false); return; }
+    // Put the stashed editor selection back (the dialog input stole focus).
+    restoreCaret();
+    const sel = window.getSelection();
+    const hasText = !!sel && sel.rangeCount > 0 && !sel.getRangeAt(0).collapsed;
+    if (hasText) {
+      // Wrap the selected text in a hyperlink.
+      document.execCommand('createLink', false, url);
+    } else {
+      // No text selected (or the selection was lost) → insert the URL itself as
+      // a clickable link so the Insert button always produces a result rather
+      // than appearing "non-responsive".
+      const safe = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      document.execCommand('insertHTML', false, `<a href="${safe}">${url}</a>`);
+    }
+    syncDraft();
+    setLinkOpen(false);
+  };
   const uploadDocx = async (file: File) => {
     const fd = new FormData(); fd.append('docx', file);
     try {
@@ -827,33 +871,13 @@ function Stage1(p: {
                 <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.3)' : '#BBF7D0'}`, overflow: 'hidden', boxShadow: '0 2px 12px rgba(109,40,217,.06)' }}>
                   <div style={{ padding: '11px 14px', background: t.dark ? 'rgba(16,185,129,.12)' : 'linear-gradient(110deg,#ECFDF5 0%,#F0FDF9 40%,#D1FAE5 100%)', borderBottom: `1.5px solid ${t.dark ? 'rgba(16,185,129,.25)' : '#A7F3D0'}`, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#059669,#047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></div>
-                    <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#064E3B' }}>Agreement Details</div><div style={{ fontSize: 8, color: t.dark ? '#34d399' : '#059669', fontWeight: 500 }}>Dates &amp; renewal terms</div></div>
+                    <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#064E3B' }}>Agreement Details</div><div style={{ fontSize: 8, color: t.dark ? '#34d399' : '#059669', fontWeight: 500 }}>Effective &amp; end dates</div></div>
                   </div>
                   <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, alignItems: 'end' }}>
                       <Field t={t} label="Effective Date *" green error={errors.effDate && !p.effDate ? 'Effective date is required' : undefined}><MasterDatePicker value={p.effDate} onChange={p.setEffDate} placeholder="Select date" /></Field>
                       <Field t={t} label="End Date *" green error={errors.endDate && !p.endDate ? 'End date is required' : undefined}><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={p.effDate || undefined} placeholder="Select date" /></Field>
                     </div>
-                    <div>
-                      <MiniLabel t={t} green>Auto Renewal</MiniLabel>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginTop: 4 }}>
-                        <GreenChoice t={t} sel={renewal === 'yes'} onClick={() => setRenewal('yes')} title="Yes" sub="Contract renews automatically"
-                          icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>} />
-                        <GreenChoice t={t} sel={renewal === 'no'} onClick={() => setRenewal('no')} title="No" sub="Contract expires on end date"
-                          icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>} />
-                      </div>
-                    </div>
-                    {renewal === 'yes' && (
-                      <div>
-                        <MiniLabel t={t} green>Renewal Schedule</MiniLabel>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7, marginTop: 4 }}>
-                          <GreenChoice t={t} sel={renewalType === 'manual'} onClick={() => setRenewalType('manual')} title="Manual Renewal" sub="Renewed by team action"
-                            icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><polyline points="20 8 20 14" /><line x1="17" y1="11" x2="23" y2="11" /></svg>} />
-                          <GreenChoice t={t} sel={renewalType === 'auto'} onClick={() => setRenewalType('auto')} title="Auto Renewal" sub="Renews automatically"
-                            icon={<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M23 4v6h-6" /><path d="M1 20v-6h6" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" /></svg>} />
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
@@ -901,7 +925,7 @@ function Stage1(p: {
                 </div>
                 <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
                   <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
-                    <div ref={editorRef} className="ctc-editor" contentEditable={!p.editLock} suppressContentEditableWarning data-ph="Start drafting your agreement content here…  This Agreement is entered into between [Counter Party 1] and [Counter Party 2]…" onInput={p.editLock ? undefined : syncDraft} onBlur={p.editLock ? undefined : syncDraft} style={{ minHeight: 220, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', color: t.dark ? '#e8eaed' : '#1f2937', lineHeight: 1.8, background: t.dark ? '#1b2230' : '#fff', boxSizing: 'border-box' }} />
+                    <div ref={editorRef} className="ctc-editor" contentEditable={!p.editLock} suppressContentEditableWarning data-ph="Start drafting your agreement content here…  This Agreement is entered into between [Counter Party 1] and [Counter Party 2]…" onInput={p.editLock ? undefined : syncDraft} onBlur={p.editLock ? undefined : flushDraft} style={{ minHeight: 220, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', color: t.dark ? '#e8eaed' : '#1f2937', lineHeight: 1.8, background: t.dark ? '#1b2230' : '#fff', boxSizing: 'border-box' }} />
                   </HeaderFooterPanel>
                 </div>
                 {/* footer hint */}
@@ -909,7 +933,7 @@ function Stage1(p: {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg><span style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 500, fontStyle: 'italic' }}>Placeholders auto-fill on agreement generation</span></div>
                   <span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
                 </div>
-                {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase(), type: c.sourceType, id: c.sourceId }))} onClose={() => setPhOpen(false)} onInsert={tok => { if (/^\s*</.test(tok)) { insertHtml(tok); toast.success('Inserted', 'Added to the agreement draft.'); } else { insertText(tok); toast.success('Placeholder added', tok); } }} />}
+                {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase(), type: c.sourceType, id: c.sourceId }))} onClose={() => setPhOpen(false)} onInsert={tok => { const isHtml = /^\s*</.test(tok); toast.success(isHtml ? 'Inserted' : 'Placeholder added', isHtml ? 'Added to the agreement draft.' : tok); if (isHtml) insertHtml(tok); else insertText(tok); }} />}
                 {clauseOpen && <ClmClauseInsertPanel onClose={() => setClauseOpen(false)} onInsert={html => insertHtml(html)} />}
                 {linkOpen && (
                   <div onMouseDown={e => { if (e.target === e.currentTarget) setLinkOpen(false); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.55)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'var(--font-sans)' }}>
@@ -971,9 +995,11 @@ function Stage1(p: {
                 );
               })()
             ) : p.resubmitMode ? (
-              <button onClick={() => { if (validateAll()) p.onResubmit(); }} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(217,119,6,.4)' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
-                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Resubmit for Review</span>
+              <button onClick={() => { if (!p.resubmitting && validateAll()) p.onResubmit(); }} disabled={p.resubmitting} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: p.resubmitting ? 'wait' : 'pointer', opacity: p.resubmitting ? .8 : 1, fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(217,119,6,.4)' }}>
+                {p.resubmitting
+                  ? <svg className="ctc-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                  : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>}
+                <span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{p.resubmitting ? 'Resubmitting…' : 'Resubmit for Review'}</span>
               </button>
             ) : (
               // Both add AND edit end Step 3 the same way: open the approval
@@ -1004,13 +1030,13 @@ function Stage1(p: {
 /* ── Stages 2–4: shared LEFT (read-only counterparty) + RIGHT (review) panels, changing MIDDLE ── */
 type SignRecipient = { name: string; email: string; role: string; contact: string; signed: boolean; signed_at: string | null; declined?: boolean; decline_reason?: string };
 
-function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, draft, header, footer, sentForApproval, workingId, record, approval, onResubmitEdit, onSendForSigning, onRecordSignature, onMoveToRepository, onRefresh, onRemind, onRespondClarification, onExit, onBack, onNext, onSave }: {
+function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, draft, header, footer, sentForApproval, workingId, record, approval, onResubmitEdit, onSendForSigning, onRecordSignature, onMoveToRepository, moving = false, onRefresh, onRemind, onRespondClarification, onExit, onBack, onNext, onSave }: {
   t: OpsTokens; stage: number; cps: CP[]; org: Org | null; agTitle: string; agType: string; effDate: string; endDate: string; draft: string; header: HeaderConfig; footer: FooterConfig; sentForApproval: boolean;
   workingId: number | null; record: Record<string, unknown> | null; approval: string;
   onResubmitEdit: () => void;
   onSendForSigning: (recipients: { name: string; email: string; role: string; contact: string }[], days: number | null) => void;
   onRecordSignature: (payload: { index?: number; all?: boolean }) => void;
-  onMoveToRepository: () => void; onRefresh: () => void; onRemind: () => void; onExit: () => void;
+  onMoveToRepository: () => void; moving?: boolean; onRefresh: () => void; onRemind: () => void; onExit: () => void;
   onRespondClarification: (response: string) => Promise<boolean>;
   onBack: () => void; onNext: () => void; onSave: () => void;
 }) {
@@ -1055,7 +1081,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   // Surfaced here so the sender sees the query in Stage 2 and can reply without
   // leaving the form. Stays visible while the contract sits in 'clarification'
   // (i.e. until the sender resubmits a fresh draft or the approver decides).
-  const clarifications = (Array.isArray(record?.clarifications) ? record!.clarifications : []) as { query?: string; date?: string; response?: string; resolved?: boolean; by?: string }[];
+  const clarifications = (Array.isArray(record?.clarifications) ? record!.clarifications : []) as { query?: string; date?: string; response?: string; response_date?: string; resolved?: boolean; by?: string }[];
   const inClarification = approval === 'clarification';
   const openClar = inClarification ? clarifications[clarifications.length - 1] ?? null : null;
   const sendClarReply = async () => {
@@ -1218,7 +1244,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                 <button onClick={async () => { if (reminding || signers.length === 0) return; setReminding(true); try { await onRemind(); } finally { setReminding(false); } }} disabled={signers.length === 0 || reminding} title="Re-email the counterparty signers via Zoho Sign" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: (signers.length === 0 || reminding) ? (t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9') : 'linear-gradient(135deg,#5B21B6,#6D28D9,#7C3AED)', border: 'none', cursor: (signers.length === 0 || reminding) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: (signers.length === 0 || reminding) ? t.textMuted : '#fff', boxShadow: (signers.length === 0 || reminding) ? 'none' : '0 3px 10px rgba(109,40,217,.35)' }}>{reminding ? <><svg className="ctc-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Sending…</> : <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg> Send Reminder</>}</button>
               )}
               {stage === 3 && !isDeclined && allSigned && (
-                <button onClick={onMoveToRepository} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(5,150,105,.35)' }}>Move to Final Repository <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg></button>
+                <button onClick={onMoveToRepository} disabled={moving} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#059669,#047857)', border: 'none', cursor: moving ? 'wait' : 'pointer', opacity: moving ? .8 : 1, fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(5,150,105,.35)' }}>{moving ? <><svg className="ctc-spin" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Moving…</> : <>Move to Final Repository <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg></>}</button>
               )}
               {/* Stage 4 — store finalized agreement */}
               {stage === 4 && (
@@ -1400,11 +1426,12 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                         return { tone: meta.tone, title: meta.title, badge: v.status || meta.title, sub: reason && !v.label.includes(reason) ? `${v.label} — ${reason}` : v.label, date: v.date, by: v.by };
                       });
                   // One "Requested" item per query + a "Answered" item when the
-                  // sender has replied. (Stored clarifications carry a date only,
-                  // no time, so they can't be reliably interleaved by timestamp.)
+                  // sender has replied. The answer uses its own `response_date`
+                  // (falling back to the request date only for legacy rows saved
+                  // before answer timestamps were stored).
                   const clarItems: TL[] = clarifications.flatMap(c => {
                     const items: TL[] = [{ tone: 'active', title: 'Clarification Requested', badge: 'Clarification', sub: c.query || 'The approver requested clarification before deciding.', date: c.date, by: c.by || apprName }];
-                    if (c.response) items.push({ tone: 'done', title: 'Clarification Answered', badge: 'Responded', sub: c.response, date: c.date });
+                    if (c.response) items.push({ tone: 'done', title: 'Clarification Answered', badge: 'Responded', sub: c.response, date: c.response_date || c.date });
                     return items;
                   });
                   // Clarifications happen during review, between submission and the
@@ -2372,7 +2399,7 @@ const toEntry = (name: unknown, country: unknown, phone: unknown, email: unknown
   id: String(id ?? i), name: String(name || '—'), initials: orgInitials(String(name || '')), country: String(country || '—'), phone: String(phone || '—'), email: String(email || '—'), grad: ORG_GRADS[i % ORG_GRADS.length],
 });
 
-function CpPicker({ t, slot, usedTypes = [], onClose, onPick }: { t: OpsTokens; slot: number; usedTypes?: string[]; onClose: () => void; onPick: (cp: CP) => void }) {
+function CpPicker({ t, slot, usedTypes = [], taken = {}, onClose, onPick }: { t: OpsTokens; slot: number; usedTypes?: string[]; taken?: { buyer?: string; consignee?: string }; onClose: () => void; onPick: (cp: CP) => void }) {
   // Types already added to this agreement — their tabs are disabled so only one
   // Customer (buyer) / Consignee / Supplier can ever be selected.
   const used = new Set(usedTypes.map(s => s.toLowerCase()));
@@ -2398,7 +2425,22 @@ function CpPicker({ t, slot, usedTypes = [], onClose, onPick }: { t: OpsTokens; 
     return () => { alive = false; };
   }, []);
 
-  const list = dir[tab].filter(p => (p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase()));
+  // The same company must not be both Customer and Consignee. Two rules:
+  //  1. The Consignee tab hides EVERY consignee that duplicates a Customer by
+  //     name — a party that already exists as a customer must never be pickable
+  //     as a consignee (e.g. "header checking" is a customer, so it's dropped
+  //     from the consignee list).
+  //  2. Either tab also hides the party already chosen for the opposite role on
+  //     THIS agreement (covers the reverse pick order).
+  const norm = (s: string) => s.trim().toLowerCase();
+  const customerNames = new Set(dir.buyer.map(b => norm(b.name)));
+  const excludedName = tab === 'consignee' ? taken.buyer : tab === 'buyer' ? taken.consignee : undefined;
+  const list = dir[tab].filter(p => {
+    if (!(p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase())) return false;
+    if (tab === 'consignee' && customerNames.has(norm(p.name))) return false;
+    if (excludedName && norm(p.name) === norm(excludedName)) return false;
+    return true;
+  });
   const tabBadge = tab === 'buyer'
     ? { label: 'Customer', bg: t.dark ? 'rgba(8,145,178,.18)' : '#E0F7FA', bd: t.dark ? 'rgba(6,182,212,.4)' : '#A5F3FC', fg: t.dark ? '#67e8f9' : '#0891b2' }
     : tab === 'supplier'

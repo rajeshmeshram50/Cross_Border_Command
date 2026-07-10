@@ -587,10 +587,13 @@ function FooterEditor({
               <select value={footer.page_number_format}
                 onChange={e => setFooter({ ...footer, page_number_format: e.target.value as PageNumberFormat })}
                 className="tpl-popover-input" style={inputStyle}>
+                {/* Labels use "N" for the total (the real page count is filled
+                    in at generation via {PAGE_COUNT}); a fixed sample like
+                    "of 10" wrongly implied every document was 10 pages. */}
                 <option value="N">1</option>
                 <option value="Page N">Page 1</option>
-                <option value="Page N of M">Page 1 of 10</option>
-                <option value="N / M">1 / 10</option>
+                <option value="Page N of M">Page 1 of N</option>
+                <option value="N / M">1 / N</option>
               </select>
             </div>
             <div className="col-md-6">
