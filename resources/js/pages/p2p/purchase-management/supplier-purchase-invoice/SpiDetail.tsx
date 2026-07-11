@@ -404,6 +404,13 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
     toast.error('Quantity exceeds PO', `${over.code || 'This product'}: only ${rem} left to invoice on this PO — you can't enter more than ${rem}.`);
     return true;
   };
+  // A saveable row needs a product picked + a quantity + a rate.
+  const hasValidProducts = () => rows.some(r => (r.productId || (r.spiName || '').trim()) && Number(r.spiQty || 0) > 0 && Number(r.spiRate || 0) > 0);
+  const blockIfNoProducts = (): boolean => {
+    if (hasValidProducts()) return false;
+    toast.error('No products added', 'Select at least one product with a quantity and rate before saving.');
+    return true;
+  };
 
   // Scroll the first highlighted (empty) field into view after a validation fail.
   const scrollToFirstError = () => {
@@ -485,7 +492,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   // update the draft created in Stage 1 (falls back to create if none exists).
   const handleSave = async () => {
     if (saving) return;
-    // No row may invoice more than the PO's remaining qty.
+    // At least one valid product, and no row over the PO's remaining qty.
+    if (blockIfNoProducts()) return;
     if (blockIfOverInvoiced()) return;
     // Invoice number, date & attachment are mandatory — highlight and block.
     // An attachment already on file (edit / re-open) counts, no re-upload required.
@@ -949,6 +957,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
             <div className="spi-dt-saverow-only">
               <button type="button" className="spi-dt-save-btn" disabled={savingDetails} onClick={() => {
                 if (savingDetails) return;
+                if (blockIfNoProducts()) return;     // at least one product with qty & rate
                 if (blockIfOverInvoiced()) return;   // can't invoice more than the PO's remaining qty
                 setSavingDetails(true);
                 setTimeout(() => { setSavingDetails(false); setShowMissing(true); setDetailsSaved(true); toast.success('Product details saved'); }, 500);
@@ -1050,6 +1059,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 </div>
                 <button type="button" className="spi-dt-save-btn" disabled={savingDetails} onClick={() => {
                   if (savingDetails) return;
+                  if (blockIfNoProducts()) return;   // must have at least one valid product
                   setSavingDetails(true);
                   setTimeout(() => { setSavingDetails(false); setShowMissing(true); setDetailsSaved(true); toast.success('Product details saved'); }, 500);
                 }}>

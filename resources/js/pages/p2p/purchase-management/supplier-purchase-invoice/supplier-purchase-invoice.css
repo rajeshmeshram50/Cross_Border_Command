@@ -101,6 +101,13 @@
 /* Pill-group container (Figma .polist-seg) */
 .spi-seg { display:flex; width:fit-content; align-items:center; gap:6px; margin:14px 16px 0; padding:5px; flex-wrap:wrap;
   background:#eef5f9; border:1px solid #dce9f0; border-radius:14px; }
+/* Tabs row that can also hold the search (Direct SPI tab) so it sits in line, not below. */
+.spi-segrow { display:flex; align-items:center; gap:18px; margin:14px 16px 0; flex-wrap:wrap; }
+.spi-segrow .spi-seg { margin:0; }
+.spi-segrow .spi-search { flex:1 1 auto; max-width:none; min-width:220px; height:40px; margin-left:auto; margin-bottom:0; }
+/* Direct-SPI tab: search lives on this row, so add breathing room before the table. */
+.spi-segrow--search { margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #eef4f7; }
+[data-bs-theme="dark"] .spi-segrow--search { border-bottom-color: rgba(148,163,184,.14); }
 .spi-seg-btn { display:inline-flex; align-items:center; gap:9px; padding:10px 16px; border-radius:10px; cursor:pointer;
   border:none; background:transparent; color:#64748b; font-family:inherit; font-size:13px; font-weight:700;
   transition: all .15s; }
