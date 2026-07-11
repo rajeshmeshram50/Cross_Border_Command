@@ -79,6 +79,18 @@ class MasterVisibility
         // Employees are PEER-ISOLATED — they see only their own rows plus
         // ancestor-tier reference data (globals + client-level rows).
         if (($user->user_type ?? null) === 'employee') {
+            // EXCEPTION — CLM masters are BRANCH-SHARED: every employee sees the
+            // whole branch's rows (same view as the branch admin), not just
+            // their own. Detected by the `clm_` table prefix so all CLM master
+            // tables (kyc, dd, qc, segments, authorities, trade-licenses,
+            // agreements/clauses/tnc/trade-doc libraries, segment-rules) opt in
+            // uniformly. This only widens READ visibility — mutating another
+            // member's row stays blocked by hierarchicalDenial() below.
+            if (str_starts_with($q->getModel()->getTable(), 'clm_')) {
+                self::applyBranchScope($q, $user);
+                return;
+            }
+
             $userId = (int) $user->id;
 
             $q->where(function ($w) use ($clientId, $userId) {

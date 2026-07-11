@@ -1176,14 +1176,30 @@ const IDIMS_CSS = `
 .idims-clm-child { display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 6px 8px; background: none; border: none; font-family: var(--font-sans); cursor: pointer; border-radius: 8px; text-align: left; transition: background .13s, transform .13s; }
 .idims-clm-child:hover { background: #F5F3FF; transform: translateX(2px); }
 .idims-clm-child-ico { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
-.idims-clm-child-label { font-size: 11.5px; font-weight: 600; color: #314058; white-space: nowrap; line-height: 1.3; transition: color .13s; }
-.idims-clm-child-desc { font-size: 9px; color: #94A3B8; white-space: nowrap; line-height: 1.3; }
+.idims-clm-child-label { font-size: 11.5px; font-weight: 600; color: #314058; white-space: normal; line-height: 1.3; transition: color .13s; overflow-wrap: anywhere; }
+.idims-clm-child-desc { font-size: 9px; color: #94A3B8; white-space: normal; line-height: 1.3; overflow-wrap: anywhere; }
 .idims-clm-child:hover .idims-clm-child-label { color: #0EA5E9; }
 .idims-dark .idims-clm-subcol + .idims-clm-subcol { border-left-color: #262B38; }
 .idims-dark .idims-clm-children { border-left-color: rgba(56,189,248,.45); }
 .idims-dark .idims-clm-child:hover { background: rgba(167,139,250,.12); }
 .idims-dark .idims-clm-child-label { color: #E5E7EB; }
 .idims-dark .idims-clm-child-ico { background: rgba(148,163,184,.14) !important; }
+/* Long labels inside the CLM sub-columns (e.g. "Quality & Compliance Docs")
+   wrap instead of nowrap-overflowing into the neighbouring column, and the text
+   box clips as a safety net so nothing bleeds across columns at tight widths. */
+.idims-clm-sub .idims-dd-item-label { white-space: normal; overflow-wrap: anywhere; }
+.idims-clm-subcol .idims-dd-item-text { overflow: hidden; }
+/* Responsive: the mega-menu is capped at min(1480px, 100vw - 28px), so on
+   narrower screens the 3 sections + nested sub-columns get cramped and collide.
+   Ease the track sizing first, then stack each section's two sub-columns. */
+@media (max-width: 1320px) {
+  .idims-clm-grid { grid-template-columns: 240px 1fr 1.2fr; }
+}
+@media (max-width: 1080px) {
+  .idims-clm-sub { grid-template-columns: 1fr; }
+  .idims-clm-subcol + .idims-clm-subcol { border-left: none; padding: 8px 0 0 0; margin-top: 6px; border-top: 1px solid #EFF2F8; }
+  .idims-dark .idims-clm-subcol + .idims-clm-subcol { border-top-color: #262B38; }
+}
 @keyframes idimsDD { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
 .idims-dd-topbar { height: 4px; flex-shrink: 0; background: linear-gradient(90deg,#7C3AED 0%,#A78BFA 28%,#0EA5E9 52%,#38BDF8 68%,#0D9488 84%,#2DD4BF 100%); }
 /* flex:1 + min-height:0 lets the content scroll within the height-capped panel

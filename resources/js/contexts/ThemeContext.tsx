@@ -23,6 +23,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Push our theme to BOTH attributes whenever state changes.
   useEffect(() => {
     const html = document.documentElement;
+    // Kill every transition/animation for the instant the theme flips, so icons,
+    // buttons, arrows & backgrounds swap instantly instead of animating through a
+    // white/light flash. Re-enabled on the next frame (normal interactions keep
+    // their transitions).
+    const killer = document.createElement('style');
+    killer.appendChild(document.createTextNode('*,*::before,*::after{transition:none!important;animation:none!important;}'));
+    document.head.appendChild(killer);
+
     if (html.getAttribute('data-theme') !== theme) html.setAttribute('data-theme', theme);
     if (html.getAttribute('data-bs-theme') !== theme) html.setAttribute('data-bs-theme', theme);
     // Persist to BOTH keys so the choice survives a hard refresh: `cbc-layout-mode`
@@ -30,6 +38,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     // on boot — without this they'd reset to their stale value and flip the theme.
     localStorage.setItem('cbc_theme', theme);
     localStorage.setItem('cbc-layout-mode', theme);
+
+    // Force a reflow so the "no transition" state applies to this swap, then
+    // remove the killer after the paint (double rAF) to restore transitions.
+    void html.offsetHeight;
+    const raf = requestAnimationFrame(() => requestAnimationFrame(() => { if (killer.parentNode) killer.parentNode.removeChild(killer); }));
+    return () => { cancelAnimationFrame(raf); if (killer.parentNode) killer.parentNode.removeChild(killer); };
   }, [theme]);
 
   // Keep our state in sync when anything else flips `data-bs-theme` or `data-theme`

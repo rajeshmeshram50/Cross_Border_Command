@@ -373,6 +373,9 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
   .clm-tabs-bar .clm-search-fixed { width: 100%; }
   .clm-tabs-bar { flex-direction: column; align-items: stretch; }
   .clm-tabs-bar .clm-total { align-self: stretch; }
+  /* In a column flex the search's flex-basis (240px) becomes its HEIGHT — reset
+     it so the bar keeps its natural 34px height and just spans full width. */
+  .clm-tabs-bar .clm-search { flex: 0 0 auto; width: 100%; min-width: 0; }
 }
 
 /* Compound Total badge — icon block + label + count number */
@@ -478,7 +481,10 @@ body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-the
 
 /* Overflow popover (opened from a +N count badge in a table cell). Positioned
    inline (fixed left/top), but colours come from here so it follows dark mode. */
-.clm-pop { background: #fff; border: 1.5px solid #99f6e4; box-shadow: 0 16px 40px rgba(0,0,0,.18); }
+.clm-pop { background: #fff; border: 1.5px solid #99f6e4; box-shadow: 0 16px 40px rgba(0,0,0,.18); -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.clm-pop::-webkit-scrollbar { width: 8px; }
+.clm-pop::-webkit-scrollbar-thumb { background: rgba(6,182,212,.35); border-radius: 8px; }
+.clm-pop::-webkit-scrollbar-track { background: transparent; }
 .clm-pop-title { color: #0d9488; }
 .clm-pop-row-alt { background: #f0fdfa; }
 [data-bs-theme="dark"] .clm-pop { background: #0f172a; border-color: rgba(6,182,212,.35); box-shadow: 0 16px 40px rgba(0,0,0,.5); }

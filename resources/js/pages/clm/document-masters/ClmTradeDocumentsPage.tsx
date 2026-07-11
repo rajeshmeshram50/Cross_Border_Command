@@ -253,10 +253,17 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
   useEffect(() => {
     if (!segOpen && !partyOpen) return;
     const close = () => { setSegOpen(null); setPartyOpen(null); };
-    window.addEventListener('scroll', close, true);
+    // Close on PAGE/table scroll, but not when scrolling inside the popover itself
+    // (that scroll used to close it, making a long list unscrollable).
+    const onScroll = (e: Event) => {
+      const t = e.target as Element | null;
+      if (t && typeof t.closest === 'function' && t.closest('.clm-pop')) return;
+      close();
+    };
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', close);
     return () => {
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', close);
     };
   }, [segOpen, partyOpen]);
