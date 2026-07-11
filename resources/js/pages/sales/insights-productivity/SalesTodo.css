@@ -432,6 +432,7 @@
   display: flex; flex-direction: column;
   box-shadow: 0 24px 60px rgba(13,148,136,.25), 0 8px 24px rgba(0,0,0,.1);
   overflow: hidden;
+  position: relative;   /* positioning context for the saving lock overlay */
 }
 .td-modal-header {
   background: linear-gradient(135deg, #0d9488 0%, #065f46 60%, #064e3b 100%);
@@ -481,6 +482,23 @@
   padding: 13px 22px 10px; background: #f0fdfa;
   overflow-y: auto; flex: 1;
 }
+
+/* Saving lock — blankets the whole modal so no field/button can be edited mid-save. */
+.td-form-lock {
+  position: absolute; inset: 0; z-index: 30;
+  display: flex; flex-direction: column; gap: 10px;
+  align-items: center; justify-content: center;
+  background: rgba(240, 253, 250, .62);
+  backdrop-filter: blur(1.5px); -webkit-backdrop-filter: blur(1.5px);
+  cursor: progress;
+}
+.td-form-lock-spinner {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid rgba(13, 148, 136, .22);
+  border-top-color: #0d9488;
+  animation: td-spin .7s linear infinite;
+}
+.td-form-lock-text { font-size: 12.5px; font-weight: 700; color: #0f766e; letter-spacing: .2px; }
 .td-form-grid {
   display: grid; grid-template-columns: 1fr 1fr;
   gap: 10px;
@@ -1242,6 +1260,9 @@
 /* Modal */
 [data-bs-theme="dark"] .td-modal { background: #0e1726; box-shadow: 0 24px 60px rgba(0,0,0,.6); }
 [data-bs-theme="dark"] .td-modal-body { background: #11182a; }
+[data-bs-theme="dark"] .td-form-lock { background: rgba(17, 24, 42, .62); }
+[data-bs-theme="dark"] .td-form-lock-spinner { border-color: rgba(94, 234, 212, .22); border-top-color: #2dd4bf; }
+[data-bs-theme="dark"] .td-form-lock-text { color: #5eead4; }
 [data-bs-theme="dark"] .td-label { color: #94a3b8; }
 [data-bs-theme="dark"] .td-inp,
 [data-bs-theme="dark"] .td-cs-trigger {

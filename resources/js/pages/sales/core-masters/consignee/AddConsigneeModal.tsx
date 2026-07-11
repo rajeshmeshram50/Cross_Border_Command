@@ -1458,6 +1458,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * fires onSaved + onClose directly, so this only matters for early
    * dismissal. */
   const handleClose = () => {
+    if (inFlightRef.current || saving) return;   // don't allow closing mid-save
     if (dirtySavedRef.current) {
       onSaved?.();
       dirtySavedRef.current = false;
@@ -2747,6 +2748,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             })()}
           </div>
         </div>
+        {/* While saving, lock the whole form so no field/step can be edited mid-save. */}
+        {saving && (
+          <div className="acm-save-lock" aria-live="polite" aria-busy="true">
+            <span className="acm-save-lock-spinner" />
+            <span className="acm-save-lock-text">Saving…</span>
+          </div>
+        )}
       </div>
     </div>
 
@@ -6467,7 +6475,29 @@ const SCOPED_CSS = `
   background: #f0fdf4; border-radius: 16px; overflow: hidden;
   box-shadow: 0 30px 80px rgba(0,0,0,.40);
   display: flex; flex-direction: column;
+  position: relative;   /* positioning context for the saving lock overlay */
 }
+
+/* Saving lock — blankets the whole wizard so no field/step/button can be edited mid-save. */
+.acm-save-lock {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; flex-direction: column; gap: 12px;
+  align-items: center; justify-content: center;
+  background: rgba(240, 253, 244, 0.62);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  cursor: progress;
+}
+.acm-save-lock-spinner {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 3.5px solid rgba(13, 148, 136, 0.22);
+  border-top-color: #0d9488;
+  animation: acm-savelock-spin .7s linear infinite;
+}
+.acm-save-lock-text { font-size: 13px; font-weight: 700; color: #0f766e; letter-spacing: .2px; }
+@keyframes acm-savelock-spin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .acm-save-lock { background: rgba(16, 49, 41, 0.66); }
+[data-bs-theme="dark"] .acm-save-lock-spinner { border-color: rgba(94, 234, 212, 0.22); border-top-color: #2dd4bf; }
+[data-bs-theme="dark"] .acm-save-lock-text { color: #5eead4; }
 /* Modal header — same mint→teal gradient used by the listing page
    hero strip + WDH banner + table header. Keeps a single emerald
    palette across the whole consignee surface. White-on-mint-teal

@@ -280,16 +280,21 @@ export function MasterSelect({
                     disabled={opt.disabled}
                     toggle={!opt.disabled}
                     onClick={opt.disabled ? undefined : () => handlePick(opt.value)}
-                    title={opt.disabled ? opt.disabledReason : undefined}
+                    /* Full label as a native tooltip so a truncated (long) option
+                       name is still readable on hover. Disabled options keep their
+                       reason. */
+                    title={opt.disabled ? opt.disabledReason : opt.label}
                     className="master-select-item"
                     style={opt.disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                   >
                     {(opt.badge || opt.badges?.length) ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', width: '100%' }}>
-                        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{opt.label}</span>
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
                         {badgesOf(opt).map((b, i) => <OptBadge key={i} b={b} />)}
                       </span>
-                    ) : opt.label}
+                    ) : (
+                      <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
+                    )}
                   </DropdownItem>
                 ))}
                 {loadingMore && (
