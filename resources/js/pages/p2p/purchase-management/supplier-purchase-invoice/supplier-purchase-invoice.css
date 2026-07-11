@@ -492,6 +492,9 @@
 .spi-dt-secpills .spi-dt-dots { align-self:center; }
 .spi-dt-mtable-wrap { overflow-x:auto; border:1px solid #e2eef3; border-radius:12px; }
 .spi-dt-mtable { width:100%; border-collapse:collapse; white-space:nowrap; }
+/* fixed layout → columns keep their width regardless of cell content (no resize on product select) */
+.spi-dt-mtable--fixed { table-layout:fixed; }
+.spi-dt-mtable--fixed th, .spi-dt-mtable--fixed td { overflow:hidden; }
 .spi-dt-mtable thead { background: linear-gradient(110deg,#0e7490 0%,#0891b2 50%,#06b6d4 100%); }
 .spi-dt-mtable thead th { background: transparent; color:#fff; font-size:8.5px; font-weight:800; letter-spacing:.03em;
   text-transform:uppercase; padding:8px 6px; text-align:left; white-space:normal; line-height:1.25; }
@@ -846,6 +849,7 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
   background: linear-gradient(135deg,#059669,#10b981 55%,#34d399); box-shadow: 0 4px 14px rgba(16,185,129,.36);
   transition:transform .15s, box-shadow .15s; }
 .spi-dt-btn-map:hover { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(16,185,129,.48); }
+.spi-dt-btn-map:disabled { opacity:.5; cursor:not-allowed; transform:none; box-shadow:none; filter:grayscale(.2); }
 
 [data-bs-theme="dark"] .spi-dt-step, [data-bs-theme="dark"] .spi-dt-sec, [data-bs-theme="dark"] .spi-dt-foot { background:#0e1b24; border-color: rgba(34,211,238,.18); }
 [data-bs-theme="dark"] .spi-dt-sec-head { background: linear-gradient(110deg,#0c2630,#103642); border-bottom-color: rgba(34,211,238,.2); }
