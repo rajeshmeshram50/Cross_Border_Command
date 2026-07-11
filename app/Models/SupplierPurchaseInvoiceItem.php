@@ -13,7 +13,7 @@ class SupplierPurchaseInvoiceItem extends Model
         'pi_product_name', 'pi_quantity',
         'po_product_name', 'po_quantity', 'rate_po',
         'product_name', 'quantity', 'missing_qty', 'hsn_code', 'rate',
-        'gst_pct', 'cgst_pct', 'sgst_pct', 'cgst_amount', 'sgst_amount', 'cost', 'line_no',
+        'gst_pct', 'cgst_pct', 'sgst_pct', 'igst_pct', 'cgst_amount', 'sgst_amount', 'igst_amount', 'cost', 'line_no',
     ];
 
     protected $casts = [

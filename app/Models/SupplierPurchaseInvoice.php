@@ -21,7 +21,7 @@ class SupplierPurchaseInvoice extends Model
         'shipment_order_id', 'shipment_code', 'proforma_invoice_id', 'pi_number',
         'opportunity_id', 'opportunity_code', 'procurement_id', 'procurement_code',
         'customer_name', 'consignee_name',
-        'total_po_amount', 'total_product_cost', 'total_cgst', 'total_sgst',
+        'total_po_amount', 'total_product_cost', 'total_cgst', 'total_sgst', 'total_igst',
         'additional_charges', 'net_payable', 'total_paid', 'balance',
         'attachment_path', 'zoho_status', 'status', 'created_by', 'updated_by',
     ];

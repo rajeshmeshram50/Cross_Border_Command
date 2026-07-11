@@ -545,11 +545,14 @@ class SupplierPurchaseInvoiceController extends Controller
             $qty = (float) ($it['quantity'] ?? 0);
             $rate = (float) ($it['rate'] ?? 0);
             $gst = (float) ($it['gst_pct'] ?? 0);
-            $cgstP = $intra ? 9 : $gst / 2;
-            $sgstP = $intra ? 9 : $gst / 2;
+            // Intra-state (home 27) → CGST + SGST (each gst/2). Inter-state → single IGST (full gst).
+            $cgstP = $intra ? $gst / 2 : 0;
+            $sgstP = $intra ? $gst / 2 : 0;
+            $igstP = $intra ? 0 : $gst;
             $base = $qty * $rate;
             $cgstA = $base * $cgstP / 100;
             $sgstA = $base * $sgstP / 100;
+            $igstA = $base * $igstP / 100;
 
             $poQty = isset($it['po_quantity']) && $it['po_quantity'] !== '' ? (float) $it['po_quantity'] : null;
 
@@ -570,9 +573,11 @@ class SupplierPurchaseInvoiceController extends Controller
                 'gst_pct' => $gst,
                 'cgst_pct' => $cgstP,
                 'sgst_pct' => $sgstP,
+                'igst_pct' => $igstP,
                 'cgst_amount' => round($cgstA, 2),
                 'sgst_amount' => round($sgstA, 2),
-                'cost' => round($base + $cgstA + $sgstA, 2),
+                'igst_amount' => round($igstA, 2),
+                'cost' => round($base + $cgstA + $sgstA + $igstA, 2),
                 'line_no' => ++$line,
             ]);
         }
@@ -584,6 +589,7 @@ class SupplierPurchaseInvoiceController extends Controller
         $prod = (float) $items->sum('cost');
         $cgst = (float) $items->sum('cgst_amount');
         $sgst = (float) $items->sum('sgst_amount');
+        $igst = (float) $items->sum('igst_amount');
         $addl = (float) ($data['shipping_charges'] ?? 0) + (float) ($data['packaging_charges'] ?? 0) + (float) ($data['other_charges'] ?? 0);
         $paid = (float) ($data['total_paid'] ?? 0);
         $net = round($prod + $addl, 2);
@@ -591,6 +597,7 @@ class SupplierPurchaseInvoiceController extends Controller
             'total_product_cost' => round($prod, 2),
             'total_cgst' => round($cgst, 2),
             'total_sgst' => round($sgst, 2),
+            'total_igst' => round($igst, 2),
             'additional_charges' => round($addl, 2),
             'net_payable' => $net,
             'total_paid' => round($paid, 2),
@@ -657,6 +664,7 @@ class SupplierPurchaseInvoiceController extends Controller
             'total_product_cost' => (float) $spi->total_product_cost,
             'total_cgst' => (float) $spi->total_cgst,
             'total_sgst' => (float) $spi->total_sgst,
+            'total_igst' => (float) $spi->total_igst,
             'additional_charges' => (float) $spi->additional_charges,
             'items' => $spi->items->map(fn ($it) => [
                 'id' => $it->id,
@@ -675,6 +683,7 @@ class SupplierPurchaseInvoiceController extends Controller
                 'gst' => (float) $it->gst_pct,
                 'cgstA' => (float) $it->cgst_amount,
                 'sgstA' => (float) $it->sgst_amount,
+                'igstA' => (float) $it->igst_amount,
                 'cost' => (float) $it->cost,
             ])->all(),
         ]);
