@@ -302,7 +302,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
       setRows((d.items ?? []).map((it: Record<string, unknown>) => ({
         productId: (it.product_id as number) ?? null, code: (it.code as string) ?? '',
         piName: (it.piName as string) ?? '', piQty: (it.piQty as number) ?? null,
-        poName: (it.poName as string) ?? '', poQty: (it.poQty as number) ?? 0, invoiced: 0,
+        poName: (it.poName as string) ?? '', poQty: (it.poQty as number) ?? 0, invoiced: (it.invoiced as number) ?? 0,
         ratePo: (it.ratePo as number) ?? 0, gst: (it.gst as number) ?? 0,
         spiName: (it.name as string) ?? '', spiQty: String((it.qty as number) ?? ''), hsn: (it.hsn as string) ?? '', spiRate: String((it.rate as number) ?? ''),
       })));
@@ -372,6 +372,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   // (any other state code) → a single IGST = the full product GST. Mirrors the
   // backend + PO wizard so the preview matches the saved row.
   const intra = (sup?.stateCode ?? '27') === '27';
+  // Hide the PI columns in the 3-way match when the PO has no linked PI (e.g. without-shipment case).
+  const hasPi = !!po?.pi_number;
   const rowCost = (r: SpiRow) => {
     const base = Number(r.spiQty || 0) * Number(r.spiRate || 0);
     const cgstA = intra ? (base * (r.gst / 2)) / 100 : 0;
@@ -384,9 +386,24 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   const grandTotal = totals.prod + addlCharges;
 
   // Products whose PO quantity is still not fully covered after this invoice.
+  // "Missing" is global: PO qty minus what THIS + all OTHER SPIs have invoiced.
+  // QTY(SPI) shown here is the cumulative invoiced so PO − SPI = Missing stays consistent.
   const missingRows = rows
-    .map(r => ({ code: r.code, name: r.poName || r.spiName, poQty: r.poQty, spiQty: Number(r.spiQty || 0), miss: r.poQty - r.invoiced - Number(r.spiQty || 0) }))
+    .map(r => ({ code: r.code, name: r.poName || r.spiName, poQty: r.poQty, spiQty: r.invoiced + Number(r.spiQty || 0), miss: r.poQty - r.invoiced - Number(r.spiQty || 0) }))
     .filter(m => m.miss > 0);
+
+  // With-PO: a row can never invoice more than what's still uncovered on the PO
+  // (PO qty − already invoiced by other SPIs). Returns the first offending row.
+  const overInvoicedRow = () => withPo
+    ? rows.find(r => Number(r.spiQty || 0) > (r.poQty - r.invoiced))
+    : undefined;
+  const blockIfOverInvoiced = (): boolean => {
+    const over = overInvoicedRow();
+    if (!over) return false;
+    const rem = Math.max(0, over.poQty - over.invoiced);
+    toast.error('Quantity exceeds PO', `${over.code || 'This product'}: only ${rem} left to invoice on this PO — you can't enter more than ${rem}.`);
+    return true;
+  };
 
   // Scroll the first highlighted (empty) field into view after a validation fail.
   const scrollToFirstError = () => {
@@ -449,10 +466,10 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
     };
   };
 
-  // Step 1 → Step 2: persist the Stage-1 data as a draft (invoice/attachment are
-  // still optional here — they come in Stage 2), then advance. The returned id is
-  // kept so Stage 2 updates the SAME row instead of creating a second one.
-  const goStep2 = async () => {
+  // Step 1 → Step 2: just advance. NO draft is written here — the SPI is created
+  // exactly once at "Map Invoice", so one user action can never leave a duplicate/
+  // orphan row. Stage-1 data is preserved in React state across both steps.
+  const goStep2 = () => {
     if (nexting) return;
     // GST scrutiny must be current — block raising the invoice on a stale supplier.
     if (scrutinyOld) {
@@ -461,27 +478,15 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
       return;
     }
     setNexting(true);
-    try {
-      const payload = buildPayload(existingAttach);
-      if (savedId) {
-        await api.put(`/p2p/supplier-purchase-invoices/${savedId}`, payload);
-      } else {
-        const r = await api.post('/p2p/supplier-purchase-invoices', payload);
-        setSavedId(r.data?.data?.id ?? null);
-      }
-      setStep(2);
-    } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error('Could not save', msg ?? 'Could not save the details. Please try again.');
-    } finally {
-      setNexting(false);
-    }
+    setTimeout(() => { setNexting(false); setStep(2); }, 300);
   };
 
   // Step 2 finalise: validate the invoice fields, upload the attachment, then
   // update the draft created in Stage 1 (falls back to create if none exists).
   const handleSave = async () => {
     if (saving) return;
+    // No row may invoice more than the PO's remaining qty.
+    if (blockIfOverInvoiced()) return;
     // Invoice number, date & attachment are mandatory — highlight and block.
     // An attachment already on file (edit / re-open) counts, no re-upload required.
     const ie = { invoiceNo: !invoiceNo.trim(), invoiceDate: !invoiceDate, file: !file && !existingAttach };
@@ -885,18 +890,27 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
             <div className="spi-dt-mtable-wrap">
               <table className="spi-dt-mtable">
                 <colgroup>
-                  <col style={{ width: '3.5%' }} /><col style={{ width: '6.5%' }} /><col style={{ width: '14%' }} /><col style={{ width: '14%' }} /><col style={{ width: '15%' }} />
-                  <col style={{ width: '5%' }} /><col style={{ width: '5%' }} /><col style={{ width: '6.5%' }} /><col style={{ width: '6%' }} />
-                  <col style={{ width: '8.5%' }} /><col style={{ width: '7.5%' }} /><col style={{ width: '8.5%' }} />
+                  <col style={{ width: '3.5%' }} />
+                  <col style={{ width: '6.5%' }} />
+                  {hasPi && <col style={{ width: '14%' }} />}
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '15%' }} />
+                  {hasPi && <col style={{ width: '5%' }} />}
+                  <col style={{ width: '5%' }} />
+                  <col style={{ width: '6.5%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '8.5%' }} />
+                  <col style={{ width: '7.5%' }} />
+                  <col style={{ width: '8.5%' }} />
                 </colgroup>
                 <thead>
                   <tr>
                     <th className="spi-dt-mc-c">SR NO</th>
                     <th>PRODUCT CODE</th>
-                    <th>PRODUCT NAME (PI)</th>
+                    {hasPi && <th>PRODUCT NAME (PI)</th>}
                     <th>PRODUCT NAME (PO)</th>
                     <th>PRODUCT NAME (SPI)</th>
-                    <th className="spi-dt-mc-c">QUANTITY (PI)</th>
+                    {hasPi && <th className="spi-dt-mc-c">QUANTITY (PI)</th>}
                     <th className="spi-dt-mc-c">QUANTITY (PO)</th>
                     <th className="spi-dt-mc-c">QUANTITY (SPI)</th>
                     <th className="spi-dt-mc-c">MISSING QTY</th>
@@ -907,7 +921,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 </thead>
                 <tbody>
                   {rows.length === 0 ? (
-                    <tr><td colSpan={12} className="spi-dt-mc-c" style={{ padding: '20px', color: '#94a3b8' }}>No products on this purchase order.</td></tr>
+                    <tr><td colSpan={hasPi ? 12 : 10} className="spi-dt-mc-c" style={{ padding: '20px', color: '#94a3b8' }}>No products on this purchase order.</td></tr>
                   ) : rows.map((r, i) => {
                     // Uncovered PO qty after prior invoices + this one.
                     const missing = r.poQty - r.invoiced - Number(r.spiQty || 0);
@@ -915,10 +929,10 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                     <tr key={i}>
                       <td className="spi-dt-mc-c">{i + 1}</td>
                       <td><span className="spi-dt-mcode">{r.code || '—'}</span></td>
-                      <td className="spi-dt-mname">{r.piName || '—'}</td>
+                      {hasPi && <td className="spi-dt-mname">{r.piName || '—'}</td>}
                       <td className="spi-dt-mname">{r.poName || '—'}</td>
                       <td><input className="spi-dt-minp" value={r.spiName} onChange={e => setRow(i, { spiName: e.target.value })} /></td>
-                      <td className="spi-dt-mc-c">{r.piQty ?? '—'}</td>
+                      {hasPi && <td className="spi-dt-mc-c">{r.piQty ?? '—'}</td>}
                       <td className="spi-dt-mc-c">{r.poQty}</td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value })} /></td>
                       <td className="spi-dt-mc-c">{Number.isFinite(missing) ? missing : 0}</td>
@@ -935,6 +949,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
             <div className="spi-dt-saverow-only">
               <button type="button" className="spi-dt-save-btn" disabled={savingDetails} onClick={() => {
                 if (savingDetails) return;
+                if (blockIfOverInvoiced()) return;   // can't invoice more than the PO's remaining qty
                 setSavingDetails(true);
                 setTimeout(() => { setSavingDetails(false); setShowMissing(true); setDetailsSaved(true); toast.success('Product details saved'); }, 500);
               }}>
@@ -1062,7 +1077,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
             <div className="spi-dt-sec-ico spi-dt-sec-ico-warn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg></div>
             <div className="spi-dt-sec-mid">
               <div className="spi-dt-sec-row"><span className="spi-dt-sec-lbl">Products</span><span className="spi-dt-sec-sep" /><span className="spi-dt-sec-title">Missing Product Details</span></div>
-              <div className="spi-dt-sec-sub">{withPo ? 'PO quantities not fully covered by this invoice' : 'Products captured on this direct invoice'}</div>
+              <div className="spi-dt-sec-sub">{withPo ? 'PO quantities not fully covered across all invoices so far' : 'Products captured on this direct invoice'}</div>
             </div>
             {showMissing && <span className={`spi-dt-misscount ${missingRows.length === 0 ? 'is-zero' : ''}`}>{missingRows.length} Missing</span>}
           </div>

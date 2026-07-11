@@ -528,6 +528,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/p2p/supplier-purchase-invoices/suppliers',           [SupplierPurchaseInvoiceController::class, 'suppliers']);
     Route::get   ('/p2p/supplier-purchase-invoices/suppliers/{id}',       [SupplierPurchaseInvoiceController::class, 'supplier'])->whereNumber('id');
     Route::post  ('/p2p/supplier-purchase-invoices/upload',              [SupplierPurchaseInvoiceController::class, 'upload']);
+    Route::get   ('/p2p/supplier-purchase-invoices/download',            [SupplierPurchaseInvoiceController::class, 'download']);
     Route::get   ('/p2p/supplier-purchase-invoices',                     [SupplierPurchaseInvoiceController::class, 'index']);
     Route::post  ('/p2p/supplier-purchase-invoices',                     [SupplierPurchaseInvoiceController::class, 'store']);
     Route::get   ('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'show'])->whereNumber('id');

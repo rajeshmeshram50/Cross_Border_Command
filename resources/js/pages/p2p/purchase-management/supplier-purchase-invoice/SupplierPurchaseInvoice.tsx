@@ -161,6 +161,24 @@ export default function SupplierPurchaseInvoice() {
     catch { toast.error('Sync failed', 'Could not sync this invoice.'); }
   };
 
+  // Download the attachment by STREAMING it through the backend (same-origin,
+  // works on the Azure-Blob server where a direct blob fetch is CORS-blocked).
+  const downloadRow = async (r: SpiRow) => {
+    setMenu(null);
+    if (!r.attach) { toast.info('Download SPI', 'No attachment on this invoice.'); return; }
+    try {
+      const resp = await api.get('/p2p/supplier-purchase-invoices/download', { params: { path: r.attach }, responseType: 'blob' });
+      const url = URL.createObjectURL(resp.data as Blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = r.attach.split('/').pop() || `${r.spiNo}-attachment`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    } catch { toast.error('Download failed', 'Could not download the attachment.'); }
+  };
+
   // The detail wizard's mode comes from the Map modal choice (falls back to the active list tab).
   if (detailOpen) return <SpiDetail editId={editId ?? undefined} withPo={mapCtx ? mapCtx.mode === 'with' : withPo} poId={mapCtx?.mode === 'with' ? mapCtx.poId : undefined} supplierId={mapCtx?.mode === 'without' ? mapCtx.supplierId : undefined} onSaved={reload} onClose={() => { setDetailOpen(false); setMapCtx(null); setEditId(null); }} onChangeSelection={() => { setDetailOpen(false); setMapCtx(null); setEditId(null); setMapOpen(true); }} />;
 
@@ -351,7 +369,7 @@ export default function SupplierPurchaseInvoice() {
             </div>
             <div className="spi-menu-items">
               <button type="button" className="spi-menu-item is-teal" onClick={() => syncRow(menu.row)}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
-              <button type="button" className="spi-menu-item" onClick={() => { const a = menu.row.attach; setMenu(null); if (a) window.open(resolveFileUrl(a), '_blank', 'noopener'); else toast.info('Download SPI', 'No attachment on this invoice.'); }}><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> Download SPI</button>
+              <button type="button" className="spi-menu-item" onClick={() => void downloadRow(menu.row)}><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> Download SPI</button>
               <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); toast.info('SPI Payment', 'Payment recording is coming soon.'); }}><span className="spi-menu-item-ico spi-menu-item-ico-pay"><IcoCard /></span> SPI Payment</button>
             </div>
           </div>
