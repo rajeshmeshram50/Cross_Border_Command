@@ -56,9 +56,15 @@ function AuthorityCell({ value }: { value?: string[] | string | null }) {
         <>
           <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
           <div style={{ position: 'fixed', left: Math.min(pop.x, window.innerWidth - 260), top: pop.y, zIndex: 13001, width: 240, maxHeight: 300, overflowY: 'auto', background: dark ? '#0f1e2b' : '#fff', border: `1px solid ${dark ? 'rgba(148,197,255,.18)' : '#e2e8f0'}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.18)', padding: '8px 0' }}>
-            <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: dark ? '#7dd3fc' : '#64748b', padding: '4px 14px 6px' }}>Issuing Authorities ({names.length})</div>
+            <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: dark ? '#6ee7b7' : '#0f766e', padding: '4px 14px 6px' }}>Issuing Authorities ({names.length})</div>
             {names.map((n, i) => (
-              <div key={i} style={{ fontSize: 12, color: dark ? '#e2e8f0' : '#0f172a', padding: '5px 14px', background: i % 2 ? (dark ? 'rgba(148,197,255,.05)' : '#f8fafc') : 'transparent' }}>{n}</div>
+              <div key={i} style={{ padding: '3px 12px' }}>
+                {/* Green pill — mirrors the consignee segment "+N" popover. */}
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: dark ? '#6ee7b7' : '#0f766e', background: dark ? 'rgba(20,184,166,.14)' : '#ecfdf5', border: `1px solid ${dark ? 'rgba(20,184,166,.35)' : '#a7f3d0'}`, borderRadius: 999, padding: '4px 11px', maxWidth: '100%' }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', flexShrink: 0 }} />
+                  {n}
+                </span>
+              </div>
             ))}
           </div>
         </>,
@@ -4472,7 +4478,7 @@ const Stage3 = ({ vaultTab, setVaultTab, evSub, setEvSub, form1, kycDocs, kycOwn
                             <td style={{ fontWeight: 700 }}>
                               {d.name}{d.requirement === 'M' ? <span style={{ marginLeft:6, color:'#7c3aed' }}>★</span> : null}
                             </td>
-                            <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
+                            <td><AuthorityCell value={d.authority_list ?? d.authority} /></td>
                             {/* Requirement — is this doc required or optional. */}
                             <td>
                               {d.requirement === 'M'
