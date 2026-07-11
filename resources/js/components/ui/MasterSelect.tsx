@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import './MasterSelect.css';
 
+/* A small pill shown beside an option label. `tone` picks the palette —
+   green/red/gray for status, violet for a category/segment tag. */
+type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet' };
+
 
 export function MasterSelect({
   name,
@@ -24,7 +28,12 @@ export function MasterSelect({
   name?: string;
   value?: string;
   defaultValue?: string;
-  options: { value: string; label: string; badge?: { text: string; tone?: 'green' | 'red' | 'gray' } }[];
+  /* Each option may carry a primary `badge` (e.g. status) plus any number
+     of extra `badges` (e.g. a segment/category tag). All render to the right
+     of the label, badges first, then the primary badge.
+     `disabled` greys the row and blocks selection (e.g. a product whose
+     segment doesn't match the customer's); `disabledReason` is its tooltip. */
+  options: { value: string; label: string; badge?: OptBadgeSpec; badges?: OptBadgeSpec[]; disabled?: boolean; disabledReason?: string }[];
   placeholder?: string;
   /* Label to show for the current value when it is NOT among `options`
    * (e.g. the option was deliberately excluded from the pickable list, or an
@@ -137,22 +146,32 @@ export function MasterSelect({
     : (search.trim()
         ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
         : options);
-  // Small status pill rendered beside an option label (e.g. Active / Inactive).
-  const OptBadge = ({ b }: { b: { text: string; tone?: 'green' | 'red' | 'gray' } }) => (
+  // Small pill rendered beside an option label (e.g. Active / Inactive, or a
+  // segment tag). `maxWidth` + ellipsis keeps a long tag (e.g. a multi-word
+  // segment name) from squeezing the label off the row.
+  const OptBadge = ({ b }: { b: OptBadgeSpec }) => (
     <span
+      title={b.text}
       style={{
         marginLeft: 8, padding: '1px 8px', borderRadius: 999,
         fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
+        maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis',
         ...(b.tone === 'red'
           ? { background: '#fee2e2', color: '#dc2626' }
           : b.tone === 'gray'
             ? { background: '#f1f5f9', color: '#475569' }
-            : { background: '#dcfce7', color: '#16a34a' }),
+            : b.tone === 'violet'
+              ? { background: '#ede9fe', color: '#6d28d9' }
+              : { background: '#dcfce7', color: '#16a34a' }),
       }}
     >
       {b.text}
     </span>
   );
+  // Collect an option's badges in render order: extra tags first, then the
+  // primary status badge at the far right.
+  const badgesOf = (o: { badge?: OptBadgeSpec; badges?: OptBadgeSpec[] }): OptBadgeSpec[] =>
+    [...(o.badges ?? []), ...(o.badge ? [o.badge] : [])];
   const handlePick = (val: string) => {
     // With allowDeselect, re-clicking the current selection clears it.
     const next = allowDeselect && val === currentValue ? '' : val;
@@ -174,7 +193,7 @@ export function MasterSelect({
           className="master-select-toggle"
         >
           {selected ? (
-            <span className="master-select-value">{selected.label}{selected.badge && <OptBadge b={selected.badge} />}</span>
+            <span className="master-select-value">{selected.label}{badgesOf(selected).map((b, i) => <OptBadge key={i} b={b} />)}</span>
           ) : currentValue ? (
             /* Value set but not in the currently-loaded options (e.g. a
                paginated/async list before its page loads, or an owner
@@ -255,13 +274,20 @@ export function MasterSelect({
                   <DropdownItem
                     key={opt.value}
                     active={opt.value === currentValue}
-                    onClick={() => handlePick(opt.value)}
+                    /* Disabled options (e.g. a product outside the customer's
+                       segment) render greyed and can't be picked; reactstrap
+                       blocks the click, and we no-op handlePick as a belt. */
+                    disabled={opt.disabled}
+                    toggle={!opt.disabled}
+                    onClick={opt.disabled ? undefined : () => handlePick(opt.value)}
+                    title={opt.disabled ? opt.disabledReason : undefined}
                     className="master-select-item"
+                    style={opt.disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                   >
-                    {opt.badge ? (
+                    {(opt.badge || opt.badges?.length) ? (
                       <span style={{ display: 'inline-flex', alignItems: 'center', width: '100%' }}>
                         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{opt.label}</span>
-                        <OptBadge b={opt.badge} />
+                        {badgesOf(opt).map((b, i) => <OptBadge key={i} b={b} />)}
                       </span>
                     ) : opt.label}
                   </DropdownItem>

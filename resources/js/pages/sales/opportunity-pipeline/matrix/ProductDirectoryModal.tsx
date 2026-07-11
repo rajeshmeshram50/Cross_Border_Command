@@ -41,6 +41,9 @@ type ProductOpt = {
   product_code: string;
   name:         string;
   status?:      string | null;   // active | inactive | draft — shown in the picker
+  /* Eager-loaded segment relation from GET /products — surfaced as a small
+     violet badge in the picker next to the status pill. */
+  segment?:     { name: string | null } | null;
 };
 
 type CurrencyOpt = {
@@ -115,10 +118,24 @@ type Props = {
    * (Stage 3) is complete — i.e. the lead is at Stage 4+ — the mapped products
    * feed downstream price/quotation/PI data and may no longer be unmapped. */
   leadStage?: number;
+  /* The mapped customer's segment name(s) (from customers.segment). Products
+   * whose own segment isn't one of these are shown disabled/greyed in the
+   * picker — mirrors the backend Customer↔Product segment-match guard so the
+   * user can't pick a product that would be rejected with a 422. Empty/absent
+   * (customer has no segment) → nothing is disabled. */
+  customerSegments?: string[];
 };
 
-export default function ProductDirectoryModal({ open, leadId, onClose, onAddProduct, onChanged, leadStage }: Props) {
+export default function ProductDirectoryModal({ open, leadId, onClose, onAddProduct, onChanged, leadStage, customerSegments }: Props) {
   const toast = useToast();
+
+  /* Lowercased set of the customer's segment names — the yardstick for
+   * greying out off-segment products. Empty when the customer has no segment,
+   * which (matching the backend guard) disables nothing. */
+  const customerSegmentSet = useMemo(
+    () => new Set((customerSegments ?? []).map(s => s.trim().toLowerCase()).filter(Boolean)),
+    [customerSegments],
+  );
 
   /* Sourcing complete → product list is locked from unmapping (and the
    * backend enforces the same rule with a 422). */
@@ -622,13 +639,26 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                   invalid={!!errors.product}
                   onChange={(v) => { setDraft(p => ({ ...p, product_id: v ? Number(v) : null })); setErrors(e => ({ ...e, product: undefined })); }}
                   /* Each option carries the product's master status as a
-                     colored badge (Active = green, Inactive = red). */
+                     colored badge (Active = green, Inactive = red) plus, when
+                     the product master has a segment assigned, a violet segment
+                     tag so the picker shows what category each product belongs to. */
                   options={availableProducts.map(p => {
                     const active = String(p.status ?? '').toLowerCase() === 'active';
+                    const seg = p.segment?.name?.trim();
+                    /* Off-segment guard: when the customer has a segment and this
+                       product carries a segment that isn't among them, disable it
+                       (greyed) — same rule the backend enforces on map. Products
+                       with no segment stay enabled (rule can't be evaluated). */
+                    const offSegment = customerSegmentSet.size > 0 && !!seg && !customerSegmentSet.has(seg.toLowerCase());
                     return {
                       value: String(p.id),
                       label: `${p.product_code} · ${p.name}`,
                       badge: { text: active ? 'Active' : 'Inactive', tone: active ? 'green' as const : 'red' as const },
+                      badges: seg ? [{ text: seg, tone: 'violet' as const }] : undefined,
+                      disabled: offSegment,
+                      disabledReason: offSegment
+                        ? `Not in the customer's segment (${(customerSegments ?? []).join(', ')}) — this product belongs to “${seg}”.`
+                        : undefined,
                     };
                   })}
                   placeholder={productsLoading ? 'Loading…' : 'Select product'}

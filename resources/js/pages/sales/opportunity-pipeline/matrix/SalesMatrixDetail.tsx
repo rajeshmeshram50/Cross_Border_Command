@@ -628,6 +628,14 @@ export default function SalesMatrixDetail() {
    * follow-up reloadLead() refreshes the toolbar from authoritative
    * server state instead of optimistic-toggling. */
   const isKeyOpportunity = !!serverHeader.keyOpportunity;
+  /* Customer's segment name(s) (comma-joined `customers.segment`) → the list
+   * the Product Directory picker uses to grey out off-segment products. */
+  const customerSegments = useMemo(() => {
+    const raw = serverHeader.customerRow?.segment;
+    return typeof raw === 'string'
+      ? raw.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+  }, [serverHeader.customerRow]);
   /* Deal lock — once the Proforma Invoice is e-signed, ONLY the centre stage
    * column (2nd column / StageComponent) becomes read-only. The action toolbar
    * and the right-hand Deal Execution panel (3rd column) stay fully usable, and
@@ -1412,6 +1420,7 @@ export default function SalesMatrixDetail() {
         open={productDirectoryOpen}
         leadId={resolvedLeadId ?? null}
         leadStage={furthestStage}
+        customerSegments={customerSegments}
         onClose={() => setProductDirectoryOpen(false)}
         onChanged={() => setProductsTick(t => t + 1)}
         onAddProduct={() => {
