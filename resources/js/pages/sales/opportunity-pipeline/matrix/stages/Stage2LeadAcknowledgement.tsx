@@ -571,10 +571,11 @@ const STAGE2_CSS = `
   background: currentColor; flex-shrink: 0;
 }
 
-/* Current-status badge per bucket (inactive-style) */
-.smd-st2-status-current.smd-st2-pill-q { background: #faf5ff; border-color: #ede9fe; color: #9b8ec4; }
-.smd-st2-status-current.smd-st2-pill-c { background: #fffdf5; border-color: #fde68a; color: #92400e; }
-.smd-st2-status-current.smd-st2-pill-d { background: #fff5f6; border-color: #fecdd3; color: #be123c; }
+/* Current-status badge per bucket — solid DARK gradient (white text), not the
+   faint tinted style, so the active status reads clearly (QA #70). */
+.smd-st2-status-current.smd-st2-pill-q { background: linear-gradient(115deg, #6d28d9, #7c3aed, #8b5cf6); border-color: transparent; color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.35); }
+.smd-st2-status-current.smd-st2-pill-c { background: linear-gradient(115deg, #b45309, #d97706, #f59e0b); border-color: transparent; color: #fff; box-shadow: 0 2px 8px rgba(245,158,11,.32); }
+.smd-st2-status-current.smd-st2-pill-d { background: linear-gradient(115deg, #be123c, #e11d48, #f43f5e); border-color: transparent; color: #fff; box-shadow: 0 2px 8px rgba(244,63,94,.32); }
 .smd-st2-status-current::before {
   content: ''; width: 5px; height: 5px; border-radius: 50%;
   background: currentColor; flex-shrink: 0;
@@ -625,7 +626,7 @@ const STAGE2_CSS = `
 }
 
 /* Visible outer frame so the grid reads as a table, not floating text (QA #70). */
-.smd-st2-table-wrap { max-height: 220px; overflow-y: auto; border: 1.5px solid #cabffb; border-radius: 8px; }
+.smd-st2-table-wrap { max-height: 220px; overflow-y: auto; border: 1.5px solid #a78bfa; border-radius: 8px; }
 .smd-st2-table-wrap::-webkit-scrollbar { width: 4px; }
 .smd-st2-table-wrap::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 999px; }
 .smd-st2-table {
@@ -643,16 +644,16 @@ const STAGE2_CSS = `
   text-align: left;
   /* Clearer header underline + column separators so rows/columns are easy to
      distinguish (QA #70 — borders were near-invisible at #e9d5ff/#f5f0ff). */
-  border-bottom: 1.5px solid #b7a7f5;
-  border-right: 1px solid #ddd3fa;
+  border-bottom: 1.5px solid #8b5cf6;
+  border-right: 1px solid #c4b5fd;
   background: linear-gradient(135deg, #f8f5ff, #ede9fe);
 }
 .smd-st2-table thead th:first-child { padding-left: 12px; }
 .smd-st2-table tbody td {
   padding: 7px 8px;
-  font-size: 10px; font-weight: 500; color: #7c6f9a;
-  border-bottom: 1px solid #e0d8f6;
-  border-right: 1px solid #ece7fa;
+  font-size: 10px; font-weight: 500; color: #5b4d80;
+  border-bottom: 1px solid #cabffb;
+  border-right: 1px solid #ddd6fe;
   white-space: nowrap;
 }
 .smd-st2-table thead th:last-child,
@@ -834,10 +835,11 @@ const STAGE2_CSS = `
 [data-bs-theme="dark"] .smd-st2-pill-d { background: rgba(244,63,94,.12); border-color: rgba(252,165,165,.35); color: #fda4af; }
 /* Active pill — keep the rich multi-stop gradient (already vibrant enough for dark). */
 
-/* Current-status chip in the status header */
-[data-bs-theme="dark"] .smd-st2-status-current.smd-st2-pill-q { background: rgba(124,58,237,.18); border-color: rgba(167,139,250,.40); color: #c4b5fd; }
-[data-bs-theme="dark"] .smd-st2-status-current.smd-st2-pill-c { background: rgba(245,158,11,.18); border-color: rgba(252,211,77,.40); color: #fbbf24; }
-[data-bs-theme="dark"] .smd-st2-status-current.smd-st2-pill-d { background: rgba(244,63,94,.18); border-color: rgba(252,165,165,.40); color: #fda4af; }
+/* Current-status chip — keep the solid dark gradient (white text) in dark mode
+   too, so it doesn't fall back to the faint translucent wash (QA #70). */
+[data-bs-theme="dark"] .smd-st2-status-current.smd-st2-pill-q { background: linear-gradient(115deg, #6d28d9, #7c3aed, #8b5cf6); border-color: transparent; color: #fff; }
+[data-bs-theme="dark"] .smd-st2-status-current.smd-st2-pill-c { background: linear-gradient(115deg, #b45309, #d97706, #f59e0b); border-color: transparent; color: #fff; }
+[data-bs-theme="dark"] .smd-st2-status-current.smd-st2-pill-d { background: linear-gradient(115deg, #be123c, #e11d48, #f43f5e); border-color: transparent; color: #fff; }
 
 /* Activity head — dark lavender wash so it stops being a bright bar. */
 [data-bs-theme="dark"] .smd-st2-activity-head {
@@ -849,16 +851,16 @@ const STAGE2_CSS = `
 
 /* Table — sticky thead and rows on dark surfaces. Stronger separators mirror
    the light-mode contrast bump (QA #70). */
-[data-bs-theme="dark"] .smd-st2-table-wrap { border-color: rgba(167,139,250,.32); }
+[data-bs-theme="dark"] .smd-st2-table-wrap { border-color: rgba(167,139,250,.50); }
 [data-bs-theme="dark"] .smd-st2-table thead th {
   background: linear-gradient(135deg, #20184a, #2a2150);
   color: #a78bfa;
-  border-bottom-color: rgba(167,139,250,.45);
-  border-right-color: rgba(167,139,250,.22);
+  border-bottom-color: rgba(167,139,250,.60);
+  border-right-color: rgba(167,139,250,.38);
 }
 [data-bs-theme="dark"] .smd-st2-table tbody tr   { background: #1a1538; }
 [data-bs-theme="dark"] .smd-st2-table tbody tr:hover { background: #20184a; }
-[data-bs-theme="dark"] .smd-st2-table tbody td   { color: #c4b5fd; border-bottom-color: rgba(167,139,250,.30); border-right-color: rgba(167,139,250,.16); }
+[data-bs-theme="dark"] .smd-st2-table tbody td   { color: #d6cbf5; border-bottom-color: rgba(167,139,250,.42); border-right-color: rgba(167,139,250,.30); }
 [data-bs-theme="dark"] .smd-st2-row-reason       { color: #ede9fe; }
 [data-bs-theme="dark"] .smd-st2-row-num {
   background: linear-gradient(135deg, #2a2150, #3b2f6e);
