@@ -788,7 +788,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               stay as flat document tables. */}
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
             ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'} filter={shipmentFilter} setFilter={setShipmentFilter}
-                             onSend={(leadId, doc, party) => setShipSend({ leadId, doc, party })} />
+                             onSend={(leadId, doc, party) => setShipSend({ leadId, doc, party })} activeSend={shipSend} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="customer" ownerId={customer?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} />}
@@ -1325,13 +1325,16 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 /* ─── Shipment-ID-wise matrix — one row per shipment, expandable into the
  *      shipment's Buyer / Consignee documents for the active kind (Trade
  *      Documents or Agreements). */
-function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
+function ShipmentTable({ rows, kind, filter, setFilter, onSend, activeSend }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement';
   filter: 'buyer-eq-consignee' | 'buyer-neq-consignee';
   setFilter: (f: 'buyer-eq-consignee' | 'buyer-neq-consignee') => void;
   /** Launches Send-for-Signature for one shipment doc (lead + doc + party). */
   onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
+  /** The send that is currently launching/in-flight (from the parent) — used to
+   *  spin the matching row's Send button until the wizard closes. */
+  activeSend?: { leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
   const buyerNeq = filter === 'buyer-neq-consignee';
@@ -1408,6 +1411,7 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
                           consigneeName={r.consignee || '—'}
                           buyerIsConsignee={r.buyer_is_consignee}
                           onSend={onSend ? (doc, party) => onSend(r.id, doc, party) : undefined}
+                          pendingSend={activeSend && activeSend.leadId === r.id ? { doc: activeSend.doc, party: activeSend.party } : null}
                         />
                       </td>
                     </tr>
@@ -1425,7 +1429,7 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend }: {
 
 /* Expanded shipment row — Buyer / Consignee sub-tabs + the document table.
  * Inline-styled (no scoped classes) so the Consignee vault reuses it as-is. */
-export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend, forceParty }: {
+export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend, forceParty, pendingSend }: {
   buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerName: string; consigneeName: string; buyerIsConsignee: boolean;
   /** Launches Send-for-Signature (preview + draggable signature box) for one
    *  not-yet-sent ("Draft") doc. Receives the doc + which party it belongs to.
@@ -1434,6 +1438,9 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
   /** Locks the panel to one party and hides the Buyer/Consignee/Both tabs —
    *  used by the Consignee vault, which only ever shows consignee documents. */
   forceParty?: 'buyer' | 'consignee';
+  /** The doc whose Send flow is currently launching/in-flight — its row's Send
+   *  button shows a spinner until the send wizard closes. */
+  pendingSend?: { doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null;
 }) {
   const toast = useToast();
   const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>(forceParty ?? 'buyer');
@@ -1512,7 +1519,18 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                   })()}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                     {d.signed_url && <button type="button" title="View" aria-label="View" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={{ ...docActStyle('#0891b2'), padding: '4px 8px' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></button>}
-                    {d.status === 'Draft' && onSend && d.db_id && <button type="button" title="Send" aria-label="Send" onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')} style={{ ...docActStyle('#7c3aed'), padding: '4px 8px' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></button>}
+                    {d.status === 'Draft' && onSend && d.db_id && (() => {
+                      const isSending = !!pendingSend && pendingSend.doc === d;
+                      return (
+                        <button type="button" title="Send" aria-label="Send" disabled={isSending}
+                          onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
+                          style={{ ...docActStyle('#7c3aed'), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
+                          {isSending
+                            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
+                            : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}
+                        </button>
+                      );
+                    })()}
                     {d.status !== 'Signed' && d.sig_req_id > 0 && <button type="button" title="Send Reminder" aria-label="Send Reminder" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={{ ...docActStyle('#06b6d4'), padding: '4px 8px' }}>{busy === d.sig_req_id ? '…' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}</button>}
                   </td>
                 </tr>

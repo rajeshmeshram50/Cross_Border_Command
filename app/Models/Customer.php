@@ -29,7 +29,7 @@ class Customer extends Model
         'client_id', 'branch_id', 'created_by',
         'customer_code',
         'company_name', 'legal_name', 'type', 'segment', 'classification', 'risk_level',
-        'gst_applicable',
+        'gst_applicable', 'gst_number',
         'website', 'primary_email', 'status',
     ];
 

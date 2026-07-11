@@ -228,6 +228,7 @@ export interface EditCustomer {
   country: string; contact: string; phone: string; email: string;
   whatsapp: 'Yes' | 'No';
   gstApplicable?: 'Yes' | 'No';
+  gstNumber?: string;
 }
 
 /* GST Scrutiny — one entry per GST number a domestic customer is
@@ -399,6 +400,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     /* Stage 1 — domestic GST flag. 'Yes' reveals the GST Scrutiny header
        button. Required; defaults to 'Yes' (most customers are domestic). */
     coGstApplicable:'Yes' as 'Yes'|'No'|'',
+    // GST number captured on the customer itself when GST Applicable = Yes;
+    // it auto-fills the GST Scrutiny form.
+    coGstNumber:'',
     /* Primary address type is locked to "Registered Office" in the UI
        — other types live on the Address & Contact Details tab. */
     addrType: DEFAULT_ADDRESS_TYPE, addr:'', country:'', state:'', city:'', pin:'',
@@ -900,6 +904,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       coClass:  '',
       coRisk:   '',
       coGstApplicable: (customer?.gstApplicable as 'Yes'|'No'|undefined) ?? 'Yes',
+      coGstNumber: (customer?.gstNumber as string|undefined) ?? '',
       addrType: DEFAULT_ADDRESS_TYPE,
       addr:     '',
       country:  customer?.country ?? '',
@@ -1011,6 +1016,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           coClass:  d.classification ?? '',
           coRisk:   d.riskLevel     ?? '',
           coGstApplicable: (d.gstApplicable as 'Yes'|'No'|undefined) ?? 'Yes',
+          coGstNumber: (d.gstNumber as string|undefined) ?? '',
           // Primary address type is locked to "Registered Office" — even
           // if older data stored a different label, normalise here so
           // the disabled dropdown stays in sync with the saved record.
@@ -1233,6 +1239,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   // page to see their Identification-tab changes). Resets the flag
   // so a subsequent re-open of the same modal starts clean.
   const handleClose = () => {
+    if (inFlightRef.current || saving) return;   // don't allow closing mid-save
     if (dirtySavedRef.current) {
       dirtySavedRef.current = false;
       onSaved?.();
@@ -1301,6 +1308,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       case 'coGstApplicable':
         if (!f.coGstApplicable) return 'Select whether GST is applicable';
         return null;
+      case 'coGstNumber':
+        // Only required + format-checked when GST is applicable.
+        if (f.coGstApplicable !== 'Yes') return null;
+        return gstNumberError((f.coGstNumber ?? '').trim()) ?? null;
       case 'coWeb':
         if (!f.coWeb || !f.coWeb.trim()) return null;
         if (f.coWeb.trim().length > 200) return 'Website must be 200 characters or fewer';
@@ -1364,7 +1375,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   };
 
   const STAGE1_FIELD_KEYS = [
-    'coName','coLegal','coType','coSeg','coClass','coRisk','coGstApplicable','coWeb',
+    'coName','coLegal','coType','coSeg','coClass','coRisk','coGstApplicable','coGstNumber','coWeb',
     'addrType','addr','country','state','city','pin',
     'cpName','cpDesig','cpTel','cpEmail','cpWa',
   ];
@@ -1465,6 +1476,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     classification: form.coClass,
     risk_level:     form.coRisk,
     gst_applicable: form.coGstApplicable || null,
+    // Send the GST number only when applicable; the backend also clears it otherwise.
+    gst_number:     form.coGstApplicable === 'Yes' ? ((form.coGstNumber ?? '').trim().toUpperCase() || null) : null,
     website:        form.coWeb,
     status:         'Active' as const,
     primary_address: {
@@ -1980,6 +1993,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           </div>
         </div>
 
+        {/* While saving, lock the whole form so no field/step can be edited mid-save. */}
+        {saving && (
+          <div className="acm-save-lock" aria-live="polite" aria-busy="true">
+            <span className="acm-save-lock-spinner" />
+            <span className="acm-save-lock-text">{isEdit ? 'Updating…' : 'Saving…'}</span>
+          </div>
+        )}
+
       </div>
 
       {/* SUB-MODAL: Add/edit a single Location (address + contact).
@@ -2168,6 +2189,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         rows={gstRows}
         onClose={() => setGstPopupOpen(false)}
         onAdd={addGstRow}
+        defaultGstNumber={form.coGstNumber}
       />
     </div>
   );
@@ -2187,8 +2209,11 @@ function GstScrutinyManagePopup(props: {
   rows: GstRow[];
   onClose: () => void;
   onAdd: (draft: GstDraft) => Promise<boolean>;
+  /* GST number captured on the customer (Stage 1). Auto-fills the Add form
+     so the user doesn't retype it. */
+  defaultGstNumber?: string;
 }) {
-  const { open, rows, onClose, onAdd } = props;
+  const { open, rows, onClose, onAdd, defaultGstNumber } = props;
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<GstDraft>(EMPTY_GST_DRAFT);
   const [errs, setErrs] = useState<{ gstNumber?: string; lastFilingDate?: string }>({});
@@ -2215,11 +2240,6 @@ function GstScrutinyManagePopup(props: {
   const setD = <K extends keyof GstDraft>(k: K, v: GstDraft[K]) => setDraft(prev => ({ ...prev, [k]: v }));
 
   // GST number: strictly 15-char uppercase alphanumeric (e.g. 27AADCI6120M1ZH).
-  const onGstNumber = (raw: string) => {
-    setD('gstNumber', raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15));
-    setErrs(p => ({ ...p, gstNumber: undefined }));
-  };
-
   const save = async () => {
     const e: typeof errs = {};
     const gstErr = gstNumberError(draft.gstNumber);
@@ -2255,7 +2275,7 @@ function GstScrutinyManagePopup(props: {
           </div>
           <div className="acm-gst-head-actions">
             {!adding && (
-              <button type="button" className="acm-add-pill" onClick={() => { setDraft({ ...EMPTY_GST_DRAFT, gstNumber: rows[0]?.gst_number ? String(rows[0].gst_number).toUpperCase() : '' }); setErrs({}); setAdding(true); }}>
+              <button type="button" className="acm-add-pill" onClick={() => { setDraft({ ...EMPTY_GST_DRAFT, gstNumber: ((defaultGstNumber || rows[0]?.gst_number || '') as string).toUpperCase() }); setErrs({}); setAdding(true); }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Add GST Scrutiny
               </button>
@@ -2334,7 +2354,17 @@ function GstScrutinyManagePopup(props: {
             <div className="acm-gst-form">
               <div className="acm-row acm-row-3">
                 <Field label="GST Number" required error={errs.gstNumber}>
-                  <input className={errs.gstNumber ? 'acm-input-error' : ''} value={draft.gstNumber} maxLength={15} onChange={e => onGstNumber(e.target.value)} placeholder="27AADCI6120M1ZH" />
+                  {/* Read-only — the GST number is captured on the customer
+                      (Stage 1) and flows in here. Edit it on the customer form;
+                      it won't be re-typed per scrutiny entry. */}
+                  <input
+                    className={errs.gstNumber ? 'acm-input-error' : ''}
+                    value={draft.gstNumber}
+                    readOnly
+                    style={{ background: 'rgba(120,120,120,.10)', cursor: 'not-allowed', opacity: .9 }}
+                    title="Comes from the customer's GST Number — change it on the customer form"
+                    placeholder="—"
+                  />
                 </Field>
                 <Field label="GST Status" required>
                   <MasterSelect value={draft.status} options={GST_STATUS_OPTS} placeholder="Select GST status" onChange={v => setD('status', v as GstDraft['status'])} />
@@ -2625,6 +2655,23 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 )}
               </div>
             </Field>
+            {/* GST Number — only shown when GST is applicable. Captured here and
+                auto-filled into the GST Scrutiny form. */}
+            {form.coGstApplicable === 'Yes' && (
+              <Field label="GST Number" required error={errors.coGstNumber} fieldKey="coGstNumber">
+                {/* Editable even after GST Scrutiny entries exist — changing it
+                    on save propagates the new number to those records. Only the
+                    GST Applicable Yes/No toggle stays locked (flipping to No
+                    would orphan the records). */}
+                <input
+                  className={`acm-input ${errors.coGstNumber ? 'acm-input-error' : ''}`}
+                  placeholder="e.g. 27AADCI6120M1ZH"
+                  maxLength={15}
+                  value={form.coGstNumber ?? ''}
+                  onChange={e => { set('coGstNumber', e.target.value.toUpperCase().replace(/\s+/g, '')); clearErr('coGstNumber'); }}
+                />
+              </Field>
+            )}
             <Field label="Classification & Flags" required error={errors.coClass} fieldKey="coClass">
               <MasterSelect value={form.coClass} options={optsWith(masters.classifications, form.coClass)} placeholder="Select classification" invalid={!!errors.coClass} allowDeselect onChange={v => set('coClass', v)} />
             </Field>
@@ -4600,9 +4647,31 @@ const SCOPED_CSS = `
   border-radius: 20px;
   box-shadow: 0 32px 80px -20px rgba(76,29,149,.40), 0 12px 30px rgba(15,5,40,.18);
   overflow: hidden; display: flex; flex-direction: column;
+  position: relative;   /* positioning context for the saving lock overlay */
   animation: acmSlideUp .35s cubic-bezier(.34,1.56,.64,1);
 }
 @keyframes acmSlideUp { from { opacity: 0; transform: translateY(24px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* Saving lock — blankets the whole card so no field/step/button can be edited mid-save. */
+.acm-save-lock {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; flex-direction: column; gap: 12px;
+  align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.62);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  cursor: progress;
+}
+.acm-save-lock-spinner {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 3.5px solid rgba(124, 58, 237, 0.22);
+  border-top-color: #7c3aed;
+  animation: acmSpin .7s linear infinite;
+}
+.acm-save-lock-text { font-size: 13px; font-weight: 700; color: #6d28d9; letter-spacing: .2px; }
+@keyframes acmSpin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .acm-save-lock { background: rgba(11, 18, 32, 0.66); }
+[data-bs-theme="dark"] .acm-save-lock-spinner { border-color: rgba(167, 139, 250, 0.22); border-top-color: #a78bfa; }
+[data-bs-theme="dark"] .acm-save-lock-text { color: #c4b5fd; }
 
 /* Header — solid violet gradient banner. Bold brand color carries
    the modal identity; white text + glassy icon box on top. */

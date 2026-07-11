@@ -253,6 +253,8 @@ class CustomerController extends Controller
                 'classification' => $data['classification'] ?? null,
                 'risk_level'     => $data['risk_level']     ?? null,
                 'gst_applicable' => $data['gst_applicable'] ?? null,
+                // Only keep a GST number when GST is applicable.
+                'gst_number'     => ($data['gst_applicable'] ?? null) === 'Yes' ? ($data['gst_number'] ?? null) : null,
                 'website'        => $data['website']        ?? null,
                 'primary_email'  => $primary['cp_email']    ?? null,
                 'status'         => $data['status']         ?? 'Active',
@@ -318,10 +320,23 @@ class CustomerController extends Controller
                 'classification' => $data['classification'] ?? null,
                 'risk_level'     => $data['risk_level']     ?? null,
                 'gst_applicable' => $data['gst_applicable'] ?? null,
+                // Only keep a GST number when GST is applicable.
+                'gst_number'     => ($data['gst_applicable'] ?? null) === 'Yes' ? ($data['gst_number'] ?? null) : null,
                 'website'        => $data['website']        ?? null,
                 'primary_email'  => $primary['cp_email']    ?? null,
                 'status'         => $data['status']         ?? $customer->status,
             ]);
+
+            // The customer's GST number is the single source of truth. When it
+            // changes, keep the existing GST Scrutiny records in sync so they
+            // don't drift to the old number (the scrutiny form shows it read-
+            // only). Only propagate a real number (Applicable = Yes).
+            $newGst = ($data['gst_applicable'] ?? null) === 'Yes' ? ($data['gst_number'] ?? null) : null;
+            if ($newGst) {
+                CustomerGstScrutiny::where('customer_id', $customer->id)
+                    ->where('gst_number', '!=', $newGst)
+                    ->update(['gst_number' => $newGst]);
+            }
 
             // Replace-all strategy on addresses: nuke + recreate from the
             // payload. Customer addresses don't have hard FK dependents
@@ -530,6 +545,7 @@ class CustomerController extends Controller
             'classification'  => $c->classification,
             'riskLevel'       => $c->risk_level,
             'gstApplicable'   => $c->gst_applicable,
+            'gstNumber'       => $c->gst_number,
             'website'         => $c->website,
             'status'          => $c->status,
             'country'         => $primary?->country,
@@ -596,6 +612,12 @@ class CustomerController extends Controller
      */
     private function validatePayload(Request $request, ?int $customerId, $clientId, $branchId = null): array
     {
+        // Normalise the GST number to uppercase before validation so a
+        // lowercase entry still satisfies the [A-Z] GSTIN regex.
+        if ($request->filled('gst_number')) {
+            $request->merge(['gst_number' => strtoupper(trim((string) $request->input('gst_number')))]);
+        }
+
         $data = $request->validate([
             'company_name'   => 'required|string|max:255',
             /* Legal (registered entity) name must be unique per tenant — two
@@ -625,6 +647,13 @@ class CustomerController extends Controller
             'risk_level'     => 'nullable|string|max:32',
             // Stage 1 — domestic GST flag. 'Yes' gates the GST Scrutiny popup.
             'gst_applicable' => ['nullable', Rule::in(['Yes', 'No'])],
+            // GST number captured on the customer itself when GST Applicable =
+            // Yes; auto-fills the GST Scrutiny form. Required + strict GSTIN
+            // format only when applicable (same regex as the scrutiny check).
+            'gst_number'     => [
+                'nullable', 'required_if:gst_applicable,Yes', 'string',
+                'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/',
+            ],
             'website'        => 'nullable|string|max:500',
             'status'         => 'nullable|in:Active,Inactive',
 

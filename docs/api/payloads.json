@@ -1,0 +1,2033 @@
+{
+    "fields": {
+        "App\\Http\\Controllers\\Api\\AdvanceRequestController@store": {
+            "advance_type": "required  string  in:  ,",
+            "advance_type_other": "nullable  string  max:255",
+            "amount": "required  numeric  min:0  max:9999999999999.99",
+            "requested_date": "required  date  after_or_equal:today  before_or_equal:today",
+            "recovery_start": "required  date  after_or_equal:requested_date",
+            "recovery_mode": "required  string  in:  ,",
+            "recovery_months": "nullable  integer  min:1  max:120",
+            "monthly_emi": "nullable  numeric  min:0  max:9999999999999.99",
+            "reason": "required  string  max:500",
+            "files": "nullable  array",
+            "files.*": "file  max:5120  mimes:pdf,jpg,jpeg,png"
+        },
+        "App\\Http\\Controllers\\Api\\AdvanceRequestController@managerAct": {
+            "comment": "nullable  string  max:1000"
+        },
+        "App\\Http\\Controllers\\Api\\AdvanceRequestController@hrAct": {
+            "comment": "nullable  string  max:1000"
+        },
+        "App\\Http\\Controllers\\Api\\AnnouncementController@validatePayload": {
+            "title": "string  max:191",
+            "description": "string",
+            "type": "nullable",
+            "priority": "nullable",
+            "attachment": "nullable|file|mimes:  |max:",
+            "audience_type": "nullable",
+            "audience_role_ids": "nullable|array",
+            "audience_role_ids.*": "integer",
+            "audience_designation_ids": "nullable|array",
+            "audience_designation_ids.*": "integer",
+            "exclude_employee_ids": "nullable|array",
+            "exclude_employee_ids.*": "integer",
+            "publish_type": "nullable",
+            "publish_at": "nullable|date",
+            "expires_at": "nullable|date|after_or_equal:publish_at",
+            "ack_required": "nullable|boolean",
+            "ack_mode": "nullable",
+            "ack_reminder_frequency": "nullable",
+            "ack_escalation_days": "nullable|integer|min:0|max:365",
+            "notify_email": "nullable|boolean",
+            "notify_in_app": "nullable|boolean",
+            "notify_sms": "nullable|boolean",
+            "notify_whatsapp": "nullable|boolean",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\AttendanceController@index": {
+            "date": "nullable  date",
+            "from": "nullable  date",
+            "to": "nullable  date  after_or_equal:from"
+        },
+        "App\\Http\\Controllers\\Api\\AttendanceController@facePunch": {
+            "descriptor": "required|array|size:",
+            "descriptor.*": "required|numeric|between:-5,5",
+            "label": "nullable|string|max:50",
+            "lat": "nullable|numeric|between:-90,90",
+            "lng": "nullable|numeric|between:-180,180"
+        },
+        "App\\Http\\Controllers\\Api\\AttendanceRegularizationController@store": {
+            "employee_id": "nullable  integer  exists:employees,id",
+            "regularization_date": "required  date",
+            "mode": "required  adjust  exempt",
+            "type": "nullable  string  max:100",
+            "work_locations": "nullable  array",
+            "work_locations.*": "string  max:120",
+            "punches": "nullable  array",
+            "punches.*.in": "nullable  string  max:8",
+            "punches.*.out": "nullable  string  max:8",
+            "reason": "required  string  max:2000"
+        },
+        "App\\Http\\Controllers\\Api\\AttendanceRegularizationController@setStatus": {
+            "comment": "nullable  string  max:2000"
+        },
+        "App\\Http\\Controllers\\Api\\AuthController@login": {
+            "email": "required|email",
+            "password": "required",
+            "client_id": "nullable|integer"
+        },
+        "App\\Http\\Controllers\\Api\\AuthController@faceLogin": {
+            "email": "required|email",
+            "descriptor": "required|array|size:128",
+            "descriptor.*": "required|numeric",
+            "client_id": "nullable|integer"
+        },
+        "App\\Http\\Controllers\\Api\\AuthController@googleLogin": {
+            "id_token": "required|string",
+            "client_id": "nullable|integer"
+        },
+        "App\\Http\\Controllers\\Api\\AuthController@changePassword": {
+            "current_password": "required|string",
+            "password": "required|string|min:8|confirmed"
+        },
+        "App\\Http\\Controllers\\Api\\AuthController@updateProfile": {
+            "name": "required|string|min:2|max:255",
+            "phone": "nullable  string  max:20  regex:/^[+\\d\\s\\-()]{7,20}$/",
+            "designation": "nullable|string|max:100",
+            "profile_photo": "nullable|image|mimes:jpg,jpeg,png|max:2048"
+        },
+        "App\\Http\\Controllers\\Api\\AuthController@updateBranding": {
+            "logo": "nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048",
+            "primary_color": "nullable|string|max:7",
+            "secondary_color": "nullable|string|max:7"
+        },
+        "App\\Http\\Controllers\\Api\\BranchController@store": {
+            "name": "required  string  max:255  branches  name  client_id  deleted_at",
+            "code": "nullable|string|max:50",
+            "email": "nullable|email|max:255",
+            "phone": "nullable  string  max:20  regex:/^[+\\d\\s\\-()]{7,20}$/",
+            "website": "nullable  string  max:500  regex:/^(https?:\\/\\/)?(www\\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}(\\/[^\\s]*)?$/i",
+            "contact_person": "nullable|string|max:255",
+            "branch_type": "nullable|string|max:50",
+            "industry": "nullable|string|max:100",
+            "description": "nullable|string",
+            "gst_number": "nullable  string  max:20  regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/  branches  gst_number  client_id  deleted_at",
+            "pan_number": "nullable  string  max:20  regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/  branches  pan_number  client_id  deleted_at",
+            "registration_number": "nullable|string|max:50",
+            "gst_state_code": "nullable|string|max:10",
+            "cin": "nullable|string|max:30",
+            "iec": "nullable|string|max:30",
+            "drug_license": "nullable|string|max:60",
+            "pcpndt_no": "nullable|string|max:60",
+            "aeo_code": "nullable|string|max:60",
+            "one_star_file_no": "nullable|string|max:60",
+            "one_star_udin_no": "nullable|string|max:60",
+            "address": "nullable|string",
+            "city": "nullable|string|max:100",
+            "district": "nullable|string|max:100",
+            "taluka": "nullable|string|max:100",
+            "state": "nullable|string|max:100",
+            "pincode": "nullable|string|max:10",
+            "country": "nullable|string|max:100",
+            "max_users": "nullable|integer|min:0",
+            "established_at": "nullable|date",
+            "status": "required|in:active,inactive",
+            "notes": "nullable|string",
+            "logo": "nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048",
+            "profile_photo": "nullable|image|mimes:jpg,jpeg,png|max:2048",
+            "signature_path": "nullable|image|mimes:jpg,jpeg,png,webp|max:2048",
+            "primary_color": "nullable|string|max:7",
+            "secondary_color": "nullable|string|max:7",
+            "user_name": "required|string|max:255",
+            "user_email": "required  email  users  email  client_id  deleted_at",
+            "user_phone": "nullable  string  max:20  regex:/^[+\\d\\s\\-()]{7,20}$/",
+            "user_designation": "nullable|string|max:100",
+            "user_password": "required|string|min:6",
+            "user_status": "nullable|in:active,inactive,pending"
+        },
+        "App\\Http\\Controllers\\Api\\BranchController@update": {
+            "name": "",
+            "code": "nullable|string|max:50",
+            "email": "nullable|email|max:255",
+            "phone": "nullable  string  max:20  regex:/^[+\\d\\s\\-()]{7,20}$/",
+            "website": "nullable  string  max:500  regex:/^(https?:\\/\\/)?(www\\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\\.)+[a-z]{2,}(\\/[^\\s]*)?$/i",
+            "contact_person": "nullable|string|max:255",
+            "branch_type": "nullable|string|max:50",
+            "industry": "nullable|string|max:100",
+            "description": "nullable|string",
+            "gst_number": "nullable  string  max:20  regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/  branches  gst_number  client_id  deleted_at",
+            "pan_number": "nullable  string  max:20  regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/  branches  pan_number  client_id  deleted_at",
+            "registration_number": "nullable|string|max:50",
+            "gst_state_code": "nullable|string|max:10",
+            "cin": "nullable|string|max:30",
+            "iec": "nullable|string|max:30",
+            "drug_license": "nullable|string|max:60",
+            "pcpndt_no": "nullable|string|max:60",
+            "aeo_code": "nullable|string|max:60",
+            "one_star_file_no": "nullable|string|max:60",
+            "one_star_udin_no": "nullable|string|max:60",
+            "address": "nullable|string",
+            "city": "nullable|string|max:100",
+            "district": "nullable|string|max:100",
+            "taluka": "nullable|string|max:100",
+            "state": "nullable|string|max:100",
+            "pincode": "nullable|string|max:10",
+            "country": "nullable|string|max:100",
+            "max_users": "nullable|integer|min:0",
+            "established_at": "nullable|date",
+            "status": "required|in:active,inactive",
+            "notes": "nullable|string",
+            "logo": "nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048",
+            "profile_photo": "nullable|image|mimes:jpg,jpeg,png|max:2048",
+            "signature_path": "nullable|image|mimes:jpg,jpeg,png,webp|max:2048",
+            "primary_color": "nullable|string|max:7",
+            "secondary_color": "nullable|string|max:7",
+            "user_name": "nullable|string|max:255",
+            "user_email": "nullable  email  users  email  client_id  deleted_at",
+            "user_phone": "nullable  string  max:20  regex:/^[+\\d\\s\\-()]{7,20}$/",
+            "user_designation": "nullable|string|max:100",
+            "user_password": "nullable|string|min:6",
+            "user_status": "nullable|in:active,inactive,pending"
+        },
+        "App\\Http\\Controllers\\Api\\CandidateController@updateStatus": {
+            "status": "required",
+            "rejection_reason": "nullable|string|max:100",
+            "status_notes": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\CandidateController@import": {
+            "recruitment_id": "required|integer|exists:recruitments,id",
+            "file": "required|file|mimes:csv,txt,xlsx,xls|max:10240",
+            "name": "required  string  max:150  regex:/^[A-Za-z][A-Za-z .'\\\\-]*$/",
+            "email": "nullable|email|max:191",
+            "mobile": "nullable|string|max:30",
+            "experience_years": "nullable|numeric|min:0|max:99.99",
+            "current_salary_lpa": "nullable|numeric|min:0|max:9999.99",
+            "expected_salary_lpa": "nullable|numeric|min:0|max:9999.99",
+            "notice_period": "nullable",
+            "source": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\CandidateController@validatePayload": {
+            "recruitment_id": "sometimes  required  integer  exists:recruitments,id",
+            "name": "sometimes  required  string  max:150  regex:/^[A-Za-z][A-Za-z .'\\\\-]*$/",
+            "email": "nullable|email|max:191",
+            "mobile": "nullable  string  max:20  regex:/^\\+?[\\d\\s\\-]*$/  /\\D/      Mobile must be 7\u201315 digits.",
+            "current_address": "nullable|string|max:500",
+            "qualification": "nullable  string  max:191  regex:/^[A-Za-z0-9 .,\\/&()+\\-]*$/  regex:/[A-Za-z]/",
+            "experience_years": "nullable|numeric|min:0|max:99.99",
+            "mode_of_transport": "nullable",
+            "distance_km": "nullable|numeric|min:0|max:99999.99",
+            "current_salary_lpa": "nullable|numeric|min:0|max:9999.99",
+            "expected_salary_lpa": "nullable|numeric|min:0|max:9999.99",
+            "notice_period": "nullable",
+            "source": "nullable",
+            "referred_by_id": "nullable|integer|exists:employees,id",
+            "referred_by_name": "nullable|string|max:150",
+            "cv": "nullable|file|mimes:  |max:",
+            "status": "nullable",
+            "rejection_reason": "nullable|string|max:100",
+            "status_notes": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\ClientController@store": {
+            "org_name": "required|string|max:255",
+            "org_type": "required|string|max:50|exists:organization_types,name",
+            "email": "required  email  max:255  clients  email  deleted_at",
+            "phone": "nullable  string  max:20  clients  phone  deleted_at",
+            "website": "nullable|string|max:500",
+            "status": "required|in:active,inactive,suspended",
+            "sports": "nullable|string|max:100",
+            "industry": "nullable|string|max:100",
+            "address": "nullable|string",
+            "city": "nullable|string|max:100",
+            "district": "nullable|string|max:100",
+            "taluka": "nullable|string|max:100",
+            "pincode": "nullable|string|max:10",
+            "state": "nullable|string|max:100",
+            "country": "nullable|string|max:100",
+            "gst_number": "nullable  string  max:20  regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/  clients  gst_number  deleted_at",
+            "pan_number": "nullable  string  max:20  regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/  clients  pan_number  deleted_at",
+            "plan_id": "nullable|exists:plans,id",
+            "plan_type": "nullable|in:free,paid",
+            "plan_expires_at": "nullable|date",
+            "primary_color": "nullable|string|max:7",
+            "secondary_color": "nullable|string|max:7",
+            "logo": "nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048",
+            "favicon": "nullable|image|mimes:jpg,jpeg,png,ico,svg,webp|max:512",
+            "profile_photo": "nullable|image|mimes:jpg,jpeg,png|max:2048",
+            "notes": "nullable|string",
+            "admin_name": "required|string|max:255",
+            "admin_email": "required  email",
+            "admin_phone": "nullable  string  max:20  users  phone  deleted_at",
+            "admin_designation": "nullable|string|max:100",
+            "admin_password": "required|string|min:6",
+            "admin_status": "nullable|in:active,inactive,pending"
+        },
+        "App\\Http\\Controllers\\Api\\ClientController@update": {
+            "org_name": "required|string|max:255",
+            "org_type": "required|string|max:50|exists:organization_types,name",
+            "email": "required  email  max:255  clients  email  deleted_at",
+            "phone": "nullable  string  max:20  clients  phone  deleted_at",
+            "website": "nullable|string|max:500",
+            "status": "required|in:active,inactive,suspended",
+            "sports": "nullable|string|max:100",
+            "industry": "nullable|string|max:100",
+            "address": "nullable|string",
+            "city": "nullable|string|max:100",
+            "district": "nullable|string|max:100",
+            "taluka": "nullable|string|max:100",
+            "pincode": "nullable|string|max:10",
+            "state": "nullable|string|max:100",
+            "country": "nullable|string|max:100",
+            "gst_number": "nullable  string  max:20  regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/  clients  gst_number  deleted_at",
+            "pan_number": "nullable  string  max:20  regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/  clients  pan_number  deleted_at",
+            "plan_id": "nullable|exists:plans,id",
+            "plan_type": "nullable|in:free,paid",
+            "plan_expires_at": "nullable|date",
+            "primary_color": "nullable|string|max:7",
+            "secondary_color": "nullable|string|max:7",
+            "logo": "nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048",
+            "favicon": "nullable|image|mimes:jpg,jpeg,png,ico,svg,webp|max:512",
+            "profile_photo": "nullable|image|mimes:jpg,jpeg,png|max:2048",
+            "notes": "nullable|string",
+            "admin_name": "nullable|string|max:255",
+            "admin_email": "nullable  email  users  email  client_id  deleted_at",
+            "admin_phone": "nullable  string  max:20  users  phone  deleted_at",
+            "admin_designation": "nullable|string|max:100",
+            "admin_password": "nullable|string|min:6",
+            "admin_status": "nullable|in:active,inactive,pending"
+        },
+        "App\\Http\\Controllers\\Api\\ClmAgreementController@typesStore": {
+            "name": "required|string|max:255",
+            "description": "required|string|max:500"
+        },
+        "App\\Http\\Controllers\\Api\\ClmAgreementController@typesUpdate": {
+            "name": "sometimes|required|string|max:255",
+            "description": "sometimes|required|string|max:500"
+        },
+        "App\\Http\\Controllers\\Api\\ClmAgreementController@libraryStore": {
+            "agreement_type": "required|string|max:255",
+            "title": "required|string|max:255",
+            "purpose": "nullable|string|max:1000",
+            "party": "required|string|max:255",
+            "regulatory": "nullable",
+            "signing": "nullable|boolean",
+            "segment": "nullable|string|max:1024",
+            "agr_status": "nullable|string|max:32",
+            "content": "nullable|string",
+            "header_config": "nullable|array",
+            "footer_config": "nullable|array"
+        },
+        "App\\Http\\Controllers\\Api\\ClmAgreementController@libraryUpdate": {
+            "agreement_type": "sometimes|required|string|max:255",
+            "title": "sometimes|required|string|max:255",
+            "purpose": "nullable|string|max:1000",
+            "party": "sometimes|required|string|max:255",
+            "regulatory": "nullable",
+            "signing": "nullable|boolean",
+            "segment": "nullable|string|max:1024",
+            "agr_status": "nullable|string|max:32",
+            "content": "nullable|string",
+            "header_config": "nullable|array",
+            "footer_config": "nullable|array"
+        },
+        "App\\Http\\Controllers\\Api\\ClmAgreementController@uploadHeaderLogo": {
+            "logo": "required|file|mimes:png,jpg,jpeg,svg,webp|max:5120"
+        },
+        "App\\Http\\Controllers\\Api\\ClmAgreementController@uploadDocx": {
+            "docx": "required|file|mimes:doc,docx|max:"
+        },
+        "App\\Http\\Controllers\\Api\\ClmAuthorityController@store": {
+            "name": "required|string|max:255",
+            "description": "required|string|max:500",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\ClmAuthorityController@update": {
+            "name": "sometimes|required|string|max:255",
+            "description": "sometimes|required|string|max:500",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\ClmClauseController@typesStore": {
+            "name": "required  string  max:255",
+            "description": "nullable|string|max:500"
+        },
+        "App\\Http\\Controllers\\Api\\ClmClauseController@typesUpdate": {
+            "name": "sometimes  required  string  max:255",
+            "description": "sometimes|nullable|string|max:500"
+        },
+        "App\\Http\\Controllers\\Api\\ClmClauseController@libraryStore": {
+            "clause_type": "required|string|max:255",
+            "name": "required  string  max:255",
+            "party": "nullable|string|max:255",
+            "clause_status": "nullable|string|max:32",
+            "content": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\ClmClauseController@libraryUpdate": {
+            "clause_type": "sometimes|required|string|max:255",
+            "name": "sometimes  required  string  max:255",
+            "party": "sometimes|nullable|string|max:255",
+            "clause_status": "nullable|string|max:32",
+            "content": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\ClmDdController@store": {
+            "name": "required|string|max:255",
+            "authority": "required|string|max:2000",
+            "expiry": "nullable|string|max:32",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\ClmDdController@update": {
+            "name": "sometimes|required|string|max:255",
+            "authority": "sometimes|required|string|max:2000",
+            "expiry": "nullable|string|max:32",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\ClmDiagnosisResolutionController@escalate": {
+            "reference": "required  string  max:120",
+            "escalate_to": "required  string  max:120",
+            "issue_type": "required  string  max:120",
+            "priority": "required  string  in:critical,high,medium,low",
+            "message": "required  string  max:5000",
+            "notify_via": "nullable  array",
+            "notify_via.*": "string  max:40"
+        },
+        "App\\Http\\Controllers\\Api\\ClmKycController@store": {
+            "name": "required|string|max:255",
+            "authority": "required|string|max:2000",
+            "expiry": "nullable|string|max:32",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\ClmKycController@update": {
+            "name": "sometimes|required|string|max:255",
+            "authority": "sometimes|required|string|max:2000",
+            "expiry": "nullable|string|max:32",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\ClmQcController@store": {
+            "name": "required|string|max:255",
+            "purpose": "required|string|max:500",
+            "issued_by": "required|string|max:255",
+            "doc_type": "nullable",
+            "qa_params": "nullable|string|max:256",
+            "min_criteria": "nullable|string|max:256",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\ClmQcController@update": {
+            "name": "sometimes|required|string|max:255",
+            "purpose": "sometimes|required|string|max:500",
+            "issued_by": "sometimes|required|string|max:255",
+            "doc_type": "nullable",
+            "qa_params": "nullable|string|max:256",
+            "min_criteria": "nullable|string|max:256",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\ClmSegmentController@store": {
+            "name": "required|string|max:255",
+            "regulatory_status": "required",
+            "buyer_consignee": "required",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\ClmSegmentController@update": {
+            "name": "sometimes|required|string|max:255",
+            "regulatory_status": "sometimes  required",
+            "buyer_consignee": "sometimes  required",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\ClmSegmentRuleController@validatePayload": {
+            "segment_code": "required|string|max:16",
+            "regulatory_status": "required",
+            "auths": "nullable|array",
+            "auths.*": "string",
+            "doc_selections": "required|array",
+            "doc_selections.kyc": "nullable|array",
+            "doc_selections.dd": "nullable|array",
+            "doc_selections.tl": "nullable|array",
+            "doc_selections.qc": "nullable|array"
+        },
+        "App\\Http\\Controllers\\Api\\ClmSignatureController@preview": {
+            "trade_doc_id": "required_without:agreement_id|integer|exists:clm_trade_doc_library,id",
+            "agreement_id": "required_without:trade_doc_id|integer|exists:clm_agreement_library,id",
+            "party_id": "required|integer",
+            "model_name": "nullable|string|in:Customer,Consignee,Vendor",
+            "header_config_override": "nullable|array",
+            "footer_config_override": "nullable|array",
+            "content_override": "nullable|string",
+            "lead_id": "nullable|integer|exists:leads,id"
+        },
+        "App\\Http\\Controllers\\Api\\ClmSignatureController@send": {
+            "trade_doc_ids": "required_without:agreement_ids|array|max:10",
+            "trade_doc_ids.*": "integer|exists:clm_trade_doc_library,id",
+            "agreement_ids": "required_without:trade_doc_ids|array|max:10",
+            "agreement_ids.*": "integer|exists:clm_agreement_library,id",
+            "party_id": "required|integer",
+            "model_name": "nullable|string|in:Customer,Consignee,Vendor",
+            "lead_id": "nullable|integer|exists:leads,id",
+            "signers": "required|array|min:1|max:5",
+            "signers.*.email": "required|email",
+            "signers.*.name": "required|string|max:255",
+            "signers.*.order": "nullable|integer|min:1",
+            "signers.*.role": "nullable|string|max:32",
+            "expiry_days": "nullable|integer|min:1|max:180",
+            "is_sequential": "nullable|boolean",
+            "notes": "nullable|string|max:1000",
+            "document_settings": "nullable|array",
+            "header_config_overrides": "nullable|array",
+            "footer_config_overrides": "nullable|array",
+            "content_overrides": "nullable|array"
+        },
+        "App\\Http\\Controllers\\Api\\ClmSignatureController@agreementPreview": {
+            "agreement_id": "required|integer|exists:clm_agreement_library,id",
+            "lead_id": "required|integer|exists:leads,id",
+            "header_config_override": "nullable|array",
+            "footer_config_override": "nullable|array",
+            "content_override": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\ClmSignatureController@agreementSend": {
+            "agreement_id": "nullable|integer|exists:clm_agreement_library,id",
+            "agreement_ids": "nullable|array|min:1|max:10",
+            "agreement_ids.*": "integer|exists:clm_agreement_library,id",
+            "lead_id": "required|integer|exists:leads,id",
+            "expiry_days": "nullable|integer|min:1|max:180",
+            "is_sequential": "nullable|boolean",
+            "notes": "nullable|string|max:1000",
+            "document_settings": "nullable|array",
+            "header_config_overrides": "nullable|array",
+            "footer_config_overrides": "nullable|array",
+            "content_overrides": "nullable|array"
+        },
+        "App\\Http\\Controllers\\Api\\ClmSignatureController@ctcPreview": {
+            "contract_id": "required|integer",
+            "header_config_override": "nullable|array",
+            "footer_config_override": "nullable|array",
+            "content_override": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\ClmSignatureController@ctcSend": {
+            "contract_id": "required|integer",
+            "signers": "required|array|min:1|max:10",
+            "signers.*.name": "required|string|max:255",
+            "signers.*.email": "required|email|max:255",
+            "signers.*.role": "nullable|string|max:64",
+            "signers.*.order": "nullable|integer",
+            "expiry_days": "nullable|integer|min:1|max:180",
+            "is_sequential": "nullable|boolean",
+            "notes": "nullable|string|max:1000",
+            "document_settings": "nullable|array",
+            "header_config_override": "nullable|array",
+            "footer_config_override": "nullable|array",
+            "content_override": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\ClmSignatureController@salesDocSend": {
+            "doc_kind": "required|string|in:quotation,proforma_invoice",
+            "doc_id": "required|integer",
+            "lead_id": "nullable|integer|exists:leads,id",
+            "signers": "nullable|array|max:5",
+            "signers.*.role": "nullable|string|max:32",
+            "signers.*.email": "required_with:signers|email",
+            "signers.*.name": "nullable|string|max:255",
+            "signers.*.order": "nullable|integer|min:1",
+            "document_settings": "nullable|array",
+            "expiry_days": "nullable|integer|min:1|max:180",
+            "is_sequential": "nullable|boolean",
+            "notes": "nullable|string|max:1000"
+        },
+        "App\\Http\\Controllers\\Api\\ClmSignatureController@recall": {
+            "reason": "required|string|max:500"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTncController@categoriesStore": {
+            "short_code": "required|string|max:12",
+            "name": "required|string|max:255"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTncController@categoriesUpdate": {
+            "short_code": "sometimes|required|string|max:12",
+            "name": "sometimes|required|string|max:255"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTncController@libraryStore": {
+            "segment": "nullable|string|max:1024",
+            "regulatory": "nullable|in:highly,less",
+            "category": "required|string|max:255",
+            "party": "required|string|max:255",
+            "content": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTncController@libraryUpdate": {
+            "segment": "nullable|string|max:1024",
+            "regulatory": "nullable|in:highly,less",
+            "category": "sometimes|required|string|max:255",
+            "party": "sometimes|required|string|max:255",
+            "content": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTradeDocumentController@namesStore": {
+            "name": "required|string|max:255"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTradeDocumentController@namesUpdate": {
+            "name": "required|string|max:255"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTradeDocumentController@libraryStore": {
+            "name": "required|string|max:255",
+            "title": "required|string|max:255",
+            "doc_type": "required|string|max:64",
+            "purpose": "required|string|max:500",
+            "party": "required|string|max:255",
+            "regulatory": "nullable|string|in:highly,less",
+            "segment": "required|string|max:500",
+            "file_path": "nullable|string|max:500",
+            "content": "nullable|string",
+            "header_config": "nullable|array",
+            "footer_config": "nullable|array"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTradeDocumentController@libraryUpdate": {
+            "name": "sometimes|required|string|max:255",
+            "title": "sometimes|required|string|max:255",
+            "doc_type": "sometimes|required|string|max:64",
+            "purpose": "sometimes|required|string|max:500",
+            "party": "sometimes|required|string|max:255",
+            "regulatory": "sometimes|nullable|string|in:highly,less",
+            "segment": "sometimes|required|string|max:500",
+            "file_path": "nullable|string|max:500",
+            "content": "nullable|string",
+            "header_config": "nullable|array",
+            "footer_config": "nullable|array"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTradeDocumentController@uploadDocx": {
+            "docx": "required|file|mimes:doc,docx|max:"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTradeDocumentController@docxToHtmlPreview": {
+            "docx": "required|file|mimes:doc,docx|max:"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTradeDocumentController@uploadHeaderLogo": {
+            "logo": "required|file|mimes:png,jpg,jpeg,svg,webp|max:5120"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTradeLicenseController@store": {
+            "name": "required|string|max:255",
+            "authority": "required|string|max:255",
+            "validity": "nullable|string|max:32",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\ClmTradeLicenseController@update": {
+            "name": "sometimes|required|string|max:255",
+            "authority": "sometimes|required|string|max:255",
+            "validity": "nullable|string|max:32",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\ConsigneeController@cloneFromCustomer": {
+            "customer_id": "required|integer|exists:customers,id"
+        },
+        "App\\Http\\Controllers\\Api\\ConsigneeController@mapCustomer": {
+            "customer_id": "required|integer|exists:customers,id"
+        },
+        "App\\Http\\Controllers\\Api\\ConsigneeDocumentController@validatePayload": {
+            "kind": "required|in:dd,tl",
+            "name": "required|string|max:255",
+            "license_number": "nullable|string|max:128",
+            "issuing_authority": "nullable|string|max:255",
+            "issue_date": "nullable|date",
+            "expiry_date": "nullable|date|after_or_equal:issue_date",
+            "description": "nullable|string|max:1000",
+            "status": "nullable|in:Active,Inactive",
+            "attachment": "sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048"
+        },
+        "App\\Http\\Controllers\\Api\\ConsigneeOwnerController@validatePayload": {
+            "owner_name": "required|string|max:255",
+            "designation": "nullable|string|max:128",
+            "official_email": "nullable|email|max:255",
+            "phone_number": "nullable  string  regex:/^\\+?[0-9\\s-]{7,15}$/",
+            "status": "nullable|in:Active,Inactive",
+            "id_proof": "sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048",
+            "address_proof": "sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048",
+            "photograph": "sometimes|file|mimes:jpg,jpeg,png|max:2048"
+        },
+        "App\\Http\\Controllers\\Api\\CtcContractController@store": {
+            "title": "required|string|max:255",
+            "agreement_type": "nullable|string|max:64",
+            "org_name": "nullable|string|max:255",
+            "org_short_code": "nullable|string|max:64",
+            "org_state": "nullable|string|max:128",
+            "org_country": "nullable|string|max:128",
+            "counterparties": "nullable|array",
+            "eff_date": "nullable|date",
+            "end_date": "nullable|date",
+            "auto_renewal": "nullable|boolean",
+            "renewal_type": "nullable|string|max:16",
+            "content": "nullable|string",
+            "header_config": "nullable|array",
+            "footer_config": "nullable|array",
+            "approvers": "nullable|array",
+            "days_to_approve": "nullable|integer",
+            "reminder_days": "nullable|integer"
+        },
+        "App\\Http\\Controllers\\Api\\CtcContractController@update": {
+            "title": "sometimes|string|max:255",
+            "agreement_type": "nullable|string|max:64",
+            "content": "nullable|string",
+            "header_config": "nullable|array",
+            "footer_config": "nullable|array",
+            "counterparties": "nullable|array",
+            "eff_date": "nullable|date",
+            "end_date": "nullable|date"
+        },
+        "App\\Http\\Controllers\\Api\\CtcContractController@reject": {
+            "reason": "required|string|max:1000"
+        },
+        "App\\Http\\Controllers\\Api\\CtcContractController@clarify": {
+            "query": "required|string|max:2000"
+        },
+        "App\\Http\\Controllers\\Api\\CtcContractController@respond": {
+            "response": "required|string|max:2000"
+        },
+        "App\\Http\\Controllers\\Api\\CtcContractController@resubmit": {
+            "content": "nullable|string",
+            "title": "sometimes|string|max:255",
+            "agreement_type": "nullable|string|max:64",
+            "header_config": "nullable|array",
+            "footer_config": "nullable|array",
+            "counterparties": "nullable|array",
+            "eff_date": "nullable|date",
+            "end_date": "nullable|date",
+            "org_name": "nullable|string|max:255",
+            "org_short_code": "nullable|string|max:64",
+            "org_state": "nullable|string|max:128",
+            "org_country": "nullable|string|max:128",
+            "approvers": "nullable|array",
+            "days_to_approve": "nullable|integer",
+            "reminder_days": "nullable|integer"
+        },
+        "App\\Http\\Controllers\\Api\\CtcContractController@sendForSigning": {
+            "recipients": "required|array|min:1",
+            "recipients.*.name": "required|string|max:255",
+            "recipients.*.email": "nullable|string|max:255",
+            "recipients.*.role": "nullable|string|max:128",
+            "recipients.*.contact": "nullable|string|max:255",
+            "days_to_sign": "nullable|integer|min:1|max:365"
+        },
+        "App\\Http\\Controllers\\Api\\CtcContractController@recordSignature": {
+            "index": "nullable|integer|min:0",
+            "email": "nullable|string|max:255",
+            "all": "nullable|boolean"
+        },
+        "App\\Http\\Controllers\\Api\\CustomerController@validateGst": {
+            "gst_number": "required  string  regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/  customer_gst_scrutiny  gst_number  customer_id  !=  deleted_at",
+            "status": "nullable  Active  Inactive",
+            "last_filing_date": "nullable|date",
+            "prev_non_gst_2a_invoice": "nullable|string|max:255",
+            "red_flags": "nullable|string|max:2000"
+        },
+        "App\\Http\\Controllers\\Api\\CustomerController@validatePayload": {
+            "company_name": "required|string|max:255",
+            "legal_name": "nullable  string  max:255  deleted_at  client_id  client_id  LOWER(legal_name) = ?  id  !=  This legal name is already used by another customer.",
+            "type": "nullable|string|max:64",
+            "segment": "nullable|string|max:1024",
+            "classification": "nullable|string|max:64",
+            "risk_level": "nullable|string|max:32",
+            "gst_applicable": "nullable  Yes  No",
+            "gst_number": "nullable  required_if:gst_applicable,Yes  string  regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/",
+            "website": "nullable|string|max:500",
+            "status": "nullable|in:Active,Inactive",
+            "primary_address": "required|array",
+            "primary_address.type": "required|string|max:64",
+            "primary_address.address_line": "required|string|min:4|max:75",
+            "primary_address.country": "nullable|string|max:64",
+            "primary_address.state": "nullable|string|max:64",
+            "primary_address.city": "nullable|string|max:64",
+            "primary_address.pin": "nullable  string  regex:/^\\d{6}$/",
+            "primary_address.cp_name": "required|string|max:255",
+            "primary_address.cp_designation": "nullable|string|max:128",
+            "primary_address.cp_contact": "required  string  regex:/^\\+?[0-9\\s-]{7,15}$/  cp_contact  is_primary  customer  deleted_at  client_id  client_id  branch_id  branch_id  id  !=  This phone number is already used by another customer in this branch.",
+            "primary_address.cp_email": "required  email  max:255  regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\\.[A-Za-z]{2,}$/  customers  primary_email  deleted_at  client_id  client_id  branch_id  branch_id",
+            "primary_address.cp_whatsapp": "nullable|in:yes,no",
+            "locations": "sometimes|array",
+            "locations.*.type": "required_with:locations|string|max:64",
+            "locations.*.address_line": "required_with:locations|string|min:4|max:75",
+            "locations.*.country": "nullable|string|max:64",
+            "locations.*.state": "nullable|string|max:64",
+            "locations.*.city": "nullable|string|max:64",
+            "locations.*.pin": "nullable  string  regex:/^\\d{6}$/",
+            "locations.*.cp_name": "required_with:locations|string|max:255",
+            "locations.*.cp_designation": "nullable|string|max:128",
+            "locations.*.cp_contact": "nullable  string  regex:/^\\+?[0-9\\s-]{7,15}$/",
+            "locations.*.cp_email": "nullable  email  max:255  regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\\.[A-Za-z]{2,}$/",
+            "locations.*.cp_whatsapp": "nullable|in:yes,no"
+        },
+        "App\\Http\\Controllers\\Api\\CustomerDocumentController@validatePayload": {
+            "kind": "required|in:dd,tl",
+            "name": "required|string|max:255",
+            "license_number": "nullable|string|max:128",
+            "issuing_authority": "nullable|string|max:255",
+            "issue_date": "nullable|date",
+            "expiry_date": "nullable|date|after_or_equal:issue_date",
+            "description": "nullable|string|max:1000",
+            "status": "nullable|in:Active,Inactive",
+            "attachment": "sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048"
+        },
+        "App\\Http\\Controllers\\Api\\CustomerOwnerController@validatePayload": {
+            "owner_name": "required|string|max:255",
+            "designation": "nullable|string|max:128",
+            "official_email": "nullable|email|max:255",
+            "phone_number": "nullable  string  regex:/^\\+?[0-9\\s-]{7,15}$/",
+            "status": "nullable|in:Active,Inactive",
+            "id_proof": "sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048",
+            "address_proof": "sometimes|file|mimes:jpg,jpeg,png,pdf,doc,docx|max:2048",
+            "photograph": "sometimes|file|mimes:jpg,jpeg,png|max:2048"
+        },
+        "App\\Http\\Controllers\\Api\\DummyItemController@store": {
+            "name": "required|string|max:255",
+            "description": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\DummyItemController@update": {
+            "name": "sometimes|required|string|max:255",
+            "description": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\EmailController@bulk": {
+            "ids": "required  array  min:1  max:500",
+            "ids.*": "integer",
+            "action": "required  read  unread  star  unstar  trash  restore  delete"
+        },
+        "App\\Http\\Controllers\\Api\\EmailController@store": {
+            "to": "required  array  min:1  max:50",
+            "to.*": "required  email",
+            "cc": "nullable  array  max:50",
+            "cc.*": "email",
+            "subject": "required  string  max:255",
+            "body": "required  string  max:50000",
+            "attachments": "nullable  array  max:10",
+            "attachments.*": "file  max:8192  mimes:jpg,jpeg,png,gif,webp,bmp,pdf,doc,docx,xls,xlsx,csv,ppt,pptx,txt,zip"
+        },
+        "App\\Http\\Controllers\\Api\\EmployeeController@updateBankDetails": {
+            "salary_payment_mode": "nullable|in:bank,cheque,cash",
+            "bank_name": "nullable|string|max:150",
+            "bank_account_number": "nullable|string|max:30",
+            "ifsc_code": "nullable|string|regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/",
+            "account_holder_name": "nullable|string|max:150",
+            "bank_branch": "nullable|string|max:150",
+            "bank_account_type": "nullable|string|max:30"
+        },
+        "App\\Http\\Controllers\\Api\\EmployeeController@setPassword": {
+            "password": "required|string|min:8|confirmed"
+        },
+        "App\\Http\\Controllers\\Api\\EmployeeController@validatePayload": {
+            "first_name": "nullable|string|max:100  required|string|max:100",
+            "middle_name": "nullable|string|max:100",
+            "last_name": "nullable|string|max:100",
+            "gender": "nullable|in:Male,Female,Other,Prefer not to say",
+            "date_of_birth": "nullable|date",
+            "blood_group": "nullable|string|max:10",
+            "nationality_country_id": "nullable|integer",
+            "work_country_id": "nullable|integer",
+            "email": "",
+            "official_email": "nullable|email|max:191",
+            "mobile": "nullable  string  max:15  regex:/^[+0-9\\s\\-()]{6,15}$/",
+            "alt_mobile": "nullable  string  max:15  regex:/^[+0-9\\s\\-()]{6,15}$/",
+            "country_id": "nullable|integer",
+            "state_id": "nullable|integer",
+            "city": "nullable  string  max:100",
+            "address_line1": "nullable  string  max:255",
+            "address_line2": "nullable  string  max:255",
+            "pincode": "nullable|string|max:20",
+            "perm_country_id": "nullable|integer",
+            "perm_state_id": "nullable|integer",
+            "perm_city": "nullable  string  max:100",
+            "perm_address_line1": "nullable  string  max:255",
+            "perm_address_line2": "nullable  string  max:255",
+            "perm_pincode": "nullable|string|max:20",
+            "legal_entity_id": "nullable|integer",
+            "location": "nullable  string  max:191",
+            "department_id": "nullable|integer",
+            "designation_id": "nullable|integer",
+            "primary_role_id": "nullable|integer",
+            "ancillary_role_id": "nullable|integer",
+            "ancillary_role_ids": "nullable|array",
+            "ancillary_role_ids.*": "integer",
+            "work_type": "nullable|string|max:50",
+            "reporting_manager_id": "nullable|integer",
+            "reporting_manager_user_id": "nullable|integer",
+            "has_prior_experience": "nullable|boolean",
+            "date_of_joining": "nullable|date|after_or_equal:  |before_or_equal:",
+            "probation_policy": "nullable|string|max:50",
+            "probation_months": "nullable|integer|min:0|max:60",
+            "probation_end_date": "nullable|date",
+            "notice_period": "nullable|string|max:50",
+            "notice_period_days": "nullable|integer|min:0|max:365",
+            "leave_plan": "nullable|string|max:100",
+            "holiday_list": "nullable|string|max:100",
+            "holiday_group_id": "nullable|integer",
+            "attendance_tracking": "nullable|boolean",
+            "shift": "nullable|string|max:50",
+            "weekly_off": "nullable|string|max:100",
+            "attendance_number": "nullable|string|max:50",
+            "time_tracking": "nullable|string|max:50",
+            "penalization_policy": "nullable|string|max:100",
+            "overtime": "nullable|string|max:50",
+            "expense_policy": "nullable|string|max:100",
+            "laptop_assigned": "nullable|string|max:20",
+            "laptop_asset_id": "nullable|string|max:50",
+            "mobile_device": "nullable|string|max:100",
+            "other_assets": "nullable|string|max:255",
+            "enable_payroll": "nullable|boolean",
+            "pay_group": "nullable|string|max:100",
+            "annual_salary": "",
+            "salary_frequency": "",
+            "salary_effective_from": "",
+            "salary_structure": "nullable|string|max:50",
+            "tax_regime": "nullable|string|max:50",
+            "bonus_in_annual": "nullable|boolean",
+            "pf_eligible": "nullable|boolean",
+            "detailed_breakup": "nullable|boolean",
+            "salary_payment_mode": "nullable|in:bank,cheque,cash",
+            "bank_name": "nullable|string|max:150",
+            "bank_account_number": "nullable|string|max:30",
+            "ifsc_code": "nullable|string|regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/",
+            "account_holder_name": "nullable|string|max:150",
+            "bank_branch": "nullable|string|max:150",
+            "bank_account_type": "nullable|string|max:30",
+            "uan_number": "nullable|string|regex:/^\\d{12}$/",
+            "pan_number": "",
+            "pf_deduction": "nullable|string|max:50",
+            "pf_type": "nullable|in:statutory,standard",
+            "esi_applicable": "nullable|in:Yes,No",
+            "gratuity_nominee_name": "nullable|string|max:150",
+            "agreed_ctc_lpa": "nullable|numeric|min:0",
+            "stage4_completed_at": "nullable|date",
+            "assets": "nullable|array",
+            "assets.*": "integer",
+            "laptop_master_asset_id": "nullable|integer|exists:master_assets,id",
+            "mobile_master_asset_id": "nullable|integer|exists:master_assets,id",
+            "other_master_asset_ids": "nullable|array",
+            "other_master_asset_ids.*": "integer|exists:master_assets,id",
+            "biometric_status": "nullable|in:Not Registered,Registered,Pending,Failed",
+            "desk_workstation_no": "nullable|string|max:50",
+            "id_card_status": "nullable|in:Not Printed,Printed,Issued,Lost,Reissued",
+            "status": "nullable|in:Active,Inactive,On Leave,Probation,Notice Period,Resigned,Terminated",
+            "onboarding_stage_completed": "nullable|integer|min:0|max:6"
+        },
+        "App\\Http\\Controllers\\Api\\EmployeeDocumentController@store": {
+            "document_key": "required|string|max:60",
+            "file": "required|file|max:  |mimes:pdf,jpg,jpeg,png,webp"
+        },
+        "App\\Http\\Controllers\\Api\\EmployeeDocumentController@reject": {
+            "rejection_reason": "required|string|max:500"
+        },
+        "App\\Http\\Controllers\\Api\\ExitController@validatePayload": {
+            "exit_type": "nullable|in:Resignation,Termination,Retirement,End of Contract,Absconding,Other",
+            "initiated_by": "nullable|in:Employee,HR,Manager",
+            "reason_for_exit": "nullable|string|max:60",
+            "other_reason": "nullable|string|max:255",
+            "notice_date": "nullable|date",
+            "last_working_day": "nullable|date|after_or_equal:notice_date",
+            "reporting_manager_id": "nullable|integer|exists:employees,id",
+            "comments": "nullable|string|max:2000",
+            "business_impact": "nullable|in:Low,Medium,High,Critical",
+            "replacement_required": "nullable|in:Yes \u2014 Immediate,Yes \u2014 Within 30 days,Yes \u2014 Within 90 days,No",
+            "clearances": "nullable|array",
+            "asset_returns": "nullable|array",
+            "handover_notes": "nullable|string|max:5000",
+            "validation": "nullable|array",
+            "final_employee_status": "nullable|in:Active,Inactive,Exited",
+            "profile_lock": "nullable|in:Locked,Unlocked",
+            "exit_case_status": "nullable|in:Open,Closed",
+            "hr_sign_off": "nullable|in:Pending,Approved,Rejected",
+            "stage_status": "nullable|array",
+            "current_stage": "nullable|integer|min:1|max:4"
+        },
+        "App\\Http\\Controllers\\Api\\ExpenseClaimController@store": {
+            "category_id": "nullable  integer",
+            "currency": "nullable  string  max:8",
+            "project": "nullable  string  max:64",
+            "payment_method": "nullable  string  max:64",
+            "title": "required  string  max:255",
+            "amount": "required  numeric  min:0  max:9999999999999.99",
+            "expense_date": "required  date  before_or_equal:today  after_or_equal:",
+            "vendor": "nullable  string  max:255",
+            "purpose": "nullable  string",
+            "files": "required  array  min:1",
+            "files.*": "file  max:5120  mimes:pdf,jpg,jpeg,png"
+        },
+        "App\\Http\\Controllers\\Api\\ExpenseClaimController@managerAct": {
+            "comment": "nullable  string  max:1000"
+        },
+        "App\\Http\\Controllers\\Api\\ExpenseClaimController@hrAct": {
+            "comment": "nullable  string  max:1000"
+        },
+        "App\\Http\\Controllers\\Api\\FaceBiometricController@register": {
+            "descriptor": "required|array|size:",
+            "descriptor.*": "required|numeric",
+            "consent": "required|accepted",
+            "employee_id": "nullable|integer"
+        },
+        "App\\Http\\Controllers\\Api\\ForgotPasswordController@sendOtp": {
+            "email": "required|email"
+        },
+        "App\\Http\\Controllers\\Api\\ForgotPasswordController@verifyOtp": {
+            "email": "required|email",
+            "otp": "required|string|size:6"
+        },
+        "App\\Http\\Controllers\\Api\\ForgotPasswordController@resetPassword": {
+            "email": "required|email",
+            "password": "required|string|min:8|confirmed",
+            "client_id": "nullable|integer"
+        },
+        "App\\Http\\Controllers\\Api\\HiringRequestController@validatePayload": {
+            "title": "nullable  required  string  max:191  regex:/^[A-Za-z0-9 .,\\-\\/]+$/",
+            "job_role": "nullable  required  string  max:191  regex:/^[A-Za-z0-9 .,\\-\\/]+$/",
+            "department_id": "nullable  required  integer  exists:master_departments,id",
+            "team": "nullable|string|max:100",
+            "requested_by_name": "nullable|string|max:150",
+            "request_date": "nullable|date",
+            "openings": "integer  min:1  max:9999",
+            "employment_type": "",
+            "work_mode": "",
+            "urgency": "",
+            "job_description": "string",
+            "daily_responsibilities": "nullable|string",
+            "required_skills": "string  max:255",
+            "required_experience": "string  max:30",
+            "required_qualification": "nullable  string  max:100  regex:/^[A-Za-z0-9 .,\\/&()+\\-]*$/  regex:/[A-Za-z]/",
+            "preferred_profile": "nullable|string|max:191",
+            "request_type": "nullable",
+            "business_justification": "nullable|string",
+            "hiring_need_reason": "nullable|string",
+            "current_team_gap": "nullable|string",
+            "what_if_not_filled": "nullable|string",
+            "target_join_date": "nullable|date|after_or_equal:today",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\HolidayController@import": {
+            "rows": "required|array|min:1|max:1000",
+            "rows.*": "array",
+            "holiday_group_id": "nullable|integer"
+        },
+        "App\\Http\\Controllers\\Api\\HolidayController@validatePayload": {
+            "name": "required|string|max:191",
+            "date": "required|date",
+            "type": "nullable",
+            "is_recurring": "nullable|boolean",
+            "description": "nullable|string|max:1000",
+            "holiday_group_id": "nullable|integer"
+        },
+        "App\\Http\\Controllers\\Api\\HolidayGroupController@validatePayload": {
+            "name": "required  string  max:191  regex:/^[\\pL\\pN \\-]+$/u",
+            "description": "nullable|string|max:1000",
+            "status": "nullable  Active  Inactive"
+        },
+        "App\\Http\\Controllers\\Api\\HrCustomFieldController@validatePayload": {
+            "name": "required  string  max:100  regex:/^[A-Za-z_][A-Za-z0-9_]*$/",
+            "type": "required",
+            "description": "nullable|string|max:500",
+            "used_in_hint": "nullable|string|max:500"
+        },
+        "App\\Http\\Controllers\\Api\\HrDocumentSignatureController@store": {
+            "template_id": "required|integer|exists:hr_document_templates,id",
+            "employee_id": "required|integer|exists:employees,id",
+            "custom_values": "nullable|array",
+            "custom_values.*": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\HrDocumentSignatureController@action": {
+            "action": "required  Sign  Approve  Acknowledge",
+            "signed_name": "nullable|string|max:120",
+            "signature_image": "nullable|string|max:5600000",
+            "note": "nullable|string|max:500"
+        },
+        "App\\Http\\Controllers\\Api\\HrDocumentSignatureController@reject": {
+            "reason": "required|string|max:500"
+        },
+        "App\\Http\\Controllers\\Api\\HrDocumentTemplateController@uploadDocx": {
+            "docx": "required|file|mimes:doc,docx|max:"
+        },
+        "App\\Http\\Controllers\\Api\\HrDocumentTemplateController@matchForEmployee": {
+            "employee_id": "required|integer|exists:employees,id",
+            "trigger_point_name": "sometimes|nullable|string|max:255",
+            "trigger_keyword": "sometimes|nullable|string|max:120"
+        },
+        "App\\Http\\Controllers\\Api\\HrDocumentTemplateController@generateForEmployee": {
+            "employee_id": "required|integer|exists:employees,id"
+        },
+        "App\\Http\\Controllers\\Api\\HrDocumentTemplateController@previewForEmployee": {
+            "employee_id": "required|integer|exists:employees,id"
+        },
+        "App\\Http\\Controllers\\Api\\HrDocumentTemplateController@validatePayload": {
+            "name": "string  max:191",
+            "description": "nullable|string",
+            "employee_category": "nullable",
+            "role_type": "nullable",
+            "doc_type": "nullable|string|max:100",
+            "trigger_point_id": "nullable|integer|exists:master_trigger_points,id",
+            "version": "nullable|string|max:10",
+            "is_mandatory": "nullable|boolean",
+            "requires_signature": "nullable|boolean",
+            "requires_manager_approval": "nullable|boolean",
+            "include_in_audit": "nullable|boolean",
+            "signing_mode": "nullable",
+            "signers": "nullable|array",
+            "signers.*.role_id": "nullable|integer",
+            "signers.*.role_name": "nullable|string|max:100",
+            "signers.*.designation_id": "nullable|integer",
+            "signers.*.designation_name": "nullable|string|max:100",
+            "signers.*.action": "nullable|string|max:30",
+            "signers.*.days": "nullable|integer|min:0|max:365",
+            "editor_mode": "nullable",
+            "content_html": "nullable|string",
+            "docx": "nullable|file|mimes:doc,docx|max:",
+            "header_config": "nullable|array",
+            "header_config.logo_path": "nullable|string|max:500",
+            "header_config.logo_url": "nullable|string|max:500",
+            "header_config.title": "nullable|string|max:2000",
+            "header_config.subtitle": "nullable|string|max:2000",
+            "header_config.align": "nullable  left  center  right  space-between",
+            "header_config.background": "nullable|string|max:30",
+            "header_config.text_color": "nullable|string|max:30",
+            "header_config.show_logo": "nullable|boolean",
+            "header_config.show_title": "nullable|boolean",
+            "header_config.logo_height": "nullable|integer|between:24,200",
+            "header_config.logo_pos": "nullable|array",
+            "header_config.logo_pos.x": "nullable|numeric|between:0,100",
+            "header_config.logo_pos.y": "nullable|numeric|between:0,100",
+            "header_config.title_pos": "nullable|array",
+            "header_config.title_pos.x": "nullable|numeric|between:0,100",
+            "header_config.title_pos.y": "nullable|numeric|between:0,100",
+            "footer_config": "nullable|array",
+            "footer_config.text": "nullable|string|max:500",
+            "footer_config.align": "nullable  left  center  right",
+            "footer_config.background": "nullable|string|max:30",
+            "footer_config.text_color": "nullable|string|max:30",
+            "footer_config.show_page_number": "nullable|boolean",
+            "footer_config.page_number_align": "nullable  left  center  right",
+            "footer_config.page_number_format": "nullable  N  Page N  Page N of M  N / M",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\HrDocumentTemplateController@uploadHeaderLogo": {
+            "logo": "required|file|mimes:png,jpg,jpeg,svg,webp|max:5120"
+        },
+        "App\\Http\\Controllers\\Api\\HrGeneratedDocumentController@preview": {
+            "template_id": "required|integer|exists:hr_document_templates,id",
+            "employee_id": "required|integer|exists:employees,id",
+            "custom_values": "nullable|array",
+            "custom_values.*": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\HrGeneratedDocumentController@store": {
+            "template_id": "required|integer|exists:hr_document_templates,id",
+            "recipients": "required|array|min:1",
+            "recipients.*.employee_id": "required|integer|exists:employees,id",
+            "recipients.*.custom_values": "nullable|array"
+        },
+        "App\\Http\\Controllers\\Api\\LeadAckReasonController@store": {
+            "opportunity_type": "required",
+            "reason": "required  string  max:500",
+            "status": "nullable",
+            "dq_status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\LeadAckReasonController@update": {
+            "reason": "nullable  string  max:500",
+            "status": "nullable",
+            "dq_status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\LeavePlanController@store": {
+            "plan_name": "required  string  max:255",
+            "description": "nullable  string",
+            "from_month_type": "required  Calendar  If Joining",
+            "from_month": "nullable  January  February  March  April  May  June  July  August  September  October  November  December",
+            "calendar_year": "nullable  string  max:20",
+            "policy_explanation_mode": "nullable  System  Custom",
+            "policy_doc_path": "nullable  string  max:1024",
+            "status": "nullable  Active  Inactive",
+            "is_default": "nullable  boolean"
+        },
+        "App\\Http\\Controllers\\Api\\LeavePlanController@update": {
+            "plan_name": "sometimes  required  string  max:255",
+            "description": "nullable  string",
+            "from_month_type": "sometimes  required  Calendar  If Joining",
+            "from_month": "nullable  January  February  March  April  May  June  July  August  September  October  November  December",
+            "calendar_year": "nullable  string  max:20",
+            "policy_explanation_mode": "nullable  System  Custom",
+            "policy_doc_path": "nullable  string  max:1024",
+            "status": "nullable  Active  Inactive",
+            "is_default": "nullable  boolean"
+        },
+        "App\\Http\\Controllers\\Api\\LeavePlanController@assignTypes": {
+            "leave_type_ids": "required  array",
+            "leave_type_ids.*": "integer  exists:master_leave_types,id",
+            "mode": "nullable  replace  append"
+        },
+        "App\\Http\\Controllers\\Api\\LeavePlanController@saveTypeConfig": {
+            "config": "required  array",
+            "config.accrual.yearlyQuota": "nullable  numeric  min:0  max:365",
+            "config.accrual.attendanceDaysWorked": "exclude_unless:config.accrual.mode,attendance  nullable  numeric  min:0  max:31",
+            "config.accrual.employeeOverdraft.days": "nullable  numeric  min:0  max:365",
+            "config.yearEnd.carryForwardCap": "nullable  numeric  min:0  max:365",
+            "quota_summary": "nullable  string  max:255",
+            "eoy_summary": "nullable  string  max:255",
+            "finalize": "sometimes  boolean"
+        },
+        "App\\Http\\Controllers\\Api\\LeavePlanController@assignEmployees": {
+            "employee_ids": "required  array",
+            "employee_ids.*": "integer  exists:employees,id"
+        },
+        "App\\Http\\Controllers\\Api\\LeaveRequestController@store": {
+            "employee_id": "nullable  integer  exists:employees,id",
+            "leave_type_id": "required  integer  master_leave_types  id  super_admin  client_id  client_id",
+            "from_date": "required  date",
+            "to_date": "required  date  after_or_equal:from_date  before_or_equal:",
+            "day_type": "nullable  full  first_half  second_half",
+            "reason": "nullable  string  max:2000",
+            "attachment_path": "nullable  string  max:1024",
+            "notify": "nullable  array",
+            "handover_required": "nullable  boolean",
+            "cover_person_id": "nullable  integer  exists:employees,id",
+            "handover_notes": "nullable  string  max:5000",
+            "critical_tasks": "nullable  string  max:5000",
+            "avail_on_call": "nullable  boolean",
+            "emergency_number": "nullable  string  max:50",
+            "avail_note": "nullable  string  max:2000"
+        },
+        "App\\Http\\Controllers\\Api\\LeaveRequestController@setStatus": {
+            "comment": "nullable  string"
+        },
+        "App\\Http\\Controllers\\Api\\OnboardingController@createInvite": {
+            "invitee_name": "required|string|max:255",
+            "invitee_email": "required|email|max:191",
+            "department_id": "nullable|integer|exists:master_departments,id",
+            "expected_join_date": "nullable|date|after_or_equal:  |before_or_equal:",
+            "expiry_days": "nullable|integer|in:3,7,15,30",
+            "app_origin": "nullable|url|max:255"
+        },
+        "App\\Http\\Controllers\\Api\\OrganizationTypeController@store": {
+            "name": "required|string|max:100|unique:organization_types,name",
+            "icon": "nullable|string|max:50",
+            "description": "nullable|string|max:255",
+            "status": "required|in:active,inactive",
+            "sort_order": "nullable|integer|min:0"
+        },
+        "App\\Http\\Controllers\\Api\\OrganizationTypeController@update": {
+            "name": "required|string|max:100|unique:organization_types,name,",
+            "icon": "nullable|string|max:50",
+            "description": "nullable|string|max:255",
+            "status": "required|in:active,inactive",
+            "sort_order": "nullable|integer|min:0"
+        },
+        "App\\Http\\Controllers\\Api\\P2p\\SourcingController@upload": {
+            "file": "required|file|max:5120|mimes:pdf,jpg,jpeg,png,webp",
+            "kind": "nullable|in:clarity,card"
+        },
+        "App\\Http\\Controllers\\Api\\P2p\\SourcingController@setProductStatus": {
+            "status": "required|in:Completed,In Progress"
+        },
+        "App\\Http\\Controllers\\Api\\P2p\\SourcingController@mapSupplier": {
+            "supplier_id": "nullable",
+            "new_supplier": "nullable|array",
+            "new_supplier.name": "required_with:new_supplier|string|max:255",
+            "new_supplier.email": "nullable|email",
+            "new_supplier.card": "nullable|string|max:512"
+        },
+        "App\\Http\\Controllers\\Api\\P2p\\SourcingController@validatePayload": {
+            "due_date": "nullable|date",
+            "source": "required|in:master,manual",
+            "assignee_id": "required",
+            "products": "required|array|min:1",
+            "products.*.id": "nullable|integer",
+            "products.*.from": "required|in:master,manual",
+            "products.*.code": "nullable|string|max:64",
+            "products.*.name": "nullable|string|max:255",
+            "products.*.target_price": "nullable|string|max:64",
+            "products.*.clarity": "nullable|array"
+        },
+        "App\\Http\\Controllers\\Api\\PaymentController@store": {
+            "client_id": "required|exists:clients,id",
+            "plan_id": "nullable|exists:plans,id",
+            "txn_id": "nullable|string|max:100",
+            "order_id": "nullable|string|max:100",
+            "amount": "required|numeric|min:0",
+            "gst": "nullable|numeric|min:0",
+            "discount": "nullable|numeric|min:0",
+            "total": "required|numeric|min:0",
+            "currency": "nullable|string|max:10",
+            "method": "required|in:upi,credit_card,debit_card,net_banking,wallet,cash,cheque",
+            "gateway": "nullable|in:razorpay,stripe,paytm,manual",
+            "status": "required|in:pending,success,failed,refunded",
+            "billing_cycle": "nullable|in:monthly,quarterly,yearly",
+            "valid_from": "nullable|date",
+            "valid_until": "nullable|date",
+            "auto_renew": "nullable|boolean",
+            "notes": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\PayrollAdjustmentController@store": {
+            "employee_id": "required  integer",
+            "month": "required  integer  between:1,12",
+            "year": "required  integer  between:2000,2100",
+            "type": "required",
+            "label": "nullable  string  max:120",
+            "amount": "required  numeric  min:0  max:99999999.99",
+            "hours": "nullable  numeric  min:0  max:999999.99",
+            "rate": "nullable  numeric  min:0  max:99999999.99",
+            "reason": "nullable  string  max:500",
+            "auto_approve": "nullable  boolean"
+        },
+        "App\\Http\\Controllers\\Api\\PayrollController@fnf": {
+            "leave_encashment_days": "nullable  numeric  min:0  max:365",
+            "notice_recovery_amount": "nullable  numeric  min:0  max:100000000",
+            "other_dues": "nullable  numeric  min:0  max:100000000",
+            "other_deductions": "nullable  numeric  min:0  max:100000000"
+        },
+        "App\\Http\\Controllers\\Api\\PayrollPaymentController@prepare": {
+            "run_id": "required  integer",
+            "mode": "required  in:cheque,online"
+        },
+        "App\\Http\\Controllers\\Api\\PayrollPaymentController@approve": {
+            "prepared_by": "required  string  max:191",
+            "verified_by": "required  string  max:191",
+            "approved_by": "required  string  max:191"
+        },
+        "App\\Http\\Controllers\\Api\\PermissionController@savePermissions": {
+            "permissions": "required|array",
+            "permissions.*.module_id": "required|exists:modules,id",
+            "permissions.*.can_view": "boolean",
+            "permissions.*.can_add": "boolean",
+            "permissions.*.can_edit": "boolean",
+            "permissions.*.can_delete": "boolean",
+            "permissions.*.can_export": "boolean",
+            "permissions.*.can_import": "boolean",
+            "permissions.*.can_approve": "boolean"
+        },
+        "App\\Http\\Controllers\\Api\\PermissionController@saveDepartmentPermissions": {
+            "permissions": "required|array",
+            "permissions.*.module_id": "required|integer|exists:modules,id",
+            "permissions.*.can_view": "boolean",
+            "permissions.*.can_add": "boolean",
+            "permissions.*.can_edit": "boolean",
+            "permissions.*.can_delete": "boolean",
+            "permissions.*.can_export": "boolean",
+            "permissions.*.can_import": "boolean",
+            "permissions.*.can_approve": "boolean"
+        },
+        "App\\Http\\Controllers\\Api\\PlanController@store": {
+            "name": "required|string|max:100",
+            "price": "required|numeric|min:0",
+            "period": "required|in:month,quarter,year",
+            "max_branches": "nullable|integer|min:0",
+            "max_users": "nullable|integer|min:0",
+            "storage_limit": "nullable|string|max:20",
+            "support_level": "nullable|string|max:50",
+            "is_featured": "boolean",
+            "badge": "nullable|string|max:50",
+            "color": "nullable|string|max:7",
+            "description": "nullable|string",
+            "best_for": "nullable|string|max:255",
+            "status": "required|in:active,inactive",
+            "trial_days": "nullable|integer|min:0",
+            "yearly_discount": "nullable|numeric|min:0|max:100",
+            "is_custom": "boolean",
+            "modules": "nullable|array",
+            "modules.*.module_id": "required|exists:modules,id",
+            "modules.*.access_level": "required|in:full,limited,addon,not_included"
+        },
+        "App\\Http\\Controllers\\Api\\PlanController@update": {
+            "name": "required|string|max:100",
+            "price": "required|numeric|min:0",
+            "period": "required|in:month,quarter,year",
+            "max_branches": "nullable|integer|min:0",
+            "max_users": "nullable|integer|min:0",
+            "storage_limit": "nullable|string|max:20",
+            "support_level": "nullable|string|max:50",
+            "is_featured": "boolean",
+            "badge": "nullable|string|max:50",
+            "color": "nullable|string|max:7",
+            "description": "nullable|string",
+            "best_for": "nullable|string|max:255",
+            "status": "required|in:active,inactive",
+            "trial_days": "nullable|integer|min:0",
+            "yearly_discount": "nullable|numeric|min:0|max:100",
+            "is_custom": "boolean",
+            "modules": "nullable|array",
+            "modules.*.module_id": "required|exists:modules,id",
+            "modules.*.access_level": "required|in:full,limited,addon,not_included"
+        },
+        "App\\Http\\Controllers\\Api\\PreviousEmploymentController@validatePayload": {
+            "company_name": "required|string|max:255",
+            "job_title": "nullable|string|max:255",
+            "start_date": "nullable|date|before_or_equal:today",
+            "end_date": "nullable|date|before_or_equal:today|after_or_equal:start_date",
+            "hr_email_1": "nullable|email|max:191",
+            "hr_email_2": "nullable|email|max:191|different:hr_email_1",
+            "contact_number": "nullable|string|max:30"
+        },
+        "App\\Http\\Controllers\\Api\\ProcurementController@store": {
+            "lead_id": "nullable|integer|exists:leads,id",
+            "procurement_date": "nullable|date",
+            "assign_id": "nullable|integer|exists:users,id",
+            "status": "nullable|in:inprogress,done",
+            "notes": "nullable|string|max:2000",
+            "attachments": "nullable|array",
+            "attachments.*": "file|magic_mime:jpg,jpeg,png,webp,pdf|max:5120",
+            "products": "required|array|min:1",
+            "products.*.product_id": "required|integer|exists:products,id",
+            "products.*.lead_product_id": "nullable|integer|exists:lead_products,id",
+            "products.*.vendor_id": "nullable|integer|exists:vendors,id",
+            "products.*.qty": "nullable|numeric|gt:0",
+            "products.*.target_price": "nullable|numeric|gt:0",
+            "products.*.attachment": "nullable|array",
+            "products.*.attachment.*": "file|magic_mime:jpg,jpeg,png,webp,pdf|max:5120"
+        },
+        "App\\Http\\Controllers\\Api\\ProductController@storeCore": {
+            "id": "nullable|integer|exists:products,id",
+            "name": "required|string|max:255",
+            "generic_name": "nullable|string|max:255",
+            "description": "nullable|string",
+            "brand": "nullable|string|max:255",
+            "segment_id": "nullable|integer",
+            "haz_type": "nullable|string|max:20",
+            "haz_class_id": "nullable|integer",
+            "uom_id": "nullable|integer",
+            "hsn_id": "nullable|integer",
+            "condition_id": "nullable|integer",
+            "packaging_material_id": "nullable|integer",
+            "confidential_info": "nullable|string",
+            "primary_image": "nullable|string|max:500",
+            "primary_image_file": "nullable|file|mimes:jpg,jpeg,png,pdf|max:2048",
+            "secondary_images": "nullable|array",
+            "secondary_images.*": "nullable|string|max:500",
+            "secondary_image_files": "nullable|array|max:10",
+            "secondary_image_files.*": "file|mimes:jpg,jpeg,png,pdf|max:2048"
+        },
+        "App\\Http\\Controllers\\Api\\ProductController@storeSales": {
+            "base_price": "nullable|numeric|min:0",
+            "gst_id": "nullable|integer",
+            "gst_amount": "nullable|numeric|min:0",
+            "total_price": "nullable|numeric|min:0",
+            "mark_bottom": "nullable|string|max:30"
+        },
+        "App\\Http\\Controllers\\Api\\ProductController@storeQuality": {
+            "net_weight": "nullable|numeric|min:0",
+            "gross_weight": "nullable|numeric|min:0",
+            "length_cm": "nullable|numeric|min:0",
+            "width_cm": "nullable|numeric|min:0",
+            "height_cm": "nullable|numeric|min:0",
+            "batch_no": "nullable|string|max:100",
+            "serial_no": "nullable|string|max:100",
+            "cat_no": "nullable|string|max:100",
+            "lot_no": "nullable|string|max:100",
+            "qc_records": "nullable|array",
+            "qc_records.*.qc_name": "required_with:qc_records|string|max:100",
+            "qc_records.*.qc_purpose": "nullable|string|max:255",
+            "qc_records.*.issued_by": "nullable|string|max:255",
+            "qc_records.*.qa_testing_parameter": "nullable|string",
+            "qc_records.*.min_acceptance_criteria": "nullable|string",
+            "qc_records.*.attachment_path": "nullable|string|max:500",
+            "qc_records.*.attachment_file": "nullable|file|mimes:jpg,jpeg,png,pdf|max:10240"
+        },
+        "App\\Http\\Controllers\\Api\\ProductController@updateVendorMapPrice": {
+            "purchase_price": "required|numeric|min:0"
+        },
+        "App\\Http\\Controllers\\Api\\ProductController@storeVendors": {
+            "vendors": "required|array|min:1",
+            "vendors.*.vendor_id": "nullable|integer|exists:vendors,id",
+            "vendors.*.vendor_code": "nullable|string|max:50",
+            "vendors.*.vendor_name": "required|string|max:255",
+            "vendors.*.vendor_website": "nullable|string|max:255",
+            "vendors.*.contact_person": "nullable|string|max:255",
+            "vendors.*.contact_no": "nullable|string|max:50",
+            "vendors.*.email": "nullable|email|max:255",
+            "vendors.*.designation": "nullable|string|max:100",
+            "vendors.*.attachment_path": "nullable|string|max:500",
+            "vendors.*.purchase_price": "nullable|numeric|min:0",
+            "vendors.*.gst_percentage": "nullable|numeric|min:0",
+            "vendors.*.gst_amount": "nullable|numeric|min:0",
+            "vendors.*.total_amount": "nullable|numeric|min:0",
+            "vendors.*.map_date": "nullable|date",
+            "vendors.*.remarks": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\PurchaseOrderController@validatePayload": {
+            "po_type": "nullable|string|max:64",
+            "document_type": "nullable|string|max:32",
+            "mode_of_transport": "nullable|string|max:64",
+            "po_date": "nullable|date",
+            "expected_delivery_date": "nullable|date",
+            "warehouse_id": "nullable|integer",
+            "delivery_location": "nullable|string|max:255",
+            "payment_type": "nullable|string|max:64",
+            "physical_inspection": "nullable|boolean",
+            "currency_id": "nullable|integer",
+            "currency_code": "nullable|string|max:16",
+            "exchange_rate": "nullable|numeric",
+            "inco_term": "nullable|string|max:32",
+            "port_of_loading": "nullable|string|max:128",
+            "port_of_discharge": "nullable|string|max:128",
+            "final_destination": "nullable|string|max:128",
+            "country_of_origin": "nullable|string|max:128",
+            "vendor_id": "nullable|integer",
+            "shipment_order_id": "nullable|integer",
+            "terms": "nullable|string",
+            "shipping_charges": "nullable|numeric",
+            "packaging_charges": "nullable|numeric",
+            "other_charges": "nullable|numeric",
+            "items": "array",
+            "items.*.product_id": "nullable|integer",
+            "items.*.product_code": "nullable|string|max:64",
+            "items.*.pi_product_name": "nullable|string|max:255",
+            "items.*.pi_quantity": "nullable|numeric",
+            "items.*.product_name": "nullable|string|max:255",
+            "items.*.quantity": "nullable|numeric",
+            "items.*.rate": "nullable|numeric",
+            "items.*.gst_pct": "nullable|numeric"
+        },
+        "App\\Http\\Controllers\\Api\\RecruitmentController@validatePayload": {
+            "job_title": "sometimes  required  string  max:191  regex:/^[A-Za-z0-9 .,\\-\\/]+$/",
+            "department_id": "sometimes|    required|integer|exists:master_departments,id",
+            "designation_id": "sometimes|    required|integer|exists:master_designations,id",
+            "primary_role_id": "nullable|integer|exists:master_roles,id",
+            "hiring_request_id": "nullable|integer|exists:hiring_requests,id",
+            "employment_type": "nullable",
+            "openings": "nullable|integer|min:1|max:9999",
+            "experience": "nullable|string|max:30",
+            "work_mode": "nullable",
+            "ctc_range": "nullable  string  max:50  regex:/^\\d+(\\.\\d+)?(\\s*-\\s*\\d+(\\.\\d+)?)?$/",
+            "priority": "nullable",
+            "hiring_manager_id": "nullable|integer|exists:employees,id",
+            "assigned_hr_id": "nullable|integer|exists:employees,id",
+            "start_date": "nullable|date",
+            "deadline": "nullable|date|after:start_date",
+            "job_description": "nullable|string",
+            "requirements": "nullable|string",
+            "post_on_portal": "nullable|boolean",
+            "notify_team_leads": "nullable|boolean",
+            "enable_referral_bonus": "nullable|boolean",
+            "status": "nullable",
+            "cancel_reason": "nullable|string|max:100",
+            "cancel_notes": "nullable|string"
+        },
+        "App\\Http\\Controllers\\Api\\SalaryStructureController@store": {
+            "employee_id": "required  integer",
+            "effective_from": "required  date",
+            "earnings": "required  array  min:1",
+            "earnings.*.code": "required  string  max:40",
+            "earnings.*.label": "required  string  max:120",
+            "earnings.*.amount": "required  numeric  min:0  max:99999999.99",
+            "deductions": "nullable  array",
+            "deductions.*.code": "required_with:deductions  string  max:40",
+            "deductions.*.label": "required_with:deductions  string  max:120",
+            "deductions.*.amount": "required_with:deductions  numeric  min:0  max:99999999.99",
+            "pf_applicable": "boolean",
+            "esi_applicable": "boolean",
+            "pt_applicable": "boolean",
+            "revision_note": "nullable  string  max:500"
+        },
+        "App\\Http\\Controllers\\Api\\SalesLeadController@store": {
+            "sender_name": "required|string|max:255",
+            "sender_mobile": "nullable|string|max:32",
+            "sender_email": "nullable|email|max:255",
+            "sender_company": "nullable|string|max:255",
+            "sender_address": "nullable|string|max:1000",
+            "sender_city": "nullable|string|max:128",
+            "sender_state": "nullable|string|max:128",
+            "sender_country_iso": "nullable|string|max:8",
+            "sender_country_name": "nullable|string|max:128",
+            "sender_pincode": "nullable|string|max:32",
+            "customer_id": "nullable|integer|exists:customers,id",
+            "consignee_id": "nullable|integer|exists:consignees,id",
+            "query_message": "nullable|string|max:10000",
+            "product_quantity": "nullable|string|max:64",
+            "query_product_name": "nullable|string|max:255"
+        },
+        "App\\Http\\Controllers\\Api\\SalesLeadController@update": {
+            "sender_name": "sometimes|required|string|max:255",
+            "sender_mobile": "nullable|string|max:32",
+            "sender_email": "nullable|email|max:255",
+            "sender_company": "nullable|string|max:255",
+            "sender_address": "nullable|string|max:1000",
+            "sender_city": "nullable|string|max:128",
+            "sender_state": "nullable|string|max:128",
+            "sender_pincode": "nullable|string|max:32",
+            "sender_country_iso": "nullable|string|max:8",
+            "qualified": "nullable|boolean",
+            "disqualified": "nullable|boolean",
+            "lead_stage_id": "nullable|integer|between:1,6",
+            "salesperson_id": "nullable  integer  users  id  deleted_at",
+            "key_opportunity": "nullable|boolean",
+            "remark": "nullable|string|max:5000",
+            "price": "nullable|string|max:64",
+            "lead_ack_reason_id": "nullable  integer  lead_ack_reasons  id  status  active",
+            "customer_id": "nullable|integer|exists:customers,id",
+            "consignee_id": "nullable|integer|exists:consignees,id",
+            "has_whatsapp": "nullable|boolean",
+            "whatsapp_status": "nullable|string|in:connected,pending,not_connected,opted_out",
+            "whatsapp_reason": "nullable|string|max:1000"
+        },
+        "App\\Http\\Controllers\\Api\\SalesLeadController@assign": {
+            "lead_ids": "required|array|min:1",
+            "lead_ids.*": "integer",
+            "salesperson_id": "required|integer|exists:users,id"
+        },
+        "App\\Http\\Controllers\\Api\\SalesLeadController@convertToQualified": {
+            "lead_ids": "required|array|min:1",
+            "lead_ids.*": "integer"
+        },
+        "App\\Http\\Controllers\\Api\\SalesLeadController@storeTaskManager": {
+            "name": "required|string|max:255",
+            "mobile_no": "required  string  regex:/^\\d{6,15}$/",
+            "email": "required|email|max:255",
+            "order_value": "nullable|numeric|min:0",
+            "buying_plan": "nullable|date_format:Y-m-d",
+            "attachment": "nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120"
+        },
+        "App\\Http\\Controllers\\Api\\SalesLeadController@updateWhatsApp": {
+            "whatsapp_status": "required|string|in:connected,pending,not_connected,opted_out",
+            "whatsapp_reason": "nullable|string|min:5|max:250",
+            "screenshot": "nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:5120"
+        },
+        "App\\Http\\Controllers\\Api\\SalesLeadController@updateLeadProductSourcingStatus": {
+            "sourcing_status": "required|in:required,not_required"
+        },
+        "App\\Http\\Controllers\\Api\\SalesLeadController@storeSharedPrice": {
+            "quoted_price": "required|numeric|gt:0"
+        },
+        "App\\Http\\Controllers\\Api\\SalesLeadController@storeLeadProduct": {
+            "product_id": "required|integer|exists:products,id",
+            "currency": "nullable|string",
+            "quantity": "nullable|numeric|min:0",
+            "target_price": "nullable|numeric|min:0",
+            "notes": "nullable|string|max:1000"
+        },
+        "App\\Http\\Controllers\\Api\\SalesLeadController@updateLeadProduct": {
+            "currency": "nullable|string",
+            "quantity": "nullable|numeric|min:0",
+            "target_price": "nullable|numeric|min:0",
+            "notes": "nullable|string|max:1000"
+        },
+        "App\\Http\\Controllers\\Api\\SalesLeadController@storeAcknowledgements": {
+            "reason_ids": "required|array|min:1",
+            "reason_ids.*": "integer"
+        },
+        "App\\Http\\Controllers\\Api\\SalesPdfController@previewPi": {
+            "piNo": "nullable|string|max:64",
+            "piDate": "nullable|string|max:32",
+            "btId": "nullable|string|max:32",
+            "btDate": "nullable|string|max:32",
+            "oppId": "nullable|string|max:64",
+            "oppDate": "nullable|string|max:32",
+            "docType": "nullable|string|max:32",
+            "currency": "nullable|string|max:8",
+            "customer": "nullable|string|max:255",
+            "consignee": "nullable|string|max:255",
+            "salesManager": "nullable|string|max:128",
+            "withSignature": "nullable|boolean"
+        },
+        "App\\Http\\Controllers\\Api\\SalesPdfController@previewQuotation": {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": "inline; filename="
+        },
+        "App\\Http\\Controllers\\Api\\SalesPdfController@previewProformaInvoice": {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": "inline; filename="
+        },
+        "App\\Http\\Controllers\\Api\\SalesTodoController@setReminderStatus": {
+            "status": "required"
+        },
+        "App\\Http\\Controllers\\Api\\SalesTodoController@setMeetingStatus": {
+            "status": "required"
+        },
+        "App\\Http\\Controllers\\Api\\SalesTodoController@validateReminderPayload": {
+            "opp_id": "nullable|string|max:60",
+            "opp_date": "nullable|date",
+            "subject": "required  string  max:255",
+            "set_date": "required  date",
+            "tat": "nullable|string|max:60",
+            "remark": "nullable|string|max:2000",
+            "status": "nullable",
+            "attachment": "nullable|file|max:  |mimes:"
+        },
+        "App\\Http\\Controllers\\Api\\SalesTodoController@validateMeetingPayload": {
+            "type": "required",
+            "opp_id": "nullable|string|max:60",
+            "customer": "required  string  max:255",
+            "email": "nullable|email|max:191",
+            "contact": "required  string  max:50  regex:/^\\+?[\\d\\s\\-]{10,20}$/  /\\D/    Contact number must be at least 10 digits.  Contact number cannot exceed 15 digits.",
+            "platform": "required  string  max:100",
+            "date": "required  date",
+            "start_time": "required  date_format:H:i",
+            "end_time": "required  date_format:H:i  after:start_time",
+            "link": "nullable  string  max:2048  required_if:type,virtual  url",
+            "venue": "nullable  string  max:1000  required_if:type,physical  type  physical",
+            "agenda": "required  string  max:1000",
+            "status": "nullable"
+        },
+        "App\\Http\\Controllers\\Api\\SegmentDocUploadController@store": {
+            "category": "required",
+            "doc_code": "required  string  max:32",
+            "doc_name": "required  string  max:255",
+            "requirement": "nullable  M  O",
+            "expiry_date": "nullable  date",
+            "attachment": "required  file  max:2048  mimes:pdf,jpg,jpeg,png"
+        },
+        "App\\Http\\Controllers\\Api\\SettingsController@uploadAsset": {
+            "kind": "required|in:logo,favicon",
+            "file": "required|image|mimes:jpg,jpeg,png,svg,webp,ico|max:2048"
+        },
+        "App\\Http\\Controllers\\Api\\ShipmentOrderController@store": {
+            "lead_id": "required|integer|exists:leads,id",
+            "proforma_invoice_id": "nullable|integer|exists:proforma_invoices,id",
+            "shipping_liability": "nullable|string|max:64",
+            "cold_chain": "nullable|boolean",
+            "zip_code": "nullable|string|max:12|regex:/^[A-Za-z0-9\\s\\-]+$/",
+            "freight_cost": "nullable|numeric|gt:0",
+            "shipping_mode": "nullable|string|max:64",
+            "inco_term": "nullable|string|max:100",
+            "port_of_loading": "nullable|string|max:128",
+            "port_of_unloading": "nullable|string|max:128",
+            "final_destination": "nullable|string|max:128",
+            "origin_country": "nullable|string|max:64",
+            "attachments": "nullable|array",
+            "attachments.*": "file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:5120",
+            "remarks": "nullable|string|max:2000"
+        },
+        "App\\Http\\Controllers\\Api\\ShipmentOrderController@update": {
+            "shipping_liability": "nullable|string|max:64",
+            "cold_chain": "nullable|boolean",
+            "zip_code": "nullable|string|max:12|regex:/^[A-Za-z0-9\\s\\-]+$/",
+            "freight_cost": "nullable|numeric|gt:0",
+            "shipping_mode": "nullable|string|max:64",
+            "inco_term": "nullable|string|max:100",
+            "port_of_loading": "nullable|string|max:128",
+            "port_of_unloading": "nullable|string|max:128",
+            "final_destination": "nullable|string|max:128",
+            "origin_country": "nullable|string|max:64",
+            "attachments": "nullable|array",
+            "attachments.*": "file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:5120",
+            "remarks": "nullable|string|max:2000"
+        },
+        "App\\Http\\Controllers\\Api\\SubscriptionController@createOrder": {
+            "plan_id": "required|exists:plans,id",
+            "payment_method": "required|in:upi,card,net_banking",
+            "billing_cycle": "required|in:month,quarter,year",
+            "kept_branch_ids": "nullable|array",
+            "kept_branch_ids.*": "integer|exists:branches,id"
+        },
+        "App\\Http\\Controllers\\Api\\SubscriptionController@cancelOrder": {
+            "razorpay_order_id": "required|string",
+            "reason": "nullable|string|max:255"
+        },
+        "App\\Http\\Controllers\\Api\\SubscriptionController@verifyPayment": {
+            "razorpay_order_id": "required|string",
+            "razorpay_payment_id": "required|string",
+            "razorpay_signature": "required|string"
+        },
+        "App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@upload": {
+            "file": "required|file|max:2048|mimes:pdf,jpg,jpeg,png,webp"
+        },
+        "App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@validatePayload": {
+            "invoice_no": "nullable|string|max:128",
+            "invoice_date": "nullable|date",
+            "document_type": "nullable|string|max:32",
+            "po_type": "nullable|string|max:64",
+            "mode_of_transport": "nullable|string|max:64",
+            "payment_type": "nullable|string|max:64",
+            "delivery_location": "nullable|string|max:255",
+            "expected_delivery_date": "nullable|date",
+            "physical_inspection": "nullable|boolean",
+            "supplier_type": "nullable|string|max:128",
+            "currency": "nullable|string|max:8",
+            "exchange_rate": "nullable|numeric",
+            "inco_term": "nullable|string|max:16",
+            "port_of_loading": "nullable|string|max:128",
+            "port_of_discharge": "nullable|string|max:128",
+            "final_destination": "nullable|string|max:128",
+            "country_of_origin": "nullable|string|max:128",
+            "purchase_order_id": "nullable|integer",
+            "vendor_id": "nullable|integer",
+            "total_paid": "nullable|numeric",
+            "shipping_charges": "nullable|numeric",
+            "packaging_charges": "nullable|numeric",
+            "other_charges": "nullable|numeric",
+            "attachment_path": "nullable|string|max:255",
+            "items": "array",
+            "items.*.product_id": "nullable|integer",
+            "items.*.product_code": "nullable|string|max:64",
+            "items.*.pi_product_name": "nullable|string|max:255",
+            "items.*.pi_quantity": "nullable|numeric",
+            "items.*.po_product_name": "nullable|string|max:255",
+            "items.*.po_quantity": "nullable|numeric",
+            "items.*.rate_po": "nullable|numeric",
+            "items.*.product_name": "nullable|string|max:255",
+            "items.*.quantity": "nullable|numeric",
+            "items.*.hsn_code": "nullable|string|max:32",
+            "items.*.rate": "nullable|numeric",
+            "items.*.gst_pct": "nullable|numeric"
+        },
+        "App\\Http\\Controllers\\Api\\VendorController@storeIdentity": {
+            "id": "nullable|integer|exists:vendors,id",
+            "company_name": "required|string|max:255",
+            "legal_name": "nullable|string|max:255",
+            "website": "nullable|string|max:500",
+            "vendor_type_id": "nullable|integer|exists:master_vendor_types,id",
+            "vendor_type": "nullable|string|max:255",
+            "risk_level_id": "nullable|integer|exists:master_risk_levels,id",
+            "vendor_behaviour_id": "nullable|integer|exists:master_vendor_behaviour,id",
+            "segment_id": "nullable|integer|exists:clm_segments,id",
+            "segment_ids": "nullable",
+            "classification_id": "nullable|integer|exists:master_customer_classifications,id",
+            "compliance_behaviour_id": "nullable|integer|exists:master_compliance_behaviours,id"
+        },
+        "App\\Http\\Controllers\\Api\\VendorController@storeContacts": {
+            "primary_address": "required|array",
+            "primary_address.address_type": "nullable|string|max:64",
+            "primary_address.address_line": "nullable|string|max:1000",
+            "primary_address.country_id": "nullable|integer|exists:master_countries,id",
+            "primary_address.state_id": "nullable|integer|exists:master_states,id",
+            "primary_address.state_code": "nullable|string|max:32",
+            "primary_address.city": "nullable|string|max:128",
+            "primary_address.pincode": "nullable|string|max:16",
+            "primary_address.contact_name": "required|string|max:255",
+            "primary_address.designation": "nullable|string|max:128",
+            "primary_address.contact_no": "nullable|string|max:32",
+            "primary_address.email": "nullable|email|max:255",
+            "primary_address.whatsapp_enabled": "nullable|boolean",
+            "primary_address.attachment_path": "nullable|string|max:500",
+            "primary_attachment": "nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:"
+        },
+        "App\\Http\\Controllers\\Api\\VendorController@validateContact": {
+            "contact_name": "required|string|max:255",
+            "designation": "nullable|string|max:128",
+            "contact_no": "nullable|string|max:32",
+            "email": "nullable|email|max:255",
+            "whatsapp_enabled": "nullable|boolean",
+            "attachment": "nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:",
+            "attachment_path": "nullable|string|max:500"
+        },
+        "App\\Http\\Controllers\\Api\\VendorController@validateBank": {
+            "bank_name": "required|string|max:255",
+            "branch_name": "required|string|max:255",
+            "account_number": "required  string  regex:/^[0-9]{9,18}$/",
+            "ifsc": "required  string  regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/",
+            "branch_address": "nullable|string|max:500",
+            "cheque": "nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:",
+            "cheque_path": "nullable|string|max:500"
+        },
+        "App\\Http\\Controllers\\Api\\VendorController@validateGst": {
+            "gst_number": "required|string|max:16",
+            "status": "nullable  Active  Inactive",
+            "last_filing_date": "nullable|date",
+            "prev_non_gst_2a_invoice": "nullable|string|max:255",
+            "red_flags": "nullable|string|max:2000"
+        },
+        "App\\Http\\Controllers\\Api\\VendorController@storeKyc": {
+            "due_diligence": "nullable|array",
+            "due_diligence.*.code": "nullable|string|max:32",
+            "due_diligence.*.document_name": "required|string|max:255",
+            "due_diligence.*.issuing_authority": "nullable|string|max:255",
+            "due_diligence.*.expiry": "nullable|string|max:32",
+            "due_diligence.*.mandatory": "nullable|boolean",
+            "due_diligence.*.existing_path": "nullable|string|max:500",
+            "dd_files": "nullable|array",
+            "dd_files.*": "file|mimes:jpg,jpeg,png,webp,pdf|max:",
+            "owner_kyc": "nullable|array",
+            "owner_kyc.*.code": "nullable|string|max:32",
+            "owner_kyc.*.document_name": "required|string|max:255",
+            "owner_kyc.*.issuing_authority": "nullable|string|max:255",
+            "owner_kyc.*.document_number": "nullable|string|max:128",
+            "owner_kyc.*.issue_date": "nullable|date",
+            "owner_kyc.*.expiry": "nullable|string|max:32",
+            "owner_kyc.*.status": "nullable  Active  Inactive",
+            "owner_kyc.*.existing_path": "nullable|string|max:500",
+            "owner_files": "nullable|array",
+            "owner_files.*": "file|mimes:jpg,jpeg,png,webp,pdf|max:",
+            "trade_licenses": "nullable|array",
+            "trade_licenses.*.code": "nullable|string|max:32",
+            "trade_licenses.*.license_type_id": "nullable|integer|exists:master_license_name,id",
+            "trade_licenses.*.license_number": "nullable|string|max:128",
+            "trade_licenses.*.issuing_authority": "nullable|string|max:255",
+            "trade_licenses.*.issue_date": "nullable|date",
+            "trade_licenses.*.expiry_date": "nullable|date",
+            "trade_licenses.*.existing_path": "nullable|string|max:500",
+            "tl_files": "nullable|array",
+            "tl_files.*": "file|mimes:jpg,jpeg,png,webp,pdf|max:"
+        },
+        "App\\Http\\Controllers\\Api\\VendorController@storeProducts": {
+            "mappings": "present|array",
+            "mappings.*.product_id": "required|integer|exists:products,id",
+            "mappings.*.batch_serial_lot": "nullable|string|max:128",
+            "mappings.*.purchase_price": "required|numeric|min:0",
+            "mappings.*.gst_percentage": "nullable|numeric|min:0",
+            "mappings.*.gst_amount": "nullable|numeric|min:0",
+            "mappings.*.total_amount": "nullable|numeric|min:0"
+        }
+    },
+    "calls": {
+        "App\\Http\\Controllers\\Api\\AnnouncementController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\AnnouncementController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\CandidateController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\CandidateController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\ClmSegmentRuleController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\ClmSegmentRuleController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\ConsigneeController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\ConsigneeController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\ConsigneeDocumentController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\ConsigneeDocumentController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\ConsigneeOwnerController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\ConsigneeOwnerController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\CustomerController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\CustomerController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\CustomerController@storeGstScrutiny": [
+            "validateGst"
+        ],
+        "App\\Http\\Controllers\\Api\\CustomerController@updateGstScrutiny": [
+            "validateGst"
+        ],
+        "App\\Http\\Controllers\\Api\\CustomerDocumentController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\CustomerDocumentController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\CustomerOwnerController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\CustomerOwnerController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\EmployeeController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\EmployeeController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\ExitController@upsert": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\ExitController@complete": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\HiringRequestController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\HiringRequestController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\HolidayController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\HolidayController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\HolidayGroupController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\HolidayGroupController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\HrCustomFieldController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\HrCustomFieldController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\HrDocumentTemplateController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\HrDocumentTemplateController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\MasterController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\MasterController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\OnboardingController@complete": [
+            "validateOnboardingPayload"
+        ],
+        "App\\Http\\Controllers\\Api\\P2p\\SourcingController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\P2p\\SourcingController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\PreviousEmploymentController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\PreviousEmploymentController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\ProformaInvoiceController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\ProformaInvoiceController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\PurchaseOrderController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\PurchaseOrderController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\PurchaseOrderController@previewPdf": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\QuotationController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\QuotationController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\RecruitmentController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\RecruitmentController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\SalesTodoController@storeReminder": [
+            "validateReminderPayload"
+        ],
+        "App\\Http\\Controllers\\Api\\SalesTodoController@updateReminder": [
+            "validateReminderPayload"
+        ],
+        "App\\Http\\Controllers\\Api\\SalesTodoController@storeMeeting": [
+            "validateMeetingPayload"
+        ],
+        "App\\Http\\Controllers\\Api\\SalesTodoController@updateMeeting": [
+            "validateMeetingPayload"
+        ],
+        "App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@store": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@update": [
+            "validatePayload"
+        ],
+        "App\\Http\\Controllers\\Api\\VendorController@storeContact": [
+            "validateContact"
+        ],
+        "App\\Http\\Controllers\\Api\\VendorController@updateContact": [
+            "validateContact"
+        ],
+        "App\\Http\\Controllers\\Api\\VendorController@storeBankAccount": [
+            "validateBank"
+        ],
+        "App\\Http\\Controllers\\Api\\VendorController@updateBankAccount": [
+            "validateBank"
+        ],
+        "App\\Http\\Controllers\\Api\\VendorController@storeGstScrutiny": [
+            "validateGst"
+        ],
+        "App\\Http\\Controllers\\Api\\VendorController@updateGstScrutiny": [
+            "validateGst"
+        ]
+    }
+}

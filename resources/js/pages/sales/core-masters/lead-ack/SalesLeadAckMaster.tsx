@@ -722,6 +722,13 @@ export default function SalesLeadAckMaster() {
                 </button>
               </div>
             </div>
+            {/* While saving, lock the whole form so no other field/button can be used. */}
+            {saving && (
+              <div className="lam-save-lock" aria-live="polite" aria-busy="true">
+                <span className="lam-save-lock-spinner" />
+                <span className="lam-save-lock-text">{editingId !== null ? 'Updating…' : 'Saving…'}</span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1321,8 +1328,29 @@ const SCOPED_CSS = `
   display: flex; flex-direction: column;
   max-height: calc(100vh - 40px);
   margin: auto;
+  position: relative;   /* positioning context for the saving lock overlay */
   animation: lam-pop .22s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+
+/* Saving lock — blankets the whole form so no field/button can be used mid-save. */
+.lam-save-lock {
+  position: absolute; inset: 0; z-index: 40;
+  display: flex; flex-direction: column; gap: 11px;
+  align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, 0.62);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  cursor: progress;
+}
+.lam-save-lock-spinner {
+  width: 38px; height: 38px; border-radius: 50%;
+  border: 3.5px solid rgba(124, 58, 237, 0.22);
+  border-top-color: #7c3aed;
+  animation: lam-spin .7s linear infinite;
+}
+.lam-save-lock-text { font-size: 12.5px; font-weight: 700; color: #6d28d9; letter-spacing: .2px; }
+[data-bs-theme="dark"] .lam-save-lock { background: rgba(26, 21, 48, 0.66); }
+[data-bs-theme="dark"] .lam-save-lock-spinner { border-color: rgba(167, 139, 250, 0.22); border-top-color: #a78bfa; }
+[data-bs-theme="dark"] .lam-save-lock-text { color: #c4b5fd; }
 @keyframes lam-pop {
   0%   { opacity: 0; transform: scale(0.94) translateY(8px); }
   100% { opacity: 1; transform: scale(1) translateY(0); }

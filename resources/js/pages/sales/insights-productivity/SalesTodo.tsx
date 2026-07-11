@@ -377,12 +377,13 @@ export default function SalesTodo() {
       label: company ? `${l.opp_code} · ${company}` : (l.opp_code as string),
       date: raw ? isoToDisplay(raw) : '',
       // Selecting an opportunity auto-fills the meeting's PRIMARY CONTACT
-      // PERSON — NOT the company. The person who owns the inquiry lives on the
-      // lead's sender_* fields (name / email / mobile); fall back to the mapped
-      // customer's email only when the contact person has none.
-      customer: (l.sender_name ?? '') as string,
-      email: (l.sender_email || l.customer?.primary_email || '') as string,
-      contact: (l.sender_mobile ?? '') as string,
+      // PERSON — NOT the company. Prefer the linked customer's primary-address
+      // contact person (cp_name / cp_email / cp_contact); fall back to the
+      // lead's own sender_* (walk-in leads with no customer), then the
+      // customer's primary_email as a last resort for the email.
+      customer: (l.customer?.primary_address?.cp_name || l.sender_name || '') as string,
+      email: (l.customer?.primary_address?.cp_email || l.sender_email || l.customer?.primary_email || '') as string,
+      contact: (l.customer?.primary_address?.cp_contact || l.sender_mobile || '') as string,
     };
   };
 
@@ -602,7 +603,7 @@ export default function SalesTodo() {
     setModalOpen(true);
   };
 
-  const close = () => { setModalOpen(false); setForm({}); setFormErrors([]); setMtgErr({}); };
+  const close = () => { if (savingRef.current) return; setModalOpen(false); setForm({}); setFormErrors([]); setMtgErr({}); };
 
   const setMark = async (record: Reminder | Meeting, status: string) => {
     if (savingRef.current) return;
@@ -1789,6 +1790,13 @@ export default function SalesTodo() {
                 </button>
               </div>
             </div>
+            {/* While saving, blanket the whole modal so no field/button can be touched. */}
+            {saving && (
+              <div className="td-form-lock" aria-live="polite" aria-busy="true">
+                <span className="td-form-lock-spinner" />
+                <span className="td-form-lock-text">{form.editId ? 'Updating…' : 'Saving…'}</span>
+              </div>
+            )}
           </div>
         </div>
       )}

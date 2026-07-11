@@ -94,7 +94,13 @@ class SalesLeadController extends Controller
                 ->limit(1)])
             ->with([
                 'salesperson' => fn ($r) => $r->select('id', 'name')->withTrashed(),
-                'customer'    => fn ($r) => $r->select('id', 'company_name', 'legal_name', 'customer_code', 'primary_email')->withTrashed(),
+                // Include the customer's PRIMARY CONTACT PERSON (cp_name / cp_email /
+                // cp_contact) so the Add-Meeting picker can auto-fill the meeting's
+                // Person Name / Email / Contact from the real contact person, not
+                // the company or the lead's raw sender.
+                'customer'    => fn ($r) => $r->select('id', 'company_name', 'legal_name', 'customer_code', 'primary_email')
+                    ->withTrashed()
+                    ->with(['primaryAddress' => fn ($a) => $a->select('id', 'customer_id', 'cp_name', 'cp_email', 'cp_contact')]),
                 'consignee'   => fn ($r) => $r->select('id', 'company_name')->withTrashed(),
             ])
             ->orderByDesc('id');
