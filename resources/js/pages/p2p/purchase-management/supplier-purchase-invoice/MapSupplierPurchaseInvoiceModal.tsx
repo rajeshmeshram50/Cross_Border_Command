@@ -18,7 +18,7 @@ import api from '../../../../api';
 type Choice = 'with' | 'without' | null;
 type LoadState = 'idle' | 'loading' | 'error' | 'ready';
 
-type PoOption = { id: number; code: string; supplier: string };
+type PoOption = { id: number; code: string; supplier: string; has_shipment: boolean };
 type SupplierOption = { id: number; name: string; code: string };
 
 /* Axios aborts a request (via AbortController) with a CanceledError — those are
@@ -62,8 +62,8 @@ export default function MapSupplierPurchaseInvoiceModal({
     setPoState('loading');
     try {
       const r = await api.get('/p2p/supplier-purchase-invoices/purchase-orders', { signal: ctrl.signal });
-      const rows = (r.data?.data ?? []) as Array<{ id: number; code: string; supplier: string }>;
-      setPos(rows.map(x => ({ id: x.id, code: x.code, supplier: x.supplier ?? '' })));
+      const rows = (r.data?.data ?? []) as Array<{ id: number; code: string; supplier: string; has_shipment?: boolean }>;
+      setPos(rows.map(x => ({ id: x.id, code: x.code, supplier: x.supplier ?? '', has_shipment: !!x.has_shipment })));
       setPoState('ready');
     } catch (e) {
       if (!isCanceled(e)) setPoState('error');
@@ -153,7 +153,7 @@ export default function MapSupplierPurchaseInvoiceModal({
                 value={poId}
                 placeholder={poPlaceholder}
                 disabled={poState === 'loading'}
-                options={pos.map(p => ({ value: String(p.id), label: `${p.code}${p.supplier ? ` — ${p.supplier}` : ''}` }))}
+                options={pos.map(p => ({ value: String(p.id), label: `${p.code}${p.supplier ? ` — ${p.supplier}` : ''}`, badge: p.has_shipment ? 'with' : 'without' }))}
                 onChange={setPoId}
               />
               {poState === 'error' && (
@@ -213,7 +213,7 @@ export default function MapSupplierPurchaseInvoiceModal({
 
 /* ── Custom dropdown (matches the PO wizard's Dd — styled panel, not a native
       <select>, so the open list looks consistent across browsers). ── */
-type DdOption = { value: string; label: string };
+type DdOption = { value: string; label: string; badge?: 'with' | 'without' };
 
 function ModalSelect({ value, options, onChange, placeholder, disabled }: {
   value: string;
@@ -281,6 +281,7 @@ function ModalSelect({ value, options, onChange, placeholder, disabled }: {
                 onClick={() => { onChange(o.value); setOpen(false); }}
               >
                 <span className="spi-mdl-dd-opt-lbl">{o.label}</span>
+                {o.badge && <span className={`spi-mdl-shipbadge ${o.badge === 'with' ? 'is-with' : 'is-without'}`}>{o.badge === 'with' ? 'With Shipment' : 'Without Shipment'}</span>}
                 <span className="spi-mdl-dd-opt-ck"><IcoCheckSm /></span>
               </div>
             ))}

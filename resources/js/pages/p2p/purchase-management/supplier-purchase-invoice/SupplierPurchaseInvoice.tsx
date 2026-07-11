@@ -92,7 +92,7 @@ export default function SupplierPurchaseInvoice() {
     let alive = true;
     setLoading(true);
     api.get('/p2p/supplier-purchase-invoices', {
-      params: { po_tab: poTab, ship_tab: shipTab, page, per_page: rpp, q: debQ || undefined },
+      params: { po_tab: poTab, ...(poTab === 'with' ? { ship_tab: shipTab } : {}), page, per_page: rpp, q: debQ || undefined },
     })
       .then(r => { if (!alive) return; setRows((r.data?.data ?? []) as SpiRow[]); setTotal(r.data?.pagination?.total ?? 0); })
       .catch(() => { if (alive) { setRows([]); setTotal(0); } })
@@ -221,6 +221,8 @@ export default function SupplierPurchaseInvoice() {
 
         {/* Sub-tabs + search */}
         <div className="spi-sub">
+          {/* Shipment sub-tabs only apply to With-PO SPIs. Direct (Without-PO) SPIs have no shipment concept. */}
+          {withPo && (
           <div className="spi-subtabs">
             <button type="button" className={`spi-subtab ${withShip ? 'is-active' : ''}`} onClick={() => switchShip('with')}>
               <IcoTruck /> With Shipment ID <span className="spi-subtab-c">{counts.shipWith}</span>
@@ -229,6 +231,7 @@ export default function SupplierPurchaseInvoice() {
               <IcoBox size={13} /> Without Shipment ID <span className="spi-subtab-c">{counts.shipWithout}</span>
             </button>
           </div>
+          )}
           <div className="spi-search">
             <IcoSearch />
             <input value={q} onChange={e => onSearch(e.target.value)} placeholder="Search SPI, supplier, PO or status..." />

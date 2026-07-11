@@ -266,6 +266,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
       if (!alive) return;
       const d = r.data?.data;
       if (!d) return;
+      // Editing an already-saved SPI → reveal the Missing Product Details table
+      // straight away (no need to re-click "Save Details" like on a fresh create).
+      setShowMissing(true);
       setInvoiceNo(d.invoice_no ?? '');
       setInvoiceDate(d.invoice_date ?? '');
       setExistingAttach(d.attachment_path ?? null);
@@ -592,10 +595,18 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 <Field label="PAYMENT TYPE"><EditSelect value={basic.payType} options={PAY_TYPES} placeholder="— Select —" onChange={v => setBasic(b => ({ ...b, payType: v }))} /></Field>
               </>)}
               <Field label="PHYSICAL INSPECTION REQUIRED">
-                <button type="button" className="spi-dt-toggle" onClick={() => setPhysInsp(v => !v)}>
-                  <span className={`spi-dt-toggle-sw ${physInsp ? 'on' : ''}`}><span className="spi-dt-toggle-knob" /></span>
-                  <span className="spi-dt-toggle-txt">{physInsp ? 'Yes' : 'No'}</span>
-                </button>
+                {withPo ? (
+                  // With-PO: this value is inherited from the PO — display only, not editable.
+                  <div className="spi-dt-toggle is-readonly" aria-disabled="true">
+                    <span className={`spi-dt-toggle-sw ${physInsp ? 'on' : ''}`}><span className="spi-dt-toggle-knob" /></span>
+                    <span className="spi-dt-toggle-txt">{physInsp ? 'Yes' : 'No'}</span>
+                  </div>
+                ) : (
+                  <button type="button" className="spi-dt-toggle" onClick={() => setPhysInsp(v => !v)}>
+                    <span className={`spi-dt-toggle-sw ${physInsp ? 'on' : ''}`}><span className="spi-dt-toggle-knob" /></span>
+                    <span className="spi-dt-toggle-txt">{physInsp ? 'Yes' : 'No'}</span>
+                  </button>
+                )}
               </Field>
               {!withPo && basic.docType === 'International' && (<>
                 <Field label="CURRENCY"><EditSelect value={basic.currency} options={currencies.length ? currencies : CURRENCIES} onChange={v => setBasic(b => ({ ...b, currency: v }))} /></Field>
@@ -653,7 +664,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                   {supLegal && <span className={`spi-dt-legal-badge ${supLegal.p === 100 ? 'ok' : 'warn'}`}>{supLegal.p === 100 ? '100% Compliant' : `${supLegal.p}% · Needs Review`}</span>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {vendorDbId && sup && (
+                  {/* With-PO: legal status is inherited from the PO — read-only, no vault access here. */}
+                  {!withPo && vendorDbId && sup && (
                     <button type="button" className="spi-dt-vault-btn" onClick={e => { e.stopPropagation(); setVaultOpen(true); }}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg>
                       <span>Supplier Legal Status</span>
@@ -818,9 +830,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
               <Field label="PURCHASE INVOICE NUMBER" req><input className={`spi-dt-inp ${errs.invoiceNo ? 'is-invalid' : ''}`} value={invoiceNo} onChange={e => { setInvoiceNo(e.target.value); setErrs(x => ({ ...x, invoiceNo: false })); }} placeholder="e.g. INV-2025-001" /></Field>
               <Field label="PURCHASE INVOICE DATE" req><MasterDatePicker value={invoiceDate} onChange={v => { setInvoiceDate(v); setErrs(x => ({ ...x, invoiceDate: false })); }} invalid={!!errs.invoiceDate} placeholder="Select date" /></Field>
               <Field label="PURCHASE INVOICE ATTACHMENT" req>
-                <div className={`spi-dt-file ${errs.file ? 'is-invalid' : ''}`}>
+                <div className={`spi-dt-file is-clickable ${errs.file ? 'is-invalid' : ''}`} role="button" tabIndex={0} onClick={() => fileRef.current?.click()} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}>
                   <span className="spi-dt-file-txt"><IcoClip /> {file ? file.name : (existingAttach ? (existingAttach.split('/').pop() || 'Attached file') : 'Choose file…')}</span>
-                  <button type="button" className="spi-dt-file-btn" onClick={() => fileRef.current?.click()}>Browse</button>
+                  <button type="button" className="spi-dt-file-btn" tabIndex={-1}>Browse</button>
                   <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={e => {
                     const f = e.target.files?.[0] ?? null;
                     if (f && f.size > 2 * 1024 * 1024) { toast.error('File too large', 'The attachment must be 2 MB or smaller.'); e.target.value = ''; return; }
@@ -1099,6 +1111,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         email: sup?.email && sup.email !== '—' ? sup.email : undefined,
         risk: 'Compliant',
       }}
+      viewOnly={withPo}
       onClose={() => setVaultOpen(false)}
     />
     </div>,

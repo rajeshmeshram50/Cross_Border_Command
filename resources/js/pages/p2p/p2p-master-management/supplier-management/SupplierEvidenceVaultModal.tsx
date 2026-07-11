@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
@@ -166,7 +166,13 @@ interface Props {
   supplier: SupplierVaultTarget | null;
   onClose: () => void;
   data?: VaultData | null;
+  /* When true the vault is opened purely to review (e.g. from a With-PO SPI where
+   * the supplier's legal status is inherited from the PO). Upload/Re-upload is hidden. */
+  viewOnly?: boolean;
 }
+
+/* Lets the deeply-nested row actions hide their Upload button without prop drilling. */
+const VaultViewOnlyCtx = createContext(false);
 
 type TabKey = 'company-dd' | 'owner-kyc' | 'trade-licenses' | 'trade-documents' | 'shipment-agreements';
 
@@ -240,7 +246,7 @@ function buildDemoVault(supplier: SupplierVaultTarget): VaultData {
   };
 }
 
-export default function SupplierEvidenceVaultModal({ open, supplier, onClose, data }: Props) {
+export default function SupplierEvidenceVaultModal({ open, supplier, onClose, data, viewOnly = false }: Props) {
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [group, setGroup] = useState<GroupKey>('standard');
@@ -589,6 +595,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const showSkeleton = loading && !vaultLive && !data;
 
   return createPortal(
+    <VaultViewOnlyCtx.Provider value={viewOnly}>
     <div className="cev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <style>{CEV_CSS}</style>
       {/* With/Without Shipment ID segmented toggle — matches the Figma .ev-shp-toggle
@@ -949,7 +956,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         </>,
         document.body
       )}
-    </div>,
+    </div>
+    </VaultViewOnlyCtx.Provider>,
     document.body
   );
 }
@@ -1072,6 +1080,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
 }) {
   const toast = useToast();
+  const viewOnly = useContext(VaultViewOnlyCtx);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [reminding, setReminding] = useState(false);
@@ -1089,7 +1098,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   // ClmSignatureController::send accepts agreement_ids and runs the same Zoho
   // flow, so the same lifecycle gates (signed / in-progress / fresh) apply.
   const isTradeDoc   = (category === 'td' || category === 'agreement') && !!ownerId && !!doc.db_id;
-  const canSend   = isTradeDoc && !!onSendTradeDoc && !isSigned && !isInProgress;
+  const canSend   = !viewOnly && isTradeDoc && !!onSendTradeDoc && !isSigned && !isInProgress;
   const canRemind = isTradeDoc && !!onRemindTradeDoc && isInProgress && !!doc.signature_request_id;
 
   const remind = async () => {
@@ -1211,8 +1220,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
       {/* Upload / Re-upload is hidden on the Case-to-Case Trade Documents
           tab (category 'td') — those rows are driven by the signature
           flow (Send / Reminder / signed-file View), not manual file
-          attachment. Standard tabs (KYC / DD / Trade Licenses) keep it. */}
-      {category !== 'td' && (
+          attachment. Standard tabs (KYC / DD / Trade Licenses) keep it.
+          Also hidden in viewOnly mode (e.g. from a With-PO SPI). */}
+      {category !== 'td' && !viewOnly && (
       <Tooltip label={canReupload ? (busy ? 'Uploading…' : (doc.attachment ? 'Re-upload (replace file)' : 'Upload')) : 'Save the record first'}>
         <button
           type="button"

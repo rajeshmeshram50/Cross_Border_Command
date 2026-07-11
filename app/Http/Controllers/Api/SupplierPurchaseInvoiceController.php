@@ -203,6 +203,7 @@ class SupplierPurchaseInvoiceController extends Controller
                 'id' => $po->id,
                 'code' => $po->code,
                 'supplier' => $po->supplier_name,
+                'has_shipment' => !empty($po->shipment_order_id),
             ])
             ->values();
         return response()->json(['status' => true, 'data' => $rows]);
