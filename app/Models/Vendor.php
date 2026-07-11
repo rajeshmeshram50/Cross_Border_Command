@@ -27,7 +27,7 @@ class Vendor extends Model
         'company_name', 'legal_name', 'website',
         'vendor_type_id', 'risk_level_id', 'vendor_behaviour_id',
         'segment_id', 'compliance_behaviour_id', 'classification_id',
-        'primary_email', 'status', 'step_completed',
+        'primary_email', 'zoho_contact_id', 'status', 'step_completed',
     ];
 
     protected $casts = [

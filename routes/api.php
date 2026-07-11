@@ -517,6 +517,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'update'])->whereNumber('id');
     Route::delete('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/sync',               [PurchaseOrderController::class, 'sync'])->whereNumber('id');
+    Route::post  ('/p2p/purchase-orders/{id}/send-for-signature', [PurchaseOrderController::class, 'sendForSignature'])->whereNumber('id');
+    Route::get   ('/p2p/purchase-orders/{id}/zoho-pdf',           [PurchaseOrderController::class, 'zohoPdf'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/email',              [SalesPdfController::class, 'emailPurchaseOrder'])->whereNumber('id');
     Route::get   ('/p2p/purchase-orders/{id}/pdf',                [SalesPdfController::class, 'viewPurchaseOrderPdf'])->whereNumber('id');
 
@@ -527,6 +529,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/p2p/supplier-purchase-invoices/suppliers',           [SupplierPurchaseInvoiceController::class, 'suppliers']);
     Route::get   ('/p2p/supplier-purchase-invoices/suppliers/{id}',       [SupplierPurchaseInvoiceController::class, 'supplier'])->whereNumber('id');
     Route::post  ('/p2p/supplier-purchase-invoices/upload',              [SupplierPurchaseInvoiceController::class, 'upload']);
+    Route::get   ('/p2p/supplier-purchase-invoices/download',            [SupplierPurchaseInvoiceController::class, 'download']);
     Route::get   ('/p2p/supplier-purchase-invoices',                     [SupplierPurchaseInvoiceController::class, 'index']);
     Route::post  ('/p2p/supplier-purchase-invoices',                     [SupplierPurchaseInvoiceController::class, 'store']);
     Route::get   ('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'show'])->whereNumber('id');

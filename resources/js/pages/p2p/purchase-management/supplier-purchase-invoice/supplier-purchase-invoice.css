@@ -331,11 +331,12 @@
  * SPI Detail wizard (Step 1) — teal, full-page
  * ═══════════════════════════════════════════════════════════════════════ */
 /* Full-page overlay — SPI Detail opens over the whole app (no navbar), Figma */
-.spi-dt-overlay { position:fixed; inset:0; z-index:1200; overflow-y:auto; padding:14px 14px 84px;
+.spi-dt-overlay { position:fixed; inset:0; z-index:1200; overflow-y:auto; padding:12px 12px 84px;
   background: linear-gradient(180deg,#eef7fb 0%,#f4f9fc 100%);
   font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif; -webkit-font-smoothing:antialiased; }
 [data-bs-theme="dark"] .spi-dt-overlay { background: linear-gradient(180deg,#0a1620,#0c1c24); }
-.spi-dt { display:flex; flex-direction:column; gap:12px; margin:0; max-width:1800px; margin-inline:auto;
+/* full-width like the PO wizard (.pom-cpoform) — no centred max-width, so no side gaps on wide screens */
+.spi-dt { display:flex; flex-direction:column; gap:12px; margin:0; width:100%; max-width:none;
   font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif; -webkit-font-smoothing:antialiased; }
 
 /* Header + stepper wrapper — ONE card (Figma .p2pj-headerstrip) */
@@ -426,6 +427,10 @@
 /* arrow on every step except the last (PO .p2sc = 12px) */
 .spi-dt-step { clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%); }
 .spi-dt-step:last-child { clip-path:none; padding-right:16px; }
+/* clickable step cards — click a step to jump between Stage 1 / Stage 2 */
+.spi-dt-step--nav { cursor:pointer; transition: transform .15s, box-shadow .15s, filter .15s; }
+.spi-dt-step--nav:hover { filter:brightness(1.02); box-shadow: 0 6px 18px rgba(8,145,178,.22); }
+.spi-dt-step--nav:not(.is-active):hover { transform: translateY(-1px); }
 .spi-dt-step.is-active { border:1.5px solid transparent; color:#fff; z-index:2;
   background: linear-gradient(140deg,#0e7490 0%,#0891b2 45%,#06b6d4 100%); box-shadow: 0 4px 14px rgba(8,145,178,.28); }
 /* done state (PO .p2sc-done) */
@@ -465,6 +470,9 @@
 /* Step 2 — Invoice section */
 .spi-dt-grid3 { display:grid; grid-template-columns: 1fr 1fr 1.25fr; gap:16px; }
 .spi-dt-file { display:flex; align-items:center; gap:8px; height:44px; padding:0 6px 0 13px; border-radius:11px; border:1.5px solid #dce9ef; background:#fff; }
+/* whole field acts as the file picker — click anywhere, not just the Browse button */
+.spi-dt-file.is-clickable { cursor:pointer; transition: border-color .15s, box-shadow .15s; }
+.spi-dt-file.is-clickable:hover { border-color:#22d3ee; box-shadow:0 0 0 3px rgba(34,211,238,.1); }
 .spi-dt-file-txt { flex:1; display:flex; align-items:center; gap:7px; font-size:13px; color:#94a3b8; min-width:0; overflow:hidden; }
 .spi-dt-file-btn { flex-shrink:0; padding:7px 16px; border-radius:8px; border:none; cursor:pointer; font-family:inherit; font-size:12px; font-weight:700;
   background:#eef2f6; color:#0e7490; }
@@ -484,10 +492,19 @@
 .spi-dt-secpills .spi-dt-dots { align-self:center; }
 .spi-dt-mtable-wrap { overflow-x:auto; border:1px solid #e2eef3; border-radius:12px; }
 .spi-dt-mtable { width:100%; border-collapse:collapse; white-space:nowrap; }
+/* fixed layout → columns keep their width regardless of cell content (no resize on product select) */
+.spi-dt-mtable--fixed { table-layout:fixed; }
+.spi-dt-mtable--fixed th, .spi-dt-mtable--fixed td { overflow:hidden; }
 .spi-dt-mtable thead { background: linear-gradient(110deg,#0e7490 0%,#0891b2 50%,#06b6d4 100%); }
 .spi-dt-mtable thead th { background: transparent; color:#fff; font-size:8.5px; font-weight:800; letter-spacing:.03em;
-  text-transform:uppercase; padding:9px 12px; text-align:left; white-space:nowrap; }
-.spi-dt-mtable tbody td { padding:7px 12px; font-size:11.5px; color:#334155; font-weight:600; border-bottom:1px solid #eef4f7; vertical-align:middle; white-space:nowrap; text-align:left; }
+  text-transform:uppercase; padding:8px 6px; text-align:left; white-space:normal; line-height:1.25; }
+/* header alignment must follow its column's data alignment (center/right), else labels sit left of centered/right values */
+.spi-dt-mtable thead th.spi-dt-mc-c { text-align:center; }
+.spi-dt-mtable thead th.spi-dt-mc-r { text-align:right; }
+/* data-cell alignment classes must out-specify the base "td { text-align:left }" rule, else centered headers sit over left-aligned values */
+.spi-dt-mtable tbody td.spi-dt-mc-c { text-align:center; }
+.spi-dt-mtable tbody td.spi-dt-mc-r { text-align:right; }
+.spi-dt-mtable tbody td { padding:8px 6px; font-size:11px; color:#334155; font-weight:600; border-bottom:1px solid #eef4f7; vertical-align:middle; white-space:nowrap; text-align:left; }
 .spi-dt-mtable tbody tr:nth-child(even) { background:#f8fcfe; }
 .spi-dt-mtable tbody tr:hover { background:#f0fbfe; }
 .spi-dt-mtable tbody tr:last-child td { border-bottom:none; }
@@ -500,16 +517,21 @@
   font-family:inherit; font-size:11.5px; font-weight:600; color:#0f172a; text-align:left; outline:none; transition: border-color .15s, box-shadow .15s, background .15s; }
 .spi-dt-minp:focus { border-color:#22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.12); background:#fff; }
 .spi-dt-minp-sm { min-width:0; width:100%; text-align:center; }
+/* Figma product-table: slightly tighter inputs + code pill inside the grid */
+.spi-dt-mtable .spi-dt-minp { padding:5px 6px; font-size:10.5px; }
+.spi-dt-mtable .spi-dt-mcode { font-size:9px; padding:2px 4px; }
 /* Product-name dropdown inside the product table → match the small row inputs. */
 .spi-dt-mtable .spi-dt-select-edit { height:auto; min-height:0; padding:6px 8px; border-radius:7px; border:1.5px solid #e6eef3; background:#f9fdfe; font-size:11.5px; font-weight:600; box-shadow:none; }
 .spi-dt-mtable .spi-dt-select-edit.is-open { border-color:#22d3ee; box-shadow:0 0 0 3px rgba(34,211,238,.12); background:#fff; }
 .spi-dt-mtable .spi-dt-select-edit svg { width:13px; height:13px; }
+/* centre the selected product-name value so it lines up under the centred header */
+.spi-dt-mtable .spi-dt-select-edit > span { flex:1; text-align:center; }
 [data-bs-theme="dark"] .spi-dt-mtable .spi-dt-select-edit { background:#0c1c24; border-color: rgba(34,211,238,.22); }
 .spi-dt-minp:focus { border-color:#22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.15); background:#fff; }
-.spi-dt-mtable .spi-dt-amt { font-family:'Geist Mono',ui-monospace,monospace; font-weight:600; color:#0f172a; }
+.spi-dt-mtable .spi-dt-amt { font-weight:600; font-variant-numeric:tabular-nums; color:#0f172a; }
 
 /* ── Step 2 summary: Additional Charges + Totals + Save Details (ported from PO) ── */
-.spi-dt-sum { display:grid; grid-template-columns:1fr 380px; gap:16px; margin-top:14px; align-items:stretch; }
+.spi-dt-sum { display:grid; grid-template-columns:1fr 380px; gap:16px; margin-top:6px; align-items:stretch; }
 .spi-dt-sumleft { display:flex; flex-direction:column; gap:14px; min-width:0; }
 .spi-dt-sumleft .spi-dt-save-btn { margin-top:auto; align-self:flex-end; }
 .spi-dt-sum-charges { border:1.5px solid #e3eef3; border-radius:12px; padding:14px; background:#fbfdff; }
@@ -536,7 +558,7 @@
 .spi-dt-saverow-only { display:flex; justify-content:flex-end; margin-top:14px; }
 
 /* Standalone product table: Add Product + per-row delete */
-.spi-dt-addrow { align-self:flex-end; display:inline-flex; align-items:center; gap:6px; height:34px; margin-top:14px; padding:0 15px; border:1.5px solid #bfe9f3; border-radius:9px; background:#eafaff; color:#0e7490; font-family:inherit; font-size:12px; font-weight:800; cursor:pointer; transition:background .15s, border-color .15s, transform .15s; }
+.spi-dt-addrow { align-self:flex-end; display:inline-flex; align-items:center; gap:6px; height:34px; margin-top:6px; padding:0 15px; border:1.5px solid #bfe9f3; border-radius:9px; background:#eafaff; color:#0e7490; font-family:inherit; font-size:12px; font-weight:800; cursor:pointer; transition:background .15s, border-color .15s, transform .15s; }
 .spi-dt-addrow:hover { background:#d8f4fb; border-color:#7fc3d8; transform:translateY(-1px); }
 .spi-dt-addrow svg { flex-shrink:0; width:14px; height:14px; }
 [data-bs-theme="dark"] .spi-dt-addrow { background: rgba(34,211,238,.1); border-color: rgba(34,211,238,.32); color:#67e8f9; }
@@ -724,6 +746,9 @@
 /* Toggle — boxed like a field (PO .pof-toggle) */
 .spi-dt-toggle { display:flex; width:100%; align-items:center; gap:11px; height:40px; padding:0 13px; box-sizing:border-box;
   border:1.5px solid #e6eef3; border-radius:9px; background:#fff; box-shadow: 0 1px 2px rgba(15,23,42,.04); cursor:pointer; font-family:inherit; }
+/* With-PO: physical-inspection is inherited from the PO — non-editable, matches the read-only PO fields */
+.spi-dt-toggle.is-readonly { cursor:default; background:#f1f6f9; border-color:#e3ebf0; box-shadow:none; }
+[data-bs-theme="dark"] .spi-dt-toggle.is-readonly { background:#0b1e27; border-color:#1c4553; }
 .spi-dt-toggle-sw { width:38px; height:21px; border-radius:20px; background:#cdd8e1; position:relative; transition: background .2s; flex-shrink:0; }
 .spi-dt-toggle-sw.on { background: linear-gradient(135deg,#06b6d4,#0891b2); }
 .spi-dt-toggle-knob { position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:50%; background:#fff; transition: transform .2s cubic-bezier(.34,1.56,.64,1); box-shadow:0 1px 3px rgba(15,23,42,.28); }
@@ -796,29 +821,35 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 [data-bs-theme="dark"] input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
 
 /* Footer */
-.spi-dt-foot { position:fixed; left:0; right:0; bottom:0; z-index:1210; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
-  padding:12px 22px; background:#fff; border-top:1px solid #d6eef5; box-shadow: 0 -4px 16px rgba(6,182,212,.10); }
-[data-bs-theme="dark"] .spi-dt-foot { background:#0e1b24; border-top-color: rgba(34,211,238,.18); }
-.spi-dt-foot-l { display:flex; align-items:center; gap:14px; }
-.spi-dt-foot-step { font-size:9.5px; font-weight:800; letter-spacing:.1em; color:#0891b2; }
-.spi-dt-foot-name { font-size:13px; font-weight:700; color:#0f172a; }
-.spi-dt-dots { display:flex; gap:6px; }
+/* Footer restyled to match the PO wizard footer (.p2pj-footer) */
+.spi-dt-foot { position:fixed; left:0; right:0; bottom:0; z-index:1210; display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  padding:12px 20px; background:#fff; border-top:1.5px solid #e4e6f0; box-shadow: 0 -5px 20px rgba(15,23,42,.08); }
+[data-bs-theme="dark"] .spi-dt-foot { background:#0f2731; border-top-color:#173947; }
+.spi-dt-foot-l { display:flex; align-items:center; gap:12px; min-width:0; }
+.spi-dt-foot-step { font-size:9px; font-weight:800; letter-spacing:.13em; text-transform:uppercase; color:#0891b2; line-height:1; }
+.spi-dt-foot-name { font-size:13.5px; font-weight:800; color:#0F172A; letter-spacing:-.2px; margin-top:4px; line-height:1.1; }
+/* opacity:1 + letter-spacing:normal reset the header-separator .spi-dt-dots rule (same class name) so the footer step-dots render crisp like the PO footer */
+.spi-dt-foot .spi-dt-dots { display:flex; align-items:center; gap:7px; opacity:1; letter-spacing:normal; padding:0; }
 .spi-dt-dots span { width:9px; height:9px; border-radius:50%; background:#dbe2ea; transition: background .2s, box-shadow .2s, transform .2s; }
 .spi-dt-dots span.done { background:#22d3ee; }
 .spi-dt-dots span.on { background:#0891b2; box-shadow: 0 0 0 4px rgba(8,145,178,.18); transform: scale(1.18); }
 [data-bs-theme="dark"] .spi-dt-dots span { background: rgba(148,163,184,.3); }
 .spi-dt-foot-r { display:flex; align-items:center; gap:10px; margin-left:auto; }
-.spi-dt-btn-ghost { display:inline-flex; align-items:center; gap:6px; padding:10px 18px; border-radius:10px; cursor:pointer;
-  border:1.5px solid #cdeef5; background:#fff; color:#0e7490; font-family:inherit; font-size:13px; font-weight:700; }
-.spi-dt-btn-ghost:hover { background:#ecfeff; border-color:#22d3ee; }
-.spi-dt-btn-next { display:inline-flex; align-items:center; gap:7px; padding:10px 22px; border-radius:10px; cursor:pointer; border:none;
-  color:#fff; font-family:inherit; font-size:13px; font-weight:700;
-  background: linear-gradient(135deg,#06b6d4,#0891b2,#0e7490); box-shadow: 0 3px 10px rgba(8,145,178,.4); }
-.spi-dt-btn-next:hover { transform: translateY(-1px); }
-.spi-dt-btn-map { display:inline-flex; align-items:center; gap:7px; padding:10px 22px; border-radius:10px; cursor:pointer; border:none;
-  color:#fff; font-family:inherit; font-size:13px; font-weight:700;
-  background: linear-gradient(135deg,#10b981,#059669,#047857); box-shadow: 0 3px 10px rgba(5,150,105,.4); }
-.spi-dt-btn-map:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.spi-dt-btn-ghost { display:inline-flex; align-items:center; gap:7px; padding:10px 20px; border-radius:11px; cursor:pointer;
+  border:1.5px solid #e2e8f0; background:#fff; color:#475569; font-family:inherit; font-size:12.5px; font-weight:700;
+  transition:transform .15s, box-shadow .15s, background .15s, border-color .15s; }
+.spi-dt-btn-ghost:hover { background:#f8fafc; border-color:#cbd5e1; transform:translateY(-1px); }
+.spi-dt-btn-next { display:inline-flex; align-items:center; gap:7px; padding:10px 20px; border-radius:11px; cursor:pointer; border:none;
+  color:#fff; font-family:inherit; font-size:12.5px; font-weight:700;
+  background: linear-gradient(135deg,#0e7490,#0891b2 55%,#06b6d4); box-shadow: 0 4px 14px rgba(8,145,178,.34);
+  transition:transform .15s, box-shadow .15s; }
+.spi-dt-btn-next:hover { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(8,145,178,.46); }
+.spi-dt-btn-map { display:inline-flex; align-items:center; gap:7px; padding:10px 20px; border-radius:11px; cursor:pointer; border:none;
+  color:#fff; font-family:inherit; font-size:12.5px; font-weight:700;
+  background: linear-gradient(135deg,#059669,#10b981 55%,#34d399); box-shadow: 0 4px 14px rgba(16,185,129,.36);
+  transition:transform .15s, box-shadow .15s; }
+.spi-dt-btn-map:hover { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(16,185,129,.48); }
+.spi-dt-btn-map:disabled { opacity:.5; cursor:not-allowed; transform:none; box-shadow:none; filter:grayscale(.2); }
 
 [data-bs-theme="dark"] .spi-dt-step, [data-bs-theme="dark"] .spi-dt-sec, [data-bs-theme="dark"] .spi-dt-foot { background:#0e1b24; border-color: rgba(34,211,238,.18); }
 [data-bs-theme="dark"] .spi-dt-sec-head { background: linear-gradient(110deg,#0c2630,#103642); border-bottom-color: rgba(34,211,238,.2); }
@@ -925,6 +956,12 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 .spi-mdl-dd-opt { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 11px; border-radius:8px;
   font-size:12.5px; font-weight:600; color:#334155; cursor:pointer; transition: background .12s, color .12s; }
 .spi-mdl-dd-opt-lbl { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Shipment batch badge in front of each PO option */
+.spi-mdl-shipbadge { flex-shrink:0; display:inline-flex; align-items:center; padding:1px 6px; border-radius:20px; font-size:6px; font-weight:500; letter-spacing:.02em; text-transform:uppercase; white-space:nowrap; }
+.spi-mdl-shipbadge.is-with { background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; }
+.spi-mdl-shipbadge.is-without { background:#fef3c7; color:#b45309; border:1px solid #fde68a; }
+[data-bs-theme="dark"] .spi-mdl-shipbadge.is-with { background:rgba(34,197,94,.16); color:#4ade80; border-color:rgba(34,197,94,.32); }
+[data-bs-theme="dark"] .spi-mdl-shipbadge.is-without { background:rgba(245,158,11,.16); color:#fbbf24; border-color:rgba(245,158,11,.32); }
 .spi-mdl-dd-opt:hover { background:#eafaff; color:#0c4a6e; }
 .spi-mdl-dd-opt.is-sel { background:#e0f7fb; color:#0e7490; font-weight:800; }
 .spi-mdl-dd-opt-ck { flex-shrink:0; display:inline-flex; color:#0891b2; opacity:0; }
@@ -1026,8 +1063,8 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 /* Footer (both steps) */
 [data-bs-theme="dark"] .spi-dt-foot-name { color:#e8f2f6; }
 [data-bs-theme="dark"] .spi-dt-foot-step { color:#38d6f0; }
-[data-bs-theme="dark"] .spi-dt-btn-ghost { background: rgba(12,38,48,.5); border-color: rgba(34,211,238,.3); color:#cbd5e1; }
-[data-bs-theme="dark"] .spi-dt-btn-ghost:hover { background: rgba(34,211,238,.12); border-color: rgba(34,211,238,.5); }
+[data-bs-theme="dark"] .spi-dt-btn-ghost { background:#16303b; border-color:#1c4553; color:#9db3c1; }
+[data-bs-theme="dark"] .spi-dt-btn-ghost:hover { background:#1c4553; border-color:#2a5a6d; }
 /* Step-2 read-only recap (summary of Step 1) */
 [data-bs-theme="dark"] .spi-dt-rogroup-hd { color:#38d6f0; }
 [data-bs-theme="dark"] .spi-dt-sumstep-title { color:#e8f2f6; }

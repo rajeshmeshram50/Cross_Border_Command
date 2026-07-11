@@ -38,6 +38,9 @@ type PoRow = {
   edd: string;
   status: string;
   zoho: string;
+  /** True once the PO is e-signed (completed Zoho-Sign request). Gates the
+   *  Zoho Books sync — you must sign the PO before you can sync it. */
+  is_signed?: boolean;
 };
 
 const PAGE_SIZE = 10;
@@ -305,6 +308,13 @@ export default function PurchaseOrder() {
   const openZohoConfirm = (r: PoRow) => {
     if (r.zoho.toLowerCase() === 'sync') { toast.success(`${r.po} is already synced with Zohobook`); return; }
     if (!r.id) return;
+    // Gate: the PO must be e-signed before it can be pushed to Zoho Books. The
+    // backend enforces the same rule; this surfaces the validation up-front
+    // instead of after the confirm dialog.
+    if (!r.is_signed) {
+      toast.warning('Sign the PO first', 'This purchase order must be e-signed via Zoho Sign before it can be synced to Zoho Books.');
+      return;
+    }
     setMore(null);
     setSync({ id: r.id, po: r.po, supName: r.supName, busy: false });
   };
@@ -358,11 +368,14 @@ export default function PurchaseOrder() {
     const { id, po } = sync;
     setSync(s => (s ? { ...s, busy: true } : s));
     toast.info(`Syncing ${po} with Zohobook…`);
-    api.post(`/p2p/purchase-orders/${id}/sync`).then(() => {
+    api.post(`/p2p/purchase-orders/${id}/sync`).then((res) => {
       setSync(null);
-      toast.success(`${po} synced with Zohobook successfully`);
+      toast.success(res?.data?.message || `${po} synced with Zohobook successfully`);
       reload();
-    }).catch(() => { setSync(null); toast.error('Sync failed', 'Please try again.'); });
+    }).catch((e) => {
+      setSync(null);
+      toast.error('Sync failed', e?.response?.data?.message || 'Please try again.');
+    });
   };
 
   const heads = tab === 'with'
@@ -517,7 +530,14 @@ export default function PurchaseOrder() {
                           ) : (
                             <button type="button" className="polist-zoho" title="Sync with Zohobook" onClick={() => openZohoConfirm(r)}>{Ico.sync(14)}<span>Zoho Sync</span></button>
                           )}
-                          <button type="button" className="polist-ico" title="Edit PO" onClick={() => setWizard({ editRow: r })}>{Ico.edit(15)}</button>
+                          <button
+                            type="button"
+                            className="polist-ico"
+                            title={synced ? 'Locked — already synced to Zoho Books' : 'Edit PO'}
+                            disabled={synced}
+                            style={synced ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                            onClick={() => { if (!synced) setWizard({ editRow: r }); }}
+                          >{Ico.edit(15)}</button>
                           <button type="button" className="polist-ico" title="Send PO Via Email" disabled={!!(r.id && emailing[r.id])} onClick={() => doEmail(r)}>{Ico.mail(15)}</button>
                           <button type="button" className="polist-ico" title="Trade Documents & Agreements" onClick={() => setTradeDoc(r)}>{Ico.vault(15)}</button>
                           <button type="button" className="polist-ico" title="PO Payment" onClick={() => stub(`PO Payment — ${r.po}`)}>{Ico.pay(15)}</button>

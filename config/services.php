@@ -67,4 +67,19 @@ return [
         'testing_mode'  => env('ZOHO_TESTING_MODE', false),
     ],
 
+    // Zoho Books — used by ZohoBooksService for the Purchase Order "Sync with
+    // Zohobook" flow. Separate refresh token from Zoho Sign because the scopes
+    // differ (ZohoBooks.purchaseorders.CREATE / contacts / settings / items).
+    // client_id / client_secret can be shared with the Sign block if the same
+    // Zoho app is registered for both. base_url is the Books API host (NOT the
+    // Sign host); org_id is the target organization the PO lands in.
+    'zoho_books' => [
+        'client_id'     => env('ZOHO_BOOKS_CLIENT_ID', env('ZOHO_CLIENT_ID')),
+        'client_secret' => env('ZOHO_BOOKS_CLIENT_SECRET', env('ZOHO_CLIENT_SECRET')),
+        'refresh_token' => env('ZOHO_BOOKS_REFRESH_TOKEN'),
+        'organization_id' => env('ZOHO_BOOKS_ORG_ID'),
+        'base_url'      => env('ZOHO_BOOKS_BASE_URL', 'https://www.zohoapis.in/books/v3'),
+        'accounts_url'  => env('ZOHO_BOOKS_ACCOUNTS_URL', env('ZOHO_ACCOUNTS_URL', 'https://accounts.zoho.in')),
+    ],
+
 ];

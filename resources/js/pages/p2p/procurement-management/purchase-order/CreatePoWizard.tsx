@@ -385,12 +385,20 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
       const opts: ProdOpt[] = arr.map((p: Record<string, unknown>) => {
         const base = num(p.base_price ?? p.price ?? 0);
         const gstAmt = num(p.gst_amount ?? 0);
+        // GST% priority: the product's GstPercentage master (relation) → a scalar
+        // gst/gst_rate → derived from gst_amount ÷ base_price. The relation is the
+        // real source (/products eager-loads gstPercentage); the amount/base
+        // derivation only kicks in for older rows that stored no percentage.
+        const relPct = num((p.gstPercentage as { percentage?: unknown } | undefined)?.percentage
+          ?? (p.gst_percentage as { percentage?: unknown } | undefined)?.percentage ?? 0);
+        const scalarPct = num(p.gst ?? p.gst_rate ?? 0);
+        const derivedPct = base > 0 && gstAmt > 0 ? Math.round((gstAmt / base) * 100) : 0;
         return {
           id: p.id != null ? Number(p.id) : null,
           name: String(p.name ?? p.product_name ?? p.title ?? ''),
           code: String(p.product_code ?? p.code ?? p.sku ?? ''),
           price: num(p.total_price ?? p.base_price ?? p.price ?? p.rate ?? 0),
-          gst: base > 0 && gstAmt > 0 ? Math.round((gstAmt / base) * 100) : num(p.gst ?? p.gst_rate ?? 0),
+          gst: relPct > 0 ? relPct : (scalarPct > 0 ? scalarPct : derivedPct),
         };
       }).filter((o: ProdOpt) => o.name);
       if (!cancelled && opts.length) setProdOpts(opts);
@@ -412,6 +420,9 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     poType: editRow?.type || PO_TYPES[0],
     docType: editRow?.doc === 'International' ? 'International' : 'Domestics',
     transport: TRANSPORTS[0],
+    // PO Date is set once at creation and never edited — preserve the saved
+    // value when editing (blank for a new PO → defaults to today on save/display).
+    poDate: editRow?.date || '',
     edd: editRow?.edd || '',
     deliveryLoc: '',
     payType: PAY_TYPES[0],
@@ -478,6 +489,26 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     setLine(id, { productId: p.productId, code: p.code, piName: p.piName, piQty: p.piQty, name: p.piName, qty: p.piQty, rate: p.rate, gst: p.gst });
   };
 
+  // GST always comes from the PRODUCT master (Product Management), not the PI/PO
+  // item — a PI product carries no GST of its own, so the CGST/SGST columns would
+  // read 0%. Once the product master (prodOpts) is loaded, reconcile every row's
+  // gst from its product (by id, falling back to code). Runs on any change to the
+  // rows or the master and only writes when a gst actually differs, so it
+  // converges without looping regardless of which loads first.
+  useEffect(() => {
+    if (!prodOpts.length) return;
+    setRows(rs => {
+      let changed = false;
+      const next = rs.map(r => {
+        if (r.productId == null && !r.code) return r;
+        const opt = prodOpts.find(o => (r.productId != null && o.id === r.productId) || (!!o.code && o.code === r.code));
+        if (opt && opt.gst !== r.gst) { changed = true; return { ...r, gst: opt.gst }; }
+        return r;
+      });
+      return changed ? next : rs;
+    });
+  }, [prodOpts, rows]);
+
   // ── Edit mode: load the full PO detail and prefill every stage ──
   useEffect(() => {
     if (!isEdit || !editId) return;
@@ -485,6 +516,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
       const d = r.data?.data; if (!d) return;
       setPo(p => ({
         ...p, poType: d.type || p.poType, docType: d.doc || p.docType, transport: d.mode_of_transport || p.transport,
+        poDate: d.date || d.po_date || p.poDate || '',
         edd: d.edd || '', deliveryLoc: d.delivery_location || '', payType: d.payment_type || p.payType,
         inspection: !!d.physical_inspection, currency: d.currency_code || p.currency,
         exRate: d.exchange_rate != null ? String(d.exchange_rate) : '', inco: d.inco_term || p.inco,
@@ -666,7 +698,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     return {
       code: poCode || null,
       po_type: po.poType, document_type: po.docType, mode_of_transport: po.transport,
-      po_date: new Date().toISOString().slice(0, 10), expected_delivery_date: po.edd || null,
+      po_date: po.poDate || todayIso, expected_delivery_date: po.edd || null,
       warehouse_id: warehouseId, delivery_location: po.deliveryLoc || null,
       payment_type: po.payType, physical_inspection: po.inspection,
       currency_id: po.docType === 'International' ? currencyId : null,
@@ -682,8 +714,10 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
 
   const generate = () => {
     if (saving) return;
-    // Expected Delivery Date can't be earlier than today.
-    if (po.edd && po.edd < todayIso) {
+    // Expected Delivery Date can't be earlier than today — but only for a NEW
+    // PO. An existing PO being edited may legitimately have a past delivery
+    // date, so we don't block the edit on it.
+    if (!isEdit && po.edd && po.edd < todayIso) {
       toast.error('Invalid Expected Delivery Date', 'It cannot be earlier than today.');
       return;
     }
@@ -708,7 +742,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     if (!po.docType) e.docType = 'Document Type is required.';
     if (!po.transport) e.transport = 'Mode of Transport is required.';
     if (!po.edd) e.edd = 'Expected Delivery Date is required.';
-    else if (po.edd < todayIso) e.edd = 'It cannot be earlier than today.';
+    else if (!isEdit && po.edd < todayIso) e.edd = 'It cannot be earlier than today.';
     if (!po.deliveryLoc) e.deliveryLoc = 'Delivery Location is required.';
     setErrs(e);
     if (Object.keys(e).length) {
@@ -858,8 +892,8 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                         <Dd label="PO Type" req err={errs.poType} value={po.poType} options={PO_TYPES} onChange={v => { if (v !== PO_TYPES[0]) { toast.info('Coming soon', `${v} PO type is currently in development. Only ${PO_TYPES[0]} is available.`); return; } setPoF('poType', v); }} />
                         <Dd label="Document Type" req err={errs.docType} value={po.docType} options={DOC_TYPES} onChange={v => setPoF('docType', v)} />
                         <Dd label="Mode of Transport" req err={errs.transport} value={po.transport} options={TRANSPORTS} onChange={v => setPoF('transport', v)} />
-                        <Frozen label="PO Date" req value={todayDisp} />
-                        <DateField label="Expected Delivery Date" req err={errs.edd} value={po.edd} onChange={v => setPoF('edd', v)} minDate={todayIso} />
+                        <Frozen label="PO Date" req value={po.poDate ? formatDmy(po.poDate) : todayDisp} />
+                        <DateField label="Expected Delivery Date" req err={errs.edd} value={po.edd} onChange={v => setPoF('edd', v)} minDate={isEdit ? undefined : todayIso} />
                         <Dd label="Delivery Location" req err={errs.deliveryLoc} optMeta={whMeta} value={po.deliveryLoc || DELIVERY_PLACEHOLDER} options={[DELIVERY_PLACEHOLDER, ...(warehouses.length ? warehouses.map(w => w.name) : WAREHOUSE_FALLBACK)]} onChange={v => { setPoF('deliveryLoc', v === DELIVERY_PLACEHOLDER ? '' : v); setWarehouseId(warehouses.find(w => w.name === v)?.id ?? null); }} />
                         <Dd label="Payment Type" value={po.payType} options={PAY_TYPES} onChange={v => setPoF('payType', v)} />
                         <Toggle label="Physical Inspection Required" on={po.inspection} onToggle={() => setPoF('inspection', !po.inspection)} />
@@ -1188,7 +1222,7 @@ function PrevSummary(props: {
       <div className="cposum-stage__hd"><div className="cposum-stage__num">01</div><div className="cposum-stage__t">PO Link Supplier Details</div><div className="cposum-stage__done"><Check /> Completed</div></div>
       <div className="cposum-stage__bd">
         <div><div className="cposum-grp__t">Basic Purchase Order Details</div><div className="cposum-grid">
-          <F l="PO Type" v={po.poType} /><F l="Document Type" v={po.docType} /><F l="Mode of Transport" v={po.transport} /><F l="PO Date" v={todayDisp} />
+          <F l="PO Type" v={po.poType} /><F l="Document Type" v={po.docType} /><F l="Mode of Transport" v={po.transport} /><F l="PO Date" v={po.poDate ? formatDmy(po.poDate) : todayDisp} />
           <F l="Expected Delivery Date" v={po.edd ? formatDmy(po.edd) : ''} /><F l="Delivery Location" v={po.deliveryLoc} /><F l="Payment Type" v={po.payType} /><F l="Physical Inspection Required" v={po.inspection ? 'Yes' : 'No'} />
           {po.docType === 'International' &&<><F l="Currency" v={po.currency} /><F l="Exchange Rate" v={po.exRate} /><F l="INCO Term" v={po.inco} /><F l="Port of Loading" v={po.portLoad} /><F l="Port of Discharge" v={po.portDischarge} /><F l="Final Destination" v={po.finalDest} /><F l="Country of Origin" v={po.origin} /></>}
         </div></div>

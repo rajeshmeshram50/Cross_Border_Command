@@ -2219,12 +2219,6 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
     setPickerOpen(false);
   };
   const tagBg = (c: string) => c === '#D97706' ? (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7') : c === '#DC2626' ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : (t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE');
-  // Realistic dates: approval starts today, is due after `days`, and the
-  // reminder fires `reminder` days before the due date (clamped to ≥ start).
-  const fmtD = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  const startD = new Date();
-  const dueD = new Date(startD); dueD.setDate(dueD.getDate() + days);
-  let remindD = new Date(dueD); remindD.setDate(remindD.getDate() - reminder); if (remindD < startD) remindD = new Date(startD);
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.72)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontFamily: 'var(--font-sans)' }}>
       <div style={{ width: '100%', maxWidth: 420, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(109,40,217,.3)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}` }}>
@@ -2272,15 +2266,6 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
                 <span style={{ fontSize: 9, fontWeight: 600, color: t.dark ? '#c4b5fd' : '#7C3AED' }}>+ Add Member</span>
               </div>
             </div>
-          </div>
-          {/* Realistic timeline derived from the default approval window */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 11px', borderRadius: 10, background: t.dark ? 'rgba(124,58,237,.10)' : '#F6F3FF', border: `1px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#E4DEFF'}` }}>
-            {([['Starts', startD, '#7C3AED'], ['Due by', dueD, '#0891b2'], ['Reminder', remindD, '#D97706']] as [string, Date, string][]).map(([lbl, d, c], i) => (
-              <div key={lbl} style={{ flex: 1, textAlign: i === 0 ? 'left' : i === 1 ? 'center' : 'right' }}>
-                <div style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#a78bfa' : c, marginBottom: 2 }}>{lbl}</div>
-                <div style={{ fontSize: 9.5, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap' }}>{fmtD(d)}</div>
-              </div>
-            ))}
           </div>
           {/* submit */}
           <button disabled={approvers.length === 0 || submitting} onClick={submit} title={approvers.length === 0 ? 'Add at least one approver' : ''} style={{ width: '100%', padding: 11, borderRadius: 11, border: 'none', background: (approvers.length === 0 || submitting) ? (t.dark ? 'rgba(124,58,237,.25)' : '#C4B5FD') : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800, cursor: (approvers.length === 0 || submitting) ? 'not-allowed' : 'pointer', opacity: (approvers.length === 0 || submitting) ? .6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, boxShadow: (approvers.length === 0 || submitting) ? 'none' : '0 4px 14px rgba(109,40,217,.4)' }}>

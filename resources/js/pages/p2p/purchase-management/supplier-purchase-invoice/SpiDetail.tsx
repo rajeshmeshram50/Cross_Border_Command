@@ -118,6 +118,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   useScrollLock();
   const toast = useToast();
   const [step, setStep] = useState(1);
+  // The persisted SPI id. Starts as the edit id (if editing); otherwise gets set
+  // once Step 1 "Save & Next" creates the draft, so Step 2 finalises the same row.
+  const [savedId, setSavedId] = useState<number | null>(editId ?? null);
   const [poOpen, setPoOpen] = useState(true);
   const [supOpen, setSupOpen] = useState(true);
   const [legalOpen, setLegalOpen] = useState(true);
@@ -158,6 +161,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   const [charges, setCharges] = useState({ ship: '', pack: '', other: '' });
   const [savingDetails, setSavingDetails] = useState(false);
   const [showMissing, setShowMissing] = useState(false);
+  // Map Invoice stays disabled until the product details are saved via "Save Details".
+  const [detailsSaved, setDetailsSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nexting, setNexting] = useState(false); // brief loader on Save & Next
   const [vaultOpen, setVaultOpen] = useState(false); // Supplier Evidence Vault modal
@@ -263,6 +268,10 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
       if (!alive) return;
       const d = r.data?.data;
       if (!d) return;
+      // Editing an already-saved SPI → reveal the Missing Product Details table
+      // straight away (no need to re-click "Save Details" like on a fresh create).
+      setShowMissing(true);
+      setDetailsSaved(true);
       setInvoiceNo(d.invoice_no ?? '');
       setInvoiceDate(d.invoice_date ?? '');
       setExistingAttach(d.attachment_path ?? null);
@@ -293,7 +302,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
       setRows((d.items ?? []).map((it: Record<string, unknown>) => ({
         productId: (it.product_id as number) ?? null, code: (it.code as string) ?? '',
         piName: (it.piName as string) ?? '', piQty: (it.piQty as number) ?? null,
-        poName: (it.poName as string) ?? '', poQty: (it.poQty as number) ?? 0, invoiced: 0,
+        poName: (it.poName as string) ?? '', poQty: (it.poQty as number) ?? 0, invoiced: (it.invoiced as number) ?? 0,
         ratePo: (it.ratePo as number) ?? 0, gst: (it.gst as number) ?? 0,
         spiName: (it.name as string) ?? '', spiQty: String((it.qty as number) ?? ''), hsn: (it.hsn as string) ?? '', spiRate: String((it.rate as number) ?? ''),
       })));
@@ -342,34 +351,59 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
 
   // Standalone (Direct) product rows: add a blank line, remove one, or fill a
   // line from a product-master pick (code / rate / gst / hsn auto-populate).
-  const addRow = () => setRows(rs => [...rs, {
+  const emptyRow = (): SpiRow => ({
     productId: null, code: '', piName: '', piQty: null, poName: '', poQty: 0, invoiced: 0, ratePo: 0, gst: 0,
     spiName: '', spiQty: '', hsn: '', spiRate: '',
-  }]);
+  });
+  const addRow = () => setRows(rs => [...rs, emptyRow()]);
   const removeRow = (i: number) => setRows(rs => rs.filter((_, idx) => idx !== i));
+  // Direct (Without-PO) new SPI: start the product table with one empty row.
+  useEffect(() => {
+    if (!withPo && !editId) setRows(rs => (rs.length === 0 ? [emptyRow()] : rs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [withPo, editId]);
   const pickProduct = (i: number, name: string) => {
     const p = prodOpts.find(x => x.name === name);
     if (!p) { setRow(i, { spiName: name }); return; }
     setRow(i, { productId: p.id, code: p.code, spiName: p.name, hsn: p.hsn, spiRate: String(p.price || ''), gst: p.gst });
   };
 
-  // Live tax + cost — intra-state (state code 27) → CGST/SGST 9/9, else split
-  // the product GST. Mirrors the backend so the preview matches the saved row.
+  // Live tax + cost. Intra-state (home 27) → CGST + SGST (each gst/2). Inter-state
+  // (any other state code) → a single IGST = the full product GST. Mirrors the
+  // backend + PO wizard so the preview matches the saved row.
   const intra = (sup?.stateCode ?? '27') === '27';
+  // Hide the PI columns in the 3-way match when the PO has no linked PI (e.g. without-shipment case).
+  const hasPi = !!po?.pi_number;
   const rowCost = (r: SpiRow) => {
     const base = Number(r.spiQty || 0) * Number(r.spiRate || 0);
-    const cgstA = (base * (intra ? 9 : r.gst / 2)) / 100;
-    const sgstA = (base * (intra ? 9 : r.gst / 2)) / 100;
-    return { cgstA, sgstA, cost: base + cgstA + sgstA };
+    const cgstA = intra ? (base * (r.gst / 2)) / 100 : 0;
+    const sgstA = intra ? (base * (r.gst / 2)) / 100 : 0;
+    const igstA = intra ? 0 : (base * r.gst) / 100;
+    return { cgstA, sgstA, igstA, cost: base + cgstA + sgstA + igstA };
   };
   const addlCharges = Number(charges.ship || 0) + Number(charges.pack || 0) + Number(charges.other || 0);
-  const totals = rows.reduce((a, r) => { const c = rowCost(r); a.prod += c.cost; a.cgst += c.cgstA; a.sgst += c.sgstA; return a; }, { prod: 0, cgst: 0, sgst: 0 });
+  const totals = rows.reduce((a, r) => { const c = rowCost(r); a.prod += c.cost; a.cgst += c.cgstA; a.sgst += c.sgstA; a.igst += c.igstA; return a; }, { prod: 0, cgst: 0, sgst: 0, igst: 0 });
   const grandTotal = totals.prod + addlCharges;
 
   // Products whose PO quantity is still not fully covered after this invoice.
+  // "Missing" is global: PO qty minus what THIS + all OTHER SPIs have invoiced.
+  // QTY(SPI) shown here is the cumulative invoiced so PO − SPI = Missing stays consistent.
   const missingRows = rows
-    .map(r => ({ code: r.code, name: r.poName || r.spiName, poQty: r.poQty, spiQty: Number(r.spiQty || 0), miss: r.poQty - r.invoiced - Number(r.spiQty || 0) }))
+    .map(r => ({ code: r.code, name: r.poName || r.spiName, poQty: r.poQty, spiQty: r.invoiced + Number(r.spiQty || 0), miss: r.poQty - r.invoiced - Number(r.spiQty || 0) }))
     .filter(m => m.miss > 0);
+
+  // With-PO: a row can never invoice more than what's still uncovered on the PO
+  // (PO qty − already invoiced by other SPIs). Returns the first offending row.
+  const overInvoicedRow = () => withPo
+    ? rows.find(r => Number(r.spiQty || 0) > (r.poQty - r.invoiced))
+    : undefined;
+  const blockIfOverInvoiced = (): boolean => {
+    const over = overInvoicedRow();
+    if (!over) return false;
+    const rem = Math.max(0, over.poQty - over.invoiced);
+    toast.error('Quantity exceeds PO', `${over.code || 'This product'}: only ${rem} left to invoice on this PO — you can't enter more than ${rem}.`);
+    return true;
+  };
 
   // Scroll the first highlighted (empty) field into view after a validation fail.
   const scrollToFirstError = () => {
@@ -379,24 +413,83 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
     }, 60);
   };
 
-  // Step 1 → Step 2: highlight any empty standalone mandatory fields (no toast) and block.
-  const goStep2 = () => {
-    if (nexting) return;
-    if (!withPo) {
-      const e = { supplier: !stdVendorId, edd: !basic.edd, deliveryLoc: !basic.deliveryLoc };
-      setErrs(e);
-      if (e.supplier || e.edd || e.deliveryLoc) { toast.error('Required fields missing', 'Please complete the highlighted fields.'); scrollToFirstError(); return; }
-    }
-    setNexting(true);
-    setTimeout(() => { setNexting(false); setStep(2); }, 400);
+  // Step 1 → Step 2. Direct (Without-PO) has no PO details to validate and the
+  // supplier is already chosen in the Map modal, so just advance.
+  // Build the full request body from current state. `attachmentPath` is passed in
+  // because the file is uploaded separately (only at the final save).
+  const buildPayload = (attachmentPath: string | null) => {
+    // Standalone (Without-PO): the basic + supplier details come from the form,
+    // not a linked PO. Omitted for With-PO so the backend inherits the PO's.
+    const stdFields = withPo ? {} : {
+      vendor_id: stdVendorId,
+      document_type: basic.docType,
+      po_type: basic.poType,
+      mode_of_transport: basic.transport,
+      payment_type: basic.payType || null,
+      delivery_location: basic.deliveryLoc || null,
+      expected_delivery_date: basic.edd || null,
+      physical_inspection: physInsp,
+      supplier_type: sup?.type || null,
+      ...(basic.docType === 'International' ? {
+        currency: basic.currency || null,
+        exchange_rate: basic.exRate === '' ? null : Number(basic.exRate),
+        inco_term: basic.inco || null,
+        port_of_loading: basic.portLoad || null,
+        port_of_discharge: basic.portDischarge || null,
+        final_destination: basic.finalDest || null,
+        country_of_origin: basic.origin || null,
+      } : {}),
+    };
+    return {
+      purchase_order_id: po?.id ?? null,
+      ...stdFields,
+      invoice_no: invoiceNo || null,
+      invoice_date: invoiceDate || null,
+      attachment_path: attachmentPath,
+      shipping_charges: Number(charges.ship || 0),
+      packaging_charges: Number(charges.pack || 0),
+      other_charges: Number(charges.other || 0),
+      items: rows.map(r => ({
+        product_id: r.productId,
+        product_code: r.code || null,
+        pi_product_name: r.piName || null,
+        pi_quantity: r.piQty,
+        po_product_name: r.poName || null,
+        po_quantity: r.poQty,
+        rate_po: r.ratePo,
+        product_name: r.spiName || null,
+        quantity: r.spiQty === '' ? 0 : Number(r.spiQty),
+        hsn_code: r.hsn || null,
+        rate: r.spiRate === '' ? 0 : Number(r.spiRate),
+        gst_pct: r.gst,
+      })),
+    };
   };
 
-  // Save the invoice: POST to the SPI create endpoint.
+  // Step 1 → Step 2: just advance. NO draft is written here — the SPI is created
+  // exactly once at "Map Invoice", so one user action can never leave a duplicate/
+  // orphan row. Stage-1 data is preserved in React state across both steps.
+  const goStep2 = () => {
+    if (nexting) return;
+    // GST scrutiny must be current — block raising the invoice on a stale supplier.
+    if (scrutinyOld) {
+      toast.error('GST scrutiny overdue', `This supplier's scrutiny is more than ${SCRUTINY_STALE_MONTHS} months old. Update the supplier's GST scrutiny before raising the invoice.`);
+      document.querySelector('.spi-dt-scrutiny-warn')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    setNexting(true);
+    setTimeout(() => { setNexting(false); setStep(2); }, 300);
+  };
+
+  // Step 2 finalise: validate the invoice fields, upload the attachment, then
+  // update the draft created in Stage 1 (falls back to create if none exists).
   const handleSave = async () => {
     if (saving) return;
-    // Invoice number, date & attachment are mandatory — highlight (no toast) and block.
-    // On edit, an attachment already on file counts (no re-upload required).
-    const ie = { invoiceNo: !invoiceNo.trim(), invoiceDate: !invoiceDate, file: !file && !(editId && existingAttach) };
+    // No row may invoice more than the PO's remaining qty.
+    if (blockIfOverInvoiced()) return;
+    // Invoice number, date & attachment are mandatory — highlight and block.
+    // An attachment already on file (edit / re-open) counts, no re-upload required.
+    const ie = { invoiceNo: !invoiceNo.trim(), invoiceDate: !invoiceDate, file: !file && !existingAttach };
     setErrs(prev => ({ ...prev, ...ie }));
     if (ie.invoiceNo || ie.invoiceDate || ie.file) {
       setInvOpen(true); // expand the invoice section so the errors are visible
@@ -406,7 +499,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
     }
     setSaving(true);
     try {
-      // If a new attachment was chosen, upload it; otherwise keep the existing one (edit).
+      // If a new attachment was chosen, upload it; otherwise keep the existing one.
       let attachmentPath: string | null = existingAttach;
       if (file) {
         const fd = new FormData();
@@ -414,55 +507,11 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         const up = await api.post('/p2p/supplier-purchase-invoices/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         attachmentPath = up.data?.data?.path ?? null;
       }
-      // Standalone (Without-PO): the basic + supplier details come from the form,
-      // not a linked PO. Omitted for With-PO so the backend inherits the PO's.
-      const stdFields = withPo ? {} : {
-        vendor_id: stdVendorId,
-        document_type: basic.docType,
-        po_type: basic.poType,
-        mode_of_transport: basic.transport,
-        payment_type: basic.payType || null,
-        delivery_location: basic.deliveryLoc || null,
-        expected_delivery_date: basic.edd || null,
-        physical_inspection: physInsp,
-        supplier_type: sup?.type || null,
-        ...(basic.docType === 'International' ? {
-          currency: basic.currency || null,
-          exchange_rate: basic.exRate === '' ? null : Number(basic.exRate),
-          inco_term: basic.inco || null,
-          port_of_loading: basic.portLoad || null,
-          port_of_discharge: basic.portDischarge || null,
-          final_destination: basic.finalDest || null,
-          country_of_origin: basic.origin || null,
-        } : {}),
-      };
-      const payload = {
-        purchase_order_id: po?.id ?? null,
-        ...stdFields,
-        invoice_no: invoiceNo || null,
-        invoice_date: invoiceDate || null,
-        attachment_path: attachmentPath,
-        shipping_charges: Number(charges.ship || 0),
-        packaging_charges: Number(charges.pack || 0),
-        other_charges: Number(charges.other || 0),
-        items: rows.map(r => ({
-          product_id: r.productId,
-          product_code: r.code || null,
-          pi_product_name: r.piName || null,
-          pi_quantity: r.piQty,
-          po_product_name: r.poName || null,
-          po_quantity: r.poQty,
-          rate_po: r.ratePo,
-          product_name: r.spiName || null,
-          quantity: r.spiQty === '' ? 0 : Number(r.spiQty),
-          hsn_code: r.hsn || null,
-          rate: r.spiRate === '' ? 0 : Number(r.spiRate),
-          gst_pct: r.gst,
-        })),
-      };
-      if (editId) await api.put(`/p2p/supplier-purchase-invoices/${editId}`, payload);
+      const payload = buildPayload(attachmentPath);
+      const isUpdate = !!savedId;
+      if (savedId) await api.put(`/p2p/supplier-purchase-invoices/${savedId}`, payload);
       else await api.post('/p2p/supplier-purchase-invoices', payload);
-      toast.success(editId ? 'Supplier purchase invoice updated' : 'Supplier purchase invoice saved');
+      toast.success(isUpdate ? 'Supplier purchase invoice updated' : 'Supplier purchase invoice saved');
       onSaved?.();
       onClose();
     } catch (e: unknown) {
@@ -508,7 +557,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
 
       {/* ── Step tabs ── */}
       <div className="spi-dt-steps">
-        <div className={`spi-dt-step ${step === 1 ? 'is-active' : 'is-done'}`}>
+        <div className={`spi-dt-step spi-dt-step--nav ${step === 1 ? 'is-active' : 'is-done'}`} role="button" tabIndex={0} title="Go to Step 1" onClick={() => setStep(1)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStep(1); } }}>
           <div className="spi-dt-step-top"><span className="spi-dt-step-lbl">STEP 01</span>
             {step === 1
               ? <span className="spi-dt-step-badge">ACTIVE</span>
@@ -519,7 +568,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
           <div className="spi-dt-step-desc">Link the PO and confirm supplier details</div>
           <span className="spi-dt-step-ghost">01</span>
         </div>
-        <div className={`spi-dt-step ${step === 2 ? 'is-active' : ''}`}>
+        <div className={`spi-dt-step spi-dt-step--nav ${step === 2 ? 'is-active' : ''}`} role="button" tabIndex={0} title="Go to Step 2" onClick={() => { if (step === 1) goStep2(); }} onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && step === 1) { e.preventDefault(); goStep2(); } }}>
           <div className="spi-dt-step-top"><span className="spi-dt-step-lbl">STEP 02</span>
             {step === 2 && <span className="spi-dt-step-badge">ACTIVE</span>}
           </div>
@@ -535,7 +584,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
       {step === 1 && loading && <SpiFormSkeleton />}
       {step === 1 && !loading && (
       <div className="spi-dt-body">
-        {/* Purchase Order section */}
+        {/* Purchase Order section — only for With-PO (a Direct invoice has no PO) */}
+        {withPo && (
         <div className={`spi-dt-sec ${poOpen ? '' : 'is-collapsed'}`}>
           <div className="spi-dt-sec-head" onClick={() => setPoOpen(o => !o)}>
             <div className="spi-dt-sec-ico"><IcoDocSm /></div>
@@ -565,10 +615,18 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 <Field label="PAYMENT TYPE"><EditSelect value={basic.payType} options={PAY_TYPES} placeholder="— Select —" onChange={v => setBasic(b => ({ ...b, payType: v }))} /></Field>
               </>)}
               <Field label="PHYSICAL INSPECTION REQUIRED">
-                <button type="button" className="spi-dt-toggle" onClick={() => setPhysInsp(v => !v)}>
-                  <span className={`spi-dt-toggle-sw ${physInsp ? 'on' : ''}`}><span className="spi-dt-toggle-knob" /></span>
-                  <span className="spi-dt-toggle-txt">{physInsp ? 'Yes' : 'No'}</span>
-                </button>
+                {withPo ? (
+                  // With-PO: this value is inherited from the PO — display only, not editable.
+                  <div className="spi-dt-toggle is-readonly" aria-disabled="true">
+                    <span className={`spi-dt-toggle-sw ${physInsp ? 'on' : ''}`}><span className="spi-dt-toggle-knob" /></span>
+                    <span className="spi-dt-toggle-txt">{physInsp ? 'Yes' : 'No'}</span>
+                  </div>
+                ) : (
+                  <button type="button" className="spi-dt-toggle" onClick={() => setPhysInsp(v => !v)}>
+                    <span className={`spi-dt-toggle-sw ${physInsp ? 'on' : ''}`}><span className="spi-dt-toggle-knob" /></span>
+                    <span className="spi-dt-toggle-txt">{physInsp ? 'Yes' : 'No'}</span>
+                  </button>
+                )}
               </Field>
               {!withPo && basic.docType === 'International' && (<>
                 <Field label="CURRENCY"><EditSelect value={basic.currency} options={currencies.length ? currencies : CURRENCIES} onChange={v => setBasic(b => ({ ...b, currency: v }))} /></Field>
@@ -591,6 +649,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
             </div>
           </div>
         </div>
+        )}
 
         {/* Supplier section */}
         <div className={`spi-dt-sec ${supOpen ? '' : 'is-collapsed'}`}>
@@ -609,9 +668,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 <span className="spi-dt-fields-badge">4 FIELDS</span>
               </div>
               <div className="spi-dt-grid4">
-                <Field label="SELECT SUPPLIER" req={!withPo}>{withPo
+                <Field label="SELECT SUPPLIER">{withPo
                   ? <Select value={po?.supplier_name ?? '— Select Supplier —'} muted={!po?.supplier_name} />
-                  : <EditSelect value={stdSupName} options={supList.map(s => s.name || '')} placeholder="— Select Supplier —" invalid={!!errs.supplier} onChange={pickSupplier} />}
+                  : <input className="spi-dt-inp" value={dash(stdSupName || sup?.name)} title={stdSupName || sup?.name || ''} readOnly />}
                 </Field>
                 <Field label="SUPPLIER CODE"><input className="spi-dt-inp" value={dash(sup?.code)} readOnly /></Field>
                 <Field label="COMPANY NAME"><input className="spi-dt-inp" value={dash(sup?.name)} title={sup?.name ?? ''} readOnly /></Field>
@@ -625,7 +684,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                   {supLegal && <span className={`spi-dt-legal-badge ${supLegal.p === 100 ? 'ok' : 'warn'}`}>{supLegal.p === 100 ? '100% Compliant' : `${supLegal.p}% · Needs Review`}</span>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {vendorDbId && sup && (
+                  {/* With-PO: legal status is inherited from the PO — read-only, no vault access here. */}
+                  {!withPo && vendorDbId && sup && (
                     <button type="button" className="spi-dt-vault-btn" onClick={e => { e.stopPropagation(); setVaultOpen(true); }}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg>
                       <span>Supplier Legal Status</span>
@@ -790,9 +850,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
               <Field label="PURCHASE INVOICE NUMBER" req><input className={`spi-dt-inp ${errs.invoiceNo ? 'is-invalid' : ''}`} value={invoiceNo} onChange={e => { setInvoiceNo(e.target.value); setErrs(x => ({ ...x, invoiceNo: false })); }} placeholder="e.g. INV-2025-001" /></Field>
               <Field label="PURCHASE INVOICE DATE" req><MasterDatePicker value={invoiceDate} onChange={v => { setInvoiceDate(v); setErrs(x => ({ ...x, invoiceDate: false })); }} invalid={!!errs.invoiceDate} placeholder="Select date" /></Field>
               <Field label="PURCHASE INVOICE ATTACHMENT" req>
-                <div className={`spi-dt-file ${errs.file ? 'is-invalid' : ''}`}>
+                <div className={`spi-dt-file is-clickable ${errs.file ? 'is-invalid' : ''}`} role="button" tabIndex={0} onClick={() => fileRef.current?.click()} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}>
                   <span className="spi-dt-file-txt"><IcoClip /> {file ? file.name : (existingAttach ? (existingAttach.split('/').pop() || 'Attached file') : 'Choose file…')}</span>
-                  <button type="button" className="spi-dt-file-btn" onClick={() => fileRef.current?.click()}>Browse</button>
+                  <button type="button" className="spi-dt-file-btn" tabIndex={-1}>Browse</button>
                   <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={e => {
                     const f = e.target.files?.[0] ?? null;
                     if (f && f.size > 2 * 1024 * 1024) { toast.error('File too large', 'The attachment must be 2 MB or smaller.'); e.target.value = ''; return; }
@@ -830,29 +890,38 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
             <div className="spi-dt-mtable-wrap">
               <table className="spi-dt-mtable">
                 <colgroup>
-                  <col style={{ width: '3.5%' }} /><col style={{ width: '6.5%' }} /><col style={{ width: '14%' }} /><col style={{ width: '14%' }} /><col style={{ width: '15%' }} />
-                  <col style={{ width: '5%' }} /><col style={{ width: '5%' }} /><col style={{ width: '6.5%' }} /><col style={{ width: '6%' }} />
-                  <col style={{ width: '8.5%' }} /><col style={{ width: '7.5%' }} /><col style={{ width: '8.5%' }} />
+                  <col style={{ width: '3.5%' }} />
+                  <col style={{ width: '6.5%' }} />
+                  {hasPi && <col style={{ width: '14%' }} />}
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '15%' }} />
+                  {hasPi && <col style={{ width: '5%' }} />}
+                  <col style={{ width: '5%' }} />
+                  <col style={{ width: '6.5%' }} />
+                  <col style={{ width: '6%' }} />
+                  <col style={{ width: '8.5%' }} />
+                  <col style={{ width: '7.5%' }} />
+                  <col style={{ width: '8.5%' }} />
                 </colgroup>
                 <thead>
                   <tr>
                     <th className="spi-dt-mc-c">SR NO</th>
                     <th>PRODUCT CODE</th>
-                    <th>PRODUCT NAME (PI)</th>
+                    {hasPi && <th>PRODUCT NAME (PI)</th>}
                     <th>PRODUCT NAME (PO)</th>
                     <th>PRODUCT NAME (SPI)</th>
-                    <th>QUANTITY (PI)</th>
-                    <th>QUANTITY (PO)</th>
-                    <th>QUANTITY (SPI)</th>
-                    <th>MISSING QTY</th>
-                    <th>HSN CODE</th>
-                    <th>RATE (PO)</th>
-                    <th>RATE (SPI)</th>
+                    {hasPi && <th className="spi-dt-mc-c">QUANTITY (PI)</th>}
+                    <th className="spi-dt-mc-c">QUANTITY (PO)</th>
+                    <th className="spi-dt-mc-c">QUANTITY (SPI)</th>
+                    <th className="spi-dt-mc-c">MISSING QTY</th>
+                    <th className="spi-dt-mc-c">HSN CODE</th>
+                    <th className="spi-dt-mc-c">RATE (PO)</th>
+                    <th className="spi-dt-mc-c">RATE (SPI)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.length === 0 ? (
-                    <tr><td colSpan={12} className="spi-dt-mc-c" style={{ padding: '20px', color: '#94a3b8' }}>No products on this purchase order.</td></tr>
+                    <tr><td colSpan={hasPi ? 12 : 10} className="spi-dt-mc-c" style={{ padding: '20px', color: '#94a3b8' }}>No products on this purchase order.</td></tr>
                   ) : rows.map((r, i) => {
                     // Uncovered PO qty after prior invoices + this one.
                     const missing = r.poQty - r.invoiced - Number(r.spiQty || 0);
@@ -860,15 +929,15 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                     <tr key={i}>
                       <td className="spi-dt-mc-c">{i + 1}</td>
                       <td><span className="spi-dt-mcode">{r.code || '—'}</span></td>
-                      <td className="spi-dt-mname">{r.piName || '—'}</td>
+                      {hasPi && <td className="spi-dt-mname">{r.piName || '—'}</td>}
                       <td className="spi-dt-mname">{r.poName || '—'}</td>
                       <td><input className="spi-dt-minp" value={r.spiName} onChange={e => setRow(i, { spiName: e.target.value })} /></td>
-                      <td>{r.piQty ?? '—'}</td>
-                      <td>{r.poQty}</td>
+                      {hasPi && <td className="spi-dt-mc-c">{r.piQty ?? '—'}</td>}
+                      <td className="spi-dt-mc-c">{r.poQty}</td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value })} /></td>
-                      <td>{Number.isFinite(missing) ? missing : 0}</td>
+                      <td className="spi-dt-mc-c">{Number.isFinite(missing) ? missing : 0}</td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value })} /></td>
-                      <td className="spi-dt-amt">{inr(r.ratePo)}</td>
+                      <td className="spi-dt-amt spi-dt-mc-c">{inr(r.ratePo)}</td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.spiRate} onChange={e => setRow(i, { spiRate: e.target.value })} /></td>
                     </tr>
                     );
@@ -880,8 +949,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
             <div className="spi-dt-saverow-only">
               <button type="button" className="spi-dt-save-btn" disabled={savingDetails} onClick={() => {
                 if (savingDetails) return;
+                if (blockIfOverInvoiced()) return;   // can't invoice more than the PO's remaining qty
                 setSavingDetails(true);
-                setTimeout(() => { setSavingDetails(false); setShowMissing(true); toast.success('Product details saved'); }, 500);
+                setTimeout(() => { setSavingDetails(false); setShowMissing(true); setDetailsSaved(true); toast.success('Product details saved'); }, 500);
               }}>
                 {savingDetails ? (<><Spinner /> Saving…</>) : (<><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg> Save Details</>)}
               </button>
@@ -907,41 +977,53 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
           </div>
           <div className="spi-dt-sec-body">
             <div className="spi-dt-mtable-wrap">
-              <table className="spi-dt-mtable">
+              <table className="spi-dt-mtable spi-dt-mtable--fixed">
+                {/* Fixed column widths so the row doesn't resize when a product is picked. */}
                 <colgroup>
-                  <col style={{ width: '5%' }} /><col style={{ width: '9%' }} /><col style={{ width: '21%' }} /><col style={{ width: '9%' }} /><col style={{ width: '10%' }} />
-                  <col style={{ width: '10%' }} /><col style={{ width: '10%' }} /><col style={{ width: '10%' }} /><col style={{ width: '10%' }} /><col style={{ width: '5%' }} />
+                  <col style={{ width: '50px' }} />
+                  <col style={{ width: '92px' }} />
+                  <col style={{ minWidth: '180px' }} />
+                  <col style={{ width: '130px' }} />
+                  <col style={{ width: '130px' }} />
+                  <col style={{ width: '130px' }} />
+                  {intra
+                    ? (<><col style={{ width: '72px' }} /><col style={{ width: '72px' }} /><col style={{ width: '112px' }} /><col style={{ width: '112px' }} /></>)
+                    : (<><col style={{ width: '72px' }} /><col style={{ width: '112px' }} /></>)}
+                  <col style={{ width: '120px' }} />
+                  <col style={{ width: '54px' }} />
                 </colgroup>
                 <thead>
                   <tr>
                     <th className="spi-dt-mc-c">SR NO</th>
                     <th>PRODUCT CODE</th>
-                    <th>PRODUCT NAME</th>
-                    <th>PRODUCT QUANTITY</th>
-                    <th>HSN CODE</th>
-                    <th>PRODUCT RATE</th>
-                    <th className="spi-dt-mc-r">CGST</th>
-                    <th className="spi-dt-mc-r">SGST</th>
-                    <th className="spi-dt-mc-r">PRODUCT COST</th>
+                    <th className="spi-dt-mc-c">PRODUCT NAME</th>
+                    <th className="spi-dt-mc-c">PRODUCT QUANTITY</th>
+                    <th className="spi-dt-mc-c">HSN CODE</th>
+                    <th className="spi-dt-mc-c">PRODUCT RATE</th>
+                    {intra
+                      ? (<><th className="spi-dt-mc-c">CGST (%)</th><th className="spi-dt-mc-c">SGST (%)</th><th className="spi-dt-mc-c">CGST AMOUNT</th><th className="spi-dt-mc-c">SGST AMOUNT</th></>)
+                      : (<><th className="spi-dt-mc-c">IGST (%)</th><th className="spi-dt-mc-c">IGST AMOUNT</th></>)}
+                    <th className="spi-dt-mc-c">PRODUCT COST</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.length === 0 ? (
-                    <tr><td colSpan={10} className="spi-dt-mc-c" style={{ padding: '20px', color: '#94a3b8' }}>No products added yet — click <b>Add Product</b> below.</td></tr>
+                    <tr><td colSpan={intra ? 12 : 10} className="spi-dt-mc-c" style={{ padding: '20px', color: '#94a3b8' }}>No products added yet — click <b>Add Product</b> below.</td></tr>
                   ) : rows.map((r, i) => {
                     const c = rowCost(r);
                     return (
                     <tr key={i}>
                       <td className="spi-dt-mc-c">{i + 1}</td>
                       <td><span className="spi-dt-mcode">{r.code || '—'}</span></td>
-                      <td><EditSelect value={r.spiName} options={prodOpts.map(p => p.name)} meta={prodMeta} placeholder="— Select Product —" onChange={v => pickProduct(i, v)} /></td>
+                      <td><EditSelect value={r.spiName} options={prodOpts.map(p => p.name)} placeholder="— Select Product —" onChange={v => pickProduct(i, v)} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiRate} onChange={e => setRow(i, { spiRate: e.target.value })} /></td>
-                      <td className="spi-dt-amt spi-dt-mc-r">{inr(c.cgstA)}</td>
-                      <td className="spi-dt-amt spi-dt-mc-r">{inr(c.sgstA)}</td>
-                      <td className="spi-dt-amt spi-dt-mc-r">{inr(c.cost)}</td>
+                      {intra
+                        ? (<><td className="spi-dt-mc-c">{r.gst / 2}%</td><td className="spi-dt-mc-c">{r.gst / 2}%</td><td className="spi-dt-amt spi-dt-mc-c">{inr(c.cgstA)}</td><td className="spi-dt-amt spi-dt-mc-c">{inr(c.sgstA)}</td></>)
+                        : (<><td className="spi-dt-mc-c">{r.gst}%</td><td className="spi-dt-amt spi-dt-mc-c">{inr(c.igstA)}</td></>)}
+                      <td className="spi-dt-amt spi-dt-mc-c">{inr(c.cost)}</td>
                       <td className="spi-dt-mc-c"><button type="button" className="spi-dt-rowdel" onClick={() => removeRow(i)} title="Remove product"><IcoX /></button></td>
                     </tr>
                     );
@@ -969,15 +1051,19 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 <button type="button" className="spi-dt-save-btn" disabled={savingDetails} onClick={() => {
                   if (savingDetails) return;
                   setSavingDetails(true);
-                  setTimeout(() => { setSavingDetails(false); setShowMissing(true); toast.success('Product details saved'); }, 500);
+                  setTimeout(() => { setSavingDetails(false); setShowMissing(true); setDetailsSaved(true); toast.success('Product details saved'); }, 500);
                 }}>
                   {savingDetails ? (<><Spinner /> Saving…</>) : (<><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg> Save Details</>)}
                 </button>
               </div>
               <div className="spi-dt-totbox">
                 <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total Product Cost</span><span className="spi-dt-totrow-v">{inr(totals.prod)}</span></div>
-                <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total CGST Amount</span><span className="spi-dt-totrow-v">{inr(totals.cgst)}</span></div>
-                <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total SGST Amount</span><span className="spi-dt-totrow-v">{inr(totals.sgst)}</span></div>
+                {intra ? (<>
+                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total CGST Amount</span><span className="spi-dt-totrow-v">{inr(totals.cgst)}</span></div>
+                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total SGST Amount</span><span className="spi-dt-totrow-v">{inr(totals.sgst)}</span></div>
+                </>) : (
+                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total IGST Amount</span><span className="spi-dt-totrow-v">{inr(totals.igst)}</span></div>
+                )}
                 <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Additional Charges</span><span className="spi-dt-totrow-v">{inr(addlCharges)}</span></div>
                 <div className="spi-dt-totrow spi-dt-totrow-grand"><span className="spi-dt-totrow-k">Grand Total</span><span className="spi-dt-totrow-v">{inr(grandTotal)}</span></div>
               </div>
@@ -991,7 +1077,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
             <div className="spi-dt-sec-ico spi-dt-sec-ico-warn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg></div>
             <div className="spi-dt-sec-mid">
               <div className="spi-dt-sec-row"><span className="spi-dt-sec-lbl">Products</span><span className="spi-dt-sec-sep" /><span className="spi-dt-sec-title">Missing Product Details</span></div>
-              <div className="spi-dt-sec-sub">{withPo ? 'PO quantities not fully covered by this invoice' : 'Products captured on this direct invoice'}</div>
+              <div className="spi-dt-sec-sub">{withPo ? 'PO quantities not fully covered across all invoices so far' : 'Products captured on this direct invoice'}</div>
             </div>
             {showMissing && <span className={`spi-dt-misscount ${missingRows.length === 0 ? 'is-zero' : ''}`}>{missingRows.length} Missing</span>}
           </div>
@@ -1051,7 +1137,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         </div>
         <div className="spi-dt-foot-r">
           <button type="button" className="spi-dt-btn-ghost" onClick={() => setStep(1)}><IcoChevronL /> Back</button>
-          <button type="button" className="spi-dt-btn-map" onClick={handleSave} disabled={saving}>{saving ? <><Spinner /> Saving…</> : <><IcoCheck /> Map Invoice</>}</button>
+          <button type="button" className="spi-dt-btn-map" onClick={handleSave} disabled={saving || !detailsSaved} title={!detailsSaved ? 'Click "Save Details" in Product Details first' : undefined}>{saving ? <><Spinner /> Saving…</> : <><IcoCheck /> Map Invoice</>}</button>
         </div>
       </div>
       )}
@@ -1069,6 +1155,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         email: sup?.email && sup.email !== '—' ? sup.email : undefined,
         risk: 'Compliant',
       }}
+      viewOnly={withPo}
       onClose={() => setVaultOpen(false)}
     />
     </div>,

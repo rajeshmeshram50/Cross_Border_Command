@@ -10,6 +10,7 @@ use App\Models\Vendor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Supplier Purchase Invoice API (P2P → Purchase Management).
@@ -106,6 +107,13 @@ class SupplierPurchaseInvoiceController extends Controller
             ], 422);
         }
 
+        if ($this->overInvoiced($data)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Invoiced quantity exceeds the remaining PO quantity.',
+            ], 422);
+        }
+
         $spi = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $code = $this->nextCode($user->client_id);
@@ -136,6 +144,13 @@ class SupplierPurchaseInvoiceController extends Controller
         $this->assertScope($spi, $user, 'write');
 
         $data = $this->validatePayload($request);
+
+        if ($this->overInvoiced($data, $spi->id)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Invoiced quantity exceeds the remaining PO quantity.',
+            ], 422);
+        }
 
         DB::transaction(function () use ($spi, $user, $data) {
             $header = $this->buildHeader($user, $data);
@@ -203,6 +218,7 @@ class SupplierPurchaseInvoiceController extends Controller
                 'id' => $po->id,
                 'code' => $po->code,
                 'supplier' => $po->supplier_name,
+                'has_shipment' => !empty($po->shipment_order_id),
             ])
             ->values();
         return response()->json(['status' => true, 'data' => $rows]);
@@ -347,6 +363,36 @@ class SupplierPurchaseInvoiceController extends Controller
         ]]);
     }
 
+    /**
+     * Stream a stored SPI attachment THROUGH the backend (same-origin, with a
+     * download disposition). Mirrors SegmentDocUploadController::download — the
+     * public disk is Azure Blob on prod, a different origin with no CORS, so a
+     * client-side fetch of the raw blob URL is blocked. Streaming here fixes it.
+     */
+    public function download(Request $request)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        // Accept a full "/storage/spi/…" path or a disk-relative "spi/…" path.
+        $raw = (string) $request->query('path', '');
+        $raw = preg_replace('/\?.*$/', '', $raw);          // drop any query string
+        if (!preg_match('#(spi/.+)$#i', $raw, $m)) abort(404);
+        $path = $m[1];
+
+        if (str_contains($path, '..') || !str_starts_with($path, 'spi/')) abort(404);
+
+        // Files live under spi/{client_id}/… — a tenant may only pull its own.
+        if ($user->user_type !== 'super_admin'
+            && !str_starts_with($path, 'spi/' . ($user->client_id ?: 'x') . '/')) {
+            abort(403);
+        }
+
+        if (!Storage::disk('public')->exists($path)) abort(404);
+
+        return Storage::disk('public')->download($path, basename($path));
+    }
+
     /* ══════════════════════════ INTERNALS ══════════════════════════ */
 
     /**
@@ -405,6 +451,41 @@ class SupplierPurchaseInvoiceController extends Controller
             ->sum('spii.quantity');
 
         return $invoiced >= $ordered;
+    }
+
+    /**
+     * True if the proposed items would push any product's total invoiced qty
+     * (other SPIs + this payload) past what the PO ordered. `$excludeSpiId` is the
+     * SPI being updated (so its own current items don't count as "other").
+     */
+    private function overInvoiced(array $data, ?int $excludeSpiId = null): bool
+    {
+        $po = $data['_po'] ?? null;
+        if (!$po) return false;
+
+        $ordered = DB::table('purchase_order_items')
+            ->where('purchase_order_id', $po->id)->whereNotNull('product_id')
+            ->groupBy('product_id')->selectRaw('product_id, SUM(quantity) as qty')
+            ->pluck('qty', 'product_id');
+
+        $q = DB::table('supplier_purchase_invoice_items as spii')
+            ->join('supplier_purchase_invoices as s', 's.id', '=', 'spii.supplier_purchase_invoice_id')
+            ->where('s.purchase_order_id', $po->id)->whereNull('s.deleted_at')->whereNotNull('spii.product_id');
+        if ($excludeSpiId) $q->where('s.id', '!=', $excludeSpiId);
+        $others = $q->groupBy('spii.product_id')->selectRaw('spii.product_id, SUM(spii.quantity) as qty')
+            ->pluck('qty', 'spii.product_id');
+
+        $proposed = [];
+        foreach ($data['items'] ?? [] as $it) {
+            if (empty($it['product_id'])) continue;
+            $proposed[$it['product_id']] = ($proposed[$it['product_id']] ?? 0) + (float) ($it['quantity'] ?? 0);
+        }
+
+        foreach ($proposed as $pid => $qty) {
+            $ord = (float) ($ordered[$pid] ?? 0);
+            if ($ord > 0 && ((float) ($others[$pid] ?? 0) + $qty) > $ord + 0.0001) return true;
+        }
+        return false;
     }
 
     private function validatePayload(Request $request): array
@@ -545,11 +626,14 @@ class SupplierPurchaseInvoiceController extends Controller
             $qty = (float) ($it['quantity'] ?? 0);
             $rate = (float) ($it['rate'] ?? 0);
             $gst = (float) ($it['gst_pct'] ?? 0);
-            $cgstP = $intra ? 9 : $gst / 2;
-            $sgstP = $intra ? 9 : $gst / 2;
+            // Intra-state (home 27) → CGST + SGST (each gst/2). Inter-state → single IGST (full gst).
+            $cgstP = $intra ? $gst / 2 : 0;
+            $sgstP = $intra ? $gst / 2 : 0;
+            $igstP = $intra ? 0 : $gst;
             $base = $qty * $rate;
             $cgstA = $base * $cgstP / 100;
             $sgstA = $base * $sgstP / 100;
+            $igstA = $base * $igstP / 100;
 
             $poQty = isset($it['po_quantity']) && $it['po_quantity'] !== '' ? (float) $it['po_quantity'] : null;
 
@@ -570,9 +654,11 @@ class SupplierPurchaseInvoiceController extends Controller
                 'gst_pct' => $gst,
                 'cgst_pct' => $cgstP,
                 'sgst_pct' => $sgstP,
+                'igst_pct' => $igstP,
                 'cgst_amount' => round($cgstA, 2),
                 'sgst_amount' => round($sgstA, 2),
-                'cost' => round($base + $cgstA + $sgstA, 2),
+                'igst_amount' => round($igstA, 2),
+                'cost' => round($base + $cgstA + $sgstA + $igstA, 2),
                 'line_no' => ++$line,
             ]);
         }
@@ -584,6 +670,7 @@ class SupplierPurchaseInvoiceController extends Controller
         $prod = (float) $items->sum('cost');
         $cgst = (float) $items->sum('cgst_amount');
         $sgst = (float) $items->sum('sgst_amount');
+        $igst = (float) $items->sum('igst_amount');
         $addl = (float) ($data['shipping_charges'] ?? 0) + (float) ($data['packaging_charges'] ?? 0) + (float) ($data['other_charges'] ?? 0);
         $paid = (float) ($data['total_paid'] ?? 0);
         $net = round($prod + $addl, 2);
@@ -591,6 +678,7 @@ class SupplierPurchaseInvoiceController extends Controller
             'total_product_cost' => round($prod, 2),
             'total_cgst' => round($cgst, 2),
             'total_sgst' => round($sgst, 2),
+            'total_igst' => round($igst, 2),
             'additional_charges' => round($addl, 2),
             'net_payable' => $net,
             'total_paid' => round($paid, 2),
@@ -627,6 +715,22 @@ class SupplierPurchaseInvoiceController extends Controller
 
     private function shapeDetail(SupplierPurchaseInvoice $spi): array
     {
+        // For a With-PO SPI: qty already invoiced by OTHER (non-deleted) SPIs on
+        // the same PO, per product — so the edit view's "Missing" reflects the
+        // TRUE remaining across all invoices, not just this one.
+        $otherInvoiced = collect();
+        if ($spi->purchase_order_id) {
+            $otherInvoiced = DB::table('supplier_purchase_invoice_items as spii')
+                ->join('supplier_purchase_invoices as s', 's.id', '=', 'spii.supplier_purchase_invoice_id')
+                ->where('s.purchase_order_id', $spi->purchase_order_id)
+                ->where('s.id', '!=', $spi->id)
+                ->whereNull('s.deleted_at')
+                ->whereNotNull('spii.product_id')
+                ->groupBy('spii.product_id')
+                ->selectRaw('spii.product_id, SUM(spii.quantity) as qty')
+                ->pluck('qty', 'spii.product_id');
+        }
+
         return array_merge($this->shapeListRow($spi), [
             'purchase_order_id' => $spi->purchase_order_id,
             'shipment_order_id' => $spi->shipment_order_id,
@@ -657,6 +761,7 @@ class SupplierPurchaseInvoiceController extends Controller
             'total_product_cost' => (float) $spi->total_product_cost,
             'total_cgst' => (float) $spi->total_cgst,
             'total_sgst' => (float) $spi->total_sgst,
+            'total_igst' => (float) $spi->total_igst,
             'additional_charges' => (float) $spi->additional_charges,
             'items' => $spi->items->map(fn ($it) => [
                 'id' => $it->id,
@@ -666,6 +771,8 @@ class SupplierPurchaseInvoiceController extends Controller
                 'piQty' => $it->pi_quantity !== null ? (float) $it->pi_quantity : null,
                 'poName' => $it->po_product_name,
                 'poQty' => $it->po_quantity !== null ? (float) $it->po_quantity : null,
+                // Qty invoiced by OTHER SPIs on this PO → drives the true "Missing" on edit.
+                'invoiced' => $it->product_id ? (float) ($otherInvoiced[$it->product_id] ?? 0) : 0,
                 'ratePo' => (float) $it->rate_po,
                 'name' => $it->product_name,
                 'qty' => (float) $it->quantity,
@@ -675,6 +782,7 @@ class SupplierPurchaseInvoiceController extends Controller
                 'gst' => (float) $it->gst_pct,
                 'cgstA' => (float) $it->cgst_amount,
                 'sgstA' => (float) $it->sgst_amount,
+                'igstA' => (float) $it->igst_amount,
                 'cost' => (float) $it->cost,
             ])->all(),
         ]);
