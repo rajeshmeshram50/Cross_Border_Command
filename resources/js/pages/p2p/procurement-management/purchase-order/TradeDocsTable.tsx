@@ -76,9 +76,12 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
   const [sendKind, setSendKind] = useState<'trade' | 'agreement'>('trade');
   const [sentBatch, setSentBatch] = useState<string[]>([]);
+  // Purchase Order send-for-signature — routes the PO PDF through the SAME
+  // shared modal in its raw-PDF mode (supplier is the single signer).
+  const [poSign, setPoSign] = useState(false);
   // The shared sign modal (z ~265k) sits below the PO wizard/modal (z 2.5M+), so
   // signal the parent to hide itself while the sign modal is open.
-  useEffect(() => { onSignActive?.(Array.isArray(sendDocIds)); }, [sendDocIds, onSignActive]);
+  useEffect(() => { onSignActive?.(Array.isArray(sendDocIds) || poSign); }, [sendDocIds, poSign, onSignActive]);
   useEffect(() => {
     if (!supplierId) { setParty(null); return; }
     let cancelled = false;
@@ -114,9 +117,18 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
     setSendKind(parsed[0].kind);
     setSendDocIds(parsed.map(p => p.libId));
   };
-  // The "Purchase Order" row isn't a CLM library doc, so "Send for Sign" can't
-  // route it through Zoho — open its PDF preview instead.
-  const sendDoc = (id: string) => { if (id === 'po') { openPoPdf(false); return; } launchSign([id]); };
+  // The "Purchase Order" row isn't a CLM library doc — route it through the
+  // shared sign modal in raw-PDF mode (needs a SAVED po id + a supplier). Falls
+  // back to the plain PDF preview when the PO hasn't been saved yet.
+  const sendDoc = (id: string) => {
+    if (id === 'po') {
+      if (!poId) { toast.info('Save the PO first', 'Save the purchase order before sending it for signature.'); return; }
+      if (!party?.db_id) { toast.error('Supplier required', 'Select a supplier first to send the PO for signature.'); return; }
+      setPoSign(true);
+      return;
+    }
+    launchSign([id]);
+  };
   const sendSelected = () => { const ids = visible.filter(d => d.status === 'pending' && sel[d.id]).map(d => d.id); if (ids.length) launchSign(ids); };
   const onSigSent = () => {
     setDocs(ds => ds.map(x => sentBatch.includes(x.id) ? { ...x, status: 'sent' } : x));
@@ -186,9 +198,15 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
                 ) : (
                   <button className="cptd-send" type="button" disabled={sent} onClick={() => sendDoc(d.id)}>{I.send} {sent ? 'Sent' : 'Send for Sign'}</button>
                 )}
-                {/* Draft view — always available (unsigned PO PDF) */}
-                <button className="cptd-lbtn" type="button" title="View draft" onClick={() => viewDoc(d, false)}>{I.eye} View</button>
-                <button className="cptd-act" type="button" title="Email document" onClick={() => toast.info(`Email composer opened for "${d.name}"`)}>{I.mail}</button>
+                {/* Draft view — always available (unsigned PO PDF). Icon-only,
+                    styled like the compact action buttons (e.g. Email). */}
+                <button className="cptd-act" type="button" title="View draft" onClick={() => viewDoc(d, false)}>{I.eye}</button>
+                {/* Email is only meaningful for the Purchase Order document —
+                    the other trade documents / agreements are e-signed via Zoho,
+                    not emailed from here. */}
+                {d.id === 'po' && (
+                  <button className="cptd-act" type="button" title="Email document" onClick={() => toast.info(`Email composer opened for "${d.name}"`)}>{I.mail}</button>
+                )}
                 {d.status === 'sent' && <button className="cptd-act" type="button" title="Track signature status" onClick={() => toast.info(`Tracking signature status — ${d.name}`)}>{I.track}</button>}
                 {d.status === 'sent' && <button className="cptd-act" type="button" title="Send reminder" onClick={() => toast.info(`Reminder sent — ${d.name}`)}>{I.reminder}</button>}
               </div></td>
@@ -208,8 +226,36 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
         modelName="Vendor"
         sendAsAgreement={sendKind === 'agreement'}
         preselectedDocIds={sendDocIds ?? undefined}
+        /* Pass the selected rows' metadata so a bulk agreement send shows EVERY
+           selected agreement in the preview rail (the modal's own library fetch
+           can't resolve agreement ids). */
+        preselectedDocs={docs
+          .filter(d => sentBatch.includes(d.id))
+          .map(d => { const p = parseRow(d.id); return p ? { id: p.libId, name: d.name, sub: d.sub } : null; })
+          .filter(Boolean) as { id: number; name: string; sub?: string }[]}
         onClose={() => { setSendDocIds(null); setSentBatch([]); }}
         onSent={onSigSent}
+      />
+
+      {/* Purchase Order → same modal in raw-PDF mode (supplier signs the PO PDF).
+          Separate instance so PO and CLM-library sends never share state. */}
+      <SalesCustomerSendForSignatureModal
+        open={poSign}
+        customer={party}
+        modelName="Vendor"
+        rawPdfContext={poId ? {
+          docId: poId,
+          code: po,
+          title: `Purchase Order · ${po}`,
+          previewUrl: `/p2p/purchase-orders/${poId}/pdf?signature=0`,
+          sendUrl: `/p2p/purchase-orders/${poId}/send-for-signature`,
+        } : null}
+        onClose={() => setPoSign(false)}
+        onSent={() => {
+          setDocs(ds => ds.map(x => (x.id === 'po' ? { ...x, status: 'sent' } : x)));
+          setPoSign(false);
+          toast.success('Sent for signature via Zoho Sign');
+        }}
       />
     </>
   );

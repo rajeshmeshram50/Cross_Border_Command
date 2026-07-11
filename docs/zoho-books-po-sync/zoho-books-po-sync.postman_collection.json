@@ -1,0 +1,354 @@
+{
+  "info": {
+    "name": "PO → Zoho Books Sync",
+    "description": "Every request for the Purchase Order → Zoho Books integration: OAuth token generation, all Zoho Books API calls, and the app PO endpoints. Fill the collection variables first. See docs/zoho-books-po-sync/ for details.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "accounts_url", "value": "https://accounts.zoho.in" },
+    { "key": "zoho_base", "value": "https://www.zohoapis.in/books/v3" },
+    { "key": "org_id", "value": "60077655856" },
+    { "key": "client_id", "value": "1000.xxxxxxxx" },
+    { "key": "client_secret", "value": "xxxxxxxx" },
+    { "key": "grant_code", "value": "1000.xxxxxxxx" },
+    { "key": "refresh_token", "value": "1000.xxxxxxxx" },
+    { "key": "access_token", "value": "" },
+    { "key": "app_base", "value": "http://127.0.0.1:8000/api" },
+    { "key": "sanctum_token", "value": "" },
+    { "key": "po_id", "value": "4" },
+    { "key": "vendor_contact_id", "value": "" },
+    { "key": "item_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth (Token Generation)",
+      "item": [
+        {
+          "name": "Exchange grant code -> refresh token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{accounts_url}}/oauth/v2/token",
+              "host": ["{{accounts_url}}"],
+              "path": ["oauth", "v2", "token"]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "authorization_code" },
+                { "key": "client_id", "value": "{{client_id}}" },
+                { "key": "client_secret", "value": "{{client_secret}}" },
+                { "key": "code", "value": "{{grant_code}}" }
+              ]
+            },
+            "description": "One-time: exchange the Self Client grant code for a refresh_token. Save the refresh_token into .env as ZOHO_BOOKS_REFRESH_TOKEN. Scope must be ZohoBooks.fullaccess.all."
+          }
+        },
+        {
+          "name": "Refresh -> access token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.access_token) { pm.collectionVariables.set('access_token', j.access_token); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{accounts_url}}/oauth/v2/token",
+              "host": ["{{accounts_url}}"],
+              "path": ["oauth", "v2", "token"]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "refresh_token" },
+                { "key": "client_id", "value": "{{client_id}}" },
+                { "key": "client_secret", "value": "{{client_secret}}" },
+                { "key": "refresh_token", "value": "{{refresh_token}}" }
+              ]
+            },
+            "description": "Mint an access token (valid ~1h). The test script saves it into {{access_token}} for the Zoho Books calls below."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Zoho Books API",
+      "item": [
+        {
+          "name": "Organizations",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" } ],
+            "url": {
+              "raw": "{{zoho_base}}/organizations?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"], "path": ["organizations"],
+              "query": [ { "key": "organization_id", "value": "{{org_id}}" } ]
+            }
+          }
+        },
+        {
+          "name": "Settings - Taxes",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" } ],
+            "url": {
+              "raw": "{{zoho_base}}/settings/taxes?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"], "path": ["settings", "taxes"],
+              "query": [ { "key": "organization_id", "value": "{{org_id}}" } ]
+            }
+          }
+        },
+        {
+          "name": "Settings - Currencies",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" } ],
+            "url": {
+              "raw": "{{zoho_base}}/settings/currencies?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"], "path": ["settings", "currencies"],
+              "query": [ { "key": "organization_id", "value": "{{org_id}}" } ]
+            }
+          }
+        },
+        {
+          "name": "Contacts - Find (by name)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" } ],
+            "url": {
+              "raw": "{{zoho_base}}/contacts?organization_id={{org_id}}&contact_name=fit nation umred&contact_type=vendor",
+              "host": ["{{zoho_base}}"], "path": ["contacts"],
+              "query": [
+                { "key": "organization_id", "value": "{{org_id}}" },
+                { "key": "contact_name", "value": "fit nation umred" },
+                { "key": "contact_type", "value": "vendor" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Contacts - Create (vendor)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "var j = pm.response.json();",
+              "if (j.contact && j.contact.contact_id) pm.collectionVariables.set('vendor_contact_id', j.contact.contact_id);"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{zoho_base}}/contacts?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"], "path": ["contacts"],
+              "query": [ { "key": "organization_id", "value": "{{org_id}}" } ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contact_name\": \"fit nation umred\",\n  \"company_name\": \"fit nation umred\",\n  \"contact_type\": \"vendor\",\n  \"gst_treatment\": \"business_gst\",\n  \"gst_no\": \"27ABCDE1234F1Z5\",\n  \"place_of_contact\": \"MH\"\n}"
+            },
+            "description": "gst_treatment=business_gst + gst_no for a registered vendor (tax flows). Use business_none (and drop gst_no) for an unregistered vendor (PO must be tax-free)."
+          }
+        },
+        {
+          "name": "Items - Find (by name)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" } ],
+            "url": {
+              "raw": "{{zoho_base}}/items?organization_id={{org_id}}&name=FCV Tobacco Leaf Grade L2",
+              "host": ["{{zoho_base}}"], "path": ["items"],
+              "query": [
+                { "key": "organization_id", "value": "{{org_id}}" },
+                { "key": "name", "value": "FCV Tobacco Leaf Grade L2" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Items - Create (purchasable)",
+          "event": [
+            { "listen": "test", "script": { "type": "text/javascript", "exec": [
+              "var j = pm.response.json();",
+              "if (j.item && j.item.item_id) pm.collectionVariables.set('item_id', j.item.item_id);"
+            ] } }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{zoho_base}}/items?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"], "path": ["items"],
+              "query": [ { "key": "organization_id", "value": "{{org_id}}" } ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"FCV Tobacco Leaf Grade L2\",\n  \"product_type\": \"goods\",\n  \"item_type\": \"sales_and_purchases\",\n  \"rate\": 653210.88,\n  \"purchase_rate\": 653210.88\n}"
+            }
+          }
+        },
+        {
+          "name": "Purchase Order - Create",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{zoho_base}}/purchaseorders?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"], "path": ["purchaseorders"],
+              "query": [ { "key": "organization_id", "value": "{{org_id}}" } ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendor_id\": \"{{vendor_contact_id}}\",\n  \"date\": \"2026-07-11\",\n  \"delivery_date\": \"2026-07-20\",\n  \"reference_number\": \"PO/2026-27/004\",\n  \"line_items\": [\n    {\n      \"item_id\": \"{{item_id}}\",\n      \"name\": \"FCV Tobacco Leaf Grade L2\",\n      \"description\": \"P-97\",\n      \"rate\": 653210.88,\n      \"quantity\": 12,\n      \"tax_id\": \"<GST12 tax_id>\"\n    }\n  ]\n}"
+            },
+            "description": "Omit tax_id per line for an unregistered vendor. Use the GST group tax id for intra-state, IGST id for inter-state."
+          }
+        },
+        {
+          "name": "Purchase Order - Get",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" } ],
+            "url": {
+              "raw": "{{zoho_base}}/purchaseorders/PO_ID?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"], "path": ["purchaseorders", "PO_ID"],
+              "query": [ { "key": "organization_id", "value": "{{org_id}}" } ]
+            }
+          }
+        },
+        {
+          "name": "Purchase Order - Get PDF",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" } ],
+            "url": {
+              "raw": "{{zoho_base}}/purchaseorders/PO_ID?organization_id={{org_id}}&accept=pdf",
+              "host": ["{{zoho_base}}"], "path": ["purchaseorders", "PO_ID"],
+              "query": [
+                { "key": "organization_id", "value": "{{org_id}}" },
+                { "key": "accept", "value": "pdf" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Purchase Order - Delete",
+          "request": {
+            "method": "DELETE",
+            "header": [ { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" } ],
+            "url": {
+              "raw": "{{zoho_base}}/purchaseorders/PO_ID?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"], "path": ["purchaseorders", "PO_ID"],
+              "query": [ { "key": "organization_id", "value": "{{org_id}}" } ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. App PO API",
+      "item": [
+        {
+          "name": "List POs",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{sanctum_token}}" } ],
+            "url": {
+              "raw": "{{app_base}}/p2p/purchase-orders?tab=without&page=1&per_page=10",
+              "host": ["{{app_base}}"], "path": ["p2p", "purchase-orders"],
+              "query": [
+                { "key": "tab", "value": "without" },
+                { "key": "page", "value": "1" },
+                { "key": "per_page", "value": "10" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Show PO",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{sanctum_token}}" } ],
+            "url": {
+              "raw": "{{app_base}}/p2p/purchase-orders/{{po_id}}",
+              "host": ["{{app_base}}"], "path": ["p2p", "purchase-orders", "{{po_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Create PO",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{sanctum_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{app_base}}/p2p/purchase-orders",
+              "host": ["{{app_base}}"], "path": ["p2p", "purchase-orders"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"po_type\": \"Material / Goods\",\n  \"document_type\": \"Domestics\",\n  \"po_date\": \"2026-07-11\",\n  \"expected_delivery_date\": \"2026-07-20\",\n  \"vendor_id\": 26,\n  \"currency_code\": \"INR\",\n  \"exchange_rate\": 1,\n  \"terms\": \"Terms & Conditions\",\n  \"shipping_charges\": 0,\n  \"packaging_charges\": 0,\n  \"other_charges\": 0,\n  \"items\": [\n    { \"product_id\": 97, \"product_code\": \"P-97\", \"product_name\": \"FCV Tobacco Leaf Grade L2\", \"quantity\": 12, \"rate\": 653210.88, \"gst_pct\": 12 },\n    { \"product_id\": 91, \"product_code\": \"P-91\", \"product_name\": \"Iron Ore Fines Fe62%\", \"quantity\": 1, \"rate\": 483255.04, \"gst_pct\": 28 }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Update PO (blocked once synced)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{sanctum_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{app_base}}/p2p/purchase-orders/{{po_id}}",
+              "host": ["{{app_base}}"], "path": ["p2p", "purchase-orders", "{{po_id}}"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"po_type\": \"Material / Goods\",\n  \"items\": []\n}" }
+          }
+        },
+        {
+          "name": "Sync PO to Zoho Books",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Authorization", "value": "Bearer {{sanctum_token}}" } ],
+            "url": {
+              "raw": "{{app_base}}/p2p/purchase-orders/{{po_id}}/sync",
+              "host": ["{{app_base}}"], "path": ["p2p", "purchase-orders", "{{po_id}}", "sync"]
+            }
+          }
+        },
+        {
+          "name": "Get Zoho PDF (cached)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{sanctum_token}}" } ],
+            "url": {
+              "raw": "{{app_base}}/p2p/purchase-orders/{{po_id}}/zoho-pdf",
+              "host": ["{{app_base}}"], "path": ["p2p", "purchase-orders", "{{po_id}}", "zoho-pdf"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
