@@ -130,9 +130,15 @@ return new class extends Migration
                 echo "  {$table}: renumbered " . count($updates) . " of " . $rows->count() . " rows\n";
             }
 
-            // Resolve the new code for a referenced (table, client, branch, oldCode).
-            // Prefer the reference row's own branch, then client-level shared,
-            // then any branch (safe — no cross-branch duplicate codes exist).
+            // Strict resolver for the new code of a referenced (table, client,
+            // branch, oldCode). Tries the reference's OWN branch first, then the
+            // client-level shared (branch NULL) rows — and nothing else. The old
+            // "any branch" fallback is deliberately gone: on data where the
+            // per-branch counters have already minted duplicate codes across
+            // branches (e.g. two branches each own a "DD-001"), guessing a branch
+            // remaps a reference to the wrong row and collides the unique index
+            // (seg_uploads_unique_per_doc). Unresolved → return null (leave the
+            // reference untouched) rather than risk pointing it at another branch.
             $lookup = function (string $table, $clientId, $branchId, ?string $oldCode) use ($maps): ?string {
                 if ($oldCode === null || $oldCode === '') return null;
                 $byBranch = $maps[$table][$clientId] ?? null;
@@ -140,9 +146,6 @@ return new class extends Migration
                 $bkey = $branchId === null ? 'null' : (string) $branchId;
                 if (isset($byBranch[$bkey][$oldCode]))  return $byBranch[$bkey][$oldCode];
                 if (isset($byBranch['null'][$oldCode])) return $byBranch['null'][$oldCode];
-                foreach ($byBranch as $codes) {
-                    if (isset($codes[$oldCode])) return $codes[$oldCode];
-                }
                 return null;
             };
 
@@ -194,17 +197,42 @@ return new class extends Migration
                 }
             }
 
-            // ── 3. Rewrite segment_doc_uploads.doc_code (no branch_id → resolve by client) ──
+            // ── 3. Rewrite segment_doc_uploads.doc_code ──
+            // This table has NO branch_id of its own — the branch context comes
+            // from the OWNING entity (customer / consignee / vendor / product /
+            // lead, each carrying a branch_id). Resolving each upload against its
+            // entity's branch is what makes the remap unambiguous when duplicate
+            // codes exist across branches (the bug that failed the first run).
             if (Schema::hasTable('segment_doc_uploads')) {
+                $uploads = DB::table('segment_doc_uploads')->get();
+
+                // Batch-resolve every owning entity's branch: "type|id" => branch_id.
+                $entityBranch = [];
+                $idsByType = [];
+                foreach ($uploads as $r) {
+                    if ($r->uploadable_type) $idsByType[$r->uploadable_type][(int) $r->uploadable_id] = true;
+                }
+                foreach ($idsByType as $type => $ids) {
+                    if (!class_exists($type)) continue;
+                    try { $tbl = (new $type)->getTable(); } catch (\Throwable $e) { continue; }
+                    if (!Schema::hasTable($tbl) || !Schema::hasColumn($tbl, 'branch_id')) continue;
+                    foreach (DB::table($tbl)->whereIn('id', array_keys($ids))->get(['id', 'branch_id']) as $e) {
+                        $entityBranch[$type . '|' . $e->id] = $e->branch_id;
+                    }
+                }
+
                 $changes = [];   // id => newDocCode
-                foreach (DB::table('segment_doc_uploads')->get() as $r) {
+                foreach ($uploads as $r) {
                     if (!isset($this->catTable[$r->category])) continue;
-                    $nc = $lookup($this->catTable[$r->category], $r->client_id, null, $r->doc_code);
+                    $branchId = $entityBranch[$r->uploadable_type . '|' . (int) $r->uploadable_id] ?? null;
+                    $nc = $lookup($this->catTable[$r->category], $r->client_id, $branchId, $r->doc_code);
                     if ($nc && $nc !== $r->doc_code) $changes[$r->id] = $nc;
                 }
+
                 if ($changes) {
-                    // Same two-pass guard: doc_code is part of a unique key, so a
-                    // rotation among a single entity's docs could transiently clash.
+                    // Two-pass guard: doc_code is part of the unique key, so a
+                    // permutation within one entity+category must not transiently
+                    // clash — park every changing row on a temp code, then finalise.
                     foreach (array_keys($changes) as $id) {
                         DB::table('segment_doc_uploads')->where('id', $id)->update(['doc_code' => '__t' . $id]);
                     }
