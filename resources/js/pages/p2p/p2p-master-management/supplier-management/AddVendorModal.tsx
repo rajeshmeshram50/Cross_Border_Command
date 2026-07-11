@@ -1444,6 +1444,30 @@ export default function AddVendorModal(props: {
    * button so the user can't double-fire mid-request.
    * ────────────────────────────────────────────────────────────── */
 
+  /* Field-key → human label, so a failed validation names the culprit in
+     the toast instead of the vague "highlighted fields" — the offending
+     field is frequently scrolled out of view (e.g. Company Name above the
+     fold, or a Website that contains spaces). */
+  const FIELD_LABELS: Record<string, string> = {
+    companyName: 'Company Name', legalName: 'Legal Name', website: 'Company Website',
+    vendorType: 'Supplier Type', riskLevel: 'Risk Level', vendorBehaviour: 'Supplier Behaviour',
+    segment: 'Supplier Segment', complianceBehaviour: 'Compliance Behaviour',
+    registeredOffice: 'Registered Office Address', country: 'Country', state: 'State',
+    stateCode: 'State Code', city: 'City', contactName: 'Contact Person Name',
+    designation: 'Designation', contactNo: 'Contact No', email: 'Email', pincode: 'Pincode',
+  };
+
+  /* Set the field errors, name them in the toast, and scroll the first bad
+     field into view so an off-screen required field is never a mystery. */
+  const flagErrors = (errs: Record<string, string>) => {
+    setFieldErrors(prev => ({ ...prev, ...errs }));
+    const names = Object.keys(errs).map(k => FIELD_LABELS[k] ?? k);
+    toast.error('Missing required fields', `Please check: ${names.join(', ')}`);
+    setTimeout(() => {
+      document.querySelector('.avm-field.has-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
+  };
+
   const saveIdentity = async (): Promise<boolean> => {
     const errs: Record<string, string> = {};
     if (!companyName.trim()) errs.companyName         = 'Company Name is required';
@@ -1463,7 +1487,7 @@ export default function AddVendorModal(props: {
     if (!stateCode.trim())        errs.stateCode        = 'State Code is required';
     else if (!/^\d{1,2}$/.test(stateCode.trim())) errs.stateCode = 'State Code must be a 1–2 digit GST code';
     if (!city.trim())             errs.city             = 'City is required';
-    if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); toast.error('Missing required fields', 'Please fix the highlighted fields'); return false; }
+    if (Object.keys(errs).length) { flagErrors(errs); return false; }
 
     setSaving(true);
     try {
@@ -1520,7 +1544,7 @@ export default function AddVendorModal(props: {
     if (!errs.email && email)      { const e = validateEmail(email);              if (e) errs.email     = e; }
     if (!errs.contactNo && contactNo) { const e = validateContactNumber(contactNo, 'Contact No'); if (e) errs.contactNo = e; }
     if (pincode)                   { const e = validatePincode(pincode);          if (e) errs.pincode   = e; }
-    if (Object.keys(errs).length) { setFieldErrors(prev => ({ ...prev, ...errs })); toast.error('Missing required fields', 'Please fix the highlighted fields'); return false; }
+    if (Object.keys(errs).length) { flagErrors(errs); return false; }
 
     setSaving(true);
     try {

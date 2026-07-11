@@ -7,9 +7,13 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\Vendor;
 use App\Models\ShipmentOrder;
+use App\Services\ZohoBooksService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use RuntimeException;
 
 /**
  * Purchase Order API (P2P → Procurement).
@@ -117,6 +121,15 @@ class PurchaseOrderController extends Controller
         $po = PurchaseOrder::findOrFail($id);
         $this->assertScope($po, $user, 'write');
 
+        // Once a PO is pushed to Zoho Books it is locked — editing it here would
+        // silently drift from the Zoho copy. Mirrors the disabled Edit button.
+        if (!empty($po->zoho_purchaseorder_id)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This PO is locked — it has already been synced to Zoho Books and can no longer be edited.',
+            ], 422);
+        }
+
         $data = $this->validatePayload($request);
 
         DB::transaction(function () use ($po, $user, $data) {
@@ -145,14 +158,166 @@ class PurchaseOrderController extends Controller
 
     /* ══════════════════════════ ZOHO SYNC ══════════════════════════ */
 
+    /**
+     * Push this PO into Zoho Books (org from config) and remember the Zoho id.
+     *
+     * Idempotent: a PO that already carries a zoho_purchaseorder_id is never
+     * pushed twice. On any Zoho error the PO stays "Not Sync" with the upstream
+     * message saved to zoho_error and returned as a truthful 422, so the UI can
+     * show what actually went wrong instead of a fake success.
+     */
     public function sync(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $po = PurchaseOrder::findOrFail($id);
+        $po = PurchaseOrder::with('items')->findOrFail($id);
         $this->assertScope($po, $user, 'write');
-        $po->update(['zoho_status' => 'Sync', 'updated_by' => $user->id]);
-        return response()->json(['status' => true, 'data' => $this->shapeListRow($po->fresh())]);
+
+        $books = app(ZohoBooksService::class);
+        if (!$books->isConfigured()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Zoho Books is not connected yet. Add the Zoho Books credentials to the server .env, then try again.',
+            ], 503);
+        }
+
+        if (!empty($po->zoho_purchaseorder_id)) {
+            return response()->json([
+                'status' => true,
+                'message' => 'This PO is already synced with Zoho Books.',
+                'data' => $this->shapeListRow($po),
+            ]);
+        }
+        if (!$po->vendor_id) {
+            return response()->json(['status' => false, 'message' => 'Attach a supplier to this PO before syncing to Zoho Books.'], 422);
+        }
+        if ($po->items->isEmpty()) {
+            return response()->json(['status' => false, 'message' => 'Add at least one product line before syncing to Zoho Books.'], 422);
+        }
+
+        try {
+            $vendor = Vendor::with('primaryAddress')->findOrFail($po->vendor_id);
+            $gstin = DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null;
+            $stateCode = optional($vendor->primaryAddress)->state_code;
+
+            // Intra- vs inter-state decides GST(CGST+SGST) vs IGST in Zoho.
+            $orgState = $books->orgStateCode() ?: '27';
+            $interState = $stateCode && (string) $stateCode !== (string) $orgState;
+
+            $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
+            $created = $books->createPurchaseOrder($this->buildZohoPayload($po, $books, $zohoVendorId, (bool) $gstin, $interState));
+            $zohoId = (string) $created['purchaseorder_id'];
+
+            // Cache Zoho's own rendered PDF — best-effort; a PDF hiccup must not
+            // undo an otherwise-successful sync.
+            $pdfPath = null;
+            try {
+                $rel = 'zoho/po/PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($po->code ?: $po->id)) . '.pdf';
+                Storage::disk('public')->put($rel, $books->getPurchaseOrderPdf($zohoId));
+                $pdfPath = '/storage/' . $rel;
+            } catch (\Throwable $e) {
+                Log::warning('Zoho PO PDF cache failed', ['po' => $po->id, 'err' => $e->getMessage()]);
+            }
+
+            $po->update([
+                'zoho_status' => 'Sync',
+                'zoho_purchaseorder_id' => $zohoId,
+                'zoho_synced_at' => now(),
+                'zoho_error' => null,
+                'zoho_pdf_path' => $pdfPath,
+                'updated_by' => $user->id,
+            ]);
+
+            // Reconcile totals — log (don't fail) when Zoho's total drifts from ours.
+            $delta = abs((float) ($created['total'] ?? 0) - (float) $po->grand_total);
+            if ($delta > 1.0) {
+                Log::warning('Zoho PO total mismatch', [
+                    'po' => $po->code, 'local' => (float) $po->grand_total, 'zoho' => (float) ($created['total'] ?? 0),
+                ]);
+            }
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Synced to Zoho Books (' . ($created['purchaseorder_number'] ?? $zohoId) . ').',
+                'data' => $this->shapeListRow($po->fresh()),
+            ]);
+        } catch (RuntimeException $e) {
+            $po->update(['zoho_status' => 'Not Sync', 'zoho_error' => $e->getMessage(), 'updated_by' => $user->id]);
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * Build the Zoho Books purchase-order payload from a local PO + its items.
+     * Forward GST is only attached when the supplier is GST-registered; for an
+     * unregistered supplier Zoho rejects forward tax (reverse-charge rule), so
+     * lines go in tax-free and the tax delta is logged during reconciliation.
+     */
+    private function buildZohoPayload(PurchaseOrder $po, ZohoBooksService $books, string $zohoVendorId, bool $registered, bool $interState = false): array
+    {
+        $lineItems = $po->items->map(function ($it) use ($books, $registered, $interState) {
+            $name = (string) ($it->product_name ?: $it->product_code ?: 'Item');
+            // Effective tax the app ACTUALLY applied (covers the Maharashtra
+            // intra-state 9+9 override, not just the nominal gst_pct) so Zoho's
+            // recomputed total reconciles with ours — registered vendors only.
+            $taxId = $registered ? $books->resolveTaxId((float) $it->cgst_pct + (float) $it->sgst_pct, $interState) : null;
+            $line = [
+                // Zoho POs need a purchasable item id, not a free-text line.
+                'item_id' => $books->findOrCreateItemId($name, (float) $it->rate, $taxId),
+                'name' => $name,
+                'description' => (string) $it->product_code,
+                'rate' => (float) $it->rate,
+                'quantity' => (float) $it->quantity,
+            ];
+            if ($taxId) $line['tax_id'] = $taxId;
+            return $line;
+        })->values()->all();
+
+        $payload = [
+            'vendor_id' => $zohoVendorId,
+            'date' => optional($po->po_date)->toDateString() ?: now()->toDateString(),
+            'reference_number' => (string) $po->code,
+            'line_items' => $lineItems,
+        ];
+
+        if ($po->expected_delivery_date) $payload['delivery_date'] = optional($po->expected_delivery_date)->toDateString();
+        if (trim((string) $po->terms) !== '') $payload['terms'] = (string) $po->terms;
+
+        // Shipping is native; packaging + other have no native field → adjustment.
+        if ((float) $po->shipping_charges != 0.0) $payload['shipping_charge'] = (float) $po->shipping_charges;
+        $adjustment = (float) $po->packaging_charges + (float) $po->other_charges;
+        if ($adjustment != 0.0) {
+            $payload['adjustment'] = $adjustment;
+            $payload['adjustment_description'] = 'Packaging & other charges';
+        }
+
+        // Currency (INR = org base, omitted); send exchange rate for non-base ccy.
+        if ($ccyId = $books->resolveCurrencyId($po->currency_code)) {
+            $payload['currency_id'] = $ccyId;
+            if ((float) $po->exchange_rate > 0) $payload['exchange_rate'] = (float) $po->exchange_rate;
+        }
+
+        return $payload;
+    }
+
+    /* ══════════════════════════ ZOHO PDF ══════════════════════════ */
+
+    /** Stream the cached Zoho Books PDF for a synced PO ("View in Zoho"). */
+    public function zohoPdf(Request $request, int $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $po = PurchaseOrder::findOrFail($id);
+        $this->assertScope($po, $user);
+
+        if (!$po->zoho_pdf_path) abort(404, 'No Zoho PDF cached for this PO.');
+        $rel = ltrim(str_replace('/storage/', '', $po->zoho_pdf_path), '/');
+        if (!Storage::disk('public')->exists($rel)) abort(404, 'Zoho PDF file missing.');
+
+        return response(Storage::disk('public')->get($rel), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="ZOHO-' . ($po->code ?: $po->id) . '.pdf"',
+        ]);
     }
 
     /* ══════════════════════════ NEXT CODE ══════════════════════════ */
@@ -191,8 +356,11 @@ class PurchaseOrderController extends Controller
             $qty = (float) ($it['quantity'] ?? 0);
             $rate = (float) ($it['rate'] ?? 0);
             $gst = (float) ($it['gst_pct'] ?? 0);
-            $cgstP = $intra ? 9 : $gst / 2;
-            $sgstP = $intra ? 9 : $gst / 2;
+            // GST always splits into equal CGST + SGST halves of the item's own
+            // rate (a 12% item → 6% + 6%). Intra- vs inter-state only changes the
+            // LABEL (CGST/SGST vs IGST), never the amount — so never hard-code 9%.
+            $cgstP = $gst / 2;
+            $sgstP = $gst / 2;
             $base = $qty * $rate;
             $cgstA = $base * $cgstP / 100;
             $sgstA = $base * $sgstP / 100;
@@ -600,8 +768,11 @@ class PurchaseOrderController extends Controller
             $qty = (float) ($it['quantity'] ?? 0);
             $rate = (float) ($it['rate'] ?? 0);
             $gst = (float) ($it['gst_pct'] ?? 0);
-            $cgstP = $intra ? 9 : $gst / 2;
-            $sgstP = $intra ? 9 : $gst / 2;
+            // GST always splits into equal CGST + SGST halves of the item's own
+            // rate (a 12% item → 6% + 6%). Intra- vs inter-state only changes the
+            // LABEL (CGST/SGST vs IGST), never the amount — so never hard-code 9%.
+            $cgstP = $gst / 2;
+            $sgstP = $gst / 2;
             $base = $qty * $rate;
             $cgstA = $base * $cgstP / 100;
             $sgstA = $base * $sgstP / 100;

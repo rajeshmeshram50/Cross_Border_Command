@@ -517,6 +517,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'update'])->whereNumber('id');
     Route::delete('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/sync',               [PurchaseOrderController::class, 'sync'])->whereNumber('id');
+    Route::get   ('/p2p/purchase-orders/{id}/zoho-pdf',           [PurchaseOrderController::class, 'zohoPdf'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/email',              [SalesPdfController::class, 'emailPurchaseOrder'])->whereNumber('id');
     Route::get   ('/p2p/purchase-orders/{id}/pdf',                [SalesPdfController::class, 'viewPurchaseOrderPdf'])->whereNumber('id');
 

@@ -22,7 +22,8 @@ class PurchaseOrder extends Model
         'opportunity_id', 'opportunity_code', 'customer_name', 'consignee_name',
         'terms', 'shipping_charges', 'packaging_charges', 'other_charges',
         'total_product_cost', 'total_cgst', 'total_sgst', 'additional_charges', 'grand_total',
-        'zoho_status', 'status', 'created_by', 'updated_by',
+        'zoho_status', 'zoho_purchaseorder_id', 'zoho_synced_at', 'zoho_error', 'zoho_pdf_path',
+        'status', 'created_by', 'updated_by',
     ];
 
     protected $casts = [
@@ -38,6 +39,7 @@ class PurchaseOrder extends Model
         'total_sgst' => 'decimal:2',
         'additional_charges' => 'decimal:2',
         'grand_total' => 'decimal:2',
+        'zoho_synced_at' => 'datetime',
     ];
 
     public function client(): BelongsTo { return $this->belongsTo(Client::class); }
