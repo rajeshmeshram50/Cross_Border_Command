@@ -151,6 +151,24 @@ interface Props {
    *  `trade_doc_ids`, so the request is tagged document_type=agreement and the
    *  vault overlays it on the Agreements drill-down. Off by default. */
   sendAsAgreement?: boolean;
+  /** Raw-PDF mode: send a NON-CLM generated document (e.g. a Purchase Order)
+   *  for signature. When set, the modal skips the CLM library picker/preview/
+   *  send entirely, previews the given PDF, drags ONE signature box for the
+   *  single signer (resolved from `customer`), and POSTs to `sendUrl`. Every
+   *  existing (CLM library) caller leaves this null and is unaffected. */
+  rawPdfContext?: {
+    docId: number;       // synthetic doc id (the PO id) used as the settings key
+    title: string;       // shown in the header / doc row
+    code: string;
+    previewUrl: string;  // GET → blob (the PO PDF)
+    sendUrl: string;     // POST → the send-for-signature endpoint
+  } | null;
+  /** Caller-supplied metadata for the preselected docs. Used only in
+   *  `sendAsAgreement` mode, where the modal's own library fetch (trade-doc
+   *  library) can't resolve agreement ids — so a bulk agreement send would show
+   *  only one doc in the preview rail. Passing the selected rows here lets every
+   *  selected agreement appear (and be positioned) in the rail. */
+  preselectedDocs?: Array<{ id: number; name: string; sub?: string; code?: string }>;
 }
 
 export default function SalesCustomerSendForSignatureModal({
@@ -166,8 +184,12 @@ export default function SalesCustomerSendForSignatureModal({
   tradeSigners = null,
   multiBox = false,
   sendAsAgreement = false,
+  rawPdfContext = null,
+  preselectedDocs,
 }: Props) {
   const isAgreement = mode === 'agreement';
+  // Raw-PDF (non-CLM) mode — e.g. sending a Purchase Order PDF for signature.
+  const isRaw = !!rawPdfContext;
   const toast = useToast();
 
   /* Unified per-role signer list. Agreement mode reads it from the
@@ -365,6 +387,32 @@ export default function SalesCustomerSendForSignatureModal({
    * customer" worth re-initialising for. */
   useEffect(() => {
     if (!open) return;
+    if (isRaw && rawPdfContext) {
+      // Raw-PDF mode: ONE synthetic doc (e.g. the PO), ONE signer resolved
+      // from `customer`. Skip the picker; seed a single flat signature box.
+      const rid = rawPdfContext.docId;
+      setStep(2);
+      setDocs([{ id: rid, code: rawPdfContext.code, name: rawPdfContext.title, title: rawPdfContext.title }]);
+      setDocsLoading(false);
+      setSelectedIds([rid]);
+      setSigners(customer
+        ? [{ name: (customer.contact || customer.company || '').trim() || 'Signer 1', email: (customer.email || '').trim(), order: 1 }]
+        : [{ name: '', email: '', order: 1 }]);
+      setIsSequential(false);
+      setExpiryDays(30);
+      setNotes('Please review and sign this purchase order.');
+      setSettings({}); setMultiBoxes({}); setActiveBoxIdx(0);
+      setSignerSettings({});
+      setActiveSignerRole(null);
+      setActiveDocId(rid);
+      setPreviewUrl(null);
+      userOverrodeRef.current.clear();
+      setHeaderOverrides({});
+      setFooterOverrides({});
+      setContentOverrides({});
+      setEditingShell(false);
+      return;
+    }
     if (isAgreement) {
       // Agreement mode skips the picker step entirely — Segment Details
       // already chose which agreements ride this send. Signers are
@@ -467,6 +515,23 @@ export default function SalesCustomerSendForSignatureModal({
 
   useEffect(() => {
     if (!open) return;
+    if (isRaw) return;   // raw-PDF mode: `docs` is the single synthetic row set on open — no CLM fetch
+    // Supplier agreement send: the modal's own library fetch is the TRADE-doc
+    // library, which can't resolve agreement ids — so a bulk agreement send
+    // would only surface one doc in the preview rail. When the caller passes the
+    // selected rows' metadata, use them directly as `docs` so every selected
+    // agreement shows (and can be positioned) in the rail.
+    if (sendAsAgreement && preselectedDocs && preselectedDocs.length) {
+      setDocs(preselectedDocs.map(d => ({
+        id:    d.id,
+        code:  d.code ?? `A-${d.id}`,
+        name:  d.name,
+        title: d.name,
+        purpose: d.sub ?? undefined,
+      })));
+      setDocsLoading(false);
+      return;
+    }
     if (isAgreement) {
       // Skip the trade-doc library fetch and stitch the picker-list
       // shape directly from the supplied agreement context. The picker
@@ -492,7 +557,8 @@ export default function SalesCustomerSendForSignatureModal({
       .then(r => setDocs(Array.isArray(r.data?.data) ? r.data.data : []))
       .catch(() => setDocs([]))
       .finally(() => setDocsLoading(false));
-  }, [open, partyFilter, isAgreement, agreementContext?.leadId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, partyFilter, isAgreement, isRaw, sendAsAgreement, agreementContext?.leadId]);
 
   /* ── Escape closes the modal whenever we're not mid-send. */
   useEffect(() => {
@@ -545,7 +611,7 @@ export default function SalesCustomerSendForSignatureModal({
     // the agreement render path). Trade-doc mode keeps its existing
     // customer-bound request shape.
     if (isAgreement && !agreementContext?.leadId) return;
-    if (!isAgreement && !customer?.db_id) return;
+    if (!isAgreement && !isRaw && !customer?.db_id) return;
     const docId = activeDocId;
     let cancelled = false;
     setPreviewLoading(true);
@@ -558,7 +624,9 @@ export default function SalesCustomerSendForSignatureModal({
     const headerOverride = headerOverrides[docId];
     const footerOverride = footerOverrides[docId];
     const contentOverride = contentOverrides[docId];
-    const previewRequest = isAgreement
+    const previewRequest = isRaw
+      ? api.get(rawPdfContext!.previewUrl, { responseType: 'blob' })
+      : isAgreement
       ? api.post('/clm/signature-requests/agreement-preview',
           {
             agreement_id: docId,
@@ -664,7 +732,7 @@ export default function SalesCustomerSendForSignatureModal({
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, activeDocId, customer?.db_id, leadId, agreementContext?.leadId, isAgreement, headerOverrides, footerOverrides, contentOverrides]);
+  }, [step, activeDocId, customer?.db_id, leadId, agreementContext?.leadId, isAgreement, isRaw, rawPdfContext?.previewUrl, headerOverrides, footerOverrides, contentOverrides]);
 
   /* ── Release blob URLs we created so we don't leak memory. */
   useEffect(() => {
@@ -705,6 +773,37 @@ export default function SalesCustomerSendForSignatureModal({
 
   /* ── Send. */
   const send = async () => {
+    if (isRaw && rawPdfContext) {
+      // Raw-PDF (e.g. PO) send: one signer, one flat signature box → POST to
+      // the caller-supplied endpoint. Never touches the CLM library payload.
+      const signer = signers[0];
+      if (!signer || !signer.name.trim() || !/\S+@\S+\.\S+/.test(signer.email.trim())) {
+        toast.error('Signer required', 'Enter a name and a valid email for the signer.');
+        return;
+      }
+      setSending(true);
+      try {
+        const box = settings[rawPdfContext.docId] ?? { ...DEFAULTS };
+        const r = await api.post(rawPdfContext.sendUrl, {
+          signers: [{ name: signer.name.trim(), email: signer.email.trim(), order: 1 }],
+          is_sequential: isSequential,
+          expiry_days: expiryDays,
+          notes: notes.trim(),
+          document_settings: { [rawPdfContext.docId]: box },
+        });
+        toast.success('Sent for signature', r.data?.message ?? 'Sent for signature via Zoho Sign.');
+        onSent?.([rawPdfContext.docId]);
+        onClose();
+      } catch (e: any) {
+        const msg = e?.response?.data?.message
+          || (e?.response?.data?.errors && Object.values(e.response.data.errors).flat().join(' · '))
+          || 'Failed to send for signature.';
+        toast.error('Send failed', msg);
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
     if (isAgreement) {
       if (!agreementContext?.leadId || selectedIds.length === 0) {
         toast.error('Missing context', 'Lead or agreement selection is missing.');
@@ -1116,7 +1215,7 @@ export default function SalesCustomerSendForSignatureModal({
   // Agreement mode follows the same single-step pattern (the segment
   // details card already picked which agreements to send).
   const launchedFromStage3 = Array.isArray(preselectedDocIds) && preselectedDocIds.length > 0;
-  const singleStepFlow = launchedFromStage3 || isAgreement;
+  const singleStepFlow = launchedFromStage3 || isAgreement || isRaw;
 
   return createPortal(
     <div className="ssf-overlay" onMouseDown={e => { if (e.target === e.currentTarget && !sending) onClose(); }} role="dialog" aria-modal="true">

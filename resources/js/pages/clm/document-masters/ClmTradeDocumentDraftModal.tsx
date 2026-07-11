@@ -58,13 +58,27 @@ const PARTY_BUYER_CONSIGNEE = [
   { value: 'Buyer',     label: 'Customer',  icon: '👤' },
   { value: 'Consignee', label: 'Consignee', icon: '🚚' },
 ];
+// Supplier party types mirror the PO Type options (Material / Goods, FFD /
+// Transporter, Services) so a trade document's applicable supplier aligns with
+// how suppliers are classified on the Purchase Order.
 const PARTY_SUPPLIER = [
-  { value: 'Supplier-Material',       label: 'Material',       icon: '📦' },
-  { value: 'Supplier-Logistic',       label: 'Logistic',       icon: '🚛' },
-  { value: 'Supplier-Tech',           label: 'Tech',           icon: '💻' },
-  { value: 'Supplier-Advisory',       label: 'Advisory',       icon: '📊' },
-  { value: 'Supplier-Strategic Risk', label: 'Strategic Risk', icon: '⚠️' },
+  { value: 'Supplier-Material / Goods',  label: 'Material / Goods',  icon: '📦' },
+  { value: 'Supplier-FFD / Transporter', label: 'FFD / Transporter', icon: '🚛' },
+  { value: 'Supplier-Services',          label: 'Services',          icon: '🛠️' },
 ];
+
+// Legacy supplier party values (from before the 5→3 option change) → their
+// closest current value, so an existing document's saved supplier selection
+// still reflects (checked) when re-opened in the edit form.
+const SUPPLIER_PARTY_ALIAS: Record<string, string> = {
+  'Supplier':                'Supplier-Material / Goods',
+  'Supplier-Material':       'Supplier-Material / Goods',
+  'Supplier-Logistic':       'Supplier-FFD / Transporter',
+  'Supplier-Tech':           'Supplier-Services',
+  'Supplier-Advisory':       'Supplier-Services',
+  'Supplier-Strategic Risk': 'Supplier-Services',
+};
+const normalizeParty = (v: string): string => SUPPLIER_PARTY_ALIAS[v] ?? v;
 
 const STEPS = [
   { key: 1, label: 'Document Basic Details', sub: 'Form fields & party selection' },
@@ -433,7 +447,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setTitle(existing.title ?? '');
       setDocType(existing.doc_type ?? DOC_TYPES[0]);
       setPurpose(existing.purpose ?? '');
-      setParties(new Set((existing.party ?? '').split(',').map(s => s.trim()).filter(Boolean)));
+      setParties(new Set((existing.party ?? '').split(',').map(s => normalizeParty(s.trim())).filter(Boolean)));
       setRegulatory(existing.regulatory ?? 'less');
       setSegments((existing.segment ?? '').split(',').map(s => s.trim()).filter(Boolean));
       setContent(existing.content ?? '');

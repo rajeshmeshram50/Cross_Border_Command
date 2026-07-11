@@ -760,6 +760,19 @@ class SalesPdfController extends Controller
         return $pdf->stream($name);
     }
 
+    /**
+     * Render a PurchaseOrder to raw PDF BYTES (not a stream) — used to hand the
+     * document to Zoho Sign in PurchaseOrderController::sendForSignature. Same
+     * view + paper as streamPoPdf, only the terminal call differs (->output()).
+     */
+    public function renderPoPdfBytes($po, bool $withSignature = false, $vendor = null): string
+    {
+        $vendor = $vendor ?: ($po->vendor_id ? \App\Models\Vendor::with('primaryAddress')->find($po->vendor_id) : null);
+        $viewData = $this->buildPurchaseOrderViewData($po, $withSignature, $vendor);
+        @set_time_limit(180);
+        return Pdf::loadView('pdf.purchase-order', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true)->output();
+    }
+
     /** Public signed PDF view for the PO email's "View" button. */
     public function publicViewPurchaseOrder(int $id)
     {

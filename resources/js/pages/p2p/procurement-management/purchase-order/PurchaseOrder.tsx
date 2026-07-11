@@ -38,6 +38,9 @@ type PoRow = {
   edd: string;
   status: string;
   zoho: string;
+  /** True once the PO is e-signed (completed Zoho-Sign request). Gates the
+   *  Zoho Books sync — you must sign the PO before you can sync it. */
+  is_signed?: boolean;
 };
 
 const PAGE_SIZE = 10;
@@ -305,6 +308,13 @@ export default function PurchaseOrder() {
   const openZohoConfirm = (r: PoRow) => {
     if (r.zoho.toLowerCase() === 'sync') { toast.success(`${r.po} is already synced with Zohobook`); return; }
     if (!r.id) return;
+    // Gate: the PO must be e-signed before it can be pushed to Zoho Books. The
+    // backend enforces the same rule; this surfaces the validation up-front
+    // instead of after the confirm dialog.
+    if (!r.is_signed) {
+      toast.warning('Sign the PO first', 'This purchase order must be e-signed via Zoho Sign before it can be synced to Zoho Books.');
+      return;
+    }
     setMore(null);
     setSync({ id: r.id, po: r.po, supName: r.supName, busy: false });
   };
