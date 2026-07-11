@@ -161,6 +161,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   const [charges, setCharges] = useState({ ship: '', pack: '', other: '' });
   const [savingDetails, setSavingDetails] = useState(false);
   const [showMissing, setShowMissing] = useState(false);
+  // Map Invoice stays disabled until the product details are saved via "Save Details".
+  const [detailsSaved, setDetailsSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nexting, setNexting] = useState(false); // brief loader on Save & Next
   const [vaultOpen, setVaultOpen] = useState(false); // Supplier Evidence Vault modal
@@ -269,6 +271,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
       // Editing an already-saved SPI → reveal the Missing Product Details table
       // straight away (no need to re-click "Save Details" like on a fresh create).
       setShowMissing(true);
+      setDetailsSaved(true);
       setInvoiceNo(d.invoice_no ?? '');
       setInvoiceDate(d.invoice_date ?? '');
       setExistingAttach(d.attachment_path ?? null);
@@ -348,11 +351,17 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
 
   // Standalone (Direct) product rows: add a blank line, remove one, or fill a
   // line from a product-master pick (code / rate / gst / hsn auto-populate).
-  const addRow = () => setRows(rs => [...rs, {
+  const emptyRow = (): SpiRow => ({
     productId: null, code: '', piName: '', piQty: null, poName: '', poQty: 0, invoiced: 0, ratePo: 0, gst: 0,
     spiName: '', spiQty: '', hsn: '', spiRate: '',
-  }]);
+  });
+  const addRow = () => setRows(rs => [...rs, emptyRow()]);
   const removeRow = (i: number) => setRows(rs => rs.filter((_, idx) => idx !== i));
+  // Direct (Without-PO) new SPI: start the product table with one empty row.
+  useEffect(() => {
+    if (!withPo && !editId) setRows(rs => (rs.length === 0 ? [emptyRow()] : rs));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [withPo, editId]);
   const pickProduct = (i: number, name: string) => {
     const p = prodOpts.find(x => x.name === name);
     if (!p) { setRow(i, { spiName: name }); return; }
@@ -445,6 +454,12 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   // kept so Stage 2 updates the SAME row instead of creating a second one.
   const goStep2 = async () => {
     if (nexting) return;
+    // GST scrutiny must be current — block raising the invoice on a stale supplier.
+    if (scrutinyOld) {
+      toast.error('GST scrutiny overdue', `This supplier's scrutiny is more than ${SCRUTINY_STALE_MONTHS} months old. Update the supplier's GST scrutiny before raising the invoice.`);
+      document.querySelector('.spi-dt-scrutiny-warn')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     setNexting(true);
     try {
       const payload = buildPayload(existingAttach);
@@ -921,7 +936,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
               <button type="button" className="spi-dt-save-btn" disabled={savingDetails} onClick={() => {
                 if (savingDetails) return;
                 setSavingDetails(true);
-                setTimeout(() => { setSavingDetails(false); setShowMissing(true); toast.success('Product details saved'); }, 500);
+                setTimeout(() => { setSavingDetails(false); setShowMissing(true); setDetailsSaved(true); toast.success('Product details saved'); }, 500);
               }}>
                 {savingDetails ? (<><Spinner /> Saving…</>) : (<><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg> Save Details</>)}
               </button>
@@ -947,7 +962,21 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
           </div>
           <div className="spi-dt-sec-body">
             <div className="spi-dt-mtable-wrap">
-              <table className="spi-dt-mtable">
+              <table className="spi-dt-mtable spi-dt-mtable--fixed">
+                {/* Fixed column widths so the row doesn't resize when a product is picked. */}
+                <colgroup>
+                  <col style={{ width: '50px' }} />
+                  <col style={{ width: '92px' }} />
+                  <col style={{ minWidth: '180px' }} />
+                  <col style={{ width: '130px' }} />
+                  <col style={{ width: '130px' }} />
+                  <col style={{ width: '130px' }} />
+                  {intra
+                    ? (<><col style={{ width: '72px' }} /><col style={{ width: '72px' }} /><col style={{ width: '112px' }} /><col style={{ width: '112px' }} /></>)
+                    : (<><col style={{ width: '72px' }} /><col style={{ width: '112px' }} /></>)}
+                  <col style={{ width: '120px' }} />
+                  <col style={{ width: '54px' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th className="spi-dt-mc-c">SR NO</th>
@@ -1007,7 +1036,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 <button type="button" className="spi-dt-save-btn" disabled={savingDetails} onClick={() => {
                   if (savingDetails) return;
                   setSavingDetails(true);
-                  setTimeout(() => { setSavingDetails(false); setShowMissing(true); toast.success('Product details saved'); }, 500);
+                  setTimeout(() => { setSavingDetails(false); setShowMissing(true); setDetailsSaved(true); toast.success('Product details saved'); }, 500);
                 }}>
                   {savingDetails ? (<><Spinner /> Saving…</>) : (<><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg> Save Details</>)}
                 </button>
@@ -1093,7 +1122,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         </div>
         <div className="spi-dt-foot-r">
           <button type="button" className="spi-dt-btn-ghost" onClick={() => setStep(1)}><IcoChevronL /> Back</button>
-          <button type="button" className="spi-dt-btn-map" onClick={handleSave} disabled={saving}>{saving ? <><Spinner /> Saving…</> : <><IcoCheck /> Map Invoice</>}</button>
+          <button type="button" className="spi-dt-btn-map" onClick={handleSave} disabled={saving || !detailsSaved} title={!detailsSaved ? 'Click "Save Details" in Product Details first' : undefined}>{saving ? <><Spinner /> Saving…</> : <><IcoCheck /> Map Invoice</>}</button>
         </div>
       </div>
       )}
