@@ -112,6 +112,7 @@ export type VendorOpt = {
   status: string;
   type: string;   // supplier type (vendor_type_name) — shown in Map Supplier
   state: string;  // supplier's state (primaryAddress) — shown in Map Supplier
+  segmentIds: number[];  // segments the supplier deals in — gates product↔supplier mapping
 };
 
 type Tab = 'core' | 'sales' | 'quality';
@@ -789,6 +790,22 @@ export default function AddProductModal(props: {
       return;
     }
 
+    /* Segment gate — a supplier can only be mapped to a product in the SAME
+     * segment. The product's segment must be one the supplier deals in
+     * (vendor_segments). Only enforced on the client when we actually have the
+     * supplier's segment data (an older cached master bundle may lack it) — the
+     * backend enforces the same rule on save and is the authoritative gate, so
+     * nothing slips through even when the client can't check here. */
+    if (segmentId) {
+      const prodSeg = Number(segmentId);
+      const vendorSegs = vendorSelected.segmentIds ?? [];
+      if (vendorSegs.length > 0 && !vendorSegs.includes(prodSeg)) {
+        const segName = labelOf(optSegments, segmentId) || "this product's segment";
+        toast.error('Segment mismatch', `${vendorSelected.name} does not deal in "${segName}". Only a supplier in the same segment as the product can be mapped.`);
+        return;
+      }
+    }
+
     /* Edit mode — overlay the editable fields onto the existing row
      * and keep its id so the change is in-place rather than producing
      * a duplicate "added" row. Map date is preserved from the original
@@ -973,6 +990,7 @@ export default function AddProductModal(props: {
         status?: string | null;
         vendor_type_name?: string | null;
         state?: string | null;
+        segment_ids?: Array<number | string> | null;
         primary_address?: {
           contact_name?: string | null;
           contact_no?: string | null;
@@ -1026,6 +1044,7 @@ export default function AddProductModal(props: {
         status:      String(r.status ?? '').toLowerCase(),
         type:        String(r.vendor_type_name ?? ''),
         state:       String(r.state ?? ''),
+        segmentIds:  Array.isArray(r.segment_ids) ? r.segment_ids.map(Number).filter(Number.isFinite) : [],
       })));
     };
 

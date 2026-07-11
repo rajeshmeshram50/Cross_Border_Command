@@ -38,7 +38,7 @@ const I = {
   tabAgr: (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>),
 };
 
-export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId, buildPreview, onSignActive }: { po?: string; poId?: number | null; supplierId?: number | null; buildPreview?: () => Record<string, unknown>; onSignActive?: (active: boolean) => void }) {
+export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId, productIds, buildPreview, onSignActive }: { po?: string; poId?: number | null; supplierId?: number | null; productIds?: number[]; buildPreview?: () => Record<string, unknown>; onSignActive?: (active: boolean) => void }) {
   const toast = useToast();
   const [docs, setDocs] = useState<TradeDoc[]>(() => makeConstants(po));
   const [sel, setSel] = useState<Record<string, boolean>>({});
@@ -50,7 +50,15 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   useEffect(() => {
     if (!supplierId) { setDocs(makeConstants(po)); return; }
     let cancelled = false;
-    api.get(`/p2p/purchase-orders/suppliers/${supplierId}/trade-documents`).then(r => {
+    // Fetch trade docs / agreements by the PO's PRODUCT segments. Prefer the
+    // selected product ids (known from the wizard's Stage-2 rows even before the
+    // PO is saved — which is exactly when this screen is used); fall back to the
+    // saved PO id, then to the supplier's own segments (backend-side).
+    const params: Record<string, string | number> =
+      productIds && productIds.length ? { product_ids: productIds.join(',') }
+      : poId ? { po_id: poId }
+      : {};
+    api.get(`/p2p/purchase-orders/suppliers/${supplierId}/trade-documents`, { params }).then(r => {
       if (cancelled) return;
       const d = r.data?.data;
       const list: TradeDoc[] = [];
@@ -68,7 +76,8 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
       setDocs(list.length ? list : makeConstants(po));
     }).catch(() => { if (!cancelled) setDocs(makeConstants(po)); });
     return () => { cancelled = true; };
-  }, [supplierId, po]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supplierId, poId, po, (productIds ?? []).join(',')]);
 
   // ── Zoho Sign (reuse the CLM Send-for-Signature flow for the supplier) ──
   type Party = { id: string; db_id?: number; company: string; contact?: string; email?: string };
@@ -79,6 +88,9 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   // Purchase Order send-for-signature — routes the PO PDF through the SAME
   // shared modal in its raw-PDF mode (supplier is the single signer).
   const [poSign, setPoSign] = useState(false);
+  // True when a BULK send bundles the PO PDF alongside CLM trade docs in one
+  // Zoho request (the PO row was checked with ≥1 real trade document).
+  const [bundlePoActive, setBundlePoActive] = useState(false);
   // The shared sign modal (z ~265k) sits below the PO wizard/modal (z 2.5M+), so
   // signal the parent to hide itself while the sign modal is open.
   useEffect(() => { onSignActive?.(Array.isArray(sendDocIds) || poSign); }, [sendDocIds, poSign, onSignActive]);
@@ -111,10 +123,17 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   const launchSign = (rowIds: string[]) => {
     if (!party?.db_id) { toast.error('Supplier required', 'Select a supplier first to send documents for signature.'); return; }
     const parsed = rowIds.map(parseRow).filter(Boolean) as Array<{ libId: number; kind: 'trade' | 'agreement' }>;
-    if (rowIds.some(id => id === 'po' || id === 'pa') && !parsed.length) { toast.info('Purchase Order / Agreement', 'Generate the PO document first — it is not a CLM library document.'); return; }
-    if (!parsed.length) return;
-    setSentBatch(rowIds.filter(id => parseRow(id)));
+    const wantsPo = rowIds.includes('po') && !!poId;   // bundle the PO PDF into this request
+    if (!parsed.length) {
+      // Only the PO (no CLM docs) is selected → send it on its own.
+      if (wantsPo) { setPoSign(true); return; }
+      if (rowIds.some(id => id === 'po' || id === 'pa')) { toast.info('Purchase Order / Agreement', 'Generate the PO document first — it is not a CLM library document.'); return; }
+      return;
+    }
+    setSentBatch(rowIds.filter(id => id === 'po' || parseRow(id)));
     setSendKind(parsed[0].kind);
+    // The PO only bundles with the Trade Documents tab (it's not an agreement).
+    setBundlePoActive(wantsPo && parsed[0].kind === 'trade');
     setSendDocIds(parsed.map(p => p.libId));
   };
   // The "Purchase Order" row isn't a CLM library doc — route it through the
@@ -122,7 +141,11 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   // back to the plain PDF preview when the PO hasn't been saved yet.
   const sendDoc = (id: string) => {
     if (id === 'po') {
-      if (!poId) { toast.info('Save the PO first', 'Save the purchase order before sending it for signature.'); return; }
+      // The wizard persists the PO only on the final "Generate Purchase Order",
+      // so during creation there's no saved id to raise a Zoho request against —
+      // show the draft PO preview instead of blocking. Once the PO is saved
+      // (edit mode / after generate), open the full sign modal.
+      if (!poId) { openPoPdf(false); return; }
       if (!party?.db_id) { toast.error('Supplier required', 'Select a supplier first to send the PO for signature.'); return; }
       setPoSign(true);
       return;
@@ -233,7 +256,15 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
           .filter(d => sentBatch.includes(d.id))
           .map(d => { const p = parseRow(d.id); return p ? { id: p.libId, name: d.name, sub: d.sub } : null; })
           .filter(Boolean) as { id: number; name: string; sub?: string }[]}
-        onClose={() => { setSendDocIds(null); setSentBatch([]); }}
+        /* Bundle the PO PDF into this request when it was checked alongside the
+           trade docs — it rides as one extra document in the same Zoho request. */
+        bundlePo={bundlePoActive && poId ? {
+          id: poId,
+          code: po,
+          name: `Purchase Order · ${po}`,
+          previewUrl: `/p2p/purchase-orders/${poId}/pdf?signature=1`,
+        } : null}
+        onClose={() => { setSendDocIds(null); setSentBatch([]); setBundlePoActive(false); }}
         onSent={onSigSent}
       />
 
@@ -247,7 +278,7 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
           docId: poId,
           code: po,
           title: `Purchase Order · ${po}`,
-          previewUrl: `/p2p/purchase-orders/${poId}/pdf?signature=0`,
+          previewUrl: `/p2p/purchase-orders/${poId}/pdf?signature=1`,
           sendUrl: `/p2p/purchase-orders/${poId}/send-for-signature`,
         } : null}
         onClose={() => setPoSign(false)}
