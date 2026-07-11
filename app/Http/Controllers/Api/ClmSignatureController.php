@@ -1213,13 +1213,12 @@ class ClmSignatureController extends Controller
     /** Render a CTC contract body to a signature-ready PDF (page-shell + org sig). */
     private function renderCtcPdf(CtcContract $c, array $signers, ?array $headerOverride, ?array $footerOverride, ?string $contentOverride, string $requestUuid)
     {
+         @set_time_limit(180);
+
         $sourceHtml = $contentOverride !== null ? $contentOverride : (string) $c->content;
         $sig = $this->ctcOrgSignatureDataUri($c);
         $sigHtml = $sig ? '<img src="' . $sig . '" alt="Authorised Signatory" style="max-height:80px;max-width:210px;object-fit:contain;" />' : '';
         $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', $sigHtml, $sourceHtml);
-        // Fill party ({{customer.*}}/{{consignee.*}}/{{supplier.*}}) + org tokens
-        // with real data and blank anything left over, so the preview / signed
-        // PDF shows actual values, never raw {{...}} placeholders.
         $processedHtml = $this->resolveCtcContent($processedHtml, $c);
 
         $client = Client::find($c->client_id);

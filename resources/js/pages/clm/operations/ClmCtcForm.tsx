@@ -2198,8 +2198,10 @@ function Field({ t, label, green, error, children }: { t: OpsTokens; label: stri
 type Approver = { name: string; email: string; initials: string; grad: string; tags: [string, string][]; locked: boolean };
 function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens; orgName: string; onClose: () => void; onSubmit: (data: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean> }) {
   const [approvers, setApprovers] = useState<Approver[]>([]);
-  const [days, setDays] = useState(7);
-  const [reminder, setReminder] = useState(5);
+  // Fixed default approval window — the on-screen steppers were removed, but
+  // the values still drive the timeline preview and the backend payload.
+  const [days] = useState(7);
+  const [reminder] = useState(5);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);   // in-flight guard — blocks duplicate submits
   const addApprover = () => setPickerOpen(true);
@@ -2217,16 +2219,6 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
     setPickerOpen(false);
   };
   const tagBg = (c: string) => c === '#D97706' ? (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7') : c === '#DC2626' ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : (t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE');
-  const stepper = (label: string, val: number, set: (n: number) => void, unit?: string, icon?: React.ReactNode) => (
-    <div style={{ padding: '9px 11px', borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>{icon}<div style={{ fontSize: 7.5, fontWeight: 700, color: t.dark ? '#a78bfa' : '#7C3AED', letterSpacing: '.08em', textTransform: 'uppercase' }}>{label}</div></div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button onClick={() => set(Math.max(1, val - 1))} style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F8F6FF', cursor: 'pointer', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 12, flexShrink: 0 }}>−</button>
-        <div style={{ flex: 1, textAlign: 'center', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 2 }}><span style={{ fontSize: 15, fontWeight: 800, color: t.textStrong }}>{val}</span>{unit && <span style={{ fontSize: 9, fontWeight: 600, color: t.textMuted }}>{unit}</span>}</div>
-        <button onClick={() => set(val + 1)} style={{ width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F8F6FF', cursor: 'pointer', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 12, flexShrink: 0 }}>+</button>
-      </div>
-    </div>
-  );
   // Realistic dates: approval starts today, is due after `days`, and the
   // reminder fires `reminder` days before the due date (clamped to ≥ start).
   const fmtD = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -2281,12 +2273,7 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
               </div>
             </div>
           </div>
-          {/* days + reminder */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {stepper('Days to Approve', days, setDays)}
-            {stepper('Reminder', reminder, setReminder, 'd', <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>)}
-          </div>
-          {/* Realistic timeline derived from the steppers above */}
+          {/* Realistic timeline derived from the default approval window */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 11px', borderRadius: 10, background: t.dark ? 'rgba(124,58,237,.10)' : '#F6F3FF', border: `1px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#E4DEFF'}` }}>
             {([['Starts', startD, '#7C3AED'], ['Due by', dueD, '#0891b2'], ['Reminder', remindD, '#D97706']] as [string, Date, string][]).map(([lbl, d, c], i) => (
               <div key={lbl} style={{ flex: 1, textAlign: i === 0 ? 'left' : i === 1 ? 'center' : 'right' }}>
