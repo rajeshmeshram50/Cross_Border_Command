@@ -390,6 +390,10 @@ class SupplierPurchaseInvoiceController extends Controller
 
         if (!Storage::disk('public')->exists($path)) abort(404);
 
+        // ?disposition=inline → open in-browser (View); otherwise force a download.
+        if ($request->query('disposition') === 'inline') {
+            return Storage::disk('public')->response($path, basename($path));
+        }
         return Storage::disk('public')->download($path, basename($path));
     }
 

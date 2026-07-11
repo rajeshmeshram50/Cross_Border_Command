@@ -6,7 +6,6 @@ import SpiDetail from './SpiDetail';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { useToast } from '../../../../contexts/ToastContext';
-import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import api from '../../../../api';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -163,8 +162,19 @@ export default function SupplierPurchaseInvoice() {
     catch { toast.error('Sync failed', 'Could not sync this invoice.'); }
   };
 
-  // Download the attachment by STREAMING it through the backend (same-origin,
-  // works on the Azure-Blob server where a direct blob fetch is CORS-blocked).
+  // View / download the attachment by STREAMING it through the backend
+  // (same-origin, works on the Azure-Blob server where a direct blob fetch is
+  // CORS-blocked and the raw /storage path 404s). Same pattern the CLM/vault
+  // downloads use — fetch the bytes via our authed endpoint, then open or save.
+  const viewRow = async (r: SpiRow) => {
+    if (!r.attach) { toast.info('View SPI', 'No attachment on this invoice.'); return; }
+    try {
+      const resp = await api.get('/p2p/supplier-purchase-invoices/download', { params: { path: r.attach, disposition: 'inline' }, responseType: 'blob' });
+      const url = URL.createObjectURL(resp.data as Blob);
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch { toast.error('Could not open', 'Failed to open the attachment.'); }
+  };
   const downloadRow = async (r: SpiRow) => {
     setMenu(null);
     if (!r.attach) { toast.info('Download SPI', 'No attachment on this invoice.'); return; }
@@ -332,7 +342,7 @@ export default function SupplierPurchaseInvoice() {
                   <td className="spi-c-r spi-amt">{inr(r.netPayable)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.totalPaid)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.balance)}</td>
-                  <td>{r.attach ? <a className="spi-attach" href={resolveFileUrl(r.attach)} target="_blank" rel="noreferrer" title={r.attach.split('/').pop()}><IcoClip /><span className="spi-attach-name">{r.attach.split('/').pop()}</span></a> : <span className="spi-date-sub">—</span>}</td>
+                  <td>{r.attach ? <button type="button" className="spi-attach" onClick={() => void viewRow(r)} title={`View ${r.attach.split('/').pop()}`}><IcoClip /><span className="spi-attach-name">{r.attach.split('/').pop()}</span></button> : <span className="spi-date-sub">—</span>}</td>
                   <td className="spi-c-c">
                     <span className={`spi-zb ${r.zoho === 'sync' ? 'spi-zb-sync' : 'spi-zb-not'}`}><span className="spi-zb-dot" />{r.zoho === 'sync' ? 'Sync' : 'Not Sync'}</span>
                   </td>

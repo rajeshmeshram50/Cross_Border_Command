@@ -196,7 +196,7 @@
 .spi-strong { font-weight:700; color:#0f172a; }
 .spi-amt { font-weight:600; font-variant-numeric:tabular-nums; }
 .spi-attach { display:inline-flex; align-items:center; gap:6px; max-width:150px; padding:5px 10px; border-radius:8px; background:#eafcff;
-  color:#0e7490; font-size:11px; font-weight:700; border:1.5px solid #c8eef6; cursor:pointer; text-decoration:none; overflow:hidden; vertical-align:middle; }
+  color:#0e7490; font-family:inherit; font-size:11px; font-weight:700; border:1.5px solid #c8eef6; cursor:pointer; text-decoration:none; overflow:hidden; vertical-align:middle; }
 .spi-attach:hover { background:#e0f7fb; border-color:#22d3ee; }
 .spi-attach svg { flex-shrink:0; }
 .spi-attach-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
