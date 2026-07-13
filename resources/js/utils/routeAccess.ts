@@ -116,6 +116,7 @@ const P2P_LEAF: Record<string, string> = {
   '/p2p/case-to-case': 'p2p.case_to_case',
   '/p2p/purchase-order': 'p2p.po',
   '/p2p/supplier-purchase-invoice': 'p2p.spi',
+  '/p2p/debit-note': 'p2p.debit_note',
 };
 
 // Known module prefixes — a path under any of these that fails to resolve to a

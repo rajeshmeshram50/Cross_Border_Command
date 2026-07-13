@@ -280,6 +280,7 @@ export const P2P_GROUPS: MenuGroup[] = [
     children: [
       { id: 'p2p.po', icon: 'FileText', label: 'Purchase Order (PO)' },
       { id: 'p2p.spi', icon: 'CreditCard', label: 'Supplier Purchase Invoice (SPI)' },
+      { id: 'p2p.debit_note', icon: 'FileText', label: 'Debit Note' },
     ],
   },
 ];

@@ -109,12 +109,27 @@ class ClmTncController extends Controller
 
         $data = $request->validate([
             // segment now holds a CSV (one for "highly", many for "less").
+            // Debit/Credit Note documents carry NO segment/regulatory/party —
+            // they're saved blank (rendered as "—" in the list), so regulatory
+            // accepts an empty string and party is no longer required.
             'segment'    => 'nullable|string|max:1024',
-            'regulatory' => 'nullable|in:highly,less',
+            'regulatory' => 'nullable|string|max:16',
             'category'   => 'required|string|max:255',
-            'party'      => 'required|string|max:255',
+            'party'      => 'nullable|string|max:255',
             'content'    => 'nullable|string',
         ]);
+
+        // Debit/Credit Note documents carry NO segment/regulatory/party. Force
+        // them blank HERE (not via the payload): Laravel's
+        // ConvertEmptyStringsToNull middleware turns the frontend's '' into
+        // null, so the "?? 'General'/'highly'" fallbacks below would otherwise
+        // wrongly backfill them. Empty string keeps the NOT-NULL columns valid
+        // and the list renders "—". Matched by category name.
+        if ($this->isNoteCategory($data['category'] ?? '')) {
+            $data['segment'] = '';
+            $data['regulatory'] = '';
+            $data['party'] = '';
+        }
 
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
@@ -123,10 +138,11 @@ class ClmTncController extends Controller
                 'client_id'  => $user->client_id,
                 'branch_id'  => $user->branch_id,   // branch-owned; null for client-level users → shared
                 'code'       => $code,
+                // '' preserved (?? only catches null) so note docs stay blank.
                 'segment'    => $data['segment'] ?? 'General',
                 'regulatory' => $data['regulatory'] ?? 'highly',
                 'category'   => trim($data['category']),
-                'party'      => trim($data['party']),
+                'party'      => trim((string) ($data['party'] ?? '')),
                 'content'    => $data['content'] ?? null,
                 'created_by' => $user->id,
                 'updated_by' => $user->id,
@@ -146,15 +162,29 @@ class ClmTncController extends Controller
         }
 
         $data = $request->validate([
+            // (see libraryStore) — keep the same relaxed rules on update.
             'segment'    => 'nullable|string|max:1024',
-            'regulatory' => 'nullable|in:highly,less',
+            'regulatory' => 'nullable|string|max:16',
             'category'   => 'sometimes|required|string|max:255',
-            'party'      => 'sometimes|required|string|max:255',
+            'party'      => 'sometimes|nullable|string|max:255',
             'content'    => 'nullable|string',
         ]);
         $data['updated_by'] = $user->id;
+        // Same note-doc blanking as libraryStore (category may be omitted on a
+        // partial update, so fall back to the row's current category).
+        if ($this->isNoteCategory($data['category'] ?? $row->category)) {
+            $data['segment'] = '';
+            $data['regulatory'] = '';
+            $data['party'] = '';
+        }
         $row->update($data);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
+    }
+
+    /** Debit/Credit Note documents store no segment / regulatory / party. */
+    private function isNoteCategory(?string $name): bool
+    {
+        return in_array(mb_strtolower(trim((string) $name)), ['debit note', 'credit note'], true);
     }
 
     public function libraryDestroy(Request $request, $id)

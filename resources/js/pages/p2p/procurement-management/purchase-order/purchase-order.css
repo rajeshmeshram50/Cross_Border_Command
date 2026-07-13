@@ -480,6 +480,11 @@
 .pof-dd-pop--portal .pof-dd-pop__opt.is-sel .pof-dd-pop__ck{opacity:1;}
 [data-bs-theme="dark"] .pof-dd-pop--portal{background:#0f2731;border-color:#173947;color:#cfe3ea;}
 [data-bs-theme="dark"] .pof-dd-pop--portal .pof-dd-pop__opt{color:#cfe3ea;}
+/* Portalled field dropdown (PO Type / Document Type / Delivery Location …) renders
+   on document.body, outside .pom — its hover + selected rows kept a light fill. */
+[data-bs-theme="dark"] .pof-dd-pop--portal .pof-dd-pop__opt:hover{background:#12303c;color:#cffafe;}
+[data-bs-theme="dark"] .pof-dd-pop--portal .pof-dd-pop__opt.is-sel{background:#0b3540;color:#67e8f9;}
+[data-bs-theme="dark"] .pof-dd__optcode{color:#67e8f9;}
 .pom .pof-toggle{height:40px;display:flex;align-items:center;gap:11px;padding:0 13px;border:1.5px solid #e6eef3;border-radius:9px;background:#f9fdfe;cursor:pointer;user-select:none;box-sizing:border-box;transition:border-color .15s,background .15s,box-shadow .15s;}
 .pom .pof-toggle:hover{border-color:#bfe5ee;background:#fff;}
 .pom .pof-toggle__sw{position:relative;width:38px;height:21px;border-radius:20px;background:#cdd8e1;flex-shrink:0;transition:background .2s ease;}
@@ -770,6 +775,157 @@
 [data-bs-theme="dark"] .pom .cposum-stage{background:#0f2731;border-color:#173947;}
 [data-bs-theme="dark"] .pom .cposum-f{background:#0c2029;}
 [data-bs-theme="dark"] .pom .cposum-f__v{color:#cfe3ea;}
+
+/* ── Wizard dark mode (inner content surfaces) ────────────────────────────
+ * The block above covers the shell, inputs and sub-cards. These rules cover
+ * every surface that still rendered on a light background inside the wizard
+ * body — the hero strip, step cards, legal cards, the product/charges/totals
+ * tables, the previous-stage summary, the choice modal and the shipment
+ * dropdown — so the whole flow reads correctly under Velzon's dark theme. */
+
+/* Hero strip: the '.p2pj-headerstrip .cstrip' light gradient is defined later
+   in the file and out-specifies the shared '.cstrip--teal' dark rule, so
+   re-assert the dark hero at the header scope (title/sub already recoloured). */
+[data-bs-theme="dark"] .pom .p2pj-headerstrip .cstrip{background:linear-gradient(110deg,#0b2430 0%,#0c2c39 45%,#0e3646 100%);box-shadow:inset 0 -1px 0 rgba(34,211,238,.12);}
+[data-bs-theme="dark"] .pom .cstrip__divider{background:linear-gradient(to bottom,transparent,rgba(34,211,238,.3) 40%,rgba(34,211,238,.3) 60%,transparent);}
+[data-bs-theme="dark"] .pom .p2pj-steps-row{background:linear-gradient(180deg,#0c2029,#0a1a22);}
+[data-bs-theme="dark"] .pom .cpd-ref__pill{background:rgba(255,255,255,.06);border-color:rgba(34,211,238,.28);box-shadow:none;}
+[data-bs-theme="dark"] .pom .cpd-ref__l{color:#67e8f9;}
+[data-bs-theme="dark"] .pom .cpd-ref__v{color:#cffafe;}
+[data-bs-theme="dark"] .pom .cpd-ref__dots>span{background:rgba(34,211,238,.4);}
+
+/* Step cards — the completed (done) card keeps a light gradient via higher
+   specificity; recolour it and every text tier so it reads on the dark shell. */
+[data-bs-theme="dark"] .pom .p2sc{background:#12303c;border-color:#1c4553;box-shadow:none;}
+[data-bs-theme="dark"] .pom .p2sc:hover:not(.p2sc-active){border-color:#1c5563;box-shadow:0 6px 18px rgba(0,0,0,.35);}
+[data-bs-theme="dark"] .pom .p2sc.p2sc-done{background:linear-gradient(135deg,#103240,#0e2d3a 60%,#0c2733);border-color:#1c5563;}
+[data-bs-theme="dark"] .pom .p2sc-step{color:#7c93a8;}
+[data-bs-theme="dark"] .pom .p2sc.p2sc-done .p2sc-step{color:#5eb7cc;}
+[data-bs-theme="dark"] .pom .p2sc-num{color:#3a5464;}
+[data-bs-theme="dark"] .pom .p2sc.p2sc-done .p2sc-num{color:#3aa6c0;}
+[data-bs-theme="dark"] .pom .p2sc.p2sc-done .p2sc-title{color:#cffafe;}
+[data-bs-theme="dark"] .pom .p2sc-desc{color:#6b8494;}
+[data-bs-theme="dark"] .pom .p2sc.p2sc-done .p2sc-desc{color:#5f97a7;}
+[data-bs-theme="dark"] .pom .p2sc-done-pill{background:rgba(34,211,238,.14);border-color:rgba(34,211,238,.3);color:#67e8f9;box-shadow:none;}
+
+/* Footer buttons + dots */
+[data-bs-theme="dark"] .pom .p2pj-footer__step{color:#22d3ee;}
+[data-bs-theme="dark"] .pom .p2pj-fbtn--ghost:hover{background:#12303c;border-color:#2a6a7d;}
+[data-bs-theme="dark"] .pom .p2pj-fdot{background:#274656;}
+
+/* Field labels + placeholders */
+[data-bs-theme="dark"] .pom .pof-f label,[data-bs-theme="dark"] .pom .cpd-chg-f label{color:#8ba7b6;}
+[data-bs-theme="dark"] .pom .pof-in::placeholder,[data-bs-theme="dark"] .pom .cpd-terms__ta::placeholder,[data-bs-theme="dark"] .pom .cpd-in::placeholder{color:#5f8493;}
+
+/* Section sub-cards (Supplier / Address / GST) header strip + fields badge */
+[data-bs-theme="dark"] .pom .pof-sub__hd{background:linear-gradient(110deg,#0c2630,#103642 60%,#0c2c38);border-bottom-color:#173947;}
+[data-bs-theme="dark"] .pom .pof-sub__n{background:#0b3540;border-color:#1c5563;color:#67e8f9;}
+[data-bs-theme="dark"] .pom .pof-frozen{background:linear-gradient(180deg,#0c2029,#0b1e27);border-color:#1c4553;}
+[data-bs-theme="dark"] .pom .pof-frozen__val{color:#b7d3dd;}
+[data-bs-theme="dark"] .pom .pof-frozen__tag{background:#0b3540;border-color:#1c5563;color:#67e8f9;}
+[data-bs-theme="dark"] .pom .pof-toggle__txt{color:#9db3c1;}
+[data-bs-theme="dark"] .pom .pof-toggle__sw{background:#274656;}
+[data-bs-theme="dark"] .pom .pof-dd-pop__opt{color:#cfe3ea;}
+[data-bs-theme="dark"] .pom .pof-dd-pop__opt:hover{background:#12303c;color:#cffafe;}
+[data-bs-theme="dark"] .pom .pof-dd-pop__opt.is-sel{background:#0b3540;color:#67e8f9;}
+
+/* GST scrutiny overdue — amber on dark */
+[data-bs-theme="dark"] .pom .pof-scrutiny-badge{background:#3a2e12;border-color:#6b5320;color:#fbbf24;}
+[data-bs-theme="dark"] .pom .pof-scrutiny-warn{background:linear-gradient(110deg,#2a2310,#241d0c);border-color:#5c4a1c;color:#fcd34d;}
+[data-bs-theme="dark"] .pom .pof-scrutiny-warn b{color:#fbbf24;}
+
+/* Supplier legal status */
+[data-bs-theme="dark"] .pom .splegal-bar,[data-bs-theme="dark"] .pom .splegal-card__bar{background:#0b2028;box-shadow:inset 0 1px 2px rgba(0,0,0,.4);}
+[data-bs-theme="dark"] .pom .splegal-pct{color:#cffafe;}
+[data-bs-theme="dark"] .pom .splegal-summary{color:#9db3c1;}
+[data-bs-theme="dark"] .pom .splegal-summary strong{color:#cffafe;}
+[data-bs-theme="dark"] .pom .splegal-badge{background:#16303b;border-color:#1c4553;color:#9db3c1;}
+[data-bs-theme="dark"] .pom .splegal-badge.ok{background:#0b3540;border-color:#1c5563;color:#67e8f9;}
+[data-bs-theme="dark"] .pom .splegal-badge.warn{background:#3a2e12;border-color:#6b5320;color:#fbbf24;}
+[data-bs-theme="dark"] .pom .splegal-card{background:linear-gradient(180deg,#0f2731,#0c2029);border-color:#173947;}
+[data-bs-theme="dark"] .pom .splegal-card__nm{color:#cfe3ea;}
+[data-bs-theme="dark"] .pom .splegal-empty{color:#7fa3b1;}
+
+/* Product table (cpd) — base bg transparent so odd rows drop onto the panel */
+[data-bs-theme="dark"] .pom .cpd-tbl{background:transparent;}
+[data-bs-theme="dark"] .pom .cpd-tbl tbody tr:hover,[data-bs-theme="dark"] .pom .cptd-tbl tbody tr:hover{background:#12303c;}
+[data-bs-theme="dark"] .pom .cpd-name{color:#cfe3ea;}
+[data-bs-theme="dark"] .pom .cpd-code{background:#0b2028;border-color:#1c4553;color:#67e8f9;}
+[data-bs-theme="dark"] .pom .cpd-cost{color:#cffafe;}
+[data-bs-theme="dark"] .pom .cpd-in{background:#0b1e27;border-color:#1c4553;color:#cffafe;}
+[data-bs-theme="dark"] .pom .cpd-in:hover{border-color:#2a6a7d;}
+[data-bs-theme="dark"] .pom .cpd-in--miss{background:#2a1614;border-color:#6b2b26;color:#f87171;}
+[data-bs-theme="dark"] .pom .cpd-del{background:#2a1614;border-color:#6b2b26;color:#f87171;}
+[data-bs-theme="dark"] .pom .cpd-del:hover{background:#3a1c19;border-color:#8a3a34;}
+[data-bs-theme="dark"] .pom .cpd-tbl tfoot .cpd-addtr td{background:#0f2731;border-top-color:#173947;}
+[data-bs-theme="dark"] .pom .cpd-add-btn{background:#0b3540;border-color:#1c5563;color:#67e8f9;}
+[data-bs-theme="dark"] .pom .cpd-add-btn:hover{background:#12414f;border-color:#2a6a7d;}
+[data-bs-theme="dark"] .pom .cpd-miss-empty{background:#0b2028;border-color:#1c4553;color:#67e8f9;}
+
+/* Trade Documents / Agreements table (cptd) — base bg transparent so odd rows
+   drop onto the dark panel; recolour doc name, dates, badges + action buttons. */
+[data-bs-theme="dark"] .pom .cptd-tbl{background:transparent;}
+[data-bs-theme="dark"] .pom .cptd-tbl tbody tr.cptd-rowsel{background:#0e2b33;}
+[data-bs-theme="dark"] .pom .cptd-docname{color:#cfe3ea;}
+[data-bs-theme="dark"] .pom .cptd-docsub{color:#7fa3b1;}
+[data-bs-theme="dark"] .pom .cptd-date{color:#9db3c1;}
+[data-bs-theme="dark"] .pom .cptd-opt{background:#16303b;border-color:#1c4553;color:#9db3c1;}
+[data-bs-theme="dark"] .pom .cptd-act{background:#0b1e27;border-color:#1c4553;color:#67e8f9;}
+[data-bs-theme="dark"] .pom .cptd-act:hover{background:#12303c;border-color:#22d3ee;}
+[data-bs-theme="dark"] .pom .cptd-attach{background:#0b2028;border-color:#1c5563;color:#67e8f9;}
+[data-bs-theme="dark"] .pom .cptd-attach:hover{background:#12414f;border-color:#22d3ee;}
+[data-bs-theme="dark"] .pom .cptd-lbtn{background:#0b2028;border-color:#1c5563;color:#67e8f9;}
+[data-bs-theme="dark"] .pom .cptd-lbtn:hover:not(:disabled){background:#12414f;border-color:#22d3ee;}
+[data-bs-theme="dark"] .pom .cptd-lbtn--signed{background:#0e2b1f;border-color:#1f5a3f;color:#34d399;}
+[data-bs-theme="dark"] .pom .cptd-lbtn--coo{background:#2a2310;border-color:#5c4a1c;color:#fbbf24;}
+[data-bs-theme="dark"] .pom .cptd-bulk__cnt{color:#9db3c1;}
+[data-bs-theme="dark"] .pom .cptd-bulk__cnt strong{color:#cffafe;}
+
+/* Additional charges + totals cards */
+[data-bs-theme="dark"] .pom .cpd-sum__charges{background:#0c2029;border-color:#173947;}
+[data-bs-theme="dark"] .pom .cpd-chg-in{background:#0b1e27;border-color:#1c4553;color:#cffafe;}
+[data-bs-theme="dark"] .pom .cpd-chg-cur{color:#7fa3b1;}
+[data-bs-theme="dark"] .pom .cpd-totbox{background:linear-gradient(180deg,#0f2731,#0c2029);border-color:#1c4553;}
+[data-bs-theme="dark"] .pom .cpd-totrow{border-bottom-color:#173947;}
+[data-bs-theme="dark"] .pom .cpd-totrow__k{color:#9db3c1;}
+[data-bs-theme="dark"] .pom .cpd-totrow__v{color:#cffafe;}
+
+/* Terms label + textarea text (bg was already dark; text stayed dark → invisible) */
+[data-bs-theme="dark"] .pom .cpd-terms__lbl{color:#cfe3ea;}
+[data-bs-theme="dark"] .pom .cpd-terms__ta{color:#cffafe;}
+
+/* Previous-stage summary (cposum) */
+[data-bs-theme="dark"] .pom .cposum-stage__hd{background:linear-gradient(180deg,#0f2731,#0c2029);border-bottom-color:#173947;}
+[data-bs-theme="dark"] .pom .cposum-stage__t{color:#cfe3ea;}
+[data-bs-theme="dark"] .pom .cposum-grid{background:#173947;border-color:#173947;}
+[data-bs-theme="dark"] .pom .cposum-f__l{color:#7fa3b1;}
+[data-bs-theme="dark"] .pom .cposum-f__v.is-empty{color:#5f8493;}
+
+/* Choice modal (cpo) */
+[data-bs-theme="dark"] .pom .cpo-sec{color:#7fa3b1;}
+[data-bs-theme="dark"] .pom .cpo-opt{border-color:#1c4553;}
+[data-bs-theme="dark"] .pom .cpo-opt__desc{color:#9db3c1;}
+[data-bs-theme="dark"] .pom .cpo-opt__rad{background:#0b1e27;border-color:#274656;}
+[data-bs-theme="dark"] .pom .cpo-ft{border-top-color:#173947;}
+[data-bs-theme="dark"] .pom .cpo-ft__note{background:#0c2029;border-color:#173947;color:#7fa3b1;}
+[data-bs-theme="dark"] .pom .cpo-btn--g{background:#16303b;border-color:#1c4553;color:#9db3c1;}
+[data-bs-theme="dark"] .pom .cpo-btn--g:hover{background:#12303c;border-color:#2a6a7d;}
+[data-bs-theme="dark"] .pom .cpo-note{background:linear-gradient(110deg,#2a2310,#241d0c);border-color:#5c4a1c;color:#fcd34d;}
+[data-bs-theme="dark"] .pom .cpo-note b{color:#fbbf24;}
+[data-bs-theme="dark"] .pom .cpo-err{background:#2a1614;border-color:#6b2b26;color:#f87171;}
+
+/* Shipment dropdown (mpv-dd) inside the choice modal */
+[data-bs-theme="dark"] .pom .mpv-dd-trigger{background:#0b1e27;border-color:#1c4553;color:#cffafe;}
+[data-bs-theme="dark"] .pom .mpv-dd-trigger:hover{background:#0b1e27;border-color:#2a6a7d;}
+/* Open state: the light '.mpv-dd.open .mpv-dd-trigger' rule out-specifies the
+   base dark trigger rule, so re-assert the dark fill at matching specificity. */
+[data-bs-theme="dark"] .pom .mpv-dd.open .mpv-dd-trigger{background:#0b1e27;border-color:#22d3ee;}
+[data-bs-theme="dark"] .pom .mpv-dd-val.ph{color:#5f8493;}
+[data-bs-theme="dark"] .pom .mpv-dd-code,[data-bs-theme="dark"] .pom .mpv-dd-opt__code{background:#0b2028;border-color:#1c5563;color:#67e8f9;}
+[data-bs-theme="dark"] .pom .mpv-dd-panel{background:#0f2731;border-color:#173947;}
+[data-bs-theme="dark"] .pom .mpv-dd-opt:hover{background:#12303c;}
+[data-bs-theme="dark"] .pom .mpv-dd-opt.sel{background:#0b3540;}
+[data-bs-theme="dark"] .pom .mpv-dd-opt__name{color:#cfe3ea;}
 
 /* ════════════════════════════════════════════════════════════════════════
  * MasterDatePicker inside the PO wizard (body.pom-dp) — the popup portals to

@@ -106,6 +106,9 @@ const PARTY_BUYER_CONSIGNEE = [
 const PARTY_SUPPLIER = [
   { value: 'Supplier-Material', label: 'Material', icon: '📦' },
 ];
+const ALL_PARTY_VALUES = [...PARTY_BUYER_CONSIGNEE, ...PARTY_SUPPLIER].map(p => p.value);
+const NOTE_DOC_NAMES = new Set(['debit note', 'credit note']);
+const isNoteDocName = (name: string) => NOTE_DOC_NAMES.has(name.trim().toLowerCase());
 
 const STEPS = [
   { key: 1, label: 'T&C Basic Details', sub: 'Segment, category & party' },
@@ -259,19 +262,31 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
   };
 
   const allPartiesSelected = useMemo(() => {
-    const all = [...PARTY_BUYER_CONSIGNEE, ...PARTY_SUPPLIER].map(p => p.value);
-    return all.every(v => parties.has(v));
+    return ALL_PARTY_VALUES.every(v => parties.has(v));
   }, [parties]);
+
+  // Debit/Credit Note → segment + party step is skipped (content-only flow).
+  const isNoteDoc = useMemo(() => isNoteDocName(category), [category]);
 
   const validateStep1 = () => {
     const next: Record<string, string> = {};
-    if (regulatory === 'highly') {
-      if (!segment.trim()) next.segment = 'Select a segment';
-    } else {
-      if (segmentsMulti.size === 0) next.segment = 'Select at least one segment';
+    if (!category.trim()) {
+      // Document name is the primary field; without it we can't tell whether
+      // the segment/party step even applies.
+      next.category = 'T&C document name is required';
+      setErrors(next);
+      return false;
     }
-    if (!category.trim()) next.category = 'T&C document name is required';
-    if (parties.size === 0) next.party  = 'Select at least one applicable party';
+    // Debit/Credit Note skip the segment + applicable-party step — only the
+    // document name (above) and the content (step 2) are required.
+    if (!isNoteDoc) {
+      if (regulatory === 'highly') {
+        if (!segment.trim()) next.segment = 'Select a segment';
+      } else {
+        if (segmentsMulti.size === 0) next.segment = 'Select at least one segment';
+      }
+      if (parties.size === 0) next.party = 'Select at least one applicable party';
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -295,15 +310,19 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       return;
     }
     setSaving(true);
-    // highly → one segment; less → CSV of the chosen segments.
-    const segmentCsv = regulatory === 'highly'
-      ? segment.trim()
-      : Array.from(segmentsMulti).join(',');
-    const payload: Omit<Lib, 'id' | 'code'> = {
+    
+    // Debit/Credit Note carry NO segment / regulatory / party — persist them
+    // blank so the list shows "—" for those columns. Other docs use the picked
+    // values: highly → one segment; less → CSV of the chosen segments.
+    const segmentCsv = isNoteDoc
+      ? ''
+      : (regulatory === 'highly' ? segment.trim() : Array.from(segmentsMulti).join(','));
+    const partyCsv = isNoteDoc ? '' : Array.from(parties).join(',');
+    const payload = {
       segment: segmentCsv,
-      regulatory,
+      regulatory: (isNoteDoc ? '' : regulatory) as Reg | '',
       category: category.trim(),
-      party: Array.from(parties).join(','),
+      party: partyCsv,
       content: content?.trim() ? content : null,
     };
     try {
@@ -371,6 +390,29 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
   };
 
   if (!open) return null;
+
+  // Shared T&C Document Name selector — placed on its own for note docs and
+  // paired beside Segment for every other document, so it's defined once.
+  const documentNameField = (
+    <div className="tnw-field">
+      <label className="tnw-label">T&amp;C Document Name <span className="tnw-req">*</span></label>
+      {/* Document categories are read-only (managed for the
+          Quotation/PI/PO documents) — no inline "+" quick-add here. */}
+      <MasterSelect
+        key={`tnw-cat-${cats.length}`}
+        value={category}
+        invalid={!!errors.category}
+        placeholder="— Select Category —"
+        options={[
+          ...cats.map(c => ({ value: c.name, label: c.name })),
+          ...(category && !cats.find(c => c.name === category) ? [{ value: category, label: category }] : []),
+        ]}
+        onChange={(v) => { setCategory(v); setErrors(p => ({ ...p, category: '' })); }}
+      />
+      <div className="tnw-hint">One T&amp;C per document · title auto-derived from name</div>
+      {errors.category && <div className="tnw-err">{errors.category}</div>}
+    </div>
+  );
 
   return createPortal(
     <div
@@ -442,8 +484,11 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
         <div className="tnw-body">
           {step === 1 ? (
             <div className="tnw-step-body">
-              {/* Regulatory tier — drives whether the segment picker is
-                  single (highly) or multi (less). */}
+              {/* Regulatory Type leads for a normal document; picking Debit
+                  Note / Credit Note as the document name hides it (and the
+                  segment + applicable-party step) and jumps straight to the
+                  content editor on "Save & Next". */}
+              {!isNoteDoc && (
               <div className="tnw-field">
                 <label className="tnw-label">Regulatory Type <span className="tnw-req">*</span></label>
                 <div className="tnw-reg-grid">
@@ -471,9 +516,25 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                   </button>
                 </div>
               </div>
+              )}
 
-              <div className="tnw-grid-2">
-                <div className="tnw-field">
+              {isNoteDoc ? (
+                <>
+                  {documentNameField}
+                  <div className="tnw-note-banner">
+                    <span className="tnw-note-banner-ico" aria-hidden>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+                    </span>
+                    <span>
+                      <strong>{category}</strong> needs no segment or applicable-party setup — click <strong>Save &amp; Next</strong> to write its Terms &amp; Conditions content.
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="tnw-grid-2">
+                    {documentNameField}
+                    <div className="tnw-field">
                   <label className="tnw-label">
                     Segment <span className="tnw-req">*</span>
                     <span className="tnw-label-tag">{regulatory === 'highly' ? 'pick one' : 'pick one or more'}</span>
@@ -527,27 +588,8 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                     </>
                   )}
                   {errors.segment && <div className="tnw-err">{errors.segment}</div>}
-                </div>
-
-                <div className="tnw-field">
-                  <label className="tnw-label">T&amp;C Document Name <span className="tnw-req">*</span></label>
-                  {/* Document categories are read-only (managed for the
-                      Quotation/PI documents) — no inline "+" quick-add here. */}
-                  <MasterSelect
-                    key={`tnw-cat-${cats.length}`}
-                    value={category}
-                    invalid={!!errors.category}
-                    placeholder="— Select Category —"
-                    options={[
-                      ...cats.map(c => ({ value: c.name, label: c.name })),
-                      ...(category && !cats.find(c => c.name === category) ? [{ value: category, label: category }] : []),
-                    ]}
-                    onChange={(v) => { setCategory(v); setErrors(p => ({ ...p, category: '' })); }}
-                  />
-                  <div className="tnw-hint">One T&amp;C per document · title auto-derived from name</div>
-                  {errors.category && <div className="tnw-err">{errors.category}</div>}
-                </div>
-              </div>
+                    </div>
+                  </div>
 
               <div className="tnw-party">
                 <div className="tnw-party-top">
@@ -589,6 +631,8 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                 <div className="tnw-party-hint">Tick "ALL" to apply to every party · or pick specific ones</div>
                 {errors.party && <div className="tnw-err">{errors.party}</div>}
               </div>
+                </>
+              )}
             </div>
           ) : (
             <div className="tnw-step-body">
@@ -962,13 +1006,6 @@ function TncEditor({
   );
 }
 
-/* ── Signature Pad ────────────────────────────────────────────────────────
- * Canvas-based draw-your-signature dialog (like Zoho / DocuSign). Captures
- * pointer events (mouse + touch + pen), smooths strokes with quadratic
- * beziers, supports Clear / Undo, then emits a base64 PNG that the parent
- * inserts as an <img> at the cursor.
- * ─────────────────────────────────────────────────────────────────────── */
-
 function SignaturePad({
   onClose,
   onInsert,
@@ -1232,12 +1269,7 @@ function SignaturePad({
   );
 }
 
-/* Signature block presets — Tiptap-friendly HTML rendered with a thin
- * horizontal rule as the signature line and tokenised placeholders so the
- * doc-generation pipeline can swap real names / dates / images later
- * ({{SignatureBuyer}}, {{SignatureSupplier}}, …). `preview` is a tiny
- * mini-render used inside the popover button so the user can see what
- * they're about to insert. */
+
 const SIG_LINE = '<hr style="border:0;border-top:1px solid #94a3b8;margin:36px 0 6px;width:240px"/>';
 const SIGNATURE_PRESETS = [
   {
@@ -1475,6 +1507,11 @@ const TNW_CSS = `
 }
 .tnw-hint { font-size: 11px; color: #0891b2; opacity: .8; }
 .tnw-err { font-size: 11px; color: #ef4444; font-weight: 600; }
+.tnw-note-banner { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px; border-radius: 12px; background: #ecfeff; border: 1px solid #a5f3fc; color: #155e75; font-size: 13px; line-height: 1.55; }
+.tnw-note-banner-ico { flex-shrink: 0; color: #0891b2; margin-top: 1px; }
+.tnw-note-banner strong { font-weight: 800; }
+[data-bs-theme="dark"] .tnw-note-banner { background: rgba(8,145,178,.12); border-color: rgba(103,232,249,.35); color: #a5f3fc; }
+[data-bs-theme="dark"] .tnw-note-banner-ico { color: #67e8f9; }
 .tnw-label-tag {
   margin-left: 8px; text-transform: none; letter-spacing: 0;
   font-size: 9.5px; font-weight: 700; color: #64748b;
