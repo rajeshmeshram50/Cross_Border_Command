@@ -375,10 +375,15 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                       })()}
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <span className={`clm-badge ${r.regulatory === 'less' ? 'clm-badge-green' : 'clm-badge-red'}`}>
-                        <span className="clm-badge-dot" />
-                        {r.regulatory === 'less' ? 'Less Regulatory' : 'Highly Regulatory'}
-                      </span>
+                      {/* Debit/Credit Note documents carry no regulatory tier → "—". */}
+                      {r.regulatory ? (
+                        <span className={`clm-badge ${r.regulatory === 'less' ? 'clm-badge-green' : 'clm-badge-red'}`}>
+                          <span className="clm-badge-dot" />
+                          {r.regulatory === 'less' ? 'Less Regulatory' : 'Highly Regulatory'}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>
+                      )}
                     </td>
                     <td className="clm-td-name">
                       <Tooltip label={r.category}>
