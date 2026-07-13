@@ -402,6 +402,18 @@ export default function AddProductModal(props: {
   const attachmentPreview = prodAttachmentFile
     ? URL.createObjectURL(prodAttachmentFile)
     : (prodAttachmentUrl || (prodAttachmentPath ? resolveFileUrl(prodAttachmentPath) : ''));
+  /* Display name for the attachment chip — the picked file's name, else the
+     stored path's basename (stripping the `{rand}__` upload prefix, like QC).
+     The card can hold ANY file type (PDF / Word / image / etc.), so we show
+     this label with a generic file icon instead of an image thumbnail. */
+  const attachmentName = (() => {
+    if (prodAttachmentFile) return prodAttachmentFile.name;
+    const src = prodAttachmentPath || prodAttachmentUrl || '';
+    if (!src) return '';
+    const last = src.split('/').pop() ?? '';
+    const sep = last.indexOf('__');
+    return sep >= 0 ? last.slice(sep + 2) : last;
+  })();
 
   /* ─── Step 1: Sales ─── */
   const [basePrice, setBasePrice] = useState<string>('');
@@ -1219,6 +1231,7 @@ export default function AddProductModal(props: {
           packaging_material_id?: number; confidential_info?: string;
           primary_image?: string | null; secondary_images?: string[] | null;
           primary_image_url?: string | null; secondary_images_url?: string[] | null;
+          product_attachment?: string | null; product_attachment_url?: string | null;
           base_price?: string | number; gst_id?: number; mark_bottom?: string;
           net_weight?: string | number; gross_weight?: string | number;
           length_cm?: string | number; width_cm?: string | number; height_cm?: string | number;
@@ -1261,6 +1274,11 @@ export default function AddProductModal(props: {
         setSecondaryImagePaths(p.secondary_images ?? []);
         setSecondaryImageUrls(p.secondary_images_url ?? (p.secondary_images ?? []).map(s => resolveFileUrl(s)));
         setSecondaryImageFiles([]);
+        // Product attachment — hydrate the stored path + resolved URL so the
+        // file chip reappears when editing (this was never loaded before).
+        setProdAttachmentPath(p.product_attachment ?? null);
+        setProdAttachmentUrl(p.product_attachment_url ?? (p.product_attachment ? resolveFileUrl(p.product_attachment) : null));
+        setProdAttachmentFile(null);
         setBasePrice(p.base_price != null ? String(p.base_price) : '');
         setGstId(p.gst_id ? String(p.gst_id) : '');
         setMarkBottom(p.mark_bottom ?? '');
@@ -1416,6 +1434,7 @@ export default function AddProductModal(props: {
         id: number; product_code?: string;
         primary_image?: string | null; secondary_images?: string[] | null;
         primary_image_url?: string | null; secondary_images_url?: string[] | null;
+        product_attachment?: string | null; product_attachment_url?: string | null;
         step_completed?: number;
       }>(
         '/products/step/core',
@@ -1432,6 +1451,11 @@ export default function AddProductModal(props: {
       setSecondaryImagePaths(res.data.secondary_images ?? []);
       setSecondaryImageUrls(res.data.secondary_images_url ?? (res.data.secondary_images ?? []).map(s => resolveFileUrl(s)));
       setSecondaryImageFiles([]);
+      // Attachment — pending file is now a stored path; mirror it so the chip
+      // keeps showing the persisted file (and survives a re-save on Step 2).
+      setProdAttachmentPath(res.data.product_attachment ?? null);
+      setProdAttachmentUrl(res.data.product_attachment_url ?? (res.data.product_attachment ? resolveFileUrl(res.data.product_attachment) : null));
+      setProdAttachmentFile(null);
 
       // Purchase has no "For Sales Department" step — saving Core finalises the
       // product and closes the popup (no advance to Step 2).
@@ -1710,6 +1734,11 @@ export default function AddProductModal(props: {
           full edit wizard is hidden so only the standalone Map Supplier
           popup shows over the dim backdrop. */}
       <div className={`apm-modal ${props.openSupplierMap ? 'apm-modal-hidden' : ''}`} onClick={(e) => e.stopPropagation()}>
+        {/* Save-time interaction lock — swallows every click while a step save
+            is in flight so no second action can be triggered mid-save (bug:
+            "buttons remain clickable during a loading action"). Auto-clears
+            since every saver resets `saving` in a finally block. */}
+        {saving && <div className="apm-busy-veil" aria-hidden />}
         {/* ─── Gradient header ─── */}
         <div className="apm-head">
           <div className="apm-head-left">
@@ -1746,6 +1775,7 @@ export default function AddProductModal(props: {
               type="button"
               className="apm-head-btn"
               title="Map / manage GST %"
+              disabled={saving}
               onClick={() => {
                 if (!productId) {
                   toast.error('Complete Core Information first', 'Save Product Core Information (Save & Next) before mapping a GST %.');
@@ -1763,6 +1793,7 @@ export default function AddProductModal(props: {
                 type="button"
                 className="apm-head-btn"
                 title="Map a supplier to this product"
+                disabled={saving}
                 onClick={() => {
                   if (!productId) {
                     toast.error('Complete Core Information first', 'Save Product Core Information (Save & Next) before mapping suppliers.');
@@ -1779,7 +1810,7 @@ export default function AddProductModal(props: {
                 Map Supplier
               </button>
             )}
-            <button className="apm-close" onClick={onClose} aria-label="Close">
+            <button className="apm-close" onClick={onClose} aria-label="Close" disabled={saving}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>
           </div>
@@ -1994,8 +2025,13 @@ export default function AddProductModal(props: {
                 >
                   <UploadDropzone
                     label="Product Attachment"
-                    hint="Click to upload attachment"
+                    hint="Click to upload attachment (PDF, Word, image, etc.)"
                     multiple={false}
+                    /* Any document type is allowed here, so render a generic
+                       file chip (icon + name) rather than an image thumbnail. */
+                    fileMode
+                    fileName={attachmentName}
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.gif,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     preview={attachmentPreview ? [attachmentPreview] : []}
                     onPick={onAttachmentUpload}
                     onRemove={clearAttachment}
@@ -2786,6 +2822,14 @@ function UploadDropzone(props: {
   preview: string[];
   onPick: (e: ChangeEvent<HTMLInputElement>) => void;
   onRemove: (index: number) => void;
+  /* File mode — the upload can hold ANY document type (PDF / Word / image /
+     etc.), so render a generic file chip (icon + filename) instead of an
+     image thumbnail. `fileName` is the label shown on that chip. */
+  fileMode?: boolean;
+  fileName?: string;
+  /* Override the `accept` list on the file input. Defaults to the image + PDF
+     set used by the Primary / Secondary image uploads. */
+  accept?: string;
 }) {
   /* Outer is a <div>, NOT a <label>. The previous label wrapped the
      title, the dashed dropzone AND the preview chips — so clicking the
@@ -2811,7 +2855,7 @@ function UploadDropzone(props: {
       <label className="apm-dropzone">
         <input
           type="file"
-          accept=".png,.jpg,.jpeg,.jfif,.jpe,.pjpeg,.pdf,image/png,image/jpeg,image/pjpeg,application/pdf"
+          accept={props.accept ?? '.png,.jpg,.jpeg,.jfif,.jpe,.pjpeg,.pdf,image/png,image/jpeg,image/pjpeg,application/pdf'}
           multiple={props.multiple}
           onChange={props.onPick}
           className="apm-dropzone-input"
@@ -2823,7 +2867,29 @@ function UploadDropzone(props: {
         </svg>
         <span>{props.hint}</span>
       </label>
-      {total > 0 && (
+      {total > 0 && props.fileMode && (
+        /* Generic file chip — any document type (PDF / Word / image / etc.),
+           so a paperclip icon + filename replaces the image thumbnail. The
+           chip links to the file so it can still be viewed/downloaded. */
+        <div className="apm-upload-preview">
+          <a
+            className="apm-upload-chip apm-upload-filechip"
+            href={props.preview[0]}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={props.fileName || 'Open attachment'}
+          >
+            <svg className="apm-upload-fileico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+            </svg>
+            <span className="apm-upload-filename">{props.fileName || 'Attachment'}</span>
+            <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onRemove(0); }} aria-label="Remove">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </a>
+        </div>
+      )}
+      {total > 0 && !props.fileMode && (
         <div className="apm-upload-preview">
           {visible.map((src, i) => (
             <div key={i} className="apm-upload-chip">

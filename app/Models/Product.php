@@ -24,7 +24,7 @@ class Product extends Model
         'product_code', 'name', 'generic_name', 'description', 'brand',
         'segment_id', 'haz_type', 'haz_class_id', 'uom_id', 'hsn_id',
         'condition_id', 'packaging_material_id', 'confidential_info',
-        'primary_image', 'secondary_images',
+        'primary_image', 'secondary_images', 'product_attachment',
         'base_price', 'gst_id', 'gst_amount', 'total_price', 'mark_bottom',
         'net_weight', 'gross_weight', 'length_cm', 'width_cm', 'height_cm',
         'batch_no', 'serial_no', 'cat_no', 'lot_no',
@@ -49,13 +49,25 @@ class Product extends Model
      * can render images without knowing the storage layout. Mirrors the
      * `profile_photo_url` accessor pattern used on Client and Branch.
      */
-    protected $appends = ['primary_image_url', 'secondary_images_url'];
+    protected $appends = ['primary_image_url', 'secondary_images_url', 'product_attachment_url'];
 
     public function getPrimaryImageUrlAttribute(): ?string
     {
         $p = $this->primary_image;
         // `blob:` URLs are browser-session-only and never resolvable on the
         // server. Treat them as empty so we don't emit `/storage/blob:...`.
+        if (!$p || str_starts_with((string) $p, 'blob:')) {
+            return null;
+        }
+        return file_url($p);
+    }
+
+    /** Resolved URL for the product-level attachment (PDF / Word / image / …),
+     *  mirroring the primary-image accessor so the frontend can render/download
+     *  it without knowing the storage layout. */
+    public function getProductAttachmentUrlAttribute(): ?string
+    {
+        $p = $this->product_attachment;
         if (!$p || str_starts_with((string) $p, 'blob:')) {
             return null;
         }
