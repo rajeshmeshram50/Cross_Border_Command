@@ -39,6 +39,8 @@ use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\PoPaymentController;
 use App\Http\Controllers\Api\SupplierPurchaseInvoiceController;
+use App\Http\Controllers\Api\DebitNoteController;
+use App\Http\Controllers\Api\DebitNoteTypeController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
 use App\Http\Controllers\Api\HrDocumentSignatureController;
@@ -544,7 +546,24 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::delete('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/supplier-purchase-invoices/{id}/sync',           [SupplierPurchaseInvoiceController::class, 'sync'])->whereNumber('id');
 
-  
+    // ── Debit Note Types (P2P master lookup) ──
+    Route::get   ('/p2p/debit-note-types',        [DebitNoteTypeController::class, 'index']);
+    Route::post  ('/p2p/debit-note-types',        [DebitNoteTypeController::class, 'store']);
+    Route::put   ('/p2p/debit-note-types/{id}',   [DebitNoteTypeController::class, 'update'])->whereNumber('id');
+    Route::delete('/p2p/debit-note-types/{id}',   [DebitNoteTypeController::class, 'destroy'])->whereNumber('id');
+
+    // ── Debit Notes (P2P) ──
+    Route::get   ('/p2p/debit-notes/preview-code',                       [DebitNoteController::class, 'previewCode']);
+    Route::get   ('/p2p/debit-notes/supplier-purchase-invoices',        [DebitNoteController::class, 'supplierPurchaseInvoices']);
+    Route::get   ('/p2p/debit-notes/supplier-purchase-invoices/{id}',   [DebitNoteController::class, 'supplierPurchaseInvoice'])->whereNumber('id');
+    Route::get   ('/p2p/debit-notes',                                   [DebitNoteController::class, 'index']);
+    Route::post  ('/p2p/debit-notes',                                   [DebitNoteController::class, 'store']);
+    Route::get   ('/p2p/debit-notes/{id}',                              [DebitNoteController::class, 'show'])->whereNumber('id');
+    Route::put   ('/p2p/debit-notes/{id}',                              [DebitNoteController::class, 'update'])->whereNumber('id');
+    Route::delete('/p2p/debit-notes/{id}',                             [DebitNoteController::class, 'destroy'])->whereNumber('id');
+    Route::post  ('/p2p/debit-notes/{id}/sync',                         [DebitNoteController::class, 'sync'])->whereNumber('id');
+
+
     Route::get   ('/sales/reminders',                 [SalesTodoController::class, 'listReminders']);
     Route::post  ('/sales/reminders',                 [SalesTodoController::class, 'storeReminder']);
  
