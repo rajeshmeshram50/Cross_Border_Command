@@ -222,6 +222,8 @@ const DN_CSS = `
 /* Exact Figma table cell — DM Sans 11.5px, #3a5161, centred, 12px 7px padding. */
 .dn-scope .spi-table tbody td { padding:12px 7px; border-bottom:1px solid #eef3f6; color:#3a5161; font-weight:600; font-size:11.5px; text-align:center; vertical-align:middle; line-height:1.35; white-space:normal; }
 .dn-scope .spi-table thead th { text-align:center; }
+/* Mobile: let the wide worklist table scroll horizontally instead of overflowing the card. */
+.dn-scope .spi-tablewrap { overflow-x:auto; }
 /* Figma uniform teal id-pill (DN / SPI / PO / SHP / PRC all identical). */
 .dn-scope .spi-pill { display:inline-block; padding:3px 8px; border:1px solid #cfe3ea; border-radius:7px; background:#f4fafc; color:#0e7490; font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace !important; font-size:10px !important; font-weight:700 !important; white-space:nowrap; }
 /* Figma date sub-text — DM Sans 11px, #64748b. */

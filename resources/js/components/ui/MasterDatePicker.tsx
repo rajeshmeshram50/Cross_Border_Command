@@ -18,6 +18,7 @@ export function MasterDatePicker({
   maxDate,
   disabled,
   invalid,
+  popupClassName,
 }: {
   name?: string;
   value?: string;
@@ -28,6 +29,8 @@ export function MasterDatePicker({
   maxDate?: string;
   disabled?: boolean;
   invalid?: boolean;
+  /** Extra class on the portalled popup so a host can re-theme it (e.g. teal). */
+  popupClassName?: string;
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
   useEffect(() => {
@@ -267,7 +270,7 @@ export function MasterDatePicker({
       {open && !disabled && popupPos && createPortal(
         <div
           ref={popupRef}
-          className="master-datepicker-popup"
+          className={`master-datepicker-popup ${popupClassName ?? ''}`}
           style={{
             position: 'fixed',
             // Always set BOTH top and bottom (the unused one to 'auto') — the

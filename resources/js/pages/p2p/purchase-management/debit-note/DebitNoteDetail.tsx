@@ -84,7 +84,6 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
               <HeadPill icon={<IcoUser />} label="SUPPLIER" value="—" />
             </div>
             <div className="spi-dt-head-r">
-              <span className="spi-dt-divider" />
               <button type="button" className="spi-dt-btn-close" onClick={onClose}><IcoX /> Close</button>
             </div>
           </div>
@@ -132,11 +131,11 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
                 <Field label="DEBIT NOTE NO."><div className="spi-dt-inp-auto"><input className="spi-dt-inp" value="DN/2025-26/001" readOnly /><span className="spi-dt-auto"><IcoLock /> AUTO</span></div></Field>
                 <Field label="DEBIT NOTE DATE"><div className="spi-dt-inp-auto"><input className="spi-dt-inp" value={todayDisp} readOnly /><span className="spi-dt-auto"><IcoLock /> AUTO</span></div></Field>
                 <Field label="DEBIT NOTE TYPE"><DnSelect value={f.dnType} options={DN_TYPES} onChange={set('dnType')} /></Field>
-                <Field label="EXPECTED DEBIT DATE"><MasterDatePicker value={f.expDate ?? ''} onChange={set('expDate')} placeholder="Select date" /></Field>
+                <Field label="EXPECTED DEBIT DATE"><MasterDatePicker value={f.expDate ?? ''} onChange={set('expDate')} placeholder="Select date" popupClassName="dncr-cal" /></Field>
                 <Field label="SPI NUMBER"><DnSelect value={f.spiNum ?? ''} options={[]} placeholder="— Select SPI Number —" onChange={set('spiNum')} /></Field>
-                <Field label="SPI DATE"><MasterDatePicker value={f.spiDate ?? ''} onChange={set('spiDate')} placeholder="Select date" /></Field>
+                <Field label="SPI DATE"><MasterDatePicker value={f.spiDate ?? ''} onChange={set('spiDate')} placeholder="Select date" popupClassName="dncr-cal" /></Field>
                 <Field label="PO NUMBER"><DnSelect value={f.poNum ?? ''} options={[]} placeholder="— Select PO Number —" onChange={set('poNum')} /></Field>
-                <Field label="PO DATE"><MasterDatePicker value={f.poDate ?? ''} onChange={set('poDate')} placeholder="Select date" /></Field>
+                <Field label="PO DATE"><MasterDatePicker value={f.poDate ?? ''} onChange={set('poDate')} placeholder="Select date" popupClassName="dncr-cal" /></Field>
               </div>
             </div>
           </div>
@@ -209,10 +208,10 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
                   <span className="spi-dt-fields-badge">5 FIELDS</span>
                 </div>
                 <div className="spi-dt-grid4">
-                  <SupField label="SCRUTINY DATE" value={sel?.scrutinyDate} edit={<MasterDatePicker value={f.scrutinyDate ?? ''} onChange={set('scrutinyDate')} placeholder="Select date" />} />
+                  <SupField label="SCRUTINY DATE" value={sel?.scrutinyDate} edit={<MasterDatePicker value={f.scrutinyDate ?? ''} onChange={set('scrutinyDate')} placeholder="Select date" popupClassName="dncr-cal" />} />
                   <SupField label="GST NUMBER" value={sel?.gstNo} edit={<input className="spi-dt-inp" placeholder="15-digit GSTIN" />} />
                   <SupField label="GST STATUS" value={sel?.gstStatus} edit={<DnSelect value={f.gstStatus} options={['Active', 'Inactive']} onChange={set('gstStatus')} />} />
-                  <SupField label="LAST FILING DATE" value={sel?.filingDate} edit={<MasterDatePicker value={f.lastFilingDate ?? ''} onChange={set('lastFilingDate')} placeholder="Select date" />} />
+                  <SupField label="LAST FILING DATE" value={sel?.filingDate} edit={<MasterDatePicker value={f.lastFilingDate ?? ''} onChange={set('lastFilingDate')} placeholder="Select date" popupClassName="dncr-cal" />} />
                   <Field label="PREV. INVOICE / REMARKS" full><textarea className="spi-dt-textarea" placeholder="Notes on previous invoices, filing history or scrutiny remarks…" /></Field>
                 </div>
               </div>
@@ -234,7 +233,56 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
               </div>
               <div className="spi-dt-sec-toggle"><IcoChevron /></div>
             </div>
-            <div className="spi-dt-sec-body"><div className="dncr-placeholder">Step 01 — Basic Debit Note Details completed.</div></div>
+            <div className="spi-dt-sec-body">
+              <div className="spi-dt-sumstep">
+                <div className="spi-dt-sumstep-hd">
+                  <div className="spi-dt-sumstep-hd-l">
+                    <span className="spi-dt-sumstep-num">01</span>
+                    <span className="spi-dt-sumstep-title">Basic Debit Note Details</span>
+                  </div>
+                  <span className="spi-dt-sumstep-done"><IcoCheck /> COMPLETED</span>
+                </div>
+                <div className="spi-dt-sumstep-body">
+                  <ROGroup label="Debit Note Details">
+                    <RO label="DEBIT NOTE NO." value="DN/2025-26/001" />
+                    <RO label="DEBIT NOTE DATE" value={todayDisp} />
+                    <RO label="DEBIT NOTE TYPE" value={np(f.dnType)} muted={!f.dnType} />
+                    <RO label="EXPECTED DEBIT DATE" value={np(f.expDate)} muted={!f.expDate} />
+                    <RO label="SPI NUMBER" value={np(f.spiNum)} muted={!f.spiNum} />
+                    <RO label="SPI DATE" value={np(f.spiDate)} muted={!f.spiDate} />
+                    <RO label="PO NUMBER" value={np(f.poNum)} muted={!f.poNum} />
+                    <RO label="PO DATE" value={np(f.poDate)} muted={!f.poDate} />
+                  </ROGroup>
+                  <ROGroup label="Supplier Details">
+                    <RO label="SELECT SUPPLIER" value={np(sel?.company)} muted={!sel} />
+                    <RO label="SUPPLIER CODE" value={np(sel?.code)} muted={!sel} />
+                    <RO label="COMPANY NAME" value={np(sel?.company)} muted={!sel} />
+                    <RO label="SUPPLIER TYPE" value={np(sel?.type ?? f.supType)} muted={!(sel?.type ?? f.supType)} />
+                  </ROGroup>
+                  <ROGroup label="Supplier Legal Status">
+                    <RO label="COMPLIANCE" value={sel ? '100% — legal & compliance documents verified' : '— Not available'} muted={!sel} full />
+                  </ROGroup>
+                  <ROGroup label="Address & Contact Details">
+                    <RO label="REGISTERED OFFICE ADDRESS" value={np(sel?.address)} muted={!sel} full />
+                    <RO label="COUNTRY" value={np(sel?.country ?? f.country)} muted={!(sel?.country ?? f.country)} />
+                    <RO label="STATE" value={np(sel?.state ?? f.state)} muted={!(sel?.state ?? f.state)} />
+                    <RO label="STATE CODE" value={np(sel?.stateCode)} muted={!sel} />
+                    <RO label="CITY" value={np(sel?.city)} muted={!sel} />
+                    <RO label="CONTACT PERSON NAME" value={np(sel?.contact)} muted={!sel} />
+                    <RO label="DESIGNATION" value={np(sel?.designation)} muted={!sel} />
+                    <RO label="CONTACT NUMBER" value={np(sel?.phone)} muted={!sel} />
+                    <RO label="EMAIL ID" value={np(sel?.email)} muted={!sel} />
+                  </ROGroup>
+                  <ROGroup label="GST Scrutiny Details">
+                    <RO label="SCRUTINY DATE" value={np(sel?.scrutinyDate ?? f.scrutinyDate)} muted={!(sel?.scrutinyDate ?? f.scrutinyDate)} />
+                    <RO label="GST NUMBER" value={np(sel?.gstNo)} muted={!sel} />
+                    <RO label="GST STATUS" value={np(sel?.gstStatus ?? f.gstStatus)} muted={!(sel?.gstStatus ?? f.gstStatus)} />
+                    <RO label="LAST FILING DATE" value={np(sel?.filingDate ?? f.lastFilingDate)} muted={!(sel?.filingDate ?? f.lastFilingDate)} />
+                    <RO label="PREV. INVOICE / REMARKS" value="— Not provided" muted full />
+                  </ROGroup>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* SPI Details — 12 auto fields */}
@@ -411,6 +459,17 @@ function Field({ label, children, full, req }: { label: string; children: ReactN
   return <div className={`spi-dt-field ${full ? 'spi-dt-field-full' : ''}`}><label className="spi-dt-field-lbl">{label}{req && <span className="spi-dt-req">*</span>}</label>{children}</div>;
 }
 
+// "— Not provided" fallback for the Step-2 read-only recap.
+const np = (v?: string | null) => (v && String(v).trim() !== '' ? String(v) : '— Not provided');
+
+/* Read-only recap field + group (Step 2 "What We Did in the Previous Stages"). */
+function RO({ label, value, full, muted }: { label: string; value: string; full?: boolean; muted?: boolean }) {
+  return <div className={`spi-dt-ro ${full ? 'spi-dt-ro-full' : ''}`}><div className="spi-dt-ro-lbl">{label}</div><div className={`spi-dt-ro-val ${muted ? 'is-muted' : ''}`}>{value}</div></div>;
+}
+function ROGroup({ label, children }: { label: string; children: ReactNode }) {
+  return <div className="spi-dt-rogroup"><div className="spi-dt-rogroup-hd">{label}</div><div className="spi-dt-robox"><div className="spi-dt-rogrid">{children}</div></div></div>;
+}
+
 /* Additions / Deductions charge block — header (label + "+ Add") stays fixed; the rows live in a
  * scroll container that caps at ~3 rows so the section never grows unbounded (senior-dev layout). */
 function ChargeBlock({ variant, label, rows, setRows }: { variant: 'add' | 'ded'; label: string; rows: ChargeRow[]; setRows: Dispatch<SetStateAction<ChargeRow[]>> }) {
@@ -503,8 +562,14 @@ function DnSelect({ value, options, onChange, placeholder }: { value: string; op
 
 const DNCR_CSS = `
 .dn-scope .dncr-placeholder { padding:60px 40px; text-align:center; color:#94a3b8; font-size:13px; font-weight:600; }
-/* Figma header: chips are grouped on the RIGHT (next to Close), not packed after the title. */
+/* Figma header: chips grouped on the RIGHT, right next to Close. Only the pills carry the auto
+ * margin — Close drops its own auto margin, else the free space splits and leaves a gap between them. */
 .dn-scope .spi-dt-pills { margin-left:auto; }
+.dn-scope .spi-dt-head-r { margin-left:0; }
+/* Close button hover = same as the PO wizard (.cstrip__back-btn): gradient darkens + a small lift
+ * (dev's default was only a faint brightness with no colour shift). */
+.dn-scope .spi-dt-btn-close { background:linear-gradient(135deg,#06b6d4 0%,#0891b2 50%,#0e7490 100%) !important; transition:background .2s,transform .2s,box-shadow .2s !important; }
+.dn-scope .spi-dt-btn-close:hover { background:linear-gradient(135deg,#0891b2 0%,#0e7490 50%,#155e75 100%) !important; transform:translateY(-1.5px) !important; filter:none !important; }
 /* Figma "Generate Debit Note" CTA (.cpo-btn--p): 135deg teal gradient + top white sheen + soft shadow. */
 .dn-scope .spi-dt-btn-map { background:linear-gradient(180deg,rgba(255,255,255,.2),rgba(255,255,255,0) 50%),linear-gradient(135deg,#0e7490,#0891b2 55%,#06b6d4) !important; box-shadow:0 8px 20px -4px rgba(8,145,178,.5) !important; }
 /* Figma header chips: all icons are ONE uniform teal gradient (dev alternated bright/dark via
@@ -582,6 +647,32 @@ const DNCR_CSS = `
 [data-bs-theme="dark"] .dn-scope .dncr-addprod { background:#0c1c24; border-color:rgba(34,211,238,.25); color:#67e8f9; }
 [data-bs-theme="dark"] .dn-scope .dncr-amtinp, [data-bs-theme="dark"] .dn-scope .dncr-note { background:#0c1c24; border-color:rgba(34,211,238,.22); color:#e2e8f0; }
 [data-bs-theme="dark"] .dn-scope .dncr-chgbtn-add, [data-bs-theme="dark"] .dn-scope .dncr-chgbtn-ded { background:#0c1c24; }
+
+/* Calendar (MasterDatePicker) re-themed TEAL to match the wizard — default is indigo/violet.
+ * The popup is portalled to <body>, so these use the .dncr-cal marker (not .dn-scope). */
+.dn-scope .master-datepicker-toggle.open { border-color:#0891b2; }
+.dn-scope .master-datepicker-icon { color:#0891b2; }
+.master-datepicker-popup.dncr-cal .master-datepicker-title-btn.is-clickable { background:rgba(8,145,178,.08); border-color:rgba(8,145,178,.2); color:#0891b2; }
+.master-datepicker-popup.dncr-cal .master-datepicker-title-btn.is-clickable:hover { background:rgba(8,145,178,.16); border-color:rgba(8,145,178,.4); color:#0e7490; }
+.master-datepicker-popup.dncr-cal .master-datepicker-nav:hover { background:rgba(8,145,178,.1); color:#0891b2; border-color:rgba(8,145,178,.3); }
+.master-datepicker-popup.dncr-cal .master-datepicker-day:hover:not(:disabled):not(.is-selected),
+.master-datepicker-popup.dncr-cal .master-datepicker-cell:hover:not(.is-selected) { background:rgba(8,145,178,.1); color:#0891b2; }
+.master-datepicker-popup.dncr-cal .master-datepicker-day.is-today,
+.master-datepicker-popup.dncr-cal .master-datepicker-cell.is-today { background:rgba(8,145,178,.12); color:#0891b2; }
+.master-datepicker-popup.dncr-cal .master-datepicker-day.is-selected,
+.master-datepicker-popup.dncr-cal .master-datepicker-cell.is-selected { background:linear-gradient(135deg,#0891b2,#06b6d4); color:#fff; box-shadow:0 3px 8px rgba(8,145,178,.3); }
+.master-datepicker-popup.dncr-cal .master-datepicker-footer .today-btn { color:#0891b2; }
+
+/* ── Mobile ─────────────────────────────────────────────────────────────
+ * Additions/Deductions sit side by side on wider screens; on phones they'd be
+ * too cramped, so stack them and trim the amount box. (The 4-col field grids,
+ * charges|totals split, steps and recap already respond via the reused SPI CSS.) */
+@media (max-width:640px) {
+  .dn-scope .dncr-charges { flex-direction:column; gap:16px; }
+  .dn-scope .dncr-amtwrap { flex:0 0 104px; }
+  .dn-scope .dncr-charge-hd { flex-wrap:wrap; }
+  .dn-scope .dncr-prodmeta { flex-wrap:wrap; gap:6px; }
+}
 `;
 
 /* ── Inline icons ── */
