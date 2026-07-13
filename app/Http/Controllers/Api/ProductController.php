@@ -46,30 +46,18 @@ class ProductController extends Controller
         $branchFilter = $applyBranchFilter ? ($request->integer('branch_id') ?: null) : null;
         $user = $request->user();
 
-        // An HOD employee sees the WHOLE branch catalog (like the Director /
-        // branch user). A regular employee stays peer-isolated (only their own
-        // rows) via MasterVisibility below — that's fine for staff. The Director
-        // (branch_user) and admins already get the right scope from MasterVisibility.
+        // Products are a SHARED branch catalog — EVERY employee (not only HODs)
+        // sees the whole branch's rows: globals + client-level + their own
+        // branch's products, so a product the branch/Director/teammate created is
+        // visible to all staff in that branch. Sibling branches stay hidden
+        // (branch_id segregation). This deliberately OVERRIDES MasterVisibility's
+        // peer-isolated employee default (which would show only self-created
+        // rows). Editing is still gated by editDenial()/hierarchicalDenial() —
+        // staff can VIEW but not modify products they don't own (HODs manage the
+        // whole branch catalog).
         if ($user && ($user->user_type ?? null) === 'employee') {
-            $isHod = \App\Models\Employee::where('user_id', $user->id)
-                ->whereIn('designation_id', \App\Support\DepartmentPermissionSync::hodDesignationIds())
-                ->exists();
-            if ($isHod) {
-                $clientId = $user->client_id ?? optional($user->branch ?? null)->client_id;
-                $branchId = $user->branch_id;
-                $query->where(function ($w) use ($clientId, $branchId) {
-                    $w->whereNull('client_id')                        // globals
-                      ->orWhere(function ($ww) use ($clientId, $branchId) {
-                          $ww->where('client_id', $clientId)
-                             ->where(function ($wb) use ($branchId) {
-                                 $wb->whereNull('branch_id')           // client-level
-                                    ->orWhere('branch_id', $branchId); // own branch
-                             });
-                      });
-                });
-                return $query;
-            }
-            // Regular employee → fall through to peer-isolated MasterVisibility.
+            MasterVisibility::applyBranchScope($query, $user);
+            return $query;
         }
 
         MasterVisibility::applyReadScope($query, $user, $branchFilter);
