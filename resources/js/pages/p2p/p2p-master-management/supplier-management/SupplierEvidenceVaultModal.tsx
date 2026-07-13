@@ -1066,6 +1066,16 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   );
 }
 
+/* Bound a filename for the View/Download tooltips — a long no-space name
+ * (e.g. "PO-PO_2026-27_003_unsigned_final.pdf") otherwise makes the tooltip
+ * run off the screen edge. Keep the start + the extension, elide the middle. */
+function clipFileName(s: string, max = 42): string {
+  if (!s || s.length <= max) return s;
+  const dot = s.lastIndexOf('.');
+  const ext = dot > 0 && s.length - dot <= 6 ? s.slice(dot) : '';
+  return s.slice(0, Math.max(1, max - ext.length - 1)) + '…' + ext;
+}
+
 /* View / Download / Re-upload actions. View opens the attachment in a new
  * tab; Download triggers a blob save; Re-upload posts to
  * /segment-uploads/{type}/{id} with the same (category, doc_code) tuple so
@@ -1289,7 +1299,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           </button>
         </Tooltip>
       )}
-      <Tooltip label={canViewOrDownload ? `View ${doc.attachment}` : 'No attachment yet'}>
+      <Tooltip label={canViewOrDownload ? `View ${clipFileName(doc.attachment)}` : 'No attachment yet'}>
         <a
           href={canViewOrDownload ? doc.attachment_url! : undefined}
           target={canViewOrDownload ? '_blank' : undefined}
@@ -1302,7 +1312,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         </a>
       </Tooltip>
-      <Tooltip label={!canViewOrDownload ? 'No attachment yet' : (downloading ? 'Downloading…' : `Download ${doc.attachment}`)}>
+      <Tooltip label={!canViewOrDownload ? 'No attachment yet' : (downloading ? 'Downloading…' : `Download ${clipFileName(doc.attachment)}`)}>
         <button
           type="button"
           disabled={!canViewOrDownload || downloading}

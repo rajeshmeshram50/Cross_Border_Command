@@ -222,7 +222,23 @@ class VendorController extends Controller
             'segment_ids'              => 'nullable',
             'classification_id'        => 'nullable|integer|exists:master_customer_classifications,id',
             'compliance_behaviour_id'  => 'nullable|integer|exists:master_compliance_behaviours,id',
+            // Registered-office address lives on the SAME "Identification &
+            // Address" tab, so persist it here too. Previously the address was
+            // only written by storeContacts (primary_address), so saving Stage 1
+            // without completing the contacts step lost the address on re-edit.
+            'address'                  => 'nullable|array',
+            'address.address_line'     => 'nullable|string|max:1000',
+            'address.country_id'       => 'nullable|integer|exists:master_countries,id',
+            'address.state_id'         => 'nullable|integer|exists:master_states,id',
+            'address.state_code'       => 'nullable|string|max:32',
+            'address.city'             => 'nullable|string|max:128',
+            'address.pincode'          => 'nullable|string|max:16',
         ]);
+
+        // Pull the address off $data (not a vendors column) — upserted onto the
+        // vendor's primary address inside the transaction below.
+        $address = $data['address'] ?? null;
+        unset($data['address']);
 
         // Resolve the supplier-type NAME → master_vendor_types id.
         if (!empty($data['vendor_type'])) {
@@ -252,7 +268,7 @@ class VendorController extends Controller
             }
         }
 
-        DB::transaction(function () use (&$vendor, $isEdit, $user, $data, $segIds) {
+        DB::transaction(function () use (&$vendor, $isEdit, $user, $data, $segIds, $address) {
             if ($isEdit) {
                 $vendor->fill($data);
                 $vendor->step_completed = max((int) $vendor->step_completed, 1);
@@ -273,6 +289,37 @@ class VendorController extends Controller
 
             // Replace the segment pivot rows with the new selection.
             $vendor->segments()->sync($segIds);
+
+            // Persist the registered-office address onto the primary VendorAddress
+            // WITHOUT touching the contact fields — so the address survives saving
+            // the Identification & Address tab, independent of the contacts step
+            // (which later fills in the primary contact person on the same row).
+            if (is_array($address) && array_filter($address, fn ($v) => $v !== null && $v !== '')) {
+                $addrFields = [
+                    'address_line' => $address['address_line'] ?? null,
+                    'country_id'   => $address['country_id']   ?? null,
+                    'state_id'     => $address['state_id']     ?? null,
+                    'state_code'   => $address['state_code']   ?? null,
+                    'city'         => $address['city']         ?? null,
+                    'pincode'      => $address['pincode']      ?? null,
+                ];
+                $primary = $vendor->addresses()->where('is_primary', true)->first();
+                if ($primary) {
+                    $primary->fill($addrFields);
+                    if (!$primary->address_type) $primary->address_type = 'Registered Office';
+                    $primary->save();
+                } else {
+                    $vendor->addresses()->create(array_merge($addrFields, [
+                        'address_type' => 'Registered Office',
+                        'is_primary'   => true,
+                        // contact_name is NOT NULL on vendor_addresses; the primary
+                        // contact person is captured later via the contacts step.
+                        // Seed an empty string so the address row can be created now
+                        // (the contacts step fills in the real contact fields).
+                        'contact_name' => '',
+                    ]));
+                }
+            }
         });
 
         $vendor->load(self::SHOW_WITH);
@@ -657,16 +704,22 @@ class VendorController extends Controller
         }
 
         $data = $this->validateGst($request);
-        $this->assertGstNumberUnique($vendor, $data['gst_number']);
+        $gst = strtoupper($data['gst_number']);
+        $this->assertGstNumberUnique($vendor, $gst);
         $row = VendorGstScrutiny::create([
             'vendor_id'               => $vendor->id,
-            'gst_number'              => strtoupper($data['gst_number']),
+            'gst_number'              => $gst,
             'status'                  => $data['status'] ?? 'Active',
             'last_filing_date'        => $data['last_filing_date'] ?? null,
             'prev_non_gst_2a_invoice' => $data['prev_non_gst_2a_invoice'] ?? null,
             'red_flags'               => $data['red_flags'] ?? null,
             'created_by'              => $user->id,
         ]);
+
+        // GST number is a supplier-wide value — every scrutiny record belongs to
+        // the same GSTIN. Keep them ALL in sync with the latest entered number so
+        // the supplier never shows mismatched GSTINs across scrutiny periods.
+        VendorGstScrutiny::where('vendor_id', $vendor->id)->update(['gst_number' => $gst]);
 
         return response()->json(['data' => $this->shapeGst($row)], 201);
     }
@@ -681,14 +734,18 @@ class VendorController extends Controller
 
         $row = VendorGstScrutiny::where('vendor_id', $vendor->id)->findOrFail($gstId);
         $data = $this->validateGst($request);
-        $this->assertGstNumberUnique($vendor, $data['gst_number']);
+        $gst = strtoupper($data['gst_number']);
+        $this->assertGstNumberUnique($vendor, $gst);
         $row->update([
-            'gst_number'              => strtoupper($data['gst_number']),
+            'gst_number'              => $gst,
             'status'                  => $data['status'] ?? 'Active',
             'last_filing_date'        => $data['last_filing_date'] ?? null,
             'prev_non_gst_2a_invoice' => $data['prev_non_gst_2a_invoice'] ?? null,
             'red_flags'               => $data['red_flags'] ?? null,
         ]);
+
+        // GST number is supplier-wide — sync every scrutiny record to it.
+        VendorGstScrutiny::where('vendor_id', $vendor->id)->update(['gst_number' => $gst]);
 
         return response()->json(['data' => $this->shapeGst($row->fresh())]);
     }
