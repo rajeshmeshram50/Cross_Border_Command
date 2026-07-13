@@ -46,30 +46,18 @@ class ProductController extends Controller
         $branchFilter = $applyBranchFilter ? ($request->integer('branch_id') ?: null) : null;
         $user = $request->user();
 
-        // An HOD employee sees the WHOLE branch catalog (like the Director /
-        // branch user). A regular employee stays peer-isolated (only their own
-        // rows) via MasterVisibility below — that's fine for staff. The Director
-        // (branch_user) and admins already get the right scope from MasterVisibility.
+        // Products are a SHARED branch catalog — EVERY employee (not only HODs)
+        // sees the whole branch's rows: globals + client-level + their own
+        // branch's products, so a product the branch/Director/teammate created is
+        // visible to all staff in that branch. Sibling branches stay hidden
+        // (branch_id segregation). This deliberately OVERRIDES MasterVisibility's
+        // peer-isolated employee default (which would show only self-created
+        // rows). Editing is still gated by editDenial()/hierarchicalDenial() —
+        // staff can VIEW but not modify products they don't own (HODs manage the
+        // whole branch catalog).
         if ($user && ($user->user_type ?? null) === 'employee') {
-            $isHod = \App\Models\Employee::where('user_id', $user->id)
-                ->whereIn('designation_id', \App\Support\DepartmentPermissionSync::hodDesignationIds())
-                ->exists();
-            if ($isHod) {
-                $clientId = $user->client_id ?? optional($user->branch ?? null)->client_id;
-                $branchId = $user->branch_id;
-                $query->where(function ($w) use ($clientId, $branchId) {
-                    $w->whereNull('client_id')                        // globals
-                      ->orWhere(function ($ww) use ($clientId, $branchId) {
-                          $ww->where('client_id', $clientId)
-                             ->where(function ($wb) use ($branchId) {
-                                 $wb->whereNull('branch_id')           // client-level
-                                    ->orWhere('branch_id', $branchId); // own branch
-                             });
-                      });
-                });
-                return $query;
-            }
-            // Regular employee → fall through to peer-isolated MasterVisibility.
+            MasterVisibility::applyBranchScope($query, $user);
+            return $query;
         }
 
         MasterVisibility::applyReadScope($query, $user, $branchFilter);
@@ -386,6 +374,13 @@ class ProductController extends Controller
             'secondary_images.*'    => 'nullable|string|max:500',
             'secondary_image_files'   => 'nullable|array|max:10',
             'secondary_image_files.*' => 'file|mimes:jpg,jpeg,png,pdf|max:2048',
+            // Product-level supporting attachment — a single document that may be
+            // ANY type (PDF / Word / Excel / PPT / image / text). Same two-input
+            // contract as the primary image:
+            //   product_attachment       existing path the client wants to keep
+            //   product_attachment_file  new file replacing it
+            'product_attachment'      => 'nullable|string|max:500',
+            'product_attachment_file' => 'nullable|file|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,jpg,jpeg,png,gif,webp|max:10240',
         ]);
 
         $product = isset($data['id'])
@@ -407,7 +402,7 @@ class ProductController extends Controller
         // need extra handling).
         $product->fill(
             collect($data)
-                ->except(['id', 'primary_image', 'primary_image_file', 'secondary_images', 'secondary_image_files'])
+                ->except(['id', 'primary_image', 'primary_image_file', 'secondary_images', 'secondary_image_files', 'product_attachment', 'product_attachment_file'])
                 ->toArray()
         );
 
@@ -486,6 +481,30 @@ class ProductController extends Controller
             }
 
             $product->secondary_images = array_values(array_merge($kept, $appended));
+        }
+
+        /* ── Product attachment ────────────────────────────────────────
+         * Same three cases as the primary image (see above):
+         *   1. New file uploaded → store it (any doc type), delete the old.
+         *   2. No new file but `product_attachment` sent as a string → keep
+         *      it (or update to a differing path). Empty string clears it.
+         *   3. Key absent entirely → leave the column untouched.
+         * ──────────────────────────────────────────────────────────── */
+        if ($request->hasFile('product_attachment_file')) {
+            if ($product->product_attachment && !str_starts_with((string) $product->product_attachment, 'blob:')) {
+                Storage::disk('public')->delete($this->relativePath($product->product_attachment));
+            }
+            $product->product_attachment = $this->storeFileWithName($request->file('product_attachment_file'), 'products/attachments');
+        } elseif ($request->has('product_attachment')) {
+            $newPath = $data['product_attachment'] ?: null;
+            if ($newPath !== null && str_starts_with($newPath, 'blob:')) {
+                $newPath = null;
+            }
+            if ($product->product_attachment && $product->product_attachment !== $newPath
+                && !str_starts_with((string) $product->product_attachment, 'blob:')) {
+                Storage::disk('public')->delete($this->relativePath($product->product_attachment));
+            }
+            $product->product_attachment = $newPath;
         }
 
         // Mark step 1 (Core) complete only if it wasn't beyond already.

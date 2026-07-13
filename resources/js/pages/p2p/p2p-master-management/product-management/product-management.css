@@ -2247,8 +2247,21 @@
   box-shadow: 0 40px 90px rgba(45,20,90,.5), 0 0 0 1px rgba(255,255,255,.5) inset;
   color: #1e1b4b;
   animation: apmPop .26s cubic-bezier(.22,1,.36,1);
+  /* Anchor for the save-time busy veil (.apm-busy-veil, inset:0). */
+  position: relative;
 }
 @keyframes apmPop { from { transform: translateY(18px) scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
+/* Save-time interaction lock — while a step save is in flight, this
+   transparent veil covers the whole card and swallows every click so the
+   user can't fire a second action (open Map Supplier, switch tab, close the
+   modal, etc.) mid-save. It clears automatically because every saver resets
+   `saving` in a finally block. The footer's "Saving…" spinner shows through. */
+.apm-busy-veil {
+  position: absolute; inset: 0; z-index: 40;
+  background: rgba(250,247,255,.35);
+  cursor: progress;
+}
+[data-bs-theme="dark"] .apm-busy-veil { background: rgba(20,16,42,.35); }
 .apm-modal *, .apm-modal *::before, .apm-modal *::after { box-sizing: border-box; }
 
 /* ─── Header ─── */
@@ -2765,6 +2778,37 @@
   display: flex; align-items: center; justify-content: center;
   padding: 0;
 }
+
+/* Generic file chip — used by the Product Attachment card, which can hold any
+   document type (PDF / Word / image / etc.). A file icon + filename pill sized
+   to content, instead of the 64px image square used for photo uploads. */
+.apm-upload-filechip {
+  width: auto; height: auto; max-width: 340px;
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 9px;
+  background: #f5f3ff; border: 1px solid #ddd6fe;
+  color: #4c1d95; text-decoration: none;
+  font-size: 12.5px; font-weight: 600;
+  transition: background .15s, border-color .15s;
+}
+.apm-upload-filechip:hover { background: #ede9fe; border-color: #c4b5fd; }
+.apm-upload-fileico { color: #7c3aed; flex-shrink: 0; }
+.apm-upload-filename {
+  min-width: 0; max-width: 240px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Remove button sits inline in the pill (not the absolute top-right corner the
+   image square uses). */
+.apm-upload-filechip button {
+  position: static; width: 18px; height: 18px; flex-shrink: 0;
+  background: rgba(76,29,149,.12); color: #6d28d9;
+}
+.apm-upload-filechip:hover button { background: rgba(76,29,149,.22); }
+[data-bs-theme="dark"] .apm-upload-filechip {
+  background: rgba(124,92,252,.14); border-color: #4c1d95; color: #ddd6fe;
+}
+[data-bs-theme="dark"] .apm-upload-fileico { color: #a78bfa; }
+[data-bs-theme="dark"] .apm-upload-filechip button { background: rgba(167,139,250,.2); color: #ddd6fe; }
 
 /* "+N more" overflow tile — reuses the chip footprint but is a button */
 .apm-upload-more { padding: 0; cursor: pointer; background: none; }

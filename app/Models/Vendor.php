@@ -140,6 +140,18 @@ class Vendor extends Model
      */
     public function scopeForUser(Builder $q, $user, ?int $branchFilter = null): Builder
     {
+        // Suppliers are a SHARED branch catalog — EVERY employee (not only the
+        // branch user/Director) sees the whole branch's suppliers: globals +
+        // client-level + their own branch's rows (sibling branches stay hidden).
+        // This mirrors the Product catalog scope (ProductController::applyScope)
+        // so a Purchase-department employee can map any supplier the branch
+        // created, and deliberately OVERRIDES MasterVisibility's peer-isolated
+        // employee default (which would show only self-created suppliers).
+        // Editing stays gated by hierarchicalDenial() elsewhere.
+        if ($user && ($user->user_type ?? null) === 'employee') {
+            \App\Support\MasterVisibility::applyBranchScope($q, $user);
+            return $q;
+        }
         // $branchFilter = BranchSwitcher narrowing; see Customer::scopeForUser.
         \App\Support\MasterVisibility::applyReadScope($q, $user, $branchFilter);
         return $q;

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
+import Tooltip from './Tooltip';
 import './MasterSelect.css';
 
 /* A small pill shown beside an option label. `tone` picks the palette —
@@ -193,13 +194,26 @@ export function MasterSelect({
           className="master-select-toggle"
         >
           {selected ? (
-            <span className="master-select-value">{selected.label}{badgesOf(selected).map((b, i) => <OptBadge key={i} b={b} />)}</span>
+            /* Long labels truncate with an ellipsis (see .master-select-value-text);
+               the full text shows on hover in the project's styled dark pill
+               (Tooltip) instead of the plain native title. Any badge sits after
+               the truncating label and stays visible. */
+            <Tooltip label={selected.label} position="bottom">
+              <span className="master-select-value">
+                <span className="master-select-value-text">{selected.label}</span>
+                {badgesOf(selected).map((b, i) => <OptBadge key={i} b={b} />)}
+              </span>
+            </Tooltip>
           ) : currentValue ? (
             /* Value set but not in the currently-loaded options (e.g. a
                paginated/async list before its page loads, or an owner
                excluded from the pickable list). Prefer a caller-supplied
                label so the field shows a NAME, not the raw value/id. */
-            <span className="master-select-value">{currentValueLabel || currentValue}</span>
+            <Tooltip label={currentValueLabel || currentValue} position="bottom">
+              <span className="master-select-value">
+                <span className="master-select-value-text">{currentValueLabel || currentValue}</span>
+              </span>
+            </Tooltip>
           ) : loading ? (
             <span className="master-select-shimmer" aria-label="Loading" />
           ) : (
@@ -280,21 +294,28 @@ export function MasterSelect({
                     disabled={opt.disabled}
                     toggle={!opt.disabled}
                     onClick={opt.disabled ? undefined : () => handlePick(opt.value)}
-                    /* Full label as a native tooltip so a truncated (long) option
-                       name is still readable on hover. Disabled options keep their
-                       reason. */
-                    title={opt.disabled ? opt.disabledReason : opt.label}
                     className="master-select-item"
                     style={opt.disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                   >
-                    {(opt.badge || opt.badges?.length) ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', width: '100%' }}>
-                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
-                        {badgesOf(opt).map((b, i) => <OptBadge key={i} b={b} />)}
-                      </span>
-                    ) : (
-                      <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
-                    )}
+                    {/* Full label (or the disabled reason) shows on hover in the
+                        project's styled dark pill (Tooltip) so a truncated (long)
+                        option name stays readable — replaces the plain native title. */}
+                    <Tooltip label={opt.disabled ? (opt.disabledReason ?? opt.label) : opt.label} position="top">
+                      {(opt.badge || opt.badges?.length) ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', width: '100%' }}>
+                          {/* Cap the label at ~55% of the row so a long name
+                              truncates early (…). It does NOT grow (flex 0 1 auto),
+                              so the free space collapses into the badge wrapper's
+                              margin-left:auto, pinning the badges to the right edge. */}
+                          <span style={{ flex: '0 1 auto', minWidth: 0, maxWidth: '55%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
+                          <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
+                            {badgesOf(opt).map((b, i) => <OptBadge key={i} b={b} />)}
+                          </span>
+                        </span>
+                      ) : (
+                        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
+                      )}
+                    </Tooltip>
                   </DropdownItem>
                 ))}
                 {loadingMore && (

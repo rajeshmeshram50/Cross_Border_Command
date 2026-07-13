@@ -79,7 +79,7 @@ type ApiVendor = {
   status: string;
   primary_email: string | null;
   vendor_type?: { id: number; name: string | null } | null;
-  segment?: { id: number; title: string | null } | null;
+  segment?: { id: number; name: string | null } | null;
   segments?: { id: number; name: string | null }[] | null;
   risk_level?: { id: number; name: string | null } | null;
   /* Correlated-subquery count from VendorController::index — drives the
@@ -166,6 +166,7 @@ export default function Vendors() {
      (same dynamic behaviour as the CLM Segment Master). */
   const [page, setPage] = useState(1);
   const [rpp, setRpp] = useState(10);
+  const autoFitRef = useRef(true); // false once the user picks a rows-per-page manually
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -212,8 +213,14 @@ export default function Vendors() {
       email:       row.primary_address?.email ?? row.primary_email ?? '—',
       status:      row.status === 'active' ? 'Active' : 'Inactive',
       opportunityCount: Number(row.opportunity_count ?? 0) || 0,
-      segment:     row.segment?.title ?? undefined,
-      segments:    (row.segments ?? []).map(s => s.name ?? '').filter(Boolean),
+      segment:     row.segment?.name ?? undefined,
+      // Prefer the multi-segment pivot; fall back to the legacy scalar `segment`
+      // relation so suppliers created before multi-segment still show their
+      // segment in the list (the list endpoint returns raw models — no fallback).
+      segments:    (() => {
+        const arr = (row.segments ?? []).map(s => s.name ?? '').filter(Boolean);
+        return arr.length ? arr : (row.segment?.name ? [row.segment.name] : []);
+      })(),
       risk:        row.risk_level?.name ?? undefined,
       contacts,
     };
@@ -255,7 +262,7 @@ export default function Vendors() {
       const cardH = Math.max(0, window.innerHeight - top - 64);
       const avail = cardH - THEAD;
       const fit = Math.max(4, Math.floor(avail / ROW));
-      setRpp(prev => (prev === fit ? prev : fit));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       setFillH(prev => (prev === cardH ? prev : cardH));
     };
     recompute();
@@ -621,7 +628,7 @@ useEffect(() => {
                 </div>
                 {/* Shared dynamic pager — same "Showing X–Y of Z · page/pages · ‹ ›"
                     component the CLM Segment Master uses. */}
-                <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} />
+                <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} pageSizeOptions={[5, 10, 25, 50]} />
               </>
             )}
           </div>
@@ -634,7 +641,7 @@ useEffect(() => {
         <AddVendorModal
           vendorId={editingId}
           initialStep={editingStep ?? undefined}
-          onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); }}
+          onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); void refresh(); }}
           onSubmit={handleSave}
         />
       )}
