@@ -374,6 +374,13 @@ class ProductController extends Controller
             'secondary_images.*'    => 'nullable|string|max:500',
             'secondary_image_files'   => 'nullable|array|max:10',
             'secondary_image_files.*' => 'file|mimes:jpg,jpeg,png,pdf|max:2048',
+            // Product-level supporting attachment — a single document that may be
+            // ANY type (PDF / Word / Excel / PPT / image / text). Same two-input
+            // contract as the primary image:
+            //   product_attachment       existing path the client wants to keep
+            //   product_attachment_file  new file replacing it
+            'product_attachment'      => 'nullable|string|max:500',
+            'product_attachment_file' => 'nullable|file|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,jpg,jpeg,png,gif,webp|max:10240',
         ]);
 
         $product = isset($data['id'])
@@ -395,7 +402,7 @@ class ProductController extends Controller
         // need extra handling).
         $product->fill(
             collect($data)
-                ->except(['id', 'primary_image', 'primary_image_file', 'secondary_images', 'secondary_image_files'])
+                ->except(['id', 'primary_image', 'primary_image_file', 'secondary_images', 'secondary_image_files', 'product_attachment', 'product_attachment_file'])
                 ->toArray()
         );
 
@@ -474,6 +481,30 @@ class ProductController extends Controller
             }
 
             $product->secondary_images = array_values(array_merge($kept, $appended));
+        }
+
+        /* ── Product attachment ────────────────────────────────────────
+         * Same three cases as the primary image (see above):
+         *   1. New file uploaded → store it (any doc type), delete the old.
+         *   2. No new file but `product_attachment` sent as a string → keep
+         *      it (or update to a differing path). Empty string clears it.
+         *   3. Key absent entirely → leave the column untouched.
+         * ──────────────────────────────────────────────────────────── */
+        if ($request->hasFile('product_attachment_file')) {
+            if ($product->product_attachment && !str_starts_with((string) $product->product_attachment, 'blob:')) {
+                Storage::disk('public')->delete($this->relativePath($product->product_attachment));
+            }
+            $product->product_attachment = $this->storeFileWithName($request->file('product_attachment_file'), 'products/attachments');
+        } elseif ($request->has('product_attachment')) {
+            $newPath = $data['product_attachment'] ?: null;
+            if ($newPath !== null && str_starts_with($newPath, 'blob:')) {
+                $newPath = null;
+            }
+            if ($product->product_attachment && $product->product_attachment !== $newPath
+                && !str_starts_with((string) $product->product_attachment, 'blob:')) {
+                Storage::disk('public')->delete($this->relativePath($product->product_attachment));
+            }
+            $product->product_attachment = $newPath;
         }
 
         // Mark step 1 (Core) complete only if it wasn't beyond already.
