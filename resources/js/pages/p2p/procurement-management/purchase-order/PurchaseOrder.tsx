@@ -3,6 +3,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import CreatePoWizard from './CreatePoWizard';
 import TradeDocsModal from './TradeDocsModal';
+import PoPaymentModal from './PoPaymentModal';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import './purchase-order.css';
 
@@ -178,6 +179,7 @@ export default function PurchaseOrder() {
   const [sync, setSync] = useState<SyncState | null>(null);
   const [wizard, setWizard] = useState<{ editRow: PoRow | null } | null>(null);
   const [tradeDoc, setTradeDoc] = useState<PoRow | null>(null);
+  const [payTarget, setPayTarget] = useState<PoRow | null>(null);
   const [emailing, setEmailing] = useState<Record<number, boolean>>({});
 
   // ── Server-driven data (branch_id is auto-injected on GETs → branch isolation) ──
@@ -540,7 +542,7 @@ export default function PurchaseOrder() {
                           >{Ico.edit(15)}</button>
                           <button type="button" className="polist-ico" title="Send PO Via Email" disabled={!!(r.id && emailing[r.id])} onClick={() => doEmail(r)}>{Ico.mail(15)}</button>
                           <button type="button" className="polist-ico" title="Trade Documents & Agreements" onClick={() => setTradeDoc(r)}>{Ico.vault(15)}</button>
-                          <button type="button" className="polist-ico" title="PO Payment" onClick={() => stub(`PO Payment — ${r.po}`)}>{Ico.pay(15)}</button>
+                          <button type="button" className="polist-ico" title="PO Payment" onClick={() => setPayTarget(r)}>{Ico.pay(15)}</button>
                           <button type="button" className="polist-ico" title="More Actions" onClick={e => openMore(e, r)}>{Ico.kebab(15)}</button>
                         </div>
                       </td>
@@ -621,6 +623,14 @@ export default function PurchaseOrder() {
       {tradeDoc && (
         <TradeDocsModal po={tradeDoc.po} poId={tradeDoc.id} supName={tradeDoc.supName} supCode={tradeDoc.supCode} supplierId={tradeDoc.vendor_id} onClose={() => setTradeDoc(null)} />
       )}
+
+      {/* ── PAYMENT SUMMARY AGAINST PO MODAL — data loads per PO id ───── */}
+      <PoPaymentModal
+        open={!!payTarget}
+        poId={payTarget?.id ?? null}
+        onClose={() => setPayTarget(null)}
+        onChanged={() => setReloadKey(k => k + 1)}
+      />
     </div>
   );
 }

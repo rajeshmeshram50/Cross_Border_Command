@@ -22,6 +22,7 @@ class PurchaseOrder extends Model
         'opportunity_id', 'opportunity_code', 'customer_name', 'consignee_name',
         'terms', 'shipping_charges', 'packaging_charges', 'other_charges',
         'total_product_cost', 'total_cgst', 'total_sgst', 'additional_charges', 'grand_total',
+        'tds_percentage', 'tds_amount', 'tds_cut',
         'zoho_status', 'zoho_purchaseorder_id', 'zoho_synced_at', 'zoho_error', 'zoho_pdf_path',
         'status', 'created_by', 'updated_by',
     ];
@@ -31,6 +32,9 @@ class PurchaseOrder extends Model
         'expected_delivery_date' => 'date',
         'physical_inspection' => 'boolean',
         'exchange_rate' => 'decimal:4',
+        'tds_percentage' => 'decimal:2',
+        'tds_amount' => 'decimal:2',
+        'tds_cut' => 'boolean',
         'shipping_charges' => 'decimal:2',
         'packaging_charges' => 'decimal:2',
         'other_charges' => 'decimal:2',
@@ -47,4 +51,5 @@ class PurchaseOrder extends Model
     public function vendor(): BelongsTo { return $this->belongsTo(Vendor::class); }
     public function shipmentOrder(): BelongsTo { return $this->belongsTo(ShipmentOrder::class); }
     public function items(): HasMany { return $this->hasMany(PurchaseOrderItem::class)->orderBy('line_no')->orderBy('id'); }
+    public function payments(): HasMany { return $this->hasMany(PoPayment::class)->orderBy('id'); }
 }

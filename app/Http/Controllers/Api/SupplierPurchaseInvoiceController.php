@@ -698,6 +698,7 @@ class SupplierPurchaseInvoiceController extends Controller
             'spiNo' => $spi->code,
             'spiDate' => optional($spi->invoice_date)->toDateString(),
             'invoice_no' => $spi->invoice_no,
+            'poId' => $spi->purchase_order_id,   // linked PO — drives "pay PO from SPI"
             'poNo' => $spi->po_code,
             'poType' => $spi->po_type,
             'doc' => $spi->document_type,

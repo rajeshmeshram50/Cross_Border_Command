@@ -7,6 +7,7 @@ import Tooltip from '../../../../components/ui/Tooltip';
 import { formatDmy } from '../../../../utils/formatDmy';
 import { formatProductCode } from '../../../../utils/formatProductCode';
 import TradeDocsTable from './TradeDocsTable';
+import PoPaymentModal from './PoPaymentModal';
 import SupplierEvidenceVaultModal from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -364,6 +365,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
   // Wizard
   const [stage, setStage] = useState(1);
   const [vaultOpen, setVaultOpen] = useState(false);
+  const [payOpen, setPayOpen] = useState(false);
   const [signActive, setSignActive] = useState(false);
   const [showMissing, setShowMissing] = useState(false);
 
@@ -904,7 +906,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                   ))}
                 </div>
                 <span className="cstrip__divider" />
-                <button type="button" className="cpo-paysum-btn" onClick={() => toast.info('PO Payment', 'Coming in a later phase')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg> PO Payment</button>
+                <button type="button" className="cpo-paysum-btn" onClick={() => savedPoId ? setPayOpen(true) : toast.warning('Save the PO first', 'Create or save this purchase order before recording a payment.')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg> PO Payment</button>
                 <span className="cstrip__divider" />
                 <button type="button" className="cstrip__back-btn" onClick={onClose}><span className="cstrip__back-btn-sheen" /><XIco /> Close</button>
               </div>
@@ -1234,6 +1236,13 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
           risk: 'Compliant',
         }}
         onClose={() => setVaultOpen(false)}
+      />
+
+      {/* Payment Summary Against PO — opens for the saved PO id (header button). */}
+      <PoPaymentModal
+        open={payOpen}
+        poId={savedPoId}
+        onClose={() => setPayOpen(false)}
       />
     </div>
   );
