@@ -152,6 +152,14 @@ class PurchaseOrderController extends Controller
         if (!$user) abort(401);
         $po = PurchaseOrder::findOrFail($id);
         $this->assertScope($po, $user, 'write');
+        // A PO already pushed to Zoho Books can't be deleted locally — doing so
+        // would orphan the Zoho record and re-free its ordered qty for other POs.
+        if ($po->zoho_purchaseorder_id) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This PO is synced to Zoho Books and can no longer be deleted.',
+            ], 422);
+        }
         $po->delete();
         return response()->json(['status' => true]);
     }
@@ -208,7 +216,8 @@ class PurchaseOrderController extends Controller
             $stateCode = optional($vendor->primaryAddress)->state_code;
 
             // Intra- vs inter-state decides GST(CGST+SGST) vs IGST in Zoho.
-            $orgState = $books->orgStateCode() ?: '27';
+            // Prefer the Zoho org's own state; fall back to this tenant's home state.
+            $orgState = $books->orgStateCode() ?: $this->homeStateCode($po->branch_id);
             $interState = $stateCode && (string) $stateCode !== (string) $orgState;
 
             $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
@@ -852,7 +861,7 @@ class PurchaseOrderController extends Controller
             'physical_inspection' => 'nullable|boolean',
             'currency_id' => 'nullable|integer',
             'currency_code' => 'nullable|string|max:16',
-            'exchange_rate' => 'nullable|numeric',
+            'exchange_rate' => 'nullable|numeric|min:0',
             'inco_term' => 'nullable|string|max:32',
             'port_of_loading' => 'nullable|string|max:128',
             'port_of_discharge' => 'nullable|string|max:128',
@@ -861,18 +870,18 @@ class PurchaseOrderController extends Controller
             'vendor_id' => 'nullable|integer',
             'shipment_order_id' => 'nullable|integer',
             'terms' => 'nullable|string',
-            'shipping_charges' => 'nullable|numeric',
-            'packaging_charges' => 'nullable|numeric',
-            'other_charges' => 'nullable|numeric',
+            'shipping_charges' => 'nullable|numeric|min:0',
+            'packaging_charges' => 'nullable|numeric|min:0',
+            'other_charges' => 'nullable|numeric|min:0',
             'items' => 'array',
             'items.*.product_id' => 'nullable|integer',
             'items.*.product_code' => 'nullable|string|max:64',
             'items.*.pi_product_name' => 'nullable|string|max:255',
-            'items.*.pi_quantity' => 'nullable|numeric',
+            'items.*.pi_quantity' => 'nullable|numeric|min:0',
             'items.*.product_name' => 'nullable|string|max:255',
-            'items.*.quantity' => 'nullable|numeric',
-            'items.*.rate' => 'nullable|numeric',
-            'items.*.gst_pct' => 'nullable|numeric',
+            'items.*.quantity' => 'nullable|numeric|min:0',
+            'items.*.rate' => 'nullable|numeric|min:0',
+            'items.*.gst_pct' => 'nullable|numeric|min:0|max:100',
         ]);
 
         // Resolve supplier + shipment context (tenant-checked) and cache labels.
@@ -895,8 +904,9 @@ class PurchaseOrderController extends Controller
             $ship = $q->find($v['shipment_order_id']);
             if ($ship) $v['_shipment'] = $ship; else $v['shipment_order_id'] = null;
         }
-        // Intra-state (Maharashtra 27) → CGST/SGST 9/9; else split the product GST.
-        $v['_intra'] = (string) $v['_supplierStateCode'] === '27';
+        // Intra- vs inter-state: compare the vendor's state against THIS tenant's
+        // own registered home state (branch GST state code), not a hardcoded '27'.
+        $v['_intra'] = (string) $v['_supplierStateCode'] === (string) $this->homeStateCode($user->branch_id);
         return $v;
     }
 
@@ -1134,6 +1144,19 @@ class PurchaseOrderController extends Controller
             return;
         }
         $q->where('branch_id', $user->branch_id);
+    }
+
+    /**
+     * This tenant's own registered GST state code, used for the intra- vs
+     * inter-state (CGST/SGST vs IGST) decision. Sourced from the branch's
+     * `gst_state_code`, deriving from its GSTIN if the code is blank; falls back
+     * to '27' only when the tenant has captured no GST state at all.
+     */
+    private function homeStateCode(?int $branchId): string
+    {
+        $branch = $branchId ? \App\Models\Branch::find($branchId) : null;
+        $code = optional($branch)->gst_state_code ?: substr((string) optional($branch)->gst_number, 0, 2);
+        return $code !== '' && $code !== null ? (string) $code : '27';
     }
 
     private function assertScope(PurchaseOrder $row, $user, string $action = 'read'): void

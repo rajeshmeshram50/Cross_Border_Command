@@ -780,13 +780,26 @@ class SalesPdfController extends Controller
         return $this->streamPoPdf($po, true);
     }
 
+    /**
+     * Tenant + branch isolation for PO PDF/email actions. Mirrors
+     * PurchaseOrderController::assertScope so a branch user can't reach another
+     * branch's PO by id (the earlier client_id-only check leaked across branches).
+     */
+    private function assertPoTenantScope(\App\Models\PurchaseOrder $po, $user): void
+    {
+        if ($user->user_type === 'super_admin') return;
+        if (!$user->client_id || (int) $po->client_id !== (int) $user->client_id) abort(404);
+        if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
+        if ((int) $po->branch_id !== (int) $user->branch_id) abort(404);
+    }
+
     /** Authenticated inline PDF stream (for the wizard/modal View actions). */
     public function viewPurchaseOrderPdf(Request $request, int $id)
     {
         $user = $request->user();
         if (!$user) abort(401);
         $po = \App\Models\PurchaseOrder::with('items')->findOrFail($id);
-        if ($user->user_type !== 'super_admin' && (int) $po->client_id !== (int) $user->client_id) abort(404);
+        $this->assertPoTenantScope($po, $user);
         return $this->streamPoPdf($po, $request->boolean('signature', true));
     }
 
@@ -796,7 +809,7 @@ class SalesPdfController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
         $po = \App\Models\PurchaseOrder::with('items')->findOrFail($id);
-        if ($user->user_type !== 'super_admin' && (int) $po->client_id !== (int) $user->client_id) abort(404);
+        $this->assertPoTenantScope($po, $user);
 
         $vendor = $po->vendor_id ? \App\Models\Vendor::with('primaryAddress')->find($po->vendor_id) : null;
         $override = trim((string) $request->input('to', ''));
