@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\PreviousEmploymentController;
 use App\Http\Controllers\Api\ProcurementController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PurchaseOrderController;
+use App\Http\Controllers\Api\PoPaymentController;
 use App\Http\Controllers\Api\SupplierPurchaseInvoiceController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
@@ -521,6 +522,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/p2p/purchase-orders/{id}/zoho-pdf',           [PurchaseOrderController::class, 'zohoPdf'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/email',              [SalesPdfController::class, 'emailPurchaseOrder'])->whereNumber('id');
     Route::get   ('/p2p/purchase-orders/{id}/pdf',                [SalesPdfController::class, 'viewPurchaseOrderPdf'])->whereNumber('id');
+    // Payment Summary Against PO — payments always subtract from the PO balance,
+    // reachable from both the PO and SPI screens.
+    Route::get   ('/p2p/purchase-orders/{po}/payment-summary',     [PoPaymentController::class, 'summary'])->whereNumber('po');
+    Route::post  ('/p2p/purchase-orders/{po}/payment-summary/tds', [PoPaymentController::class, 'saveTds'])->whereNumber('po');
+    Route::post  ('/p2p/purchase-orders/{po}/payments',            [PoPaymentController::class, 'store'])->whereNumber('po');
+    Route::delete('/p2p/purchase-orders/{po}/payments/{payment}',  [PoPaymentController::class, 'destroy'])->whereNumber('po')->whereNumber('payment');
 
     // ── Supplier Purchase Invoices (P2P) ──
     Route::get   ('/p2p/supplier-purchase-invoices/preview-code',        [SupplierPurchaseInvoiceController::class, 'previewCode']);

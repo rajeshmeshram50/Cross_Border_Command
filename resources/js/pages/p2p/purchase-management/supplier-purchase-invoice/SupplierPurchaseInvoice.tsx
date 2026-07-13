@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import './supplier-purchase-invoice.css';
 import MapSupplierPurchaseInvoiceModal, { type MapConfirmPayload } from './MapSupplierPurchaseInvoiceModal';
 import SpiDetail from './SpiDetail';
+import PoPaymentModal from '../../procurement-management/purchase-order/PoPaymentModal';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -19,6 +20,7 @@ type ShipTab = 'with' | 'without';
 
 interface SpiRow {
   id: number;
+  poId?: number | null;   // linked PO id — enables paying the PO from the SPI screen
   spiNo: string; spiDate: string;
   poNo: string;  poDate?: string; poType: string;
   shipId: string; piNo: string; procId: string;
@@ -58,6 +60,12 @@ export default function SupplierPurchaseInvoice() {
 
   // Server-driven list state.
   const [rows, setRows] = useState<SpiRow[]>([]);
+  // "Payment Summary Against PO" popup target (paid against the SPI's linked PO).
+  const [payRow, setPayRow] = useState<SpiRow | null>(null);
+  const openPoPayment = (r: SpiRow) => {
+    if (!r.poId) { toast.info('No linked PO', 'This invoice has no purchase order to pay against.'); return; }
+    setPayRow(r);
+  };
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [counts, setCounts] = useState({ poWith: 0, poWithout: 0, shipWith: 0, shipWithout: 0 });
@@ -347,7 +355,7 @@ export default function SupplierPurchaseInvoice() {
                         ? <Tooltip label="Already synced to Zohobook"><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
                         : <Tooltip label="Sync this invoice to Zohobook"><button type="button" className="spi-zohobtn" onClick={() => syncRow(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
                       <Tooltip label="Edit invoice"><button type="button" className="spi-iconbtn" onClick={() => { setEditId(r.id); setMapCtx(null); setDetailOpen(true); }}><IcoEdit /></button></Tooltip>
-                      <Tooltip label="Record payment"><button type="button" className="spi-iconbtn" onClick={() => toast.info('Record payment', 'Payment recording is coming soon.')}><IcoRupee /></button></Tooltip>
+                      <Tooltip label="Record payment"><button type="button" className="spi-iconbtn" onClick={() => openPoPayment(r)}><IcoRupee /></button></Tooltip>
                       <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => openMenu(e, r)}><IcoMore /></button></Tooltip>
                     </span>
                   </td>
@@ -370,6 +378,17 @@ export default function SupplierPurchaseInvoice() {
 
       {mapOpen && <MapSupplierPurchaseInvoiceModal onClose={() => setMapOpen(false)} onConfirm={(payload) => { setMapCtx(payload); setMapOpen(false); setDetailOpen(true); }} />}
 
+      {/* Payment Summary Against PO — pays the SPI's LINKED PO (amount subtracts
+          from the PO balance, never a separate SPI amount). spiId traces the
+          entry point. */}
+      <PoPaymentModal
+        open={!!payRow}
+        poId={payRow?.poId ?? null}
+        spiId={payRow?.id ?? null}
+        onClose={() => setPayRow(null)}
+        onChanged={reload}
+      />
+
       {/* ── More Actions dropdown (3-dot) ── */}
       {menu && createPortal(
         <div className="spi-menu-backdrop" onMouseDown={() => setMenu(null)}>
@@ -385,7 +404,7 @@ export default function SupplierPurchaseInvoice() {
             <div className="spi-menu-items">
               <button type="button" className="spi-menu-item is-teal" onClick={() => syncRow(menu.row)}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
               <button type="button" className="spi-menu-item" onClick={() => void downloadRow(menu.row)}><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> Download SPI</button>
-              <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); toast.info('SPI Payment', 'Payment recording is coming soon.'); }}><span className="spi-menu-item-ico spi-menu-item-ico-pay"><IcoCard /></span> SPI Payment</button>
+              <button type="button" className="spi-menu-item" onClick={() => { const row = menu.row; setMenu(null); openPoPayment(row); }}><span className="spi-menu-item-ico spi-menu-item-ico-pay"><IcoCard /></span> SPI Payment</button>
             </div>
           </div>
         </div>,

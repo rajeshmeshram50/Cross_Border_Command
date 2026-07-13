@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 /**
@@ -91,6 +92,7 @@ class PurchaseOrderController extends Controller
         if (!$user->client_id) return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
 
         $data = $this->validatePayload($request);
+        $this->assertWithinPiAllocation($data, null);
 
         $po = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
@@ -131,6 +133,7 @@ class PurchaseOrderController extends Controller
         }
 
         $data = $this->validatePayload($request);
+        $this->assertWithinPiAllocation($data, $po->id);
 
         DB::transaction(function () use ($po, $user, $data) {
             $header = $this->buildHeader($user, $data);
@@ -152,6 +155,14 @@ class PurchaseOrderController extends Controller
         if (!$user) abort(401);
         $po = PurchaseOrder::findOrFail($id);
         $this->assertScope($po, $user, 'write');
+        // A PO already pushed to Zoho Books can't be deleted locally — doing so
+        // would orphan the Zoho record and re-free its ordered qty for other POs.
+        if ($po->zoho_purchaseorder_id) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This PO is synced to Zoho Books and can no longer be deleted.',
+            ], 422);
+        }
         $po->delete();
         return response()->json(['status' => true]);
     }
@@ -208,7 +219,8 @@ class PurchaseOrderController extends Controller
             $stateCode = optional($vendor->primaryAddress)->state_code;
 
             // Intra- vs inter-state decides GST(CGST+SGST) vs IGST in Zoho.
-            $orgState = $books->orgStateCode() ?: '27';
+            // Prefer the Zoho org's own state; fall back to this tenant's home state.
+            $orgState = $books->orgStateCode() ?: $this->homeStateCode($po->branch_id);
             $interState = $stateCode && (string) $stateCode !== (string) $orgState;
 
             $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
@@ -852,7 +864,7 @@ class PurchaseOrderController extends Controller
             'physical_inspection' => 'nullable|boolean',
             'currency_id' => 'nullable|integer',
             'currency_code' => 'nullable|string|max:16',
-            'exchange_rate' => 'nullable|numeric',
+            'exchange_rate' => 'nullable|numeric|min:0',
             'inco_term' => 'nullable|string|max:32',
             'port_of_loading' => 'nullable|string|max:128',
             'port_of_discharge' => 'nullable|string|max:128',
@@ -861,18 +873,18 @@ class PurchaseOrderController extends Controller
             'vendor_id' => 'nullable|integer',
             'shipment_order_id' => 'nullable|integer',
             'terms' => 'nullable|string',
-            'shipping_charges' => 'nullable|numeric',
-            'packaging_charges' => 'nullable|numeric',
-            'other_charges' => 'nullable|numeric',
+            'shipping_charges' => 'nullable|numeric|min:0',
+            'packaging_charges' => 'nullable|numeric|min:0',
+            'other_charges' => 'nullable|numeric|min:0',
             'items' => 'array',
             'items.*.product_id' => 'nullable|integer',
             'items.*.product_code' => 'nullable|string|max:64',
             'items.*.pi_product_name' => 'nullable|string|max:255',
-            'items.*.pi_quantity' => 'nullable|numeric',
+            'items.*.pi_quantity' => 'nullable|numeric|min:0',
             'items.*.product_name' => 'nullable|string|max:255',
-            'items.*.quantity' => 'nullable|numeric',
-            'items.*.rate' => 'nullable|numeric',
-            'items.*.gst_pct' => 'nullable|numeric',
+            'items.*.quantity' => 'nullable|numeric|min:0',
+            'items.*.rate' => 'nullable|numeric|min:0',
+            'items.*.gst_pct' => 'nullable|numeric|min:0|max:100',
         ]);
 
         // Resolve supplier + shipment context (tenant-checked) and cache labels.
@@ -895,9 +907,126 @@ class PurchaseOrderController extends Controller
             $ship = $q->find($v['shipment_order_id']);
             if ($ship) $v['_shipment'] = $ship; else $v['shipment_order_id'] = null;
         }
-        // Intra-state (Maharashtra 27) → CGST/SGST 9/9; else split the product GST.
-        $v['_intra'] = (string) $v['_supplierStateCode'] === '27';
+        // Intra- vs inter-state: compare the vendor's state against THIS tenant's
+        // own registered home state (branch GST state code), not a hardcoded '27'.
+        $v['_intra'] = (string) $v['_supplierStateCode'] === (string) $this->homeStateCode($user->branch_id);
         return $v;
+    }
+
+    /**
+     * Guard against over-allocating a PI. The quantity a PO orders for each
+     * product may not exceed the PI quantity still AVAILABLE — the full PI
+     * quantity minus what OTHER POs on the same shipment already ordered (this
+     * PO's own lines are excluded on update via $excludePoId). Mirrors the
+     * remaining quantity surfaced by shipmentPiProducts() and the frontend cap,
+     * so a direct API call can't bypass it. The Without-Shipment flow has no PI
+     * and is left uncapped.
+     *
+     * @throws ValidationException 422 listing every product that overflows.
+     */
+    private function assertWithinPiAllocation(array $data, ?int $excludePoId): void
+    {
+        $ship = $data['_shipment'] ?? null;
+        $items = $data['items'] ?? [];
+        if (!$ship || empty($items)) return;
+
+        // Resolve the PI: direct link, else via the shared lead/opportunity.
+        $piId = $ship->proforma_invoice_id;
+        if (!$piId && $ship->lead_id) {
+            $piId = DB::table('proforma_invoices')->where('opp_id', $ship->lead_id)->value('id');
+        }
+        if (!$piId) return;
+
+        $piItems = DB::table('proforma_invoice_items')->where('proforma_invoice_id', $piId)->get();
+        if ($piItems->isEmpty()) return;
+
+        $codes = DB::table('products')
+            ->whereIn('id', $piItems->pluck('product_id')->filter()->all())
+            ->pluck('product_code', 'id');
+
+        // Full PI quantity + a clean display name, keyed by product_id and by code
+        // (same code-splitting as shipmentPiProducts so the caps line up exactly).
+        $piById = [];
+        $piByCode = [];
+        $nameById = [];
+        $nameByCode = [];
+        foreach ($piItems as $it) {
+            $rawName = (string) $it->product_name;
+            $code = $it->product_id ? ($codes[$it->product_id] ?? null) : null;
+            $name = $rawName;
+            if (preg_match('/^\s*([A-Za-z]{1,5}[-\s]?\d{1,6})\s*[–—:|\-]\s*(.+)$/u', $rawName, $m)) {
+                $code = trim($m[1]);
+                $name = trim($m[2]);
+            }
+            $qty = (float) $it->quantity;
+            if ($it->product_id) {
+                $piById[(int) $it->product_id] = ($piById[(int) $it->product_id] ?? 0) + $qty;
+                $nameById[(int) $it->product_id] = $name;
+            } elseif ($code) {
+                $piByCode[$code] = ($piByCode[$code] ?? 0) + $qty;
+                $nameByCode[$code] = $name;
+            }
+        }
+
+        // Quantity ordered by OTHER POs on this shipment (exclude this PO on update).
+        $orderedRows = DB::table('purchase_order_items as poi')
+            ->join('purchase_orders as po', 'po.id', '=', 'poi.purchase_order_id')
+            ->where('po.shipment_order_id', $ship->id)
+            ->whereNull('po.deleted_at')
+            ->when($excludePoId, fn ($q) => $q->where('po.id', '!=', $excludePoId))
+            ->selectRaw('poi.product_id, poi.product_code, SUM(poi.quantity) as qty')
+            ->groupBy('poi.product_id', 'poi.product_code')
+            ->get();
+        $ordById = [];
+        $ordByCode = [];
+        foreach ($orderedRows as $row) {
+            if ($row->product_id) {
+                $ordById[(int) $row->product_id] = ($ordById[(int) $row->product_id] ?? 0) + (float) $row->qty;
+            } elseif ($row->product_code) {
+                $ordByCode[$row->product_code] = ($ordByCode[$row->product_code] ?? 0) + (float) $row->qty;
+            }
+        }
+
+        // Sum THIS PO's requested quantity per product (a product can span rows).
+        $reqById = [];
+        $reqByCode = [];
+        foreach ($items as $it) {
+            $qty = (float) ($it['quantity'] ?? 0);
+            if ($qty <= 0) continue;
+            $pid = isset($it['product_id']) && $it['product_id'] !== '' ? (int) $it['product_id'] : null;
+            $code = $it['product_code'] ?? null;
+            if ($pid) $reqById[$pid] = ($reqById[$pid] ?? 0) + $qty;
+            elseif ($code) $reqByCode[$code] = ($reqByCode[$code] ?? 0) + $qty;
+        }
+
+        $eps = 0.0001;
+        $errors = [];
+        foreach ($reqById as $pid => $req) {
+            if (!array_key_exists($pid, $piById)) continue; // not a PI product → not PI-capped
+            $remaining = max(0, $piById[$pid] - ($ordById[$pid] ?? 0));
+            if ($req > $remaining + $eps) {
+                $label = $nameById[$pid] ?? ('product #' . $pid);
+                $errors[] = "\"{$label}\": PO quantity {$this->qtyStr($req)} exceeds the PI quantity still available ({$this->qtyStr($remaining)} remaining).";
+            }
+        }
+        foreach ($reqByCode as $code => $req) {
+            if (!array_key_exists($code, $piByCode)) continue;
+            $remaining = max(0, $piByCode[$code] - ($ordByCode[$code] ?? 0));
+            if ($req > $remaining + $eps) {
+                $label = $nameByCode[$code] ?? $code;
+                $errors[] = "\"{$label}\": PO quantity {$this->qtyStr($req)} exceeds the PI quantity still available ({$this->qtyStr($remaining)} remaining).";
+            }
+        }
+
+        if ($errors) {
+            throw ValidationException::withMessages(['items' => $errors]);
+        }
+    }
+
+    /** Format a quantity for a message — drop trailing zeros (5.00 → "5", 2.50 → "2.5"). */
+    private function qtyStr(float $n): string
+    {
+        return rtrim(rtrim(number_format($n, 2, '.', ''), '0'), '.');
     }
 
     private function buildHeader($user, array $data): array
@@ -1134,6 +1263,19 @@ class PurchaseOrderController extends Controller
             return;
         }
         $q->where('branch_id', $user->branch_id);
+    }
+
+    /**
+     * This tenant's own registered GST state code, used for the intra- vs
+     * inter-state (CGST/SGST vs IGST) decision. Sourced from the branch's
+     * `gst_state_code`, deriving from its GSTIN if the code is blank; falls back
+     * to '27' only when the tenant has captured no GST state at all.
+     */
+    private function homeStateCode(?int $branchId): string
+    {
+        $branch = $branchId ? \App\Models\Branch::find($branchId) : null;
+        $code = optional($branch)->gst_state_code ?: substr((string) optional($branch)->gst_number, 0, 2);
+        return $code !== '' && $code !== null ? (string) $code : '27';
     }
 
     private function assertScope(PurchaseOrder $row, $user, string $action = 'read'): void
