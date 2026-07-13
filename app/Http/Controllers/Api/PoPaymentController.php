@@ -50,8 +50,10 @@ class PoPaymentController extends Controller
             ], 422);
         }
 
-        // TDS is computed on the BASE amount (taxable value, excluding GST).
-        $base = (float) $order->total_product_cost;
+        // TDS is computed on the BASE amount = Total PO − GST (taxable value,
+        // excluding GST). Derived from the same figures the popup shows.
+        $gst = (float) $order->total_cgst + (float) $order->total_sgst;
+        $base = (float) $order->grand_total - $gst;
         $tdsPct = round((float) $data['tds_percentage'], 2);
         $order->tds_percentage = $tdsPct;
         $order->tds_amount = round($base * $tdsPct / 100, 2);
@@ -145,21 +147,19 @@ class PoPaymentController extends Controller
 
     /* ────────────────────────── internals ────────────────────────── */
 
-    /** Net payable = (Base + GST) − TDS.
-     *  TDS is cut on the BASE (taxable value, excl. GST); GST is added back on
-     *  the post-TDS base → (base − tds) + gst = base + gst − tds. */
+    /** Net payable = (Base + GST) − TDS, where Base = Total PO − GST.
+     *  So Base + GST = Total PO → net payable = Total PO − TDS. */
     private function netPayable(PurchaseOrder $po): float
     {
-        $baseGst = (float) $po->total_product_cost + (float) $po->total_cgst + (float) $po->total_sgst;
-        return round($baseGst - (float) $po->tds_amount, 2);
+        return round((float) $po->grand_total - (float) $po->tds_amount, 2);
     }
 
     /** Assemble the full payment-summary payload for the popup. */
     private function buildSummary(PurchaseOrder $po): array
     {
-        $base      = (float) $po->total_product_cost;
-        $gstAmount = round((float) $po->total_cgst + (float) $po->total_sgst, 2);
         $totalPo   = (float) $po->grand_total;
+        $gstAmount = round((float) $po->total_cgst + (float) $po->total_sgst, 2);
+        $base      = round($totalPo - $gstAmount, 2);   // Base = Total PO − GST
         $gstPct    = $base > 0 ? round($gstAmount / $base * 100, 2) : 0.0;
         $tdsPct    = (float) $po->tds_percentage;
         $tdsAmount = (float) $po->tds_amount;
@@ -168,7 +168,9 @@ class PoPaymentController extends Controller
         $payments  = $po->payments()->get();
         $amountPaid = round((float) $payments->sum('amount'), 2);
         $balance   = round($netPay - $amountPaid, 2);
-        $progress  = $totalPo > 0 ? min(100, round($amountPaid / $totalPo * 100)) : 0;
+        // Progress is measured against the NET PAYABLE (post-TDS) — that's the
+        // amount actually owed, so 100% = balance cleared.
+        $progress  = $netPay > 0 ? min(100, round($amountPaid / $netPay * 100)) : 0;
 
         return [
             'po' => [

@@ -584,6 +584,20 @@
 .pom .cpd-misscount.is-zero{color:#15803d;background:#dcfce7;border-color:#bbf7d0;}
 .pom .cpd-ref{display:flex;align-items:center;gap:2px;min-width:0;flex-shrink:1;overflow-x:auto;scrollbar-width:none;position:relative;z-index:1;margin-right:6px;}
 .pom .cpd-ref::-webkit-scrollbar{display:none;}
+/* Product Details view/edit toggle (sits just before the collapse chevron). */
+.pom .cpd-viewtgl{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 13px;flex-shrink:0;position:relative;z-index:1;margin-right:8px;border:1.5px solid rgba(8,145,178,.35);background:rgba(255,255,255,.82);color:#0e7490;font-family:inherit;font-size:12px;font-weight:800;border-radius:9px;cursor:pointer;box-shadow:0 2px 8px rgba(6,182,212,.14);transition:background .15s,border-color .15s;}
+.pom .cpd-viewtgl:hover{background:#eafaff;border-color:#0891b2;}
+.pom .cpd-viewtgl.is-view{background:linear-gradient(135deg,#0e7490,#0891b2);border-color:#0e7490;color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35);}
+/* Read-only view: neutralise the interactive dropdowns in the product table. */
+.pom .cpd-scroll--ro .pof-dd,.pom .cpd-scroll--ro .cpd-prodcell{pointer-events:none;opacity:.72;}
+/* TDS-deducted lock banner (stages 1–3 become read-only). */
+.pom .cpo-locknote{display:flex;align-items:center;gap:10px;padding:11px 15px;margin-bottom:13px;border:1.5px solid #fcd9a8;border-radius:12px;background:linear-gradient(180deg,#fffaf0,#fff4e0);color:#92510a;font-size:12.5px;font-weight:600;line-height:1.35;box-shadow:0 2px 8px rgba(217,119,6,.1);}
+.pom .cpo-locknote svg{flex-shrink:0;color:#d97706;}
+.pom .cpo-locknote strong{font-weight:800;}
+[data-bs-theme="dark"] .pom .cpo-locknote{background:#33240f;border-color:#7a5518;color:#fcd34d;}
+[data-bs-theme="dark"] .pom .cpo-locknote svg{color:#fbbf24;}
+[data-bs-theme="dark"] .pom .cpd-viewtgl{background:#0b2b34;border-color:#1c5563;color:#67e8f9;}
+[data-bs-theme="dark"] .pom .cpd-viewtgl.is-view{background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;}
 .pom .cpd-ref__pill{display:flex;align-items:center;gap:9px;padding:6px 13px;flex-shrink:0;background:rgba(255,255,255,.72);border:1.5px solid rgba(8,145,178,.3);border-radius:12px;box-shadow:0 2px 8px rgba(6,182,212,.12),0 1px 0 rgba(255,255,255,.95) inset;}
 .pom .cpd-ref__ico{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#fff;background:linear-gradient(135deg,#06b6d4,#0891b2);box-shadow:0 3px 8px rgba(8,145,178,.45);}
 .pom .cpd-ref__ico--alt{background:linear-gradient(135deg,#0891b2,#0e7490);}

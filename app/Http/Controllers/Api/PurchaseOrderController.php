@@ -34,7 +34,9 @@ class PurchaseOrderController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $q = PurchaseOrder::query()->orderByDesc('id');
+        // withSum → per-row payment total in one query (shapeListRow reads it to
+        // compute the "fully utilised" flag without an N+1 per-row sum).
+        $q = PurchaseOrder::query()->withSum('payments as paid_sum', 'amount')->orderByDesc('id');
         $this->applyScope($q, $user, $request->integer('branch_id') ?: null);
 
         // Tab: with / without shipment id
@@ -132,6 +134,15 @@ class PurchaseOrderController extends Controller
             ], 422);
         }
 
+        // Once a PO is out for e-signature (or already signed) its content is
+        // frozen — editing after signers have the document would invalidate it.
+        if ($po->status === 'Sent for Sign' || $this->isPoSigned($po)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This PO has been sent for signature and can no longer be edited.',
+            ], 422);
+        }
+
         $data = $this->validatePayload($request);
         $this->assertWithinPiAllocation($data, $po->id);
 
@@ -204,6 +215,17 @@ class PurchaseOrderController extends Controller
         if (!$this->isPoSigned($po)) {
             return response()->json(['status' => false, 'message' => 'Sign the Purchase Order first — it must be e-signed via Zoho Sign before it can be synced to Zoho Books.'], 422);
         }
+        // The full PO amount must be utilised (all payments recorded so the
+        // net-payable balance is cleared) before the PO is pushed to Zoho Books.
+        $paid = (float) $po->payments()->sum('amount');
+        $netPayable = round((float) $po->grand_total - (float) $po->tds_amount, 2);
+        if (!($netPayable > 0.005 && round($netPayable - $paid, 2) <= 0.005)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Utilise the full PO amount first — record payments until the outstanding balance is cleared before syncing to Zoho Books.',
+                'errors'  => ['amount' => ['The PO amount must be fully utilised before syncing.']],
+            ], 422);
+        }
 
         try {
             $vendor = Vendor::with('primaryAddress')->findOrFail($po->vendor_id);
@@ -270,6 +292,17 @@ class PurchaseOrderController extends Controller
         if (!$user) abort(401);
         $po = PurchaseOrder::with('items')->findOrFail($id);
         $this->assertScope($po, $user, 'write');
+
+        // TDS must be deducted (once, in the PO Payment screen) before the PO can
+        // go out for signature — the signed document must reflect the final,
+        // post-TDS payable figures.
+        if (!$po->tds_cut) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Deduct TDS first — the TDS deduction must be cut in the PO Payment screen before sending the PO for signature.',
+                'errors'  => ['tds' => ['TDS must be deducted before sending for signature.']],
+            ], 422);
+        }
 
         $zoho = app(\App\Services\ZohoSignService::class);
         if (!$zoho->isConfigured()) {
@@ -1113,6 +1146,17 @@ class PurchaseOrderController extends Controller
 
     private function shapeListRow(PurchaseOrder $po): array
     {
+        // Payment utilisation: Net Payable = grand_total − TDS; "fully utilised"
+        // means the recorded payments cover the whole net-payable balance.
+        // `paid_sum` is eager-loaded via withSum() in index() to avoid N+1 (it is
+        // null when a row has no payments); single-row callers (show/sync/send)
+        // don't eager-load it, so they fall back to a direct sum.
+        $paid = array_key_exists('paid_sum', $po->getAttributes())
+            ? (float) $po->getAttributes()['paid_sum']
+            : (float) $po->payments()->sum('amount');
+        $netPayable = round((float) $po->grand_total - (float) $po->tds_amount, 2);
+        $balance    = round($netPayable - $paid, 2);
+
         return [
             'id' => $po->id,
             'vendor_id' => $po->vendor_id,
@@ -1132,6 +1176,17 @@ class PurchaseOrderController extends Controller
             // Whether the PO is e-signed (completed Zoho-Sign request). The
             // frontend uses this to gate the Zoho Books sync button.
             'is_signed' => $this->isPoSigned($po),
+            // Sent for signature → PO can no longer be edited.
+            'sent_for_sign' => $po->status === 'Sent for Sign',
+            // TDS one-time deduction state (drives the wizard read-only lock and
+            // gates "Send for Signature").
+            'tds_cut' => (bool) $po->tds_cut,
+            'tds_amount' => round((float) $po->tds_amount, 2),
+            // Payment utilisation (gates Zoho Books sync).
+            'amount_paid' => round($paid, 2),
+            'net_payable' => $netPayable,
+            'balance' => $balance,
+            'fully_utilized' => $netPayable > 0.005 && $balance <= 0.005,
         ];
     }
 

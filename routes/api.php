@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\ProcurementController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PurchaseOrderController;
 use App\Http\Controllers\Api\PoPaymentController;
+use App\Http\Controllers\Api\SpiPaymentController;
 use App\Http\Controllers\Api\SupplierPurchaseInvoiceController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
@@ -543,6 +544,11 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'update'])->whereNumber('id');
     Route::delete('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/supplier-purchase-invoices/{id}/sync',           [SupplierPurchaseInvoiceController::class, 'sync'])->whereNumber('id');
+    // Direct-SPI payments ("Payment Summary Against SPI") — mirrors the PO flow.
+    Route::get   ('/p2p/supplier-purchase-invoices/{spi}/payment-summary',     [SpiPaymentController::class, 'summary'])->whereNumber('spi');
+    Route::post  ('/p2p/supplier-purchase-invoices/{spi}/payment-summary/tds', [SpiPaymentController::class, 'saveTds'])->whereNumber('spi');
+    Route::post  ('/p2p/supplier-purchase-invoices/{spi}/payments',            [SpiPaymentController::class, 'store'])->whereNumber('spi');
+    Route::delete('/p2p/supplier-purchase-invoices/{spi}/payments/{payment}',  [SpiPaymentController::class, 'destroy'])->whereNumber('spi')->whereNumber('payment');
 
   
     Route::get   ('/sales/reminders',                 [SalesTodoController::class, 'listReminders']);

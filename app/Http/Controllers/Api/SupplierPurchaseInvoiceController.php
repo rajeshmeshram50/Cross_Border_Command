@@ -184,6 +184,17 @@ class SupplierPurchaseInvoiceController extends Controller
         if (!$user) abort(401);
         $spi = SupplierPurchaseInvoice::findOrFail($id);
         $this->assertScope($spi, $user, 'write');
+        // The payable amount must be fully utilised (balance cleared) before this
+        // invoice can be synced to Zohobook — the linked PO for a With-PO SPI, or
+        // the invoice itself for a Direct SPI.
+        if (!$this->spiSyncUtilized($spi)) {
+            $where = $spi->purchase_order_id ? 'the linked purchase order' : 'this invoice';
+            return response()->json([
+                'status'  => false,
+                'message' => "Utilise the full amount first — record payments against {$where} until its balance is cleared before syncing to Zohobook.",
+                'errors'  => ['amount' => ['The payable amount must be fully utilised before syncing.']],
+            ], 422);
+        }
         $spi->update(['zoho_status' => 'Sync', 'updated_by' => $user->id]);
         return response()->json(['status' => true, 'data' => $this->shapeListRow($spi->fresh())]);
     }
@@ -457,6 +468,27 @@ class SupplierPurchaseInvoiceController extends Controller
         return $invoiced >= $ordered;
     }
 
+    /** True once this SPI's payable amount has been fully utilised — gates the
+     *  Zoho sync. With-PO SPI → the linked PO's (post-TDS) balance must be
+     *  cleared by PO payments; Direct SPI → the SPI's own (post-TDS) balance
+     *  must be cleared by SPI payments. */
+    private function spiSyncUtilized(SupplierPurchaseInvoice $spi): bool
+    {
+        if ($spi->purchase_order_id) {
+            $po = DB::table('purchase_orders')->where('id', $spi->purchase_order_id)->first();
+            if (!$po) return false;
+            $net = round((float) $po->grand_total - (float) ($po->tds_amount ?? 0), 2);
+            if ($net <= 0.005) return false;
+            $paid = (float) \App\Models\PoPayment::where('purchase_order_id', $spi->purchase_order_id)->sum('amount');
+            return round($net - $paid, 2) <= 0.005;
+        }
+        // Direct SPI — pay against the invoice itself.
+        $net = round((float) $spi->net_payable - (float) ($spi->tds_amount ?? 0), 2);
+        if ($net <= 0.005) return false;
+        $paid = (float) \App\Models\SpiPayment::where('supplier_purchase_invoice_id', $spi->id)->sum('amount');
+        return round($net - $paid, 2) <= 0.005;
+    }
+
     /**
      * True if the proposed items would push any product's total invoiced qty
      * (other SPIs + this payload) past what the PO ordered. `$excludeSpiId` is the
@@ -715,6 +747,8 @@ class SupplierPurchaseInvoiceController extends Controller
             'attach' => $spi->attachment_path,
             'zoho' => $spi->zoho_status === 'Sync' ? 'sync' : 'not',
             'status' => $spi->status,
+            // This SPI's payable amount fully utilised — gates the Zoho sync button.
+            'po_fully_utilized' => $this->spiSyncUtilized($spi),
         ];
     }
 
@@ -745,6 +779,8 @@ class SupplierPurchaseInvoiceController extends Controller
             'consignee_name' => $spi->consignee_name,
             'invoice_date' => optional($spi->invoice_date)->toDateString(),
             'attachment_path' => $spi->attachment_path,
+            // TDS deducted → the wizard locks this invoice read-only.
+            'tds_cut' => (bool) $spi->tds_cut,
             // Basic Purchase Order Details (for the edit form's Step 1)
             'po_type' => $spi->po_type,
             'document_type' => $spi->document_type,

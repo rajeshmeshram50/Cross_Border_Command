@@ -23,6 +23,7 @@ class SupplierPurchaseInvoice extends Model
         'customer_name', 'consignee_name',
         'total_po_amount', 'total_product_cost', 'total_cgst', 'total_sgst', 'total_igst',
         'additional_charges', 'net_payable', 'total_paid', 'balance',
+        'tds_percentage', 'tds_amount', 'tds_cut',
         'attachment_path', 'zoho_status', 'status', 'created_by', 'updated_by',
     ];
 
@@ -39,6 +40,9 @@ class SupplierPurchaseInvoice extends Model
         'net_payable' => 'decimal:2',
         'total_paid' => 'decimal:2',
         'balance' => 'decimal:2',
+        'tds_percentage' => 'decimal:2',
+        'tds_amount' => 'decimal:2',
+        'tds_cut' => 'boolean',
     ];
 
     public function client(): BelongsTo { return $this->belongsTo(Client::class); }
@@ -47,4 +51,5 @@ class SupplierPurchaseInvoice extends Model
     public function purchaseOrder(): BelongsTo { return $this->belongsTo(PurchaseOrder::class); }
     public function shipmentOrder(): BelongsTo { return $this->belongsTo(ShipmentOrder::class); }
     public function items(): HasMany { return $this->hasMany(SupplierPurchaseInvoiceItem::class)->orderBy('line_no')->orderBy('id'); }
+    public function spiPayments(): HasMany { return $this->hasMany(SpiPayment::class)->orderBy('id'); }
 }

@@ -42,6 +42,16 @@ type PoRow = {
   /** True once the PO is e-signed (completed Zoho-Sign request). Gates the
    *  Zoho Books sync — you must sign the PO before you can sync it. */
   is_signed?: boolean;
+  /** True once the PO is out for e-signature — editing is then locked. */
+  sent_for_sign?: boolean;
+  /** True once TDS has been deducted (one-time) for this PO. */
+  tds_cut?: boolean;
+  /** True once the full net-payable PO amount is utilised (balance cleared).
+   *  Together with is_signed this gates the Zoho Books sync. */
+  fully_utilized?: boolean;
+  amount_paid?: number;
+  net_payable?: number;
+  balance?: number;
 };
 
 const PAGE_SIZE = 10;
@@ -301,11 +311,15 @@ export default function PurchaseOrder() {
   const openZohoConfirm = (r: PoRow) => {
     if (r.zoho.toLowerCase() === 'sync') { toast.success(`${r.po} is already synced with Zohobook`); return; }
     if (!r.id) return;
-    // Gate: the PO must be e-signed before it can be pushed to Zoho Books. The
-    // backend enforces the same rule; this surfaces the validation up-front
-    // instead of after the confirm dialog.
+    // Gate: the PO must be BOTH e-signed AND fully utilised (all payments
+    // recorded so the balance is cleared) before it can be pushed to Zoho Books.
+    // The backend enforces the same rules; surface them up-front here.
     if (!r.is_signed) {
       toast.warning('Sign the PO first', 'This purchase order must be e-signed via Zoho Sign before it can be synced to Zoho Books.');
+      return;
+    }
+    if (!r.fully_utilized) {
+      toast.warning('Utilise the full PO amount first', 'Record payments until the outstanding balance is cleared before syncing to Zoho Books.');
       return;
     }
     setMore(null);
@@ -492,6 +506,9 @@ export default function PurchaseOrder() {
                   ))
                 ) : pageRows.map((r, i) => {
                   const synced = r.zoho.toLowerCase() === 'sync';
+                  // Editing is locked once the PO is synced, out for signature,
+                  // or already signed — its content must not drift afterwards.
+                  const editLocked = synced || !!r.sent_for_sign || !!r.is_signed;
                   return (
                     <tr key={r.po}>
                       <td>{start + i + 1}</td>
@@ -526,10 +543,10 @@ export default function PurchaseOrder() {
                           <button
                             type="button"
                             className="polist-ico"
-                            title={synced ? 'Locked — already synced to Zoho Books' : 'Edit PO'}
-                            disabled={synced}
-                            style={synced ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                            onClick={() => { if (!synced) setWizard({ editRow: r }); }}
+                            title={synced ? 'Locked — already synced to Zoho Books' : (r.sent_for_sign || r.is_signed) ? 'Locked — PO sent for signature' : 'Edit PO'}
+                            disabled={editLocked}
+                            style={editLocked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                            onClick={() => { if (!editLocked) setWizard({ editRow: r }); }}
                           >{Ico.edit(15)}</button>
                           <button type="button" className="polist-ico" title="Send PO Via Email" disabled={!!(r.id && emailing[r.id])} onClick={() => doEmail(r)}>{Ico.mail(15)}</button>
                           <button type="button" className="polist-ico" title="Trade Documents & Agreements" onClick={() => setTradeDoc(r)}>{Ico.vault(15)}</button>

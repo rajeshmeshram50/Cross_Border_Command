@@ -325,6 +325,15 @@ function Box({ label, title, sub, ico, extra, children, defaultOpen = true }: { 
   );
 }
 
+// Read-only lock (applied to stages 1–3 once TDS is deducted for the PO).
+const RO_STYLE: React.CSSProperties = { pointerEvents: 'none', opacity: 0.92 };
+const LockNote = () => (
+  <div className="cpo-locknote">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+    <span><strong>TDS deducted — this purchase order is locked.</strong> You can review all details, but editing is disabled. Only the trade-document stage (send for signature / view / download) remains available.</span>
+  </div>
+);
+
 const userIco = (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>);
 const pinIco = (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>);
 const fileIco = (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></svg>);
@@ -365,6 +374,13 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
   const [confirming, setConfirming] = useState(false);   // choice-modal "Confirm & Continue" fetch
   const [supLoading, setSupLoading] = useState(false);    // supplier detail + legal fetch after select
   const [savingDetails, setSavingDetails] = useState(false); // stage-2 "Save Details" click feedback
+  // Product Details read-only ("view") toggle — flips the whole stage-2 table
+  // into a non-editable view (also forced on once TDS is deducted for the PO).
+  const [poView, setPoView] = useState(false);
+  // Once TDS is deducted for this PO, stages 1–3 are locked read-only (edit →
+  // view); only the last stage's actions (send-for-sign / view / download) work.
+  // Loaded from the PO detail's `tds_cut` flag in edit mode.
+  const [tdsLocked, setTdsLocked] = useState(false);
   // Stage-1 data-load shimmer: the lookup masters (dropdowns) load on mount and,
   // when editing, the PO detail loads too. Show a shimmer over the Stage-1 fields
   // (supplier + the rest) until both settle so the form fills in instead of
@@ -539,6 +555,8 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     if (!isEdit || !editId) return;
     api.get(`/p2p/purchase-orders/${editId}`).then(r => {
       const d = r.data?.data; if (!d) return;
+      // TDS deducted → lock the whole PO into read-only view (stages 1–3).
+      if (d.tds_cut) { setTdsLocked(true); setPoView(true); }
       setPo(p => ({
         ...p, poType: d.type || p.poType, docType: d.doc || p.docType, transport: d.mode_of_transport || p.transport,
         poDate: d.date || d.po_date || p.poDate || '',
@@ -976,8 +994,9 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                 </div>
               )}
 
+              {stage === 1 && !stage1Loading && tdsLocked && <LockNote />}
               {stage === 1 && !stage1Loading && (
-                <div className="pof-wrap" style={{ gap: 13 }}>
+                <div className="pof-wrap" style={{ gap: 13, ...(tdsLocked ? RO_STYLE : {}) }}>
                   <Box label="Purchase Order" title="Basic Purchase Order Details" sub="Core details that identify this purchase order." ico={fileIco}>
                     <div className="pof-grid pof-grid--4">
                       {(<>
@@ -1076,16 +1095,27 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
               )}
 
               {stage === 2 && (<>
+                {tdsLocked && <LockNote />}
                 <Box label="Products" title="Product Details" sub={withShip ? 'PI vs PO product mapping with live tax & cost computation' : 'Add PO products with live tax & cost computation'} ico={boxIco}
-                  extra={<div className="cpd-ref">
+                  extra={<>
+                    <div className="cpd-ref">
                     {[{ l: 'Supplier Code', v: sup.code || 'S-001', mono: true }, { l: 'Supplier Name', v: sup.name || 'AgroSource Materials Pvt Ltd', mono: false }, { l: 'State Code', v: sup.stateCode || '27', mono: true }, { l: 'PI Number', v: 'PI/2025-26/001', mono: true }].map((f, i, arr) => (
                       <span key={f.l} style={{ display: 'contents' }}>
                         <div className="cpd-ref__pill"><div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{refIcoFor(f.l)}</div><div className="cpd-ref__txt"><div className="cpd-ref__l">{f.l}</div><div className={`cpd-ref__v ${f.mono ? 'cpd-ref__v--mono' : ''}`}>{f.v}</div></div></div>
                         {i < arr.length - 1 && <div className="cpd-ref__dots"><span /><span /><span /></div>}
                       </span>
                     ))}
-                  </div>}>
-                  <div className="cpd-scroll">
+                    </div>
+                    <button type="button" className={`cpd-viewtgl ${poView ? 'is-view' : ''}`} disabled={tdsLocked}
+                      title={tdsLocked ? 'TDS deducted — this PO is locked read-only' : (poView ? 'Switch to edit mode' : 'Switch to read-only view')}
+                      onClick={e => { e.stopPropagation(); if (!tdsLocked) setPoView(v => !v); }}>
+                      {poView
+                        ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+                        : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>}
+                      <span>{poView ? 'Edit' : 'View'}</span>
+                    </button>
+                  </>}>
+                  <div className={`cpd-scroll ${poView ? 'cpd-scroll--ro' : ''}`}>
                     <table className={`cpd-tbl ${withShip ? '' : 'cpd-tbl--po'}`}>
                       <thead><tr>
                         {withShip ? (<>
@@ -1112,29 +1142,29 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                                 ? <div className="cpd-prodcell"><Dd value={PI_REPICK_PLACEHOLDER} options={[PI_REPICK_PLACEHOLDER, ...removedPi.map(piLabel)]} onChange={label => { if (label !== PI_REPICK_PLACEHOLDER) reAddPi(r.id, label); }} /></div>
                                 : <Tooltip label={r.piName} disabled={!r.piName}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
                               <td className="cpd-c">{r.piQty || 0}</td>
-                              <td><input className="cpd-in cpd-in--name" value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} /></td>
-                              <td><input className="cpd-in cpd-in--num" type="number" min={0} max={r.piQty || undefined} value={r.qty} onChange={e => setLine(r.id, { qty: capQty(e.target.value, r.piQty) })} /></td>
+                              <td><input className="cpd-in cpd-in--name" disabled={poView} value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} max={r.piQty || undefined} value={r.qty} onChange={e => setLine(r.id, { qty: capQty(e.target.value, r.piQty) })} /></td>
                               <td className={`cpd-c cpd-miss ${c.miss > 0 ? 'is-short' : ''}`}>{c.miss}</td>
-                              <td><input className="cpd-in cpd-in--num" type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
-                              <td className="cpd-c"><button type="button" className="cpd-del" title="Remove product" onClick={() => removeLine(r.id)}>✕</button></td>
+                              <td className="cpd-c">{!poView && <button type="button" className="cpd-del" title="Remove product" onClick={() => removeLine(r.id)}>✕</button>}</td>
                             </tr>
                           ) : (
                             <tr key={r.id}>
                               <td className="cpd-c">{i + 1}</td>
                               <td className="cpd-c"><span className="cpd-code">{formatProductCode(r.code) || '—'}</span></td>
-                              <td className="cpd-prodcell"><Dd value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.map(o => o.name)]} onChange={name => pickProduct(r.id, name)} /></td>
-                              <td><input className="cpd-in cpd-in--num" type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
-                              <td><input className="cpd-in cpd-in--num" type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
+                              <td className="cpd-prodcell"><Dd value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
-                              <td className="cpd-c"><button type="button" className="cpd-del" title="Remove product" onClick={() => removeLine(r.id)}>✕</button></td>
+                              <td className="cpd-c">{!poView && <button type="button" className="cpd-del" title="Remove product" onClick={() => removeLine(r.id)}>✕</button>}</td>
                             </tr>
                           );
                         })}
                       </tbody>
-                      {canAddProduct && (
+                      {canAddProduct && !poView && (
                         <tfoot>
                           <tr className="cpd-addtr"><td colSpan={colCount}>
                             <button type="button" className="cpd-add-btn" onClick={addLine}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add Product</button>
@@ -1148,7 +1178,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                       <div className="cpd-sum__hd">Additional Charges</div>
                       <div className="cpd-chg-grid">
                         {([['Shipping Charges', 'ship'], ['Packaging Charges', 'pack'], ['Other Charges', 'other']] as const).map(([lbl, key]) => (
-                          <div className="cpd-chg-f" key={key}><label>{lbl}</label><div className="cpd-chg-inwrap"><span className="cpd-chg-cur">₹</span><input className="cpd-chg-in" type="number" min={0} step="0.01" placeholder="0.00" value={charges[key]} onChange={e => setCharges(c => ({ ...c, [key]: e.target.value }))} /></div></div>
+                          <div className="cpd-chg-f" key={key}><label>{lbl}</label><div className="cpd-chg-inwrap"><span className="cpd-chg-cur">₹</span><input className="cpd-chg-in" disabled={poView} type="number" min={0} step="0.01" placeholder="0.00" value={charges[key]} onChange={e => setCharges(c => ({ ...c, [key]: e.target.value }))} /></div></div>
                         ))}
                       </div>
                     </div>
@@ -1165,8 +1195,8 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                     </div>
                   </div>
                   <div className="cpd-saverow">
-                    <button type="button" className="cpd-save-btn" disabled={savingDetails} onClick={() => {
-                      if (savingDetails) return;
+                    <button type="button" className="cpd-save-btn" disabled={savingDetails || poView} onClick={() => {
+                      if (savingDetails || poView) return;
                       setSavingDetails(true);
                       setTimeout(() => { setSavingDetails(false); setShowMissing(true); toast.success('Product details saved'); }, 500);
                     }}>
@@ -1195,13 +1225,16 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                 )}
               </>)}
 
+              {stage === 3 && tdsLocked && <LockNote />}
               {stage === 3 && (
+                <div style={tdsLocked ? RO_STYLE : undefined}>
                 <Box label="Terms" title="PO Terms & Conditions" sub="Define the terms & conditions for this purchase order" ico={fileIco}>
                   <div className="cpd-terms">
                     <label className="cpd-terms__lbl" htmlFor="cpoTermsTA">Terms &amp; Condition</label>
                     <textarea id="cpoTermsTA" className="cpd-terms__ta" placeholder="Enter purchase order terms & conditions…" value={terms} onChange={e => setTerms(e.target.value)} />
                   </div>
                 </Box>
+                </div>
               )}
 
               {stage === 4 && (

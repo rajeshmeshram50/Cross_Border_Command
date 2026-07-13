@@ -27,6 +27,7 @@ interface SpiRow {
   customer: string; supplier: string;
   totalPo: number; netPayable: number; totalPaid: number; balance: number;
   attach: string | null; zoho: 'sync' | 'not';
+  po_fully_utilized?: boolean;   // linked PO fully paid — gates the Zoho sync
 }
 
 const STEPS = [
@@ -62,10 +63,9 @@ export default function SupplierPurchaseInvoice() {
   const [rows, setRows] = useState<SpiRow[]>([]);
   // "Payment Summary Against PO" popup target (paid against the SPI's linked PO).
   const [payRow, setPayRow] = useState<SpiRow | null>(null);
-  const openPoPayment = (r: SpiRow) => {
-    if (!r.poId) { toast.info('No linked PO', 'This invoice has no purchase order to pay against.'); return; }
-    setPayRow(r);
-  };
+  // With-PO SPI → pay the linked PO; Direct SPI → pay the SPI itself. The modal
+  // picks the flow from (poId, spiId).
+  const openPoPayment = (r: SpiRow) => setPayRow(r);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [counts, setCounts] = useState({ poWith: 0, poWithout: 0, shipWith: 0, shipWithout: 0 });
@@ -166,11 +166,17 @@ export default function SupplierPurchaseInvoice() {
   const switchShip = (t: ShipTab) => { setShipTab(t); setPage(1); };
   const onSearch = (v: string) => setQ(v);
 
-  // Zoho-sync one invoice.
+  // Zoho-sync one invoice. Blocked until the linked PO's amount is fully
+  // utilised (the backend enforces the same rule; this surfaces it up-front).
   const syncRow = async (r: SpiRow) => {
     setMenu(null);
+    if (!r.po_fully_utilized) {
+      const where = r.poId ? 'the linked purchase order' : 'this invoice';
+      toast.warning('Utilise the full amount first', `Record payments against ${where} until its balance is cleared before syncing to Zohobook.`);
+      return;
+    }
     try { await api.post(`/p2p/supplier-purchase-invoices/${r.id}/sync`); toast.success(`${r.spiNo} synced with Zohobook`); reload(); }
-    catch { toast.error('Sync failed', 'Could not sync this invoice.'); }
+    catch (e: any) { toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this invoice.'); }
   };
 
   // View / download the attachment by STREAMING it through the backend
