@@ -6,7 +6,11 @@
     <title>PURCHASE ORDER — {{ $po->code ?? '' }}</title>
     <style>
         @page {
-            margin-bottom: 48px;
+            /* Reserve more than the 40px footer so a flowing line whose top fits
+               the content box (but bottom overshoots by ~one line) still clears
+               the fixed footer instead of overlapping the barcode/company strip.
+               This is what long Terms & Conditions were colliding with. */
+            margin-bottom: 10px;
         }
 
         .pdf-footer {
