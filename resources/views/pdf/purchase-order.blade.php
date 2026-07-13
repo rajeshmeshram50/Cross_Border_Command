@@ -365,7 +365,7 @@
                     <table style="width:100%; border-collapse:collapse; margin-top:12px; font-size:9px; line-height:14px;">
                         <tr>
                             <td style="width:55%; vertical-align:top;">
-                                <div class="info-line"><strong>BT ID :</strong> {{ $po->bt_id }}</div>
+                                <div class="info-line"><strong>SHP ID :</strong> {{ $po->bt_id }}</div>
                                 <div class="info-line"><strong>Opportunity ID :</strong> {{ $po->opp_id }}</div>
                                 <div class="info-line"><strong>PO No :</strong> {{ $po->code }}</div>
                                 <div class="info-line"><strong>PO Type :</strong> {{ $po->po_type }}</div>
@@ -374,7 +374,7 @@
                                 <div class="info-line"><strong>Document Type :</strong> {{ $po->document_type }}</div>
                             </td>
                             <td style="width:45%; vertical-align:top;">
-                                <div class="info-line"><strong>BT Date :</strong> {{ $po->bt_date }}</div>
+                                <div class="info-line"><strong>SHP Date :</strong> {{ $po->bt_date }}</div>
                                 <div class="info-line"><strong>Opportunity Date :</strong> {{ $po->opp_date }}</div>
                                 <div class="info-line"><strong>PO Date :</strong> {{ $po->po_date }}</div>
                             </td>
@@ -382,8 +382,11 @@
                     </table>
 
                     <div style="margin-top:8px; font-size:9px; line-height:14px;">
-                        <div class="info-line"><strong>Vendor Name :</strong> {{ $vendor->name }}</div>
-                        <div style="margin-bottom:0;"><strong>Vendor Address :</strong> {{ $pdfClean($vendor->address) }}</div>
+                        <div class="info-line"><strong>Supplier Name :</strong> {{ $vendor->name }}</div>
+                        <div class="info-line"><strong>Supplier Address :</strong> {{ $pdfClean($vendor->address) }}</div>
+                        @if(trim((string) ($vendor->state_code ?? '')) !== '')
+                            <div style="margin-bottom:0;"><strong>Supplier State Code :</strong> {{ $vendor->state_code }}</div>
+                        @endif
                     </div>
                 </td>
             </tr>
@@ -503,18 +506,21 @@
                                 <td style="padding:3px 0;"><strong style="color:#555;">Sub Total</strong></td>
                                 <td style="text-align:right; padding:3px 0;"><strong style="color:#555;">{{ number_format($totals->sub_total, 2) }}</strong></td>
                             </tr>
-                            <tr>
-                                <td style="padding:3px 0; color:#555;">IGST</td>
-                                <td style="text-align:right; padding:3px 0;">{{ number_format($totals->igst, 2) }}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding:3px 0; color:#555;">CGST</td>
-                                <td style="text-align:right; padding:3px 0;">{{ number_format($totals->cgst, 2) }}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding:3px 0; color:#555;">SGST</td>
-                                <td style="text-align:right; padding:3px 0;">{{ number_format($totals->sgst, 2) }}</td>
-                            </tr>
+                            @if($interState)
+                                <tr>
+                                    <td style="padding:3px 0; color:#555;">IGST</td>
+                                    <td style="text-align:right; padding:3px 0;">{{ number_format($totals->igst, 2) }}</td>
+                                </tr>
+                            @else
+                                <tr>
+                                    <td style="padding:3px 0; color:#555;">CGST</td>
+                                    <td style="text-align:right; padding:3px 0;">{{ number_format($totals->cgst, 2) }}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:3px 0; color:#555;">SGST</td>
+                                    <td style="text-align:right; padding:3px 0;">{{ number_format($totals->sgst, 2) }}</td>
+                                </tr>
+                            @endif
                             <tr>
                                 <td style="padding:8px 0 0 0; font-size:12px; color:#333; border-top:1px solid #ddd; white-space:nowrap;">
                                     <strong>Grand Total:</strong>

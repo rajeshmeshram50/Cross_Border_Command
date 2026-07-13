@@ -905,46 +905,36 @@ class SalesPdfController extends Controller
                 $vAddr?->pincode,
                 $vAddr?->country?->name,
             ),
+            'state_code' => (string) ($vAddr?->state_code ?? ''),
             'email' => $vAddr?->email ?: ($vendor?->primary_email ?? ''),
             'contact_no' => $vAddr?->contact_no ?? '',
         ];
 
-        // Bill-To = the purchasing company (issuing branch / client).
+        // ─── Bill-To / Deliver-To ───────────────────────────────────────────
+        // Hardcoded to the reference PO layout (same as the shared sample),
+        // independent of the branch/warehouse records.
         $billTo = (object) [
-            'name' => strtoupper((string) (($branch?->name ?: $client?->org_name) ?: '')),
-            'address' => $branchAddress ?: $clientAddress,
-            'contact' => $branch?->phone ?: ($client?->phone ?? ''),
+            'name' => 'INORBVICT HEALTHCARE INDIA PRIVATE LIMITED',
+            'address' => 'Office No 821, 8th Flr, Solitaire Business Hub, Balewadi Highstreet Baner, Pune, Maharashtra - 411045, India',
+            'contact' => '+91 9850558881',
         ];
-
-        // Deliver-To = the selected warehouse (by warehouse_id) or the free-text
-        // delivery location; falls back to the bill-to address.
-        $wh = $po->warehouse_id ? DB::table('master_warehouse_master')->where('id', $po->warehouse_id)->first() : null;
-        $whAddress = $wh
-            ? trim(implode(', ', array_filter([$wh->address, $wh->city, $wh->state, $wh->pincode])))
-            : '';
         $deliverTo = (object) [
-            'name' => strtoupper((string) (($branch?->name ?: $client?->org_name) ?: '')),
-            'address' => $whAddress ?: ($po->delivery_location ?: $billTo->address),
-            'contact' => $wh?->contact_phone ?: $billTo->contact,
+            'name' => 'INORBVICT HEALTHCARE INDIA PRIVATE LIMITED',
+            'address' => 'At post Jambe, Sarvhe no.146/1, Near Datta mandir, Jambe-Sangawade road, Taluka-Mulshi, District-Pune MH-411033',
+            'contact' => '+91 9850558881',
         ];
 
-        // Bank = the branch's bank (first master_bank_accounts row for this
-        // client, preferring the branch-specific one over a client-wide one).
-        $bankRow = DB::table('master_bank_accounts')
-            ->where('client_id', $po->client_id)
-            ->when($po->branch_id, fn ($q) => $q->where(fn ($w) => $w->where('branch_id', $po->branch_id)->orWhereNull('branch_id')))
-            ->orderByRaw('branch_id IS NULL')
-            ->first();
+        // ─── Bank details ───────────────────────────────────────────────────
         $bankDetails = (object) [
-            'bank_name' => $bankRow->bank_name ?? '',
-            'account_holder_name' => $bankRow->account_holder ?? '',
-            'address' => trim((string) ($bankRow->city ?? '')),
-            'branch' => $bankRow->branch_name ?? '',
-            'branch_code' => '',
-            'ad_code' => $bankRow->ad_code ?? '',
-            'account_no' => $bankRow->account_number ?? '',
-            'ifsc' => $bankRow->ifsc_code ?? '',
-            'swift_code' => $bankRow->swift_code ?? '',
+            'bank_name'           => 'HDFC BANK LTD',
+            'account_holder_name' => 'INORBVICT HEALTHCARE INDIA PRIVATE LIMITED',
+            'address'             => 'HDFC BANK, SR NO. 244/3-5, OPP INDIAN OIL PETROL PUMP, RAJIV GANDHI IT PARK, HINJEWADI, PUNE, MAHARASHTRA 411057 INDIA SWIFT : HDFCINBB',
+            'branch'              => 'HINJEWADI, PUNE',
+            'branch_code'         => '794',
+            'ad_code'             => '0510573',
+            'account_no'          => '59209850100030',
+            'ifsc'                => 'HDFC0000794',
+            'swift_code'          => 'HDFCINBB',
         ];
 
         $productIds = collect($po->items)->pluck('product_id')->filter()->unique()->values();
@@ -981,14 +971,21 @@ class SalesPdfController extends Controller
             ];
         })->values()->all();
 
+        // Place of supply: intra-state (supplier in our GST home state) shows
+        // CGST + SGST; inter-state (a different state) shows a single IGST.
+        // Mirrors the wizard's isIntraState — an unknown supplier state defaults
+        // to intra-state (CGST/SGST).
+        $homeStateCode = trim((string) ($companyDetails->gst_state_code ?? '')) ?: '27';
+        $supStateCode = trim((string) ($vendorBlock->state_code ?? ''));
+        $isInterState = $supStateCode !== '' && $supStateCode !== $homeStateCode;
+
         $totalCgst = (float) $po->total_cgst;
         $totalSgst = (float) $po->total_sgst;
         $subTotal = round((float) $po->total_product_cost - $totalCgst - $totalSgst, 2);
         $grandTotal = (float) $po->grand_total;
-        $isIntl = ($po->document_type ?? 'Domestic') === 'International';
-        $igst = $isIntl ? round($totalCgst + $totalSgst, 2) : 0;
-        $cgst = $isIntl ? 0 : $totalCgst;
-        $sgst = $isIntl ? 0 : $totalSgst;
+        $igst = $isInterState ? round($totalCgst + $totalSgst, 2) : 0;
+        $cgst = $isInterState ? 0 : $totalCgst;
+        $sgst = $isInterState ? 0 : $totalSgst;
 
         $poInfo = (object) [
             'code' => $po->code,
@@ -1040,6 +1037,7 @@ class SalesPdfController extends Controller
             'bankDetails' => $bankDetails,
             'po' => $poInfo,
             'products' => $poProducts,
+            'interState' => $isInterState,
             'totals' => $totals,
         ];
     }
