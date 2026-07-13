@@ -137,6 +137,16 @@ const piItemToLine = (it: Record<string, unknown>, id: number): PoLine => {
   const p = mapPiRow(it);
   return { id, productId: p.productId, code: p.code, piName: p.piName, piQty: p.piQty, name: p.piName, qty: p.piQty, rate: p.rate, gst: p.gst };
 };
+// Cap a PO quantity at the PI quantity still available to THIS PO — the backend
+// serves piQty as (PI total − what other POs already consumed), excluding this
+// PO's own lines when editing. So a PO can only ever use the remaining/missing
+// quantity, never over-allocate, and Missing Qty can never go negative. The
+// Without-Shipment flow has no PI (piQty === '') so it is left uncapped.
+const capQty = (v: string, piQty: string): string => {
+  if (piQty === '' || v === '') return v;
+  const cap = num(piQty);
+  return num(v) > cap ? String(cap) : v;
+};
 
 // Tax columns — CGST+SGST (intra-state) or a single IGST (inter-state). Shared
 // by the products table's header and each body row so the two never drift.
@@ -598,7 +608,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     const sgstP = intra ? gst / 2 : 0;
     const igstP = intra ? 0 : gst;
     const cgstA = base * cgstP / 100, sgstA = base * sgstP / 100, igstA = base * igstP / 100;
-    return { cgstP, sgstP, igstP, base, cgstA, sgstA, igstA, cost: base + cgstA + sgstA + igstA, miss: r.piQty === '' ? 0 : num(r.piQty) - num(r.qty) };
+    return { cgstP, sgstP, igstP, base, cgstA, sgstA, igstA, cost: base + cgstA + sgstA + igstA, miss: r.piQty === '' ? 0 : Math.max(0, num(r.piQty) - num(r.qty)) };
   };
   const summary = useMemo(() => {
     let prod = 0, cg = 0, sg = 0, ig = 0;
@@ -615,7 +625,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
   // qty (With-Shipment only; there's no PI in the Without-Shipment flow).
   const missing = useMemo(() => rows
     .filter(r => r.piQty !== '')
-    .map(r => ({ code: r.code, piName: r.piName, piQty: num(r.piQty), poName: r.name || '—', miss: num(r.piQty) - num(r.qty) }))
+    .map(r => ({ code: r.code, piName: r.piName, piQty: num(r.piQty), poName: r.name || '—', miss: Math.max(0, num(r.piQty) - num(r.qty)) }))
     .filter(m => m.miss > 0), [rows]);
 
   const todayDisp = useMemo(() => { const d = new Date(); const mm = ('0' + (d.getMonth() + 1)).slice(-2), dd = ('0' + d.getDate()).slice(-2); return `${dd}/${mm}/${d.getFullYear()}`; }, []);
@@ -1101,8 +1111,8 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                                 : <Tooltip label={r.piName} disabled={!r.piName}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
                               <td className="cpd-c">{r.piQty || 0}</td>
                               <td><input className="cpd-in cpd-in--name" value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} /></td>
-                              <td><input className="cpd-in cpd-in--num" type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
-                              <td className={`cpd-c cpd-miss ${c.miss > 0 ? 'is-short' : (c.miss < 0 ? 'is-over' : '')}`}>{c.miss}</td>
+                              <td><input className="cpd-in cpd-in--num" type="number" min={0} max={r.piQty || undefined} value={r.qty} onChange={e => setLine(r.id, { qty: capQty(e.target.value, r.piQty) })} /></td>
+                              <td className={`cpd-c cpd-miss ${c.miss > 0 ? 'is-short' : ''}`}>{c.miss}</td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
