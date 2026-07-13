@@ -197,25 +197,18 @@ export default function PurchaseOrder() {
   // pager overrides auto-fit (autoFitRef → false).
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const autoFitRef = useRef(true);
-  const totalRef = useRef(total);
-  totalRef.current = total;
   const recomputeFit = useCallback(() => {
     if (!autoFitRef.current) return;
     const el = scrollRef.current;
     if (!el) return;
-    const avail = el.clientHeight;
+    const top = el.getBoundingClientRect().top;
+    const THEAD = 44, ROW = 56, FOOTER = 72;
+    const avail = window.innerHeight - top - THEAD - FOOTER;
     if (avail <= 0) return;
-    const thead = el.querySelector('thead') as HTMLElement | null;
-    const bodyRow = el.querySelector('tbody tr:not(.polist-skel-row)') as HTMLElement | null;
-    const THEAD = thead?.offsetHeight || 42;
-    // Measure a real data row when present; the empty-state row is taller, so
-    // fall back to a sane constant until rows render.
-    const ROW = (totalRef.current > 0 && bodyRow) ? bodyRow.offsetHeight : 56;
-    const fit = Math.max(5, Math.floor((avail - THEAD) / ROW));
+    const fit = Math.max(5, Math.floor(avail / ROW));
     setPageSize(prev => (prev === fit ? prev : fit));
   }, []);
-  // Observe the scroll area's SIZE once — the observer isn't rebuilt on every
-  // data fetch (only genuine resizes fire it).
+  useLayoutEffect(() => { recomputeFit(); }, [recomputeFit]);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -223,8 +216,6 @@ export default function PurchaseOrder() {
     ro.observe(el);
     return () => ro.disconnect();
   }, [recomputeFit]);
-  // Re-measure when the data changes (new rows may have a different height).
-  useEffect(() => { recomputeFit(); }, [total, rows, recomputeFit]);
 
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, pages);
