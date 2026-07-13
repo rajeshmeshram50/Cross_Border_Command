@@ -578,47 +578,54 @@ export default function AddProductModal(props: {
      reject the request with PostTooLargeException. Mirrors the
      `max:2048` rule on ProductController::storeCore. */
   const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
-  /* Accept the common JPEG extension variants too — Windows/Chrome routinely
-     save JPEGs as `.jfif` (and occasionally `.jpe`/`.pjpeg`), which are the
-     same image/jpeg bytes the server already accepts. Without these a user
-     picking a perfectly valid JPEG was wrongly told "unsupported file type". */
-  const ALLOWED_PRODUCT_EXTS = ['.png', '.jpg', '.jpeg', '.jfif', '.jpe', '.pjpeg', '.pdf'];
-  /* Allowed MIME types — used as a fallback so a JPEG with an unusual
+  /* Product primary & secondary images are PNG/JPG ONLY — PDFs and every
+     other format are rejected. Accept the common JPEG extension variants
+     too — Windows/Chrome routinely save JPEGs as `.jfif` (and occasionally
+     `.jpe`/`.pjpeg`), which are the same image/jpeg bytes the server already
+     accepts. Without these a user picking a valid JPEG was wrongly told
+     "unsupported file type". */
+  const ALLOWED_IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.jfif', '.jpe', '.pjpeg'];
+  /* Allowed image MIME types — used as a fallback so a JPEG with an unusual
      extension still passes on its content type. */
-  const ALLOWED_PRODUCT_MIMES = /^(image\/(png|jpeg|pjpeg)|application\/pdf)$/i;
-  /* Two-stage validation on picked product files:
-       1. extension OR mime → only PNG, JPG/JPEG, or PDF allowed
-       2. size → 2 MB cap (matches `max:2048` rule on storeCore)
-     We accept the file when EITHER the extension matches OR the browser-
-     reported MIME type matches — some browsers ship an empty `file.type`
-     for PDFs picked via drag-drop (extension covers that), while a JPEG
-     saved as `.jfif` fails the extension test but carries image/jpeg
-     (MIME covers that). */
-  const validateImageSize = (file: File): boolean => {
-    const lowerName = file.name.toLowerCase();
-    const okExt  = ALLOWED_PRODUCT_EXTS.some(ext => lowerName.endsWith(ext));
-    const okMime = !!file.type && ALLOWED_PRODUCT_MIMES.test(file.type);
-    if (!okExt && !okMime) {
-      toast.error('Unsupported file type', `${file.name} — only PNG, JPG, or PDF files are allowed.`);
-      return false;
-    }
+  const ALLOWED_IMAGE_MIMES = /^image\/(png|jpeg|pjpeg)$/i;
+  /* Shared 2 MB size gate (matches `max:2048` on storeCore). */
+  const validateFileSize = (file: File): boolean => {
     if (file.size <= MAX_IMAGE_BYTES) return true;
     const mb = (file.size / (1024 * 1024)).toFixed(2);
     toast.error('File too large', `${file.name} is ${mb} MB — each file must be 2 MB or smaller.`);
     return false;
   };
+  /* Two-stage validation on picked product IMAGES (primary/secondary):
+       1. extension OR mime → only PNG or JPG/JPEG allowed (PDF rejected)
+       2. size → 2 MB cap
+     We accept the file when EITHER the extension matches OR the browser-
+     reported MIME type matches — a JPEG saved as `.jfif` fails the extension
+     test but carries image/jpeg (MIME covers that). */
+  const validateImageFile = (file: File): boolean => {
+    const lowerName = file.name.toLowerCase();
+    const okExt  = ALLOWED_IMAGE_EXTS.some(ext => lowerName.endsWith(ext));
+    const okMime = !!file.type && ALLOWED_IMAGE_MIMES.test(file.type);
+    if (!okExt && !okMime) {
+      toast.error('Unsupported file type', `${file.name} — only PNG or JPG images are allowed.`);
+      return false;
+    }
+    return validateFileSize(file);
+  };
+  /* The product attachment accepts ANY file type (PDF, Word, Excel, image,
+     …) — size is the only gate. */
+  const validateAttachmentFile = (file: File): boolean => validateFileSize(file);
 
   const onPrimaryUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (!validateImageSize(f)) { e.target.value = ''; return; }
+    if (!validateImageFile(f)) { e.target.value = ''; return; }
     setPrimaryImageFile(f);
     setPrimaryImagePath(null); // queued file supersedes any stored path
     setPrimaryImageUrl(null);  // and its display URL
   };
 
   const onSecondaryUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []).filter(validateImageSize);
+    const files = Array.from(e.target.files ?? []).filter(validateImageFile);
     // Reset the input so the user can re-pick the same oversize file
     // after shrinking it without the browser silently swallowing the change.
     e.target.value = '';
@@ -650,7 +657,7 @@ export default function AddProductModal(props: {
   const onAttachmentUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    if (!validateImageSize(f)) { e.target.value = ''; return; }
+    if (!validateAttachmentFile(f)) { e.target.value = ''; return; }
     setProdAttachmentFile(f);
     setProdAttachmentPath(null);
     setProdAttachmentUrl(null);
@@ -2292,10 +2299,18 @@ export default function AddProductModal(props: {
                       <div className="apm-grid-3">
                         <Field label="Supplier Name" required>
                           <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select Supplier Name"
-                            options={vendorOpts.map(v => ({
-                              value: v.code,
-                              label: `${v.code ? `${formatSupplierCode(v.code)}: ` : ''}${v.name}`,
-                            }))}
+                            options={vendorOpts.map(v => {
+                              // Show the supplier's segment(s) alongside the name so the
+                              // right supplier is easy to pick (segment_ids → titles).
+                              const segs = (v.segmentIds ?? [])
+                                .map(id => labelOf(optSegments, String(id), ''))
+                                .filter(Boolean)
+                                .join(', ');
+                              return {
+                                value: v.code,
+                                label: `${v.code ? `${formatSupplierCode(v.code)}: ` : ''}${v.name}${segs ? ` (${segs})` : ''}`,
+                              };
+                            })}
                           />
                         </Field>
                         <Field label="Supplier Code">
@@ -2827,8 +2842,8 @@ function UploadDropzone(props: {
      image thumbnail. `fileName` is the label shown on that chip. */
   fileMode?: boolean;
   fileName?: string;
-  /* Override the `accept` list on the file input. Defaults to the image + PDF
-     set used by the Primary / Secondary image uploads. */
+  /* Override the `accept` list on the file input. Defaults to the PNG/JPG
+     image-only set used by the Primary / Secondary image uploads. */
   accept?: string;
 }) {
   /* Outer is a <div>, NOT a <label>. The previous label wrapped the
@@ -2855,7 +2870,7 @@ function UploadDropzone(props: {
       <label className="apm-dropzone">
         <input
           type="file"
-          accept={props.accept ?? '.png,.jpg,.jpeg,.jfif,.jpe,.pjpeg,.pdf,image/png,image/jpeg,image/pjpeg,application/pdf'}
+          accept={props.accept ?? '.png,.jpg,.jpeg,.jfif,.jpe,.pjpeg,image/png,image/jpeg,image/pjpeg'}
           multiple={props.multiple}
           onChange={props.onPick}
           className="apm-dropzone-input"
