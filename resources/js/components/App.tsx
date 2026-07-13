@@ -121,6 +121,7 @@ import ModuleStubPage from '../pages/ModuleStubPage';
 import P2pBulkSourcing from '../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing';
 import PurchaseOrder from '../pages/p2p/procurement-management/purchase-order/PurchaseOrder';
 import SupplierPurchaseInvoice from '../pages/p2p/purchase-management/supplier-purchase-invoice/SupplierPurchaseInvoice';
+import DebitNote from '../pages/p2p/purchase-management/debit-note/DebitNote';
 import MyTeam from '../pages/MyTeam';
 import Inbox from '../pages/Inbox';
 import Gmail from '../pages/Gmail';
@@ -786,6 +787,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/p2p/case-to-case" element={<ModuleStubPage />} />
               <Route path="/p2p/purchase-order" element={<PurchaseOrder />} />
               <Route path="/p2p/supplier-purchase-invoice" element={<SupplierPurchaseInvoice />} />
+              <Route path="/p2p/debit-note" element={<DebitNote />} />
               <Route path="/developers/shipment" element={<DeveloperShipments />} />
               <Route path="/products" element={<Products />} />
               <Route path="/products/:id" element={<ProductView />} />

@@ -91,6 +91,7 @@ const LEAF_DESC: Record<string, string> = {
   'p2p.case_to_case': 'Manage request-based sourcing.',
   'p2p.po': 'Create & track purchase orders.',
   'p2p.spi': 'Process supplier invoices & taxes.',
+  'p2p.debit_note': 'Issue & track supplier debit notes for returns & adjustments.',
 };
 
 // Top-level slug → route.
@@ -170,6 +171,7 @@ function p2pLeafPath(id: string): string {
     case 'p2p.case_to_case':  return '/p2p/case-to-case';
     case 'p2p.po':            return '/p2p/purchase-order';
     case 'p2p.spi':           return '/p2p/supplier-purchase-invoice';
+    case 'p2p.debit_note':    return '/p2p/debit-note';
     default:                  return '/p2p';
   }
 }
