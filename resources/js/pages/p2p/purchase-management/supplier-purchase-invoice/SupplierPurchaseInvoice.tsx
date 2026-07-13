@@ -82,8 +82,10 @@ export default function SupplierPurchaseInvoice() {
 
   const withPo = poTab === 'with';
   const withShip = shipTab === 'with';
-  // Shipment / PI / Customer columns belong to the With-PO + With-Shipment view only.
-  const showShipCols = withPo && withShip;
+  // Shipment / PI / Customer columns show whenever the "With Shipment ID" sub-tab is
+  // active — in BOTH With-PO and Direct (Without-PO) SPI, since a Direct SPI can also
+  // be linked to a shipment (matches the design).
+  const showShipCols = withShip;
 
   // Debounce the search box so we don't hit the API on every keystroke.
   useEffect(() => { const t = setTimeout(() => { setDebQ(q); setPage(1); }, 300); return () => clearTimeout(t); }, [q]);
@@ -93,7 +95,8 @@ export default function SupplierPurchaseInvoice() {
     let alive = true;
     setLoading(true);
     api.get('/p2p/supplier-purchase-invoices', {
-      params: { po_tab: poTab, ...(poTab === 'with' ? { ship_tab: shipTab } : {}), page, per_page: rpp, q: debQ || undefined },
+      // Direct (Without-PO) SPI also splits by shipment now, so send ship_tab for both PO tabs.
+      params: { po_tab: poTab, ship_tab: shipTab, page, per_page: rpp, q: debQ || undefined },
     })
       .then(r => { if (!alive) return; setRows((r.data?.data ?? []) as SpiRow[]); setTotal(r.data?.pagination?.total ?? 0); })
       .catch(() => { if (alive) { setRows([]); setTotal(0); } })
@@ -237,9 +240,8 @@ export default function SupplierPurchaseInvoice() {
 
       {/* ── List card ── */}
       <div className="spi-card" style={{ minHeight: fillH }}>
-        {/* Segment pills: With / Without PO. On the Direct (Without-PO) tab the
-            search sits inline here (no sub-tabs row below), so there's no empty gap. */}
-        <div className={`spi-segrow ${!withPo ? 'spi-segrow--search' : ''}`}>
+        {/* Segment pills: With / Without PO. */}
+        <div className="spi-segrow">
           <div className="spi-seg">
             <button type="button" className={`spi-seg-btn ${withPo ? 'is-active' : ''}`} onClick={() => switchPo('with')}>
               <span className="spi-seg-ico"><IcoLink size={15} /></span> With Purchase Order SPI
@@ -250,16 +252,10 @@ export default function SupplierPurchaseInvoice() {
               <span className="spi-seg-c">{counts.poWithout}</span>
             </button>
           </div>
-          {!withPo && (
-            <div className="spi-search">
-              <IcoSearch />
-              <input value={q} onChange={e => onSearch(e.target.value)} placeholder="Search SPI, supplier or status..." />
-            </div>
-          )}
         </div>
 
-        {/* Sub-tabs + search — With-PO only (Direct SPI has no shipment concept and its search is above). */}
-        {withPo && (
+        {/* Sub-tabs (With / Without Shipment ID) + search — shown for BOTH PO tabs:
+            a Direct SPI can also be linked to a shipment (matches the design). */}
         <div className="spi-sub">
           <div className="spi-subtabs">
             <button type="button" className={`spi-subtab ${withShip ? 'is-active' : ''}`} onClick={() => switchShip('with')}>
@@ -274,7 +270,6 @@ export default function SupplierPurchaseInvoice() {
             <input value={q} onChange={e => onSearch(e.target.value)} placeholder="Search SPI, supplier, PO or status..." />
           </div>
         </div>
-        )}
 
         {/* Table */}
         <div className="spi-tablewrap" ref={scrollRef}>
@@ -287,10 +282,10 @@ export default function SupplierPurchaseInvoice() {
                 {withPo && <th>PO TYPE</th>}
                 {showShipCols && <th>SHIPMENT ID</th>}
                 {showShipCols && <th>PI NUMBER</th>}
-                {withPo && <th>PROCUREMENT ID</th>}
+                <th>PROCUREMENT ID</th>
                 {showShipCols && <th>CUSTOMER NAME</th>}
                 <th>SUPPLIER NAME</th>
-                {withPo && <th className="spi-c-r">TOTAL PO AMOUNT</th>}
+                <th className="spi-c-r">TOTAL PO AMOUNT</th>
                 <th className="spi-c-r">NET PAYABLE AMOUNT</th>
                 <th className="spi-c-r">TOTAL PAID AMOUNT</th>
                 <th className="spi-c-r">BALANCE AMOUNT</th>
@@ -309,10 +304,10 @@ export default function SupplierPurchaseInvoice() {
                     {withPo && <td><span className="spi-sk-bar" style={{ width: 88 }} /></td>}
                     {showShipCols && <td><span className="spi-sk-bar" style={{ width: 58 }} /></td>}
                     {showShipCols && <td><span className="spi-sk-bar" style={{ width: 68 }} /></td>}
-                    {withPo && <td><span className="spi-sk-bar" style={{ width: 40 }} /></td>}
+                    <td><span className="spi-sk-bar" style={{ width: 40 }} /></td>
                     {showShipCols && <td><span className="spi-sk-bar" style={{ width: 78 }} /></td>}
                     <td><span className="spi-sk-bar" style={{ width: 120 }} /></td>
-                    {withPo && <td className="spi-c-r"><span className="spi-sk-bar" style={{ width: 72, marginLeft: 'auto' }} /></td>}
+                    <td className="spi-c-r"><span className="spi-sk-bar" style={{ width: 72, marginLeft: 'auto' }} /></td>
                     <td className="spi-c-r"><span className="spi-sk-bar" style={{ width: 72, marginLeft: 'auto' }} /></td>
                     <td className="spi-c-r"><span className="spi-sk-bar" style={{ width: 48, marginLeft: 'auto' }} /></td>
                     <td className="spi-c-r"><span className="spi-sk-bar" style={{ width: 72, marginLeft: 'auto' }} /></td>
@@ -335,10 +330,10 @@ export default function SupplierPurchaseInvoice() {
                   {withPo && <td>{r.poType}</td>}
                   {showShipCols && <td><span className="spi-pill spi-pill-shp">{r.shipId}</span></td>}
                   {showShipCols && <td><span className="spi-pill spi-pill-pi">{r.piNo}</span></td>}
-                  {withPo && <td><span className="spi-pill spi-pill-proc">{r.procId}</span></td>}
+                  <td><span className="spi-pill spi-pill-proc">{r.procId}</span></td>
                   {showShipCols && <td>{r.customer}</td>}
                   <td title={r.supplier}>{r.supplier && r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier}</td>
-                  {withPo && <td className="spi-c-r spi-amt">{inr(r.totalPo)}</td>}
+                  <td className="spi-c-r spi-amt">{inr(r.totalPo)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.netPayable)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.totalPaid)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.balance)}</td>
