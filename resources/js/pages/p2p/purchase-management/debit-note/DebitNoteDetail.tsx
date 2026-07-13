@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, type ReactNode, type Dispatch, type SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
+import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 // Reuse the SPI wizard shell styling (.spi-dt-*) so Debit Note matches the SPI create flow 1:1.
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 
@@ -22,6 +23,16 @@ const DN_PRODUCTS = [
 ];
 const SPI_AUTO_FIELDS = ['SPI NUMBER', 'SPI DATE', 'PO NUMBER', 'PO DATE', 'GRN ID', 'WAREHOUSE', 'SUPPLIER NAME', 'SUPPLIER GSTIN', 'PAYMENT TERM', 'TOTAL INVOICE AMOUNT', 'PAID AMOUNT', 'TOTAL BALANCE AMOUNT'];
 
+// Sample suppliers (design-only). Picking one auto-fills + locks the supplier fields
+// below — mirrors the intended flow (data comes from the supplier master, read-only).
+type ChargeRow = { amount: string; note: string };
+type Supplier = { code: string; company: string; type: string; address: string; country: string; state: string; stateCode: string; city: string; contact: string; designation: string; phone: string; email: string; gstNo: string; gstStatus: string; scrutinyDate: string; filingDate: string };
+const SUPPLIERS: Supplier[] = [
+  { code: 'S-001', company: 'Reliance Industries Ltd', type: 'Manufacturer', address: 'Maker Chambers IV, Nariman Point, Mumbai 400021', country: 'India', state: 'Maharashtra', stateCode: '27', city: 'Mumbai', contact: 'Ramesh Shah', designation: 'Procurement Manager', phone: '+91 98200 11223', email: 'ramesh@relianceind.com', gstNo: '27AAACR5055K1Z5', gstStatus: 'Active', scrutinyDate: '2026-04-10', filingDate: '2026-06-30' },
+  { code: 'S-002', company: 'Tata Steel Ltd', type: 'Manufacturer', address: 'Bombay House, 24 Homi Mody St, Fort, Mumbai 400001', country: 'India', state: 'Jharkhand', stateCode: '20', city: 'Jamshedpur', contact: 'Anil Kumar', designation: 'Sourcing Head', phone: '+91 96500 44556', email: 'anil.kumar@tatasteel.com', gstNo: '20AAACT2803M1ZH', gstStatus: 'Active', scrutinyDate: '2026-03-22', filingDate: '2026-06-28' },
+  { code: 'S-004', company: 'Mahindra Logistics Ltd', type: 'Service Provider', address: 'Mahindra Towers, Worli, Mumbai 400018', country: 'India', state: 'Maharashtra', stateCode: '27', city: 'Mumbai', contact: 'Priya Nair', designation: 'Vendor Relations', phone: '+91 99300 77889', email: 'priya.nair@mahindralog.com', gstNo: '27AABCM8892F1Z3', gstStatus: 'Active', scrutinyDate: '2026-05-01', filingDate: '2026-07-05' },
+];
+
 export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<1 | 2>(1);
   const [dnOpen, setDnOpen] = useState(true);
@@ -32,6 +43,20 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
   const [prodOpen, setProdOpen] = useState(true);
   const [reasonOpen, setReasonOpen] = useState(true);
   const [termsOpen, setTermsOpen] = useState(true);
+  // Design-only form values (drives the app dropdowns + date pickers).
+  const [f, setF] = useState<Record<string, string>>({ dnType: 'Purchase Return', supType: 'Manufacturer', country: 'India', state: 'Maharashtra', gstStatus: 'Active' });
+  const set = (k: string) => (v: string) => setF(o => ({ ...o, [k]: v }));
+  // Selected supplier — once picked, the supplier fields below auto-fill & lock (read-only AUTO).
+  const [sel, setSel] = useState<Supplier | null>(null);
+  // Additions / Deductions charge rows (add/remove; the lists scroll internally past ~3 rows
+  // so the section height stays fixed and never pushes the totals panel out of alignment).
+  const [additions, setAdditions] = useState<ChargeRow[]>([{ amount: '', note: '' }]);
+  const [deductions, setDeductions] = useState<ChargeRow[]>([{ amount: '', note: '' }]);
+  const sumAmt = (rows: ChargeRow[]) => rows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
+  const addSum = sumAmt(additions);
+  const dedSum = sumAmt(deductions);
+  const PRODUCT_TOTAL = 3125;
+  const grandTotal = PRODUCT_TOTAL + addSum - dedSum;
 
   return createPortal(
     <div className="spi-dt-overlay dn-scope">
@@ -106,12 +131,12 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
               <div className="spi-dt-grid4">
                 <Field label="DEBIT NOTE NO."><div className="spi-dt-inp-auto"><input className="spi-dt-inp" value="DN/2025-26/001" readOnly /><span className="spi-dt-auto"><IcoLock /> AUTO</span></div></Field>
                 <Field label="DEBIT NOTE DATE"><div className="spi-dt-inp-auto"><input className="spi-dt-inp" value={todayDisp} readOnly /><span className="spi-dt-auto"><IcoLock /> AUTO</span></div></Field>
-                <Field label="DEBIT NOTE TYPE"><select className="spi-dt-inp dncr-native" defaultValue={DN_TYPES[0]}>{DN_TYPES.map(t => <option key={t}>{t}</option>)}</select></Field>
-                <Field label="EXPECTED DEBIT DATE"><input type="date" className="spi-dt-inp dncr-native" /></Field>
-                <Field label="SPI NUMBER"><select className="spi-dt-inp dncr-native"><option>— Select SPI Number —</option></select></Field>
-                <Field label="SPI DATE"><input type="date" className="spi-dt-inp dncr-native" /></Field>
-                <Field label="PO NUMBER"><select className="spi-dt-inp dncr-native"><option>— Select PO Number —</option></select></Field>
-                <Field label="PO DATE"><input type="date" className="spi-dt-inp dncr-native" /></Field>
+                <Field label="DEBIT NOTE TYPE"><DnSelect value={f.dnType} options={DN_TYPES} onChange={set('dnType')} /></Field>
+                <Field label="EXPECTED DEBIT DATE"><MasterDatePicker value={f.expDate ?? ''} onChange={set('expDate')} placeholder="Select date" /></Field>
+                <Field label="SPI NUMBER"><DnSelect value={f.spiNum ?? ''} options={[]} placeholder="— Select SPI Number —" onChange={set('spiNum')} /></Field>
+                <Field label="SPI DATE"><MasterDatePicker value={f.spiDate ?? ''} onChange={set('spiDate')} placeholder="Select date" /></Field>
+                <Field label="PO NUMBER"><DnSelect value={f.poNum ?? ''} options={[]} placeholder="— Select PO Number —" onChange={set('poNum')} /></Field>
+                <Field label="PO DATE"><MasterDatePicker value={f.poDate ?? ''} onChange={set('poDate')} placeholder="Select date" /></Field>
               </div>
             </div>
           </div>
@@ -134,10 +159,10 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
                   <span className="spi-dt-fields-badge">4 FIELDS</span>
                 </div>
                 <div className="spi-dt-grid4">
-                  <Field label="SELECT SUPPLIER"><select className="spi-dt-inp dncr-native"><option>— Select Supplier —</option></select></Field>
-                  <Field label="SUPPLIER CODE"><input className="spi-dt-inp" placeholder="e.g. S-001" /></Field>
-                  <Field label="COMPANY NAME"><input className="spi-dt-inp" placeholder="Enter company name" /></Field>
-                  <Field label="SUPPLIER TYPE"><select className="spi-dt-inp dncr-native" defaultValue="Manufacturer"><option>Manufacturer</option><option>Trader</option><option>Service Provider</option><option>Distributor</option></select></Field>
+                  <Field label="SELECT SUPPLIER"><DnSelect value={sel?.company ?? ''} options={SUPPLIERS.map(s => s.company)} placeholder="— Select Supplier —" onChange={v => setSel(SUPPLIERS.find(s => s.company === v) ?? null)} /></Field>
+                  <SupField label="SUPPLIER CODE" value={sel?.code} edit={<input className="spi-dt-inp" placeholder="e.g. S-001" />} />
+                  <SupField label="COMPANY NAME" value={sel?.company} edit={<input className="spi-dt-inp" placeholder="Enter company name" />} />
+                  <SupField label="SUPPLIER TYPE" value={sel?.type} edit={<DnSelect value={f.supType} options={['Manufacturer', 'Trader', 'Service Provider', 'Distributor']} onChange={set('supType')} />} />
                 </div>
               </div>
 
@@ -150,10 +175,10 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
                 {legalOpen && (
                   <div className="spi-dt-legal">
                     <div className="spi-dt-legal-top">
-                      <div className="spi-dt-legal-bar"><span className="spi-dt-legal-fill" style={{ width: '0%' }} /></div>
-                      <div className="spi-dt-legal-pct">0%</div>
+                      <div className="spi-dt-legal-bar"><span className="spi-dt-legal-fill" style={{ width: sel ? '100%' : '0%', background: sel ? 'linear-gradient(90deg,#0e7490,#0891b2 55%,#06b6d4)' : undefined }} /></div>
+                      <div className="spi-dt-legal-pct">{sel ? '100%' : '0%'}</div>
                     </div>
-                    <div className="spi-dt-legal-note">Select a supplier to view legal &amp; compliance status.</div>
+                    <div className="spi-dt-legal-note">{sel ? `${sel.company} — legal & compliance documents verified.` : 'Select a supplier to view legal & compliance status.'}</div>
                   </div>
                 )}
               </div>
@@ -165,15 +190,15 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
                   <span className="spi-dt-fields-badge">9 FIELDS</span>
                 </div>
                 <div className="spi-dt-grid4">
-                  <Field label="REGISTERED OFFICE ADDRESS" full><input className="spi-dt-inp" placeholder="Building / street / area / landmark, with PIN code" /></Field>
-                  <Field label="COUNTRY"><select className="spi-dt-inp dncr-native" defaultValue="India"><option>India</option></select></Field>
-                  <Field label="STATE"><select className="spi-dt-inp dncr-native" defaultValue="Maharashtra"><option>Maharashtra</option></select></Field>
-                  <Field label="STATE CODE"><input className="spi-dt-inp" placeholder="e.g. 27" /></Field>
-                  <Field label="CITY"><input className="spi-dt-inp" placeholder="Enter city" /></Field>
-                  <Field label="CONTACT PERSON NAME"><input className="spi-dt-inp" placeholder="Full name" /></Field>
-                  <Field label="DESIGNATION"><input className="spi-dt-inp" placeholder="e.g. Procurement Manager" /></Field>
-                  <Field label="CONTACT NUMBER"><input className="spi-dt-inp" placeholder="+91" /></Field>
-                  <Field label="EMAIL ID"><input className="spi-dt-inp" placeholder="name@company.com" /></Field>
+                  <SupField label="REGISTERED OFFICE ADDRESS" full value={sel?.address} edit={<input className="spi-dt-inp" placeholder="Building / street / area / landmark, with PIN code" />} />
+                  <SupField label="COUNTRY" value={sel?.country} edit={<DnSelect value={f.country} options={['India']} onChange={set('country')} />} />
+                  <SupField label="STATE" value={sel?.state} edit={<DnSelect value={f.state} options={['Maharashtra', 'Jharkhand', 'Gujarat', 'Karnataka']} onChange={set('state')} />} />
+                  <SupField label="STATE CODE" value={sel?.stateCode} edit={<input className="spi-dt-inp" placeholder="e.g. 27" />} />
+                  <SupField label="CITY" value={sel?.city} edit={<input className="spi-dt-inp" placeholder="Enter city" />} />
+                  <SupField label="CONTACT PERSON NAME" value={sel?.contact} edit={<input className="spi-dt-inp" placeholder="Full name" />} />
+                  <SupField label="DESIGNATION" value={sel?.designation} edit={<input className="spi-dt-inp" placeholder="e.g. Procurement Manager" />} />
+                  <SupField label="CONTACT NUMBER" value={sel?.phone} edit={<input className="spi-dt-inp" placeholder="+91" />} />
+                  <SupField label="EMAIL ID" value={sel?.email} edit={<input className="spi-dt-inp" placeholder="name@company.com" />} />
                 </div>
               </div>
 
@@ -184,10 +209,10 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
                   <span className="spi-dt-fields-badge">5 FIELDS</span>
                 </div>
                 <div className="spi-dt-grid4">
-                  <Field label="SCRUTINY DATE"><input type="date" className="spi-dt-inp dncr-native" /></Field>
-                  <Field label="GST NUMBER"><input className="spi-dt-inp" placeholder="15-digit GSTIN" /></Field>
-                  <Field label="GST STATUS"><select className="spi-dt-inp dncr-native" defaultValue="Active"><option>Active</option><option>Inactive</option><option>Suspended</option><option>Cancelled</option></select></Field>
-                  <Field label="LAST FILING DATE"><input type="date" className="spi-dt-inp dncr-native" /></Field>
+                  <SupField label="SCRUTINY DATE" value={sel?.scrutinyDate} edit={<MasterDatePicker value={f.scrutinyDate ?? ''} onChange={set('scrutinyDate')} placeholder="Select date" />} />
+                  <SupField label="GST NUMBER" value={sel?.gstNo} edit={<input className="spi-dt-inp" placeholder="15-digit GSTIN" />} />
+                  <SupField label="GST STATUS" value={sel?.gstStatus} edit={<DnSelect value={f.gstStatus} options={['Active', 'Inactive']} onChange={set('gstStatus')} />} />
+                  <SupField label="LAST FILING DATE" value={sel?.filingDate} edit={<MasterDatePicker value={f.lastFilingDate ?? ''} onChange={set('lastFilingDate')} placeholder="Select date" />} />
                   <Field label="PREV. INVOICE / REMARKS" full><textarea className="spi-dt-textarea" placeholder="Notes on previous invoices, filing history or scrutiny remarks…" /></Field>
                 </div>
               </div>
@@ -232,7 +257,7 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
           </div>
 
           {/* Products */}
-          <div className={`spi-dt-sec ${prodOpen ? '' : 'is-collapsed'}`}>
+          <div className={`spi-dt-sec dncr-prodsec ${prodOpen ? '' : 'is-collapsed'}`}>
             <div className="spi-dt-sec-head" onClick={() => setProdOpen(o => !o)}>
               <div className="spi-dt-sec-ico spi-dt-sec-ico-3"><IcoBox /></div>
               <div className="spi-dt-sec-mid">
@@ -243,8 +268,7 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
             </div>
             <div className="spi-dt-sec-body">
               <div className="dncr-prodmeta">
-                <span className="dncr-prodmeta-txt">{DN_PRODUCTS.length} products · edit any cell, add or remove rows</span>
-                <button type="button" className="dncr-addprod"><IcoPlus /> Add Product</button>
+                <span className="dncr-prodmeta-txt">{DN_PRODUCTS.length} products · from the linked SPI · edit any cell or remove a row</span>
               </div>
               <div className="spi-dt-mtable-wrap">
                 <table className="spi-dt-mtable spi-dt-mtable--fixed">
@@ -286,30 +310,16 @@ export default function DebitNoteDetail({ onClose }: { onClose: () => void }) {
               {/* Additions / Deductions + totals */}
               <div className="spi-dt-sum">
                 <div className="dncr-charges">
-                  <div className="dncr-charge-block">
-                    <div className="dncr-charge-hd"><span className="dncr-charge-lbl dncr-add">— ADDITIONS (+)</span><button type="button" className="dncr-chgbtn dncr-chgbtn-add"><IcoPlus size={12} /> Add</button></div>
-                    <div className="dncr-charge-row">
-                      <div className="dncr-amtwrap"><span className="dncr-cur">₹</span><input className="dncr-amtinp" type="number" placeholder="0.00" /></div>
-                      <input className="dncr-note" placeholder="Note against this charge…" />
-                      <button type="button" className="dncr-rowx"><IcoX size={13} /></button>
-                    </div>
-                  </div>
-                  <div className="dncr-charge-block">
-                    <div className="dncr-charge-hd"><span className="dncr-charge-lbl dncr-ded">— DEDUCTIONS (-)</span><button type="button" className="dncr-chgbtn dncr-chgbtn-ded"><IcoPlus size={12} /> Add</button></div>
-                    <div className="dncr-charge-row">
-                      <div className="dncr-amtwrap"><span className="dncr-cur">₹</span><input className="dncr-amtinp" type="number" placeholder="0.00" /></div>
-                      <input className="dncr-note" placeholder="Note against this charge…" />
-                      <button type="button" className="dncr-rowx"><IcoX size={13} /></button>
-                    </div>
-                  </div>
+                  <ChargeBlock variant="add" label="ADDITIONS (+)" rows={additions} setRows={setAdditions} />
+                  <ChargeBlock variant="ded" label="DEDUCTIONS (-)" rows={deductions} setRows={setDeductions} />
                 </div>
                 <div className="spi-dt-totbox">
-                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total Debit Cost</span><span className="spi-dt-totrow-v">{inr(3125)}</span></div>
+                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total Debit Cost</span><span className="spi-dt-totrow-v">{inr(PRODUCT_TOTAL)}</span></div>
                   <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total CGST Amount</span><span className="spi-dt-totrow-v">{inr(87)}</span></div>
                   <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total SGST Amount</span><span className="spi-dt-totrow-v">{inr(87)}</span></div>
-                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Additions (+)</span><span className="spi-dt-totrow-v">{inr(0)}</span></div>
-                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Deductions (–)</span><span className="spi-dt-totrow-v">– {inr(0)}</span></div>
-                  <div className="spi-dt-totrow spi-dt-totrow-grand"><span className="spi-dt-totrow-k">Grand Total</span><span className="spi-dt-totrow-v">{inr(3125)}</span></div>
+                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Additions (+)</span><span className="spi-dt-totrow-v">{inr(addSum)}</span></div>
+                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Deductions (–)</span><span className="spi-dt-totrow-v">– {inr(dedSum)}</span></div>
+                  <div className="spi-dt-totrow spi-dt-totrow-grand"><span className="spi-dt-totrow-k">Grand Total</span><span className="spi-dt-totrow-v">{inr(grandTotal)}</span></div>
                 </div>
               </div>
             </div>
@@ -401,34 +411,158 @@ function Field({ label, children, full, req }: { label: string; children: ReactN
   return <div className={`spi-dt-field ${full ? 'spi-dt-field-full' : ''}`}><label className="spi-dt-field-lbl">{label}{req && <span className="spi-dt-req">*</span>}</label>{children}</div>;
 }
 
+/* Additions / Deductions charge block — header (label + "+ Add") stays fixed; the rows live in a
+ * scroll container that caps at ~3 rows so the section never grows unbounded (senior-dev layout). */
+function ChargeBlock({ variant, label, rows, setRows }: { variant: 'add' | 'ded'; label: string; rows: ChargeRow[]; setRows: Dispatch<SetStateAction<ChargeRow[]>> }) {
+  const patch = (i: number, key: 'amount' | 'note', v: string) => setRows(rs => rs.map((r, idx) => idx === i ? { ...r, [key]: v } : r));
+  return (
+    <div className="dncr-charge-block">
+      <div className="dncr-charge-hd">
+        <span className={`dncr-charge-lbl dncr-${variant}`}>— {label}</span>
+        <button type="button" className={`dncr-chgbtn dncr-chgbtn-${variant}`} onClick={() => setRows(rs => [...rs, { amount: '', note: '' }])}><IcoPlus size={12} /> Add</button>
+      </div>
+      <div className="dncr-charge-rows">
+        {rows.map((row, i) => (
+          <div className="dncr-charge-row" key={i}>
+            <div className="dncr-amtwrap"><span className="dncr-cur">₹</span><input className="dncr-amtinp" type="number" placeholder="0.00" value={row.amount} onChange={e => patch(i, 'amount', e.target.value)} /></div>
+            <input className="dncr-note" placeholder="Note against this charge…" value={row.note} onChange={e => patch(i, 'note', e.target.value)} />
+            <button type="button" className="dncr-rowx" title="Remove" onClick={() => setRows(rs => rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs)}><IcoX size={13} /></button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* Supplier-derived field: once a supplier is picked its value fills in READ-ONLY
+ * (the greyed AUTO look, same as DEBIT NOTE DATE); before that, the editable control. */
+function SupField({ label, value, full, edit }: { label: string; value?: string; full?: boolean; edit: ReactNode }) {
+  return (
+    <Field label={label} full={full}>
+      {value
+        ? <div className="spi-dt-inp-auto"><input className="spi-dt-inp" value={value} title={value} readOnly /><span className="spi-dt-auto"><IcoLock /> AUTO</span></div>
+        : edit}
+    </Field>
+  );
+}
+
+/* App-style selective dropdown — same portal-popover pattern & .spi-dt-select styling
+ * as the SPI wizard's EditSelect, so Debit Note dropdowns match the rest of the app. */
+function DnSelect({ value, options, onChange, placeholder }: { value: string; options: string[]; onChange: (v: string) => void; placeholder?: string }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const [pos, setPos] = useState({ left: 0, top: 0, width: 0 });
+
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const h = Math.min(224, Math.max(options.length, 1) * 38 + 10);
+    const up = r.bottom + 6 + h > window.innerHeight && r.top - 6 - h > 4;
+    setPos({ left: r.left, width: r.width, top: up ? r.top - 6 - h : r.bottom + 6 });
+  }, [open, options.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (btnRef.current && !btnRef.current.contains(t) && !t.closest?.('.spi-dt-esel-pop')) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    const close = () => setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', close);
+    document.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('scroll', close, true);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button type="button" ref={btnRef} title={value || undefined} className={`spi-dt-select spi-dt-select-edit ${open ? 'is-open' : ''} ${!value ? 'is-muted' : ''}`} onClick={() => setOpen(o => !o)}>
+        <span>{value || placeholder || '— Select —'}</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {open && createPortal(
+        <div className="spi-dt-esel-pop" style={{ left: pos.left, top: pos.top, width: pos.width }}>
+          {options.length === 0
+            ? <div className="spi-dt-esel-opt is-muted" style={{ color: '#94a3b8', cursor: 'default' }}>No options</div>
+            : options.map(o => (
+              <div key={o} className={`spi-dt-esel-opt ${o === value ? 'is-active' : ''}`} onClick={() => { onChange(o); setOpen(false); }}>{o}</div>
+            ))}
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 const DNCR_CSS = `
 .dn-scope .dncr-placeholder { padding:60px 40px; text-align:center; color:#94a3b8; font-size:13px; font-weight:600; }
 /* Figma header: chips are grouped on the RIGHT (next to Close), not packed after the title. */
 .dn-scope .spi-dt-pills { margin-left:auto; }
-/* Native select / date controls styled to match the .spi-dt-inp look with a custom chevron. */
-.dn-scope select.dncr-native { -webkit-appearance:none; -moz-appearance:none; appearance:none; padding-right:34px; cursor:pointer;
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%230891b2' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat:no-repeat; background-position:right 12px center; }
-.dn-scope input[type=date].dncr-native::-webkit-calendar-picker-indicator { cursor:pointer; opacity:.55; }
+/* Figma "Generate Debit Note" CTA (.cpo-btn--p): 135deg teal gradient + top white sheen + soft shadow. */
+.dn-scope .spi-dt-btn-map { background:linear-gradient(180deg,rgba(255,255,255,.2),rgba(255,255,255,0) 50%),linear-gradient(135deg,#0e7490,#0891b2 55%,#06b6d4) !important; box-shadow:0 8px 20px -4px rgba(8,145,178,.5) !important; }
+/* Figma header chips: all icons are ONE uniform teal gradient (dev alternated bright/dark via
+ * the --alt variant). Match the list-header icon gradient + a soft shadow. */
+.dn-scope .spi-dt-pill-ico,
+.dn-scope .spi-dt-pill-ico--alt { background:linear-gradient(140deg,#22d3ee,#0891b2 60%,#0e7490) !important; box-shadow:0 3px 9px -1px rgba(8,145,178,.5), inset 0 1px 0 rgba(255,255,255,.3) !important; }
+/* Figma-strength drop shadow on the teal header/section/card icons (dev's was too subtle) —
+ * bigger soft teal shadow + an inset white top highlight so the icons visibly lift off. */
+.dn-scope .spi-dt-head-ico { box-shadow:0 8px 20px -4px rgba(8,145,178,.5), inset 0 1px 0 rgba(255,255,255,.42) !important; }
+.dn-scope .spi-dt-sec-ico { box-shadow:0 7px 16px -3px rgba(8,145,178,.45), inset 0 1px 0 rgba(255,255,255,.35) !important; }
+.dn-scope .spi-dt-card-ico { box-shadow:0 5px 13px -2px rgba(8,145,178,.42), inset 0 1px 0 rgba(255,255,255,.3) !important; }
+/* Figma product table (.cpd-tbl) — dev was using the compact/responsive sizing, so it read
+ * smaller than the Figma. Restore the Figma base scale: roomier header/cell padding + bigger font. */
+/* Products section body is white (not the cyan #f0fbfd) so the whole table area reads clean white. */
+.dn-scope .dncr-prodsec .spi-dt-sec-body { background:#fff; }
+.dn-scope .spi-dt-mtable { font-size:12px; background:#fff; }
+.dn-scope .spi-dt-mtable-wrap { background:#fff; }
+.dn-scope .spi-dt-mtable thead th { padding:9px 12px; }
+.dn-scope .spi-dt-mtable tbody td { padding:7px 12px; font-size:12px; }
+/* Pure white table — kill the blue zebra + input tint so it reads clean white like the Figma. */
+.dn-scope .spi-dt-mtable tbody tr,
+.dn-scope .spi-dt-mtable tbody tr:nth-child(even),
+.dn-scope .spi-dt-mtable tbody tr:nth-child(odd),
+.dn-scope .spi-dt-mtable tbody td { background:#fff !important; }
+.dn-scope .spi-dt-mtable tbody tr:hover,
+.dn-scope .spi-dt-mtable tbody tr:hover td { background:#f6fdff !important; }
+.dn-scope .spi-dt-mtable .spi-dt-minp { padding:6px 8px; font-size:11.5px; background:#fff !important; }
+.dn-scope .spi-dt-mtable .spi-dt-minp::placeholder { color:#9fb0bf; }
 
 /* Products meta row (count + Add Product) */
-.dn-scope .dncr-prodmeta { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
-.dn-scope .dncr-prodmeta-txt { font-size:11.5px; font-weight:600; color:#64748b; }
+.dn-scope .dncr-prodmeta { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:-4px 0 5px; }
+.dn-scope .dncr-prodmeta-txt { font-size:11.5px; font-weight:600; color:#64748b; line-height:1.2; }
 .dn-scope .dncr-addprod { display:inline-flex; align-items:center; gap:5px; padding:7px 13px; border:1.5px solid #cfe3ea; border-radius:9px; background:#fff; color:#0e7490; font-size:12px; font-weight:700; cursor:pointer; transition:background .15s,border-color .15s; }
 .dn-scope .dncr-addprod:hover { background:#f0fbfe; border-color:#22d3ee; }
 
 /* Additions / Deductions charge blocks (left of the totals panel) */
-.dn-scope .dncr-charges { flex:1; display:flex; flex-direction:column; gap:16px; min-width:0; }
-.dn-scope .dncr-charge-hd { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
-.dn-scope .dncr-charge-lbl { font-size:11.5px; font-weight:800; letter-spacing:.02em; }
-.dn-scope .dncr-charge-lbl.dncr-add { color:#0891b2; }
-.dn-scope .dncr-charge-lbl.dncr-ded { color:#d97706; }
+/* Additions | Deductions side by side (horizontal), not stacked — keeps the section short so it
+ * balances against the totals panel instead of towering over it when rows are added. */
+.dn-scope .dncr-charges { flex:1; display:flex; flex-direction:row; gap:18px; min-width:0; align-items:flex-start; }
+.dn-scope .dncr-charge-block { flex:1 1 0; min-width:0; }
+.dn-scope .dncr-charge-hd { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+/* Figma .cpd-sum__hd — 9.5px DM Sans, weight 800, .07em, uppercase, teal for BOTH add & ded
+ * (only the "+ Add" button turns amber for deductions, not the label). */
+.dn-scope .dncr-charge-lbl { font-size:9.5px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; }
+.dn-scope .dncr-charge-lbl.dncr-add,
+.dn-scope .dncr-charge-lbl.dncr-ded { color:#0891b2; }
 .dn-scope .dncr-chgbtn { display:inline-flex; align-items:center; gap:4px; padding:4px 11px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer; border:1.5px solid transparent; background:#fff; transition:background .15s; }
 .dn-scope .dncr-chgbtn-add { color:#0891b2; border-color:#bfe4ec; }
 .dn-scope .dncr-chgbtn-add:hover { background:#f0fbfe; }
 .dn-scope .dncr-chgbtn-ded { color:#d97706; border-color:#fde3ba; }
 .dn-scope .dncr-chgbtn-ded:hover { background:#fffbf2; }
-.dn-scope .dncr-charge-row { display:flex; align-items:center; gap:10px; }
+/* Rows scroll internally past ~4 so the block height is capped and the layout never blows up. */
+.dn-scope .dncr-charge-rows { display:flex; flex-direction:column; gap:10px; max-height:204px; overflow-y:auto; padding:2px 4px 2px 2px; }
+.dn-scope .dncr-charge-rows::-webkit-scrollbar { width:7px; }
+.dn-scope .dncr-charge-rows::-webkit-scrollbar-thumb { background:#cfe3ea; border-radius:6px; }
+.dn-scope .dncr-charge-rows::-webkit-scrollbar-thumb:hover { background:#a9d3df; }
+.dn-scope .dncr-charge-rows::-webkit-scrollbar-track { background:transparent; }
+.dn-scope .dncr-charge-row { display:flex; align-items:center; gap:10px; flex-shrink:0; }
 .dn-scope .dncr-amtwrap { position:relative; flex:0 0 150px; display:flex; align-items:center; }
 .dn-scope .dncr-cur { position:absolute; left:12px; color:#64748b; font-size:13px; font-weight:700; pointer-events:none; }
 .dn-scope .dncr-amtinp { width:100%; height:40px; padding:0 12px 0 26px; border:1.5px solid #e3edf2; border-radius:10px; font-size:13px; font-weight:600; color:#0c4a6e; background:#fff; box-sizing:border-box; text-align:right; }
