@@ -888,7 +888,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
               </div>
               <div className="cev-ov-body">
                 <table className="cev-ov-table">
-                  <thead><tr><th style={{ width: 48 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+                  <thead><tr><th style={{ width: 60 }}>SR NO</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>
@@ -1070,6 +1070,101 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
  * tab; Download triggers a blob save; Re-upload posts to
  * /segment-uploads/{type}/{id} with the same (category, doc_code) tuple so
  * the existing row is replaced server-side. */
+/* Re-upload / Upload popup for an Evidence Vault row. Shows the CURRENT file
+ * (so the user sees what's already there), lets them pick a replacement, previews
+ * the picked file, then saves. Mirrors the AddVendorModal SegmentRefUploadPopup. */
+function VaultReuploadPopup({ doc, busy, onClose, onSubmit }: {
+  doc: VaultDoc;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (f: File) => void | Promise<void>;
+}) {
+  const toast = useToast();
+  const [file, setFile] = useState<File | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const pick = (f: File | undefined) => {
+    if (!f) return;
+    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
+      toast.error('Unsupported file type', 'Only PDF, JPG or PNG files are allowed.');
+      return;
+    }
+    if (f.size > 2 * 1024 * 1024) {
+      toast.error('File too large', f.name + ' exceeds the 2 MB limit.');
+      return;
+    }
+    setFile(f);
+  };
+  return createPortal(
+    <div className="cev-reup-ov" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+      <style>{CEV_REUP_CSS}</style>
+      <div className="cev-reup-card" role="dialog" aria-modal="true">
+        <div className="cev-reup-hd">
+          <div>
+            <div className="cev-reup-ttl">{doc.attachment ? 'Re-upload Document' : 'Upload Document'}</div>
+            <div className="cev-reup-sub">{doc.name || doc.doc_code}</div>
+          </div>
+          <button type="button" className="cev-reup-x" onClick={onClose} aria-label="Close" disabled={busy}><i className="ri-close-line" /></button>
+        </div>
+        <div className="cev-reup-bd">
+          <div className="cev-reup-fld">
+            <label>Current file</label>
+            {doc.attachment
+              ? <a className="cev-reup-cur" href={doc.attachment_url} target="_blank" rel="noreferrer"><i className="ri-file-text-line" /><span>{doc.attachment}</span></a>
+              : <span className="cev-reup-none">No file uploaded yet</span>}
+          </div>
+          <div className="cev-reup-fld">
+            <label>{doc.attachment ? 'Replace with new file' : 'Choose file'} <span className="cev-reup-req">*</span></label>
+            <input ref={inputRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { pick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }} />
+            <button type="button" className={`cev-reup-drop${file ? ' has' : ''}`} onClick={() => inputRef.current?.click()}>
+              <i className={file ? 'ri-file-check-line' : 'ri-upload-cloud-2-line'} />
+              <span>{file ? file.name : 'Choose a file (PDF / JPG / PNG, max 2 MB)'}</span>
+            </button>
+          </div>
+        </div>
+        <div className="cev-reup-ft">
+          <button type="button" className="cev-reup-cancel" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="button" className="cev-reup-save" disabled={!file || busy} onClick={() => file && void onSubmit(file)}>
+            {busy ? <><i className="ri-loader-4-line cev-spin" /> Uploading…</> : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+const CEV_REUP_CSS = `
+.cev-reup-ov { position:fixed; inset:0; z-index:100000; background:rgba(15,23,42,.5); display:flex; align-items:center; justify-content:center; padding:16px; }
+.cev-reup-card { width:100%; max-width:460px; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 24px 60px rgba(8,40,60,.32); font-family:'DM Sans',system-ui,sans-serif; }
+.cev-reup-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:16px 18px; background:linear-gradient(120deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; }
+.cev-reup-ttl { font-size:15px; font-weight:800; }
+.cev-reup-sub { font-size:12px; opacity:.85; margin-top:2px; }
+.cev-reup-x { background:rgba(255,255,255,.18); border:none; color:#fff; width:30px; height:30px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
+.cev-reup-x:hover:not(:disabled) { background:rgba(255,255,255,.3); }
+.cev-reup-bd { padding:18px; display:flex; flex-direction:column; gap:16px; }
+.cev-reup-fld label { display:block; font-size:11px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; color:#64748b; margin-bottom:6px; }
+.cev-reup-req { color:#dc2626; }
+.cev-reup-cur { display:inline-flex; align-items:center; gap:7px; max-width:100%; padding:8px 12px; border-radius:9px; background:#f5f3ff; border:1px solid #ddd6fe; color:#6d28d9; font-size:12.5px; font-weight:600; text-decoration:none; }
+.cev-reup-cur span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cev-reup-cur:hover { background:#ede9fe; }
+.cev-reup-none { font-size:12.5px; color:#94a3b8; font-style:italic; }
+.cev-reup-drop { width:100%; display:flex; align-items:center; gap:9px; padding:12px 14px; border-radius:10px; border:1.5px dashed #cbd5e1; background:#f8fafc; color:#64748b; font-family:inherit; font-size:12.5px; font-weight:600; cursor:pointer; text-align:left; }
+.cev-reup-drop:hover { border-color:#8b5cf6; background:#faf5ff; color:#6d28d9; }
+.cev-reup-drop.has { border-style:solid; border-color:#8b5cf6; background:#faf5ff; color:#6d28d9; }
+.cev-reup-drop i { font-size:18px; flex-shrink:0; }
+.cev-reup-drop span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cev-reup-ft { display:flex; justify-content:flex-end; gap:10px; padding:14px 18px; border-top:1px solid #eef2f7; }
+.cev-reup-cancel { padding:9px 18px; border-radius:9px; border:1.5px solid #e2e8f0; background:#fff; color:#475569; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer; }
+.cev-reup-cancel:hover:not(:disabled) { background:#f8fafc; }
+.cev-reup-save { display:inline-flex; align-items:center; gap:7px; padding:9px 22px; border-radius:9px; border:none; background:linear-gradient(135deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer; }
+.cev-reup-save:disabled, .cev-reup-cancel:disabled { opacity:.55; cursor:not-allowed; }
+[data-bs-theme="dark"] .cev-reup-card { background:#0f2731; }
+[data-bs-theme="dark"] .cev-reup-drop { background:#16303b; border-color:#2a4a56; color:#9db3c1; }
+[data-bs-theme="dark"] .cev-reup-cur { background:rgba(139,92,246,.14); border-color:rgba(139,92,246,.35); color:#c4b5fd; }
+[data-bs-theme="dark"] .cev-reup-ft { border-top-color:#1c3a45; }
+[data-bs-theme="dark"] .cev-reup-cancel { background:#16303b; border-color:#2a4a56; color:#9db3c1; }
+`;
+
 function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTradeDoc, onRemindTradeDoc }: {
   doc: VaultDoc;
   ownerType: 'customer' | 'consignee' | 'supplier';
@@ -1081,7 +1176,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 }) {
   const toast = useToast();
   const viewOnly = useContext(VaultViewOnlyCtx);
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [reupOpen, setReupOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reminding, setReminding] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -1118,13 +1213,13 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
     finally { setDownloading(false); }
   };
 
-  const onPick = async (f: File | undefined) => {
-    if (!f || !ownerId || !doc.doc_code) return;
+  const onPick = async (f: File | undefined): Promise<boolean> => {
+    if (!f || !ownerId || !doc.doc_code) return false;
     // Only PDF / JPG / PNG may be uploaded (Word / Excel are blocked so every
     // stored attachment can be previewed in-browser via View).
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
       toast.error('Unsupported file type', 'Only PDF, JPG or PNG files are allowed. Word / Excel files are not supported.');
-      return;
+      return false;
     }
     setBusy(true);
     try {
@@ -1138,8 +1233,10 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
       });
       await onReload();
       toast.success('Document uploaded', `${f.name} has been attached.`);
+      return true;
     } catch (e: any) {
       toast.error('Upload failed', e?.response?.data?.message || 'The file could not be uploaded. Please try again.');
+      return false;
     } finally {
       setBusy(false);
     }
@@ -1147,13 +1244,14 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 
   return (
     <div className="cev-row-actions">
-      <input
-        ref={fileRef}
-        type="file"
-        hidden
-        accept=".pdf,.jpg,.jpeg,.png"
-        onChange={e => { void onPick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }}
-      />
+      {reupOpen && (
+        <VaultReuploadPopup
+          doc={doc}
+          busy={busy}
+          onClose={() => setReupOpen(false)}
+          onSubmit={async f => { const ok = await onPick(f); if (ok) setReupOpen(false); }}
+        />
+      )}
       {canSend && (
         <Tooltip label="Send for signature">
           <button
@@ -1227,7 +1325,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
         <button
           type="button"
           disabled={!canReupload || busy}
-          onClick={() => fileRef.current?.click()}
+          onClick={() => setReupOpen(true)}
           className={`cev-row-act cev-row-act-upload ${(!canReupload || busy) ? 'is-disabled' : ''}`}
           aria-label={doc.attachment ? 'Re-upload' : 'Upload'}
         >

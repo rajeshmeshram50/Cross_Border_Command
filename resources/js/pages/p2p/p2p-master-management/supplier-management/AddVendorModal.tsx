@@ -8,6 +8,7 @@ import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { ShimmerForm } from '../../../../components/ui/Shimmer';
 import { MasterMultiSelect } from '../../../master/masterFormKit';
+import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { SegmentModal, nextSegmentCode, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
@@ -480,7 +481,7 @@ export default function AddVendorModal(props: {
    * above the Step 2 Company DD and Trade License tables so onboarders
    * see the segment's required uploads at a glance. Stays empty when no
    * segment is picked or the segment has no rule configured. */
-  type SegDocRow = { id:number; code:string; name:string; authority?:string|null; expiry?:string|null; status?:string; requirement:'M'|'O' };
+  type SegDocRow = { id:number; code:string; name:string; authority?:string|null; authority_list?:string[]|null; expiry?:string|null; status?:string; requirement:'M'|'O' };
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
@@ -1471,6 +1472,7 @@ export default function AddVendorModal(props: {
   const saveIdentity = async (): Promise<boolean> => {
     const errs: Record<string, string> = {};
     if (!companyName.trim()) errs.companyName         = 'Company Name is required';
+    if (!legalName.trim())   errs.legalName           = 'Company Legal Name is required';
     if (!vendorType)         errs.vendorType          = 'Supplier Type is required';
     if (!riskLevel)          errs.riskLevel           = 'Risk Level is required';
     if (!vendorBehaviour)    errs.vendorBehaviour     = 'Supplier Behaviour is required';
@@ -1528,7 +1530,11 @@ export default function AddVendorModal(props: {
     }
   };
 
-  const saveContacts = async (): Promise<boolean> => {
+  const saveContacts = async (opts?: { outerSpinner?: boolean }): Promise<boolean> => {
+    // The Primary Contact card's own "Save Contact" button drives its own
+    // spinner (savingPrimary), so it calls this with outerSpinner:false to keep
+    // the footer "Update & Next" button from ALSO showing a loader.
+    const useOuter = opts?.outerSpinner !== false;
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return false; }
     const errs: Record<string, string> = {};
     if (!registeredOffice.trim())  errs.registeredOffice = 'Registered Office Address is required';
@@ -1546,7 +1552,7 @@ export default function AddVendorModal(props: {
     if (pincode)                   { const e = validatePincode(pincode);          if (e) errs.pincode   = e; }
     if (Object.keys(errs).length) { flagErrors(errs); return false; }
 
-    setSaving(true);
+    if (useOuter) setSaving(true);
     try {
       // Multipart so the primary contact's business card can upload. The
       // contacts route is PUT, but PHP only parses multipart on POST, so we
@@ -1592,7 +1598,7 @@ export default function AddVendorModal(props: {
       toast.error('Save failed', msg);
       return false;
     } finally {
-      setSaving(false);
+      if (useOuter) setSaving(false);
     }
   };
 
@@ -2162,15 +2168,14 @@ export default function AddVendorModal(props: {
         segment?: { id?: number; title?: string } | null;
         gst_percentage?: { percentage?: number | string } | null;
       };
-      // Pull every product (no `status=` filter) so we get both the
-      // post-Quality "inactive" rows and the post-Vendor "active"
-      // rows. Drafts are dropped client-side — anything with
-      // step_completed < 3 hasn't gone through the Core → Sales →
-      // Quality sub-tabs and therefore lacks the HSN / segment data
-      // that the mapping modal auto-fills.
+      // Pull every product (no `status=` filter) so we get active, inactive AND
+      // the draft/zero-supplier rows. A product is mappable as long as it has a
+      // SEGMENT (Core step done) — that's what the segment filter matches against
+      // and what a supplier is mapped by. Price / GST are entered in the popup,
+      // so a product that hasn't finished Sales / Quality can still be mapped.
       const res = await api.get<{ data?: ProductRow[] } | ProductRow[]>('/products?per_page=500');
       const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
-      const eligible = rows.filter(r => Number(r.step_completed ?? 0) >= 3);
+      const eligible = rows.filter(r => r.segment_id != null || r.segment?.id != null);
       setProductOpts(eligible.map(r => ({
         value:    String(r.id),
         label:    `${formatProductCode(r.product_code) || (r.product_code ?? '')} — ${r.name ?? ''}`.replace(/^ — /, ''),
@@ -2405,15 +2410,18 @@ export default function AddVendorModal(props: {
     }
     setSavingPrimary(true);
     try {
-      const ok = await saveContacts();   // persists primary_address + business card
+      const ok = await saveContacts({ outerSpinner: false });   // persists primary_address + business card; spinner stays on THIS button only
       if (ok) { setPrimarySaved(true); setEditingPrimary(false); }
     } finally {
       setSavingPrimary(false);
     }
   };
-  /* The Primary Contact card is read-only once saved (or on edit), UNLESS the
-     user clicked Edit on its row — then editingPrimary re-opens it. */
-  const primaryLocked = (primarySaved || isEdit) && !editingPrimary;
+  /* The Primary Contact card is read-only once saved (or on edit of a supplier
+     that ALREADY has a primary contact), UNLESS the user clicked Edit on its
+     row — then editingPrimary re-opens it. If a supplier was created WITHOUT a
+     primary contact, the card stays open on edit so it can finally be filled. */
+  const hasPrimaryContact = !!(contactName.trim() && contactNo.trim());
+  const primaryLocked = (primarySaved || (isEdit && hasPrimaryContact)) && !editingPrimary;
   const startEditPrimary = () => {
     setEditingPrimary(true);
     primaryCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2437,6 +2445,7 @@ export default function AddVendorModal(props: {
       attachmentName: c.attachmentName,
       attachmentFile: c.attachmentFile ?? null,
       attachmentPath: c.attachmentPath,
+      attachmentUrl: c.attachmentUrl,
     });
     setContactPopupOpen(true);
   };
@@ -2730,7 +2739,7 @@ export default function AddVendorModal(props: {
                   { label: 'Document Name',     value: own.documentName || '—' },
                   { label: 'Issuing Authority', value: own.issuingAuthority || '—' },
                   { label: 'Document Number',   value: own.documentNumber || '—' },
-                  { label: 'Issue Date',        value: own.issueDate || '—' },
+                  { label: 'Issue Date',        value: fmtDMY(own.issueDate) },
                 ]);
               }
               if (kycRows.length) {
@@ -2818,7 +2827,7 @@ export default function AddVendorModal(props: {
                         onChange={e => handleCompanyNameChange(e.target.value, 'companyName', setCompanyName)}
                       />
                     </Field>
-                    <Field label="Company Legal Name" error={fieldErrors.legalName}>
+                    <Field label="Company Legal Name" required error={fieldErrors.legalName}>
                       <input
                         className="avm-input"
                         placeholder="ABC Logistics Pvt Ltd"
@@ -2835,25 +2844,33 @@ export default function AddVendorModal(props: {
                     <Field label="Company Website">
                       <input className="avm-input" placeholder="https://abclogistics.com" value={website} onChange={e => setWebsite(e.target.value)} />
                     </Field>
-                    <Field label="Supplier Segment" required addNew onAdd={openSegmentAdd} error={fieldErrors.segment}
-                      hint={lockedSegments.length > 0 ? <span className="avm-seg-hint" title="Segments with uploaded documents can’t be removed"><i className="ri-lock-2-line" />(locked)</span> : undefined}>
+                    <Field label="Supplier Segment" required addNew onAdd={openSegmentAdd} error={fieldErrors.segment}>
                       {/* masterFormKit's MasterMultiSelect renders visible violet
                           chips with × buttons + a checkbox-marked dropdown so
                           multi-select is obvious. `value` prop is plural despite
-                          the singular name. Wrapped in .avm-master-select so it
-                          gets the same 32px height / padding / placeholder size
-                          as every other select on the form. */}
+                          the singular name. No lock icon — like the Customer master,
+                          the × stays visible and removal is guarded via onChange
+                          (toast + restore) if the segment has uploaded documents. */}
                       <div className="avm-master-select">
                         <MasterMultiSelect
                           value={segment}
                           options={segmentOpts}
                           placeholder="Select Segment"
-                          /* Only the segments that already have a document
-                             uploaded are locked (can't be removed — that would
-                             orphan the uploads). Adding new segments, and
-                             removing ones without docs, stays allowed. */
-                          lockedValues={lockedSegments}
-                          onChange={vs => { setSegment(vs); clearFieldError('segment'); }}
+                          onChange={vs => {
+                            // Guard removal of a locked segment (one with uploaded docs) —
+                            // block it, restore the segment, and explain why (mirrors the
+                            // Customer master's guardSegmentRemove).
+                            const removed = segment.filter(s => !vs.includes(s));
+                            const blocked = removed.filter(s => lockedSegments.includes(String(s)));
+                            if (blocked.length) {
+                              const names = blocked.map(s => segmentOpts.find(o => o.value === s)?.label ?? s);
+                              toast.error('Cannot remove segment', `You can't remove ${names.join(', ')} — ${blocked.length > 1 ? 'they have' : 'it has'} uploaded documents. Delete those documents first to drop the segment.`);
+                              setSegment([...vs, ...blocked.filter(s => !vs.includes(s))]);
+                              return;
+                            }
+                            setSegment(vs);
+                            clearFieldError('segment');
+                          }}
                         />
                       </div>
                     </Field>
@@ -2919,15 +2936,16 @@ export default function AddVendorModal(props: {
                       />
                     </Field>
                     <Field label="State Code" required error={fieldErrors.stateCode}>
+                      {/* Derived from the selected State — read-only so it can't drift
+                          out of sync with the State (GST state code is fixed per state). */}
                       <input
                         className="avm-input"
-                        placeholder="Auto-filled from State (editable)"
+                        placeholder="Auto-filled from State"
                         value={stateCode}
-                        inputMode="numeric"
-                        pattern="\d*"
-                        maxLength={2}
-                        title="GST state code — auto-fills from the selected State; edit it if it's blank or wrong"
-                        onChange={e => { setStateCode(e.target.value.replace(/\D/g, '').slice(0, 2)); clearFieldError('stateCode'); }}
+                        readOnly
+                        tabIndex={-1}
+                        title="GST state code — automatically set from the selected State"
+                        style={{ background: '#f1f5f9', color: '#475569', cursor: 'default' }}
                       />
                     </Field>
                     <Field label="City" required error={fieldErrors.city}>
@@ -3753,6 +3771,9 @@ type ContactDraft = {
    * state so the user sees the previously-attached file with View +
    * Delete actions instead of an empty input. */
   attachmentPath?: string;
+  /* Backend-resolved file_url() for that stored path — used for the View
+   * link so it works on the Azure server (resolveFileUrl(path) breaks there). */
+  attachmentUrl?: string;
 };
 function ContactAddPopup(props: {
   draft: ContactDraft;
@@ -3848,6 +3869,8 @@ function ContactAddPopup(props: {
               <FileChooser
                 file={draft.attachmentFile ?? null}
                 existingPath={draft.attachmentFile ? undefined : draft.attachmentPath}
+                existingUrl={draft.attachmentFile ? undefined : draft.attachmentUrl}
+                existingName={draft.attachmentFile ? undefined : (draft.attachmentName || undefined)}
                 onPick={async (f) => {
                   // Deleting an existing attachment (f === null) → confirm first.
                   if (!f && (draft.attachmentFile || draft.attachmentPath)) {
@@ -4062,10 +4085,13 @@ function FileChooser(props: {
    *  knows about Azure Blob Storage, where Storage::url() is the only
    *  authoritative URL builder. */
   existingUrl?: string;
+  /** Original filename for an already-uploaded file that only has a URL
+   *  (no local path) — e.g. re-upload popups on server-loaded documents. */
+  existingName?: string;
   /** When true the chooser is locked — no upload, no delete (view-only link). */
   readOnly?: boolean;
 }) {
-  const { file, onPick, placeholder, existingPath, existingUrl, readOnly } = props;
+  const { file, onPick, placeholder, existingPath, existingUrl, existingName, readOnly } = props;
   const toast = useToast();
 
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -4099,7 +4125,7 @@ function FileChooser(props: {
     onPick(picked);
   };
 
-  const hasFile = !!file || !!existingPath;
+  const hasFile = !!file || !!existingPath || !!existingUrl;
   // Strip the storage prefix from the filename so users see the original
   // upload name (e.g. "PAN Card.pdf"), not the slug+rand prefix that
   // absorbFile() puts in front to keep filenames collision-safe.
@@ -4107,7 +4133,9 @@ function FileChooser(props: {
     const idx = n.indexOf('__');
     return idx >= 0 ? n.slice(idx + 2) : n;
   };
-  const fileName = file?.name ?? (existingPath ? stripPrefix(existingPath.split('/').pop() ?? 'Attachment') : '');
+  const fileName = file?.name
+    ?? existingName
+    ?? (existingPath ? stripPrefix(existingPath.split('/').pop() ?? 'Attachment') : (existingUrl ? 'Uploaded file' : ''));
   const viewHref = file
     ? URL.createObjectURL(file)
     : (existingUrl || (existingPath ? resolveFileUrl(existingPath) : ''));
@@ -4216,7 +4244,29 @@ function fmtSegRefExpiry(iso?: string): string {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-type SegRefRow = { code: string; name: string; authority?: string | null; expiry?: string | null; requirement: 'M' | 'O' };
+/* Table date display → DD-MMM-YYYY (e.g. 01-Jul-2026), matching the popup date
+ * pickers. Parses the YYYY-MM-DD parts directly so there's no timezone drift. */
+const DMY_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function fmtDMY(iso?: string | null): string {
+  if (!iso) return '—';
+  const m = String(iso).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[3]}-${DMY_MONTHS[parseInt(m[2], 10) - 1]}-${m[1]}`;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? String(iso) : `${String(d.getDate()).padStart(2, '0')}-${DMY_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+/* Expiry colour tone: 'is-expired' (red) when the date is before today,
+ * 'is-valid' (green) when today or in the future, '' when there's no real date. */
+function segExpiryTone(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return d < today ? 'is-expired' : 'is-valid';
+}
+
+type SegRefRow = { code: string; name: string; authority?: string | null; authority_list?: string[] | null; expiry?: string | null; requirement: 'M' | 'O' };
 
 function SupplierSegmentRefTable(props: {
   title: string;
@@ -4303,13 +4353,15 @@ function SupplierSegmentRefTable(props: {
               const uploadedExpiry = uploaded?.expiry ? fmtSegRefExpiry(uploaded.expiry) : '';
               const expiryText = uploadedExpiry || r.expiry || 'N/A';
               const isDate = !!uploadedExpiry || !!(r.expiry && /\d/.test(r.expiry));
+              // Colour a real expiry date: past today → red (expired), else → green (valid).
+              const expTone = segExpiryTone(uploaded?.expiry);
               return (
                 <tr key={r.code}>
                   <td><span className="avm-sr-badge">{String(i + 1).padStart(2, '0')}</span></td>
                   <td><span className="avm-auto-code">{r.code}</span></td>
                   <td><strong>{r.name}</strong></td>
-                  <td>{r.authority || '—'}</td>
-                  <td><span className={`avm-exp-pill ${isDate ? 'is-date' : 'is-na'}`}>{expiryText}</span></td>
+                  <td><AuthorityBadges value={r.authority_list && r.authority_list.length ? r.authority_list : r.authority} /></td>
+                  <td><span className={`avm-exp-pill ${isDate ? 'is-date' : 'is-na'} ${expTone}`}>{expiryText}</span></td>
                   <td>
                     <div className="avm-req-pair">
                       {r.requirement === 'M'
@@ -4425,6 +4477,7 @@ function SegmentRefUploadPopup(props: {
           <FileChooser
             file={file}
             existingUrl={existing && !existing.file ? existing.url : undefined}
+            existingName={existing && !existing.file ? existing.name : undefined}
             onPick={f => setFile(f)}
             placeholder="Upload document (JPG / PNG / PDF, max 2 MB)"
           />
@@ -4583,7 +4636,7 @@ function OwnerKycTable(props: {
               <td><strong>{r.documentName}</strong></td>
               <td className="avm-cell-authority">{r.issuingAuthority}</td>
               <td><span className="font-monospace fs-13">{r.documentNumber || '—'}</span></td>
-              <td>{r.issueDate || '—'}</td>
+              <td>{fmtDMY(r.issueDate)}</td>
               <td>{r.expiry || 'N/A'}</td>
               <td>
                 <span className={`avm-pill ${r.status === 'Active' ? 'avm-pill-success' : 'avm-pill-muted'}`}>
@@ -4648,8 +4701,8 @@ function TradeLicenseTable(props: {
                 <td><strong>{r.licenseType}</strong></td>
                 <td><span className="font-monospace fs-13">{r.licenseNumber || '—'}</span></td>
                 <td className="avm-cell-authority">{r.issuingAuthority}</td>
-                <td>{r.issueDate || '—'}</td>
-                <td>{r.expiryDate || '—'}</td>
+                <td>{fmtDMY(r.issueDate)}</td>
+                <td>{fmtDMY(r.expiryDate)}</td>
                 <td>
                   <AttachmentCell
                     fileName={r.fileName}
@@ -4764,14 +4817,14 @@ function GstScrutinyTable(props: { rows: GstScrutinyRow[]; onRemove?: (id: strin
           {props.rows.map((r, i) => (
             <tr key={r.id}>
               <td>{String(i + 1).padStart(2, '0')}</td>
-              <td>{r.scrutinyDate || '—'}</td>
+              <td>{fmtDMY(r.scrutinyDate)}</td>
               <td><span className="font-monospace fs-13">{r.gstNumber}</span></td>
               <td>
                 <span className={`avm-pill ${r.status === 'Active' ? 'avm-pill-success' : 'avm-pill-danger'}`}>
                   {r.status}
                 </span>
               </td>
-              <td>{r.lastFilingDate || '—'}</td>
+              <td>{fmtDMY(r.lastFilingDate)}</td>
               <td>{r.prevNonGst2aInvoice || '—'}</td>
               <td>{r.redFlags || '—'}</td>
               <td>
@@ -6495,10 +6548,11 @@ const SCOPED_CSS = `
 .avm-filechooser.avm-filechooser-has-file:hover { border-color: #a78bfa; }
 .avm-filechooser-actions {
   display: inline-flex; align-items: center; gap: 4px;
-  flex-shrink: 0;
+  flex-shrink: 0; align-self: center;
 }
 .avm-fc-action {
-  width: 26px; height: 26px;
+  width: 26px; height: 26px; box-sizing: border-box; vertical-align: middle;
+  margin: 0; line-height: 1; font-size: 0; appearance: none; -webkit-appearance: none;
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: 6px;
   background: #fff;
@@ -6839,7 +6893,10 @@ const SCOPED_CSS = `
    fits the card width and sizes to the popup dynamically. */
 /* 12px radius + overflow clip so the gradient header curves at the top
    corners, matching the Figma .sf-doc-scroll wrapper. */
-.avm-kyc-table-wrap { overflow: hidden; border-radius: 12px !important; border-color: #f1ecfb !important; margin: 0 !important; }
+/* overflow:visible (not hidden) so a centred action-column tooltip isn't clipped
+   at the table edge. Fixed-layout tables fill 100% width, so nothing else spills.
+   Mobile still gets overflow-x:auto below for horizontal scroll. */
+.avm-kyc-table-wrap { overflow: visible; border-radius: 12px !important; border-color: #f1ecfb !important; margin: 0 !important; }
 .avm-kyc-table-wrap.table-card { margin: 0 !important; }
 /* Fill the card width so columns spread to fit (no bleed, no scroll on desktop). */
 .avm-kyc-table-wrap .avm-kyc-table { width: 100%; }
@@ -7463,12 +7520,43 @@ const SCOPED_CSS = `
 .avm-exp-pill { display: inline-block; padding: 4px 10px; border-radius: 7px; font-size: 11px; font-weight: 700; }
 .avm-exp-pill.is-na   { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
 .avm-exp-pill.is-date { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.avm-exp-pill.is-expired { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.avm-exp-pill.is-valid   { background: #ecfdf5; color: #16a34a; border: 1px solid #bbf7d0; }
+/* Issuing-authority badges + "+N" overflow popover (reused AuthorityBadges component).
+   These .clm-* classes live in the CLM shared CSS, which isn't loaded in this modal,
+   so mirror the ones AuthorityBadges needs here. */
+.clm-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 600; border: 1px solid; white-space: nowrap; letter-spacing: .01em; line-height: 1.35; }
+.clm-badge-teal { background: rgba(8,145,178,.08); color: #0891b2; border-color: rgba(6,182,212,.22); }
+.clm-code-pill { display: inline-block; font-family: 'Geist Mono', ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 500; letter-spacing: .05em; color: #0891b2; background: linear-gradient(135deg, rgba(8,145,178,.10), rgba(6,182,212,.06)); padding: 4px 9px; border-radius: 7px; border: 1px solid rgba(6,182,212,.25); white-space: nowrap; }
+.clm-pop { background: #fff; border: 1.5px solid #99f6e4; box-shadow: 0 16px 40px rgba(0,0,0,.18); -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.clm-pop::-webkit-scrollbar { width: 8px; }
+.clm-pop::-webkit-scrollbar-thumb { background: rgba(6,182,212,.35); border-radius: 8px; }
+.clm-pop-title { color: #0d9488; }
+.clm-pop-row-alt { background: #f0fdfa; }
+[data-bs-theme="dark"] .clm-pop { background: #0f172a; border-color: rgba(6,182,212,.35); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .clm-pop-title { color: #5eead4; }
+[data-bs-theme="dark"] .clm-pop-row-alt { background: rgba(255,255,255,.04); }
+[data-bs-theme="dark"] .clm-badge-teal { background: rgba(8,145,178,.16); color: #67e8f9; border-color: rgba(6,182,212,.4); }
 .avm-req-pair { display: inline-flex; align-items: center; gap: 4px; }
 .avm-req-pill { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 99px; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .avm-req-pill.on-m { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 2px 6px rgba(22,163,74,.3); }
 .avm-req-pill.on-o { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 2px 6px rgba(124,58,237,.3); }
 .avm-req-pill.off  { background: #f5f3fb; color: #9b94b3; border: 1px solid #e9e2f7; }
 .avm-kyc-actions { display: inline-flex; align-items: center; gap: 5px; }
+/* Action-column tooltips stay ABOVE the button and CENTRED (default). They were
+   clipping at the card's right edge because the table wrapper clipped overflow —
+   the wrappers below are set to overflow:visible so the centred tooltip shows in
+   full. (These tables are table-layout:fixed / width:100%, so nothing else spills.) */
+/* FileChooser action tooltips (Replace / Delete) sit at a field's RIGHT edge in
+   every context — table cell, popup, contact card. Keep them ABOVE the button but
+   anchor right so they extend LEFT and never clip, whatever the container clips. */
+.avm-filechooser-actions [data-tooltip]::after {
+  left: auto; right: 0;
+  transform: translateX(0) translateY(4px);
+}
+.avm-filechooser-actions [data-tooltip]:hover::after {
+  transform: translateX(0) translateY(0);
+}
 .avm-kyc-act {
   width: 27px; height: 27px; border-radius: 7px; cursor: pointer;
   /* margin:0 — the Upload is a <label>, which Bootstrap gives a default
@@ -7622,6 +7710,8 @@ button.avm-kyc-act { padding: 0; font: inherit; }
 [data-bs-theme="dark"] .avm-sr-badge  { background: rgba(124,58,237,.2); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
 [data-bs-theme="dark"] .avm-exp-pill.is-na   { background: rgba(255,255,255,.06); color: #adb5bd; border-color: rgba(255,255,255,.12); }
 [data-bs-theme="dark"] .avm-exp-pill.is-date { background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(220,38,38,.4); }
+[data-bs-theme="dark"] .avm-exp-pill.is-expired { background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(220,38,38,.4); }
+[data-bs-theme="dark"] .avm-exp-pill.is-valid   { background: rgba(22,163,74,.18); color: #86efac; border-color: rgba(22,163,74,.4); }
 [data-bs-theme="dark"] .avm-req-pill.off { background: rgba(255,255,255,.05); color: #9a93b3; border-color: rgba(255,255,255,.12); }
 [data-bs-theme="dark"] .avm-kyc-act.up   { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
 [data-bs-theme="dark"] .avm-kyc-act.down { background: rgba(22,163,74,.18); color: #4ade80; border-color: rgba(22,163,74,.4); }

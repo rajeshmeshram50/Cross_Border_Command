@@ -203,7 +203,7 @@ class VendorController extends Controller
         $data = $request->validate([
             'id'                       => 'nullable|integer|exists:vendors,id',
             'company_name'             => 'required|string|max:255',
-            'legal_name'               => 'nullable|string|max:255',
+            'legal_name'               => 'required|string|max:255',
             'website'                  => 'nullable|string|max:500',
             'vendor_type_id'           => 'nullable|integer|exists:master_vendor_types,id',
             // Supplier Type is now a fixed frontend vocabulary (Logistic /

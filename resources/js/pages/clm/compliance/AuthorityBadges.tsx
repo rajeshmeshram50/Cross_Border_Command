@@ -78,14 +78,14 @@ export default function AuthorityBadges({ value }: { value?: string | string[] |
 
       {pop && createPortal(
         <>
-          <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
+          <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 100000 }} />
           <div
             className="clm-pop"
             style={{
               position: 'fixed', left: Math.min(pop.x, window.innerWidth - 340),
               top: pop.flipUp ? undefined : pop.y,
               bottom: pop.flipUp ? (window.innerHeight - pop.y) : undefined,
-              zIndex: 601, width: 320, maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', borderRadius: 12, padding: 8,
+              zIndex: 100001, width: 320, maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', borderRadius: 12, padding: 8,
             }}
           >
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Issuing Authorities ({list.length})</div>

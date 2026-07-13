@@ -27,7 +27,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const toast = useCallback((type: ToastType, title: string, message?: string) => {
     const id = ++nextId;
-    setToasts(prev => [...prev, { id, type, title, message }]);
+    setToasts(prev => {
+      // De-dupe: if an identical toast is already showing (e.g. the user clicked
+      // a failing Save button several times), don't stack another copy of it.
+      if (prev.some(t => !t.exiting && t.type === type && t.title === title && t.message === message)) {
+        return prev;
+      }
+      return [...prev, { id, type, title, message }];
+    });
+    // Harmless if the toast above was de-duped — dismiss(id) then finds nothing.
     setTimeout(() => dismiss(id), 4000);
   }, [dismiss]);
 
