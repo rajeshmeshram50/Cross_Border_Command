@@ -1,11 +1,106 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import Tooltip from './Tooltip';
 import './MasterSelect.css';
 
 /* A small pill shown beside an option label. `tone` picks the palette —
-   green/red/gray for status, violet for a category/segment tag. */
-type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet' };
+   green/red/gray for status, violet for a category/segment tag.
+   `title` overrides the hover tooltip (defaults to `text`).
+   `items` turns the pill into a click target — e.g. a "+2 more" overflow
+   pill opens a mini popup listing the hidden tags. */
+type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: string[] };
+
+const badgeToneStyle = (tone?: OptBadgeSpec['tone']): CSSProperties =>
+  tone === 'red'
+    ? { background: '#fee2e2', color: '#dc2626' }
+    : tone === 'gray'
+      ? { background: '#f1f5f9', color: '#475569' }
+      : tone === 'violet'
+        ? { background: '#ede9fe', color: '#6d28d9' }
+        : { background: '#dcfce7', color: '#16a34a' };
+
+/* A pill rendered beside an option label. When the spec carries `items`
+   (and it isn't forced static), the pill becomes clickable and pops a mini
+   list of those items — used by a "+N more" overflow pill to reveal the
+   hidden tags. The popup is portalled to <body> with fixed positioning so
+   it isn't clipped by the option list's `overflow: auto`. `staticPill`
+   forces the plain, non-interactive span (used inside the toggle, which is
+   itself a <button> — a nested interactive control there would be invalid). */
+function OptBadge({ b, staticPill }: { b: OptBadgeSpec; staticPill?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const ref = useRef<HTMLSpanElement>(null);
+  const interactive = !staticPill && !!b.items?.length;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocDown = (e: globalThis.MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (ref.current?.contains(t)) return;
+      if (t?.closest?.('.master-select-badge-pop')) return;
+      setOpen(false);
+    };
+    const close = () => setOpen(false);
+    // Capture so we run before reactstrap's own document handlers.
+    document.addEventListener('mousedown', onDocDown, true);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown, true);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  const style: CSSProperties = {
+    marginLeft: 8, padding: '1px 8px', borderRadius: 999,
+    fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
+    maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis',
+    ...badgeToneStyle(b.tone),
+  };
+
+  if (!interactive) {
+    return <span title={b.title ?? b.text} style={style}>{b.text}</span>;
+  }
+
+  const toggle = () => {
+    if (ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 4, left: r.left });
+    }
+    setOpen(o => !o);
+  };
+
+  return (
+    <span
+      ref={ref}
+      role="button"
+      tabIndex={0}
+      title={b.title ?? b.text}
+      // Stop the pill's clicks from selecting the option / closing the menu.
+      onMouseDown={e => e.stopPropagation()}
+      onClick={e => { e.preventDefault(); e.stopPropagation(); toggle(); }}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggle(); } }}
+      style={{ ...style, cursor: 'pointer' }}
+    >
+      {b.text}
+      {open && pos && createPortal(
+        <div
+          className="master-select-badge-pop"
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+          style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 12000 }}
+        >
+          {b.items!.map((it, i) => (
+            <span key={i} className="master-select-badge-pop-item" title={it}>{it}</span>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </span>
+  );
+}
 
 
 export function MasterSelect({
@@ -147,28 +242,6 @@ export function MasterSelect({
     : (search.trim()
         ? options.filter(o => o.label.toLowerCase().includes(search.trim().toLowerCase()))
         : options);
-  // Small pill rendered beside an option label (e.g. Active / Inactive, or a
-  // segment tag). `maxWidth` + ellipsis keeps a long tag (e.g. a multi-word
-  // segment name) from squeezing the label off the row.
-  const OptBadge = ({ b }: { b: OptBadgeSpec }) => (
-    <span
-      title={b.text}
-      style={{
-        marginLeft: 8, padding: '1px 8px', borderRadius: 999,
-        fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
-        maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis',
-        ...(b.tone === 'red'
-          ? { background: '#fee2e2', color: '#dc2626' }
-          : b.tone === 'gray'
-            ? { background: '#f1f5f9', color: '#475569' }
-            : b.tone === 'violet'
-              ? { background: '#ede9fe', color: '#6d28d9' }
-              : { background: '#dcfce7', color: '#16a34a' }),
-      }}
-    >
-      {b.text}
-    </span>
-  );
   // Collect an option's badges in render order: extra tags first, then the
   // primary status badge at the far right.
   const badgesOf = (o: { badge?: OptBadgeSpec; badges?: OptBadgeSpec[] }): OptBadgeSpec[] =>
@@ -201,7 +274,7 @@ export function MasterSelect({
             <Tooltip label={selected.label} position="bottom">
               <span className="master-select-value">
                 <span className="master-select-value-text">{selected.label}</span>
-                {badgesOf(selected).map((b, i) => <OptBadge key={i} b={b} />)}
+                {badgesOf(selected).map((b, i) => <OptBadge key={i} b={b} staticPill />)}
               </span>
             </Tooltip>
           ) : currentValue ? (
