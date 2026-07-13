@@ -169,7 +169,16 @@ interface Props {
    *  only one doc in the preview rail. Passing the selected rows here lets every
    *  selected agreement appear (and be positioned) in the rail. */
   preselectedDocs?: Array<{ id: number; name: string; sub?: string; code?: string }>;
+  /** Bundle a Purchase Order PDF into this (CLM trade-doc) signature request —
+   *  the PO rides as one extra document in the SAME Zoho request. Shown as an
+   *  extra row in the preview rail (positionable like any doc); on send its
+   *  coords go under document_settings['po'] and `purchase_order_id` is posted. */
+  bundlePo?: { id: number; code: string; name: string; previewUrl: string } | null;
 }
+
+/* Sentinel doc id for the bundled Purchase Order — negative so it can never
+ * collide with a real (positive) CLM library id in selectedIds / settings. */
+const PO_BUNDLE_ID = -100;
 
 export default function SalesCustomerSendForSignatureModal({
   open,
@@ -186,6 +195,7 @@ export default function SalesCustomerSendForSignatureModal({
   sendAsAgreement = false,
   rawPdfContext = null,
   preselectedDocs,
+  bundlePo = null,
 }: Props) {
   const isAgreement = mode === 'agreement';
   // Raw-PDF (non-CLM) mode — e.g. sending a Purchase Order PDF for signature.
@@ -461,7 +471,8 @@ export default function SalesCustomerSendForSignatureModal({
     const isTradeRoleMode  = tradeRoleSigners.length > 0;
     setStep(hasPreselected ? 2 : 1);
     const initialIds = hasPreselected ? preselectedDocIds!.slice(0, 10) : [];
-    setSelectedIds(initialIds);
+    // Append the bundled PO (sentinel id) so it appears in the rail + is sent.
+    setSelectedIds(bundlePo ? [...initialIds, PO_BUNDLE_ID] : initialIds);
     // Multi-party trade send → seed display rows from the resolved role
     // signers (Buyer / Consignee). Single-party send → the single customer
     // contact, exactly as before.
@@ -584,7 +595,13 @@ export default function SalesCustomerSendForSignatureModal({
     else if (!activeDocId || !selectedIds.includes(activeDocId)) setActiveDocId(selectedIds[0]);
   }, [selectedIds, activeDocId]);
 
-  const selectedDocs = useMemo(() => selectedIds.map(id => docs.find(d => d.id === id)).filter(Boolean) as TradeDoc[], [selectedIds, docs]);
+  // The full doc list the rail/preview resolve against — the fetched CLM docs
+  // plus, when bundling, a synthetic Purchase Order row for the sentinel id.
+  const allDocs = useMemo<TradeDoc[]>(
+    () => bundlePo ? [...docs, { id: PO_BUNDLE_ID, code: bundlePo.code, name: bundlePo.name, title: bundlePo.name }] : docs,
+    [docs, bundlePo],
+  );
+  const selectedDocs = useMemo(() => selectedIds.map(id => allDocs.find(d => d.id === id)).filter(Boolean) as TradeDoc[], [selectedIds, allDocs]);
 
   /* Per-document set tracking whether the user has manually overridden
    * the signature box. Once they drag the overlay, we stop auto-snapping
@@ -611,7 +628,11 @@ export default function SalesCustomerSendForSignatureModal({
     // the agreement render path). Trade-doc mode keeps its existing
     // customer-bound request shape.
     if (isAgreement && !agreementContext?.leadId) return;
-    if (!isAgreement && !isRaw && !customer?.db_id) return;
+    // The PO sentinel is only previewable while its bundle context exists — on
+    // close, bundlePo flips to null before the sentinel clears from state, so
+    // bail rather than deref a null previewUrl.
+    if (activeDocId === PO_BUNDLE_ID && !bundlePo) return;
+    if (!isAgreement && !isRaw && activeDocId !== PO_BUNDLE_ID && !customer?.db_id) return;
     const docId = activeDocId;
     let cancelled = false;
     setPreviewLoading(true);
@@ -624,7 +645,9 @@ export default function SalesCustomerSendForSignatureModal({
     const headerOverride = headerOverrides[docId];
     const footerOverride = footerOverrides[docId];
     const contentOverride = contentOverrides[docId];
-    const previewRequest = isRaw
+    const previewRequest = (activeDocId === PO_BUNDLE_ID && bundlePo)
+      ? api.get(bundlePo.previewUrl, { responseType: 'blob' })
+      : isRaw
       ? api.get(rawPdfContext!.previewUrl, { responseType: 'blob' })
       : isAgreement
       ? api.post('/clm/signature-requests/agreement-preview',
@@ -732,7 +755,7 @@ export default function SalesCustomerSendForSignatureModal({
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, activeDocId, customer?.db_id, leadId, agreementContext?.leadId, isAgreement, isRaw, rawPdfContext?.previewUrl, headerOverrides, footerOverrides, contentOverrides]);
+  }, [step, activeDocId, customer?.db_id, leadId, agreementContext?.leadId, isAgreement, isRaw, rawPdfContext?.previewUrl, bundlePo?.previewUrl, headerOverrides, footerOverrides, contentOverrides]);
 
   /* ── Release blob URLs we created so we don't leak memory. */
   useEffect(() => {
@@ -897,10 +920,24 @@ export default function SalesCustomerSendForSignatureModal({
         payloadSigners = signers.map((s, i) => ({ ...s, name: s.name.trim(), email: s.email.trim(), order: s.order ?? i + 1 }));
         documentSettings = settings;
       }
+      // Split the bundled Purchase Order (sentinel id) out of the CLM ids: the
+      // real trade-doc/agreement ids go to trade_doc_ids/agreement_ids, and the
+      // PO rides via purchase_order_id with its coords remapped under key 'po'.
+      const realIds = selectedIds.filter(id => id !== PO_BUNDLE_ID);
+      const bundlingPo = !!bundlePo && selectedIds.includes(PO_BUNDLE_ID);
+      let docSettingsOut: Record<string, unknown> = documentSettings as Record<string, unknown>;
+      if (bundlingPo) {
+        const clone: Record<string, unknown> = { ...(documentSettings as Record<string, unknown>) };
+        const poCoords = clone[String(PO_BUNDLE_ID)];
+        delete clone[String(PO_BUNDLE_ID)];
+        if (poCoords) clone.po = poCoords;
+        docSettingsOut = clone;
+      }
       const payload = {
         // Supplier agreements post agreement_ids (document_type=agreement);
         // everything else posts trade_doc_ids. Same endpoint + render flow.
-        ...(sendAsAgreement ? { agreement_ids: selectedIds } : { trade_doc_ids: selectedIds }),
+        ...(sendAsAgreement ? { agreement_ids: realIds } : { trade_doc_ids: realIds }),
+        ...(bundlingPo ? { purchase_order_id: bundlePo!.id } : {}),
         party_id: customer.db_id,
         model_name: modelName,
         // Lead scope (Sales-Matrix Trade Documents popup) — omitted for the
@@ -910,7 +947,7 @@ export default function SalesCustomerSendForSignatureModal({
         is_sequential: isSequential,
         expiry_days: expiryDays,
         notes: notes.trim(),
-        document_settings: documentSettings,
+        document_settings: docSettingsOut,
         // Per-doc page-shell overrides — keys are trade_doc_id, payloads
         // mirror the saved row's columns. Backend layers them over the
         // saved config when rendering each doc to PDF, so each draft can

@@ -173,6 +173,12 @@ class ClmSignatureController extends Controller
             'header_config_overrides'   => 'nullable|array',
             'footer_config_overrides'   => 'nullable|array',
             'content_overrides'         => 'nullable|array',
+            // Optional Purchase Order to BUNDLE into the same signature request.
+            // The PO is a generated PDF (not a CLM library doc), so it rides
+            // alongside the trade docs as one extra document in the same Zoho
+            // request. Its dragged signature box arrives in document_settings
+            // under the reserved key "po".
+            'purchase_order_id'         => 'nullable|integer',
         ]);
 
         $modelName = $data['model_name'] ?? 'Customer';
@@ -281,6 +287,27 @@ class ClmSignatureController extends Controller
                 ];
             }
 
+            // 1b. Bundle the Purchase Order PDF, if requested — it rides as one
+            // extra document in the SAME Zoho request (rendered WITH the org
+            // signature; the supplier's dragged box is added on top). Keyed 'po'
+            // so its coords resolve from document_settings['po'] in step 5.
+            $poDoc = null;
+            if (!empty($data['purchase_order_id'])) {
+                $poDoc = \App\Models\PurchaseOrder::where('client_id', $user->client_id)
+                    ->with('items')->find($data['purchase_order_id']);
+                if ($poDoc) {
+                    $poVendor   = $poDoc->vendor_id ? \App\Models\Vendor::with('primaryAddress')->find($poDoc->vendor_id) : null;
+                    $poPdfBytes = app(SalesPdfController::class)->renderPoPdfBytes($poDoc, true, $poVendor);
+                    $poTmp      = storage_path('app/temp/' . Str::uuid()->toString() . '.pdf');
+                    file_put_contents($poTmp, $poPdfBytes);
+                    $tempPaths[]    = $poTmp;
+                    $localDocMeta[] = [
+                        'id'            => 'po',
+                        'document_name' => 'Purchase Order ' . ($poDoc->code ?: $poDoc->id),
+                    ];
+                }
+            }
+
             // 2. Build the Zoho request body — recipient actions + metadata.
             $expiryDays = (int) ($data['expiry_days'] ?? 30);
             $actions = [];
@@ -346,9 +373,13 @@ class ClmSignatureController extends Controller
             //    a flat { x,y,page,width,height } (single signer) or a per-role
             //    map { buyer:{…}, consignee:{…} } (Buyer+Consignee). Both shapes
             //    pass straight through — submitWithFields resolves the role.
+            // cbc doc-id order MUST mirror $tempPaths order (CLM docs, then the
+            // bundled PO under key 'po') so coords align to the right Zoho doc.
+            $cbcDocIdsOrdered = $orderedDocs->pluck('id')->all();
+            if ($poDoc) $cbcDocIdsOrdered[] = 'po';
             $perDocCoords = $this->mapClientCoordsToZohoDocIds(
                 (array) ($data['document_settings'] ?? []),
-                $orderedDocs->pluck('id')->all(),
+                $cbcDocIdsOrdered,
                 $zohoDocumentIds
             );
 
@@ -402,6 +433,9 @@ class ClmSignatureController extends Controller
                 ],
                 'document_settings' => $data['document_settings'] ?? null,
                 'request_uuid'      => $requestUuid,
+                // The bundled PO (if any) so the request can be resolved PO-side.
+                'purchase_order_id' => $poDoc?->id,
+                'purchase_order_code' => $poDoc?->code,
             ];
             $sigReq->created_by          = Auth::id();
             $sigReq->save();

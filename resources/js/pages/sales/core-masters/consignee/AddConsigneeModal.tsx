@@ -39,33 +39,36 @@ function AuthorityCell({ value }: { value?: string[] | string | null }) {
   if (names.length === 0) return <span style={{ color: '#9ca3af' }}>—</span>;
   const first = names[0];
   const extra = names.length - 1;
+  // Match the consignee "Segment" cell design (first green chip + a "View all N"
+  // pill that opens a green-pill popover). The popover shows 3 rows at a time,
+  // the rest scroll.
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', maxWidth: '100%' }}>
       <Tooltip label={first}>
-        <span style={{ display: 'inline-block', maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>{first}</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12, fontWeight: 600, color: dark ? '#6ee7b7' : '#0f766e', background: dark ? 'rgba(16,185,129,.16)' : '#ecfdf5', border: `1px solid ${dark ? 'rgba(16,185,129,.30)' : '#a7f3d0'}`, borderRadius: 12, padding: '2px 10px' }}>{first}</span>
       </Tooltip>
       {extra > 0 && (
         <button
           type="button"
           aria-label={`Show ${extra} more issuing authorit${extra === 1 ? 'y' : 'ies'}`}
           onClick={e => { e.stopPropagation(); const b = e.currentTarget.getBoundingClientRect(); setPop(p => (p ? null : { x: b.left, y: b.bottom + 6 })); }}
-          style={{ flexShrink: 0, fontSize: 10, fontWeight: 700, color: '#0d9488', background: dark ? 'rgba(20,184,166,.18)' : '#ccfbf1', border: `1px solid ${dark ? 'rgba(20,184,166,.45)' : '#5eead4'}`, borderRadius: 10, padding: '1px 7px', cursor: 'pointer', lineHeight: 1.4 }}
-        >+{extra}</button>
+          style={{ flexShrink: 0, cursor: 'pointer', fontSize: 11, fontWeight: 700, letterSpacing: '.2px', color: dark ? '#6ee7b7' : '#0f766e', background: dark ? 'rgba(16,185,129,.16)' : '#ecfdf5', border: `1px solid ${dark ? 'rgba(16,185,129,.30)' : '#a7f3d0'}`, borderRadius: 20, padding: '2px 10px', lineHeight: 1.4 }}
+        >{pop ? 'Hide' : `View all ${names.length}`}</button>
       )}
       {pop && createPortal(
         <>
           <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
-          <div style={{ position: 'fixed', left: Math.min(pop.x, window.innerWidth - 260), top: pop.y, zIndex: 13001, width: 240, maxHeight: 300, overflowY: 'auto', background: dark ? '#0f1e2b' : '#fff', border: `1px solid ${dark ? 'rgba(148,197,255,.18)' : '#e2e8f0'}`, borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,.18)', padding: '8px 0' }}>
-            <div style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.06em', color: dark ? '#6ee7b7' : '#0f766e', padding: '4px 14px 6px' }}>Issuing Authorities ({names.length})</div>
-            {names.map((n, i) => (
-              <div key={i} style={{ padding: '3px 12px' }}>
-                {/* Green pill — mirrors the consignee segment "+N" popover. */}
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: dark ? '#6ee7b7' : '#0f766e', background: dark ? 'rgba(20,184,166,.14)' : '#ecfdf5', border: `1px solid ${dark ? 'rgba(20,184,166,.35)' : '#a7f3d0'}`, borderRadius: 999, padding: '4px 11px', maxWidth: '100%' }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', flexShrink: 0 }} />
+          <div style={{ position: 'fixed', left: Math.min(pop.x, window.innerWidth - 260), top: pop.y, zIndex: 13001, width: 240, background: dark ? '#103129' : '#fff', border: `1px solid ${dark ? 'rgba(16,185,129,.30)' : '#d1fae5'}`, borderRadius: 12, boxShadow: dark ? '0 14px 34px rgba(0,0,0,.5)' : '0 14px 34px rgba(13,148,136,.18), 0 4px 12px rgba(0,0,0,.08)', padding: 10 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.5px', color: dark ? '#6ee7b7' : '#0f766e', marginBottom: 8 }}>Issuing Authorities ({names.length})</div>
+            {/* 3 rows visible; the rest scroll. */}
+            <div style={{ maxHeight: 108, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 2 }}>
+              {names.map((n, i) => (
+                <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: dark ? '#d1fae5' : '#134e4a', background: dark ? 'rgba(16,185,129,.14)' : '#ecfdf5', border: `1px solid ${dark ? 'rgba(16,185,129,.28)' : '#a7f3d0'}`, borderRadius: 20, padding: '5px 12px' }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', flex: '0 0 auto' }} />
                   {n}
                 </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </>,
         document.body,
@@ -882,7 +885,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       website:        customer.website ?? '',
       /* Customer's segment is a single comma-joined string (legacy
        * scalar column); split back into an array for the consignee's
-       * multi-select. Empty pieces drop out. */
+       * multi-select. A Same-as-Customer consignee mirrors exactly ONE
+       * customer (multi-mapping is blocked below), so the primary
+       * customer's segment IS the full set. */
       segment:        String(customer.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
       classification: customer.classification ?? '',
       risk:           customer.risk ?? '',
@@ -1453,6 +1458,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * fires onSaved + onClose directly, so this only matters for early
    * dismissal. */
   const handleClose = () => {
+    if (inFlightRef.current || saving) return;   // don't allow closing mid-save
     if (dirtySavedRef.current) {
       onSaved?.();
       dirtySavedRef.current = false;
@@ -1491,6 +1497,12 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     } else if (!customer) {
       setCustomer(opt);            // first pick = primary
     } else {
+      // "Same as Customer" is intrinsically 1:1 — block mapping additional
+      // customers while it's on (the consignee mirrors that ONE customer).
+      if (sameAsCustomer) {
+        toast.warning('Same as Customer is on', '"Same as Customer" links the consignee to exactly one customer. Turn it off to map additional customers.');
+        return;
+      }
       setExtraCustomerIds(prev => [...prev, id]);
     }
   };
@@ -2736,6 +2748,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             })()}
           </div>
         </div>
+        {/* While saving, lock the whole form so no field/step can be edited mid-save. */}
+        {saving && (
+          <div className="acm-save-lock" aria-live="polite" aria-busy="true">
+            <span className="acm-save-lock-spinner" />
+            <span className="acm-save-lock-text">Saving…</span>
+          </div>
+        )}
       </div>
     </div>
 
@@ -3785,6 +3804,16 @@ const Stage2 = ({
         || (o.designation || '').toLowerCase().includes(q)
         || (o.official_email || '').toLowerCase().includes(q);
   });
+  /* Segment-rule REFERENCE rows are the default table view before any upload.
+     The search box must filter them too — otherwise it looks broken whenever
+     only reference rows are shown (QA #24, Stage 2 search not working). */
+  const authText = (d: any) => Array.isArray(d?.authority_list) ? d.authority_list.join(' ') : String(d?.authority_list ?? d?.authority ?? '');
+  const segMatch = (d: any) => !q
+    || String(d?.name || '').toLowerCase().includes(q)
+    || String(d?.code || '').toLowerCase().includes(q)
+    || authText(d).toLowerCase().includes(q);
+  const hasRealDocs = (docs || []).some(d => d.kind === kind);
+  const segKyc = (segmentDocs.kyc || []).filter(segMatch);
   /* Count what the table ACTUALLY renders so the badge never lags behind the
      list. It previously counted only real uploaded `docs`, so the default
      segment-rule reference rows (Company DD / Trade Licence / Owner KYC) that
@@ -3794,13 +3823,13 @@ const Stage2 = ({
        • owner-kyc with real owners      → filteredOwners
        • dd/tl with real docs or a search→ filteredDocs
        • dd/tl showing segment refs      → segmentDocs.dd / .tl */
-  const segRefDocs = sub === 'company-dd' ? (segmentDocs.dd || [])
-                   : sub === 'trade-licence' ? (segmentDocs.tl || [])
+  const segRefDocs = sub === 'company-dd' ? (segmentDocs.dd || []).filter(segMatch)
+                   : sub === 'trade-licence' ? (segmentDocs.tl || []).filter(segMatch)
                    : [];
   const showingOwnerRefs = isOwners && filteredOwners.length === 0 && (segmentDocs.kyc?.length ?? 0) > 0;
   const totalRows = isOwners
-    ? (showingOwnerRefs ? (segmentDocs.kyc?.length ?? 0) : filteredOwners.length)
-    : ((filteredDocs.length > 0 || q) ? filteredDocs.length : segRefDocs.length);
+    ? (showingOwnerRefs ? segKyc.length : filteredOwners.length)
+    : (hasRealDocs ? filteredDocs.length : segRefDocs.length);
   const codeFor = (k: string, sr: number) => `${k.toUpperCase()}-${String(sr).padStart(3, '0')}`;
   const fmtMy = (s?: string) => {
     if (!s) return 'N/A';
@@ -3919,7 +3948,10 @@ const Stage2 = ({
                   </tr>
                 </thead>
                 <tbody>
-                  {segmentDocs.kyc.map((d: any, i: number) => {
+                  {segKyc.length === 0 && (
+                    <tr className="acm-loc-empty"><td colSpan={7}>No documents match your search.</td></tr>
+                  )}
+                  {segKyc.map((d: any, i: number) => {
                     const refKey = `owner-kyc::${d.code}`;
                     const uploaded = segmentRefUploads[refKey];
                     return (
@@ -4028,10 +4060,13 @@ const Stage2 = ({
                       placeholder) — the empty message below takes over.
                       Once a real upload lands the live row takes over. */}
                   {(() => {
-                    if (filteredDocs.length > 0 || q) return null;
+                    // Reference rows show whenever there are no real uploaded docs of
+                    // this kind — filtered by the search box (QA #24) so the search
+                    // works on the default reference table too.
+                    if (hasRealDocs) return null;
                     let segSrc: any[] = [];
-                    if (sub === 'company-dd')   segSrc = (segmentDocs.dd || []).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', authority_list:d.authority_list, expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
-                    if (sub === 'trade-licence') segSrc = (segmentDocs.tl || []).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', authority_list:d.authority_list, expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
+                    if (sub === 'company-dd')   segSrc = (segmentDocs.dd || []).filter(segMatch).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', authority_list:d.authority_list, expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
+                    if (sub === 'trade-licence') segSrc = (segmentDocs.tl || []).filter(segMatch).map((d: any) => ({ code:d.code, name:d.name, authority:d.authority ?? '—', authority_list:d.authority_list, expiry:d.expiry ?? 'N/A', isMandatory:d.requirement === 'M' }));
                     return segSrc.map((tl, i) => {
                       const refKey = `${sub}::${tl.code}`;
                       const uploaded = segmentRefUploads[refKey];
@@ -4068,15 +4103,17 @@ const Stage2 = ({
                       );
                     });
                   })()}
-                  {filteredDocs.length === 0 && (
-                    q
-                      ? <tr className="acm-loc-empty"><td colSpan={7}>No documents match your search.</td></tr>
-                      : (sub === 'company-dd' && (segmentDocs.dd?.length ?? 0) === 0)
-                        ? <tr className="acm-loc-empty"><td colSpan={7}>{`No DD documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
-                        : (sub === 'trade-licence' && (segmentDocs.tl?.length ?? 0) === 0)
-                          ? <tr className="acm-loc-empty"><td colSpan={7}>No trade licence documents configured for this segment in the Document Control Panel.</td></tr>
-                          : null /* company-dd-with-segment-refs already render rows above */
-                  )}
+                  {hasRealDocs
+                    ? (filteredDocs.length === 0 && (
+                        <tr className="acm-loc-empty"><td colSpan={7}>No documents match your search.</td></tr>
+                      ))
+                    : (segRefDocs.length === 0 && (
+                        q
+                          ? <tr className="acm-loc-empty"><td colSpan={7}>No documents match your search.</td></tr>
+                          : (sub === 'company-dd')
+                            ? <tr className="acm-loc-empty"><td colSpan={7}>{`No DD documents yet. Click "+ ${meta.addLabel}" to add one.`}</td></tr>
+                            : <tr className="acm-loc-empty"><td colSpan={7}>No trade licence documents configured for this segment in the Document Control Panel.</td></tr>
+                      ))}
                   {filteredDocs.map((d, i) => {
                     const sr = i + 1;
                     return (
@@ -6438,7 +6475,29 @@ const SCOPED_CSS = `
   background: #f0fdf4; border-radius: 16px; overflow: hidden;
   box-shadow: 0 30px 80px rgba(0,0,0,.40);
   display: flex; flex-direction: column;
+  position: relative;   /* positioning context for the saving lock overlay */
 }
+
+/* Saving lock — blankets the whole wizard so no field/step/button can be edited mid-save. */
+.acm-save-lock {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; flex-direction: column; gap: 12px;
+  align-items: center; justify-content: center;
+  background: rgba(240, 253, 244, 0.62);
+  -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+  cursor: progress;
+}
+.acm-save-lock-spinner {
+  width: 40px; height: 40px; border-radius: 50%;
+  border: 3.5px solid rgba(13, 148, 136, 0.22);
+  border-top-color: #0d9488;
+  animation: acm-savelock-spin .7s linear infinite;
+}
+.acm-save-lock-text { font-size: 13px; font-weight: 700; color: #0f766e; letter-spacing: .2px; }
+@keyframes acm-savelock-spin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .acm-save-lock { background: rgba(16, 49, 41, 0.66); }
+[data-bs-theme="dark"] .acm-save-lock-spinner { border-color: rgba(94, 234, 212, 0.22); border-top-color: #2dd4bf; }
+[data-bs-theme="dark"] .acm-save-lock-text { color: #5eead4; }
 /* Modal header — same mint→teal gradient used by the listing page
    hero strip + WDH banner + table header. Keeps a single emerald
    palette across the whole consignee surface. White-on-mint-teal
@@ -6825,7 +6884,8 @@ select.acm-input { appearance: none; background-image: linear-gradient(45deg, tr
 }
 .acg-hs-inline {
   display: flex; align-items: baseline; gap: 6px;
-  font-size: 12px; min-width: 0;
+  font-size: 12px; min-width: 0; max-width: 100%;
+  overflow: hidden;   /* keep long values (e.g. Registered Address) inside the column — the rest shows on hover via the tooltip */
   cursor: default;
   padding: 1px 2px;
   border-radius: 4px;

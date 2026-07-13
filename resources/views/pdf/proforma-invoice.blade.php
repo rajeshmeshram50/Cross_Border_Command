@@ -320,7 +320,7 @@
             $__grandTotal = (float) ($quotation->grand_total ?? 0);
             $__rupees = (int) floor($__grandTotal);
             $__paise = (int) round(($__grandTotal - $__rupees) * 100);
-            $__spellInr = function (int $n): string {
+            $__spellInr = function (int $n) use (&$__spellInr): string {
                 if ($n === 0)
                     return 'Zero';
                 $ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
@@ -349,7 +349,11 @@
                 $hund = $n;
                 $parts = [];
                 if ($crore)
-                    $parts[] = $threeDigit($crore) . ' Crore';
+                    // Spell the crore segment recursively so amounts with a crore
+                    // count > 999 (e.g. 3232 crore) don't index $ones out of range
+                    // — that was the "Undefined array key 32" 500 on servers
+                    // without ext-intl.
+                    $parts[] = $__spellInr($crore) . ' Crore';
                 if ($lakh)
                     $parts[] = $twoDigit($lakh) . ' Lakh';
                 if ($thou)
@@ -783,7 +787,7 @@
                         that wraps gracefully. --}}
                         <tr
                             style="background-color:{{ $companyDetails->primary_color ?? '#7CB342' }}; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }};">
-                            <th style="width:5%;  text-align: center;">Sr No</th>
+                            <th style="width:5%;  text-align: center; white-space: nowrap;">Sr No</th>
                             <th style="width:10%; text-align: center;">Product Code</th>
                             <th style="width:16%; text-align: left;">Product Name</th>
                             <th style="width:18%; text-align: left;">Description</th>

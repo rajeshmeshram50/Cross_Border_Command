@@ -326,7 +326,7 @@ export default function SalesConsignee() {
     {
       header: 'Customer ID',
       accessorKey: 'customerId',
-      meta: { align: 'center' },
+      meta: { align: 'start' },
       cell: (info: any) => {
         const row = info.row.original as ConsigneeRow;
         const list = (row.customers ?? []).map(c => c.code || `C-${c.id}`);
@@ -339,7 +339,7 @@ export default function SalesConsignee() {
         // the full Map-Customer popup (still reachable from the Actions column).
         const custPopId = `cust-${row.id}`;
         return (
-          <span className="d-inline-flex align-items-center" style={{ gap: 4, justifyContent: 'center' }}>
+          <span className="d-inline-flex align-items-center" style={{ gap: 4, justifyContent: 'flex-start' }}>
             <span className="smcg-cust-chip">{chips[0]}</span>
             {chips.length > 1 && (
               <span
@@ -715,11 +715,25 @@ export default function SalesConsignee() {
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                {canEdit && (
-                  <button type="button" onClick={() => (custMapOpen ? setCustMapOpen(false) : openCustMap())} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, background: '#fff', color: '#6d28d9', border: 'none', borderRadius: 9, padding: '7px 13px', cursor: 'pointer' }}>
-                    <i className="ri-link" /> Map Customer
-                  </button>
-                )}
+                {canEdit && (() => {
+                  // A "Same as Customer" consignee mirrors exactly ONE customer,
+                  // so it can't be mapped to more — disable Map Customer and
+                  // explain why on click.
+                  const sac = !!mappedTarget.same_as_customer;
+                  return (
+                    <button
+                      type="button"
+                      aria-disabled={sac}
+                      onClick={() => {
+                        if (sac) { toast.warning('Same as Customer', 'This consignee is “Same as Customer”, so it can be linked to only one customer. Turn off Same as Customer to map more.'); return; }
+                        custMapOpen ? setCustMapOpen(false) : openCustMap();
+                      }}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, background: '#fff', color: '#6d28d9', border: 'none', borderRadius: 9, padding: '7px 13px', cursor: sac ? 'not-allowed' : 'pointer', opacity: sac ? 0.5 : 1 }}
+                    >
+                      <i className="ri-link" /> Map Customer
+                    </button>
+                  );
+                })()}
                 <span style={{ fontSize: 12, fontWeight: 700, background: 'rgba(255,255,255,.16)', borderRadius: 20, padding: '3px 12px' }}>{(mappedTarget.customers ?? []).length} {(mappedTarget.customers ?? []).length === 1 ? 'customer' : 'customers'}</span>
                 <button type="button" onClick={() => setMappedTarget(null)} aria-label="Close" style={{ width: 30, height: 30, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,.16)', color: '#fff', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
               </div>

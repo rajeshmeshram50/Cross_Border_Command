@@ -77,6 +77,12 @@ class QuotationController extends Controller
             // the column renders "—" instead of the employee's name (QA #4).
             $emp     = $mgrByOwner->get((int) ($r->sales_manager_id ?: $r->created_by));
             $mgrName = $emp?->reportingManager?->user?->name ?? $emp?->reportingManagerUser?->name;
+            // A BRANCH USER is the top of their branch — they have no reporting
+            // manager above them, so a quotation they created would show "—".
+            // Show the branch user's own name as the Sales Manager instead.
+            if (!$mgrName && ($r->creator?->user_type === 'branch_user')) {
+                $mgrName = $r->creator?->name;
+            }
             $r->sales_manager_name = $mgrName ?: null;
             return $r;
         })->all();

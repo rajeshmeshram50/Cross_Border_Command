@@ -593,7 +593,10 @@ const STAGE2_CSS = `
 /* ── Activity Report card ── */
 .smd-st2-activity {
   background: #fff;
-  border: 1.5px solid #ede9fe;
+  /* Visible violet frame + thick violet top bar — same card treatment as the
+     "All Mapped Products" table so it reads as a clearly-bordered card (CBC-236). */
+  border: 1.5px solid #ddd6fe;
+  border-top: 3px solid #7c3aed;
   border-radius: 12px;
   overflow: hidden;
   box-shadow:
@@ -608,19 +611,19 @@ const STAGE2_CSS = `
 }
 .smd-st2-activity-head-left { display: flex; align-items: center; gap: 7px; }
 .smd-st2-activity-icon {
-  width: 17px; height: 17px; border-radius: 5px;
+  width: 22px; height: 22px; border-radius: 6px;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 2px 6px rgba(124,58,237,.30);
 }
-.smd-st2-activity-icon svg { width: 8px; height: 8px; }
-.smd-st2-activity-title { font-size: 9.5px; font-weight: 800; color: #3b0764; }
+.smd-st2-activity-icon svg { width: 11px; height: 11px; }
+.smd-st2-activity-title { font-size: 12.5px; font-weight: 800; color: #3b0764; }
 .smd-st2-activity-count {
-  min-width: 18px; height: 17px;
+  min-width: 20px; height: 20px;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
   color: #fff;
-  font-size: 8px; font-weight: 800;
-  padding: 0 6px; border-radius: 10px;
+  font-size: 10px; font-weight: 800;
+  padding: 0 7px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
   box-shadow: 0 2px 5px rgba(124,58,237,.28);
 }
@@ -633,26 +636,27 @@ const STAGE2_CSS = `
   width: 100%; border-collapse: collapse;
   table-layout: fixed;
 }
-.smd-st2-table colgroup col:nth-child(1) { width: 38px; }
-.smd-st2-table colgroup col:nth-child(2) { width: 95px; }
-.smd-st2-table colgroup col:nth-child(3) { width: 130px; }
+.smd-st2-table colgroup col:nth-child(1) { width: 62px; }
+.smd-st2-table colgroup col:nth-child(2) { width: 118px; }
+.smd-st2-table colgroup col:nth-child(3) { width: 150px; }
 .smd-st2-table thead th {
   position: sticky; top: 0; z-index: 1;
-  padding: 5px 8px;
-  font-size: 7.5px; font-weight: 800; color: #a78bfa;
-  letter-spacing: .12em; text-transform: uppercase;
-  text-align: left;
-  /* Clearer header underline + column separators so rows/columns are easy to
-     distinguish (QA #70 — borders were near-invisible at #e9d5ff/#f5f0ff). */
-  border-bottom: 1.5px solid #8b5cf6;
-  border-right: 1px solid #c4b5fd;
-  background: linear-gradient(135deg, #f8f5ff, #ede9fe);
+  padding: 10px 12px;
+  font-size: 11px; font-weight: 800; color: #fff;
+  letter-spacing: .05em; text-transform: uppercase;
+  text-align: left; white-space: nowrap;   /* keep "SR NO" etc. on one line */
+  /* Solid violet header bar + white labels — same look as the "All Mapped
+     Products" table so the grid reads as a clearly-bordered table, not faint
+     floating text (QA #70 / CBC-236). */
+  background: linear-gradient(180deg, #7c3aed, #6d28d9);
+  border-bottom: 1.5px solid #6d28d9;
+  border-right: 1px solid rgba(255, 255, 255, .18);
 }
-.smd-st2-table thead th:first-child { padding-left: 12px; }
+.smd-st2-table thead th:first-child { padding-left: 10px; padding-right: 6px; }
 .smd-st2-table tbody td {
-  padding: 7px 8px;
-  font-size: 10px; font-weight: 500; color: #5b4d80;
-  border-bottom: 1px solid #cabffb;
+  padding: 9px 12px;
+  font-size: 11.5px; font-weight: 500; color: #5b4d80;
+  border-bottom: 1px solid #c4b5fd;
   border-right: 1px solid #ddd6fe;
   white-space: nowrap;
 }
@@ -664,16 +668,16 @@ const STAGE2_CSS = `
 
 .smd-st2-row-num {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; border-radius: 7px;
+  width: 26px; height: 26px; border-radius: 8px;
   background: linear-gradient(135deg, #ede9fe, #ddd6fe);
   border: 1px solid #c4b5fd;
   color: #5b21b6;
-  font-size: 9.5px; font-weight: 800;
+  font-size: 11px; font-weight: 800;
 }
 .smd-st2-row-pill {
-  display: inline-flex; align-items: center; gap: 3px;
-  padding: 2px 10px; border-radius: 20px;
-  font-size: 9.5px; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 12px; border-radius: 20px;
+  font-size: 11px; font-weight: 700;
   border: 1px solid;
   white-space: nowrap;
 }
@@ -690,7 +694,7 @@ const STAGE2_CSS = `
 .smd-st2-row-pill.smd-st2-pill-d::before { background: currentColor; }
 
 .smd-st2-row-reason {
-  font-size: 10.5px; font-weight: 500; color: #2d1b69;
+  font-size: 11.5px; font-weight: 500; color: #2d1b69;
   white-space: normal !important;
   /* Break even a long UNBROKEN string (e.g. "AAAA…") so the reason wraps
      inside its column instead of stretching the row and overlapping the
@@ -853,10 +857,10 @@ const STAGE2_CSS = `
    the light-mode contrast bump (QA #70). */
 [data-bs-theme="dark"] .smd-st2-table-wrap { border-color: rgba(167,139,250,.50); }
 [data-bs-theme="dark"] .smd-st2-table thead th {
-  background: linear-gradient(135deg, #20184a, #2a2150);
-  color: #a78bfa;
-  border-bottom-color: rgba(167,139,250,.60);
-  border-right-color: rgba(167,139,250,.38);
+  background: linear-gradient(180deg, #7c3aed, #6d28d9);
+  color: #fff;
+  border-bottom-color: #6d28d9;
+  border-right-color: rgba(255, 255, 255, .16);
 }
 [data-bs-theme="dark"] .smd-st2-table tbody tr   { background: #1a1538; }
 [data-bs-theme="dark"] .smd-st2-table tbody tr:hover { background: #20184a; }

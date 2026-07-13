@@ -297,9 +297,9 @@ class PurchaseOrderController extends Controller
 
         $tempPaths = [];
         try {
-            // Unsigned PO PDF — the supplier's dragged signature box IS the
-            // signature, so no baked-in branch signature is rendered.
-            $pdfBytes = app(SalesPdfController::class)->renderPoPdfBytes($po, false, $vendor);
+            // PO PDF rendered WITH the org signature; the supplier's dragged
+            // signature box is added on top when submitted to Zoho.
+            $pdfBytes = app(SalesPdfController::class)->renderPoPdfBytes($po, true, $vendor);
             $tmp = storage_path('app/temp/' . \Illuminate\Support\Str::uuid()->toString() . '.pdf');
             if (!is_dir(dirname($tmp))) @mkdir(dirname($tmp), 0775, true);
             file_put_contents($tmp, $pdfBytes);
@@ -749,8 +749,30 @@ class PurchaseOrderController extends Controller
         $vendor = Vendor::forUser($user, $request->integer('branch_id') ?: null)->find($id);
         if (!$vendor || !$cid) return response()->json(['status' => true, 'data' => $out]);
 
-        $segIds = DB::table('vendor_segments')->where('vendor_id', $vendor->id)->pluck('segment_id')->map(fn ($x) => (int) $x)->unique()->values()->all();
-        if (empty($segIds) && $vendor->segment_id) $segIds = [(int) $vendor->segment_id];
+        // Segments to match documents against — the trade docs / agreements
+        // shown are the ones applicable to the PO's PRODUCT segments. Priority:
+        //   1. explicit product_ids (the wizard's Stage-2 rows — works even
+        //      before the PO is saved, which is when this screen is used),
+        //   2. the saved PO's items (po_id),
+        //   3. the supplier's own segments (last-ditch fallback).
+        $productIds = array_values(array_filter(array_map('intval', preg_split('/\s*,\s*/', (string) $request->query('product_ids', ''), -1, PREG_SPLIT_NO_EMPTY))));
+        $poId       = $request->integer('po_id');
+        if (!empty($productIds)) {
+            $segIds = DB::table('products')
+                ->where('client_id', $cid)
+                ->whereIn('id', $productIds)
+                ->whereNotNull('segment_id')
+                ->pluck('segment_id')->map(fn ($x) => (int) $x)->unique()->values()->all();
+        } elseif ($poId && PurchaseOrder::where('id', $poId)->where('client_id', $cid)->exists()) {
+            $segIds = DB::table('purchase_order_items as poi')
+                ->join('products as p', 'p.id', '=', 'poi.product_id')
+                ->where('poi.purchase_order_id', $poId)
+                ->whereNotNull('p.segment_id')
+                ->pluck('p.segment_id')->map(fn ($x) => (int) $x)->unique()->values()->all();
+        } else {
+            $segIds = DB::table('vendor_segments')->where('vendor_id', $vendor->id)->pluck('segment_id')->map(fn ($x) => (int) $x)->unique()->values()->all();
+            if (empty($segIds) && $vendor->segment_id) $segIds = [(int) $vendor->segment_id];
+        }
         if (empty($segIds)) return response()->json(['status' => true, 'data' => $out]);
 
         $segments = DB::table('clm_segments')->whereIn('id', $segIds)->get(['name', 'code', 'regulatory_status']);

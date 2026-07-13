@@ -86,6 +86,11 @@ class ProformaInvoiceController extends Controller
             // Strictly the owner's Reporting Manager — never fall back to the
             // owner's own name. Null when the owner has no manager so the column
             // renders "—" instead of the employee's name (QA #4).
+            // Exception: a BRANCH USER has no manager above them, so a PI they
+            // created shows their own name as the Sales Manager.
+            if (!$mgrName && ($r->creator?->user_type === 'branch_user')) {
+                $mgrName = $r->creator?->name;
+            }
             $r->sales_manager_name = $mgrName ?: null;
             // Victory-stage gate — the opportunity behind this PI has
             // crossed Stage 6 (Victory Stage) when EITHER lead_stage_id

@@ -73,7 +73,7 @@ export default function SalesCustomers() {
   const canAdd    = isSuperAdmin || !!customerPerm?.can_add;
   const canEdit   = isSuperAdmin || !!customerPerm?.can_edit;
 
-  const [tab, setTab] = useState<'fresh' | 'recurring'>('fresh');
+  const [tab, setTab] = useState<'all' | 'fresh' | 'recurring'>('all');
 
   const [tabSwitching, setTabSwitching] = useState(false);
   const [q, setQ] = useState('');
@@ -187,7 +187,7 @@ export default function SalesCustomers() {
     };
   }, []);
 
-  const switchTab = (next: 'fresh' | 'recurring') => {
+  const switchTab = (next: 'all' | 'fresh' | 'recurring') => {
     if (next === tab) return;
     setTabSwitching(true);
     setTab(next);
@@ -427,6 +427,9 @@ export default function SalesCustomers() {
 
         <div className="smc-toolbar">
           <div className="smc-pill-group">
+            <button className={`smc-pill ${tab === 'all' ? 'on' : 'off'}`} onClick={() => switchTab('all')}>
+              <i className="ri-list-check-2" /> All Customers
+            </button>
             <button className={`smc-pill ${tab === 'fresh' ? 'on' : 'off'}`} onClick={() => switchTab('fresh')}>
               <i className="ri-group-line" /> Fresh Customers
             </button>

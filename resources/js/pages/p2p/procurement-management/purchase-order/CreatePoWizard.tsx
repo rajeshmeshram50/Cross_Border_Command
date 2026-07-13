@@ -5,6 +5,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { formatDmy } from '../../../../utils/formatDmy';
+import { formatProductCode } from '../../../../utils/formatProductCode';
 import TradeDocsTable from './TradeDocsTable';
 import SupplierEvidenceVaultModal from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 
@@ -120,7 +121,7 @@ const PI_REPICK_PLACEHOLDER = '— Select PI Product —';
 // then product code, then the PI name.
 const piIdent = (x: { productId: number | null; code: string; piName?: string; name?: string }) =>
   x.productId != null ? `#${x.productId}` : (x.code || x.piName || x.name || '');
-const piLabel = (p: PiRow) => (p.code ? `${p.code} — ${p.piName}` : p.piName);
+const piLabel = (p: PiRow) => (p.code ? `${formatProductCode(p.code)} — ${p.piName}` : p.piName);
 const blankLine = (id: number): PoLine => ({ id, productId: null, code: '', piName: '', piQty: '', name: '', qty: '', rate: '', gst: 0 });
 // Map a /shipments/{id}/pi-products item into the canonical PI product set.
 const mapPiRow = (it: Record<string, unknown>): PiRow => ({
@@ -335,6 +336,10 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
   const toast = useToast();
   const isEdit = !!editRow;
   const editId = editRow?.id ?? null;
+  // The PO's persisted id. In edit mode it's known up-front; for a new PO it's
+  // populated when the PO is CREATED on leaving stage 3 (so stage 4's document /
+  // e-sign features have a real id to work against).
+  const [savedPoId, setSavedPoId] = useState<number | null>(editRow?.id ?? null);
 
   const [phase, setPhase] = useState<'choice' | 'form'>(isEdit ? 'form' : 'choice');
   const [choiceOpen, setChoiceOpen] = useState(true);
@@ -349,6 +354,12 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
   const [confirming, setConfirming] = useState(false);   // choice-modal "Confirm & Continue" fetch
   const [supLoading, setSupLoading] = useState(false);    // supplier detail + legal fetch after select
   const [savingDetails, setSavingDetails] = useState(false); // stage-2 "Save Details" click feedback
+  // Stage-1 data-load shimmer: the lookup masters (dropdowns) load on mount and,
+  // when editing, the PO detail loads too. Show a shimmer over the Stage-1 fields
+  // (supplier + the rest) until both settle so the form fills in instead of
+  // flashing empty/default values.
+  const [mastersLoading, setMastersLoading] = useState(true);
+  const [editLoading, setEditLoading] = useState<boolean>(!!editRow);
 
   // Wizard
   const [stage, setStage] = useState(1);
@@ -369,18 +380,18 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
 
   useEffect(() => {
     let cancelled = false;
-    api.get('/master/warehouse_master').then(r => {
+    const pW = api.get('/master/warehouse_master').then(r => {
       const arr = Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
       const w = arr.map((x: Record<string, unknown>) => ({ id: Number(x.id), name: String(x.wh_name ?? x.name ?? ''), code: String(x.wh_id ?? x.code ?? ''), type: String(x.wh_type ?? '') })).filter((x: Warehouse) => x.name && x.id);
       if (!cancelled && w.length) setWarehouses(w);
     }).catch(() => {});
-    api.get('/master/currencies').then(r => {
+    const pC = api.get('/master/currencies').then(r => {
       const arr = Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
       const c = arr.filter((x: { status?: string }) => (x.status ?? 'Active') === 'Active')
         .map((x: Record<string, unknown>) => ({ id: Number(x.id), code: String(x.code ?? '') })).filter((x: Currency) => x.code && x.id);
       if (!cancelled && c.length) setCurrencies(c);
     }).catch(() => {});
-    api.get('/products').then(r => {
+    const pP = api.get('/products').then(r => {
       const arr = Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
       const opts: ProdOpt[] = arr.map((p: Record<string, unknown>) => {
         const base = num(p.base_price ?? p.price ?? 0);
@@ -403,9 +414,11 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
       }).filter((o: ProdOpt) => o.name);
       if (!cancelled && opts.length) setProdOpts(opts);
     }).catch(() => {});
-    api.get('/p2p/purchase-orders/suppliers').then(r => { if (!cancelled) setSuppliers((r.data?.data ?? []) as SupplierOpt[]); }).catch(() => {});
+    const pS = api.get('/p2p/purchase-orders/suppliers').then(r => { if (!cancelled) setSuppliers((r.data?.data ?? []) as SupplierOpt[]); }).catch(() => {});
     api.get('/p2p/purchase-orders/shipments').then(r => { if (!cancelled) setShipments((r.data?.data ?? []) as Shipment[]); }).catch(() => {});
     if (!isEdit) api.get('/p2p/purchase-orders/preview-code').then(r => { if (!cancelled) setPoCode(r.data?.data?.code || ''); }).catch(() => {});
+    // Drop the Stage-1 shimmer once the dropdown masters have settled.
+    Promise.allSettled([pW, pC, pP, pS]).then(() => { if (!cancelled) setMastersLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -562,7 +575,8 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
           const s = sr.data?.data; if (s) { setSup(mapDetailToSup(s)); setSupName(s.name); }
         }).catch(() => {});
       }
-    }).catch(() => toast.error('Failed to load purchase order'));
+    }).catch(() => toast.error('Failed to load purchase order'))
+      .finally(() => setEditLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEdit, editId]);
 
@@ -594,6 +608,9 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     return { prod, cgst: cg, sgst: sg, igst: ig, addl, grand: prod + addl };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, charges, sup.stateCode]);
+  // Stage-1 shimmer while the dropdown masters (and, when editing, the PO
+  // detail) are still loading — so the fields fill in rather than flash.
+  const stage1Loading = mastersLoading || editLoading;
   // Missing Product Details — per PI-linked row, the PI qty not covered by the PO
   // qty (With-Shipment only; there's no PI in the Without-Shipment flow).
   const missing = useMemo(() => rows
@@ -712,6 +729,24 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
     };
   };
 
+  // Create (first save) or update (subsequent saves) the PO and return its id.
+  // The PO is created when leaving stage 3, then updated by the final Generate.
+  const persistPo = async (): Promise<number | null> => {
+    const payload = buildPayload();
+    if (savedPoId) {
+      await api.put(`/p2p/purchase-orders/${savedPoId}`, payload);
+      return savedPoId;
+    }
+    const res = await api.post('/p2p/purchase-orders', payload);
+    const newId = (res.data?.data?.id ?? null) as number | null;
+    if (newId) setSavedPoId(newId);
+    // Adopt the server-allocated code (the earlier preview code can drift if
+    // another PO was created since) so the header + PO document row match.
+    const savedCode = res.data?.data?.po as string | undefined;
+    if (savedCode) setPoCode(savedCode);
+    return newId;
+  };
+
   const generate = () => {
     if (saving) return;
     // Expected Delivery Date can't be earlier than today — but only for a NEW
@@ -721,17 +756,16 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
       toast.error('Invalid Expected Delivery Date', 'It cannot be earlier than today.');
       return;
     }
-    const payload = buildPayload();
     setSaving(true);
-    const req = isEdit && editId
-      ? api.put(`/p2p/purchase-orders/${editId}`, payload)
-      : api.post('/p2p/purchase-orders', payload);
-    req.then(() => {
-      toast.success(isEdit ? 'Purchase Order updated successfully' : 'Purchase Order created successfully');
-      onSaved();
-    }).catch((e: { response?: { data?: { message?: string } } }) => {
-      toast.error('Save failed', e?.response?.data?.message ?? 'Please review the form and try again.');
-    }).finally(() => setSaving(false));
+    persistPo()
+      .then(() => {
+        toast.success(isEdit ? 'Purchase Order updated successfully' : 'Purchase Order created successfully');
+        onSaved();
+      })
+      .catch((e: { response?: { data?: { message?: string } } }) => {
+        toast.error('Save failed', e?.response?.data?.message ?? 'Please review the form and try again.');
+      })
+      .finally(() => setSaving(false));
   };
 
   // Stage 1 mandatory fields — all must be filled before leaving stage 1.
@@ -754,7 +788,25 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
 
   const next = () => {
     if (stage === 1 && !validateStage1()) return;
-    if (stage === 3) toast.success('Purchase Order submitted successfully');
+    // Persist the PO when leaving stage 3 (before entering stage 4) so the
+    // documents / e-sign stage has a real PO id — its preview, individual
+    // "Send for Sign", and bundling the PO into a trade-doc signature request
+    // all need the PO to exist. Only advances once the save succeeds.
+    if (stage === 3) {
+      if (saving) return;
+      if (!isEdit && po.edd && po.edd < todayIso) {
+        toast.error('Invalid Expected Delivery Date', 'It cannot be earlier than today.');
+        return;
+      }
+      setSaving(true);
+      persistPo()
+        .then(() => { toast.success(savedPoId ? 'Purchase Order saved' : 'Purchase Order created'); setStage(4); })
+        .catch((e: { response?: { data?: { message?: string } } }) => {
+          toast.error('Save failed', e?.response?.data?.message ?? 'Please review the form and try again.');
+        })
+        .finally(() => setSaving(false));
+      return;
+    }
     if (stage < 4) setStage(s => s + 1);
     else generate();
   };
@@ -884,7 +936,35 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
             <div className="pof-wrap">
               {stage > 1 && <PrevSummary stage={stage} po={po} sup={sup} supName={supName} rows={rows} compute={compute} summary={summary} charges={charges} terms={terms} todayDisp={todayDisp} legalText={legalView ? `${legalView.p}% ${legalView.p === 100 ? 'Compliant' : '· Needs Review'} — ${legalView.done} of ${legalView.tot} documents completed across all 5 parameters` : ''} />}
 
-              {stage === 1 && (
+              {/* Stage-1 shimmer — shown until the dropdown masters (and, in
+                  edit mode, the PO detail) load, so supplier + the rest fill in
+                  instead of flashing empty/default values. */}
+              {stage === 1 && stage1Loading && (
+                <div className="pof-wrap" style={{ gap: 13 }}>
+                  <Box label="Purchase Order" title="Basic Purchase Order Details" sub="Core details that identify this purchase order." ico={fileIco}>
+                    <div className="pof-grid pof-grid--4">
+                      {Array.from({ length: 8 }).map((_, i) => (
+                        <div key={i} className="pof-f">
+                          <label><Skel w="55%" /></label>
+                          <div className="pof-ro pof-ro--skel"><Skel w="85%" /></div>
+                        </div>
+                      ))}
+                    </div>
+                  </Box>
+                  <Box label="Supplier" title="Supplier Details" sub="Fetched from the selected supplier's master." ico={userIco}>
+                    <div className="pof-grid pof-grid--4">
+                      {Array.from({ length: 12 }).map((_, i) => (
+                        <div key={i} className="pof-f">
+                          <label><Skel w="55%" /></label>
+                          <div className="pof-ro pof-ro--skel"><Skel w="85%" /></div>
+                        </div>
+                      ))}
+                    </div>
+                  </Box>
+                </div>
+              )}
+
+              {stage === 1 && !stage1Loading && (
                 <div className="pof-wrap" style={{ gap: 13 }}>
                   <Box label="Purchase Order" title="Basic Purchase Order Details" sub="Core details that identify this purchase order." ico={fileIco}>
                     <div className="pof-grid pof-grid--4">
@@ -1015,7 +1095,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                           return withShip ? (
                             <tr key={r.id}>
                               <td className="cpd-c">{i + 1}</td>
-                              <td className="cpd-c"><span className="cpd-code">{r.code || '—'}</span></td>
+                              <td className="cpd-c"><span className="cpd-code">{formatProductCode(r.code) || '—'}</span></td>
                               <td className="cpd-name">{(r.productId == null && !r.code && !r.piName)
                                 ? <div className="cpd-prodcell"><Dd value={PI_REPICK_PLACEHOLDER} options={[PI_REPICK_PLACEHOLDER, ...removedPi.map(piLabel)]} onChange={label => { if (label !== PI_REPICK_PLACEHOLDER) reAddPi(r.id, label); }} /></div>
                                 : <Tooltip label={r.piName} disabled={!r.piName}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
@@ -1031,7 +1111,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                           ) : (
                             <tr key={r.id}>
                               <td className="cpd-c">{i + 1}</td>
-                              <td className="cpd-c"><span className="cpd-code">{r.code || '—'}</span></td>
+                              <td className="cpd-c"><span className="cpd-code">{formatProductCode(r.code) || '—'}</span></td>
                               <td className="cpd-prodcell"><Dd value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.map(o => o.name)]} onChange={name => pickProduct(r.id, name)} /></td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
                               <td><input className="cpd-in cpd-in--num" type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
@@ -1115,7 +1195,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
               {stage === 4 && (
                 <Box label="Documents" title="Post PO Trade Document Management" sub="Generate, e-sign & track documents via Zoho Sign" ico={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>}
                   extra={<button type="button" className="cptd-vault-btn" onClick={e => { e.stopPropagation(); setVaultOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg><span>Supplier Legal Status</span></button>}>
-                  <TradeDocsTable po={poCode || undefined} poId={editId} supplierId={vendorId} buildPreview={buildPayload} onSignActive={setSignActive} />
+                  <TradeDocsTable po={poCode || undefined} poId={savedPoId} supplierId={vendorId} productIds={rows.map(r => r.productId).filter((x): x is number => x != null)} buildPreview={buildPayload} onSignActive={setSignActive} />
                 </Box>
               )}
             </div>
@@ -1250,7 +1330,7 @@ function PrevSummary(props: {
         <div><div className="cposum-grp__t">Product Details</div>
           <div style={{ overflowX: 'auto', border: '1px solid #e8eff3', borderRadius: 10 }}>
             <table className="cpd-tbl"><thead><tr><th className="cpd-c">Sr</th><th>Code</th><th>Product (PO)</th><th className="cpd-c">Qty</th><th>Rate</th><th className="cpd-r">Cost</th></tr></thead>
-              <tbody>{rows.map((r, i) => { const c = compute(r); return <tr key={r.id}><td className="cpd-c">{i + 1}</td><td className="cpd-c"><span className="cpd-code">{r.code || '—'}</span></td><td className="cpd-name"><Tooltip label={r.name} disabled={!r.name}><span className="cpd-name__txt">{r.name || '—'}</span></Tooltip></td><td className="cpd-c">{r.qty || 0}</td><td className="cpd-r">{money2(num(r.rate))}</td><td className="cpd-r cpd-cost">{money2(c.cost)}</td></tr>; })}</tbody>
+              <tbody>{rows.map((r, i) => { const c = compute(r); return <tr key={r.id}><td className="cpd-c">{i + 1}</td><td className="cpd-c"><span className="cpd-code">{formatProductCode(r.code) || '—'}</span></td><td className="cpd-name"><Tooltip label={r.name} disabled={!r.name}><span className="cpd-name__txt">{r.name || '—'}</span></Tooltip></td><td className="cpd-c">{r.qty || 0}</td><td className="cpd-r">{money2(num(r.rate))}</td><td className="cpd-r cpd-cost">{money2(c.cost)}</td></tr>; })}</tbody>
             </table>
           </div>
         </div>

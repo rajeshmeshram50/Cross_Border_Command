@@ -46,30 +46,18 @@ class ProductController extends Controller
         $branchFilter = $applyBranchFilter ? ($request->integer('branch_id') ?: null) : null;
         $user = $request->user();
 
-        // An HOD employee sees the WHOLE branch catalog (like the Director /
-        // branch user). A regular employee stays peer-isolated (only their own
-        // rows) via MasterVisibility below — that's fine for staff. The Director
-        // (branch_user) and admins already get the right scope from MasterVisibility.
+        // Products are a SHARED branch catalog — EVERY employee (not only HODs)
+        // sees the whole branch's rows: globals + client-level + their own
+        // branch's products, so a product the branch/Director/teammate created is
+        // visible to all staff in that branch. Sibling branches stay hidden
+        // (branch_id segregation). This deliberately OVERRIDES MasterVisibility's
+        // peer-isolated employee default (which would show only self-created
+        // rows). Editing is still gated by editDenial()/hierarchicalDenial() —
+        // staff can VIEW but not modify products they don't own (HODs manage the
+        // whole branch catalog).
         if ($user && ($user->user_type ?? null) === 'employee') {
-            $isHod = \App\Models\Employee::where('user_id', $user->id)
-                ->whereIn('designation_id', \App\Support\DepartmentPermissionSync::hodDesignationIds())
-                ->exists();
-            if ($isHod) {
-                $clientId = $user->client_id ?? optional($user->branch ?? null)->client_id;
-                $branchId = $user->branch_id;
-                $query->where(function ($w) use ($clientId, $branchId) {
-                    $w->whereNull('client_id')                        // globals
-                      ->orWhere(function ($ww) use ($clientId, $branchId) {
-                          $ww->where('client_id', $clientId)
-                             ->where(function ($wb) use ($branchId) {
-                                 $wb->whereNull('branch_id')           // client-level
-                                    ->orWhere('branch_id', $branchId); // own branch
-                             });
-                      });
-                });
-                return $query;
-            }
-            // Regular employee → fall through to peer-isolated MasterVisibility.
+            MasterVisibility::applyBranchScope($query, $user);
+            return $query;
         }
 
         MasterVisibility::applyReadScope($query, $user, $branchFilter);
@@ -760,6 +748,37 @@ class ProductController extends Controller
             'vendors.*.remarks'          => 'nullable|string',
         ]);
 
+        // Segment gate — a supplier can only be mapped to a product in the SAME
+        // segment. The product's segment must be one the supplier deals in
+        // (vendor_segments pivot + the scalar segment_id). Enforced here so a
+        // direct API call can't bypass the frontend validation. Skipped when the
+        // product has no segment (nothing to match against).
+        if ($product->segment_id) {
+            $prodSeg   = (int) $product->segment_id;
+            $vendorIds = array_values(array_filter(array_map(fn ($v) => $v['vendor_id'] ?? null, $data['vendors'])));
+            if ($vendorIds) {
+                $mismatches = [];
+                foreach (Vendor::with('segments:id')->whereIn('id', $vendorIds)->get(['id', 'company_name', 'segment_id']) as $ven) {
+                    $segs = array_values(array_unique(array_filter(array_merge(
+                        [$ven->segment_id ? (int) $ven->segment_id : null],
+                        $ven->segments->pluck('id')->map(fn ($x) => (int) $x)->all(),
+                    ))));
+                    if (!in_array($prodSeg, $segs, true)) {
+                        $mismatches[] = $ven->company_name ?: ('Vendor #' . $ven->id);
+                    }
+                }
+                if (!empty($mismatches)) {
+                    $segName = optional(Segments::find($prodSeg))->name;
+                    return response()->json([
+                        'status'  => false,
+                        'message' => 'Segment mismatch: ' . implode(', ', $mismatches)
+                            . ' ' . (count($mismatches) > 1 ? 'do' : 'does') . ' not deal in the product\'s segment'
+                            . ($segName ? ' "' . $segName . '"' : '') . '. Only a supplier in the same segment can be mapped.',
+                    ], 422);
+                }
+            }
+        }
+
         DB::transaction(function () use ($product, $data, $request) {
             $userId = $request->user()?->id;
 
@@ -978,9 +997,13 @@ class ProductController extends Controller
                     'primaryAddress:id,vendor_id,state_id,state_code,contact_name,contact_no,email,designation',
                     'primaryAddress.state:id,name',
                     'vendorType:id,name',
+                    // Segments the supplier deals in — used to gate product↔supplier
+                    // mapping (a supplier can only be mapped to a product in the
+                    // same segment).
+                    'segments:id',
                 ])
                 ->orderByDesc('id')
-                ->get(['id', 'vendor_code', 'company_name', 'website', 'primary_email', 'status', 'vendor_type_id'])
+                ->get(['id', 'vendor_code', 'company_name', 'website', 'primary_email', 'status', 'vendor_type_id', 'segment_id'])
                 ->map(fn ($v) => [
                     'id'             => $v->id,
                     'vendor_code'    => $v->vendor_code,
@@ -989,6 +1012,12 @@ class ProductController extends Controller
                     'primary_email'  => $v->primary_email,
                     'status'         => $v->status,
                     'vendor_type_name' => optional($v->vendorType)->name,
+                    // Every segment this supplier is tagged with (pivot rows + the
+                    // scalar first-segment), so the frontend can enforce the match.
+                    'segment_ids'    => array_values(array_unique(array_filter(array_merge(
+                        [$v->segment_id ? (int) $v->segment_id : null],
+                        $v->segments->pluck('id')->map(fn ($x) => (int) $x)->all(),
+                    )))),
                     // Supplier's state — name (from the state relation) with the
                     // 2-letter state_code as a fallback when the relation is empty.
                     'state'          => optional(optional($v->primaryAddress)->state)->name
