@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import Tooltip from '../../../../components/ui/Tooltip';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import { useToast } from '../../../../contexts/ToastContext';
+import DebitNoteDetail from './DebitNoteDetail';
 // Reuse the SPI list styling so Debit Note matches the SPI / PO design 1:1.
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 
@@ -33,11 +34,11 @@ const DN_DATA: DnRow[] = [
 ];
 
 const STEPS = [
-  { n: '01', ico: <IcoUserCheck size={13} />, title: 'Link Supplier & Invoice',   desc: 'Select the supplier and the reference invoice or PO.' },
-  { n: '02', ico: <IcoDoc size={13} />,        title: 'Debit Note Details',        desc: 'Enter the debit note number, date, and reason.' },
-  { n: '03', ico: <IcoBox size={13} />,        title: 'Returned / Adjusted Items', desc: 'Add the items with quantities and debit values.' },
-  { n: '04', ico: <IcoTax size={13} />,        title: 'Tax Reversal & Adjustment', desc: 'Reverse applicable tax and compute the net amount.' },
-  { n: '05', ico: <IcoSync size={13} />,       title: 'Sync with Zohobook',        desc: 'Post the approved debit note to Zohobook.' },
+  { n: '01', ico: <StepIco1 />, title: 'Link Supplier & Invoice',   desc: 'Select the supplier and the reference invoice or PO.' },
+  { n: '02', ico: <StepIco2 />, title: 'Debit Note Details',        desc: 'Enter the debit note number, date, and reason.' },
+  { n: '03', ico: <StepIco3 />, title: 'Returned / Adjusted Items', desc: 'Add the items with quantities and debit values.' },
+  { n: '04', ico: <StepIco4 />, title: 'Tax Reversal & Adjustment', desc: 'Reverse applicable tax and compute the net amount.' },
+  { n: '05', ico: <StepIco5 />, title: 'Sync with Zohobook',        desc: 'Post the approved debit note to Zohobook.' },
 ];
 
 const statusClass = (s: DnRow['status']) =>
@@ -52,6 +53,7 @@ export default function DebitNote() {
   const [page, setPage] = useState(1);
   const [rpp, setRpp] = useState(10);
   const [menu, setMenu] = useState<{ row: DnRow; x: number; y: number } | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const lo = q.trim().toLowerCase();
   const filtered = lo
@@ -76,8 +78,8 @@ export default function DebitNote() {
             <div className="spi-head-sub">Issue and track supplier debit notes for returns, rejected goods, and price or quantity adjustments — from creation to tax reversal and accounting sync.</div>
           </div>
         </div>
-        <button type="button" className="spi-head-btn" onClick={soon}>
-          <IcoDoc size={13} /> Create Debit Note
+        <button type="button" className="spi-head-btn" onClick={() => setCreateOpen(true)}>
+          <IcoPlus size={15} /> Create Debit Note
         </button>
       </div>
 
@@ -206,6 +208,8 @@ export default function DebitNote() {
         </div>
       )}
 
+      {createOpen && <DebitNoteDetail onClose={() => setCreateOpen(false)} />}
+
       <style>{DN_CSS}</style>
     </div>
   );
@@ -279,7 +283,14 @@ function IcoSync({ size = 14 }: { size?: number }) { return <svg width={size} he
 function IcoEdit({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>; }
 function IcoRupee({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h12M6 8h12M6 13l8.5 8M6 13h3a5 5 0 0 0 5-5"/></svg>; }
 function IcoMore({ size = 16 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>; }
+function IcoPlus({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>; }
 function IcoMail({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>; }
-function IcoUserCheck({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg>; }
-function IcoTax({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>; }
+
+/* ── Step-strip icons — EXACT Figma clones (.bref-item__ico): 11px glyph, stroke-width 2.4. ── */
+function StepSvg({ size = 11, children }: { size?: number; children: ReactNode }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">{children}</svg>; }
+function StepIco1() { return <StepSvg><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3 3-2-2"/></StepSvg>; }
+function StepIco2() { return <StepSvg><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="15" x2="16" y2="15"/></StepSvg>; }
+function StepIco3() { return <StepSvg><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></StepSvg>; }
+function StepIco4() { return <StepSvg><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></StepSvg>; }
+function StepIco5() { return <StepSvg><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-6.7-3M3 12a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3"/><polyline points="21 3 18.7 6 15.6 5.4"/><polyline points="3 21 5.3 18 8.4 18.6"/></StepSvg>; }
 function IcoX({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>; }

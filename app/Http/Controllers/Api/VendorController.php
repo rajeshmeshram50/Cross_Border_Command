@@ -83,25 +83,27 @@ class VendorController extends Controller
                 'riskLevel:id,name',
             ])
             ->withCount('productMappings')
-            // Fresh vs Recurring split. A supplier is "Recurring" once it is the
-            // ACTUAL supplier on a procurement — i.e. a procurement_products row
-            // pins vendor_id to it (set at procurement time: explicit pick, or
-            // auto when the product has a single mapped vendor). Until then it is
-            // "Fresh" (just onboarded, never procured from). This is a real
-            // vendor⇄procurement link, so merely sharing a product with someone
-            // else's procurement no longer flips a supplier to Recurring.
-            // Single correlated subquery → whole list classified in one round-
-            // trip, no N+1. Field name kept as opportunity_count for the frontend.
-            ->addSelect(['opportunity_count' => DB::table('procurements as pr')
-                ->selectRaw('count(distinct pr.id)')
-                ->whereColumn('pr.client_id', 'vendors.client_id')
-                ->whereExists(function ($q) {
-                    $q->selectRaw('1')
-                        ->from('procurement_products as pp')
-                        ->whereColumn('pp.procurement_id', 'pr.id')
-                        ->whereColumn('pp.vendor_id', 'vendors.id');
-                }),
-            ])
+            // ── Fresh vs Recurring split ──────────────────────────────────────
+            // TEMPORARY (2026-07-13, per user): the Recurring tab must stay EMPTY
+            // for now. Real procurement IDs will be minted later through the P2P
+            // case-to-case flow; until that exists we report 0 so every supplier
+            // sits in Fresh and the Recurring tab shows no rows.
+            //
+            // WHEN case-to-case procurement lands: delete the line below and
+            // uncomment the vendor_id subquery — Recurring = the supplier DIRECTLY
+            // pinned (procurement_products.vendor_id) on an actual procurement
+            // line (the true supplier⇄procurement link; not inferred via product).
+            ->addSelect(DB::raw('0 as opportunity_count'))
+            // ->addSelect(['opportunity_count' => DB::table('procurements as pr')
+            //     ->selectRaw('count(distinct pr.id)')
+            //     ->whereColumn('pr.client_id', 'vendors.client_id')
+            //     ->whereExists(function ($q) {
+            //         $q->selectRaw('1')
+            //             ->from('procurement_products as pp')
+            //             ->whereColumn('pp.procurement_id', 'pr.id')
+            //             ->whereColumn('pp.vendor_id', 'vendors.id');
+            //     }),
+            // ])
             ->orderByDesc('id');
 
         if ($search = trim((string) $request->query('q', ''))) {
