@@ -365,15 +365,14 @@ class ProductController extends Controller
             //   secondary_images[]     existing paths to keep
             //   secondary_image_files[] new files to append
             'primary_image'         => 'nullable|string|max:500',
-            // Product image attachments are limited to PNG / JPG / PDF
-            // only. Dropped `webp` and `image:` flag (the flag rejects
-            // PDFs since they're not images) so a PDF spec sheet can be
-            // attached as a product reference.
-            'primary_image_file'    => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:2048',
+            // Product primary & secondary images are PNG / JPG only — PDFs and
+            // every other format are rejected. Use a supporting attachment
+            // (product_attachment_file below) for spec sheets / PDFs instead.
+            'primary_image_file'    => 'nullable|file|mimes:jpg,jpeg,png|max:2048',
             'secondary_images'      => 'nullable|array',
             'secondary_images.*'    => 'nullable|string|max:500',
             'secondary_image_files'   => 'nullable|array|max:10',
-            'secondary_image_files.*' => 'file|mimes:jpg,jpeg,png,pdf|max:2048',
+            'secondary_image_files.*' => 'file|mimes:jpg,jpeg,png|max:2048',
             // Product-level supporting attachment — a single document that may be
             // ANY type (PDF / Word / Excel / PPT / image / text). Same two-input
             // contract as the primary image:

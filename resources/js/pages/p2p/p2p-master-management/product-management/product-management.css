@@ -2877,7 +2877,7 @@
   font-family: var(--font-sans);
 }
 .apm-mv-popup {
-  width: 100%; max-width: 980px;
+  width: 100%; max-width: 1060px;
   margin: auto;
   background: #fff;
   border-radius: 16px;
@@ -3586,7 +3586,8 @@
 .apm-sup-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .apm-sup-countpill { font-size: 12px; font-weight: 700; color: #6d28d9; background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 20px; padding: 6px 14px; }
 .apm-sup-map { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 11px; font-weight: 700; color: #fff; background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); border: none; border-radius: 9px; padding: 7px 12px; cursor: pointer; box-shadow: 0 3px 9px rgba(124, 58, 237, .42); transition: transform .14s, box-shadow .14s; }
-.apm-sup-map:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.52); }
+.apm-sup-map:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.52); }
+.apm-sup-map:disabled { background: #c4b5fd; box-shadow: none; cursor: not-allowed; opacity: .75; transform: none; }
 .apm-sup-map span { font-size: 14px; line-height: 1; }
 .apm-sup-empty { text-align: center; color: #7c3aed; font-weight: 600; font-size: 13px; padding: 34px 16px; border: 1.5px dashed #d6cbf7; border-radius: 12px; background: #fbf9ff; }
 .apm-sup-tablewrap { overflow-x: auto; border: 1px solid #efe9fb; border-radius: 12px; }

@@ -970,11 +970,11 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                       <td><input className="spi-dt-minp" value={r.spiName} onChange={e => setRow(i, { spiName: e.target.value })} /></td>
                       {hasPi && <td className="spi-dt-mc-c">{r.piQty ?? '—'}</td>}
                       <td className="spi-dt-mc-c">{r.poQty}</td>
-                      <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value })} /></td>
+                      <td><input type="number" min={0} step="any" className="spi-dt-minp spi-dt-minp-sm" value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value })} /></td>
                       <td className="spi-dt-mc-c">{Number.isFinite(missing) ? missing : 0}</td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value })} /></td>
                       <td className="spi-dt-amt spi-dt-mc-c">{inr(r.ratePo)}</td>
-                      <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.spiRate} onChange={e => setRow(i, { spiRate: e.target.value })} /></td>
+                      <td><input type="number" min={0} step="any" className="spi-dt-minp spi-dt-minp-sm" value={r.spiRate} onChange={e => setRow(i, { spiRate: e.target.value })} /></td>
                     </tr>
                     );
                   })}

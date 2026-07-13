@@ -66,7 +66,7 @@ export type SupplierContact = {
 
 /* Fresh vs Recurring tab key. Fresh = newly onboarded supplier with no
    opportunity yet; Recurring = at least one opportunity created against it. */
-type SupplierTab = 'fresh' | 'recurring';
+type SupplierTab = 'all' | 'fresh' | 'recurring';
 
 /* Shape of an item in the paginated GET /api/vendors response. Only
  * the fields the list page actually renders are typed — anything else
@@ -124,7 +124,7 @@ export default function Vendors() {
 
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [search, setSearch] = useState('');
-  const [tab, setTab] = useState<SupplierTab>('fresh');
+  const [tab, setTab] = useState<SupplierTab>('all');
   const [addOpen, setAddOpen] = useState(false);
   /* Edit vs Add — same modal, just seeded with an existing vendor id.
      Reset to null on close so the next "+ Add Vendor" click opens a
@@ -314,7 +314,7 @@ useEffect(() => {
 
   const filtered = useMemo(() => {
     const lo = search.trim().toLowerCase();
-    const inTab = (v: Vendor) => tab === 'fresh' ? v.opportunityCount === 0 : v.opportunityCount > 0;
+    const inTab = (v: Vendor) => tab === 'all' ? true : tab === 'fresh' ? v.opportunityCount === 0 : v.opportunityCount > 0;
     return vendors
       .filter(inTab)
       .filter(v => !lo
@@ -461,6 +461,14 @@ useEffect(() => {
                 is computed server-side (VendorController::index → opportunity_count). */}
             <div className="sl-toolbar">
               <div className="sl-tabs">
+                <button
+                  type="button"
+                  className={`sl-tab ${tab === 'all' ? 'is-active' : ''}`}
+                  onClick={() => setTab('all')}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
+                  <span>All Suppliers</span>
+                </button>
                 <button
                   type="button"
                   className={`sl-tab ${tab === 'fresh' ? 'is-active' : ''}`}

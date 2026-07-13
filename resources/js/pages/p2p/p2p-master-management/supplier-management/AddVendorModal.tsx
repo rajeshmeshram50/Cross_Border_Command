@@ -1233,13 +1233,16 @@ export default function AddVendorModal(props: {
       const minShimmerMs = 350; // floor so the shimmer doesn't flicker on fast networks
       const t0 = performance.now();
       try {
-        const [res] = await Promise.all([
-          api.get<{ data: ApiVendor; segment_uploads?: { data?: any[] } }>(`/vendors/${initialVendorId}`),
-          fetchProductOptsIfNeeded(),
-        ]);
+        const res = await api.get<{ data: ApiVendor; segment_uploads?: { data?: any[] } }>(`/vendors/${initialVendorId}`);
         const root = res.data ?? ({} as { data?: ApiVendor; segment_uploads?: { data?: any[] } });
         const v = root.data;
         if (!v) return;
+        // The ~500-row products dropdown is only needed up-front to hydrate a
+        // supplier's EXISTING mappings. Skip it entirely when there are none —
+        // it lazy-loads when Map Products opens. On single-threaded artisan
+        // serve this drops a whole boot-tax round-trip + payload from the very
+        // common "edit a supplier that has no products yet" path.
+        if ((v.product_mappings ?? []).length > 0) await fetchProductOptsIfNeeded();
 
         /* Stage 2/3 segment-rule reference uploads — now arrive in the
          * same response as the vendor itself (top-level `segment_uploads`
@@ -1386,7 +1389,7 @@ export default function AddVendorModal(props: {
           lastFilingDate: r.last_filing_date ?? '',
           prevNonGst2aInvoice: r.prev_non_gst_2a_invoice ?? '',
           redFlags: r.red_flags ?? '',
-        })));
+        })).reverse());   // newest scrutiny first (matches the prepend-on-add ordering)
 
         // Step 4 — product mappings. HSN/SAC + Segment aren't echoed in
         // the vendor show payload, so they're seeded empty here and a
@@ -1510,6 +1513,17 @@ export default function AddVendorModal(props: {
         segment_ids: (segment ?? []).map(Number),
         compliance_behaviour_id: complianceBehaviour ? Number(complianceBehaviour) : null,
         classification_id: classificationId ? Number(classificationId) : null,
+        // Persist the registered-office address WITH Stage 1 so it survives even
+        // if the primary contact (contacts step) is never filled. The backend
+        // upserts it onto the primary address without touching contact fields.
+        address: {
+          address_line: registeredOffice || null,
+          country_id: country ? Number(country) : null,
+          state_id: state ? Number(state) : null,
+          state_code: stateCode || null,
+          city: city || null,
+          pincode: pincode || null,
+        },
       });
       setVendorId(res.data?.data?.id ?? vendorId);
       // Capture the server-assigned vendor_code so the header on
@@ -1745,7 +1759,19 @@ export default function AddVendorModal(props: {
   };
 
   const goPrev = () => {
-    if (step > 1) setStep((step - 1) as StepKey);
+    // Walk back TAB-WISE (mirrors Save & Next) instead of jumping whole stages.
+    // Pure navigation — no save — so the user can flip back through sub-tabs.
+    if (step > 2) { setStep((step - 1) as StepKey); return; }
+    if (step === 2) {
+      const idx = KYC_TAB_ORDER.indexOf(kycTab);
+      if (idx > 0) { setKycTab(KYC_TAB_ORDER[idx - 1]); return; }   // back one KYC sub-tab
+      // First KYC sub-tab → step back into Step 1's LAST sub-tab (Contact Person).
+      setStep(1);
+      setIdTab('address');
+      return;
+    }
+    if (step === 1 && idTab === 'address') setIdTab('identification');
+    // step 1 / identification is the very first tab — nothing before it.
   };
 
   /* Final step is KYC — there is no separate Product Mapping step in the
@@ -1914,7 +1940,9 @@ export default function AddVendorModal(props: {
     fd.append('branch_address', bankDraft.branchAddress || '');
     if (bankDraft.chequeFile) fd.append('cheque', bankDraft.chequeFile);
 
-    setSaving(true);
+    // No setSaving here — the Add Bank popup (PopupShell) shows its OWN "Saving…"
+    // spinner on its Save button. Touching the shared `saving` flag would ALSO
+    // spin the outer "Update & Next" footer button, which is wrong.
     try {
       if (editingBankId) {
         // Laravel doesn't parse multipart bodies on PUT — POST with a method
@@ -1950,8 +1978,6 @@ export default function AddVendorModal(props: {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save bank';
       toast.error('Save failed', msg);
-    } finally {
-      setSaving(false);
     }
   };
   const removeBankRow = async (id: string) => {
@@ -1979,11 +2005,13 @@ export default function AddVendorModal(props: {
   };
 
   const openGstPopup = () => {
-    // A supplier's GSTIN stays the same across scrutiny records (only the
-    // filing period changes), so pre-fill the GST number from the last
-    // entry to save re-typing. Still fully editable in case it differs.
-    const prevGst = gstRows.length ? gstRows[gstRows.length - 1].gstNumber : '';
-    setGstDraft({ ...EMPTY_GST_DRAFT, gstNumber: prevGst });
+    // Start each new scrutiny entry with a BLANK GST number so it is clearly
+    // its own independent record. The old code pre-filled it from the previous
+    // row, which made a fresh entry look like it "carried over" and matched the
+    // existing rows — so a user adding a 2nd GST thought all rows had changed.
+    // (Every row is stored separately server-side; adding one never alters the
+    // others — this just removes the misleading pre-fill.)
+    setGstDraft({ ...EMPTY_GST_DRAFT });
     setGstPopupOpen(true);
   };
   const saveGstDraft = async () => {
@@ -1992,7 +2020,8 @@ export default function AddVendorModal(props: {
     const gstErr = validateGstin(gstDraft.gstNumber); if (gstErr) { toast.error('Invalid GST Number', gstErr); return; }
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return; }
 
-    setSaving(true);
+    // No setSaving — the Add GST Scrutiny popup (PopupShell) shows its OWN Save
+    // spinner; the shared flag would also spin the outer "Update & Next" button.
     try {
       const { data } = await api.post<{ data: ApiGstRow }>(`/vendors/${vendorId}/gst-scrutiny`, {
         gst_number: gstDraft.gstNumber,
@@ -2002,22 +2031,24 @@ export default function AddVendorModal(props: {
         red_flags: gstDraft.redFlags || null,
       });
       const g = data.data;
-      setGstRows(prev => [...prev, {
+      const gstNo = g.gst_number ?? '';
+      // Prepend the new scrutiny at the TOP, and sync EVERY row's GST number to
+      // it — GST is a supplier-wide value shared across all scrutiny periods
+      // (the backend mirrors this by updating all rows for the vendor).
+      setGstRows(prev => [{
         id: String(g.id),
-        gstNumber: g.gst_number ?? '',
+        gstNumber: gstNo,
         status: (g.status === 'Active' ? 'Active' : 'Inactive'),
         scrutinyDate: g.scrutiny_date ?? new Date().toISOString().slice(0, 10),
         lastFilingDate: g.last_filing_date ?? '',
         prevNonGst2aInvoice: g.prev_non_gst_2a_invoice ?? '',
         redFlags: g.red_flags ?? '',
-      }]);
+      }, ...prev].map(r => ({ ...r, gstNumber: gstNo })));
       setGstPopupOpen(false);
       toast.success('GST scrutiny saved', g.gst_number ?? '');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save GST scrutiny';
       toast.error('Save failed', msg);
-    } finally {
-      setSaving(false);
     }
   };
   const removeGstRow = async (id: string) => {
@@ -2420,7 +2451,12 @@ export default function AddVendorModal(props: {
      that ALREADY has a primary contact), UNLESS the user clicked Edit on its
      row — then editingPrimary re-opens it. If a supplier was created WITHOUT a
      primary contact, the card stays open on edit so it can finally be filled. */
-  const hasPrimaryContact = !!(contactName.trim() && contactNo.trim());
+  // Only treat the primary contact as "saved/locked" when it is COMPLETE (all
+  // required fields present). An incomplete/partial contact — e.g. a supplier
+  // whose address was saved at Stage 1 but the contact person was never fully
+  // filled — must stay OPEN on edit so the user can finish it, instead of being
+  // locked behind the Edit-icon step with invalid data that blocks Save.
+  const hasPrimaryContact = !!(contactName.trim() && designation.trim() && contactNo.trim() && email.trim());
   const primaryLocked = (primarySaved || (isEdit && hasPrimaryContact)) && !editingPrimary;
   const startEditPrimary = () => {
     setEditingPrimary(true);
@@ -3305,11 +3341,13 @@ export default function AddVendorModal(props: {
             <span className="avm-foot-dot" /> Fields marked with <span className="avm-req">*</span> are required
           </div>
           <div className="avm-foot-right">
-            {step > 1 && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
+            {!(step === 1 && idTab === 'identification') && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
             {!(step === 2 && KYC_TAB_ORDER.indexOf(kycTab) === KYC_TAB_ORDER.length - 1) ? (
-              <button className="avm-btn-primary" onClick={goNext} disabled={saving}>
+              <button className="avm-btn-primary" onClick={goNext} disabled={saving || loadingEdit || mastersLoading}>
                 {saving ? (
                   <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+                ) : (loadingEdit || mastersLoading) ? (
+                  <><span className="avm-spinner" role="status" aria-hidden="true" /> Loading…</>
                 ) : (
                   <>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
@@ -3319,9 +3357,11 @@ export default function AddVendorModal(props: {
               </button>
             ) : (
               /* Last KYC sub-tab = final step. Saves + closes (no Product step). */
-              <button className="avm-btn-primary" onClick={finishSupplier} disabled={saving}>
+              <button className="avm-btn-primary" onClick={finishSupplier} disabled={saving || loadingEdit || mastersLoading}>
                 {saving ? (
                   <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+                ) : (loadingEdit || mastersLoading) ? (
+                  <><span className="avm-spinner" role="status" aria-hidden="true" /> Loading…</>
                 ) : (
                   <>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
@@ -4766,7 +4806,11 @@ function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; on
               <td>{r.branchName}</td>
               <td><span className="font-monospace fs-13">{r.accountNumber}</span></td>
               <td><span className="font-monospace fs-13">{r.ifsc}</span></td>
-              <td>{r.branchAddress || '—'}</td>
+              <td>{r.branchAddress
+                ? (r.branchAddress.length > 30
+                    ? <Tooltip label={r.branchAddress}><span>{r.branchAddress.slice(0, 30)}…</span></Tooltip>
+                    : r.branchAddress)
+                : '—'}</td>
               <td>
                 <AttachmentCell
                   fileName={r.chequeFileName}

@@ -1,37 +1,31 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import Tooltip from '../../../../components/ui/Tooltip';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useConfirm } from '../../../../contexts/ConfirmContext';
+import api from '../../../../api';
 import DebitNoteDetail from './DebitNoteDetail';
 // Reuse the SPI list styling so Debit Note matches the SPI / PO design 1:1.
 import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
- * Debit Note — list view (DESIGN ONLY). Mirrors the Supplier Purchase Invoice
- * list: header banner, "what we are doing" step strip, and a worklist table.
- * Data is static for now (from the P2P prototype); the create/map wizard and
- * backend wiring land in later phases.
+ * Debit Note — list view (server-driven). Mirrors the Supplier Purchase
+ * Invoice list: header banner, "what we are doing" step strip, and a worklist
+ * table. Rows, search, pagination and row actions all hit the Debit Note API.
  * ──────────────────────────────────────────────────────────────────────── */
 
-const inr = (n: number) => `₹${n.toLocaleString('en-IN')}`;
+const inr = (n: number) => `₹${(n ?? 0).toLocaleString('en-IN')}`;
 
+type DnStatus = 'Unpaid' | 'Partially Paid' | 'Fully Paid' | 'Payment Overdue';
 type DnRow = {
+  id: number;
   no: string; dnDate: string; type: string;
   ship: string; proc: string;
   spi: string; spiDate: string; po: string; poDate: string;
   supplier: string; exp: string; total: number;
-  status: 'Unpaid' | 'Partially Paid' | 'Fully Paid' | 'Payment Overdue';
+  status: DnStatus;
   zoho: 'sync' | 'not';
 };
-
-const DN_DATA: DnRow[] = [
-  { no: 'DN/2025-26/001', dnDate: '2026-05-12', type: 'Purchase Return',     ship: 'SHP-001', proc: 'PRC-001', spi: 'SPI/2025-26/001', spiDate: '2026-05-10', po: 'PO/2025-26/001', poDate: '2026-04-15', supplier: 'Reliance Industries Ltd', exp: '15 May 2026', total: 3125,  status: 'Unpaid',          zoho: 'not'  },
-  { no: 'DN/2025-26/002', dnDate: '2026-05-20', type: 'Rate Difference',     ship: 'SHP-014', proc: 'PRC-009', spi: 'SPI/2025-26/002', spiDate: '2026-05-18', po: 'PO/2025-26/002', poDate: '2026-04-22', supplier: 'Tata Steel Ltd',          exp: '22 May 2026', total: 18750, status: 'Partially Paid',  zoho: 'not'  },
-  { no: 'DN/2025-26/003', dnDate: '2026-05-28', type: 'Quantity Difference', ship: 'SHP-021', proc: 'PRC-015', spi: 'SPI/2025-26/003', spiDate: '2026-05-25', po: 'PO/2025-26/003', poDate: '2026-05-01', supplier: 'Adani Enterprises Ltd',    exp: '01 Jun 2026', total: 9420,  status: 'Fully Paid',      zoho: 'sync' },
-  { no: 'DN/2025-26/004', dnDate: '2026-06-05', type: 'Quality Rejection',   ship: 'SHP-025', proc: 'PRC-018', spi: 'SPI/2025-26/004', spiDate: '2026-06-02', po: 'PO/2025-26/004', poDate: '2026-05-12', supplier: 'Mahindra Logistics Ltd',  exp: '12 Jun 2026', total: 26500, status: 'Payment Overdue', zoho: 'not'  },
-  { no: 'DN/2025-26/005', dnDate: '2026-06-08', type: 'GST Adjustment',      ship: 'SHP-031', proc: 'PRC-022', spi: 'SPI/2025-26/005', spiDate: '2026-06-04', po: 'PO/2025-26/005', poDate: '2026-05-15', supplier: 'JSW Steel Ltd',           exp: '18 Jun 2026', total: 14200, status: 'Fully Paid',      zoho: 'sync' },
-  { no: 'DN/2025-26/006', dnDate: '2026-06-10', type: 'Freight Recovery',    ship: 'SHP-034', proc: 'PRC-025', spi: 'SPI/2025-26/006', spiDate: '2026-06-08', po: 'PO/2025-26/006', poDate: '2026-05-20', supplier: 'Vedanta Ltd',             exp: '20 Jun 2026', total: 7800,  status: 'Partially Paid',  zoho: 'not'  },
-];
 
 const STEPS = [
   { n: '01', ico: <StepIco1 />, title: 'Link Supplier & Invoice',   desc: 'Select the supplier and the reference invoice or PO.' },
@@ -49,26 +43,89 @@ const statusClass = (s: DnRow['status']) =>
 
 export default function DebitNote() {
   const toast = useToast();
+  const confirm = useConfirm();
   const [q, setQ] = useState('');
+  const [debQ, setDebQ] = useState('');
   const [page, setPage] = useState(1);
   const [rpp, setRpp] = useState(10);
   const [menu, setMenu] = useState<{ row: DnRow; x: number; y: number } | null>(null);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
 
-  const lo = q.trim().toLowerCase();
-  const filtered = lo
-    ? DN_DATA.filter(r => `${r.no} ${r.type} ${r.spi} ${r.po} ${r.supplier} ${r.status}`.toLowerCase().includes(lo))
-    : DN_DATA;
-  const total = filtered.length;
+  const [rows, setRows] = useState<DnRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = () => setReloadKey(k => k + 1);
+
+  const rootRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const autoFitRef = useRef(true); // false once the user picks a rows-per-page manually
+  const [fillH, setFillH] = useState<number | undefined>(undefined); // stretch the card to the viewport
+
   const pageCount = Math.max(1, Math.ceil(total / rpp));
   const curPage = Math.min(page, pageCount);
   const start = (curPage - 1) * rpp;
-  const rows = filtered.slice(start, start + rpp);
 
-  const soon = () => toast.info('Coming soon', 'Debit Note actions are in development.');
+  // Debounce the search box.
+  useEffect(() => { const t = setTimeout(() => { setDebQ(q); setPage(1); }, 300); return () => clearTimeout(t); }, [q]);
+
+  // Auto-fit rows-per-page to the viewport so the pagination footer always sits
+  // at the bottom of the screen without scrolling (mirrors the SPI list).
+  useEffect(() => {
+    const recompute = () => {
+      const el = scrollRef.current;
+      if (!el) return;
+      if (window.innerWidth <= 768) { setFillH(undefined); return; }
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 44, ROW = 58, FOOTER = 96;
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
+      const card = scrollRef.current?.closest('.spi-card') as HTMLElement | null;
+      if (card) {
+        const fh = Math.max(0, window.innerHeight - card.getBoundingClientRect().top - 20);
+        setFillH(prev => (prev === fh ? prev : fh));
+      }
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
+    const recomputeDebounced = () => { if (settleTimer) clearTimeout(settleTimer); settleTimer = setTimeout(recompute, 140); };
+    window.addEventListener('resize', recomputeDebounced);
+    return () => { if (settleTimer) clearTimeout(settleTimer); window.removeEventListener('resize', recomputeDebounced); cancelAnimationFrame(raf); };
+  }, []);
+
+  // Fetch the current page of debit notes.
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    api.get('/p2p/debit-notes', { params: { page, per_page: rpp, q: debQ || undefined } })
+      .then(r => { if (!alive) return; setRows((r.data?.data ?? []) as DnRow[]); setTotal(r.data?.pagination?.total ?? 0); })
+      .catch(() => { if (alive) { setRows([]); setTotal(0); } })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [page, rpp, debQ, reloadKey]);
+
+  const openCreate = () => { setEditId(null); setDetailOpen(true); };
+  const openEdit = (r: DnRow) => { setEditId(r.id); setDetailOpen(true); };
+
+  const syncRow = async (r: DnRow) => {
+    try { await api.post(`/p2p/debit-notes/${r.id}/sync`); toast.success(`${r.no} synced with Zohobook`); reload(); }
+    catch { toast.error('Sync failed', 'Could not sync this debit note.'); }
+  };
+
+  const delRow = async (r: DnRow) => {
+    const ok = await confirm({ title: 'Delete debit note', message: `Delete ${r.no}? This cannot be undone.`, tone: 'danger', confirmLabel: 'Delete' });
+    if (!ok) return;
+    try { await api.delete(`/p2p/debit-notes/${r.id}`); toast.success(`${r.no} deleted`); reload(); }
+    catch { toast.error('Delete failed', 'Could not delete this debit note.'); }
+  };
+
+  const soon = () => toast.info('Coming soon', 'This action is in development.');
 
   return (
-    <div className="spi-root dn-scope">
+    <div className="spi-root dn-scope" ref={rootRef}>
       {/* ── Header banner ── */}
       <div className="spi-head">
         <div className="spi-head-left">
@@ -78,7 +135,7 @@ export default function DebitNote() {
             <div className="spi-head-sub">Issue and track supplier debit notes for returns, rejected goods, and price or quantity adjustments — from creation to tax reversal and accounting sync.</div>
           </div>
         </div>
-        <button type="button" className="spi-head-btn" onClick={() => setCreateOpen(true)}>
+        <button type="button" className="spi-head-btn" onClick={openCreate}>
           <IcoPlus size={15} /> Create Debit Note
         </button>
       </div>
@@ -108,7 +165,7 @@ export default function DebitNote() {
       </div>
 
       {/* ── List card ── */}
-      <div className="spi-card">
+      <div className="spi-card" style={{ minHeight: fillH }}>
         {/* Figma ".dnlh" list header: teal icon + title + records pill + subtitle, search on the right. */}
         <div className="polist-top dnlh">
           <div className="dnlh-left">
@@ -116,7 +173,7 @@ export default function DebitNote() {
             <div className="dnlh-txt">
               <div className="dnlh-titrow">
                 <span className="dnlh-title">All Debit Notes</span>
-                <span className="dnlh-count">{DN_DATA.length} records</span>
+                <span className="dnlh-count">{total} records</span>
               </div>
               <div className="dnlh-sub">Track returns, rate &amp; quantity adjustments, and payment recovery</div>
             </div>
@@ -128,7 +185,7 @@ export default function DebitNote() {
         </div>
 
         {/* Table */}
-        <div className="spi-tablewrap">
+        <div className="spi-tablewrap" ref={scrollRef}>
           <table className="spi-table">
             <thead>
               <tr>
@@ -148,21 +205,23 @@ export default function DebitNote() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 ? (
+              {loading ? (
+                <tr><td colSpan={13}><div className="spi-empty"><div className="spi-empty-t">Loading…</div></div></td></tr>
+              ) : rows.length === 0 ? (
                 <tr><td colSpan={13}>
                   <div className="spi-empty"><div className="spi-empty-t">No debit notes found</div><div className="spi-empty-s">Create a debit note to get started, or try a different search.</div></div>
                 </td></tr>
               ) : rows.map((r, i) => (
-                <tr key={r.no}>
+                <tr key={r.id}>
                   <td className="spi-c-sr"><span className="spi-sr">{start + i + 1}</span></td>
                   <td><span className="spi-idstack"><span className="spi-pill spi-pill-spi">{r.no}</span><span className="spi-date-sub">{r.dnDate}</span></span></td>
-                  <td><span className="dn-type">{r.type}</span></td>
-                  <td><span className="spi-pill spi-pill-shp">{r.ship}</span></td>
-                  <td><span className="spi-pill spi-pill-proc">{r.proc}</span></td>
-                  <td><span className="spi-idstack"><span className="spi-pill spi-pill-pi">{r.spi}</span><span className="spi-date-sub">{r.spiDate}</span></span></td>
-                  <td><span className="spi-idstack"><span className="spi-pill spi-pill-po">{r.po}</span><span className="spi-date-sub">{r.poDate}</span></span></td>
-                  <td title={r.supplier}>{r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier}</td>
-                  <td><span className="spi-date-sub">{r.exp}</span></td>
+                  <td><span className="dn-type">{r.type || '—'}</span></td>
+                  <td>{r.ship ? <span className="spi-pill spi-pill-shp">{r.ship}</span> : '—'}</td>
+                  <td>{r.proc ? <span className="spi-pill spi-pill-proc">{r.proc}</span> : '—'}</td>
+                  <td>{r.spi ? <span className="spi-idstack"><span className="spi-pill spi-pill-pi">{r.spi}</span><span className="spi-date-sub">{r.spiDate}</span></span> : '—'}</td>
+                  <td>{r.po ? <span className="spi-idstack"><span className="spi-pill spi-pill-po">{r.po}</span><span className="spi-date-sub">{r.poDate}</span></span> : '—'}</td>
+                  <td title={r.supplier ?? ''}>{r.supplier ? (r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier) : '—'}</td>
+                  <td><span className="spi-date-sub">{r.exp || '—'}</span></td>
                   <td className="spi-c-r spi-amt">{inr(r.total)}</td>
                   <td className="spi-c-c"><span className={`dn-st ${statusClass(r.status)}`}>{r.status}</span></td>
                   <td className="spi-c-c">
@@ -172,8 +231,8 @@ export default function DebitNote() {
                     <span className="spi-acts">
                       {r.zoho === 'sync'
                         ? <Tooltip label="Already synced to Zohobook"><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
-                        : <Tooltip label="Sync this debit note to Zohobook"><button type="button" className="spi-zohobtn" onClick={soon}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
-                      <Tooltip label="Edit debit note"><button type="button" className="spi-iconbtn" onClick={soon}><IcoEdit /></button></Tooltip>
+                        : <Tooltip label="Sync this debit note to Zohobook"><button type="button" className="spi-zohobtn" onClick={() => syncRow(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
+                      <Tooltip label="Edit debit note"><button type="button" className="spi-iconbtn" onClick={() => openEdit(r)}><IcoEdit /></button></Tooltip>
                       <Tooltip label="Email debit note"><button type="button" className="spi-iconbtn" onClick={soon}><IcoMail /></button></Tooltip>
                       <Tooltip label="Record payment"><button type="button" className="spi-iconbtn" onClick={soon}><IcoRupee /></button></Tooltip>
                       <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => { const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ row: r, x: b.right, y: b.bottom + 6 }); }}><IcoMore /></button></Tooltip>
@@ -185,7 +244,7 @@ export default function DebitNote() {
           </table>
         </div>
 
-        <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={n => { setRpp(n); setPage(1); }} pageSizeOptions={[5, 10, 25, 50]} />
+        <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={n => { autoFitRef.current = false; setRpp(n); setPage(1); }} pageSizeOptions={[5, 10, 15]} />
       </div>
 
       {menu && (
@@ -197,18 +256,19 @@ export default function DebitNote() {
             </div>
             <div className="spi-menu-info">
               <span className="spi-pill spi-pill-spi">{menu.row.no}</span>
-              <div className="spi-menu-sup">Supplier: {menu.row.supplier}</div>
+              <div className="spi-menu-sup">Supplier: {menu.row.supplier ?? '—'}</div>
             </div>
             <div className="spi-menu-items">
-              <button type="button" className="spi-menu-item is-teal" onClick={() => { setMenu(null); soon(); }}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
+              <button type="button" className="spi-menu-item is-teal" onClick={() => { const r = menu.row; setMenu(null); syncRow(r); }}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
+              <button type="button" className="spi-menu-item" onClick={() => { const r = menu.row; setMenu(null); openEdit(r); }}><span className="spi-menu-item-ico"><IcoEdit /></span> Edit Debit Note</button>
               <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); soon(); }}><span className="spi-menu-item-ico"><IcoDoc size={15} /></span> Download Debit Note</button>
-              <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); soon(); }}><span className="spi-menu-item-ico"><IcoRupee /></span> Record Payment</button>
+              <button type="button" className="spi-menu-item is-danger" onClick={() => { const r = menu.row; setMenu(null); delRow(r); }}><span className="spi-menu-item-ico"><IcoTrash /></span> Delete Debit Note</button>
             </div>
           </div>
         </div>
       )}
 
-      {createOpen && <DebitNoteDetail onClose={() => setCreateOpen(false)} />}
+      {detailOpen && <DebitNoteDetail editId={editId} onClose={() => setDetailOpen(false)} onSaved={reload} />}
 
       <style>{DN_CSS}</style>
     </div>
@@ -222,6 +282,8 @@ const DN_CSS = `
 /* Exact Figma table cell — DM Sans 11.5px, #3a5161, centred, 12px 7px padding. */
 .dn-scope .spi-table tbody td { padding:12px 7px; border-bottom:1px solid #eef3f6; color:#3a5161; font-weight:600; font-size:11.5px; text-align:center; vertical-align:middle; line-height:1.35; white-space:normal; }
 .dn-scope .spi-table thead th { text-align:center; }
+/* Mobile: let the wide worklist table scroll horizontally instead of overflowing the card. */
+.dn-scope .spi-tablewrap { overflow-x:auto; }
 /* Figma uniform teal id-pill (DN / SPI / PO / SHP / PRC all identical). */
 .dn-scope .spi-pill { display:inline-block; padding:3px 8px; border:1px solid #cfe3ea; border-radius:7px; background:#f4fafc; color:#0e7490; font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace !important; font-size:10px !important; font-weight:700 !important; white-space:nowrap; }
 /* Figma date sub-text — DM Sans 11px, #64748b. */
@@ -285,6 +347,7 @@ function IcoRupee({ size = 14 }: { size?: number }) { return <svg width={size} h
 function IcoMore({ size = 16 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>; }
 function IcoPlus({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>; }
 function IcoMail({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>; }
+function IcoTrash({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>; }
 
 /* ── Step-strip icons — EXACT Figma clones (.bref-item__ico): 11px glyph, stroke-width 2.4. ── */
 function StepSvg({ size = 11, children }: { size?: number; children: ReactNode }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">{children}</svg>; }
