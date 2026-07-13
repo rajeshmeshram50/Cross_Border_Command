@@ -433,6 +433,11 @@ export default function AddProductModal(props: {
      the convention used everywhere else (vendor pricing, ProductView
      vendor table) and are enough resolution for any practical rate. */
   const gstPctStr = gstPctNum ? `${gstPctNum.toFixed(2)}%` : '';
+  /* A supplier can only be mapped once the product carries a GST % (set in the
+     Sales Config step). The vendor mapping inherits that rate to compute its
+     GST amount + total, so with no rate the mapping would be incomplete — the
+     Map Supplier flow is blocked until a GST % exists. */
+  const canMapSupplier = gstPctNum > 0;
   const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
   const totalPrice = +(basePriceNum + gstAmt).toFixed(2);
 
@@ -778,6 +783,12 @@ export default function AddProductModal(props: {
   };
 
   const saveVendorDraft = async () => {
+    // Belt to the button/auto-open guards: never persist a mapping without a
+    // product GST % (the inherited rate the GST amount + total depend on).
+    if (!canMapSupplier) {
+      toast.error('GST % required', 'Set a GST % on this product (Sales Config step) before you can map a supplier.');
+      return;
+    }
     const missing: string[] = [];
     if (!vendorSelected)        missing.push('Vendor');
     if (!vendorPp || vendorPp <= 0) missing.push('Purchase Price');
@@ -1727,7 +1738,13 @@ export default function AddProductModal(props: {
     if (props.openSupplierMap && !supplierMapFiredRef.current && productId && !mastersLoading && !loadingEdit) {
       supplierMapFiredRef.current = true;
       setSupplierPopupOpen(true);
-      setVendorDraftOpen(true);
+      // Only pop the Map Supplier form when the product has a GST % — otherwise
+      // land on the (empty) supplier list and tell the user what's missing.
+      if (canMapSupplier) {
+        setVendorDraftOpen(true);
+      } else {
+        toast.error('GST % required', 'Set a GST % on this product (Sales Config step) before you can map a supplier.');
+      }
     }
   }, [props.openSupplierMap, productId, mastersLoading, loadingEdit]);
 
@@ -2270,7 +2287,19 @@ export default function AddProductModal(props: {
                 <div className="apm-sup-body">
               <div className="apm-sup-bar">
                 <span className="apm-sup-countpill">{vendors.length} supplier{vendors.length !== 1 ? 's' : ''} mapped</span>
-                <button type="button" className="apm-sup-map" onClick={() => setVendorDraftOpen(true)}>
+                <button
+                  type="button"
+                  className="apm-sup-map"
+                  disabled={!canMapSupplier}
+                  title={canMapSupplier ? undefined : 'Set a GST % on this product (Sales Config) before mapping a supplier.'}
+                  onClick={() => {
+                    if (!canMapSupplier) {
+                      toast.error('GST % required', 'Set a GST % on this product (Sales Config step) before you can map a supplier.');
+                      return;
+                    }
+                    setVendorDraftOpen(true);
+                  }}
+                >
                   <span>+</span> Map Supplier
                 </button>
               </div>
@@ -2300,15 +2329,26 @@ export default function AddProductModal(props: {
                         <Field label="Supplier Name" required>
                           <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select Supplier Name"
                             options={vendorOpts.map(v => {
-                              // Show the supplier's segment(s) alongside the name so the
-                              // right supplier is easy to pick (segment_ids → titles).
-                              const segs = (v.segmentIds ?? [])
+                              // Show the supplier's segment(s) as violet pills beside the
+                              // name so the right supplier is easy to pick. Only the first
+                              // segment shows inline; the rest collapse into a "+N" pill
+                              // that opens a mini popup listing them on click (keeps the
+                              // row compact).
+                              const segNames = (v.segmentIds ?? [])
                                 .map(id => labelOf(optSegments, String(id), ''))
-                                .filter(Boolean)
-                                .join(', ');
+                                .filter(Boolean);
+                              const MAX_INLINE = 1;
+                              const badges: OptBadge[] = segNames
+                                .slice(0, MAX_INLINE)
+                                .map(s => ({ text: s, tone: 'violet' as const }));
+                              if (segNames.length > MAX_INLINE) {
+                                const rest = segNames.slice(MAX_INLINE);
+                                badges.push({ text: `+${rest.length}`, tone: 'gray' as const, title: rest.join(', '), items: rest });
+                              }
                               return {
                                 value: v.code,
-                                label: `${v.code ? `${formatSupplierCode(v.code)}: ` : ''}${v.name}${segs ? ` (${segs})` : ''}`,
+                                label: `${v.code ? `${formatSupplierCode(v.code)}: ` : ''}${v.name}`,
+                                badges,
                               };
                             })}
                           />
@@ -2805,7 +2845,11 @@ function Field(props: {
   );
 }
 
-type Opt = string | { value: string; label: string };
+/* A pill shown beside an option label — mirrors MasterSelect's OptBadgeSpec.
+   `title` is the hover tooltip; `items` makes a "+N more" pill clickable,
+   popping a mini list of the hidden tags. */
+type OptBadge = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: string[] };
+type Opt = string | { value: string; label: string; badges?: OptBadge[] };
 function SelectInput(props: {
   value: string;
   onChange: (v: string) => void;
@@ -2922,7 +2966,7 @@ function UploadDropzone(props: {
               aria-label={`Show all ${total} images`}
             >
               <img src={props.preview[MAX_VISIBLE - 1]} alt="" />
-              <span className="apm-upload-more-badge">+{total - (MAX_VISIBLE - 1)} more</span>
+              <span className="apm-upload-more-badge">+{total - (MAX_VISIBLE - 1)}</span>
             </button>
           )}
         </div>
