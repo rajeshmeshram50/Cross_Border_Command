@@ -444,14 +444,18 @@ class SupplierPurchaseInvoiceController extends Controller
      */
     private function poFullyInvoiced(int $poId): bool
     {
+        // Count only product-bearing lines on both sides so a junk/null-product
+        // line can't inflate the invoiced total and falsely lock the PO. Matches
+        // overInvoiced(), which also filters on product_id.
         $ordered = (float) DB::table('purchase_order_items')
-            ->where('purchase_order_id', $poId)->sum('quantity');
+            ->where('purchase_order_id', $poId)->whereNotNull('product_id')->sum('quantity');
         if ($ordered <= 0) return false;
 
         $invoiced = (float) DB::table('supplier_purchase_invoice_items as spii')
             ->join('supplier_purchase_invoices as spi', 'spi.id', '=', 'spii.supplier_purchase_invoice_id')
             ->where('spi.purchase_order_id', $poId)
             ->whereNull('spi.deleted_at')
+            ->whereNotNull('spii.product_id')
             ->sum('spii.quantity');
 
         return $invoiced >= $ordered;
@@ -506,7 +510,7 @@ class SupplierPurchaseInvoiceController extends Controller
             'physical_inspection' => 'nullable|boolean',
             'supplier_type' => 'nullable|string|max:128',
             'currency' => 'nullable|string|max:8',
-            'exchange_rate' => 'nullable|numeric',
+            'exchange_rate' => 'nullable|numeric|min:0',
             'inco_term' => 'nullable|string|max:16',
             'port_of_loading' => 'nullable|string|max:128',
             'port_of_discharge' => 'nullable|string|max:128',
@@ -514,24 +518,24 @@ class SupplierPurchaseInvoiceController extends Controller
             'country_of_origin' => 'nullable|string|max:128',
             'purchase_order_id' => 'nullable|integer',
             'vendor_id' => 'nullable|integer',
-            'total_paid' => 'nullable|numeric',
-            'shipping_charges' => 'nullable|numeric',
-            'packaging_charges' => 'nullable|numeric',
-            'other_charges' => 'nullable|numeric',
+            'total_paid' => 'nullable|numeric|min:0',
+            'shipping_charges' => 'nullable|numeric|min:0',
+            'packaging_charges' => 'nullable|numeric|min:0',
+            'other_charges' => 'nullable|numeric|min:0',
             'attachment_path' => 'nullable|string|max:255',
             'items' => 'array',
             'items.*.product_id' => 'nullable|integer',
             'items.*.product_code' => 'nullable|string|max:64',
             'items.*.pi_product_name' => 'nullable|string|max:255',
-            'items.*.pi_quantity' => 'nullable|numeric',
+            'items.*.pi_quantity' => 'nullable|numeric|min:0',
             'items.*.po_product_name' => 'nullable|string|max:255',
-            'items.*.po_quantity' => 'nullable|numeric',
-            'items.*.rate_po' => 'nullable|numeric',
+            'items.*.po_quantity' => 'nullable|numeric|min:0',
+            'items.*.rate_po' => 'nullable|numeric|min:0',
             'items.*.product_name' => 'nullable|string|max:255',
-            'items.*.quantity' => 'nullable|numeric',
+            'items.*.quantity' => 'nullable|numeric|min:0',
             'items.*.hsn_code' => 'nullable|string|max:32',
-            'items.*.rate' => 'nullable|numeric',
-            'items.*.gst_pct' => 'nullable|numeric',
+            'items.*.rate' => 'nullable|numeric|min:0',
+            'items.*.gst_pct' => 'nullable|numeric|min:0|max:100',
         ]);
 
         $user = $request->user();
@@ -570,8 +574,9 @@ class SupplierPurchaseInvoiceController extends Controller
             }
         }
 
-        // Intra-state (Maharashtra 27) → CGST/SGST 9/9; else split the product GST.
-        $v['_intra'] = (string) $v['_supplierStateCode'] === '27';
+        // Intra- vs inter-state: compare the vendor's state against THIS tenant's
+        // own registered home state (branch GST state code), not a hardcoded '27'.
+        $v['_intra'] = (string) $v['_supplierStateCode'] === (string) $this->homeStateCode($user->branch_id);
         return $v;
     }
 
@@ -846,6 +851,18 @@ class SupplierPurchaseInvoiceController extends Controller
     }
 
     /* ── Tenant / branch scope (mirrors PurchaseOrderController) ── */
+
+    /**
+     * This tenant's own registered GST state code for the intra- vs inter-state
+     * (CGST/SGST vs IGST) decision. From the branch's `gst_state_code`, deriving
+     * from its GSTIN when blank; '27' only if no GST state is captured at all.
+     */
+    private function homeStateCode(?int $branchId): string
+    {
+        $branch = $branchId ? \App\Models\Branch::find($branchId) : null;
+        $code = optional($branch)->gst_state_code ?: substr((string) optional($branch)->gst_number, 0, 2);
+        return $code !== '' && $code !== null ? (string) $code : '27';
+    }
 
     private function applyScope($q, $user, ?int $branchFilter = null): void
     {

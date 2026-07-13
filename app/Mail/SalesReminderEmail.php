@@ -115,4 +115,5 @@ class SalesReminderEmail extends Mailable
         }
         return [];
     }
+    
 }
