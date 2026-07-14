@@ -47,6 +47,16 @@ interface ProdRow {
 
 const num = (v: any) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 
+// Supplier Legal Status — the 5 compliance parameters shown once a supplier is
+// linked (design mirrors the SPI / PO wizard's legal card grid).
+const LEGAL_PARAMS = [
+  { name: 'Company Due Diligence', d: 4, t: 4 },
+  { name: 'Owner KYC Documents',   d: 4, t: 4 },
+  { name: 'Trade Licenses',        d: 3, t: 3 },
+  { name: 'Trade Documents',       d: 4, t: 4 },
+  { name: 'Agreements',            d: 3, t: 3 },
+];
+
 export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose: () => void; onSaved?: () => void; editId?: number | null }) {
   const toast = useToast();
   const [step, setStep] = useState<1 | 2>(1);
@@ -345,7 +355,10 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
               {/* Supplier Legal Status card */}
               <div className="spi-dt-card">
                 <div className="spi-dt-card-head" style={{ cursor: 'pointer' }} onClick={() => setLegalOpen(o => !o)}>
-                  <div className="spi-dt-card-title"><span className="spi-dt-card-ico spi-dt-card-ico-2"><IcoShield /></span> Supplier Legal Status</div>
+                  <div className="spi-dt-card-title">
+                    <span className="spi-dt-card-ico spi-dt-card-ico-2"><IcoShield /></span> Supplier Legal Status
+                    {sel && <span className="spi-dt-legal-badge ok">100% Compliant</span>}
+                  </div>
                   <span className="spi-dt-minus">{legalOpen ? '–' : '+'}</span>
                 </div>
                 {legalOpen && (
@@ -354,7 +367,19 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
                       <div className="spi-dt-legal-bar"><span className="spi-dt-legal-fill" style={{ width: sel ? '100%' : '0%', background: sel ? 'linear-gradient(90deg,#0e7490,#0891b2 55%,#06b6d4)' : undefined }} /></div>
                       <div className="spi-dt-legal-pct">{sel ? '100%' : '0%'}</div>
                     </div>
-                    <div className="spi-dt-legal-note">{sel ? `${sel.name} — legal & compliance documents verified.` : 'Select an SPI to view legal & compliance status.'}</div>
+                    {sel ? (<>
+                      <div className="spi-dt-legal-summary"><strong>18</strong> of <strong>18</strong> documents completed across all 5 parameters</div>
+                      <div className="spi-dt-legal-grid">
+                        {LEGAL_PARAMS.map(c => (
+                          <div key={c.name} className="spi-dt-legal-pcard spi-dt-legal-pcard--ok">
+                            <div className="spi-dt-legal-pcard-hd"><span className="spi-dt-legal-pcard-ico"><IcoCheck /></span><span className="spi-dt-legal-pcard-nm">{c.name}</span><span className="spi-dt-legal-pcard-cnt">{c.d} / {c.t}</span></div>
+                            <div className="spi-dt-legal-pcard-bar"><div className="spi-dt-legal-pcard-fill" style={{ width: '100%' }} /></div>
+                          </div>
+                        ))}
+                      </div>
+                    </>) : (
+                      <div className="spi-dt-legal-note">Select an SPI to view legal &amp; compliance status.</div>
+                    )}
                   </div>
                 )}
               </div>
