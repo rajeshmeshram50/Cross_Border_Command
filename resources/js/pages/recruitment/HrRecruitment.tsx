@@ -1313,7 +1313,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
     const rejected           = requests.filter(r => r.status === 'Rejected').length;
     const submitted          = requests.filter(r => r.status === 'Submitted').length;
     const critical           = requests.filter(r => r.urgency === 'Critical').length;
-    const recruitmentCreated = requests.filter(r => linkedHrIds.has(Number(r.id))).length;
+    const recruitmentCreated = requests.filter(r => linkedHrIds.has(Number(r.id)) && r.status !== 'Rejected').length;
     return { total, rejected, submitted, critical, recruitmentCreated };
   }, [requests, linkedHrIds]);
 
@@ -1321,8 +1321,11 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
     return requests.filter(r => {
       const linked = linkedHrIds.has(Number(r.id));
       const rejected = r.status === 'Rejected';
-      if (tab === 'created')  return linked;
-      if (tab === 'rejected') return rejected && !linked;
+      // Rejected always wins: a rejected request belongs only in the Rejected
+      // tab, even if a recruitment was created before it was rejected. Without
+      // excluding rejected here, such rows leaked into "Recruitment Created".
+      if (tab === 'created')  return linked && !rejected;
+      if (tab === 'rejected') return rejected;
       return !linked && !rejected;
     });
   }, [requests, linkedHrIds, tab]);
@@ -1344,8 +1347,8 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
   }, [tabRequests, statusFilter, urgencyFilter, q]);
 
   const pendingCount  = useMemo(() => requests.filter(r => !linkedHrIds.has(Number(r.id)) && r.status !== 'Rejected').length, [requests, linkedHrIds]);
-  const createdCount  = useMemo(() => requests.filter(r =>  linkedHrIds.has(Number(r.id))).length, [requests, linkedHrIds]);
-  const rejectedCount = useMemo(() => requests.filter(r => !linkedHrIds.has(Number(r.id)) && r.status === 'Rejected').length, [requests, linkedHrIds]);
+  const createdCount  = useMemo(() => requests.filter(r =>  linkedHrIds.has(Number(r.id)) && r.status !== 'Rejected').length, [requests, linkedHrIds]);
+  const rejectedCount = useMemo(() => requests.filter(r => r.status === 'Rejected').length, [requests, linkedHrIds]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(page, pageCount);
@@ -1881,7 +1884,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   const [openings, setOpenings]               = useState('');
   const [experience, setExperience]           = useState('');
   const [workMode, setWorkMode]               = useState<WorkMode | ''>('');
-  const [priority, setPriority]               = useState<Priority>('Medium');
+  const [priority, setPriority]               = useState<Priority | ''>('');
   const [hiringManagerId, setHiringManagerId] = useState('');
   const [assignedHrId, setAssignedHrId]       = useState('');
   const [startDate, setStartDate]             = useState('');
@@ -2036,7 +2039,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setOpenings(hr.openings ? String(hr.openings) : '');
       setExperience((hr.required_experience || '') as string);
       setWorkMode((HR_TO_REC_WORK_MODE[hr.work_mode] || '') as WorkMode | '');
-      setPriority((hr.urgency || 'Medium') as Priority);
+      setPriority((hr.urgency || '') as Priority | '');
       setHiringManagerId('');
       setAssignedHrId('');
       setStartDate('');
@@ -2049,7 +2052,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     } else {
       setJobTitle(''); setDepartmentId(''); setDesignationId(''); setPrimaryRoleId('');
       setCtcRange(''); setEmploymentType('');
-      setOpenings(''); setExperience(''); setWorkMode(''); setPriority('Medium');
+      setOpenings(''); setExperience(''); setWorkMode(''); setPriority('');
       setHiringManagerId(''); setAssignedHrId(''); setStartDate(''); setDeadline('');
       setJobDescription(''); setRequirements('');
       setPostOnPortal(false); setNotifyTeamLeads(false); setEnableReferralBonus(false);

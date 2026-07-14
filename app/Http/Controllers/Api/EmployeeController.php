@@ -352,7 +352,13 @@ class EmployeeController extends Controller
             ->where('status', 'active');
         if (!$user->isSuperAdmin()) {
             $uq->where('client_id', $user->client_id);
-            if ($user->user_type === 'branch_user') {
+            // Branch-bound actors (a branch_user AND an employee granted HRMS
+            // access) are strictly locked to their own branch — same rule
+            // applyScope() enforces for the employee list. Without 'employee'
+            // here, a branch employee adding a hire saw branch users from every
+            // branch of the client in the Reporting Manager picker. Client-level
+            // users (branch_id IS NULL — e.g. Director/CEO) stay visible.
+            if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
                 $uq->where(function ($q) use ($user) {
                     $q->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
                 });

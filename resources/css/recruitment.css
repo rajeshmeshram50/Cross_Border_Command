@@ -11354,3 +11354,25 @@
         .mschips-item.is-on { background: rgba(99,102,241,0.10); color: #6366f1; font-weight: 600; }
         .mschips-check { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--vz-border-color); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .mschips-item.is-on .mschips-check { background: #6366f1; border-color: #6366f1; color: #fff; }
+
+/* Active/Disabled Employee table — sticky header (bug #65).
+   Sticky lives on the th cells (not just thead) so the background paints over
+   scrolled rows in every browser, with an opaque theme-aware fill so dark mode
+   doesn't let rows bleed through the translucent .table-light. */
+.hr-emp-table thead.hr-emp-sticky-head th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background-color: var(--vz-light);
+  background-clip: padding-box;
+}
+[data-bs-theme="dark"] .hr-emp-table thead.hr-emp-sticky-head th,
+[data-layout-mode="dark"] .hr-emp-table thead.hr-emp-sticky-head th {
+  /* Vertical gradient so it reads seamless across the per-cell sticky headers
+     (a horizontal gradient would restart in every column). Matches the active
+     "Active Employees" tab's blurple. */
+  background-color: #6355e0;
+  background-image: linear-gradient(180deg, #7a6ef0 0%, #5a4ce2 100%);
+  color: #ffffff;
+  border-bottom-color: rgba(255,255,255,0.12);
+}
