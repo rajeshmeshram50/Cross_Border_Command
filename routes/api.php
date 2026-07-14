@@ -499,7 +499,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
         [SalesLeadController::class, 'listSharedPricesByProduct'])
         ->whereNumber('id')->whereNumber('mapping');
     Route::get('/sales/shared-prices/{id}/pdf',
-        [SalesLeadController::class, 'sharedPricePdf'])->whereNumber('id');
+        [SalesPdfController::class, 'sharedPriceQuotation'])->whereNumber('id');
 
 
     Route::get   ('/procurements/next-number', [ProcurementController::class, 'nextNumber']);

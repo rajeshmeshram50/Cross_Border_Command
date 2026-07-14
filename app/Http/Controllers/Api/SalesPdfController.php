@@ -84,6 +84,120 @@ class SalesPdfController extends Controller
     }
 
     /**
+     * Shared-price quotation PDF — rendered with the SAME structure as the
+     * Proforma Invoice template, but populated with the single shared-price
+     * line item (a pre-tax quote, so no CGST/SGST/IGST). GET
+     * /sales/shared-prices/{id}/pdf (?inline=1 to stream).
+     */
+    public function sharedPriceQuotation(Request $request, int $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $entry = \App\Models\LeadProductSharedPrice::with([
+            'lead:id,opp_code,unique_query_id,customer_id,created_at,sender_name,sender_email,sender_mobile',
+            'leadProduct:id,product_id,currency,quantity,target_price',
+            'leadProduct.product:id,product_code,name',
+        ])->where('client_id', $user->client_id)->findOrFail($id);
+
+        $lp       = $entry->leadProduct;
+        $product  = $lp?->product;
+        $qty      = $lp?->quantity !== null ? (float) $lp->quantity : 1;
+        $rate     = (float) $entry->quoted_price;
+        $amount   = round($rate * $qty, 2);
+        $currency = $lp?->currency ?: 'INR';
+        $quoteCode = 'Q-' . str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT);
+
+        // Load the customer WITHOUT the branch-visibility global scope (this is the
+        // tenant's own quotation), keeping client isolation via client_id.
+        $cust = $entry->lead?->customer_id
+            ? \App\Models\Customer::withoutGlobalScopes()
+                ->where('client_id', $user->client_id)
+                ->with('primaryAddress')
+                ->find($entry->lead->customer_id)
+            : null;
+        $addr = $cust?->primaryAddress;
+
+        // Reuse the PI view-data, then swap in the real shared product + zero tax.
+        $vd = $this->buildViewData([
+            'customer' => $cust?->legal_name ?: ($cust?->company_name ?? $entry->lead?->sender_name),
+            'consignee' => null,
+            'piNo'     => $quoteCode,
+            'piDate'   => \Carbon\Carbon::parse($entry->shared_at)->format('Y-m-d'),
+            'oppId'    => $entry->lead?->opp_code ?? $entry->lead?->unique_query_id,
+            'oppDate'  => null,
+        ], $currency, 'Domestic', false);
+
+        // Real buyer (customer) — company legal name, GST (when applicable),
+        // primary address (line + region), contact no & email.
+        $gstOn = filter_var($cust?->gst_applicable, FILTER_VALIDATE_BOOLEAN)
+            || strtolower((string) $cust?->gst_applicable) === 'yes';
+        $vd['buyerDetails'] = (object) [
+            'name'         => $cust?->legal_name ?: ($cust?->company_name ?? ($entry->lead?->sender_name ?? '—')),
+            'gst_no'       => ($gstOn && !empty($cust?->gst_number)) ? $cust->gst_number : null,
+            'address_line' => $addr?->address_line,
+            'region'       => trim(implode(', ', array_filter([
+                $addr?->city, $addr?->state, $addr?->country,
+                $addr?->pin ? '- ' . $addr->pin : null,
+            ]))),
+            'email'        => $addr?->cp_email ?: ($cust?->primary_email ?: $entry->lead?->sender_email),
+            'contact_no'   => $addr?->cp_contact ?: $entry->lead?->sender_mobile,
+        ];
+
+        // Branch primary brand colour drives the document accents.
+        $branchColor = $user->branch_id
+            ? \App\Models\Branch::whereKey($user->branch_id)->value('primary_color')
+            : null;
+        $vd['companyDetails']->primary_color = $branchColor ?: '#7CB342';
+        $vd['companyDetails']->primary_text_color = '#ffffff';
+
+        // Default IGC invoice logo (as requested).
+        try {
+            $igc = public_path('images/igc-logo-invoice.png');
+            if (is_file($igc)) {
+                $vd['companyDetails']->logo_data = 'data:image/png;base64,' . base64_encode(file_get_contents($igc));
+            }
+        } catch (\Throwable $e) { /* fallback handled in the blade */ }
+
+        // Code-128 barcode of the quotation code, for the header.
+        $vd['barcodeHtml'] = '';
+        try {
+            $vd['barcodeHtml'] = (new \Milon\Barcode\DNS1D())->getBarcodeHTML($quoteCode, 'C128', 0.8, 24);
+        } catch (\Throwable $e) { /* renders without barcode */ }
+
+        $vd['quotationProducts'] = collect([[
+            'product_code'        => $product?->product_code ?? '',
+            'product_name'        => $product?->name ?? '—',
+            'model_name'          => $product?->product_code ?? '',
+            'product_description' => '',
+            'quantity'            => $qty,
+            'rate'                => $rate,
+            'rate_with_tax'       => $rate,
+            'amount'              => $amount,
+        ]]);
+        $q = $vd['quotation'];
+        $q->total = $amount;
+        $q->igst = 0; $q->cgst = 0; $q->sgst = 0;
+        $q->shipping_cost = 0; $q->packaging_cost = 0;
+        $q->grand_total = $amount;
+        $q->pi_number = $quoteCode;
+        $vd['pdf_title'] = 'QUOTATION';
+        $vd['doc_label_short'] = 'Q';
+        $vd['base_currency_total'] = $amount;
+        $vd['opportunity_date'] = $entry->lead?->created_at
+            ? \Carbon\Carbon::parse($entry->lead->created_at) : null;
+
+        $pdf = Pdf::loadView('pdf.shared_price_quotation', $vd)
+            ->setPaper('A5', 'portrait')
+            ->setOption('isPhpEnabled', true);
+        $filename = 'quotation_' . str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT) . '.pdf';
+
+        return $request->boolean('inline')
+            ? $pdf->stream($filename)
+            : $pdf->download($filename);
+    }
+
+    /**
      * Build the full view-data array the template expects. All values
      * are dummy / template-style stand-ins shaped as objects with the
      * same property names as the IDIMS source models.
