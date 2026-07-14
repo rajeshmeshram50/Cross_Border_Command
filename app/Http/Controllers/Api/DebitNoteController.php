@@ -297,11 +297,13 @@ class DebitNoteController extends Controller
     {
         $v = $request->validate([
             'debit_note_date' => 'nullable|date',
-            'expected_debit_date' => 'nullable|date',
-            'debit_note_type_id' => 'nullable|integer',
+            // Mandatory: debit note type, expected debit date, SPI number and
+            // reason (mirrors the frontend form validation).
+            'expected_debit_date' => 'required|date',
+            'debit_note_type_id' => 'required|integer',
             'debit_note_type' => 'nullable|string|max:128',
-            'supplier_purchase_invoice_id' => 'nullable|integer',
-            'reason' => 'nullable|string|max:2000',
+            'supplier_purchase_invoice_id' => 'required|integer',
+            'reason' => 'required|string|max:2000',
             'terms' => 'nullable|string|max:5000',
             'attachment_path' => 'nullable|string|max:255',
 
