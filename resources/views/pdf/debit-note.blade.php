@@ -372,18 +372,18 @@
                         <tr>
                             <td style="width:55%; vertical-align:top;">
                                 <div class="info-line"><strong>SHP ID :</strong> {{ $dn->shipment_code }}</div>
-                                <div class="info-line"><strong>Procurement ID :</strong> {{ $dn->procurement_code }}</div>
-                                <div class="info-line"><strong>Debit Note Type :</strong> {{ $dn->dn_type }}</div>
-                                <div class="info-line"><strong>Expected Debit Date :</strong> {{ $dn->expected_debit_date }}</div>
                                 <div class="info-line"><strong>SPI No :</strong> {{ $dn->spi_code }}</div>
+                                <div class="info-line"><strong>SPI Date :</strong> {{ $dn->spi_date }}</div>
                                 <div class="info-line"><strong>PO No :</strong> {{ $dn->po_code }}</div>
+                                <div class="info-line"><strong>PO Date :</strong> {{ $dn->po_date }}</div>
                                 <div class="info-line"><strong>Invoice No :</strong> {{ $dn->invoice_no }}</div>
                                 <div class="info-line"><strong>Invoice Date :</strong> {{ $dn->invoice_date }}</div>
                             </td>
                             <td style="width:45%; vertical-align:top;">
                                 <div class="info-line"><strong>Debit Note Date :</strong> {{ $dn->dn_date }}</div>
-                                <div class="info-line"><strong>SPI Date :</strong> {{ $dn->spi_date }}</div>
-                                <div class="info-line"><strong>PO Date :</strong> {{ $dn->po_date }}</div>
+                                <div class="info-line"><strong>Procurement ID :</strong> {{ $dn->procurement_code }}</div>
+                                <div class="info-line"><strong>Debit Note Type :</strong> {{ $dn->dn_type }}</div>
+                                <div class="info-line"><strong>Expected Debit Date :</strong> {{ $dn->expected_debit_date }}</div>
                             </td>
                         </tr>
                     </table>
