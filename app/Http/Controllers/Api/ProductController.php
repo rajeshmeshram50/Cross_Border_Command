@@ -753,6 +753,41 @@ class ProductController extends Controller
     }
 
     /* ──────────────────────────────────────────────────────────────────
+     * DELETE /products/{id}/vendor-maps/{mapId}
+     * Unmap a single supplier from the product. Kept separate from
+     * storeVendors (full-list replace) so both the Product-Detail-View list
+     * and the Edit-form list can delete one row and stay in sync — the
+     * vendor side (vendor_product_mappings) is cleared to match.
+     * ────────────────────────────────────────────────────────────── */
+    public function destroyVendorMap(Request $request, int $id, int $mapId)
+    {
+        $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
+        if ($denial = $this->editDenial($request->user(), $product, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $map = ProductVendorMap::where('product_id', $product->id)->findOrFail($mapId);
+
+        DB::transaction(function () use ($map) {
+            // Mirror-delete the vendor side so a supplier removed here also
+            // drops off the vendor's mapped-products list.
+            if ($map->vendor_id) {
+                \App\Models\VendorProductMapping::where('vendor_id', $map->vendor_id)
+                    ->where('product_id', $map->product_id)
+                    ->delete();
+            }
+            $map->delete();
+        });
+
+        return response()->json(
+            $this->maskProductArray(
+                $product->fresh(['vendorMaps', 'vendorMaps.vendor:id,vendor_code', 'qcRecords'])->toArray(),
+                $this->departmentHiddenGroups($request)
+            )
+        );
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
      * PUT /products/{id}/step/vendors
      * Final step. Saves vendor mappings and activates the product.
      * ────────────────────────────────────────────────────────────── */
