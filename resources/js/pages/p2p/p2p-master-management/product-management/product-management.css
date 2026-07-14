@@ -3621,6 +3621,11 @@
 [data-bs-theme="dark"] .apm-sup-empty { background: rgba(124,58,237,.08); border-color: rgba(167,139,250,.3); color: #c4b5fd; }
 [data-bs-theme="dark"] .apm-sup-del { background: rgba(220,38,38,.16); border-color: rgba(248,113,113,.35); color: #fca5a5; }
 [data-bs-theme="dark"] .apm-sup-del:hover { background: #dc2626; color: #fff; border-color: transparent; }
+/* Edit button was missing its dark override — kept the light lavender fill
+   (#f5f1fe) and read as a white box on the dark table. Mirror the delete
+   button's translucent treatment in the brand violet. */
+[data-bs-theme="dark"] .apm-sup-edit { background: rgba(124,58,237,.18); border-color: rgba(167,139,250,.35); color: #c4b5fd; }
+[data-bs-theme="dark"] .apm-sup-edit:hover { background: #6d28d9; color: #fff; border-color: transparent; }
 
 /* ═══ Map GST (%) + GST (%) Master popups ═══ */
 .apm-gst-overlay { position: fixed; inset: 0; z-index: 1150; background: rgba(66, 65, 71, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; font-family: var(--font-sans); }

@@ -8,6 +8,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import AddProductModal from './AddProductModal';
+import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 
 
 type AnyRec = Record<string, unknown>;
@@ -109,6 +110,10 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   const [priceEditId, setPriceEditId] = useState<number | null>(null);
   const [priceEditVal, setPriceEditVal] = useState('');
   const [priceSaving, setPriceSaving] = useState(false);
+  // Single-row supplier delete — mirrors the Edit-form list so a supplier
+  // removed here (or there) drops from the DB and both views stay in sync.
+  const [vendorMapDelete, setVendorMapDelete] = useState<{ id: number; name: string } | null>(null);
+  const [vendorMapDeleting, setVendorMapDeleting] = useState(false);
 
   /* QC documents come from the same `segment_doc_uploads` table the Add
    * Product wizard writes to (category = 'qc'). Surfaced here so the
@@ -303,6 +308,22 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
       toast.error('Update failed', 'Could not update the purchase price. Please try again.');
     } finally {
       setPriceSaving(false);
+    }
+  };
+
+  const confirmDeleteVendorMap = async () => {
+    if (!vendorMapDelete) return;
+    setVendorMapDeleting(true);
+    try {
+      const res = await api.delete(`/products/${product.id}/vendor-maps/${vendorMapDelete.id}`);
+      const fresh = res.data as ProductDto;
+      setProduct(prev => (prev ? { ...prev, vendor_maps: fresh.vendor_maps ?? prev.vendor_maps } : prev));
+      setVendorMapDelete(null);
+      toast.success('Supplier removed', 'The supplier has been unmapped from this product.');
+    } catch {
+      toast.error('Remove failed', 'Could not remove the supplier. Please try again.');
+    } finally {
+      setVendorMapDeleting(false);
     }
   };
 
@@ -574,13 +595,29 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
                           <td>{fmtMoney(v.gst_amount as string | number | null)}</td>
                           <td className="pv2pd-sup-ctotal">{fmtMoney(v.total_amount as string | number | null)}</td>
                           <td>
-                            <button
-                              className="pv2pd-sup-edit"
-                              title="Edit purchase price"
-                              onClick={() => startPriceEdit(mapId, v.purchase_price as string | number | null)}
-                            >
-                              <i className="ri-pencil-line" /> Edit
-                            </button>
+                            {/* Same icon actions as the Edit-form list so both
+                                views match. Edit tweaks price; Delete unmaps the
+                                supplier (persists immediately → both stay in sync). */}
+                            <div className="apm-sup-actions">
+                              <button
+                                type="button"
+                                className="apm-sup-edit"
+                                title="Edit purchase price"
+                                aria-label="Edit purchase price"
+                                onClick={() => startPriceEdit(mapId, v.purchase_price as string | number | null)}
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                              </button>
+                              <button
+                                type="button"
+                                className="apm-sup-del"
+                                title="Remove supplier"
+                                aria-label="Remove supplier"
+                                onClick={() => setVendorMapDelete({ id: mapId, name: String(v.vendor_name ?? 'this supplier') })}
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         );
@@ -698,6 +735,16 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
           </div>
         ), document.body);
       })()}
+
+      <DeleteConfirmModal
+        open={vendorMapDelete !== null}
+        itemName={vendorMapDelete?.name}
+        title="Remove Mapped Supplier"
+        subMessage="This unmaps the supplier from the product and saves immediately."
+        loading={vendorMapDeleting}
+        onClose={() => { if (!vendorMapDeleting) setVendorMapDelete(null); }}
+        onConfirm={confirmDeleteVendorMap}
+      />
     </div>
   );
 }
