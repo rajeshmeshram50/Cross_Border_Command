@@ -372,7 +372,7 @@ export default function DebitNote() {
                   <td>{r.proc ? <span className="spi-pill spi-pill-proc">{r.proc}</span> : '—'}</td>
                   <td>{r.spi ? <span className="spi-idstack"><span className="spi-pill spi-pill-pi">{r.spi}</span><span className="spi-date-sub">{fmtDate(r.spiDate)}</span></span> : '—'}</td>
                   <td>{r.po ? <span className="spi-idstack"><span className="spi-pill spi-pill-po">{r.po}</span><span className="spi-date-sub">{fmtDate(r.poDate)}</span></span> : '—'}</td>
-                  <td title={r.supplier ?? ''}>{r.supplier ? (r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier) : '—'}</td>
+                  <td>{r.supplier ? <Tooltip label={r.supplier}><span>{r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier}</span></Tooltip> : '—'}</td>
                   <td><span className="spi-date-sub">{r.exp ? fmtDate(r.exp) : '—'}</span></td>
                   <td className="spi-c-r spi-amt">{inr(r.total)}</td>
                   <td className="spi-c-c"><span className={`dn-st ${statusClass(r.status)}`}>{r.status}</span></td>
