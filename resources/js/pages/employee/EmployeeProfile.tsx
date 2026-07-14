@@ -2595,10 +2595,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   {claimMode === 'expense' ? 'Submit New Expense Claim' : 'Advance Request — Recoverable Payout'}
                 </h5>
                 <small className="ep-claim-hero-sub">
-                  {/* "Receipt required above ₹500" only applies to expense claims —
-                      advances are a recoverable payout with no receipt, so drop it
-                      from the advance-mode header. */}
-                  All required fields must be completed · {claimMode === 'expense' ? 'Receipt required above ₹500 · ' : ''}Changes take effect after approval flow completes
+                  {/* "Receipt required above ₹500" removed from both Expense and
+                      Advance headers per QA — it isn't a valid rule here. */}
+                  All required fields must be completed · Changes take effect after approval flow completes
                 </small>
               </div>
             </div>
@@ -2624,8 +2623,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </div>
         </div>
 
-        {/* Body */}
-        <div className="ep-claim-body">
+        {/* Body — frozen while the claim is being saved: `inert` blocks mouse,
+            keyboard and focus across the whole form subtree (React 19) so no
+            field can be edited mid-submit, and the dimmed/wait cursor signals
+            it. Footer buttons handle their own disabled state below. */}
+        <div
+          className="ep-claim-body"
+          inert={claimSubmitting}
+          style={claimSubmitting ? { opacity: 0.6, cursor: 'wait' } : undefined}
+        >
           {claimMode === 'expense' ? (
             <Row className="g-2">
               {/* Left column */}
