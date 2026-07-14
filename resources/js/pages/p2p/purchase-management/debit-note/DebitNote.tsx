@@ -48,7 +48,7 @@ export default function DebitNote() {
   const [debQ, setDebQ] = useState('');
   const [page, setPage] = useState(1);
   const [rpp, setRpp] = useState(10);
-  const [menu, setMenu] = useState<{ row: DnRow; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ row: DnRow; x: number; top: number; bottom: number } | null>(null);
   const [payRow, setPayRow] = useState<DnRow | null>(null);   // Payment Recovery popup
   const [syncConfirm, setSyncConfirm] = useState<DnRow | null>(null);   // "Sync with Zohobook?" confirm
   const [detailOpen, setDetailOpen] = useState(false);
@@ -108,6 +108,18 @@ export default function DebitNote() {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [page, rpp, debQ, reloadKey]);
+
+  // Lock background scroll while any popup/overlay is open. Must lock BOTH
+  // <html> and <body> — a body-only overflow:hidden doesn't stop the page from
+  // scrolling behind the modal.
+  useEffect(() => {
+    if (!(payRow || syncConfirm || menu || detailOpen)) return;
+    const html = document.documentElement, body = document.body;
+    const ph = html.style.overflow, pb = body.style.overflow;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    return () => { html.style.overflow = ph; body.style.overflow = pb; };
+  }, [payRow, syncConfirm, menu, detailOpen]);
 
   const openCreate = () => { setEditId(null); setDetailOpen(true); };
   const openEdit = (r: DnRow) => { setEditId(r.id); setDetailOpen(true); };
@@ -237,7 +249,7 @@ export default function DebitNote() {
                       <Tooltip label="Edit debit note"><button type="button" className="spi-iconbtn" onClick={() => openEdit(r)}><IcoEdit /></button></Tooltip>
                       <Tooltip label="Email debit note"><button type="button" className="spi-iconbtn" onClick={soon}><IcoMail /></button></Tooltip>
                       <Tooltip label="Payment recovery"><button type="button" className="spi-iconbtn" onClick={() => setPayRow(r)}><IcoRupee /></button></Tooltip>
-                      <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => { const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ row: r, x: b.right, y: b.bottom + 6 }); }}><IcoMore /></button></Tooltip>
+                      <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => { const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ row: r, x: b.right, top: b.top, bottom: b.bottom }); }}><IcoMore /></button></Tooltip>
                     </span>
                   </td>
                 </tr>
@@ -249,9 +261,21 @@ export default function DebitNote() {
         <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={n => { autoFitRef.current = false; setRpp(n); setPage(1); }} pageSizeOptions={[5, 10, 15]} />
       </div>
 
-      {menu && (
+      {menu && (() => {
+        // Viewport-aware placement: open below the button when there's room,
+        // else flip above; cap the height + scroll internally so the menu is
+        // always fully visible (never clipped off the bottom of the screen).
+        const MENU_W = 288, GAP = 6, MARGIN = 10;
+        const spaceBelow = window.innerHeight - menu.bottom;
+        const spaceAbove = menu.top;
+        const below = spaceBelow >= spaceAbove;
+        const maxH = Math.max(180, (below ? spaceBelow : spaceAbove) - GAP - MARGIN);
+        const left = Math.min(Math.max(8, menu.x - MENU_W), window.innerWidth - MENU_W - 8);
+        return (
         <div className="spi-menu-backdrop" onMouseDown={() => setMenu(null)}>
-          <div className="spi-menu" style={{ top: menu.y, left: Math.max(8, menu.x - 280) }} onMouseDown={e => e.stopPropagation()}>
+          <div className="spi-menu" style={below
+            ? { top: menu.bottom + GAP, left, maxHeight: maxH, overflowY: 'auto' }
+            : { bottom: window.innerHeight - menu.top + GAP, left, maxHeight: maxH, overflowY: 'auto' }} onMouseDown={e => e.stopPropagation()}>
             <div className="spi-menu-head">
               <div className="spi-menu-head-l"><span className="spi-menu-head-ico"><IcoMore /></span> More Actions</div>
               <button type="button" className="spi-menu-x" onClick={() => setMenu(null)}><IcoX /></button>
@@ -268,11 +292,11 @@ export default function DebitNote() {
               <div className="dn-menu-grouplbl dn-menu-grouplbl-dl"><IcoDownload size={13} /> DOWNLOAD</div>
               <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); soon(); }}><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> With Signature</button>
               <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); soon(); }}><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> Without Signature</button>
-              <button type="button" className="spi-menu-item is-danger" onClick={() => { const r = menu.row; setMenu(null); delRow(r); }}><span className="spi-menu-item-ico"><IcoTrash /></span> Delete Debit Note</button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {syncConfirm && (
         <div className="dn-modal-backdrop" onMouseDown={() => setSyncConfirm(null)}>
