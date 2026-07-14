@@ -57,7 +57,7 @@ const LEGAL_PARAMS = [
   { name: 'Agreements',            d: 3, t: 3 },
 ];
 
-export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose: () => void; onSaved?: () => void; editId?: number | null }) {
+export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = false }: { onClose: () => void; onSaved?: () => void; editId?: number | null; readOnly?: boolean }) {
   const toast = useToast();
   const [step, setStep] = useState<1 | 2>(1);
   const [dnOpen, setDnOpen] = useState(true);
@@ -183,23 +183,41 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
   };
 
   // ── Derived product amounts + totals ──
+  // Place of supply drives the tax split, exactly like the PO / SPI: a supplier
+  // in our home GST state (27) is intra-state → CGST + SGST; any other state is
+  // inter-state → a single IGST. The per-row GST rate is the sum of whatever the
+  // SPI line carried (cgst+sgst or igst), re-split here by the supplier's state.
+  const intra = (sel?.stateCode ?? '27') === '27';
   const rowsCalc = products.map(p => {
     const base = p.debitQty * p.rate;
-    const cgstA = base * p.cgstPct / 100;
-    const sgstA = base * p.sgstPct / 100;
-    const igstA = base * p.igstPct / 100;
-    return { ...p, base, cgstA, sgstA, igstA, cost: base + cgstA + sgstA + igstA };
+    const gst = p.cgstPct + p.sgstPct + p.igstPct;
+    const cgstA = intra ? base * (gst / 2) / 100 : 0;
+    const sgstA = intra ? base * (gst / 2) / 100 : 0;
+    const igstA = intra ? 0 : base * gst / 100;
+    return { ...p, base, gst, cgstA, sgstA, igstA, cost: base + cgstA + sgstA + igstA };
   });
   const totProd = rowsCalc.reduce((s, r) => s + r.cost, 0);
   const totCgst = rowsCalc.reduce((s, r) => s + r.cgstA, 0);
   const totSgst = rowsCalc.reduce((s, r) => s + r.sgstA, 0);
+  const totIgst = rowsCalc.reduce((s, r) => s + r.igstA, 0);
   const sumAmt = (rs: ChargeRow[]) => rs.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
   const addSum = sumAmt(additions);
   const dedSum = sumAmt(deductions);
   const grandTotal = totProd + addSum - dedSum;
 
   const patchProduct = (i: number, key: keyof ProdRow, v: any) =>
-    setProducts(ps => ps.map((r, idx) => idx === i ? { ...r, [key]: (key === 'code' || key === 'name' || key === 'hsn') ? v : num(v) } : r));
+    setProducts(ps => ps.map((r, idx) => {
+      if (idx !== i) return r;
+      if (key === 'code' || key === 'name' || key === 'hsn') return { ...r, [key]: v };
+      let nv = num(v);
+      // Debit Qty can never exceed the quantity billed on the SPI — clamp it and
+      // warn the user (returning more than was invoiced is not valid).
+      if (key === 'debitQty' && nv > r.qtySpi) {
+        nv = r.qtySpi;
+        toast.info('Debit Qty capped', `Cannot exceed the SPI quantity (${r.qtySpi}) for ${r.name || 'this product'}.`);
+      }
+      return { ...r, [key]: nv };
+    }));
   const removeProduct = (i: number) => setProducts(ps => ps.filter((_, idx) => idx !== i));
 
   // ── Save ──
@@ -213,11 +231,16 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
       debit_note_date: todayISO,
       expected_debit_date: expDate || null,
       reason, terms,
-      items: products.map(p => ({
-        product_id: p.product_id ?? null, product_code: p.code, product_name: p.name, hsn_code: p.hsn,
-        qty_po: p.qtyPo, qty_spi: p.qtySpi, debit_qty: p.debitQty, rate: p.rate,
-        cgst_pct: p.cgstPct, sgst_pct: p.sgstPct, igst_pct: p.igstPct,
-      })),
+      items: products.map(p => {
+        // Re-split the SPI line's GST by place of supply so what we persist (and
+        // render on the PDF) matches the intra/inter-state decision shown above.
+        const gst = p.cgstPct + p.sgstPct + p.igstPct;
+        return {
+          product_id: p.product_id ?? null, product_code: p.code, product_name: p.name, hsn_code: p.hsn,
+          qty_po: p.qtyPo, qty_spi: p.qtySpi, debit_qty: p.debitQty, rate: p.rate,
+          cgst_pct: intra ? gst / 2 : 0, sgst_pct: intra ? gst / 2 : 0, igst_pct: intra ? 0 : gst,
+        };
+      }),
       additions: additions.filter(r => r.amount || r.note).map(r => ({ amount: num(r.amount), note: r.note })),
       deductions: deductions.filter(r => r.amount || r.note).map(r => ({ amount: num(r.amount), note: r.note })),
     };
@@ -242,7 +265,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
   ];
 
   return createPortal(
-    <div className="spi-dt-overlay dn-scope">
+    <div className={`spi-dt-overlay dn-scope${readOnly ? ' dn-readonly' : ''}`}>
       <div className="spi-dt">
         {/* Header + stepper share one card (Figma) */}
         <div className="spi-dt-topcard">
@@ -252,7 +275,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
               <div className="spi-dt-head-ico"><IcoDoc /><span className="spi-dt-head-dot" /></div>
               <div>
                 <div className="spi-dt-head-title">Debit Note</div>
-                <div className="spi-dt-head-sub">{editId ? 'Editing' : 'Draft · not yet issued'}</div>
+                <div className="spi-dt-head-sub">{readOnly ? 'View only · payment recorded' : (editId ? 'Editing' : 'Draft · not yet issued')}</div>
               </div>
             </div>
             <div className="spi-dt-pills">
@@ -296,6 +319,12 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
           </div>
         </div>
 
+        {readOnly && (
+          <div className="dn-ro-banner">
+            <IcoLock /> This debit note has a recorded payment recovery — it is <b>view-only</b> and can no longer be edited.
+          </div>
+        )}
+
         {/* ── Body (Step 1) ── */}
         {step === 1 && (
         <div className="spi-dt-body">
@@ -319,7 +348,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
                     <button type="button" className="dn-typeadd" title="Manage debit note types" onClick={() => setTypeModalOpen(true)}><IcoPlus size={15} /></button>
                   </div>
                 </Field>
-                <Field label="EXPECTED DEBIT DATE"><MasterDatePicker value={expDate} onChange={setExpDate} placeholder="Select date" popupClassName="dncr-cal" /></Field>
+                <Field label="EXPECTED DEBIT DATE"><MasterDatePicker value={expDate} onChange={setExpDate} minDate={todayISO} placeholder="Select date" popupClassName="dncr-cal" /></Field>
                 <Field label="SPI NUMBER"><DnSelect value={spiCode} options={spis.map(s => s.code)} placeholder="— Select SPI Number —" onChange={v => selectSpi(spis.find(s => s.code === v) ?? null)} /></Field>
                 <AutoField label="SPI DATE" value={spiDate} loading={spiLoading} />
                 <AutoField label="PO NUMBER" value={poCode} loading={spiLoading} />
@@ -540,18 +569,24 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
                   <colgroup>
                     <col style={{ width: '52px' }} /><col style={{ width: '96px' }} /><col style={{ minWidth: '180px' }} />
                     <col style={{ width: '110px' }} /><col style={{ width: '84px' }} /><col style={{ width: '84px' }} /><col style={{ width: '84px' }} /><col style={{ width: '96px' }} />
-                    <col style={{ width: '76px' }} /><col style={{ width: '104px' }} /><col style={{ width: '76px' }} /><col style={{ width: '104px' }} /><col style={{ width: '104px' }} /><col style={{ width: '54px' }} />
+                    {intra
+                      ? (<><col style={{ width: '76px' }} /><col style={{ width: '104px' }} /><col style={{ width: '76px' }} /><col style={{ width: '104px' }} /></>)
+                      : (<><col style={{ width: '76px' }} /><col style={{ width: '104px' }} /></>)}
+                    <col style={{ width: '104px' }} /><col style={{ width: '54px' }} />
                   </colgroup>
                   <thead>
                     <tr>
                       <th className="spi-dt-mc-c">SR NO</th><th>PRODUCT CODE</th><th>PRODUCT NAME (SPI)</th><th className="spi-dt-mc-c">HSN CODE</th>
                       <th className="spi-dt-mc-c">QTY (PO)</th><th className="spi-dt-mc-c">QTY (SPI)</th><th className="spi-dt-mc-c">DEBIT QTY</th><th className="spi-dt-mc-c">PRODUCT RATE</th>
-                      <th className="spi-dt-mc-c">CGST(%)</th><th className="spi-dt-mc-c">CGST AMOUNT</th><th className="spi-dt-mc-c">SGST(%)</th><th className="spi-dt-mc-c">SGST AMOUNT</th><th className="spi-dt-mc-c">DEBIT COST</th><th className="spi-dt-mc-c">ACTION</th>
+                      {intra
+                        ? (<><th className="spi-dt-mc-c">CGST(%)</th><th className="spi-dt-mc-c">CGST AMOUNT</th><th className="spi-dt-mc-c">SGST(%)</th><th className="spi-dt-mc-c">SGST AMOUNT</th></>)
+                        : (<><th className="spi-dt-mc-c">IGST(%)</th><th className="spi-dt-mc-c">IGST AMOUNT</th></>)}
+                      <th className="spi-dt-mc-c">DEBIT COST</th><th className="spi-dt-mc-c">ACTION</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rowsCalc.length === 0 ? (
-                      <tr><td colSpan={14} style={{ textAlign: 'center', padding: '28px', color: '#94a3b8', fontWeight: 600 }}>Select an SPI to load its products.</td></tr>
+                      <tr><td colSpan={intra ? 14 : 12} style={{ textAlign: 'center', padding: '28px', color: '#94a3b8', fontWeight: 600 }}>Select an SPI to load its products.</td></tr>
                     ) : rowsCalc.map((p, i) => (
                       <tr key={i}>
                         <td className="spi-dt-mc-c">{i + 1}</td>
@@ -560,12 +595,19 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
                         <td className="spi-dt-mc-c"><span className="dn-frz">{p.hsn || '—'}</span></td>
                         <td className="spi-dt-mc-c"><span className="dn-frz">{p.qtyPo}</span></td>
                         <td className="spi-dt-mc-c"><span className="dn-frz">{p.qtySpi}</span></td>
-                        <td><input className="spi-dt-minp spi-dt-minp-sm dn-editqty" type="number" min={0} value={p.debitQty} onChange={e => patchProduct(i, 'debitQty', e.target.value)} title="Editable" /></td>
+                        <td><input className="spi-dt-minp spi-dt-minp-sm dn-editqty" type="number" min={0} max={p.qtySpi} value={p.debitQty} onChange={e => patchProduct(i, 'debitQty', e.target.value)} title={`Editable · max ${p.qtySpi} (SPI qty)`} /></td>
                         <td className="spi-dt-mc-c"><span className="dn-frz">{p.rate}</span></td>
-                        <td className="spi-dt-mc-c"><span className="dn-frz">{p.cgstPct}</span></td>
-                        <td className="spi-dt-amt spi-dt-mc-c">{inr(p.cgstA)}</td>
-                        <td className="spi-dt-mc-c"><span className="dn-frz">{p.sgstPct}</span></td>
-                        <td className="spi-dt-amt spi-dt-mc-c">{inr(p.sgstA)}</td>
+                        {intra
+                          ? (<>
+                              <td className="spi-dt-mc-c"><span className="dn-frz">{p.gst / 2}</span></td>
+                              <td className="spi-dt-amt spi-dt-mc-c">{inr(p.cgstA)}</td>
+                              <td className="spi-dt-mc-c"><span className="dn-frz">{p.gst / 2}</span></td>
+                              <td className="spi-dt-amt spi-dt-mc-c">{inr(p.sgstA)}</td>
+                            </>)
+                          : (<>
+                              <td className="spi-dt-mc-c"><span className="dn-frz">{p.gst}</span></td>
+                              <td className="spi-dt-amt spi-dt-mc-c">{inr(p.igstA)}</td>
+                            </>)}
                         <td className="spi-dt-amt spi-dt-mc-c">{inr(p.cost)}</td>
                         <td className="spi-dt-mc-c"><button type="button" className="spi-dt-rowdel" title="Remove product" onClick={() => removeProduct(i)}><IcoX size={13} /></button></td>
                       </tr>
@@ -582,8 +624,12 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
                 </div>
                 <div className="spi-dt-totbox">
                   <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total Debit Cost</span><span className="spi-dt-totrow-v">{inr(totProd)}</span></div>
-                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total CGST Amount</span><span className="spi-dt-totrow-v">{inr(totCgst)}</span></div>
-                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total SGST Amount</span><span className="spi-dt-totrow-v">{inr(totSgst)}</span></div>
+                  {intra ? (<>
+                    <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total CGST Amount</span><span className="spi-dt-totrow-v">{inr(totCgst)}</span></div>
+                    <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total SGST Amount</span><span className="spi-dt-totrow-v">{inr(totSgst)}</span></div>
+                  </>) : (
+                    <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total IGST Amount</span><span className="spi-dt-totrow-v">{inr(totIgst)}</span></div>
+                  )}
                   <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Additions (+)</span><span className="spi-dt-totrow-v">{inr(addSum)}</span></div>
                   <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Deductions (–)</span><span className="spi-dt-totrow-v">– {inr(dedSum)}</span></div>
                   <div className="spi-dt-totrow spi-dt-totrow-grand"><span className="spi-dt-totrow-k">Grand Total</span><span className="spi-dt-totrow-v">{inr(grandTotal)}</span></div>
@@ -653,7 +699,9 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
             </div>
             <div className="spi-dt-foot-r">
               <button type="button" className="spi-dt-btn-ghost" onClick={() => setStep(1)}><IcoChevronL /> Back</button>
-              <button type="button" className="spi-dt-btn-map" onClick={save} disabled={saving}>{saving ? 'Saving…' : (editId ? 'Update Debit Note' : 'Generate Debit Note')} <IcoChevronR /></button>
+              {readOnly
+                ? <button type="button" className="spi-dt-btn-ghost" onClick={onClose}>Close</button>
+                : <button type="button" className="spi-dt-btn-map" onClick={save} disabled={saving}>{saving ? 'Saving…' : (editId ? 'Update Debit Note' : 'Generate Debit Note')} <IcoChevronR /></button>}
             </div>
           </div>
         )}
@@ -787,6 +835,23 @@ function DnSelect({ value, options, onChange, placeholder }: { value: string; op
 }
 
 const DNCR_CSS = `
+/* View-only lock (debit note has a recorded payment recovery). A tenant can
+ * still read every field and expand/collapse sections, but all form controls
+ * are inert and the Update action is hidden — the server also rejects edits. */
+.dn-readonly .dn-ro-banner { display:flex; align-items:center; gap:9px; margin:12px 16px 0; padding:11px 14px; border:1px solid #fcd9b6; border-radius:11px; background:#fff7ed; color:#9a3412; font-size:12px; font-weight:700; }
+.dn-readonly .dn-ro-banner svg { flex:0 0 auto; }
+.dn-readonly .dn-ro-banner b { color:#9a3412; }
+.dn-readonly .spi-dt-body input,
+.dn-readonly .spi-dt-body textarea,
+.dn-readonly .spi-dt-body select,
+.dn-readonly .spi-dt-body button,
+.dn-readonly .spi-dt-body .master-datepicker-wrap { pointer-events:none !important; }
+.dn-readonly .spi-dt-body .dncr-chgbtn,
+.dn-readonly .spi-dt-body .dncr-rowx,
+.dn-readonly .spi-dt-body .spi-dt-rowdel,
+.dn-readonly .spi-dt-body .dn-typeadd { opacity:.45; }
+[data-bs-theme="dark"] .dn-readonly .dn-ro-banner { background:rgba(154,52,18,.16); border-color:rgba(251,146,60,.35); color:#fdba74; }
+[data-bs-theme="dark"] .dn-readonly .dn-ro-banner b { color:#fdba74; }
 /* Step-2 recap Supplier Legal Status — compact: just the progress bar + a one-line
  * summary and a small "compliant" badge (no bulky parameter cards). */
 .dn-scope .dn-recap-legal { padding:13px 14px; }
