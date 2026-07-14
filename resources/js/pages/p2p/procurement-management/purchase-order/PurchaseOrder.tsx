@@ -44,6 +44,8 @@ type PoRow = {
   is_signed?: boolean;
   /** True once the PO is out for e-signature — editing is then locked. */
   sent_for_sign?: boolean;
+  /** True once any supplier invoice (SPI) is mapped to the PO — editing locked. */
+  has_spi?: boolean;
   /** True once TDS has been deducted (one-time) for this PO. */
   tds_cut?: boolean;
   /** True once the full net-payable PO amount is utilised (balance cleared).
@@ -187,7 +189,7 @@ export default function PurchaseOrder() {
 
   const [more, setMore] = useState<MoreState | null>(null);
   const [sync, setSync] = useState<SyncState | null>(null);
-  const [wizard, setWizard] = useState<{ editRow: PoRow | null } | null>(null);
+  const [wizard, setWizard] = useState<{ editRow: PoRow | null; viewOnly?: boolean } | null>(null);
   const [tradeDoc, setTradeDoc] = useState<PoRow | null>(null);
   const [payTarget, setPayTarget] = useState<PoRow | null>(null);
   const [emailing, setEmailing] = useState<Record<number, boolean>>({});
@@ -508,7 +510,7 @@ export default function PurchaseOrder() {
                   const synced = r.zoho.toLowerCase() === 'sync';
                   // Editing is locked once the PO is synced, out for signature,
                   // or already signed — its content must not drift afterwards.
-                  const editLocked = synced || !!r.sent_for_sign || !!r.is_signed;
+                  const editLocked = synced || !!r.sent_for_sign || !!r.is_signed || !!r.has_spi;
                   return (
                     <tr key={r.po}>
                       <td>{start + i + 1}</td>
@@ -543,11 +545,9 @@ export default function PurchaseOrder() {
                           <button
                             type="button"
                             className="polist-ico"
-                            title={synced ? 'Locked — already synced to Zoho Books' : (r.sent_for_sign || r.is_signed) ? 'Locked — PO sent for signature' : 'Edit PO'}
-                            disabled={editLocked}
-                            style={editLocked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                            onClick={() => { if (!editLocked) setWizard({ editRow: r }); }}
-                          >{Ico.edit(15)}</button>
+                            title={editLocked ? (synced ? 'View — locked (already synced to Zoho Books)' : (r.sent_for_sign || r.is_signed) ? 'View — locked (PO sent for signature)' : r.has_spi ? 'View — locked (a supplier invoice is mapped to this PO)' : 'View PO') : 'Edit PO'}
+                            onClick={() => setWizard({ editRow: r, viewOnly: editLocked })}
+                          >{editLocked ? Ico.eye(15) : Ico.edit(15)}</button>
                           <button type="button" className="polist-ico" title="Send PO Via Email" disabled={!!(r.id && emailing[r.id])} onClick={() => doEmail(r)}>{Ico.mail(15)}</button>
                           <button type="button" className="polist-ico" title="Trade Documents & Agreements" onClick={() => setTradeDoc(r)}>{Ico.vault(15)}</button>
                           <button type="button" className="polist-ico" title="PO Payment" onClick={() => setPayTarget(r)}>{Ico.pay(15)}</button>
@@ -624,7 +624,7 @@ export default function PurchaseOrder() {
 
       {/* ── CREATE / EDIT PO WIZARD ──────────────────────────────────── */}
       {wizard && (
-        <CreatePoWizard editRow={wizard.editRow} onClose={() => setWizard(null)} onSaved={handleSaved} />
+        <CreatePoWizard editRow={wizard.editRow} viewOnly={wizard.viewOnly} onClose={() => setWizard(null)} onSaved={handleSaved} />
       )}
 
       {/* ── TRADE DOCUMENTS & AGREEMENTS MODAL ───────────────────────── */}

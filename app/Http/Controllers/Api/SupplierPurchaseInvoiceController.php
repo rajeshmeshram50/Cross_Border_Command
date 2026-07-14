@@ -729,6 +729,21 @@ class SupplierPurchaseInvoiceController extends Controller
 
     private function shapeListRow(SupplierPurchaseInvoice $spi): array
     {
+        // Payment figures: a With-PO SPI is paid THROUGH its linked PO (po_payments),
+        // so its paid/balance/net-payable must reflect the PO's post-TDS state — not
+        // the SPI's static columns (which stay 0). A Direct SPI keeps its own columns
+        // (SpiPaymentController updates them on each payment).
+        if ($spi->purchase_order_id) {
+            $po = DB::table('purchase_orders')->where('id', $spi->purchase_order_id)->first();
+            $netPayable = $po ? round((float) $po->grand_total - (float) ($po->tds_amount ?? 0), 2) : (float) $spi->net_payable;
+            $totalPaid  = round((float) \App\Models\PoPayment::where('purchase_order_id', $spi->purchase_order_id)->sum('amount'), 2);
+            $balance    = round($netPayable - $totalPaid, 2);
+        } else {
+            $netPayable = round((float) $spi->net_payable - (float) $spi->tds_amount, 2);
+            $totalPaid  = (float) $spi->total_paid;
+            $balance    = (float) $spi->balance;
+        }
+
         return [
             'id' => $spi->id,
             'vendor_id' => $spi->vendor_id,
@@ -746,9 +761,9 @@ class SupplierPurchaseInvoiceController extends Controller
             'supCode' => $spi->supplier_code,
             'supplier' => $spi->supplier_name,
             'totalPo' => (float) $spi->total_po_amount,
-            'netPayable' => (float) $spi->net_payable,
-            'totalPaid' => (float) $spi->total_paid,
-            'balance' => (float) $spi->balance,
+            'netPayable' => $netPayable,
+            'totalPaid' => $totalPaid,
+            'balance' => $balance,
             'attach' => $spi->attachment_path,
             'zoho' => $spi->zoho_status === 'Sync' ? 'sync' : 'not',
             'status' => $spi->status,
