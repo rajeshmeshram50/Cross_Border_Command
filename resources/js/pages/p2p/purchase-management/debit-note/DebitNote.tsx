@@ -49,6 +49,8 @@ export default function DebitNote() {
   const [page, setPage] = useState(1);
   const [rpp, setRpp] = useState(10);
   const [menu, setMenu] = useState<{ row: DnRow; x: number; y: number } | null>(null);
+  const [payRow, setPayRow] = useState<DnRow | null>(null);   // Payment Recovery popup
+  const [syncConfirm, setSyncConfirm] = useState<DnRow | null>(null);   // "Sync with Zohobook?" confirm
   const [detailOpen, setDetailOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
 
@@ -231,10 +233,10 @@ export default function DebitNote() {
                     <span className="spi-acts">
                       {r.zoho === 'sync'
                         ? <Tooltip label="Already synced to Zohobook"><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
-                        : <Tooltip label="Sync this debit note to Zohobook"><button type="button" className="spi-zohobtn" onClick={() => syncRow(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
+                        : <Tooltip label="Sync this debit note to Zohobook"><button type="button" className="spi-zohobtn" onClick={() => setSyncConfirm(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
                       <Tooltip label="Edit debit note"><button type="button" className="spi-iconbtn" onClick={() => openEdit(r)}><IcoEdit /></button></Tooltip>
                       <Tooltip label="Email debit note"><button type="button" className="spi-iconbtn" onClick={soon}><IcoMail /></button></Tooltip>
-                      <Tooltip label="Record payment"><button type="button" className="spi-iconbtn" onClick={soon}><IcoRupee /></button></Tooltip>
+                      <Tooltip label="Payment recovery"><button type="button" className="spi-iconbtn" onClick={() => setPayRow(r)}><IcoRupee /></button></Tooltip>
                       <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => { const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ row: r, x: b.right, y: b.bottom + 6 }); }}><IcoMore /></button></Tooltip>
                     </span>
                   </td>
@@ -259,10 +261,57 @@ export default function DebitNote() {
               <div className="spi-menu-sup">Supplier: {menu.row.supplier ?? '—'}</div>
             </div>
             <div className="spi-menu-items">
-              <button type="button" className="spi-menu-item is-teal" onClick={() => { const r = menu.row; setMenu(null); syncRow(r); }}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
-              <button type="button" className="spi-menu-item" onClick={() => { const r = menu.row; setMenu(null); openEdit(r); }}><span className="spi-menu-item-ico"><IcoEdit /></span> Edit Debit Note</button>
-              <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); soon(); }}><span className="spi-menu-item-ico"><IcoDoc size={15} /></span> Download Debit Note</button>
+              <button type="button" className="spi-menu-item is-teal" onClick={() => { const r = menu.row; setMenu(null); setSyncConfirm(r); }}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
+              <div className="dn-menu-grouplbl"><IcoEye size={13} /> VIEW</div>
+              <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); soon(); }}><span className="spi-menu-item-ico spi-menu-item-ico-pay"><IcoEye /></span> With Signature</button>
+              <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); soon(); }}><span className="spi-menu-item-ico spi-menu-item-ico-pay"><IcoEye /></span> Without Signature</button>
+              <div className="dn-menu-grouplbl dn-menu-grouplbl-dl"><IcoDownload size={13} /> DOWNLOAD</div>
+              <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); soon(); }}><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> With Signature</button>
+              <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); soon(); }}><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> Without Signature</button>
               <button type="button" className="spi-menu-item is-danger" onClick={() => { const r = menu.row; setMenu(null); delRow(r); }}><span className="spi-menu-item-ico"><IcoTrash /></span> Delete Debit Note</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {syncConfirm && (
+        <div className="dn-modal-backdrop" onMouseDown={() => setSyncConfirm(null)}>
+          <div className="dn-sync" onMouseDown={e => e.stopPropagation()}>
+            <span className="dn-sync-ico"><IcoSync size={22} /></span>
+            <div className="dn-sync-title">Sync with Zohobook?</div>
+            <div className="dn-sync-sub">This will push the latest debit note data to your Zohobook account and update its sync status.</div>
+            <div className="dn-sync-dn"><span className="spi-pill spi-pill-spi">{syncConfirm.no}</span> · {syncConfirm.supplier ?? '—'}</div>
+            <div className="dn-sync-foot">
+              <button type="button" className="dn-pay-cancel" onClick={() => setSyncConfirm(null)}>Cancel</button>
+              <button type="button" className="dn-pay-record" onClick={() => { const r = syncConfirm; setSyncConfirm(null); syncRow(r); }}><IcoSync size={14} /> Yes, Sync</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {payRow && (
+        <div className="dn-modal-backdrop" onMouseDown={() => setPayRow(null)}>
+          <div className="dn-pay" onMouseDown={e => e.stopPropagation()}>
+            <div className="dn-pay-head">
+              <span className="dn-pay-ico"><IcoRupee size={18} /></span>
+              <div>
+                <div className="dn-pay-title">Payment Recovery</div>
+                <div className="dn-pay-sub">Record recovered amount &amp; attach proof of payment</div>
+              </div>
+            </div>
+            <div className="dn-pay-dn"><span className="spi-pill spi-pill-spi">{payRow.no}</span> · {payRow.supplier ?? '—'}</div>
+            <div className="dn-pay-stats">
+              <div className="dn-pay-stat"><div className="dn-pay-stat-k">TOTAL DEBIT</div><div className="dn-pay-stat-v">{inr(payRow.total)}</div></div>
+              <div className="dn-pay-stat"><div className="dn-pay-stat-k">ALREADY PAID</div><div className="dn-pay-stat-v">{inr(0)}</div></div>
+              <div className="dn-pay-stat"><div className="dn-pay-stat-k">BALANCE</div><div className="dn-pay-stat-v">{inr(payRow.total)}</div></div>
+            </div>
+            <label className="dn-pay-lbl">AMOUNT RECOVERED (₹)</label>
+            <input className="dn-pay-input" type="number" placeholder="Enter recovered / debit amount" />
+            <label className="dn-pay-lbl">PROOF OF PAYMENT</label>
+            <button type="button" className="dn-pay-attach"><IcoUpload size={15} /> Click to attach proof (PDF, JPG, PNG)</button>
+            <div className="dn-pay-foot">
+              <button type="button" className="dn-pay-cancel" onClick={() => setPayRow(null)}>Cancel</button>
+              <button type="button" className="dn-pay-record" onClick={() => { setPayRow(null); soon(); }}><IcoRupee size={14} /> Record Payment</button>
             </div>
           </div>
         </div>
@@ -333,6 +382,56 @@ const DN_CSS = `
 [data-bs-theme="dark"] .dn-st-partial { background:rgba(180,83,9,.18); color:#fcd34d; }
 [data-bs-theme="dark"] .dn-st-overdue { background:rgba(220,38,38,.18); color:#fca5a5; }
 [data-bs-theme="dark"] .dn-st-unpaid  { background:rgba(148,163,184,.16); color:#cbd5e1; }
+
+/* More-Actions menu group labels — VIEW = purple, DOWNLOAD = teal (matches the
+ * per-group icon tints below). */
+.dn-scope .dn-menu-grouplbl { display:flex; align-items:center; gap:6px; padding:9px 12px 4px; font-size:9.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:#8b5cf6; }
+.dn-scope .dn-menu-grouplbl.dn-menu-grouplbl-dl { color:#0891b2; }
+[data-bs-theme="dark"] .dn-scope .dn-menu-grouplbl { color:#c4b5fd; }
+[data-bs-theme="dark"] .dn-scope .dn-menu-grouplbl.dn-menu-grouplbl-dl { color:#67e8f9; }
+
+/* ── Payment Recovery popup (₹ action) ── */
+.dn-modal-backdrop { position:fixed; inset:0; z-index:100000; background:rgba(15,23,42,.45); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:20px; }
+.dn-pay { width:420px; max-width:100%; background:#fff; border-radius:18px; overflow:hidden; box-shadow:0 24px 60px -12px rgba(8,47,73,.4); }
+.dn-pay-head { display:flex; align-items:center; gap:12px; padding:18px 20px 14px; }
+.dn-pay-ico { width:40px; height:40px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff; background:linear-gradient(140deg,#22d3ee,#0891b2 60%,#0e7490); box-shadow:0 6px 16px -3px rgba(8,145,178,.5), inset 0 1px 0 rgba(255,255,255,.3); }
+.dn-pay-title { font-size:15px; font-weight:800; color:#0c4a6e; letter-spacing:-.01em; }
+.dn-pay-sub { font-size:11.5px; font-weight:600; color:#5b8aa0; margin-top:2px; }
+.dn-pay-dn { margin:0 20px 14px; display:flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:#334155; }
+.dn-pay-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding:0 20px 16px; }
+.dn-pay-stat { border:1px solid #e3eef3; border-radius:11px; background:#f7fdff; padding:9px 10px; text-align:center; }
+.dn-pay-stat-k { font-size:8.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#5b7585; }
+.dn-pay-stat-v { font-size:14px; font-weight:800; color:#0c4a6e; margin-top:3px; }
+.dn-pay-lbl { display:block; margin:0 20px 5px; font-size:9.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#5b7585; }
+.dn-pay-input { display:block; width:calc(100% - 40px); margin:0 20px 14px; height:42px; padding:0 14px; border:1.5px solid #e3edf2; border-radius:11px; font-size:13px; font-weight:600; color:#0c4a6e; background:#fff; box-sizing:border-box; }
+.dn-pay-input:focus { outline:none; border-color:#22d3ee; box-shadow:0 0 0 3px rgba(34,211,238,.12); }
+.dn-pay-attach { display:flex; align-items:center; gap:8px; width:calc(100% - 40px); margin:0 20px 18px; padding:11px 14px; border:1.5px dashed #cfe3ea; border-radius:11px; background:#f7fdff; color:#0e7490; font-size:12.5px; font-weight:700; cursor:pointer; transition:background .15s,border-color .15s; }
+.dn-pay-attach:hover { background:#eefaff; border-color:#22d3ee; }
+.dn-pay-foot { display:flex; justify-content:flex-end; gap:10px; padding:0 20px 20px; }
+.dn-pay-cancel { padding:9px 18px; border:1.5px solid #e3edf2; border-radius:11px; background:#fff; color:#475569; font-size:12.5px; font-weight:700; cursor:pointer; }
+.dn-pay-cancel:hover { background:#f4f7f9; }
+.dn-pay-record { display:inline-flex; align-items:center; gap:7px; padding:9px 18px; border:none; border-radius:11px; color:#fff; font-size:12.5px; font-weight:800; cursor:pointer; background:linear-gradient(135deg,#0e7490,#0891b2 55%,#06b6d4); box-shadow:0 6px 16px -4px rgba(8,145,178,.5); }
+.dn-pay-record:hover { filter:brightness(1.05); transform:translateY(-1px); }
+[data-bs-theme="dark"] .dn-pay { background:#0e1b24; }
+[data-bs-theme="dark"] .dn-pay-title { color:#e8f2f6; }
+[data-bs-theme="dark"] .dn-pay-dn { color:#cbd5e1; }
+[data-bs-theme="dark"] .dn-pay-stat { background:#0c1c24; border-color:rgba(34,211,238,.2); }
+[data-bs-theme="dark"] .dn-pay-stat-v { color:#7dd3fc; }
+[data-bs-theme="dark"] .dn-pay-input, [data-bs-theme="dark"] .dn-pay-attach { background:#0c1c24; border-color:rgba(34,211,238,.22); color:#e2e8f0; }
+[data-bs-theme="dark"] .dn-pay-cancel { background:#0c1c24; border-color:rgba(148,163,184,.25); color:#cbd5e1; }
+
+/* ── "Sync with Zohobook?" confirm popup (centered) ── */
+.dn-sync { width:400px; max-width:100%; background:#fff; border-radius:20px; padding:26px 26px 22px; text-align:center; box-shadow:0 24px 60px -12px rgba(8,47,73,.4); }
+.dn-sync-ico { width:56px; height:56px; margin:0 auto 16px; border-radius:16px; display:flex; align-items:center; justify-content:center; color:#fff; background:linear-gradient(140deg,#22d3ee,#0891b2 60%,#0e7490); box-shadow:0 10px 22px -5px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.35); }
+.dn-sync-title { font-size:17px; font-weight:800; color:#0c4a6e; letter-spacing:-.01em; }
+.dn-sync-sub { font-size:12.5px; font-weight:500; color:#5b7585; line-height:1.5; margin:8px auto 16px; max-width:320px; }
+.dn-sync-dn { display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:#334155; margin-bottom:20px; }
+.dn-sync-foot { display:flex; justify-content:center; gap:12px; }
+.dn-sync-foot .dn-pay-cancel, .dn-sync-foot .dn-pay-record { padding:10px 22px; }
+[data-bs-theme="dark"] .dn-sync { background:#0e1b24; }
+[data-bs-theme="dark"] .dn-sync-title { color:#e8f2f6; }
+[data-bs-theme="dark"] .dn-sync-sub { color:#7c9fb0; }
+[data-bs-theme="dark"] .dn-sync-dn { color:#cbd5e1; }
 `;
 
 /* ── Inline icons ── */
@@ -357,3 +456,6 @@ function StepIco3() { return <StepSvg><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 
 function StepIco4() { return <StepSvg><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></StepSvg>; }
 function StepIco5() { return <StepSvg><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-6.7-3M3 12a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3"/><polyline points="21 3 18.7 6 15.6 5.4"/><polyline points="3 21 5.3 18 8.4 18.6"/></StepSvg>; }
 function IcoX({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>; }
+function IcoEye({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>; }
+function IcoDownload({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>; }
+function IcoUpload({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>; }
