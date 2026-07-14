@@ -116,8 +116,14 @@
              style="display:inline-block;border:0;outline:none;vertical-align:middle;" />
       </td>
       <td valign="middle" style="padding-left:8px;font-size:12px;color:#6b7280;line-height:1.5;">
+        @php($attachmentName = $announcement->attachment_original_name ?: basename($announcement->attachment_path))
         An attachment is included with this email:
-        <strong style="color:#111827;font-weight:700;">{{ $announcement->attachment_original_name ?: basename($announcement->attachment_path) }}</strong>
+        @if(!empty($attachmentUrl))
+        <a href="{{ $attachmentUrl }}" target="_blank" rel="noopener"
+           style="color:#7c3aed;font-weight:700;text-decoration:underline;">{{ $attachmentName }}</a>
+        @else
+        <strong style="color:#111827;font-weight:700;">{{ $attachmentName }}</strong>
+        @endif
       </td>
     </tr>
     </table>

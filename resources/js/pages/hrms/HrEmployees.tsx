@@ -1823,11 +1823,12 @@ export default function HrEmployees() {
       if (!ok) return;
       setEErrors({});
       toast.success(`Step ${empStep} saved`, `Progress saved — you can resume later.`);
-      setEmpStep((s) => {
-        const next = (s + 1) as 1 | 2 | 3 | 4;
-        setEmpMaxStep((m) => (next > m ? next : m));
-        return next;
-      });
+      // Advance from the step we actually saved (captured in this closure) and
+      // clamp to 4 — never derive the next step from live state, or a stepper
+      // click landing mid-save could push us to a non-existent "Step 5 of 4".
+      const next = Math.min(empStep + 1, 4) as 1 | 2 | 3 | 4;
+      setEmpStep(next);
+      setEmpMaxStep((m) => (next > m ? next : m));
     } finally {
       setSaving(false);
     }
@@ -2274,8 +2275,8 @@ export default function HrEmployees() {
 
             <div className="p-3 d-flex flex-column" ref={listScrollRef} style={{ minHeight: listFillH }}>
                 <div className="table-responsive flex-grow-1" style={{ maxHeight: listFillH ? Math.max(280, listFillH - 64) : undefined, overflowY: 'auto' }}>
-                  <table className="table align-middle table-nowrap mb-0">
-                    <thead className="table-light" style={{ position: 'sticky', top: 0, zIndex: 2 }}>
+                  <table className="table align-middle table-nowrap mb-0 hr-emp-table">
+                    <thead className="table-light hr-emp-sticky-head">
                       <tr>
                         <th scope="col" className="ps-3 text-center" style={{ width: 56 }}>Sr No</th>
                         <th scope="col">Employee</th>
@@ -3118,11 +3119,11 @@ export default function HrEmployees() {
                     <button
                       type="button"
                       className={`emp-stepper-btn${locked ? ' is-locked' : ''}`}
-                      onClick={() => { if (!locked) setEmpStep(s.n as 1 | 2 | 3 | 4); }}
-                      disabled={locked}
+                      onClick={() => { if (!locked && !saving) setEmpStep(s.n as 1 | 2 | 3 | 4); }}
+                      disabled={locked || saving}
                       aria-label={`Go to step ${s.n}: ${s.label}`}
                       aria-current={active ? 'step' : undefined}
-                      title={locked ? 'Complete the current step first' : undefined}
+                      title={locked ? 'Complete the current step first' : saving ? 'Saving…' : undefined}
                     >
                       <div className={`emp-stepper-circle${active ? ' is-active' : ''}${done ? ' is-done' : ''}`}>
                         {done ? <i className="ri-check-line" style={{ fontSize: 16 }} /> : s.n}
@@ -4538,9 +4539,15 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
             width: 200,
             padding: 10,
             borderRadius: 12,
-            background: 'var(--vz-card-bg, #fff)',
-            border: '1px solid var(--vz-border-color)',
-            boxShadow: '0 18px 38px -8px rgba(15,23,42,0.22), 0 6px 14px rgba(15,23,42,0.08)',
+            // Explicit theme-aware colours — this popover is portalled to
+            // document.body, where the card-scoped --vz-card-bg / --vz-border-color
+            // variables don't resolve and fell back to white (a light box in dark
+            // mode). isDark from useTheme drives the surface instead.
+            background: isDark ? '#1f2937' : '#fff',
+            border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'var(--vz-border-color, #e5e7eb)'}`,
+            boxShadow: isDark
+              ? '0 18px 38px -8px rgba(0,0,0,0.55), 0 6px 14px rgba(0,0,0,0.38)'
+              : '0 18px 38px -8px rgba(15,23,42,0.22), 0 6px 14px rgba(15,23,42,0.08)',
           }}
         >
           <div
@@ -4548,7 +4555,7 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
               fontSize: 10,
               fontWeight: 700,
               letterSpacing: '0.06em',
-              color: 'var(--vz-secondary-color)',
+              color: isDark ? 'rgba(255,255,255,0.55)' : '#6b7280',
               textTransform: 'uppercase',
               marginBottom: 4,
             }}

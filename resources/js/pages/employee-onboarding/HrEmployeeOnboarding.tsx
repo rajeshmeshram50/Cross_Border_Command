@@ -3477,10 +3477,12 @@ function InitiateOnboardingModal({
     mobile_assigned: '',
     mobile_master_asset_id: '',
     other_master_asset_ids: [] as string[],
-    // Stage 3 — Physical Setup & Identification.
-    biometric_status:    'Not Registered',
+    // Stage 3 — Physical Setup & Identification. Status fields start blank so
+    // HR must consciously pick a value (bugs #36/#37 — a pre-selected default
+    // let wrong info save silently).
+    biometric_status:    '',
     desk_workstation_no: '',
-    id_card_status:      'Not Printed',
+    id_card_status:      '',
     attendance_tracking: true,
 
     enable_payroll: true,
@@ -3565,9 +3567,9 @@ useEffect(() => {
     other_master_asset_ids: Array.isArray(x.other_master_asset_ids)
       ? x.other_master_asset_ids.map((n: any) => String(n))
       : [],
-    biometric_status:    String(x.biometric_status    ?? 'Not Registered'),
+    biometric_status:    String(x.biometric_status    ?? ''),
     desk_workstation_no: String(x.desk_workstation_no ?? ''),
-    id_card_status:      String(x.id_card_status      ?? 'Not Printed'),
+    id_card_status:      String(x.id_card_status      ?? ''),
     attendance_tracking: x.attendance_tracking !== undefined ? !!x.attendance_tracking : true,
 
     enable_payroll: x.enable_payroll !== undefined ? !!x.enable_payroll : true,
@@ -7157,7 +7159,8 @@ function Stage3Provisioning({
                   { value: 'Registered',     label: 'Registered' },
                   { value: 'Failed',         label: 'Failed' },
                 ]}
-                value={s1.biometric_status || 'Not Registered'}
+                placeholder="Select status"
+                value={s1.biometric_status}
                 onChange={(v) => setS1((p: any) => ({ ...p, biometric_status: v }))}
               />
             </Col>
@@ -7180,7 +7183,8 @@ function Stage3Provisioning({
                   { value: 'Lost',        label: 'Lost' },
                   { value: 'Reissued',    label: 'Reissued' },
                 ]}
-                value={s1.id_card_status || 'Not Printed'}
+                placeholder="Select status"
+                value={s1.id_card_status}
                 onChange={(v) => setS1((p: any) => ({ ...p, id_card_status: v }))}
               />
             </Col>

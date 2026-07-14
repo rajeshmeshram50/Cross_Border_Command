@@ -838,11 +838,11 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
   useEffect(() => { if (!open) setDownloading(false); }, [open]);
 
   const COLUMNS = [
-    'Name', 'Email', 'Mobile', 'Experience',
+    'Name', 'Email', 'Mobile', 'Experience', 'Qualification',
     'Current Salary', 'Expected Salary', 'Notice Period', 'Source', 'Status',
   ];
   const SAMPLE_ROWS: string[][] = [
-    ['Priya Sharma', 'priya.s@example.com', '+91 9812345678', '5',  '15', '22', '30 Days',  'LinkedIn', 'Final Round Selected'],
+    ['Priya Sharma', 'priya.s@example.com', '+91 9812345678', '5', 'B.Tech', '15', '22', '30 Days',  'LinkedIn', 'Final Round Selected'],
   ];
 
   const handleDownload = async () => {

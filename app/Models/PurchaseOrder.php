@@ -52,4 +52,5 @@ class PurchaseOrder extends Model
     public function shipmentOrder(): BelongsTo { return $this->belongsTo(ShipmentOrder::class); }
     public function items(): HasMany { return $this->hasMany(PurchaseOrderItem::class)->orderBy('line_no')->orderBy('id'); }
     public function payments(): HasMany { return $this->hasMany(PoPayment::class)->orderBy('id'); }
+    public function supplierPurchaseInvoices(): HasMany { return $this->hasMany(SupplierPurchaseInvoice::class); }
 }

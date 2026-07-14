@@ -36,7 +36,10 @@ class PurchaseOrderController extends Controller
 
         // withSum → per-row payment total in one query (shapeListRow reads it to
         // compute the "fully utilised" flag without an N+1 per-row sum).
-        $q = PurchaseOrder::query()->withSum('payments as paid_sum', 'amount')->orderByDesc('id');
+        $q = PurchaseOrder::query()
+            ->withSum('payments as paid_sum', 'amount')
+            ->withCount('supplierPurchaseInvoices as spi_count')
+            ->orderByDesc('id');
         $this->applyScope($q, $user, $request->integer('branch_id') ?: null);
 
         // Tab: with / without shipment id
@@ -140,6 +143,15 @@ class PurchaseOrderController extends Controller
             return response()->json([
                 'status' => false,
                 'message' => 'This PO has been sent for signature and can no longer be edited.',
+            ], 422);
+        }
+
+        // Once a supplier invoice (SPI) is mapped to this PO, the PO is frozen —
+        // the invoice was reconciled against these figures.
+        if ($po->supplierPurchaseInvoices()->exists()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This PO has a supplier invoice mapped to it and can no longer be edited.',
             ], 422);
         }
 
@@ -1166,6 +1178,10 @@ class PurchaseOrderController extends Controller
             : (float) $po->payments()->sum('amount');
         $netPayable = round((float) $po->grand_total - (float) $po->tds_amount, 2);
         $balance    = round($netPayable - $paid, 2);
+        // Once ANY supplier invoice is mapped to this PO, editing is locked.
+        $hasSpi = array_key_exists('spi_count', $po->getAttributes())
+            ? (int) $po->getAttributes()['spi_count'] > 0
+            : $po->supplierPurchaseInvoices()->exists();
 
         return [
             'id' => $po->id,
@@ -1188,6 +1204,8 @@ class PurchaseOrderController extends Controller
             'is_signed' => $this->isPoSigned($po),
             // Sent for signature → PO can no longer be edited.
             'sent_for_sign' => $po->status === 'Sent for Sign',
+            // Any supplier invoice mapped → PO can no longer be edited.
+            'has_spi' => $hasSpi,
             // TDS one-time deduction state (drives the wizard read-only lock and
             // gates "Send for Signature").
             'tds_cut' => (bool) $po->tds_cut,

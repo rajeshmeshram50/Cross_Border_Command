@@ -330,7 +330,7 @@ const RO_STYLE: React.CSSProperties = { pointerEvents: 'none', opacity: 0.92 };
 const LockNote = () => (
   <div className="cpo-locknote">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-    <span><strong>TDS deducted — this purchase order is locked.</strong> You can review all details, but editing is disabled. Only the trade-document stage (send for signature / view / download) remains available.</span>
+    <span><strong>This purchase order is read-only.</strong> You can review all details, but editing is disabled.</span>
   </div>
 );
 
@@ -352,7 +352,7 @@ const mapDetailToSup = (s: Record<string, unknown>): SupplierRec => ({
   filing: String(s.filing ?? ''), remarks: String(s.remarks ?? ''), web: '',
 });
 
-export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow: PoRow | null; onClose: () => void; onSaved: () => void }) {
+export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onSaved }: { editRow: PoRow | null; viewOnly?: boolean; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const isEdit = !!editRow;
   const editId = editRow?.id ?? null;
@@ -376,11 +376,14 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
   const [savingDetails, setSavingDetails] = useState(false); // stage-2 "Save Details" click feedback
   // Product Details read-only ("view") toggle — flips the whole stage-2 table
   // into a non-editable view (also forced on once TDS is deducted for the PO).
-  const [poView, setPoView] = useState(false);
+  const [poView, setPoView] = useState(viewOnly);
   // Once TDS is deducted for this PO, stages 1–3 are locked read-only (edit →
   // view); only the last stage's actions (send-for-sign / view / download) work.
   // Loaded from the PO detail's `tds_cut` flag in edit mode.
   const [tdsLocked, setTdsLocked] = useState(false);
+  // Whole-wizard read-only: opened as view-only (e.g. a PO that already has an
+  // SPI mapped / is synced / signed), OR once its TDS has been deducted.
+  const locked = viewOnly || tdsLocked;
   // Stage-1 data-load shimmer: the lookup masters (dropdowns) load on mount and,
   // when editing, the PO detail loads too. Show a shimmer over the Stage-1 fields
   // (supplier + the rest) until both settle so the form fills in instead of
@@ -817,6 +820,8 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
   };
 
   const next = () => {
+    // View-only: navigate through the stages to review, never persist/generate.
+    if (viewOnly) { if (stage < 4) setStage(s => s + 1); return; }
     if (stage === 1 && !validateStage1()) return;
     // Persist the PO when leaving stage 3 (before entering stage 4) so the
     // documents / e-sign stage has a real PO id — its preview, individual
@@ -994,9 +999,9 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                 </div>
               )}
 
-              {stage === 1 && !stage1Loading && tdsLocked && <LockNote />}
+              {stage === 1 && !stage1Loading && locked && <LockNote />}
               {stage === 1 && !stage1Loading && (
-                <div className="pof-wrap" style={{ gap: 13, ...(tdsLocked ? RO_STYLE : {}) }}>
+                <div className="pof-wrap" style={{ gap: 13, ...(locked ? RO_STYLE : {}) }}>
                   <Box label="Purchase Order" title="Basic Purchase Order Details" sub="Core details that identify this purchase order." ico={fileIco}>
                     <div className="pof-grid pof-grid--4">
                       {(<>
@@ -1095,7 +1100,7 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
               )}
 
               {stage === 2 && (<>
-                {tdsLocked && <LockNote />}
+                {locked && <LockNote />}
                 <Box label="Products" title="Product Details" sub={withShip ? 'PI vs PO product mapping with live tax & cost computation' : 'Add PO products with live tax & cost computation'} ico={boxIco}
                   extra={<>
                     <div className="cpd-ref">
@@ -1106,9 +1111,9 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                       </span>
                     ))}
                     </div>
-                    <button type="button" className={`cpd-viewtgl ${poView ? 'is-view' : ''}`} disabled={tdsLocked}
-                      title={tdsLocked ? 'TDS deducted — this PO is locked read-only' : (poView ? 'Switch to edit mode' : 'Switch to read-only view')}
-                      onClick={e => { e.stopPropagation(); if (!tdsLocked) setPoView(v => !v); }}>
+                    <button type="button" className={`cpd-viewtgl ${poView ? 'is-view' : ''}`} disabled={locked}
+                      title={locked ? 'This PO is read-only — editing is disabled' : (poView ? 'Switch to edit mode' : 'Switch to read-only view')}
+                      onClick={e => { e.stopPropagation(); if (!locked) setPoView(v => !v); }}>
                       {poView
                         ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
                         : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>}
@@ -1225,9 +1230,9 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
                 )}
               </>)}
 
-              {stage === 3 && tdsLocked && <LockNote />}
+              {stage === 3 && locked && <LockNote />}
               {stage === 3 && (
-                <div style={tdsLocked ? RO_STYLE : undefined}>
+                <div style={locked ? RO_STYLE : undefined}>
                 <Box label="Terms" title="PO Terms & Conditions" sub="Define the terms & conditions for this purchase order" ico={fileIco}>
                   <div className="cpd-terms">
                     <label className="cpd-terms__lbl" htmlFor="cpoTermsTA">Terms &amp; Condition</label>
@@ -1256,8 +1261,9 @@ export default function CreatePoWizard({ editRow, onClose, onSaved }: { editRow:
           <div className="p2pj-footer__dots">{[1, 2, 3, 4].map(i => <div key={i} className={`p2pj-fdot ${i < stage ? 'is-done' : (i === stage ? 'is-active' : '')}`} />)}</div>
           <div className="p2pj-footer__btns">
             <button className="p2pj-fbtn p2pj-fbtn--ghost" onClick={back}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg> {stage === 1 ? 'Change Link' : 'Back'}</button>
-            <button className={`p2pj-fbtn ${stage === 3 ? 'p2pj-fbtn--submit' : 'p2pj-fbtn--primary'}`} disabled={saving} onClick={next}>
+            <button className={`p2pj-fbtn ${!viewOnly && stage === 3 ? 'p2pj-fbtn--submit' : 'p2pj-fbtn--primary'}`} disabled={saving || (viewOnly && stage === 4)} onClick={next}>
               {saving ? (<><Spin s={14} /> {stage === 4 ? (isEdit ? 'Updating…' : 'Generating…') : 'Please wait…'}</>)
+                : viewOnly ? (stage === 4 ? (<>View Only</>) : (<>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>))
                 : stage === 3 ? (<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> Submit PO &amp; Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)
                 : stage === 4 ? (<>{isEdit ? 'Update Purchase Order' : 'Generate Purchase Order'} <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)
                   : (<>Save &amp; Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)}

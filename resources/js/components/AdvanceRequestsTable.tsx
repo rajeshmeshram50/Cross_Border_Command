@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ShimmerTableRows } from './ui/Shimmer';
+import ProofOfPaymentCell from './ProofOfPaymentCell';
 import '../../css/recruitment.css';
 
 
@@ -185,7 +186,6 @@ function AdvanceRequestRowView({
   const tone = STATUS_TONE[r.status];
   const empName = r.employee_name || fallbackName || ('#' + r.employee_id);
   const empInitials = initialsFromName(r.employee_name, fallbackInitials);
-  const proof = r.attachments?.[0];
   const typeLabel = r.advance_type === 'Other' && r.advance_type_other
     ? `Other · ${r.advance_type_other}`
     : r.advance_type;
@@ -275,25 +275,13 @@ function AdvanceRequestRowView({
       </td>
       <td className="text-muted">{emiSummary}</td>
       <td>
-        {proof?.url ? (
-          <a
-            href={withAuthToken(proof.url)}
-            target="_blank"
-            rel="noreferrer"
-            className="d-inline-flex align-items-center gap-1 text-decoration-none"
-            style={{
-              fontSize: 11, padding: '3px 9px', borderRadius: 8,
-              background: 'rgba(99,102,241,0.10)', color: '#4338ca',
-              fontWeight: 600, border: '1px solid rgba(99,102,241,0.25)',
-            }}
-          >
-            <i className="ri-file-text-line" />
-            {(proof.name || 'attachment').slice(0, 14)}
-            {(r.attachments?.length ?? 0) > 1 && <small className="ms-1 text-muted">+{(r.attachments?.length ?? 0) - 1}</small>}
-          </a>
-        ) : (
-          <span className="text-muted" style={{ fontSize: 11 }}>—</span>
-        )}
+        {/* First receipt inline; any extras collapse into a "+N more" popover
+            so multiple uploads never expand the row height. */}
+        <ProofOfPaymentCell
+          attachments={r.attachments}
+          withAuthToken={withAuthToken}
+          accent={{ bg: 'rgba(99,102,241,0.10)', fg: '#4338ca', border: 'rgba(99,102,241,0.25)' }}
+        />
       </td>
       <td>
         <span

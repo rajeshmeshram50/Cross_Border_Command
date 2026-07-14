@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, type ReactNode, type Dispatch, type SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
+import Tooltip from '../../../../components/ui/Tooltip';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import DebitNoteTypeModal, { type DnType } from './DebitNoteTypeModal';
@@ -23,13 +24,23 @@ const GRN_ID = 'GRN-001';
 const WAREHOUSE = 'Central Warehouse — Mumbai';
 
 const todayISO = new Date().toISOString().slice(0, 10);
-const todayDisp = new Date().toLocaleDateString('en-US');
+// Every date renders as "14-July-2026".
+const DN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const fmtDate = (s?: string) => {
+  if (!s) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return `${m[3]}-${DN_MONTHS[+m[2] - 1]}-${m[1]}`;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? s : `${String(d.getDate()).padStart(2, '0')}-${DN_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+};
+const todayDisp = fmtDate(todayISO);
 const inr = (n: number) => `₹${(Math.round(n * 100) / 100).toLocaleString('en-IN')}`;
 
 type ChargeRow = { amount: string; note: string };
 
 // Supplier view derived from the linked SPI (server → supplierDetail shape).
 interface SupplierView {
+  id?: number;
   code?: string; name?: string; type?: string; addr?: string; country?: string;
   state?: string; stateCode?: string; city?: string; contact?: string; desig?: string;
   phone?: string; email?: string; scrutiny?: string; gstNo?: string; gstStatus?: string;
@@ -47,17 +58,34 @@ interface ProdRow {
 
 const num = (v: any) => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 
-// Supplier Legal Status — the 5 compliance parameters shown once a supplier is
-// linked (design mirrors the SPI / PO wizard's legal card grid).
-const LEGAL_PARAMS = [
-  { name: 'Company Due Diligence', d: 4, t: 4 },
-  { name: 'Owner KYC Documents',   d: 4, t: 4 },
-  { name: 'Trade Licenses',        d: 3, t: 3 },
-  { name: 'Trade Documents',       d: 4, t: 4 },
-  { name: 'Agreements',            d: 3, t: 3 },
-];
+// Supplier Legal Status — the 5-parameter compliance breakdown is derived from
+// the vendor's Evidence Vault (/segment-uploads/supplier/{id}/vault), exactly
+// like the SPI / PO wizard: KYC/DD/licenses/docs from upload buckets (Verified =
+// done), Agreements from signature status (Signed = done). No hardcoded numbers.
+type LegalCard = { name: string; t: number; d: number; st: 'full' | 'part' | 'none'; pc: number };
+type LegalView = { cards: LegalCard[]; p: number; done: number; tot: number };
+const LEGAL_DONE = ['Verified', 'Signed', 'Approved'];
+const buildLegalFromVault = (v: Record<string, unknown>): LegalView => {
+  const rowsOf = (k: string) => (Array.isArray(v[k]) ? (v[k] as { status?: string }[]) : []);
+  const defs: [string, { status?: string }[]][] = [
+    ['Company Due Diligence', rowsOf('company_dd')],
+    ['Owner KYC Documents', rowsOf('owner_kyc')],
+    ['Trade Licenses', rowsOf('trade_licenses')],
+    ['Trade Documents', rowsOf('trade_documents')],
+    ['Agreements', rowsOf('agreements')],
+  ];
+  let tot = 0, done = 0;
+  const cards: LegalCard[] = defs.map(([name, rows]) => {
+    const t = rows.length;
+    const d = rows.filter(r => LEGAL_DONE.includes(String(r.status))).length;
+    tot += t; done += d;
+    const st: LegalCard['st'] = t > 0 && d >= t ? 'full' : (d > 0 ? 'part' : 'none');
+    return { name, t, d, st, pc: t ? Math.round(d / t * 100) : 0 };
+  });
+  return { cards, p: tot ? Math.round(done / tot * 100) : 0, done, tot };
+};
 
-export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose: () => void; onSaved?: () => void; editId?: number | null }) {
+export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = false }: { onClose: () => void; onSaved?: () => void; editId?: number | null; readOnly?: boolean }) {
   const toast = useToast();
   const [step, setStep] = useState<1 | 2>(1);
   const [dnOpen, setDnOpen] = useState(true);
@@ -93,6 +121,22 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
   const [deductions, setDeductions] = useState<ChargeRow[]>([{ amount: '', note: '' }]);
   const [saving, setSaving] = useState(false);
   const [spiLoading, setSpiLoading] = useState(false);
+  // Edit mode shows a shimmer skeleton over the form until the record loads.
+  const [hydrating, setHydrating] = useState<boolean>(!!editId);
+  // Live supplier legal status (Evidence Vault) — fetched per linked vendor.
+  const [supLegal, setSupLegal] = useState<LegalView | null>(null);
+  const [supLegalLoading, setSupLegalLoading] = useState(false);
+
+  // Pull the vendor's real 5-parameter Evidence-Vault breakdown for the legal card.
+  const loadSupplierLegal = (vendorId?: number | null) => {
+    if (!vendorId) { setSupLegal(null); return; }
+    setSupLegal(null);
+    setSupLegalLoading(true);
+    api.get(`/segment-uploads/supplier/${vendorId}/vault`)
+      .then(r => { const v = r.data?.data; if (v) setSupLegal(buildLegalFromVault(v)); })
+      .catch(() => setSupLegal(null))
+      .finally(() => setSupLegalLoading(false));
+  };
 
   const dnTypeName = useMemo(() => types.find(t => t.id === dnTypeId)?.name ?? '', [types, dnTypeId]);
 
@@ -107,7 +151,8 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
       .then(r => setSpis((r.data?.data ?? []) as SpiOption[]))
       .catch(() => setSpis([]));
     if (editId) {
-      api.get(`/p2p/debit-notes/${editId}`).then(r => hydrate(r.data?.data)).catch(() => {});
+      setHydrating(true);
+      api.get(`/p2p/debit-notes/${editId}`).then(r => hydrate(r.data?.data)).catch(() => {}).finally(() => setHydrating(false));
     } else {
       api.get('/p2p/debit-notes/preview-code').then(r => setCode(r.data?.data?.code ?? '—')).catch(() => {});
     }
@@ -134,12 +179,13 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
     setReason(d.reason ?? '');
     setTerms(d.terms ?? '');
     setSel({
-      code: d.supplier_code, name: d.supplier, type: d.supplier_type, addr: d.address,
+      id: d.vendor_id, code: d.supplier_code, name: d.supplier, type: d.supplier_type, addr: d.address,
       country: d.country, state: d.state, stateCode: d.state_code, city: d.city,
       contact: d.contact_name, desig: d.designation, phone: d.contact_no, email: d.email,
       scrutiny: d.scrutiny_date, gstNo: d.gst_number, gstStatus: d.gst_status,
       filing: d.last_filing_date, remarks: d.gst_remarks,
     });
+    loadSupplierLegal(d.vendor_id);
     setProducts((d.items ?? []).map((it: any) => ({
       product_id: it.product_id, code: it.code ?? '', name: it.name ?? '', hsn: it.hsn ?? '',
       qtyPo: num(it.qtyPo), qtySpi: num(it.qtySpi), debitQty: num(it.debitQty), rate: num(it.rate),
@@ -159,7 +205,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
 
   // Picking an SPI → fetch full detail and auto-fill everything.
   const selectSpi = (opt: SpiOption | null) => {
-    if (!opt) { setSpiId(null); setSpiCode(''); return; }
+    if (!opt) { setSpiId(null); setSpiCode(''); setSel(null); setSupLegal(null); return; }
     setSpiId(opt.id); setSpiCode(opt.code); setSpiLoading(true);
     api.get(`/p2p/debit-notes/supplier-purchase-invoices/${opt.id}`)
       .then(r => {
@@ -171,6 +217,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
         setShipCode(d.shipment_code ?? '');
         setProcCode(d.procurement_code ?? '');
         setSel(d.supplier ?? null);
+        loadSupplierLegal(d.vendor_id ?? d.supplier?.id);
         setSpiPay({ paymentTerm: d.payment_term ?? '', totalInvoice: num(d.total_invoice), paidAmount: num(d.paid_amount), balance: num(d.balance) });
         setProducts((d.items ?? []).map((it: any) => ({
           product_id: it.product_id, code: it.code ?? '', name: it.name ?? '', hsn: it.hsn ?? '',
@@ -183,23 +230,41 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
   };
 
   // ── Derived product amounts + totals ──
+  // Place of supply drives the tax split, exactly like the PO / SPI: a supplier
+  // in our home GST state (27) is intra-state → CGST + SGST; any other state is
+  // inter-state → a single IGST. The per-row GST rate is the sum of whatever the
+  // SPI line carried (cgst+sgst or igst), re-split here by the supplier's state.
+  const intra = (sel?.stateCode ?? '27') === '27';
   const rowsCalc = products.map(p => {
     const base = p.debitQty * p.rate;
-    const cgstA = base * p.cgstPct / 100;
-    const sgstA = base * p.sgstPct / 100;
-    const igstA = base * p.igstPct / 100;
-    return { ...p, base, cgstA, sgstA, igstA, cost: base + cgstA + sgstA + igstA };
+    const gst = p.cgstPct + p.sgstPct + p.igstPct;
+    const cgstA = intra ? base * (gst / 2) / 100 : 0;
+    const sgstA = intra ? base * (gst / 2) / 100 : 0;
+    const igstA = intra ? 0 : base * gst / 100;
+    return { ...p, base, gst, cgstA, sgstA, igstA, cost: base + cgstA + sgstA + igstA };
   });
   const totProd = rowsCalc.reduce((s, r) => s + r.cost, 0);
   const totCgst = rowsCalc.reduce((s, r) => s + r.cgstA, 0);
   const totSgst = rowsCalc.reduce((s, r) => s + r.sgstA, 0);
+  const totIgst = rowsCalc.reduce((s, r) => s + r.igstA, 0);
   const sumAmt = (rs: ChargeRow[]) => rs.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
   const addSum = sumAmt(additions);
   const dedSum = sumAmt(deductions);
   const grandTotal = totProd + addSum - dedSum;
 
   const patchProduct = (i: number, key: keyof ProdRow, v: any) =>
-    setProducts(ps => ps.map((r, idx) => idx === i ? { ...r, [key]: (key === 'code' || key === 'name' || key === 'hsn') ? v : num(v) } : r));
+    setProducts(ps => ps.map((r, idx) => {
+      if (idx !== i) return r;
+      if (key === 'code' || key === 'name' || key === 'hsn') return { ...r, [key]: v };
+      let nv = num(v);
+      // Debit Qty can never exceed the quantity billed on the SPI — clamp it and
+      // warn the user (returning more than was invoiced is not valid).
+      if (key === 'debitQty' && nv > r.qtySpi) {
+        nv = r.qtySpi;
+        toast.info('Debit Qty capped', `Cannot exceed the SPI quantity (${r.qtySpi}) for ${r.name || 'this product'}.`);
+      }
+      return { ...r, [key]: nv };
+    }));
   const removeProduct = (i: number) => setProducts(ps => ps.filter((_, idx) => idx !== i));
 
   // ── Save ──
@@ -213,11 +278,16 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
       debit_note_date: todayISO,
       expected_debit_date: expDate || null,
       reason, terms,
-      items: products.map(p => ({
-        product_id: p.product_id ?? null, product_code: p.code, product_name: p.name, hsn_code: p.hsn,
-        qty_po: p.qtyPo, qty_spi: p.qtySpi, debit_qty: p.debitQty, rate: p.rate,
-        cgst_pct: p.cgstPct, sgst_pct: p.sgstPct, igst_pct: p.igstPct,
-      })),
+      items: products.map(p => {
+        // Re-split the SPI line's GST by place of supply so what we persist (and
+        // render on the PDF) matches the intra/inter-state decision shown above.
+        const gst = p.cgstPct + p.sgstPct + p.igstPct;
+        return {
+          product_id: p.product_id ?? null, product_code: p.code, product_name: p.name, hsn_code: p.hsn,
+          qty_po: p.qtyPo, qty_spi: p.qtySpi, debit_qty: p.debitQty, rate: p.rate,
+          cgst_pct: intra ? gst / 2 : 0, sgst_pct: intra ? gst / 2 : 0, igst_pct: intra ? 0 : gst,
+        };
+      }),
       additions: additions.filter(r => r.amount || r.note).map(r => ({ amount: num(r.amount), note: r.note })),
       deductions: deductions.filter(r => r.amount || r.note).map(r => ({ amount: num(r.amount), note: r.note })),
     };
@@ -236,13 +306,13 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
   // except GRN ID + WAREHOUSE, which aren't captured on the SPI yet (hardcoded).
   const money = (n?: number) => (n === undefined || n === null ? '' : inr(n));
   const spiAutoFields: [string, string][] = [
-    ['SPI NUMBER', spiCode], ['SPI DATE', spiDate], ['PO NUMBER', poCode], ['PO DATE', poDate],
+    ['SPI NUMBER', spiCode], ['SPI DATE', fmtDate(spiDate)], ['PO NUMBER', poCode], ['PO DATE', fmtDate(poDate)],
     ['GRN ID', spiCode ? GRN_ID : ''], ['WAREHOUSE', spiCode ? WAREHOUSE : ''], ['SUPPLIER NAME', sel?.name ?? ''], ['SUPPLIER GSTIN', sel?.gstNo ?? ''],
     ['PAYMENT TERM', spiPay?.paymentTerm ?? ''], ['TOTAL INVOICE AMOUNT', money(spiPay?.totalInvoice)], ['PAID AMOUNT', money(spiPay?.paidAmount)], ['TOTAL BALANCE AMOUNT', money(spiPay?.balance)],
   ];
 
   return createPortal(
-    <div className="spi-dt-overlay dn-scope">
+    <div className={`spi-dt-overlay dn-scope${readOnly ? ' dn-readonly' : ''}`}>
       <div className="spi-dt">
         {/* Header + stepper share one card (Figma) */}
         <div className="spi-dt-topcard">
@@ -252,7 +322,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
               <div className="spi-dt-head-ico"><IcoDoc /><span className="spi-dt-head-dot" /></div>
               <div>
                 <div className="spi-dt-head-title">Debit Note</div>
-                <div className="spi-dt-head-sub">{editId ? 'Editing' : 'Draft · not yet issued'}</div>
+                <div className="spi-dt-head-sub">{readOnly ? 'View only · payment recorded' : (editId ? 'Editing' : 'Draft · not yet issued')}</div>
               </div>
             </div>
             <div className="spi-dt-pills">
@@ -273,7 +343,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
 
           {/* ── Step tabs ── */}
           <div className="spi-dt-steps">
-            <div className={`spi-dt-step spi-dt-step--nav ${step === 1 ? 'is-active' : 'is-done'}`} role="button" tabIndex={0} title="Go to Step 1" onClick={() => setStep(1)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStep(1); } }}>
+            <Tooltip label="Go to Step 1"><div className={`spi-dt-step spi-dt-step--nav ${step === 1 ? 'is-active' : 'is-done'}`} role="button" tabIndex={0} onClick={() => setStep(1)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStep(1); } }}>
               <div className="spi-dt-step-top"><span className="spi-dt-step-lbl">STEP 01</span>
                 {step === 1
                   ? <span className="spi-dt-step-badge">ACTIVE</span>
@@ -283,8 +353,8 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
               <div className="spi-dt-step-title">Basic Debit Note Details</div>
               <div className="spi-dt-step-desc">Core details that identify this debit note</div>
               <span className="spi-dt-step-ghost">01</span>
-            </div>
-            <div className={`spi-dt-step spi-dt-step--nav ${step === 2 ? 'is-active' : ''}`} role="button" tabIndex={0} title="Go to Step 2" onClick={() => setStep(2)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStep(2); } }}>
+            </div></Tooltip>
+            <Tooltip label="Go to Step 2"><div className={`spi-dt-step spi-dt-step--nav ${step === 2 ? 'is-active' : ''}`} role="button" tabIndex={0} onClick={() => setStep(2)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStep(2); } }}>
               <div className="spi-dt-step-top"><span className="spi-dt-step-lbl">STEP 02</span>
                 {step === 2 && <span className="spi-dt-step-badge">ACTIVE</span>}
               </div>
@@ -292,12 +362,21 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
               <div className="spi-dt-step-title">SPI Details &amp; Debit Note Product Details</div>
               <div className="spi-dt-step-desc">Invoice details &amp; returned / adjusted items</div>
               <span className="spi-dt-step-ghost">02</span>
-            </div>
+            </div></Tooltip>
           </div>
         </div>
 
+        {readOnly && (
+          <div className="dn-ro-banner">
+            <IcoLock /> This debit note has a recorded payment recovery — it is <b>view-only</b> and can no longer be edited.
+          </div>
+        )}
+
+        {/* Shimmer skeleton while an existing debit note is loading (edit mode). */}
+        {hydrating && <FormSkeleton />}
+
         {/* ── Body (Step 1) ── */}
-        {step === 1 && (
+        {!hydrating && step === 1 && (
         <div className="spi-dt-body">
           {/* Section 1 — Debit Note Details */}
           <div className={`spi-dt-sec ${dnOpen ? '' : 'is-collapsed'}`}>
@@ -316,14 +395,14 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
                 <Field label="DEBIT NOTE TYPE">
                   <div className="dn-typewrap">
                     <DnSelect value={dnTypeName} options={types.map(t => t.name)} placeholder="— Select Type —" onChange={v => setDnTypeId(types.find(t => t.name === v)?.id ?? null)} />
-                    <button type="button" className="dn-typeadd" title="Manage debit note types" onClick={() => setTypeModalOpen(true)}><IcoPlus size={15} /></button>
+                    <Tooltip label="Manage debit note types"><button type="button" className="dn-typeadd" onClick={() => setTypeModalOpen(true)}><IcoPlus size={15} /></button></Tooltip>
                   </div>
                 </Field>
-                <Field label="EXPECTED DEBIT DATE"><MasterDatePicker value={expDate} onChange={setExpDate} placeholder="Select date" popupClassName="dncr-cal" /></Field>
+                <Field label="EXPECTED DEBIT DATE"><MasterDatePicker value={expDate} onChange={setExpDate} minDate={todayISO} placeholder="Select date" popupClassName="dncr-cal" /></Field>
                 <Field label="SPI NUMBER"><DnSelect value={spiCode} options={spis.map(s => s.code)} placeholder="— Select SPI Number —" onChange={v => selectSpi(spis.find(s => s.code === v) ?? null)} /></Field>
-                <AutoField label="SPI DATE" value={spiDate} loading={spiLoading} />
+                <AutoField label="SPI DATE" value={fmtDate(spiDate)} loading={spiLoading} />
                 <AutoField label="PO NUMBER" value={poCode} loading={spiLoading} />
-                <AutoField label="PO DATE" value={poDate} loading={spiLoading} />
+                <AutoField label="PO DATE" value={fmtDate(poDate)} loading={spiLoading} />
               </div>
             </div>
           </div>
@@ -357,28 +436,28 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
                 <div className="spi-dt-card-head" style={{ cursor: 'pointer' }} onClick={() => setLegalOpen(o => !o)}>
                   <div className="spi-dt-card-title">
                     <span className="spi-dt-card-ico spi-dt-card-ico-2"><IcoShield /></span> Supplier Legal Status
-                    {sel && <span className="spi-dt-legal-badge ok">100% Compliant</span>}
+                    {supLegal && <span className={`spi-dt-legal-badge ${supLegal.p === 100 ? 'ok' : 'warn'}`}>{supLegal.p === 100 ? '100% Compliant' : `${supLegal.p}% · Needs Review`}</span>}
                   </div>
                   <span className="spi-dt-minus">{legalOpen ? '–' : '+'}</span>
                 </div>
                 {legalOpen && (
                   <div className="spi-dt-legal">
                     <div className="spi-dt-legal-top">
-                      <div className="spi-dt-legal-bar"><span className="spi-dt-legal-fill" style={{ width: sel ? '100%' : '0%', background: sel ? 'linear-gradient(90deg,#0e7490,#0891b2 55%,#06b6d4)' : undefined }} /></div>
-                      <div className="spi-dt-legal-pct">{sel ? '100%' : '0%'}</div>
+                      <div className="spi-dt-legal-bar"><span className="spi-dt-legal-fill" style={{ width: `${supLegal?.p ?? 0}%`, background: supLegal ? (supLegal.p === 100 ? 'linear-gradient(90deg,#0e7490,#0891b2 55%,#06b6d4)' : supLegal.p >= 60 ? 'linear-gradient(90deg,#d97706,#f59e0b)' : 'linear-gradient(90deg,#dc2626,#ef4444)') : undefined }} /></div>
+                      <div className="spi-dt-legal-pct">{supLegal?.p ?? 0}%</div>
                     </div>
-                    {sel ? (<>
-                      <div className="spi-dt-legal-summary"><strong>18</strong> of <strong>18</strong> documents completed across all 5 parameters</div>
+                    {supLegal ? (<>
+                      <div className="spi-dt-legal-summary"><strong>{supLegal.done}</strong> of <strong>{supLegal.tot}</strong> documents completed across all 5 parameters</div>
                       <div className="spi-dt-legal-grid">
-                        {LEGAL_PARAMS.map(c => (
-                          <div key={c.name} className="spi-dt-legal-pcard spi-dt-legal-pcard--full">
+                        {supLegal.cards.map(c => (
+                          <div key={c.name} className={`spi-dt-legal-pcard spi-dt-legal-pcard--${c.st}`}>
                             <div className="spi-dt-legal-pcard-hd"><span className="spi-dt-legal-pcard-ico"><IcoCheck /></span><span className="spi-dt-legal-pcard-nm">{c.name}</span><span className="spi-dt-legal-pcard-cnt">{c.d} / {c.t}</span></div>
-                            <div className="spi-dt-legal-pcard-bar"><div className="spi-dt-legal-pcard-fill" style={{ width: '100%' }} /></div>
+                            <div className="spi-dt-legal-pcard-bar"><div className="spi-dt-legal-pcard-fill" style={{ width: `${c.pc}%` }} /></div>
                           </div>
                         ))}
                       </div>
                     </>) : (
-                      <div className="spi-dt-legal-note">Select an SPI to view legal &amp; compliance status.</div>
+                      <div className="spi-dt-legal-note">{supLegalLoading ? 'Loading compliance status…' : 'Select an SPI to view legal & compliance status.'}</div>
                     )}
                   </div>
                 )}
@@ -423,7 +502,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
         )}
 
         {/* ── Body (Step 2) ── */}
-        {step === 2 && (
+        {!hydrating && step === 2 && (
         <div className="spi-dt-body">
           {/* Summary (read-only, collapsed) */}
           <div className={`spi-dt-sec ${sumOpen ? '' : 'is-collapsed'}`}>
@@ -449,11 +528,11 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
                     <RO label="DEBIT NOTE NO." value={code} />
                     <RO label="DEBIT NOTE DATE" value={todayDisp} />
                     <RO label="DEBIT NOTE TYPE" value={np(dnTypeName)} muted={!dnTypeName} />
-                    <RO label="EXPECTED DEBIT DATE" value={np(expDate)} muted={!expDate} />
+                    <RO label="EXPECTED DEBIT DATE" value={np(fmtDate(expDate))} muted={!expDate} />
                     <RO label="SPI NUMBER" value={np(spiCode)} muted={!spiCode} />
-                    <RO label="SPI DATE" value={np(spiDate)} muted={!spiDate} />
+                    <RO label="SPI DATE" value={np(fmtDate(spiDate))} muted={!spiDate} />
                     <RO label="PO NUMBER" value={np(poCode)} muted={!poCode} />
-                    <RO label="PO DATE" value={np(poDate)} muted={!poDate} />
+                    <RO label="PO DATE" value={np(fmtDate(poDate))} muted={!poDate} />
                   </ROGroup>
                   <ROGroup label="Supplier Details">
                     <RO label="SUPPLIER CODE" value={np(sel?.code)} muted={!sel} />
@@ -532,26 +611,29 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
               <div className="spi-dt-sec-toggle"><IcoChevron /></div>
             </div>
             <div className="spi-dt-sec-body">
-              <div className="dncr-prodmeta">
-                <span className="dncr-prodmeta-txt">{products.length} products · from the linked SPI · only <b>Debit Qty</b> is editable · remove a row to exclude it</span>
-              </div>
               <div className="spi-dt-mtable-wrap">
                 <table className="spi-dt-mtable spi-dt-mtable--fixed">
                   <colgroup>
                     <col style={{ width: '52px' }} /><col style={{ width: '96px' }} /><col style={{ minWidth: '180px' }} />
                     <col style={{ width: '110px' }} /><col style={{ width: '84px' }} /><col style={{ width: '84px' }} /><col style={{ width: '84px' }} /><col style={{ width: '96px' }} />
-                    <col style={{ width: '76px' }} /><col style={{ width: '104px' }} /><col style={{ width: '76px' }} /><col style={{ width: '104px' }} /><col style={{ width: '104px' }} /><col style={{ width: '54px' }} />
+                    {intra
+                      ? (<><col style={{ width: '76px' }} /><col style={{ width: '104px' }} /><col style={{ width: '76px' }} /><col style={{ width: '104px' }} /></>)
+                      : (<><col style={{ width: '76px' }} /><col style={{ width: '104px' }} /></>)}
+                    <col style={{ width: '104px' }} /><col style={{ width: '54px' }} />
                   </colgroup>
                   <thead>
                     <tr>
                       <th className="spi-dt-mc-c">SR NO</th><th>PRODUCT CODE</th><th>PRODUCT NAME (SPI)</th><th className="spi-dt-mc-c">HSN CODE</th>
                       <th className="spi-dt-mc-c">QTY (PO)</th><th className="spi-dt-mc-c">QTY (SPI)</th><th className="spi-dt-mc-c">DEBIT QTY</th><th className="spi-dt-mc-c">PRODUCT RATE</th>
-                      <th className="spi-dt-mc-c">CGST(%)</th><th className="spi-dt-mc-c">CGST AMOUNT</th><th className="spi-dt-mc-c">SGST(%)</th><th className="spi-dt-mc-c">SGST AMOUNT</th><th className="spi-dt-mc-c">DEBIT COST</th><th className="spi-dt-mc-c">ACTION</th>
+                      {intra
+                        ? (<><th className="spi-dt-mc-c">CGST(%)</th><th className="spi-dt-mc-c">CGST AMOUNT</th><th className="spi-dt-mc-c">SGST(%)</th><th className="spi-dt-mc-c">SGST AMOUNT</th></>)
+                        : (<><th className="spi-dt-mc-c">IGST(%)</th><th className="spi-dt-mc-c">IGST AMOUNT</th></>)}
+                      <th className="spi-dt-mc-c">DEBIT COST</th><th className="spi-dt-mc-c">ACTION</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rowsCalc.length === 0 ? (
-                      <tr><td colSpan={14} style={{ textAlign: 'center', padding: '28px', color: '#94a3b8', fontWeight: 600 }}>Select an SPI to load its products.</td></tr>
+                      <tr><td colSpan={intra ? 14 : 12} style={{ textAlign: 'center', padding: '28px', color: '#94a3b8', fontWeight: 600 }}>Select an SPI to load its products.</td></tr>
                     ) : rowsCalc.map((p, i) => (
                       <tr key={i}>
                         <td className="spi-dt-mc-c">{i + 1}</td>
@@ -560,14 +642,21 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
                         <td className="spi-dt-mc-c"><span className="dn-frz">{p.hsn || '—'}</span></td>
                         <td className="spi-dt-mc-c"><span className="dn-frz">{p.qtyPo}</span></td>
                         <td className="spi-dt-mc-c"><span className="dn-frz">{p.qtySpi}</span></td>
-                        <td><input className="spi-dt-minp spi-dt-minp-sm dn-editqty" type="number" min={0} value={p.debitQty} onChange={e => patchProduct(i, 'debitQty', e.target.value)} title="Editable" /></td>
+                        <td><input className="spi-dt-minp spi-dt-minp-sm dn-editqty" type="number" min={0} max={p.qtySpi} value={p.debitQty} onChange={e => patchProduct(i, 'debitQty', e.target.value)} title={`Editable · max ${p.qtySpi} (SPI qty)`} /></td>
                         <td className="spi-dt-mc-c"><span className="dn-frz">{p.rate}</span></td>
-                        <td className="spi-dt-mc-c"><span className="dn-frz">{p.cgstPct}</span></td>
-                        <td className="spi-dt-amt spi-dt-mc-c">{inr(p.cgstA)}</td>
-                        <td className="spi-dt-mc-c"><span className="dn-frz">{p.sgstPct}</span></td>
-                        <td className="spi-dt-amt spi-dt-mc-c">{inr(p.sgstA)}</td>
+                        {intra
+                          ? (<>
+                              <td className="spi-dt-mc-c"><span className="dn-frz">{p.gst / 2}</span></td>
+                              <td className="spi-dt-amt spi-dt-mc-c">{inr(p.cgstA)}</td>
+                              <td className="spi-dt-mc-c"><span className="dn-frz">{p.gst / 2}</span></td>
+                              <td className="spi-dt-amt spi-dt-mc-c">{inr(p.sgstA)}</td>
+                            </>)
+                          : (<>
+                              <td className="spi-dt-mc-c"><span className="dn-frz">{p.gst}</span></td>
+                              <td className="spi-dt-amt spi-dt-mc-c">{inr(p.igstA)}</td>
+                            </>)}
                         <td className="spi-dt-amt spi-dt-mc-c">{inr(p.cost)}</td>
-                        <td className="spi-dt-mc-c"><button type="button" className="spi-dt-rowdel" title="Remove product" onClick={() => removeProduct(i)}><IcoX size={13} /></button></td>
+                        <td className="spi-dt-mc-c"><Tooltip label="Remove product"><button type="button" className="spi-dt-rowdel" onClick={() => removeProduct(i)}><IcoX size={13} /></button></Tooltip></td>
                       </tr>
                     ))}
                   </tbody>
@@ -582,8 +671,12 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
                 </div>
                 <div className="spi-dt-totbox">
                   <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total Debit Cost</span><span className="spi-dt-totrow-v">{inr(totProd)}</span></div>
-                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total CGST Amount</span><span className="spi-dt-totrow-v">{inr(totCgst)}</span></div>
-                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total SGST Amount</span><span className="spi-dt-totrow-v">{inr(totSgst)}</span></div>
+                  {intra ? (<>
+                    <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total CGST Amount</span><span className="spi-dt-totrow-v">{inr(totCgst)}</span></div>
+                    <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total SGST Amount</span><span className="spi-dt-totrow-v">{inr(totSgst)}</span></div>
+                  </>) : (
+                    <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total IGST Amount</span><span className="spi-dt-totrow-v">{inr(totIgst)}</span></div>
+                  )}
                   <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Additions (+)</span><span className="spi-dt-totrow-v">{inr(addSum)}</span></div>
                   <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Deductions (–)</span><span className="spi-dt-totrow-v">– {inr(dedSum)}</span></div>
                   <div className="spi-dt-totrow spi-dt-totrow-grand"><span className="spi-dt-totrow-k">Grand Total</span><span className="spi-dt-totrow-v">{inr(grandTotal)}</span></div>
@@ -639,7 +732,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
             </div>
             <div className="spi-dt-foot-r">
               <button type="button" className="spi-dt-btn-ghost" onClick={onClose}><IcoChevronL /> Cancel</button>
-              <button type="button" className="spi-dt-btn-next" onClick={() => setStep(2)}>Save &amp; Next <IcoChevronR /></button>
+              <button type="button" className="spi-dt-btn-next" onClick={() => setStep(2)} disabled={hydrating}>Save &amp; Next <IcoChevronR /></button>
             </div>
           </div>
         ) : (
@@ -653,7 +746,9 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
             </div>
             <div className="spi-dt-foot-r">
               <button type="button" className="spi-dt-btn-ghost" onClick={() => setStep(1)}><IcoChevronL /> Back</button>
-              <button type="button" className="spi-dt-btn-map" onClick={save} disabled={saving}>{saving ? 'Saving…' : (editId ? 'Update Debit Note' : 'Generate Debit Note')} <IcoChevronR /></button>
+              {readOnly
+                ? <button type="button" className="spi-dt-btn-ghost" onClick={onClose}>Close</button>
+                : <button type="button" className="spi-dt-btn-map" onClick={save} disabled={saving || hydrating}>{saving ? <><IcoSpinner /> Saving…</> : <>{editId ? 'Update Debit Note' : 'Generate Debit Note'} <IcoChevronR /></>}</button>}
             </div>
           </div>
         )}
@@ -664,6 +759,42 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
       <style>{DNCR_CSS}</style>
     </div>,
     document.body,
+  );
+}
+
+/* Spinning loader glyph for in-flight action buttons. */
+function IcoSpinner({ size = 14 }: { size?: number }) {
+  return <svg className="dncr-spin" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>;
+}
+
+/* Shimmer skeleton shown in edit mode while the debit note record loads —
+ * mimics the two stacked section cards of the form body. */
+function FormSkeleton() {
+  const Bar = ({ w, h = 12 }: { w: string | number; h?: number }) => <span className="dncr-sk" style={{ width: w, height: h }} />;
+  return (
+    <div className="spi-dt-body">
+      {[0, 1].map(s => (
+        <div className="spi-dt-sec" key={s}>
+          <div className="spi-dt-sec-head">
+            <div className="spi-dt-sec-ico"><span className="dncr-sk" style={{ width: 22, height: 22, borderRadius: 7 }} /></div>
+            <div className="spi-dt-sec-mid" style={{ flex: 1 }}>
+              <Bar w={s === 0 ? 180 : 240} />
+              <div style={{ marginTop: 6 }}><Bar w={s === 0 ? 260 : 320} h={9} /></div>
+            </div>
+          </div>
+          <div className="spi-dt-sec-body">
+            <div className="dncr-sk-grid">
+              {Array.from({ length: s === 0 ? 8 : 6 }).map((_, i) => (
+                <div key={i}>
+                  <Bar w="55%" h={9} />
+                  <div style={{ marginTop: 6 }}><Bar w="100%" h={30} /></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -723,7 +854,7 @@ function ChargeBlock({ variant, label, rows, setRows }: { variant: 'add' | 'ded'
           <div className="dncr-charge-row" key={i}>
             <div className="dncr-amtwrap"><span className="dncr-cur">₹</span><input className="dncr-amtinp" type="number" placeholder="0.00" value={row.amount} onChange={e => patch(i, 'amount', e.target.value)} /></div>
             <input className="dncr-note" placeholder="Note against this charge…" value={row.note} onChange={e => patch(i, 'note', e.target.value)} />
-            <button type="button" className="dncr-rowx" title="Remove" onClick={() => setRows(rs => rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs)}><IcoX size={13} /></button>
+            <Tooltip label="Remove"><button type="button" className="dncr-rowx" onClick={() => setRows(rs => rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs)}><IcoX size={13} /></button></Tooltip>
           </div>
         ))}
       </div>
@@ -787,6 +918,30 @@ function DnSelect({ value, options, onChange, placeholder }: { value: string; op
 }
 
 const DNCR_CSS = `
+/* Action-button spinner + edit-mode shimmer skeleton. */
+.dncr-spin { animation:dncr-spin .7s linear infinite; }
+@keyframes dncr-spin { to { transform:rotate(360deg); } }
+.dn-scope .dncr-sk, .spi-dt-overlay .dncr-sk { display:inline-block; border-radius:6px; background:linear-gradient(90deg,#e8eef2 25%,#f4f8fa 37%,#e8eef2 63%); background-size:400% 100%; animation:dncr-sk 1.4s ease infinite; }
+@keyframes dncr-sk { 0% { background-position:100% 50%; } 100% { background-position:0 50%; } }
+.spi-dt-overlay .dncr-sk-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:14px 16px; }
+[data-bs-theme="dark"] .spi-dt-overlay .dncr-sk { background:linear-gradient(90deg,#1e2c34 25%,#26363e 37%,#1e2c34 63%); background-size:400% 100%; }
+/* View-only lock (debit note has a recorded payment recovery). A tenant can
+ * still read every field and expand/collapse sections, but all form controls
+ * are inert and the Update action is hidden — the server also rejects edits. */
+.dn-readonly .dn-ro-banner { display:flex; align-items:center; gap:9px; margin:12px 16px 0; padding:11px 14px; border:1px solid #fcd9b6; border-radius:11px; background:#fff7ed; color:#9a3412; font-size:12px; font-weight:700; }
+.dn-readonly .dn-ro-banner svg { flex:0 0 auto; }
+.dn-readonly .dn-ro-banner b { color:#9a3412; }
+.dn-readonly .spi-dt-body input,
+.dn-readonly .spi-dt-body textarea,
+.dn-readonly .spi-dt-body select,
+.dn-readonly .spi-dt-body button,
+.dn-readonly .spi-dt-body .master-datepicker-wrap { pointer-events:none !important; }
+.dn-readonly .spi-dt-body .dncr-chgbtn,
+.dn-readonly .spi-dt-body .dncr-rowx,
+.dn-readonly .spi-dt-body .spi-dt-rowdel,
+.dn-readonly .spi-dt-body .dn-typeadd { opacity:.45; }
+[data-bs-theme="dark"] .dn-readonly .dn-ro-banner { background:rgba(154,52,18,.16); border-color:rgba(251,146,60,.35); color:#fdba74; }
+[data-bs-theme="dark"] .dn-readonly .dn-ro-banner b { color:#fdba74; }
 /* Step-2 recap Supplier Legal Status — compact: just the progress bar + a one-line
  * summary and a small "compliant" badge (no bulky parameter cards). */
 .dn-scope .dn-recap-legal { padding:13px 14px; }

@@ -456,7 +456,7 @@ class CandidateController extends Controller
      * round-trip (download → fill → upload) always validates cleanly.
      */
     private const CSV_COLUMNS = [
-        'Name', 'Email', 'Mobile', 'Experience',
+        'Name', 'Email', 'Mobile', 'Experience', 'Qualification',
         'Current Salary', 'Expected Salary',
         'Notice Period', 'Source', 'Status',
     ];
@@ -484,7 +484,7 @@ class CandidateController extends Controller
         $this->authorize($request, 'can_view');
 
         $sampleRow = [
-            'Priya Sharma', 'priya.s@example.com', '+91 9812345678', '5',
+            'Priya Sharma', 'priya.s@example.com', '+91 9812345678', '5', 'B.Tech',
             '15', '22', '30 Days', 'LinkedIn', 'Final Round Selected',
         ];
 
@@ -585,6 +585,7 @@ class CandidateController extends Controller
                 'email'               => 'nullable|email|max:191',
                 'mobile'              => 'nullable|string|max:30',
                 'experience_years'    => 'nullable|numeric|min:0|max:99.99',
+                'qualification'       => 'nullable|string|max:191',
                 'current_salary_lpa'  => 'nullable|numeric|min:0|max:9999.99',
                 'expected_salary_lpa' => 'nullable|numeric|min:0|max:9999.99',
                 'notice_period'       => ['nullable', Rule::in(self::NOTICE_PERIODS)],
@@ -690,7 +691,7 @@ class CandidateController extends Controller
         // Export adds a few extra columns over the import format so the
         // downloaded file is more useful as a standalone report.
         $exportHeader = [
-            'Name', 'Email', 'Mobile', 'Experience',
+            'Name', 'Email', 'Mobile', 'Experience', 'Qualification',
             'Current Salary', 'Expected Salary', 'Notice Period',
             'Source', 'Status', 'Recruitment ID',
         ];
@@ -700,6 +701,7 @@ class CandidateController extends Controller
                 $c->email ?? '',
                 $c->mobile ?? '',
                 $c->experience_years !== null ? (string) (float) $c->experience_years : '',
+                $c->qualification ?? '',
                 $c->current_salary_lpa  !== null ? (string) (float) $c->current_salary_lpa  : '',
                 $c->expected_salary_lpa !== null ? (string) (float) $c->expected_salary_lpa : '',
                 $c->notice_period ?? '',
@@ -954,6 +956,7 @@ class CandidateController extends Controller
             'email'               => $val('Email'),
             'mobile'              => $val('Mobile'),
             'experience_years'    => $val('Experience'),
+            'qualification'       => $val('Qualification'),
             'current_salary_lpa'  => $val('Current Salary'),
             'expected_salary_lpa' => $val('Expected Salary'),
             'notice_period'       => $val('Notice Period'),

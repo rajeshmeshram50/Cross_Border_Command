@@ -16,6 +16,31 @@ import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 
 const inr = (n: number) => `₹${(n ?? 0).toLocaleString('en-IN')}`;
 
+// One recorded payment recovery, for the history popup.
+type PayHistoryRow = {
+  id: number; sr: number; amount: number; bank_name?: string | null; reference_no?: string | null;
+  paid_date?: string | null; recorded_at?: string | null; attachment_url?: string | null;
+  attachment_name?: string | null; balance_after: number; status?: string | null;
+};
+
+// Every date renders as "14-July-2026".
+const DN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const fmtDate = (s?: string) => {
+  if (!s) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return `${m[3]}-${DN_MONTHS[+m[2] - 1]}-${m[1]}`;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? s : `${String(d.getDate()).padStart(2, '0')}-${DN_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+};
+// "14-July-2026, 03:45 PM" from an ISO datetime.
+const fmtDateTime = (s?: string | null) => {
+  if (!s) return '—';
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  let h = d.getHours(); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+  return `${String(d.getDate()).padStart(2, '0')}-${DN_MONTHS[d.getMonth()]}-${d.getFullYear()}, ${String(h).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${ap}`;
+};
+
 type DnStatus = 'Unpaid' | 'Partially Paid' | 'Fully Paid' | 'Payment Overdue';
 type DnRow = {
   id: number;
@@ -23,6 +48,7 @@ type DnRow = {
   ship: string; proc: string;
   spi: string; spiDate: string; po: string; poDate: string;
   supplier: string; exp: string; total: number;
+  paid?: number; balance?: number; locked?: boolean;
   status: DnStatus;
   zoho: 'sync' | 'not';
 };
@@ -53,6 +79,18 @@ export default function DebitNote() {
   const [syncConfirm, setSyncConfirm] = useState<DnRow | null>(null);   // "Sync with Zohobook?" confirm
   const [detailOpen, setDetailOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
+  const [viewOnly, setViewOnly] = useState(false);   // opened for a locked (paid) debit note
+  const [stepsOpen, setStepsOpen] = useState(true);  // "What We Are Doing Here" collapse toggle
+  const [emailing, setEmailing] = useState<Record<number, boolean>>({});
+  // Payment Recovery popup state — live already-paid / balance for the row, plus
+  // the amount + proof being recorded.
+  const [paySummary, setPaySummary] = useState<{ amountPaid: number; balance: number } | null>(null);
+  const [payList, setPayList] = useState<PayHistoryRow[]>([]);   // recorded payments for the history popup
+  const [payHistoryOpen, setPayHistoryOpen] = useState(false);
+  const [payAmount, setPayAmount] = useState('');
+  const [payFile, setPayFile] = useState<File | null>(null);
+  const [paySaving, setPaySaving] = useState(false);
+  const payFileRef = useRef<HTMLInputElement>(null);
 
   const [rows, setRows] = useState<DnRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -141,8 +179,51 @@ export default function DebitNote() {
     return () => { html.style.overflow = ph; body.style.overflow = pb; };
   }, [payRow, syncConfirm, menu, detailOpen]);
 
-  const openCreate = () => { setEditId(null); setDetailOpen(true); };
-  const openEdit = (r: DnRow) => { setEditId(r.id); setDetailOpen(true); };
+  const openCreate = () => { setEditId(null); setViewOnly(false); setDetailOpen(true); };
+  const openEdit = (r: DnRow) => { setEditId(r.id); setViewOnly(!!r.locked); setDetailOpen(true); };
+
+  // When the Payment Recovery popup opens, load the debit note's live
+  // recovered / balance figures + recorded-payment history, and reset the form.
+  useEffect(() => {
+    if (!payRow) { setPaySummary(null); setPayList([]); setPayHistoryOpen(false); setPayAmount(''); setPayFile(null); return; }
+    let alive = true;
+    api.get(`/p2p/debit-notes/${payRow.id}/payment-summary`)
+      .then(r => {
+        if (!alive) return;
+        const a = r.data?.data?.amounts;
+        if (a) setPaySummary({ amountPaid: Number(a.amountPaid) || 0, balance: Number(a.balance) || 0 });
+        setPayList((r.data?.data?.payments ?? []) as PayHistoryRow[]);
+      })
+      .catch(() => { if (alive) { setPaySummary(null); setPayList([]); } });
+    return () => { alive = false; };
+  }, [payRow]);
+
+  const recordPayment = async () => {
+    if (!payRow || paySaving) return;
+    const amt = parseFloat(payAmount);
+    if (!isFinite(amt) || amt <= 0) { toast.info('Enter an amount', 'Enter a valid recovered amount first.'); return; }
+    const bal = paySummary?.balance ?? payRow.total;
+    if (amt > bal + 0.001) { toast.error('Amount too high', `Cannot exceed the outstanding balance (${inr(bal)}).`); return; }
+    setPaySaving(true);
+    const fd = new FormData();
+    fd.append('amount', String(amt));
+    if (payFile) fd.append('attachment', payFile);
+    try {
+      const r = await api.post(`/p2p/debit-notes/${payRow.id}/payments`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      toast.success('Payment recorded', `${inr(amt)} recovered against ${payRow.no}.`);
+      // Refresh the popup in place from the returned summary so the balance and
+      // History reflect this payment; reset the form; refresh the list statuses.
+      const data = r.data?.data;
+      if (data?.amounts) setPaySummary({ amountPaid: Number(data.amounts.amountPaid) || 0, balance: Number(data.amounts.balance) || 0 });
+      setPayList((data?.payments ?? []) as PayHistoryRow[]);
+      setPayAmount('');
+      setPayFile(null);
+      if (payFileRef.current) payFileRef.current.value = '';
+      reload();
+    } catch (e: any) {
+      toast.error('Could not record payment', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setPaySaving(false); }
+  };
 
   const syncRow = async (r: DnRow) => {
     try { await api.post(`/p2p/debit-notes/${r.id}/sync`); toast.success(`${r.no} synced with Zohobook`); reload(); }
@@ -157,6 +238,55 @@ export default function DebitNote() {
   };
 
   const soon = () => toast.info('Coming soon', 'This action is in development.');
+
+  // Email the debit note PDF to the supplier (same template as PI / PO).
+  const emailDn = (r: DnRow) => {
+    if (!r.id || emailing[r.id]) return;
+    const id = r.id;
+    setEmailing(m => ({ ...m, [id]: true }));
+    toast.info(`Emailing ${r.no} to supplier…`);
+    api.post(`/p2p/debit-notes/${id}/email`)
+      .then(res => toast.success(res.data?.message || `Debit Note emailed — ${r.no}`))
+      .catch(err => {
+        const msg = err?.response?.data?.message;
+        if (err?.response?.status === 422) toast.error('Cannot send email', msg || 'No valid supplier email address.');
+        else toast.error('Email failed', msg || 'Please try again.');
+      })
+      .finally(() => setEmailing(m => { const n = { ...m }; delete n[id]; return n; }));
+  };
+
+  // Debit Note PDF (same render shell as the PO PDF) — with/without signature.
+  const dnPdfBlob = (id: number, withSign: boolean) =>
+    api.get(`/p2p/debit-notes/${id}/pdf`, { params: { signature: withSign ? 1 : 0 }, responseType: 'blob' });
+  const viewDnPdf = (r: DnRow, withSign: boolean) => {
+    const w = window.open('', '_blank');
+    toast.info(`Preparing debit note PDF${withSign ? ' (signed)' : ' (without signature)'}…`);
+    return dnPdfBlob(r.id, withSign)
+      .then(res => { const url = URL.createObjectURL(res.data as Blob); if (w) w.location.href = url; else window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); })
+      .catch(() => { if (w) w.close(); toast.error('Could not open debit note PDF', 'Please try again.'); });
+  };
+  const downloadDnPdf = (r: DnRow, withSign: boolean) => {
+    toast.info(`Downloading debit note PDF${withSign ? ' (signed)' : ' (without signature)'}…`);
+    return dnPdfBlob(r.id, withSign)
+      .then(res => {
+        const url = URL.createObjectURL(res.data as Blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `DN-${r.no.replace(/[^A-Za-z0-9_-]/g, '_')}${withSign ? '_signed' : '_unsigned'}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      })
+      .catch(() => toast.error('Could not download debit note PDF', 'Please try again.'));
+  };
+
+  // Run a menu PDF action, keeping the menu open with a spinner on the clicked
+  // item until the PDF is ready, then close the menu.
+  const [menuBusy, setMenuBusy] = useState<string | null>(null);
+  const runMenuPdf = (key: string, fn: () => Promise<unknown>) => {
+    if (menuBusy) return;
+    setMenuBusy(key);
+    fn().finally(() => { setMenuBusy(null); setMenu(null); });
+  };
 
   return (
     <div className="spi-root dn-scope" ref={rootRef}>
@@ -175,8 +305,8 @@ export default function DebitNote() {
       </div>
 
       {/* ── What We Are Doing Here ── */}
-      <div className="spi-bref">
-        <div className="spi-bref-head">
+      <div className={`spi-bref ${stepsOpen ? '' : 'is-collapsed'}`}>
+        <div className="spi-bref-head" onClick={() => setStepsOpen(o => !o)}>
           <div className="spi-bref-ico"><IcoDoc size={14} /></div>
           <div className="spi-bref-mid">
             <div className="spi-bref-row">
@@ -186,6 +316,7 @@ export default function DebitNote() {
             </div>
             <div className="spi-bref-sub">Link the supplier invoice, capture the debit note, add the returned or adjusted items, reverse the applicable tax, and post the approved note to Zohobook — end to end in one place.</div>
           </div>
+          <div className="spi-bref-toggle"><IcoChevron /></div>
         </div>
         <div className="spi-bref-body">
           {STEPS.map(s => (
@@ -240,7 +371,23 @@ export default function DebitNote() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={13}><div className="spi-empty"><div className="spi-empty-t">Loading…</div></div></td></tr>
+                Array.from({ length: Math.max(5, Math.min(rpp, 10)) }).map((_, i) => (
+                  <tr key={`sk-${i}`} className="dn-sk-row">
+                    <td className="spi-c-sr"><span className="dn-sk" style={{ width: 18 }} /></td>
+                    <td><span className="dn-sk" style={{ width: '72%' }} /><span className="dn-sk dn-sk-sm" style={{ width: '46%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '80%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '60%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '60%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '70%' }} /><span className="dn-sk dn-sk-sm" style={{ width: '46%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '70%' }} /><span className="dn-sk dn-sk-sm" style={{ width: '46%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '85%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '58%' }} /></td>
+                    <td className="spi-c-r"><span className="dn-sk" style={{ width: '55%', marginLeft: 'auto' }} /></td>
+                    <td className="spi-c-c"><span className="dn-sk" style={{ width: 72, margin: '0 auto' }} /></td>
+                    <td className="spi-c-c"><span className="dn-sk" style={{ width: 72, margin: '0 auto' }} /></td>
+                    <td className="spi-c-c"><span className="dn-sk" style={{ width: 92, margin: '0 auto' }} /></td>
+                  </tr>
+                ))
               ) : rows.length === 0 ? (
                 <tr><td colSpan={13}>
                   <div className="spi-empty"><div className="spi-empty-t">No debit notes found</div><div className="spi-empty-s">Create a debit note to get started, or try a different search.</div></div>
@@ -248,14 +395,14 @@ export default function DebitNote() {
               ) : rows.map((r, i) => (
                 <tr key={r.id}>
                   <td className="spi-c-sr"><span className="spi-sr">{start + i + 1}</span></td>
-                  <td><span className="spi-idstack"><span className="spi-pill spi-pill-spi">{r.no}</span><span className="spi-date-sub">{r.dnDate}</span></span></td>
+                  <td><span className="spi-idstack"><span className="spi-pill spi-pill-spi">{r.no}</span><span className="spi-date-sub">{fmtDate(r.dnDate)}</span></span></td>
                   <td><span className="dn-type">{r.type || '—'}</span></td>
                   <td>{r.ship ? <span className="spi-pill spi-pill-shp">{r.ship}</span> : '—'}</td>
                   <td>{r.proc ? <span className="spi-pill spi-pill-proc">{r.proc}</span> : '—'}</td>
-                  <td>{r.spi ? <span className="spi-idstack"><span className="spi-pill spi-pill-pi">{r.spi}</span><span className="spi-date-sub">{r.spiDate}</span></span> : '—'}</td>
-                  <td>{r.po ? <span className="spi-idstack"><span className="spi-pill spi-pill-po">{r.po}</span><span className="spi-date-sub">{r.poDate}</span></span> : '—'}</td>
-                  <td title={r.supplier ?? ''}>{r.supplier ? (r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier) : '—'}</td>
-                  <td><span className="spi-date-sub">{r.exp || '—'}</span></td>
+                  <td>{r.spi ? <span className="spi-idstack"><span className="spi-pill spi-pill-pi">{r.spi}</span><span className="spi-date-sub">{fmtDate(r.spiDate)}</span></span> : '—'}</td>
+                  <td>{r.po ? <span className="spi-idstack"><span className="spi-pill spi-pill-po">{r.po}</span><span className="spi-date-sub">{fmtDate(r.poDate)}</span></span> : '—'}</td>
+                  <td>{r.supplier ? <Tooltip label={r.supplier}><span>{r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier}</span></Tooltip> : '—'}</td>
+                  <td><span className="spi-date-sub">{r.exp ? fmtDate(r.exp) : '—'}</span></td>
                   <td className="spi-c-r spi-amt">{inr(r.total)}</td>
                   <td className="spi-c-c"><span className={`dn-st ${statusClass(r.status)}`}>{r.status}</span></td>
                   <td className="spi-c-c">
@@ -266,8 +413,8 @@ export default function DebitNote() {
                       {r.zoho === 'sync'
                         ? <Tooltip label="Already synced to Zohobook"><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
                         : <Tooltip label="Sync this debit note to Zohobook"><button type="button" className="spi-zohobtn" onClick={() => setSyncConfirm(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
-                      <Tooltip label="Edit debit note"><button type="button" className="spi-iconbtn" onClick={() => openEdit(r)}><IcoEdit /></button></Tooltip>
-                      <Tooltip label="Email debit note"><button type="button" className="spi-iconbtn" onClick={soon}><IcoMail /></button></Tooltip>
+                      <Tooltip label={r.locked ? 'View debit note (locked — payment recorded)' : 'Edit debit note'}><button type="button" className="spi-iconbtn" onClick={() => openEdit(r)}>{r.locked ? <IcoEye /> : <IcoEdit />}</button></Tooltip>
+                      <Tooltip label={r.id && emailing[r.id] ? 'Sending…' : 'Email debit note to supplier'}><button type="button" className="spi-iconbtn" disabled={!!(r.id && emailing[r.id])} onClick={() => emailDn(r)}>{r.id && emailing[r.id] ? <IcoSpinner /> : <IcoMail />}</button></Tooltip>
                       <Tooltip label="Payment recovery"><button type="button" className="spi-iconbtn" onClick={() => setPayRow(r)}><IcoRupee /></button></Tooltip>
                       <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => { const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ row: r, x: b.right, top: b.top, bottom: b.bottom }); }}><IcoMore /></button></Tooltip>
                     </span>
@@ -282,7 +429,7 @@ export default function DebitNote() {
       </div>
 
       {menu && (
-        <div className="pomore-backdrop" onMouseDown={() => setMenu(null)}>
+        <div className="pomore-backdrop">
           <div ref={menuRef} className={`pomore-pop${menuPos ? ' is-open' : ''}`}
             style={menuPos ? { left: menuPos.left, top: menuPos.top } : { left: -9999, top: 0 }}
             onMouseDown={e => e.stopPropagation()}>
@@ -298,17 +445,17 @@ export default function DebitNote() {
             <button type="button" className="pomore-item pomore-item--sync" onClick={() => { const r = menu.row; setMenu(null); setSyncConfirm(r); }}><span className="pomore-item__ico pomore-item__ico--sync"><IcoSync size={15} /></span> Sync with Zohobook</button>
             <div className="pomore-divider" />
             <div className="pomore-sec pomore-sec--view"><IcoEye size={13} /> View</div>
-            <button type="button" className="pomore-item" onClick={() => { setMenu(null); soon(); }}><span className="pomore-item__ico pomore-item__ico--view"><IcoEye size={15} /></span> With Signature</button>
-            <button type="button" className="pomore-item" onClick={() => { setMenu(null); soon(); }}><span className="pomore-item__ico pomore-item__ico--view"><IcoEye size={15} /></span> Without Signature</button>
+            <button type="button" className="pomore-item" disabled={!!menuBusy} onClick={() => runMenuPdf('view-sig', () => viewDnPdf(menu.row, true))}><span className="pomore-item__ico pomore-item__ico--view">{menuBusy === 'view-sig' ? <IcoSpinner size={15} /> : <IcoEye size={15} />}</span> With Signature</button>
+            <button type="button" className="pomore-item" disabled={!!menuBusy} onClick={() => runMenuPdf('view-nosig', () => viewDnPdf(menu.row, false))}><span className="pomore-item__ico pomore-item__ico--view">{menuBusy === 'view-nosig' ? <IcoSpinner size={15} /> : <IcoEye size={15} />}</span> Without Signature</button>
             <div className="pomore-sec pomore-sec--dl"><IcoDownload size={13} /> Download</div>
-            <button type="button" className="pomore-item" onClick={() => { setMenu(null); soon(); }}><span className="pomore-item__ico pomore-item__ico--dl"><IcoDownload size={15} /></span> With Signature</button>
-            <button type="button" className="pomore-item" onClick={() => { setMenu(null); soon(); }}><span className="pomore-item__ico pomore-item__ico--dl"><IcoDownload size={15} /></span> Without Signature</button>
+            <button type="button" className="pomore-item" disabled={!!menuBusy} onClick={() => runMenuPdf('dl-sig', () => downloadDnPdf(menu.row, true))}><span className="pomore-item__ico pomore-item__ico--dl">{menuBusy === 'dl-sig' ? <IcoSpinner size={15} /> : <IcoDownload size={15} />}</span> With Signature</button>
+            <button type="button" className="pomore-item" disabled={!!menuBusy} onClick={() => runMenuPdf('dl-nosig', () => downloadDnPdf(menu.row, false))}><span className="pomore-item__ico pomore-item__ico--dl">{menuBusy === 'dl-nosig' ? <IcoSpinner size={15} /> : <IcoDownload size={15} />}</span> Without Signature</button>
           </div>
         </div>
       )}
 
       {syncConfirm && (
-        <div className="dn-modal-backdrop" onMouseDown={() => setSyncConfirm(null)}>
+        <div className="dn-modal-backdrop">
           <div className="dn-sync" onMouseDown={e => e.stopPropagation()}>
             <span className="dn-sync-ico"><IcoSync size={24} /></span>
             <div className="dn-sync-title">Sync with Zohobook?</div>
@@ -323,7 +470,7 @@ export default function DebitNote() {
       )}
 
       {payRow && (
-        <div className="dn-modal-backdrop" onMouseDown={() => setPayRow(null)}>
+        <div className="dn-modal-backdrop">
           <div className="dn-pay" onMouseDown={e => e.stopPropagation()}>
             <div className="dn-pay-head">
               <span className="dn-pay-ico"><IcoRupee size={18} /></span>
@@ -331,26 +478,89 @@ export default function DebitNote() {
                 <div className="dn-pay-title">Payment Recovery</div>
                 <div className="dn-pay-sub">Record recovered amount &amp; attach proof of payment</div>
               </div>
+              <Tooltip label="View payment history">
+                <button type="button" className="dn-pay-hist-btn" onClick={() => setPayHistoryOpen(true)}>
+                  <IcoHistory size={14} /> History{payList.length ? ` (${payList.length})` : ''}
+                </button>
+              </Tooltip>
             </div>
             <div className="dn-pay-dn"><span className="po">{payRow.no}</span> <span className="sup">· {payRow.supplier ?? '—'}</span></div>
             <div className="dn-pay-stats">
               <div className="dn-pay-stat"><div className="dn-pay-stat-k">TOTAL DEBIT</div><div className="dn-pay-stat-v">{inr(payRow.total)}</div></div>
-              <div className="dn-pay-stat"><div className="dn-pay-stat-k">ALREADY PAID</div><div className="dn-pay-stat-v">{inr(0)}</div></div>
-              <div className="dn-pay-stat"><div className="dn-pay-stat-k">BALANCE</div><div className="dn-pay-stat-v">{inr(payRow.total)}</div></div>
+              <div className="dn-pay-stat"><div className="dn-pay-stat-k">ALREADY PAID</div><div className="dn-pay-stat-v">{inr(paySummary?.amountPaid ?? 0)}</div></div>
+              <div className="dn-pay-stat"><div className="dn-pay-stat-k">BALANCE</div><div className="dn-pay-stat-v">{inr(paySummary?.balance ?? payRow.total)}</div></div>
             </div>
             <label className="dn-pay-lbl">AMOUNT RECOVERED (₹)</label>
-            <input className="dn-pay-input" type="number" placeholder="Enter recovered / debit amount" />
+            <input className="dn-pay-input" type="number" min={0} step="0.01" placeholder="Enter recovered / debit amount" value={payAmount} onChange={e => setPayAmount(e.target.value)} />
             <label className="dn-pay-lbl">PROOF OF PAYMENT</label>
-            <button type="button" className="dn-pay-attach"><IcoUpload size={15} /> Click to attach proof (PDF, JPG, PNG)</button>
+            <input ref={payFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" style={{ display: 'none' }} onChange={e => {
+              const f = e.target.files?.[0] ?? null;
+              // Only PDF / JPG / PNG proofs are allowed — reject anything else.
+              if (f && !(/\.(pdf|jpe?g|png)$/i.test(f.name) || ['application/pdf', 'image/jpeg', 'image/png'].includes(f.type))) {
+                toast.error('Invalid file type', 'Only PDF, JPG or PNG files are allowed as proof of payment.');
+                e.target.value = '';
+                setPayFile(null);
+                return;
+              }
+              setPayFile(f);
+            }} />
+            <button type="button" className="dn-pay-attach" onClick={() => payFileRef.current?.click()}>
+              <IcoUpload size={15} /> {payFile ? payFile.name : 'Click to attach proof (PDF, JPG, PNG)'}
+            </button>
             <div className="dn-pay-foot">
-              <button type="button" className="dn-pay-cancel" onClick={() => setPayRow(null)}>Cancel</button>
-              <button type="button" className="dn-pay-record" onClick={() => { setPayRow(null); soon(); }}>Record Payment</button>
+              <button type="button" className="dn-pay-cancel" disabled={paySaving} onClick={() => setPayRow(null)}>Cancel</button>
+              <button type="button" className="dn-pay-record" disabled={paySaving} onClick={recordPayment}>{paySaving ? <><IcoSpinner size={14} /> Recording…</> : 'Record Payment'}</button>
             </div>
           </div>
         </div>
       )}
 
-      {detailOpen && <DebitNoteDetail editId={editId} onClose={() => setDetailOpen(false)} onSaved={reload} />}
+      {/* Payment history popup (list view of every recorded recovery). */}
+      {payRow && payHistoryOpen && (
+        <div className="dn-modal-backdrop dn-hist-backdrop">
+          <div className="dn-hist" onMouseDown={e => e.stopPropagation()}>
+            <div className="dn-hist-head">
+              <span className="dn-pay-ico"><IcoHistory size={17} /></span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="dn-pay-title">Payment History</div>
+                <div className="dn-pay-sub"><span className="po">{payRow.no}</span> · {payRow.supplier ?? '—'}</div>
+              </div>
+              <button type="button" className="dn-hist-x" onClick={() => setPayHistoryOpen(false)} aria-label="Close">✕</button>
+            </div>
+            <div className="dn-hist-body">
+              {payList.length === 0 ? (
+                <div className="dn-hist-empty">No payments recorded yet for this debit note.</div>
+              ) : (
+                <table className="dn-hist-table">
+                  <thead>
+                    <tr>
+                      <th>SR</th><th>DATE &amp; TIME</th><th className="dn-hist-c">AMOUNT</th><th className="dn-hist-c">BALANCE AFTER</th><th className="dn-hist-c">STATUS</th><th className="dn-hist-c">PROOF</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payList.map(p => (
+                      <tr key={p.id}>
+                        <td>{p.sr}</td>
+                        <td>{fmtDateTime(p.recorded_at || p.paid_date)}</td>
+                        <td className="dn-hist-c dn-hist-amt">{inr(p.amount)}</td>
+                        <td className="dn-hist-c">{inr(p.balance_after)}</td>
+                        <td className="dn-hist-c"><span className={`dn-hist-badge ${String(p.status).toLowerCase() === 'pending' ? 'is-pending' : 'is-cleared'}`}>{p.status || 'Cleared'}</span></td>
+                        <td className="dn-hist-c">{p.attachment_url ? <a className="dn-hist-proof" href={p.attachment_url} target="_blank" rel="noreferrer" title={p.attachment_name || 'View proof'}><IcoEye size={13} /></a> : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="dn-hist-foot">
+              <div className="dn-hist-total">Total recovered: <b>{inr(paySummary?.amountPaid ?? 0)}</b></div>
+              <button type="button" className="dn-pay-cancel" onClick={() => setPayHistoryOpen(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailOpen && <DebitNoteDetail editId={editId} readOnly={viewOnly} onClose={() => setDetailOpen(false)} onSaved={reload} />}
 
       <style>{DN_CSS}</style>
     </div>
@@ -361,6 +571,25 @@ export default function DebitNote() {
  * and the four payment-status pills, PLUS exact values from the P2P Figma
  * prototype (.polist-* classes) so the table reads pixel-for-pixel like the design. */
 const DN_CSS = `
+/* Inline action spinner (email / view / download in-flight). */
+.dn-spin { animation:dn-spin 0.7s linear infinite; }
+@keyframes dn-spin { to { transform:rotate(360deg); } }
+.pomore-pop .pomore-item:disabled { opacity:.75; cursor:default; }
+/* Rows-per-page selector — the shared pager defaults its <select> to the violet
+ * accent; retint it (and its dropdown options) teal to match the table. */
+.dn-scope .tc-wl-rows select { color:#0e7490; accent-color:#0e7490; }
+.dn-scope .tc-wl-rows select option { color:#0e7490; background:#ffffff; }
+.dn-scope .tc-wl-rows select option:checked { color:#ffffff; background:#0e7490; }
+[data-bs-theme="dark"] .dn-scope .tc-wl-rows select { color:#67e8f9; accent-color:#22d3ee; }
+[data-bs-theme="dark"] .dn-scope .tc-wl-rows select option { color:#67e8f9; background:#0c1c24; }
+[data-bs-theme="dark"] .dn-scope .tc-wl-rows select option:checked { color:#0b1220; background:#22d3ee; }
+/* Skeleton shimmer for the loading list rows. */
+.dn-scope .dn-sk-row td { padding:12px 7px; border-bottom:1px solid #eef3f6; }
+.dn-scope .dn-sk { display:block; height:12px; border-radius:6px; margin:3px 0; background:linear-gradient(90deg,#e8eef2 25%,#f4f8fa 37%,#e8eef2 63%); background-size:400% 100%; animation:dn-sk 1.4s ease infinite; }
+.dn-scope .dn-sk-sm { height:9px; opacity:.7; }
+@keyframes dn-sk { 0% { background-position:100% 50%; } 100% { background-position:0 50%; } }
+[data-bs-theme="dark"] .dn-scope .dn-sk { background:linear-gradient(90deg,#1e2c34 25%,#26363e 37%,#1e2c34 63%); background-size:400% 100%; }
+[data-bs-theme="dark"] .dn-scope .dn-sk-row td { border-bottom-color:rgba(148,163,184,.12); }
 /* Exact Figma table cell — DM Sans 11.5px, #3a5161, centred, 12px 7px padding. */
 .dn-scope .spi-table tbody td { padding:12px 7px; border-bottom:1px solid #eef3f6; color:#3a5161; font-weight:600; font-size:11.5px; text-align:center; vertical-align:middle; line-height:1.35; white-space:normal; }
 .dn-scope .spi-table thead th { text-align:center; }
@@ -493,6 +722,40 @@ const DN_CSS = `
 [data-bs-theme="dark"] .dn-pay-input, [data-bs-theme="dark"] .dn-pay-attach { background:#0c1c24; border-color:rgba(34,211,238,.22); color:#e2e8f0; }
 [data-bs-theme="dark"] .dn-pay-cancel { background:#0c1c24; border-color:rgba(148,163,184,.25); color:#cbd5e1; }
 
+/* ── Payment history: small header button + list popup ── */
+.dn-pay-hist-btn { display:inline-flex; align-items:center; gap:5px; align-self:flex-start; margin-left:auto; padding:6px 11px; border:1.5px solid #bfe9f3; border-radius:9px; background:#f0fdff; color:#0e7490; font-size:11.5px; font-weight:800; cursor:pointer; white-space:nowrap; transition:background .14s,border-color .14s; }
+.dn-pay-hist-btn:hover { background:#e2f8fd; border-color:#22d3ee; }
+.dn-hist-backdrop { z-index:100010; }
+.dn-hist { width:640px; max-width:100%; background:#fff; border-radius:18px; overflow:hidden; box-shadow:0 24px 60px -12px rgba(8,47,73,.4); display:flex; flex-direction:column; max-height:82vh; }
+.dn-hist-head { display:flex; align-items:center; gap:12px; padding:18px 20px 14px; border-bottom:1px solid #eef3f6; }
+.dn-hist-x { width:30px; height:30px; border-radius:9px; border:1px solid #e1e9ef; background:#f1f5f8; color:#506478; font-size:14px; cursor:pointer; flex:0 0 auto; }
+.dn-hist-x:hover { background:#e7eef3; }
+.dn-hist-body { overflow:auto; padding:6px 8px; }
+.dn-hist-empty { padding:34px 20px; text-align:center; color:#94a3b8; font-weight:600; font-size:13px; }
+.dn-hist-table { width:100%; border-collapse:collapse; font-size:11.5px; }
+.dn-hist-table thead th { position:sticky; top:0; background:#f7fdff; text-align:left; padding:9px 12px; font-size:9.5px; font-weight:800; letter-spacing:.05em; color:#5b7585; border-bottom:1.5px solid #e3eef3; white-space:nowrap; }
+.dn-hist-table tbody td { padding:10px 12px; border-bottom:1px solid #eef3f6; color:#3a5161; font-weight:600; vertical-align:middle; }
+.dn-hist-r { text-align:right; }
+.dn-hist-c { text-align:center; }
+.dn-hist-amt { font-weight:800; color:#0c4a6e; font-variant-numeric:tabular-nums; }
+.dn-hist-badge { display:inline-flex; align-items:center; padding:3px 9px; border-radius:20px; font-size:10px; font-weight:800; }
+.dn-hist-badge.is-cleared { background:#ecfdf5; color:#059669; }
+.dn-hist-badge.is-pending { background:#fffbeb; color:#b45309; }
+.dn-hist-proof { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; border:1px solid #cfe3ea; background:#f4fafc; color:#0e7490; }
+.dn-hist-proof:hover { background:#e2f8fd; border-color:#22d3ee; }
+.dn-hist-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 20px; border-top:1px solid #eef3f6; }
+.dn-hist-total { font-size:12px; font-weight:600; color:#506478; }
+.dn-hist-total b { color:#0c4a6e; font-weight:800; }
+.dn-hist-foot .dn-pay-cancel { flex:0 0 auto; padding:9px 20px; }
+[data-bs-theme="dark"] .dn-pay-hist-btn { background:rgba(34,211,238,.1); border-color:rgba(34,211,238,.3); color:#67e8f9; }
+[data-bs-theme="dark"] .dn-hist { background:#0e1b24; }
+[data-bs-theme="dark"] .dn-hist-head, [data-bs-theme="dark"] .dn-hist-foot { border-color:rgba(148,163,184,.14); }
+[data-bs-theme="dark"] .dn-hist-table thead th { background:#0c1c24; color:#94a3b8; border-bottom-color:rgba(34,211,238,.18); }
+[data-bs-theme="dark"] .dn-hist-table tbody td { color:#cbd5e1; border-bottom-color:rgba(148,163,184,.12); }
+[data-bs-theme="dark"] .dn-hist-amt, [data-bs-theme="dark"] .dn-hist-total b { color:#7dd3fc; }
+[data-bs-theme="dark"] .dn-hist-x { background:#0c1c24; border-color:rgba(148,163,184,.25); color:#cbd5e1; }
+[data-bs-theme="dark"] .dn-hist-proof { background:#0c1c24; border-color:rgba(34,211,238,.22); color:#67e8f9; }
+
 /* ── "Sync with Zohobook?" confirm popup (centered) ── */
 .dn-sync { width:400px; max-width:100%; background:#fff; border-radius:18px; padding:22px; text-align:center; box-shadow:0 24px 60px rgba(8,40,60,.32); }
 .dn-sync-ico { width:54px; height:54px; margin:0 auto 14px; border-radius:16px; display:flex; align-items:center; justify-content:center; color:#fff; background:linear-gradient(140deg,#22d3ee,#0891b2 60%,#0e7490); box-shadow:0 10px 22px -6px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.4); }
@@ -522,6 +785,9 @@ function IcoRupee({ size = 14 }: { size?: number }) { return <svg width={size} h
 function IcoMore({ size = 16 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>; }
 function IcoPlus({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>; }
 function IcoMail({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>; }
+function IcoSpinner({ size = 14 }: { size?: number }) { return <svg className="dn-spin" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>; }
+function IcoChevron() { return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>; }
+function IcoHistory({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>; }
 function IcoTrash({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>; }
 
 /* ── Step-strip icons — EXACT Figma clones (.bref-item__ico): 11px glyph, stroke-width 2.4. ── */
