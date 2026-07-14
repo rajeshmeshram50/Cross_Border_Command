@@ -371,7 +371,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
                       <div className="spi-dt-legal-summary"><strong>18</strong> of <strong>18</strong> documents completed across all 5 parameters</div>
                       <div className="spi-dt-legal-grid">
                         {LEGAL_PARAMS.map(c => (
-                          <div key={c.name} className="spi-dt-legal-pcard spi-dt-legal-pcard--ok">
+                          <div key={c.name} className="spi-dt-legal-pcard spi-dt-legal-pcard--full">
                             <div className="spi-dt-legal-pcard-hd"><span className="spi-dt-legal-pcard-ico"><IcoCheck /></span><span className="spi-dt-legal-pcard-nm">{c.name}</span><span className="spi-dt-legal-pcard-cnt">{c.d} / {c.t}</span></div>
                             <div className="spi-dt-legal-pcard-bar"><div className="spi-dt-legal-pcard-fill" style={{ width: '100%' }} /></div>
                           </div>
@@ -407,13 +407,14 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
               <div className="spi-dt-card">
                 <div className="spi-dt-card-head">
                   <div className="spi-dt-card-title"><span className="spi-dt-card-ico spi-dt-card-ico-4"><IcoDocSm /></span> GST Scrutiny Details</div>
-                  <span className="spi-dt-fields-badge">4 FIELDS</span>
+                  <span className="spi-dt-fields-badge">5 FIELDS</span>
                 </div>
                 <div className="spi-dt-grid4">
                   <AutoField label="SCRUTINY DATE" value={sel?.scrutiny} placeholder="— from SPI —" />
                   <AutoField label="GST NUMBER" value={sel?.gstNo} placeholder="— from SPI —" />
                   <AutoField label="GST STATUS" value={sel?.gstStatus} placeholder="— from SPI —" />
                   <AutoField label="LAST FILING DATE" value={sel?.filing} placeholder="— from SPI —" />
+                  <AutoField label="PREV. INVOICE / REMARKS" full multiline value={sel?.remarks} placeholder="— from SPI —" />
                 </div>
               </div>
             </div>
@@ -459,6 +460,26 @@ export default function DebitNoteDetail({ onClose, onSaved, editId }: { onClose:
                     <RO label="COMPANY NAME" value={np(sel?.name)} muted={!sel} />
                     <RO label="SUPPLIER TYPE" value={np(sel?.type)} muted={!sel?.type} />
                   </ROGroup>
+                  {/* Supplier Legal Status — read-only compliance recap (percentage + parameter cards). */}
+                  <div className="spi-dt-rogroup">
+                    <div className="spi-dt-rogroup-hd">Supplier Legal Status</div>
+                    <div className="spi-dt-robox">
+                      {sel ? (
+                        <div className="dn-recap-legal">
+                          <div className="dn-recap-legal-row">
+                            <div className="spi-dt-legal-bar"><span className="spi-dt-legal-fill" style={{ width: '100%', background: 'linear-gradient(90deg,#0e7490,#0891b2 55%,#06b6d4)' }} /></div>
+                            <span className="dn-recap-legal-pct">100%</span>
+                          </div>
+                          <div className="dn-recap-legal-foot">
+                            <span className="dn-recap-legal-sum"><strong>18</strong> of <strong>18</strong> documents completed across all 5 parameters</span>
+                            <span className="dn-recap-legal-badge"><IcoCheck /> 100% Compliant</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="dn-recap-legal"><span className="spi-dt-legal-note" style={{ marginTop: 0 }}>No supplier selected — legal &amp; compliance status unavailable.</span></div>
+                      )}
+                    </div>
+                  </div>
                   <ROGroup label="Address & Contact Details">
                     <RO label="REGISTERED OFFICE ADDRESS" value={np(sel?.addr)} muted={!sel} full />
                     <RO label="COUNTRY" value={np(sel?.country)} muted={!sel?.country} />
@@ -661,12 +682,15 @@ function Field({ label, children, full, req }: { label: string; children: ReactN
 
 /* Read-only AUTO field — shows the (SPI-derived) value locked, or a muted
  * placeholder until an SPI is chosen. */
-function AutoField({ label, value, full, placeholder, loading }: { label: string; value?: string | null; full?: boolean; placeholder?: string; loading?: boolean }) {
+function AutoField({ label, value, full, placeholder, loading, multiline }: { label: string; value?: string | null; full?: boolean; placeholder?: string; loading?: boolean; multiline?: boolean }) {
   const v = value && String(value).trim() !== '' ? String(value) : '';
+  const shown = loading ? 'Loading…' : (v || placeholder || '—');
   return (
     <Field label={label} full={full}>
-      <div className="spi-dt-inp-auto">
-        <input className="spi-dt-inp" value={loading ? 'Loading…' : (v || placeholder || '—')} title={v || undefined} readOnly />
+      <div className={`spi-dt-inp-auto${multiline ? ' spi-dt-inp-auto--ta' : ''}`}>
+        {multiline
+          ? <textarea className="spi-dt-textarea" value={shown} title={v || undefined} readOnly rows={3} />
+          : <input className="spi-dt-inp" value={shown} title={v || undefined} readOnly />}
         <span className="spi-dt-auto"><IcoLock /> AUTO</span>
       </div>
     </Field>
@@ -763,6 +787,39 @@ function DnSelect({ value, options, onChange, placeholder }: { value: string; op
 }
 
 const DNCR_CSS = `
+/* Step-2 recap Supplier Legal Status — compact: just the progress bar + a one-line
+ * summary and a small "compliant" badge (no bulky parameter cards). */
+.dn-scope .dn-recap-legal { padding:13px 14px; }
+.dn-scope .dn-recap-legal-row { display:flex; align-items:center; gap:12px; }
+.dn-scope .dn-recap-legal-row .spi-dt-legal-bar { flex:1; height:7px; border-radius:999px; background:#dbeef3; overflow:hidden; box-shadow:inset 0 1px 2px rgba(8,40,60,.08); }
+.dn-scope .dn-recap-legal-pct { font-size:13px; font-weight:800; color:#0c4a6e; font-variant-numeric:tabular-nums; flex-shrink:0; }
+.dn-scope .dn-recap-legal-foot { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:9px; flex-wrap:wrap; }
+.dn-scope .dn-recap-legal-sum { font-size:11.5px; font-weight:600; color:#5b7585; }
+.dn-scope .dn-recap-legal-sum strong { color:#0c4a6e; font-weight:800; }
+.dn-scope .dn-recap-legal-badge { display:inline-flex; align-items:center; gap:5px; flex-shrink:0; padding:3px 10px; border-radius:999px; font-size:10.5px; font-weight:800; color:#0e7490; background:#cffafe; }
+.dn-scope .dn-recap-legal-badge svg { width:11px; height:11px; }
+[data-bs-theme="dark"] .dn-scope .dn-recap-legal-row .spi-dt-legal-bar { background:rgba(148,163,184,.2); }
+[data-bs-theme="dark"] .dn-scope .dn-recap-legal-pct, [data-bs-theme="dark"] .dn-scope .dn-recap-legal-sum strong { color:#7dd3fc; }
+[data-bs-theme="dark"] .dn-scope .dn-recap-legal-sum { color:#94a3b8; }
+[data-bs-theme="dark"] .dn-scope .dn-recap-legal-badge { color:#67e8f9; background:rgba(34,211,238,.14); }
+
+/* Read-only AUTO textarea (GST "Prev. Invoice / Remarks") — badge sits top-right,
+ * not vertically centred like the single-line inputs. */
+.dn-scope .spi-dt-inp-auto--ta .spi-dt-textarea { padding-right:70px; min-height:88px; resize:none; }
+.dn-scope .spi-dt-inp-auto--ta .spi-dt-auto { top:12px; transform:none; }
+
+/* Legal parameter cards — match Figma splegal-card--full: TEAL (not green) icon /
+ * count / bar, subtle gradient card + soft teal glow. (Dev's --full was green.) */
+.dn-scope .spi-dt-legal-pcard { background:linear-gradient(180deg,#ffffff,#f4fbfd); box-shadow:0 3px 12px -2px rgba(6,182,212,.18), 0 1px 3px rgba(15,23,42,.04); }
+.dn-scope .spi-dt-legal-pcard--full { border-color:#bfe9f0 !important; background:linear-gradient(180deg,#ffffff,#f4fbfd) !important; }
+.dn-scope .spi-dt-legal-pcard--full .spi-dt-legal-pcard-ico { background:#cffafe !important; color:#0891b2 !important; }
+.dn-scope .spi-dt-legal-pcard--full .spi-dt-legal-pcard-cnt { background:#cffafe !important; color:#0e7490 !important; }
+.dn-scope .spi-dt-legal-pcard--full .spi-dt-legal-pcard-fill { background:linear-gradient(90deg,#0e7490,#0891b2 55%,#06b6d4) !important; }
+[data-bs-theme="dark"] .dn-scope .spi-dt-legal-pcard { background:#0c1c24; box-shadow:0 3px 12px -2px rgba(6,182,212,.22); }
+[data-bs-theme="dark"] .dn-scope .spi-dt-legal-pcard--full { background:#0c1c24 !important; border-color:rgba(34,211,238,.3) !important; }
+[data-bs-theme="dark"] .dn-scope .spi-dt-legal-pcard--full .spi-dt-legal-pcard-ico { background:rgba(34,211,238,.18) !important; color:#67e8f9 !important; }
+[data-bs-theme="dark"] .dn-scope .spi-dt-legal-pcard--full .spi-dt-legal-pcard-cnt { background:rgba(34,211,238,.14) !important; color:#67e8f9 !important; }
+
 .dn-scope .dncr-placeholder { padding:60px 40px; text-align:center; color:#94a3b8; font-size:13px; font-weight:600; }
 /* DEBIT NOTE TYPE dropdown + inline "+" manage button, sitting side by side. */
 .dn-scope .dn-typewrap { display:flex; align-items:stretch; gap:7px; }
