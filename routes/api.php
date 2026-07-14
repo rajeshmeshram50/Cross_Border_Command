@@ -41,6 +41,7 @@ use App\Http\Controllers\Api\PoPaymentController;
 use App\Http\Controllers\Api\SpiPaymentController;
 use App\Http\Controllers\Api\SupplierPurchaseInvoiceController;
 use App\Http\Controllers\Api\DebitNoteController;
+use App\Http\Controllers\Api\DebitNotePaymentController;
 use App\Http\Controllers\Api\DebitNoteTypeController;
 use App\Http\Controllers\Api\HiringRequestController;
 use App\Http\Controllers\Api\HrCustomFieldController;
@@ -100,6 +101,10 @@ Route::get('/p2p/purchase-orders/{id}/view',     [SalesPdfController::class, 'pu
     ->middleware('signed')
     ->whereNumber('id')
     ->name('p2p.po.view');
+Route::get('/p2p/debit-notes/{id}/view',         [SalesPdfController::class, 'publicViewDebitNote'])
+    ->middleware('signed')
+    ->whereNumber('id')
+    ->name('p2p.dn.view');
 
 // Protected
 Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
@@ -565,9 +570,16 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/p2p/debit-notes',                                   [DebitNoteController::class, 'index']);
     Route::post  ('/p2p/debit-notes',                                   [DebitNoteController::class, 'store']);
     Route::get   ('/p2p/debit-notes/{id}',                              [DebitNoteController::class, 'show'])->whereNumber('id');
+    Route::get   ('/p2p/debit-notes/{id}/pdf',                          [SalesPdfController::class, 'viewDebitNotePdf'])->whereNumber('id');
+    Route::post  ('/p2p/debit-notes/{id}/email',                        [SalesPdfController::class, 'emailDebitNote'])->whereNumber('id');
     Route::put   ('/p2p/debit-notes/{id}',                              [DebitNoteController::class, 'update'])->whereNumber('id');
     Route::delete('/p2p/debit-notes/{id}',                             [DebitNoteController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/debit-notes/{id}/sync',                         [DebitNoteController::class, 'sync'])->whereNumber('id');
+    // Payment Recovery against a debit note — recovered amounts subtract from the
+    // DN balance and drive its Unpaid → Partially/Fully Paid / Overdue status.
+    Route::get   ('/p2p/debit-notes/{dn}/payment-summary',              [DebitNotePaymentController::class, 'summary'])->whereNumber('dn');
+    Route::post  ('/p2p/debit-notes/{dn}/payments',                     [DebitNotePaymentController::class, 'store'])->whereNumber('dn');
+    Route::delete('/p2p/debit-notes/{dn}/payments/{payment}',           [DebitNotePaymentController::class, 'destroy'])->whereNumber('dn')->whereNumber('payment');
 
 
     Route::get   ('/sales/reminders',                 [SalesTodoController::class, 'listReminders']);

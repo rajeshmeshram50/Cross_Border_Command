@@ -44,6 +44,15 @@ const todayLocal = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+/** Outside-click "heartbeat": instead of closing, pulse the modal to signal it
+ *  stays open. Returns [isPulsing, triggerOnBackdropClick, onAnimationEndReset]. */
+function usePulse(): [boolean, () => void, () => void] {
+  const [pulse, setPulse] = useState(false);
+  const bump = () => { setPulse(false); requestAnimationFrame(() => setPulse(true)); };
+  const end = () => setPulse(false);
+  return [pulse, bump, end];
+}
+
 export default function PoPaymentModal({
   open, poId, spiId = null, onClose, onChanged,
 }: {
@@ -56,12 +65,21 @@ export default function PoPaymentModal({
   const toast = useToast();
   useScrollLock(open);
 
+  // When open, mark the body so this modal (and its date-picker) can sit above
+  // any host overlay it's launched from (e.g. the full-screen PO wizard).
+  useEffect(() => {
+    if (!open) return;
+    document.body.classList.add('pop-modal-open');
+    return () => document.body.classList.remove('pop-modal-open');
+  }, [open]);
+
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<Summary | null>(null);
   const [tdsInput, setTdsInput] = useState('0');
   const [savingTds, setSavingTds] = useState(false);
   const [addOpen, setAddOpen] = useState(false);   // "Update Payment" sub-modal
   const [gstOpen, setGstOpen] = useState(false);   // GST amount breakdown sub-modal
+  const [pulse, bumpPulse, endPulse] = usePulse(); // outside-click heartbeat
 
   // "SPI" when opened from an SPI, else "PO" — drives the add-modal title/button.
   const label = spiId ? 'SPI' : 'PO';
@@ -87,9 +105,11 @@ export default function PoPaymentModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, poId, spiId]);
 
-  // Live TDS preview (persisted only on Save).
+  // Live TDS preview (before deduction only). Once TDS is cut, the table shows
+  // the STORED tds_amount / net payable so it matches the progress bar and the
+  // actual recorded payments — never a re-computed figure that can drift.
   const preview = useMemo(() => {
-    if (!data) return null;
+    if (!data || data.amounts.tdsCut) return null;
     const pct = Math.max(0, Math.min(100, Number(tdsInput) || 0));
     const tdsAmount = Math.round(data.amounts.base * pct) / 100;
     // Net payable = (base − TDS) + GST = base + GST − TDS.
@@ -107,6 +127,8 @@ export default function PoPaymentModal({
   const tryAddPayment = () => {
     if (!entityId) return;
     if (!a?.tdsCut) { toast.warning('Deduct the TDS first', 'Save the TDS deduction in Payment Details before recording a payment.'); return; }
+    // Fully paid → nothing left to record.
+    if ((a?.balance ?? 0) <= 0.005) { toast.success('Amount paid completely', `This ${label} is fully paid — there is no outstanding balance to record.`); return; }
     setAddOpen(true);
   };
 
@@ -124,9 +146,9 @@ export default function PoPaymentModal({
   };
 
   return createPortal(
-    <div className="pop-backdrop" onMouseDown={onClose}>
+    <div className="pop-backdrop" onMouseDown={bumpPulse}>
       <style>{CSS}</style>
-      <div className="pop-modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div className={`pop-modal ${pulse ? 'is-pulse' : ''}`} onAnimationEnd={endPulse} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         {/* ── Hero: title bar + supplier card share ONE continuous teal panel ── */}
         <div className="pop-hero">
           <div className="pop-head">
@@ -299,6 +321,7 @@ function UpdatePaymentModal({
   onSaved: (summary: Summary) => void;
 }) {
   const toast = useToast();
+  const [pulse, bumpPulse, endPulse] = usePulse();
   const [amount, setAmount] = useState('');
   const [bank, setBank] = useState('');
   const [utr, setUtr] = useState('');
@@ -360,8 +383,8 @@ function UpdatePaymentModal({
   };
 
   return (
-    <div className="upm-backdrop" onMouseDown={onClose}>
-      <div className="upm-modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+    <div className="upm-backdrop" onMouseDown={bumpPulse}>
+      <div className={`upm-modal ${pulse ? 'is-pulse' : ''}`} onAnimationEnd={endPulse} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="upm-head">
           <div className="upm-head-l">
             <span className="upm-head-ico"><IcoCard w={18} /></span>
@@ -470,12 +493,13 @@ function UpdatePaymentModal({
  * ──────────────────────────────────────────────────────────────────────── */
 type GstItem = {
   id?: number; code?: string; name?: string; qty?: number | string; rate?: number | string;
-  gst?: number | string; cgstP?: number | string; sgstP?: number | string;
-  cgstA?: number | string; sgstA?: number | string; cost?: number | string;
+  gst?: number | string; cgstP?: number | string; sgstP?: number | string; igstP?: number | string;
+  cgstA?: number | string; sgstA?: number | string; igstA?: number | string; cost?: number | string;
 };
 function GstBreakdownModal({ detailUrl, label, onClose }: { detailUrl: string; label: string; onClose: () => void }) {
   const [items, setItems] = useState<GstItem[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pulse, bumpPulse, endPulse] = usePulse();
   useEffect(() => {
     let alive = true;
     api.get<{ status: boolean; data: { items?: GstItem[] } }>(detailUrl)
@@ -490,11 +514,15 @@ function GstBreakdownModal({ detailUrl, label, onClose }: { detailUrl: string; l
   const pct = (v: number | string | undefined) => (v == null || v === '' ? '—' : `${Number(v)}%`);
   const totCgst = (items ?? []).reduce((s, it) => s + Number(it.cgstA || 0), 0);
   const totSgst = (items ?? []).reduce((s, it) => s + Number(it.sgstA || 0), 0);
+  const totIgst = (items ?? []).reduce((s, it) => s + Number(it.igstA || 0), 0);
   const totCost = (items ?? []).reduce((s, it) => s + Number(it.cost || 0), 0);
+  // Inter-state → IGST columns; intra-state → CGST/SGST columns.
+  const inter = totIgst > 0.005;
+  const colCount = inter ? 8 : 10;
 
   return createPortal(
-    <div className="gst-backdrop" onMouseDown={onClose}>
-      <div className="gst-modal" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+    <div className="gst-backdrop" onMouseDown={bumpPulse}>
+      <div className={`gst-modal ${pulse ? 'is-pulse' : ''}`} onAnimationEnd={endPulse} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         <div className="gst-head">
           <span className="gst-head-l"><span className="gst-head-ico"><IcoPct /></span>GST Amount Breakdown</span>
           <button className="gst-x" onClick={onClose} aria-label="Close">✕</button>
@@ -504,14 +532,17 @@ function GstBreakdownModal({ detailUrl, label, onClose }: { detailUrl: string; l
             <table className="pop-tbl pop-tbl-c" style={{ minWidth: 820 }}>
               <thead><tr>
                 <th>SR NO</th><th>PRODUCT CODE</th><th style={{ textAlign: 'left' }}>PRODUCT NAME ({label})</th>
-                <th>QTY ({label})</th><th>RATE</th><th>CGST (%)</th><th>SGST (%)</th>
-                <th>CGST AMOUNT</th><th>SGST AMOUNT</th><th>PRODUCT COST</th>
+                <th>QTY ({label})</th><th>RATE</th>
+                {inter
+                  ? (<><th>IGST (%)</th><th>IGST AMOUNT</th></>)
+                  : (<><th>CGST (%)</th><th>SGST (%)</th><th>CGST AMOUNT</th><th>SGST AMOUNT</th></>)}
+                <th>PRODUCT COST</th>
               </tr></thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={10} className="pop-empty">Loading…</td></tr>
+                  <tr><td colSpan={colCount} className="pop-empty">Loading…</td></tr>
                 ) : (items?.length ?? 0) === 0 ? (
-                  <tr><td colSpan={10} className="pop-empty">No product lines on this {label}.</td></tr>
+                  <tr><td colSpan={colCount} className="pop-empty">No product lines on this {label}.</td></tr>
                 ) : items!.map((it, i) => (
                   <tr key={it.id ?? i}>
                     <td>{i + 1}</td>
@@ -519,10 +550,9 @@ function GstBreakdownModal({ detailUrl, label, onClose }: { detailUrl: string; l
                     <td style={{ textAlign: 'left' }} title={it.name || ''}><span className="gst-name">{it.name || '—'}</span></td>
                     <td>{it.qty ?? '—'}</td>
                     <td>{inr(Number(it.rate || 0))}</td>
-                    <td>{pct(it.cgstP ?? half(it.gst))}</td>
-                    <td>{pct(it.sgstP ?? half(it.gst))}</td>
-                    <td className="pop-amt">{inr(Number(it.cgstA || 0))}</td>
-                    <td className="pop-amt">{inr(Number(it.sgstA || 0))}</td>
+                    {inter
+                      ? (<><td>{pct(it.igstP ?? it.gst)}</td><td className="pop-amt">{inr(Number(it.igstA || 0))}</td></>)
+                      : (<><td>{pct(it.cgstP ?? half(it.gst))}</td><td>{pct(it.sgstP ?? half(it.gst))}</td><td className="pop-amt">{inr(Number(it.cgstA || 0))}</td><td className="pop-amt">{inr(Number(it.sgstA || 0))}</td></>)}
                     <td className="pop-amt">{inr(Number(it.cost || 0))}</td>
                   </tr>
                 ))}
@@ -531,10 +561,15 @@ function GstBreakdownModal({ detailUrl, label, onClose }: { detailUrl: string; l
           </div>
           {!loading && (items?.length ?? 0) > 0 && (
             <div className="gst-totals">
-              <div className="gst-tot-item"><span className="gst-tot-k">Total CGST</span><span className="gst-tot-v">{inr(totCgst)}</span></div>
-              <div className="gst-tot-item"><span className="gst-tot-k">Total SGST</span><span className="gst-tot-v">{inr(totSgst)}</span></div>
-              <div className="gst-tot-item is-hl"><span className="gst-tot-k">Total GST (CGST + SGST)</span><span className="gst-tot-v">{inr(totCgst + totSgst)}</span></div>
-              <div className="gst-tot-item is-cost"><span className="gst-tot-k">Total Product Cost</span><span className="gst-tot-v">{inr(totCost)}</span></div>
+              {inter ? (<>
+                <div className="gst-tot-item is-hl"><span className="gst-tot-k">Total GST (IGST)</span><span className="gst-tot-v">{inr(totIgst)}</span></div>
+                <div className="gst-tot-item is-cost"><span className="gst-tot-k">Total Product Cost</span><span className="gst-tot-v">{inr(totCost)}</span></div>
+              </>) : (<>
+                <div className="gst-tot-item"><span className="gst-tot-k">Total CGST</span><span className="gst-tot-v">{inr(totCgst)}</span></div>
+                <div className="gst-tot-item"><span className="gst-tot-k">Total SGST</span><span className="gst-tot-v">{inr(totSgst)}</span></div>
+                <div className="gst-tot-item is-hl"><span className="gst-tot-k">Total GST (CGST + SGST)</span><span className="gst-tot-v">{inr(totCgst + totSgst)}</span></div>
+                <div className="gst-tot-item is-cost"><span className="gst-tot-k">Total Product Cost</span><span className="gst-tot-v">{inr(totCost)}</span></div>
+              </>)}
             </div>
           )}
         </div>
@@ -693,7 +728,9 @@ function UpmSkeleton() {
 }
 
 const CSS = `
-.pop-backdrop{position:fixed;inset:0;z-index:1300;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto;font-family:var(--font-sans,'Inter',sans-serif);}
+/* Keep the MasterDatePicker popup above the payment modal (it opens from within). */
+body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
+.pop-backdrop{position:fixed;inset:0;z-index:2900000;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto;font-family:var(--font-sans,'Inter',sans-serif);}
 .pop-modal{width:100%;max-width:1120px;margin:auto;background:#f8fafc;border:1.5px solid rgba(255,255,255,.5);border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);display:flex;flex-direction:column;}
 .pop-hero{background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);}
 .pop-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 22px 4px;background:transparent;color:#fff;}
@@ -790,7 +827,7 @@ const CSS = `
 .pop-foot{display:flex;align-items:center;justify-content:center;gap:12px;padding:14px 22px;background:#fff;border-top:1px solid #e2e8f0;}
 
 /* ── Update Payment popup ── */
-.upm-backdrop{position:fixed;inset:0;z-index:1320;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:24px 16px;font-family:var(--font-sans,'Inter',sans-serif);}
+.upm-backdrop{position:fixed;inset:0;z-index:2900010;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:24px 16px;font-family:var(--font-sans,'Inter',sans-serif);}
 .upm-modal{width:100%;max-width:920px;background:#fff;border:1.5px solid rgba(255,255,255,.5);border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.5);display:flex;flex-direction:column;}
 .upm-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;background:linear-gradient(120deg,#0e7490,#06b6d4);color:#fff;}
 .upm-head-l{display:flex;align-items:center;gap:11px;}
@@ -845,12 +882,59 @@ const CSS = `
 .upm-btn-save:hover:not(:disabled){filter:brightness(1.05);} .upm-btn-save:disabled,.upm-btn-ghost:disabled{opacity:.6;cursor:not-allowed;}
 @media (max-width:900px){.pop-sup,.pop-kpis{grid-template-columns:repeat(2,1fr);}.upm-grid{grid-template-columns:1fr;}}
 
+/* ── Mobile / small screens ── */
+@media (max-width:640px){
+  .pop-backdrop{padding:10px 8px;align-items:flex-start;}
+  .pop-modal{border-radius:14px;}
+  .pop-head{padding:12px 14px 4px;flex-wrap:wrap;gap:8px;}
+  .pop-head-title{font-size:14px;}
+  .pop-head-l{gap:7px;}
+  .pop-sup{margin:0 14px 12px;padding:8px 12px;grid-template-columns:repeat(2,1fr);gap:6px 12px;}
+  .pop-body{padding:10px;gap:9px;}
+  .pop-kpis{grid-template-columns:repeat(2,1fr);gap:8px;}
+  .pop-kpi{padding:8px 10px;gap:8px;border-radius:11px;}
+  .pop-kpi-ico{width:32px;height:32px;}
+  .pop-kpi-ico svg{width:15px;height:15px;}
+  .pop-kpi-val{font-size:15px;}
+  .pop-prog{padding:11px 13px;}
+  .pop-prog-top{flex-direction:column;align-items:flex-start;gap:3px;margin-bottom:7px;}
+  .pop-sec-head{padding:8px 11px;flex-wrap:wrap;gap:8px;}
+  .pop-sec-l{gap:9px;}
+  .pop-sec-r{flex-wrap:wrap;justify-content:flex-end;}
+  .pop-sec-body{padding:10px 9px;}
+  .pop-gstbtn span,.pop-btn-add{font-size:11px;}
+  .pop-foot{flex-wrap:wrap;gap:9px;padding:12px 14px;}
+  .pop-btn-ghost,.pop-btn-submit{flex:1 1 auto;text-align:center;}
+  /* Update-payment popup */
+  .upm-backdrop{padding:12px 8px;align-items:flex-start;}
+  .upm-head{padding:12px 14px;}
+  .upm-title{font-size:14px;}
+  .upm-body{padding:14px;gap:14px;}
+  .upm-bal{padding:12px;}
+  .upm-bal-val{font-size:18px;}
+  .upm-bal-chips{width:100%;justify-content:flex-start;}
+  .upm-in{height:42px;}
+  .upm-foot{padding:12px 14px;}
+  .upm-btn-ghost,.upm-btn-save{flex:1 1 auto;text-align:center;}
+  /* GST breakdown popup */
+  .gst-backdrop{padding:12px 8px;align-items:flex-start;}
+  .gst-head{padding:12px 14px;}
+  .gst-head-l{font-size:14px;}
+  .gst-body{padding:12px 10px;}
+  .gst-tbl-wrap{max-height:52vh;}
+  .gst-tot-item{flex:1 1 130px;}
+  .gst-foot{padding:11px 14px;}
+}
+@media (max-width:420px){
+  .pop-sup,.pop-kpis{grid-template-columns:1fr;}
+}
+
 /* ── GST Breakdown button + modal ── */
 .pop-gstbtn{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border:1.5px solid #7dd3e0;background:#fff;color:#0e7490;font-family:inherit;font-size:11.5px;font-weight:700;border-radius:8px;cursor:pointer;box-shadow:0 2px 6px rgba(6,182,212,.12);}
 .pop-gstbtn:hover:not(:disabled){background:#ecfeff;border-color:#0891b2;}
 .pop-gstbtn:disabled{opacity:.5;cursor:not-allowed;}
 .pop-gstbtn svg{width:14px;height:14px;}
-.gst-backdrop{position:fixed;inset:0;z-index:1320;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:24px 16px;font-family:var(--font-sans,'Inter',sans-serif);}
+.gst-backdrop{position:fixed;inset:0;z-index:2900010;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:24px 16px;font-family:var(--font-sans,'Inter',sans-serif);}
 .gst-modal{width:100%;max-width:1000px;background:#fff;border:1.5px solid rgba(255,255,255,.5);border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.5);display:flex;flex-direction:column;}
 .gst-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;background:linear-gradient(120deg,#0e7490,#0891b2 55%,#06b6d4);color:#fff;}
 .gst-head-l{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:800;}
@@ -877,6 +961,12 @@ const CSS = `
 .gst-tot td{background:linear-gradient(90deg,#ecfeff,#f0fdfa);border-top:2px solid #bfe8f2;color:#0f172a;}
 .gst-tot--gst td{background:linear-gradient(90deg,#cffafe,#a5f3fc);border-top:1px solid #7dd3e0;color:#0c4a6e;font-size:12.5px;}
 .gst-foot{display:flex;justify-content:flex-end;padding:12px 20px;background:#f8fafc;border-top:1px solid #e2e8f0;}
+
+/* ── Outside-click heartbeat (modal stays open, pulses instead) ── */
+@keyframes pop-heartbeat{0%,100%{transform:scale(1);}18%{transform:scale(1.018);}36%{transform:scale(.992);}54%{transform:scale(1.012);}72%{transform:scale(.998);}}
+.pop-modal.is-pulse,.upm-modal.is-pulse,.gst-modal.is-pulse{animation:pop-heartbeat .42s ease;}
+.pop-modal.is-pulse{box-shadow:0 0 0 3px rgba(6,182,212,.55),0 30px 80px rgba(15,23,42,.45);}
+.upm-modal.is-pulse,.gst-modal.is-pulse{box-shadow:0 0 0 3px rgba(6,182,212,.55),0 30px 80px rgba(15,23,42,.5);}
 
 /* ── Shimmer skeletons ── */
 .pop-sk{position:relative;overflow:hidden;background:#e2e8f0;border-radius:6px;display:inline-block;vertical-align:middle;}

@@ -165,8 +165,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   // Map Invoice stays disabled until the product details are saved via "Save Details".
   const [detailsSaved, setDetailsSaved] = useState(false);
   const [payOpen, setPayOpen] = useState(false);   // SPI Payment modal (against the linked PO)
-  // Once TDS is deducted for this SPI, the invoice is locked read-only.
-  const [tdsLocked, setTdsLocked] = useState(false);
+  // An existing invoice is VIEW-ONLY — you can review it and record payments, but
+  // never edit it. (New invoices, being created, are editable until saved.)
+  const viewOnly = !!editId;
   const [saving, setSaving] = useState(false);
   const [nexting, setNexting] = useState(false); // brief loader on Save & Next
   const [vaultOpen, setVaultOpen] = useState(false); // Supplier Evidence Vault modal
@@ -276,7 +277,6 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
       // straight away (no need to re-click "Save Details" like on a fresh create).
       setShowMissing(true);
       setDetailsSaved(true);
-      if (d.tds_cut) setTdsLocked(true);   // TDS deducted → invoice locked read-only
       setInvoiceNo(d.invoice_no ?? '');
       setInvoiceDate(d.invoice_date ?? '');
       setExistingAttach(d.attachment_path ?? null);
@@ -535,12 +535,12 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
     }
   };
 
-  // TDS-deducted read-only lock (Direct SPI). Non-interactive body + banner.
-  const roStyle: React.CSSProperties | undefined = tdsLocked ? { pointerEvents: 'none', opacity: 0.92 } : undefined;
-  const lockNote = tdsLocked ? (
+  // View-only lock for an existing invoice. Non-interactive body + banner.
+  const roStyle: React.CSSProperties | undefined = viewOnly ? { pointerEvents: 'none', opacity: 0.92 } : undefined;
+  const lockNote = viewOnly ? (
     <div className="spi-dt-locknote">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
-      <span><strong>TDS deducted — this invoice is locked.</strong> You can review all details and record payments, but editing is disabled.</span>
+      <span><strong>This invoice is view-only.</strong> You can review all details and record payments, but editing is disabled.</span>
     </div>
   ) : null;
 
@@ -572,15 +572,15 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         <div className="spi-dt-head-r">
           <span className="spi-dt-divider" />
           <button type="button" className="spi-dt-btn-pay"
-            disabled={!detailsSaved}
-            title={!detailsSaved ? 'Click "Save Details" in Product Details first' : 'Record a payment'}
+            title="Record a payment"
             onClick={() => {
-              if (!detailsSaved) return;
               // With-PO SPI → pay against the linked PO. Direct SPI → pay against
               // the SPI itself (needs the invoice saved first). TDS is deducted
-              // inside the payment popup (blocked there until it's cut).
+              // inside the payment popup (blocked there until it's cut). Toast the
+              // reason instead of sitting disabled.
               const payPoId = poId ?? po?.id;
-              if (!payPoId && !savedId) { toast.warning('Save the SPI first', 'Save this invoice before recording a payment against it.'); return; }
+              if (!detailsSaved) { toast.warning('Save details first', 'Click "Save Details" in Product Details before recording a payment.'); return; }
+              if (!payPoId && !savedId) { toast.warning('Save the invoice first', 'Save this supplier invoice before recording a payment against it.'); return; }
               setPayOpen(true);
             }}>
             <IcoCard /> SPI Payment</button>
@@ -1019,7 +1019,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 <colgroup>
                   <col style={{ width: '50px' }} />
                   <col style={{ width: '92px' }} />
-                  <col style={{ minWidth: '180px' }} />
+                  <col style={{ width: '240px' }} />
                   <col style={{ width: '130px' }} />
                   <col style={{ width: '130px' }} />
                   <col style={{ width: '130px' }} />
@@ -1053,7 +1053,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                     <tr key={i}>
                       <td className="spi-dt-mc-c">{i + 1}</td>
                       <td><span className="spi-dt-mcode">{r.code || '—'}</span></td>
-                      <td><EditSelect value={r.spiName} options={prodOpts.map(p => p.name)} placeholder="— Select Product —" onChange={v => pickProduct(i, v)} /></td>
+                      <td>{r.productId != null
+                        ? <input className="spi-dt-minp spi-dt-minp-name" value={r.spiName} placeholder="Product name" onChange={e => setRow(i, { spiName: e.target.value })} />
+                        : <EditSelect value={r.spiName} options={prodOpts.map(p => p.name)} placeholder="— Select Product —" onChange={v => pickProduct(i, v)} />}</td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiRate} onChange={e => setRow(i, { spiRate: e.target.value })} /></td>
@@ -1175,7 +1177,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         </div>
         <div className="spi-dt-foot-r">
           <button type="button" className="spi-dt-btn-ghost" onClick={() => setStep(1)}><IcoChevronL /> Back</button>
-          <button type="button" className="spi-dt-btn-map" onClick={handleSave} disabled={saving || !detailsSaved || tdsLocked} title={tdsLocked ? 'TDS deducted — this invoice is locked' : (!detailsSaved ? 'Click "Save Details" in Product Details first' : undefined)}>{saving ? <><Spinner /> Saving…</> : <><IcoCheck /> Map Invoice</>}</button>
+          <button type="button" className="spi-dt-btn-map" onClick={handleSave} disabled={saving || !detailsSaved || viewOnly} title={viewOnly ? 'This invoice is view-only' : (!detailsSaved ? 'Click "Save Details" in Product Details first' : undefined)}>{saving ? <><Spinner /> Saving…</> : <><IcoCheck /> Map Invoice</>}</button>
         </div>
       </div>
       )}
@@ -1199,7 +1201,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
 
     {/* SPI Payment — With-PO SPI pays the linked PO; Direct SPI pays the SPI itself. */}
     <PoPaymentModal open={payOpen} poId={(poId ?? po?.id) ?? null} spiId={savedId}
-      onChanged={() => { if (!(poId ?? po?.id)) setTdsLocked(true); onSaved?.(); }} onClose={() => setPayOpen(false)} />
+      onChanged={() => { onSaved?.(); }} onClose={() => setPayOpen(false)} />
     </div>,
     document.body,
   );

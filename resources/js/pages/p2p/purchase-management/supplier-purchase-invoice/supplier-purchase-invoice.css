@@ -525,6 +525,8 @@
   font-family:inherit; font-size:11.5px; font-weight:600; color:#0f172a; text-align:left; outline:none; transition: border-color .15s, box-shadow .15s, background .15s; }
 .spi-dt-minp:focus { border-color:#22d3ee; box-shadow: 0 0 0 3px rgba(34,211,238,.12); background:#fff; }
 .spi-dt-minp-sm { min-width:0; width:100%; text-align:center; }
+/* Product name: editable once a product is picked — full width, left-aligned, ellipsis. */
+.spi-dt-minp-name { width:100%; text-align:left; text-overflow:ellipsis; }
 /* Figma product-table: slightly tighter inputs + code pill inside the grid */
 .spi-dt-mtable .spi-dt-minp { padding:5px 6px; font-size:10.5px; }
 .spi-dt-mtable .spi-dt-mcode { font-size:9px; padding:2px 4px; }
