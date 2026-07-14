@@ -16,6 +16,13 @@ import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 
 const inr = (n: number) => `₹${(n ?? 0).toLocaleString('en-IN')}`;
 
+// One recorded payment recovery, for the history popup.
+type PayHistoryRow = {
+  id: number; sr: number; amount: number; bank_name?: string | null; reference_no?: string | null;
+  paid_date?: string | null; recorded_at?: string | null; attachment_url?: string | null;
+  attachment_name?: string | null; balance_after: number; status?: string | null;
+};
+
 // Every date renders as "14-July-2026".
 const DN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const fmtDate = (s?: string) => {
@@ -24,6 +31,14 @@ const fmtDate = (s?: string) => {
   if (m) return `${m[3]}-${DN_MONTHS[+m[2] - 1]}-${m[1]}`;
   const d = new Date(s);
   return isNaN(d.getTime()) ? s : `${String(d.getDate()).padStart(2, '0')}-${DN_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+};
+// "14-July-2026, 03:45 PM" from an ISO datetime.
+const fmtDateTime = (s?: string | null) => {
+  if (!s) return '—';
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  let h = d.getHours(); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+  return `${String(d.getDate()).padStart(2, '0')}-${DN_MONTHS[d.getMonth()]}-${d.getFullYear()}, ${String(h).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${ap}`;
 };
 
 type DnStatus = 'Unpaid' | 'Partially Paid' | 'Fully Paid' | 'Payment Overdue';
@@ -70,6 +85,8 @@ export default function DebitNote() {
   // Payment Recovery popup state — live already-paid / balance for the row, plus
   // the amount + proof being recorded.
   const [paySummary, setPaySummary] = useState<{ amountPaid: number; balance: number } | null>(null);
+  const [payList, setPayList] = useState<PayHistoryRow[]>([]);   // recorded payments for the history popup
+  const [payHistoryOpen, setPayHistoryOpen] = useState(false);
   const [payAmount, setPayAmount] = useState('');
   const [payFile, setPayFile] = useState<File | null>(null);
   const [paySaving, setPaySaving] = useState(false);
@@ -166,13 +183,18 @@ export default function DebitNote() {
   const openEdit = (r: DnRow) => { setEditId(r.id); setViewOnly(!!r.locked); setDetailOpen(true); };
 
   // When the Payment Recovery popup opens, load the debit note's live
-  // recovered / balance figures and reset the form.
+  // recovered / balance figures + recorded-payment history, and reset the form.
   useEffect(() => {
-    if (!payRow) { setPaySummary(null); setPayAmount(''); setPayFile(null); return; }
+    if (!payRow) { setPaySummary(null); setPayList([]); setPayHistoryOpen(false); setPayAmount(''); setPayFile(null); return; }
     let alive = true;
     api.get(`/p2p/debit-notes/${payRow.id}/payment-summary`)
-      .then(r => { if (!alive) return; const a = r.data?.data?.amounts; if (a) setPaySummary({ amountPaid: Number(a.amountPaid) || 0, balance: Number(a.balance) || 0 }); })
-      .catch(() => { if (alive) setPaySummary(null); });
+      .then(r => {
+        if (!alive) return;
+        const a = r.data?.data?.amounts;
+        if (a) setPaySummary({ amountPaid: Number(a.amountPaid) || 0, balance: Number(a.balance) || 0 });
+        setPayList((r.data?.data?.payments ?? []) as PayHistoryRow[]);
+      })
+      .catch(() => { if (alive) { setPaySummary(null); setPayList([]); } });
     return () => { alive = false; };
   }, [payRow]);
 
@@ -187,9 +209,16 @@ export default function DebitNote() {
     fd.append('amount', String(amt));
     if (payFile) fd.append('attachment', payFile);
     try {
-      await api.post(`/p2p/debit-notes/${payRow.id}/payments`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const r = await api.post(`/p2p/debit-notes/${payRow.id}/payments`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Payment recorded', `${inr(amt)} recovered against ${payRow.no}.`);
-      setPayRow(null);
+      // Refresh the popup in place from the returned summary so the balance and
+      // History reflect this payment; reset the form; refresh the list statuses.
+      const data = r.data?.data;
+      if (data?.amounts) setPaySummary({ amountPaid: Number(data.amounts.amountPaid) || 0, balance: Number(data.amounts.balance) || 0 });
+      setPayList((data?.payments ?? []) as PayHistoryRow[]);
+      setPayAmount('');
+      setPayFile(null);
+      if (payFileRef.current) payFileRef.current.value = '';
       reload();
     } catch (e: any) {
       toast.error('Could not record payment', e?.response?.data?.message ?? 'Please try again.');
@@ -449,6 +478,11 @@ export default function DebitNote() {
                 <div className="dn-pay-title">Payment Recovery</div>
                 <div className="dn-pay-sub">Record recovered amount &amp; attach proof of payment</div>
               </div>
+              <Tooltip label="View payment history">
+                <button type="button" className="dn-pay-hist-btn" onClick={() => setPayHistoryOpen(true)}>
+                  <IcoHistory size={14} /> History{payList.length ? ` (${payList.length})` : ''}
+                </button>
+              </Tooltip>
             </div>
             <div className="dn-pay-dn"><span className="po">{payRow.no}</span> <span className="sup">· {payRow.supplier ?? '—'}</span></div>
             <div className="dn-pay-stats">
@@ -476,6 +510,51 @@ export default function DebitNote() {
             <div className="dn-pay-foot">
               <button type="button" className="dn-pay-cancel" disabled={paySaving} onClick={() => setPayRow(null)}>Cancel</button>
               <button type="button" className="dn-pay-record" disabled={paySaving} onClick={recordPayment}>{paySaving ? <><IcoSpinner size={14} /> Recording…</> : 'Record Payment'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment history popup (list view of every recorded recovery). */}
+      {payRow && payHistoryOpen && (
+        <div className="dn-modal-backdrop dn-hist-backdrop">
+          <div className="dn-hist" onMouseDown={e => e.stopPropagation()}>
+            <div className="dn-hist-head">
+              <span className="dn-pay-ico"><IcoHistory size={17} /></span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="dn-pay-title">Payment History</div>
+                <div className="dn-pay-sub"><span className="po">{payRow.no}</span> · {payRow.supplier ?? '—'}</div>
+              </div>
+              <button type="button" className="dn-hist-x" onClick={() => setPayHistoryOpen(false)} aria-label="Close">✕</button>
+            </div>
+            <div className="dn-hist-body">
+              {payList.length === 0 ? (
+                <div className="dn-hist-empty">No payments recorded yet for this debit note.</div>
+              ) : (
+                <table className="dn-hist-table">
+                  <thead>
+                    <tr>
+                      <th>SR</th><th>DATE &amp; TIME</th><th className="dn-hist-c">AMOUNT</th><th className="dn-hist-c">BALANCE AFTER</th><th className="dn-hist-c">STATUS</th><th className="dn-hist-c">PROOF</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payList.map(p => (
+                      <tr key={p.id}>
+                        <td>{p.sr}</td>
+                        <td>{fmtDateTime(p.recorded_at || p.paid_date)}</td>
+                        <td className="dn-hist-c dn-hist-amt">{inr(p.amount)}</td>
+                        <td className="dn-hist-c">{inr(p.balance_after)}</td>
+                        <td className="dn-hist-c"><span className={`dn-hist-badge ${String(p.status).toLowerCase() === 'pending' ? 'is-pending' : 'is-cleared'}`}>{p.status || 'Cleared'}</span></td>
+                        <td className="dn-hist-c">{p.attachment_url ? <a className="dn-hist-proof" href={p.attachment_url} target="_blank" rel="noreferrer" title={p.attachment_name || 'View proof'}><IcoEye size={13} /></a> : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="dn-hist-foot">
+              <div className="dn-hist-total">Total recovered: <b>{inr(paySummary?.amountPaid ?? 0)}</b></div>
+              <button type="button" className="dn-pay-cancel" onClick={() => setPayHistoryOpen(false)}>Close</button>
             </div>
           </div>
         </div>
@@ -643,6 +722,40 @@ const DN_CSS = `
 [data-bs-theme="dark"] .dn-pay-input, [data-bs-theme="dark"] .dn-pay-attach { background:#0c1c24; border-color:rgba(34,211,238,.22); color:#e2e8f0; }
 [data-bs-theme="dark"] .dn-pay-cancel { background:#0c1c24; border-color:rgba(148,163,184,.25); color:#cbd5e1; }
 
+/* ── Payment history: small header button + list popup ── */
+.dn-pay-hist-btn { display:inline-flex; align-items:center; gap:5px; align-self:flex-start; margin-left:auto; padding:6px 11px; border:1.5px solid #bfe9f3; border-radius:9px; background:#f0fdff; color:#0e7490; font-size:11.5px; font-weight:800; cursor:pointer; white-space:nowrap; transition:background .14s,border-color .14s; }
+.dn-pay-hist-btn:hover { background:#e2f8fd; border-color:#22d3ee; }
+.dn-hist-backdrop { z-index:100010; }
+.dn-hist { width:640px; max-width:100%; background:#fff; border-radius:18px; overflow:hidden; box-shadow:0 24px 60px -12px rgba(8,47,73,.4); display:flex; flex-direction:column; max-height:82vh; }
+.dn-hist-head { display:flex; align-items:center; gap:12px; padding:18px 20px 14px; border-bottom:1px solid #eef3f6; }
+.dn-hist-x { width:30px; height:30px; border-radius:9px; border:1px solid #e1e9ef; background:#f1f5f8; color:#506478; font-size:14px; cursor:pointer; flex:0 0 auto; }
+.dn-hist-x:hover { background:#e7eef3; }
+.dn-hist-body { overflow:auto; padding:6px 8px; }
+.dn-hist-empty { padding:34px 20px; text-align:center; color:#94a3b8; font-weight:600; font-size:13px; }
+.dn-hist-table { width:100%; border-collapse:collapse; font-size:11.5px; }
+.dn-hist-table thead th { position:sticky; top:0; background:#f7fdff; text-align:left; padding:9px 12px; font-size:9.5px; font-weight:800; letter-spacing:.05em; color:#5b7585; border-bottom:1.5px solid #e3eef3; white-space:nowrap; }
+.dn-hist-table tbody td { padding:10px 12px; border-bottom:1px solid #eef3f6; color:#3a5161; font-weight:600; vertical-align:middle; }
+.dn-hist-r { text-align:right; }
+.dn-hist-c { text-align:center; }
+.dn-hist-amt { font-weight:800; color:#0c4a6e; font-variant-numeric:tabular-nums; }
+.dn-hist-badge { display:inline-flex; align-items:center; padding:3px 9px; border-radius:20px; font-size:10px; font-weight:800; }
+.dn-hist-badge.is-cleared { background:#ecfdf5; color:#059669; }
+.dn-hist-badge.is-pending { background:#fffbeb; color:#b45309; }
+.dn-hist-proof { display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; border:1px solid #cfe3ea; background:#f4fafc; color:#0e7490; }
+.dn-hist-proof:hover { background:#e2f8fd; border-color:#22d3ee; }
+.dn-hist-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 20px; border-top:1px solid #eef3f6; }
+.dn-hist-total { font-size:12px; font-weight:600; color:#506478; }
+.dn-hist-total b { color:#0c4a6e; font-weight:800; }
+.dn-hist-foot .dn-pay-cancel { flex:0 0 auto; padding:9px 20px; }
+[data-bs-theme="dark"] .dn-pay-hist-btn { background:rgba(34,211,238,.1); border-color:rgba(34,211,238,.3); color:#67e8f9; }
+[data-bs-theme="dark"] .dn-hist { background:#0e1b24; }
+[data-bs-theme="dark"] .dn-hist-head, [data-bs-theme="dark"] .dn-hist-foot { border-color:rgba(148,163,184,.14); }
+[data-bs-theme="dark"] .dn-hist-table thead th { background:#0c1c24; color:#94a3b8; border-bottom-color:rgba(34,211,238,.18); }
+[data-bs-theme="dark"] .dn-hist-table tbody td { color:#cbd5e1; border-bottom-color:rgba(148,163,184,.12); }
+[data-bs-theme="dark"] .dn-hist-amt, [data-bs-theme="dark"] .dn-hist-total b { color:#7dd3fc; }
+[data-bs-theme="dark"] .dn-hist-x { background:#0c1c24; border-color:rgba(148,163,184,.25); color:#cbd5e1; }
+[data-bs-theme="dark"] .dn-hist-proof { background:#0c1c24; border-color:rgba(34,211,238,.22); color:#67e8f9; }
+
 /* ── "Sync with Zohobook?" confirm popup (centered) ── */
 .dn-sync { width:400px; max-width:100%; background:#fff; border-radius:18px; padding:22px; text-align:center; box-shadow:0 24px 60px rgba(8,40,60,.32); }
 .dn-sync-ico { width:54px; height:54px; margin:0 auto 14px; border-radius:16px; display:flex; align-items:center; justify-content:center; color:#fff; background:linear-gradient(140deg,#22d3ee,#0891b2 60%,#0e7490); box-shadow:0 10px 22px -6px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.4); }
@@ -674,6 +787,7 @@ function IcoPlus({ size = 15 }: { size?: number }) { return <svg width={size} he
 function IcoMail({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>; }
 function IcoSpinner({ size = 14 }: { size?: number }) { return <svg className="dn-spin" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>; }
 function IcoChevron() { return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>; }
+function IcoHistory({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>; }
 function IcoTrash({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>; }
 
 /* ── Step-strip icons — EXACT Figma clones (.bref-item__ico): 11px glyph, stroke-width 2.4. ── */

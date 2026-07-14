@@ -179,6 +179,8 @@ class DebitNotePaymentController extends Controller
                 'bank_name'       => $p->bank_name,
                 'reference_no'    => $p->reference_no,
                 'paid_date'       => optional($p->paid_date)->toDateString(),
+                // Recorded-at timestamp (UTC → IST) for the history list.
+                'recorded_at'     => optional($p->created_at)->timezone('Asia/Kolkata')->toIso8601String(),
                 'attachment_url'  => $p->attachment_url,
                 'attachment_name' => $p->attachment_path ? basename($p->attachment_path) : null,
                 'balance_after'   => (float) $p->balance_after,
