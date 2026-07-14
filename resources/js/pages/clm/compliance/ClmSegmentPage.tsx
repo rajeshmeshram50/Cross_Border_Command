@@ -18,6 +18,10 @@ import { ClmSkeletonRows, useScrollLock } from '../shared/clmCommon';
  *   Card 3 — tabs (All/Highly/Less) + search + table + pagination
  */
 
+/* Clip long segment names so toasts stay compact (mirrors the 35-char table
+ * truncation). */
+const clipName = (s?: string | null, n = 40) => (s && s.length > n ? s.slice(0, n) + '…' : (s ?? ''));
+
 export type Reg = 'highly' | 'less';
 export type BC  = 'allowed' | 'not_allowed';
 export type SegStatus = 'active' | 'inactive';
@@ -151,8 +155,8 @@ export default function ClmSegmentPage() {
 
   const onSave = async (form: SegmentForm, id?: number): Promise<SaveResult> => {
     try {
-      if (id) { await api.put(`/clm/segments/${id}`, form); toast.success('Updated', `${form.name} saved`); }
-      else    { await api.post('/clm/segments', form);     toast.success('Added',   `${form.name} added`); }
+      if (id) { await api.put(`/clm/segments/${id}`, form); toast.success('Updated', `${clipName(form.name)} saved`); }
+      else    { await api.post('/clm/segments', form);     toast.success('Added',   `${clipName(form.name)} added`); }
       setModalOpen(false); setEditing(null); reload();
       return { ok: true };
     } catch (e: any) {
@@ -175,7 +179,7 @@ export default function ClmSegmentPage() {
   const onDelete = async () => {
     if (!pendingDelete || deleting) return;
     setDeleting(true);
-    try { await api.delete(`/clm/segments/${pendingDelete.id}`); toast.success('Deleted', `${pendingDelete.name} removed`); setPendingDelete(null); reload(); }
+    try { await api.delete(`/clm/segments/${pendingDelete.id}`); toast.success('Deleted', `${clipName(pendingDelete.name)} removed`); setPendingDelete(null); reload(); }
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
     finally { setDeleting(false); }
   };
@@ -278,14 +282,14 @@ export default function ClmSegmentPage() {
               </div>
             ) : (
               <div className="clm-table-wrap clm-table-fill" ref={scrollRef} style={{ minHeight: fillH }}>
-                <table className="clm-table">
+                <table className="clm-table" style={{ tableLayout: 'fixed', width: '100%' }}>
                   <thead><tr>
-                    <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
-                    <th style={{ width: 110, textAlign: 'center' }}>SEGMENT ID</th>
-                    <th>SEGMENT NAME</th>
-                    <th style={{ width: 170, textAlign: 'center' }}>REGULATORY STATUS</th>
-                    <th style={{ width: 150, textAlign: 'center' }}>CUSTOMER ≠ CONSIGNEE</th>
-                    <th style={{ width: 90,  textAlign: 'center' }}>ACTIONS</th>
+                    <th style={{ width: '6%', textAlign: 'center' }}>SR. NO</th>
+                    <th style={{ width: '12%', textAlign: 'center' }}>SEGMENT ID</th>
+                    <th style={{ width: '28%' }}>SEGMENT NAME</th>
+                    <th style={{ width: '19%', textAlign: 'center' }}>REGULATORY STATUS</th>
+                    <th style={{ width: '20%', textAlign: 'center' }}>CUSTOMER ≠ CONSIGNEE</th>
+                    <th style={{ width: '15%', textAlign: 'center' }}>ACTIONS</th>
                   </tr></thead>
                   <tbody>
                     {loading && <ClmSkeletonRows cols={6} />}
@@ -293,7 +297,7 @@ export default function ClmSegmentPage() {
                       <tr key={r.id}>
                         <td className="clm-td-num">{start + i + 1}</td>
                         <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                        <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
+                        <Tooltip label={r.name}><td className="clm-td-name clm-td-trunc-cell" style={{ maxWidth: 'none' }}><div className="clm-td-name-trunc">{r.name && r.name.length > 35 ? r.name.slice(0, 35) + '…' : r.name}</div></td></Tooltip>
                         <td style={{ textAlign: 'center' }}>
                           <span className={`clm-badge ${r.regulatory_status === 'highly' ? 'clm-badge-red' : 'clm-badge-emerald'}`}>
                             <span className="clm-badge-dot" />

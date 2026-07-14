@@ -588,6 +588,20 @@ function SegmentRuleModal(props: {
   const optCount  = (cat: keyof DocSelections) => Object.values(docSel[cat] ?? {}).filter(v => v === 'O').length;
   const grandTotal = CAT_KEYS.reduce((sum, c) => sum + totalSel(c), 0);
 
+  /* Select-all for the active tab: every unselected doc becomes Mandatory (same
+   * default as the per-row checkbox); when all are already selected, clear them. */
+  const allSel  = (cat: keyof DocSelections) => catData[cat].length > 0 && catData[cat].every(d => !!docSel[cat]?.[d.code]);
+  const someSel = (cat: keyof DocSelections) => catData[cat].some(d => !!docSel[cat]?.[d.code]);
+  const toggleAllDocs = (cat: keyof DocSelections) => {
+    setDocSel(prev => {
+      const next = { ...prev, [cat]: { ...(prev[cat] ?? {}) } };
+      const every = catData[cat].length > 0 && catData[cat].every(d => !!next[cat]![d.code]);
+      if (every) next[cat] = {};
+      else for (const d of catData[cat]) { if (!next[cat]![d.code]) next[cat]![d.code] = 'M'; }
+      return next;
+    });
+  };
+
   const handleSave = async () => {
     if (!reg || segCodes.length === 0) {
       toast.error('Incomplete form', 'Select a regulatory status and segment first.');
@@ -809,7 +823,20 @@ function SegmentRuleModal(props: {
                   <table className="clm-table">
                     <thead>
                       <tr className="dcp-thead-row" style={{ background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1.5px solid rgba(6,182,212,.12)' }}>
-                        <th style={{ width: 36, padding: '9px 4px 9px 14px', textAlign: 'center' }}></th>
+                        <th style={{ width: 36, padding: '9px 4px 9px 14px', textAlign: 'center' }}>
+                          {catData[activeCat].length > 0 && (() => {
+                            const all = allSel(activeCat), some = someSel(activeCat);
+                            return (
+                              <label className="clm-doc-check" title={all ? 'Clear all in this tab' : 'Select all in this tab'}>
+                                <input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = some && !all; }} onChange={() => toggleAllDocs(activeCat)} />
+                                <span className={`clm-doc-check-box${some && !all ? ' is-indet' : ''}`}>
+                                  {all && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                                  {some && !all && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round"><line x1="6" y1="12" x2="18" y2="12"/></svg>}
+                                </span>
+                              </label>
+                            );
+                          })()}
+                        </th>
                         <th style={{ width: 44, padding: '9px 8px', textAlign: 'left' }}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2', whiteSpace: 'nowrap' }}>Sr. No</span></th>
                         <th style={{ width: 100, padding: '9px 8px', textAlign: 'left' }}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2' }}>Code</span></th>
                         <th style={{ padding: '9px 12px', textAlign: 'left' }}><span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: '#0891b2' }}>Document Name</span></th>
@@ -937,7 +964,8 @@ const DCP_PAGE_CSS = `
   transition: all .14s;
 }
 .clm-doc-check:hover .clm-doc-check-box { border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.12); }
-.clm-doc-check input:checked + .clm-doc-check-box {
+.clm-doc-check input:checked + .clm-doc-check-box,
+.clm-doc-check-box.is-indet {
   background: linear-gradient(135deg,#06b6d4,#0891b2);
   border-color: #0891b2;
   box-shadow: 0 2px 6px rgba(8,145,178,.28);
