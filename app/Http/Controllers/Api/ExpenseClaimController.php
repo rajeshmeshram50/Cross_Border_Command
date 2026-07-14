@@ -381,8 +381,12 @@ class ExpenseClaimController extends Controller
             abort(409, 'This claim has already been actioned by the manager.');
         }
 
+        // A rejection reason is mandatory for auditability (parity with the
+        // frontend + Notifications reject flow); approvals may omit a note.
         $data = $request->validate([
-            'comment' => ['nullable', 'string', 'max:1000'],
+            'comment' => [$verdict === 'rejected' ? 'required' : 'nullable', 'string', 'max:1000'],
+        ], [
+            'comment.required' => 'A reason is required to reject this claim.',
         ]);
 
         $row->manager_status   = $verdict;
@@ -426,8 +430,12 @@ class ExpenseClaimController extends Controller
             abort(409, 'This claim has already been actioned by HR / Finance.');
         }
 
+        // A rejection reason is mandatory for auditability (parity with the
+        // frontend + Notifications reject flow); approvals may omit a note.
         $data = $request->validate([
-            'comment' => ['nullable', 'string', 'max:1000'],
+            'comment' => [$verdict === 'rejected' ? 'required' : 'nullable', 'string', 'max:1000'],
+        ], [
+            'comment.required' => 'A reason is required to reject this claim.',
         ]);
 
         $row->hr_status   = $verdict;

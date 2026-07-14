@@ -2595,7 +2595,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   {claimMode === 'expense' ? 'Submit New Expense Claim' : 'Advance Request — Recoverable Payout'}
                 </h5>
                 <small className="ep-claim-hero-sub">
-                  All required fields must be completed · Receipt required above ₹500 · Changes take effect after approval flow completes
+                  {/* "Receipt required above ₹500" only applies to expense claims —
+                      advances are a recoverable payout with no receipt, so drop it
+                      from the advance-mode header. */}
+                  All required fields must be completed · {claimMode === 'expense' ? 'Receipt required above ₹500 · ' : ''}Changes take effect after approval flow completes
                 </small>
               </div>
             </div>

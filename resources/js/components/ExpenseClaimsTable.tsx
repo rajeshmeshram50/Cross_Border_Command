@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ShimmerTableRows } from './ui/Shimmer';
+import ProofOfPaymentCell from './ProofOfPaymentCell';
 // Reuses the polished confirmation-modal CSS classes already shipping with
 // the recruitment / candidate flows (cand-confirm-modal, cand-confirm-head,
 // cand-confirm-body, cand-confirm-footer, etc.).
@@ -275,39 +276,13 @@ function ExpenseClaimRowView({
       <td className="text-muted">{fmtDate(c.expense_date)}</td>
       <td className="fw-bold exp-col-amount">₹{Number(c.amount || 0).toLocaleString('en-IN')}</td>
       <td>
-        {(c.attachments?.length ?? 0) > 0 ? (
-          /* Previously the cell rendered just the FIRST attachment as a
-             link and showed "+N" for the rest — so any claim with
-             multiple receipts hid every attachment past the first one,
-             and the user had no way to open them from the list view.
-             Render every attachment as its own clickable chip; the
-             flex-wrap keeps the column readable when there are several. */
-          <div className="d-flex flex-wrap align-items-center" style={{ gap: 4, maxWidth: 220 }}>
-            {(c.attachments ?? []).map((att, idx) => (
-              att?.url ? (
-                <a
-                  key={`${att.url}-${idx}`}
-                  href={withAuthToken(att.url)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="d-inline-flex align-items-center gap-1 text-decoration-none"
-                  title={att.name || `Attachment ${idx + 1}`}
-                  style={{
-                    fontSize: 11, padding: '3px 9px', borderRadius: 8,
-                    background: 'rgba(239,68,68,0.10)', color: '#dc2626',
-                    fontWeight: 600, border: '1px solid rgba(239,68,68,0.25)',
-                    maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}
-                >
-                  <i className="ri-file-text-line" />
-                  {(att.name || `Receipt ${idx + 1}`).slice(0, 14)}
-                </a>
-              ) : null
-            ))}
-          </div>
-        ) : (
-          <span className="text-muted" style={{ fontSize: 11 }}>—</span>
-        )}
+        {/* Only the first receipt shows in the cell; extras collapse into a
+            "+N more" popover so multiple uploads can't expand the row height. */}
+        <ProofOfPaymentCell
+          attachments={c.attachments}
+          withAuthToken={withAuthToken}
+          accent={{ bg: 'rgba(239,68,68,0.10)', fg: '#dc2626', border: 'rgba(239,68,68,0.25)' }}
+        />
       </td>
       <td className="exp-col-status">
         <span
@@ -689,6 +664,9 @@ function ExpenseConfirmModal({
   if (!target) return null;
   const { claim, action } = target;
   const isApprove = action.verdict === 'approve';
+  // A rejection reason is mandatory (parity with the Notifications reject flow) —
+  // it gates the confirm button so a claim can't be rejected without a reason.
+  const rejectReasonMissing = !isApprove && !comment.trim();
   const stageLabel = action.stage === 'manager' ? 'Manager' : 'HR / Finance';
   const tone = STATUS_TONE[claim.status];
 
@@ -775,7 +753,9 @@ function ExpenseConfirmModal({
 
           <div className="cand-confirm-field">
             <label className="cand-confirm-label">
-              {isApprove ? 'Approval Note' : 'Reason for Rejection'} <span className="opt">(OPTIONAL)</span>
+              {isApprove
+                ? <>Approval Note <span className="opt">(OPTIONAL)</span></>
+                : <>Reason for Rejection <span style={{ color: '#dc2626', fontWeight: 700 }}>*</span></>}
             </label>
             <textarea
               className="cand-confirm-textarea"
@@ -787,13 +767,18 @@ function ExpenseConfirmModal({
               onChange={e => setComment(e.target.value)}
               autoFocus
             />
+            {rejectReasonMissing && (
+              <div style={{ fontSize: 12, color: '#dc2626', marginTop: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <i className="ri-error-warning-line" /> A reason is required to reject this claim.
+              </div>
+            )}
           </div>
         </div>
 
         {/* Footer */}
         <div className="cand-confirm-footer">
           <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
-          <button type="button" className="cand-confirm-submit" onClick={handleConfirm} disabled={submitting}>
+          <button type="button" className="cand-confirm-submit" onClick={handleConfirm} disabled={submitting || rejectReasonMissing}>
             {submitting ? (
               <>
                 <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
