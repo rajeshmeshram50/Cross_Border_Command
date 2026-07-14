@@ -349,7 +349,9 @@ class ProductController extends Controller
             'name'                  => 'required|string|max:255',
             'generic_name'          => 'nullable|string|max:255',
             'description'           => 'nullable|string',
-            'brand'                 => 'nullable|string|max:255',
+            // Make / Brand / Specifications — no character cap (column widened to
+            // TEXT); description is likewise uncapped (already TEXT).
+            'brand'                 => 'nullable|string',
             'segment_id'            => 'nullable|integer',
             'haz_type'              => 'nullable|string|max:20',
             'haz_class_id'          => 'nullable|integer',
@@ -357,7 +359,7 @@ class ProductController extends Controller
             'hsn_id'                => 'nullable|integer',
             'condition_id'          => 'nullable|integer',
             'packaging_material_id' => 'nullable|integer',
-            'confidential_info'     => 'nullable|string',
+            'confidential_info'     => 'nullable|string|max:2000',
 
             // Image inputs — see the doc block above for the upload contract:
             //   primary_image          existing path the client wants to keep
@@ -379,7 +381,9 @@ class ProductController extends Controller
             //   product_attachment       existing path the client wants to keep
             //   product_attachment_file  new file replacing it
             'product_attachment'      => 'nullable|string|max:500',
-            'product_attachment_file' => 'nullable|file|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,jpg,jpeg,png,gif,webp|max:10240',
+            // Supported formats only — PDF, Word, images. Excel/PPT/CSV/TXT are
+            // intentionally rejected (a spreadsheet isn't a valid product doc).
+            'product_attachment_file' => 'nullable|file|mimes:pdf,doc,docx,jpg,jpeg,png,gif,webp|max:10240',
         ]);
 
         $product = isset($data['id'])
