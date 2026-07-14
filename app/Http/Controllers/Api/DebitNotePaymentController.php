@@ -46,7 +46,10 @@ class DebitNotePaymentController extends Controller
             'reference_no' => 'nullable|string|max:64',
             'paid_date'    => 'nullable|date',
             'status'       => 'nullable|in:Cleared,Pending',
-            'attachment'   => 'nullable|file|mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,webp|max:10240',
+            // Proof of payment — only PDF / JPG / PNG accepted.
+            'attachment'   => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:10240',
+        ], [
+            'attachment.mimes' => 'Only PDF, JPG or PNG files are allowed as proof of payment.',
         ]);
 
         // Guard against recovering beyond the debit note's outstanding balance.

@@ -55,7 +55,7 @@ export default function DebitNoteTypeModal({ onClose, onChanged }: { onClose: ()
   const close = () => { if (dirty) onChanged(); onClose(); };
 
   return createPortal(
-    <div className="dnt-overlay" onMouseDown={close}>
+    <div className="dnt-overlay">
       <div className="dnt-modal" onMouseDown={e => e.stopPropagation()}>
         {/* Gradient header (matches the Close button) — title + Add on the right. */}
         <div className="dnt-head">
@@ -86,9 +86,11 @@ export default function DebitNoteTypeModal({ onClose, onChanged }: { onClose: ()
                     <td>{i + 1}</td>
                     <td>{r.name}</td>
                     <td>
-                      <button type="button" className={`dnt-badge ${r.status === 'active' ? 'is-active' : 'is-inactive'}`} onClick={() => toggle(r)} title="Click to toggle">
-                        <span className="dnt-dot" />{r.status === 'active' ? 'Active' : 'Inactive'}
-                      </button>
+                      <Tooltip label="Click to toggle status">
+                        <button type="button" className={`dnt-badge ${r.status === 'active' ? 'is-active' : 'is-inactive'}`} onClick={() => toggle(r)}>
+                          <span className="dnt-dot" />{r.status === 'active' ? 'Active' : 'Inactive'}
+                        </button>
+                      </Tooltip>
                     </td>
                     <td className="dnt-c-r">
                       <div className="dnt-actions">
@@ -204,7 +206,7 @@ function TypeFormModal({ row, onClose, onSaved }: { row: DnType | null; onClose:
   };
 
   return createPortal(
-    <div className="dnt-overlay dnt-overlay-2" onMouseDown={onClose}>
+    <div className="dnt-overlay dnt-overlay-2">
       <div className="dnt-modal dnt-modal-sm" onMouseDown={e => e.stopPropagation()}>
         <div className="dnt-head">
           <div className="dnt-head-l">

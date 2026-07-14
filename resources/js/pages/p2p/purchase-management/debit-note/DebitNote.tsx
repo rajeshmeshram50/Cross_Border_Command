@@ -16,6 +16,16 @@ import '../supplier-purchase-invoice/supplier-purchase-invoice.css';
 
 const inr = (n: number) => `₹${(n ?? 0).toLocaleString('en-IN')}`;
 
+// Every date renders as "14-July-2026".
+const DN_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const fmtDate = (s?: string) => {
+  if (!s) return '';
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return `${m[3]}-${DN_MONTHS[+m[2] - 1]}-${m[1]}`;
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? s : `${String(d.getDate()).padStart(2, '0')}-${DN_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+};
+
 type DnStatus = 'Unpaid' | 'Partially Paid' | 'Fully Paid' | 'Payment Overdue';
 type DnRow = {
   id: number;
@@ -55,6 +65,7 @@ export default function DebitNote() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [viewOnly, setViewOnly] = useState(false);   // opened for a locked (paid) debit note
+  const [stepsOpen, setStepsOpen] = useState(true);  // "What We Are Doing Here" collapse toggle
   const [emailing, setEmailing] = useState<Record<number, boolean>>({});
   // Payment Recovery popup state — live already-paid / balance for the row, plus
   // the amount + proof being recorded.
@@ -265,8 +276,8 @@ export default function DebitNote() {
       </div>
 
       {/* ── What We Are Doing Here ── */}
-      <div className="spi-bref">
-        <div className="spi-bref-head">
+      <div className={`spi-bref ${stepsOpen ? '' : 'is-collapsed'}`}>
+        <div className="spi-bref-head" onClick={() => setStepsOpen(o => !o)}>
           <div className="spi-bref-ico"><IcoDoc size={14} /></div>
           <div className="spi-bref-mid">
             <div className="spi-bref-row">
@@ -276,6 +287,7 @@ export default function DebitNote() {
             </div>
             <div className="spi-bref-sub">Link the supplier invoice, capture the debit note, add the returned or adjusted items, reverse the applicable tax, and post the approved note to Zohobook — end to end in one place.</div>
           </div>
+          <div className="spi-bref-toggle"><IcoChevron /></div>
         </div>
         <div className="spi-bref-body">
           {STEPS.map(s => (
@@ -330,7 +342,23 @@ export default function DebitNote() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={13}><div className="spi-empty"><div className="spi-empty-t">Loading…</div></div></td></tr>
+                Array.from({ length: Math.max(5, Math.min(rpp, 10)) }).map((_, i) => (
+                  <tr key={`sk-${i}`} className="dn-sk-row">
+                    <td className="spi-c-sr"><span className="dn-sk" style={{ width: 18 }} /></td>
+                    <td><span className="dn-sk" style={{ width: '72%' }} /><span className="dn-sk dn-sk-sm" style={{ width: '46%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '80%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '60%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '60%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '70%' }} /><span className="dn-sk dn-sk-sm" style={{ width: '46%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '70%' }} /><span className="dn-sk dn-sk-sm" style={{ width: '46%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '85%' }} /></td>
+                    <td><span className="dn-sk" style={{ width: '58%' }} /></td>
+                    <td className="spi-c-r"><span className="dn-sk" style={{ width: '55%', marginLeft: 'auto' }} /></td>
+                    <td className="spi-c-c"><span className="dn-sk" style={{ width: 72, margin: '0 auto' }} /></td>
+                    <td className="spi-c-c"><span className="dn-sk" style={{ width: 72, margin: '0 auto' }} /></td>
+                    <td className="spi-c-c"><span className="dn-sk" style={{ width: 92, margin: '0 auto' }} /></td>
+                  </tr>
+                ))
               ) : rows.length === 0 ? (
                 <tr><td colSpan={13}>
                   <div className="spi-empty"><div className="spi-empty-t">No debit notes found</div><div className="spi-empty-s">Create a debit note to get started, or try a different search.</div></div>
@@ -338,14 +366,14 @@ export default function DebitNote() {
               ) : rows.map((r, i) => (
                 <tr key={r.id}>
                   <td className="spi-c-sr"><span className="spi-sr">{start + i + 1}</span></td>
-                  <td><span className="spi-idstack"><span className="spi-pill spi-pill-spi">{r.no}</span><span className="spi-date-sub">{r.dnDate}</span></span></td>
+                  <td><span className="spi-idstack"><span className="spi-pill spi-pill-spi">{r.no}</span><span className="spi-date-sub">{fmtDate(r.dnDate)}</span></span></td>
                   <td><span className="dn-type">{r.type || '—'}</span></td>
                   <td>{r.ship ? <span className="spi-pill spi-pill-shp">{r.ship}</span> : '—'}</td>
                   <td>{r.proc ? <span className="spi-pill spi-pill-proc">{r.proc}</span> : '—'}</td>
-                  <td>{r.spi ? <span className="spi-idstack"><span className="spi-pill spi-pill-pi">{r.spi}</span><span className="spi-date-sub">{r.spiDate}</span></span> : '—'}</td>
-                  <td>{r.po ? <span className="spi-idstack"><span className="spi-pill spi-pill-po">{r.po}</span><span className="spi-date-sub">{r.poDate}</span></span> : '—'}</td>
+                  <td>{r.spi ? <span className="spi-idstack"><span className="spi-pill spi-pill-pi">{r.spi}</span><span className="spi-date-sub">{fmtDate(r.spiDate)}</span></span> : '—'}</td>
+                  <td>{r.po ? <span className="spi-idstack"><span className="spi-pill spi-pill-po">{r.po}</span><span className="spi-date-sub">{fmtDate(r.poDate)}</span></span> : '—'}</td>
                   <td title={r.supplier ?? ''}>{r.supplier ? (r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier) : '—'}</td>
-                  <td><span className="spi-date-sub">{r.exp || '—'}</span></td>
+                  <td><span className="spi-date-sub">{r.exp ? fmtDate(r.exp) : '—'}</span></td>
                   <td className="spi-c-r spi-amt">{inr(r.total)}</td>
                   <td className="spi-c-c"><span className={`dn-st ${statusClass(r.status)}`}>{r.status}</span></td>
                   <td className="spi-c-c">
@@ -372,7 +400,7 @@ export default function DebitNote() {
       </div>
 
       {menu && (
-        <div className="pomore-backdrop" onMouseDown={() => { if (!menuBusy) setMenu(null); }}>
+        <div className="pomore-backdrop">
           <div ref={menuRef} className={`pomore-pop${menuPos ? ' is-open' : ''}`}
             style={menuPos ? { left: menuPos.left, top: menuPos.top } : { left: -9999, top: 0 }}
             onMouseDown={e => e.stopPropagation()}>
@@ -398,7 +426,7 @@ export default function DebitNote() {
       )}
 
       {syncConfirm && (
-        <div className="dn-modal-backdrop" onMouseDown={() => setSyncConfirm(null)}>
+        <div className="dn-modal-backdrop">
           <div className="dn-sync" onMouseDown={e => e.stopPropagation()}>
             <span className="dn-sync-ico"><IcoSync size={24} /></span>
             <div className="dn-sync-title">Sync with Zohobook?</div>
@@ -413,7 +441,7 @@ export default function DebitNote() {
       )}
 
       {payRow && (
-        <div className="dn-modal-backdrop" onMouseDown={() => { if (!paySaving) setPayRow(null); }}>
+        <div className="dn-modal-backdrop">
           <div className="dn-pay" onMouseDown={e => e.stopPropagation()}>
             <div className="dn-pay-head">
               <span className="dn-pay-ico"><IcoRupee size={18} /></span>
@@ -431,7 +459,17 @@ export default function DebitNote() {
             <label className="dn-pay-lbl">AMOUNT RECOVERED (₹)</label>
             <input className="dn-pay-input" type="number" min={0} step="0.01" placeholder="Enter recovered / debit amount" value={payAmount} onChange={e => setPayAmount(e.target.value)} />
             <label className="dn-pay-lbl">PROOF OF PAYMENT</label>
-            <input ref={payFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" style={{ display: 'none' }} onChange={e => setPayFile(e.target.files?.[0] ?? null)} />
+            <input ref={payFileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" style={{ display: 'none' }} onChange={e => {
+              const f = e.target.files?.[0] ?? null;
+              // Only PDF / JPG / PNG proofs are allowed — reject anything else.
+              if (f && !(/\.(pdf|jpe?g|png)$/i.test(f.name) || ['application/pdf', 'image/jpeg', 'image/png'].includes(f.type))) {
+                toast.error('Invalid file type', 'Only PDF, JPG or PNG files are allowed as proof of payment.');
+                e.target.value = '';
+                setPayFile(null);
+                return;
+              }
+              setPayFile(f);
+            }} />
             <button type="button" className="dn-pay-attach" onClick={() => payFileRef.current?.click()}>
               <IcoUpload size={15} /> {payFile ? payFile.name : 'Click to attach proof (PDF, JPG, PNG)'}
             </button>
@@ -458,6 +496,21 @@ const DN_CSS = `
 .dn-spin { animation:dn-spin 0.7s linear infinite; }
 @keyframes dn-spin { to { transform:rotate(360deg); } }
 .pomore-pop .pomore-item:disabled { opacity:.75; cursor:default; }
+/* Rows-per-page selector — the shared pager defaults its <select> to the violet
+ * accent; retint it (and its dropdown options) teal to match the table. */
+.dn-scope .tc-wl-rows select { color:#0e7490; accent-color:#0e7490; }
+.dn-scope .tc-wl-rows select option { color:#0e7490; background:#ffffff; }
+.dn-scope .tc-wl-rows select option:checked { color:#ffffff; background:#0e7490; }
+[data-bs-theme="dark"] .dn-scope .tc-wl-rows select { color:#67e8f9; accent-color:#22d3ee; }
+[data-bs-theme="dark"] .dn-scope .tc-wl-rows select option { color:#67e8f9; background:#0c1c24; }
+[data-bs-theme="dark"] .dn-scope .tc-wl-rows select option:checked { color:#0b1220; background:#22d3ee; }
+/* Skeleton shimmer for the loading list rows. */
+.dn-scope .dn-sk-row td { padding:12px 7px; border-bottom:1px solid #eef3f6; }
+.dn-scope .dn-sk { display:block; height:12px; border-radius:6px; margin:3px 0; background:linear-gradient(90deg,#e8eef2 25%,#f4f8fa 37%,#e8eef2 63%); background-size:400% 100%; animation:dn-sk 1.4s ease infinite; }
+.dn-scope .dn-sk-sm { height:9px; opacity:.7; }
+@keyframes dn-sk { 0% { background-position:100% 50%; } 100% { background-position:0 50%; } }
+[data-bs-theme="dark"] .dn-scope .dn-sk { background:linear-gradient(90deg,#1e2c34 25%,#26363e 37%,#1e2c34 63%); background-size:400% 100%; }
+[data-bs-theme="dark"] .dn-scope .dn-sk-row td { border-bottom-color:rgba(148,163,184,.12); }
 /* Exact Figma table cell — DM Sans 11.5px, #3a5161, centred, 12px 7px padding. */
 .dn-scope .spi-table tbody td { padding:12px 7px; border-bottom:1px solid #eef3f6; color:#3a5161; font-weight:600; font-size:11.5px; text-align:center; vertical-align:middle; line-height:1.35; white-space:normal; }
 .dn-scope .spi-table thead th { text-align:center; }
@@ -620,6 +673,7 @@ function IcoMore({ size = 16 }: { size?: number }) { return <svg width={size} he
 function IcoPlus({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>; }
 function IcoMail({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>; }
 function IcoSpinner({ size = 14 }: { size?: number }) { return <svg className="dn-spin" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>; }
+function IcoChevron() { return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>; }
 function IcoTrash({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>; }
 
 /* ── Step-strip icons — EXACT Figma clones (.bref-item__ico): 11px glyph, stroke-width 2.4. ── */

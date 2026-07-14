@@ -1276,11 +1276,12 @@ class SalesPdfController extends Controller
         $deductions = (float) $dn->deductions_total;
         $grandTotal = (float) $dn->grand_total;
 
-        $fmtDate = fn ($d) => $d ? \Illuminate\Support\Carbon::parse($d)->format('d/m/Y') : '';
+        // Every date on the debit note PDF reads like "14-July-2026".
+        $fmtDate = fn ($d) => $d ? \Illuminate\Support\Carbon::parse($d)->format('d-F-Y') : '';
 
         $dnInfo = (object) [
             'code' => $dn->code,
-            'dn_date' => $fmtDate($dn->debit_note_date) ?: date('d/m/Y'),
+            'dn_date' => $fmtDate($dn->debit_note_date) ?: date('d-F-Y'),
             'dn_type' => $dn->debit_note_type ?: '',
             'expected_debit_date' => $fmtDate($dn->expected_debit_date) ?: 'NA',
             'spi_code' => $dn->spi_code ?: 'NA',
