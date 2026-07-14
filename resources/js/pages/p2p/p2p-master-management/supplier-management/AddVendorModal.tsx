@@ -3018,13 +3018,12 @@ export default function AddVendorModal(props: {
                       {/* Derived from the selected State — read-only so it can't drift
                           out of sync with the State (GST state code is fixed per state). */}
                       <input
-                        className="avm-input"
+                        className="avm-input avm-input-ro"
                         placeholder="Auto-filled from State"
                         value={stateCode}
                         readOnly
                         tabIndex={-1}
                         title="GST state code — automatically set from the selected State"
-                        style={{ background: '#f1f5f9', color: '#475569', cursor: 'default' }}
                       />
                     </Field>
                     <Field label="City" required error={fieldErrors.city}>
@@ -3181,14 +3180,20 @@ export default function AddVendorModal(props: {
                                 <tr key={r.key}>
                                   <td>{idx + 1}</td>
                                   <td>
-                                    <strong>{r.name || '—'}</strong>
+                                    <Tooltip label={r.name || '—'}>
+                                      <strong>{r.name && r.name.length > 20 ? r.name.slice(0, 20) + '…' : (r.name || '—')}</strong>
+                                    </Tooltip>
                                     {r.isPrimary && (
                                       <span className="avm-primary-tag ms-2">Primary</span>
                                     )}
                                   </td>
                                   <td>{r.designation || '—'}</td>
                                   <td><span className="font-monospace fs-13">{r.phone || '—'}</span></td>
-                                  <td>{r.email || '—'}</td>
+                                  <td>
+                                    {r.email
+                                      ? <Tooltip label={r.email}><span>{r.email.length > 24 ? r.email.slice(0, 24) + '…' : r.email}</span></Tooltip>
+                                      : '—'}
+                                  </td>
                                   <td>
                                     <span className={r.whatsapp ? 'avm-wa-yes' : 'avm-wa-no'}>
                                       {r.whatsapp ? '✓ Yes' : '— No'}
@@ -3197,19 +3202,22 @@ export default function AddVendorModal(props: {
                                   <td>
                                     {r.attachmentName ? (
                                       r.attachmentHref ? (
-                                        <a
-                                          href={r.attachmentHref}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="fs-13 d-inline-flex align-items-center text-truncate"
-                                          style={{ maxWidth: 200, color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
-                                          title={`Open ${r.attachmentName}`}
-                                        >
-                                          <i className="ri-attachment-line me-1" />
-                                          {r.attachmentName}
-                                        </a>
+                                        <Tooltip label={r.attachmentName}>
+                                          <a
+                                            href={r.attachmentHref}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="fs-13 d-inline-flex align-items-center"
+                                            style={{ color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                                          >
+                                            <i className="ri-attachment-line me-1" />
+                                            {r.attachmentName.length > 20 ? r.attachmentName.slice(0, 20) + '…' : r.attachmentName}
+                                          </a>
+                                        </Tooltip>
                                       ) : (
-                                        <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.attachmentName}</span>
+                                        <Tooltip label={r.attachmentName}>
+                                          <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.attachmentName.length > 20 ? r.attachmentName.slice(0, 20) + '…' : r.attachmentName}</span>
+                                        </Tooltip>
                                       )
                                     ) : (
                                       <span className="text-muted fs-13">—</span>
@@ -6566,6 +6574,9 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
 }
 .avm-field-plus:disabled { opacity: .85; cursor: progress; }
+/* Read-only input (State Code auto-fill) — light in light mode, dark in dark mode. */
+.avm-input-ro { background: #f1f5f9; color: #475569; cursor: default; }
+[data-bs-theme="dark"] .avm-input-ro { background: #1a1430; color: #9db3c1; border-color: #3b2a6b; }
 .avm-spinner-sm { width: 10px; height: 10px; border-width: 1.5px; vertical-align: 0; }
 /* Inputs — mirror .master-modal .form-control from masterFormKit so the
    wizard reads as part of the same form family as Clients / Recruitment.
