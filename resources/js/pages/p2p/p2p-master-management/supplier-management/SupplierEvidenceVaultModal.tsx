@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { useToast } from '../../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../../../utils/vaultSignatureRows';
@@ -1208,7 +1209,7 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
               </div>
               <div className="cev-reup-fld">
                 <label>Document Name</label>
-                <input className="cev-reup-in" value={docName} onChange={e => setDocName(e.target.value)} placeholder="Document name" />
+                <div className="cev-reup-ro">{doc.name || '—'}</div>
               </div>
               <div className="cev-reup-fld">
                 <label>Issuing Authority</label>
@@ -1220,7 +1221,7 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
                   <button type="button" className={hasExpiry ? 'on' : ''} onClick={() => setHasExpiry(true)}>Yes</button>
                   <button type="button" className={!hasExpiry ? 'on' : ''} onClick={() => { setHasExpiry(false); setExpiryDate(''); }}>No</button>
                 </div>
-                {hasExpiry && <input type="date" className="cev-reup-in" value={expiryDate} min={new Date().toISOString().slice(0, 10)} onChange={e => setExpiryDate(e.target.value)} style={{ marginTop: 8 }} />}
+                {hasExpiry && <div style={{ marginTop: 8 }}><MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={new Date().toISOString().slice(0, 10)} /></div>}
               </div>
             </div>
           )}
@@ -1253,7 +1254,7 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
 
 const CEV_REUP_CSS = `
 .cev-reup-ov { position:fixed; inset:0; z-index:100000; background:rgba(15,23,42,.5); display:flex; align-items:center; justify-content:center; padding:16px; }
-.cev-reup-card { width:100%; max-width:560px; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 24px 60px rgba(8,40,60,.32); font-family:'DM Sans',system-ui,sans-serif; }
+.cev-reup-card { width:100%; max-width:640px; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 24px 60px rgba(8,40,60,.32); font-family:'DM Sans',system-ui,sans-serif; }
 .cev-reup-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:16px 18px; background:linear-gradient(120deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; }
 .cev-reup-hd-l { display:flex; align-items:center; gap:12px; min-width:0; }
 .cev-reup-hd-ico { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.18); color:#fff; font-size:20px; }
@@ -1299,6 +1300,9 @@ const CEV_REUP_CSS = `
 [data-bs-theme="dark"] .cev-reup-in { background:#16303b; border-color:#2a4a56; color:#e2e8f0; }
 [data-bs-theme="dark"] .cev-reup-toggle { border-color:#2a4a56; }
 [data-bs-theme="dark"] .cev-reup-toggle button { background:#16303b; color:#9db3c1; }
+[data-bs-theme="dark"] .cev-reup-fld label { color:#c4b5fd; }
+[data-bs-theme="dark"] .cev-reup-none { color:#7c93a8; }
+[data-bs-theme="dark"] .cev-reup-cancel:hover:not(:disabled) { background:#1c3a45; }
 @media (max-width:560px) { .cev-reup-grid { grid-template-columns:1fr; } }
 `;
 
