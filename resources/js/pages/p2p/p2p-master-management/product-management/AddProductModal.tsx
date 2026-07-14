@@ -270,9 +270,8 @@ export default function AddProductModal(props: {
    *     `<script>alert(1)</script>`, `<img onerror=…>`, etc.)
    *   • SQL injection — block common attack signatures (`' OR 1=1 --`,
    *     `; DROP …`, `UNION SELECT …`, `javascript:`, inline event handlers)
-   * Also caps the field at 2000 chars to keep the printed PDF from overflowing
-   * the description box (backend column is TEXT, so it imposes no limit). */
-  const DESCRIPTION_MAX = 2000;
+   * No length cap — the Printable Description is intentionally unlimited
+   * (backend column is TEXT). Only the security scrubbing below is applied. */
   const HAS_ANGLE_BRACKET_RE = /[<>]/;
   const SQL_INJECTION_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i;
   const handleDescriptionChange = (raw: string) => {
@@ -286,10 +285,6 @@ export default function AddProductModal(props: {
       cleaned = cleaned.replace(/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi, '');
       issues.push('Suspicious SQL-like patterns are not allowed');
     }
-    if (cleaned.length > DESCRIPTION_MAX) {
-      cleaned = cleaned.slice(0, DESCRIPTION_MAX);
-      issues.push(`Description must be ${DESCRIPTION_MAX} characters or fewer`);
-    }
     setDescription(cleaned);
     if (issues.length) {
       setFieldErrors(prev => ({ ...prev, description: issues.join('; ') }));
@@ -300,10 +295,10 @@ export default function AddProductModal(props: {
 
   /* Confidential Info uses the same defence layer as the printable
    * description — strip every `<` / `>` (kills any HTML/script tag) and
-   * scrub the SQL-injection signatures, then cap at 500 chars. Stays
+   * scrub the SQL-injection signatures, then cap at 2000 chars. Stays
    * silent in the UI (no inline error) because the field is optional
    * and the audit wanted the payload neutralised, not flagged. */
-  const CONFIDENTIAL_MAX = 500;
+  const CONFIDENTIAL_MAX = 2000;
   const handleConfidentialChange = (raw: string) => {
     let cleaned = raw.replace(/[<>]/g, '');
     cleaned = cleaned.replace(/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi, '');
@@ -616,9 +611,23 @@ export default function AddProductModal(props: {
     }
     return validateFileSize(file);
   };
-  /* The product attachment accepts ANY file type (PDF, Word, Excel, image,
-     …) — size is the only gate. */
-  const validateAttachmentFile = (file: File): boolean => validateFileSize(file);
+  /* Product attachment — supported formats only: PDF, Word (doc/docx) and
+     images (PNG/JPG/GIF/WebP). Excel/PPT/CSV/TXT are rejected (bug: Excel was
+     silently accepted). Accept when EITHER the extension OR the browser MIME
+     matches, then apply the size gate — the `accept` attr alone is bypassable
+     via drag-drop / "All files". */
+  const ALLOWED_ATTACH_EXTS = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.gif', '.webp'];
+  const ALLOWED_ATTACH_MIMES = /^(application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|image\/(png|jpe?g|gif|webp))$/;
+  const validateAttachmentFile = (file: File): boolean => {
+    const lowerName = file.name.toLowerCase();
+    const okExt  = ALLOWED_ATTACH_EXTS.some(ext => lowerName.endsWith(ext));
+    const okMime = !!file.type && ALLOWED_ATTACH_MIMES.test(file.type);
+    if (!okExt && !okMime) {
+      toast.error('Unsupported file type', `${file.name} — only PDF, Word or image files are allowed.`);
+      return false;
+    }
+    return validateFileSize(file);
+  };
 
   const onPrimaryUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -1382,7 +1391,6 @@ export default function AddProductModal(props: {
     if (!description.trim())     errs.description       = 'Printable description is required';
     else if (HAS_ANGLE_BRACKET_RE.test(description)) errs.description = 'HTML-like syntax (<, >) is not allowed';
     else if (SQL_INJECTION_RE.test(description))     errs.description = 'Suspicious SQL-like patterns are not allowed';
-    else if (description.length > DESCRIPTION_MAX)   errs.description = `Description must be ${DESCRIPTION_MAX} characters or fewer`;
     if (!brand.trim())           errs.brand             = 'Make / Brand / Specifications is required';
     if (!segmentId)              errs.segmentId         = 'Segment is required';
     if (!hazType)                errs.hazType           = 'Haz / Non-Haz is required';
@@ -1816,8 +1824,11 @@ export default function AddProductModal(props: {
               <button
                 type="button"
                 className="apm-head-btn"
-                title="Map a supplier to this product"
-                disabled={saving}
+                // Stay disabled until Stage 1 (Product Core) is saved — a
+                // productId only exists after a successful core save, and a
+                // supplier can't be mapped to an unsaved product.
+                title={productId ? 'Map a supplier to this product' : 'Save Product Core Information (Stage 1) before mapping suppliers'}
+                disabled={saving || !productId}
                 onClick={() => {
                   if (!productId) {
                     toast.error('Complete Core Information first', 'Save Product Core Information (Save & Next) before mapping suppliers.');
@@ -1933,11 +1944,10 @@ export default function AddProductModal(props: {
                       placeholder="Enter printable description"
                       value={description}
                       onChange={e => handleDescriptionChange(e.target.value)}
-                      maxLength={DESCRIPTION_MAX}
                       rows={3}
                     />
                     <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 11, color: 'var(--vz-secondary-color)', pointerEvents: 'none' }}>
-                      {description.length}/{DESCRIPTION_MAX}
+                      {description.length} characters
                     </div>
                   </Field>
 
@@ -2049,13 +2059,13 @@ export default function AddProductModal(props: {
                 >
                   <UploadDropzone
                     label="Product Attachment"
-                    hint="Click to upload attachment (PDF, Word, image, etc.)"
+                    hint="Click to upload attachment (PDF, Word or image)"
                     multiple={false}
-                    /* Any document type is allowed here, so render a generic
-                       file chip (icon + name) rather than an image thumbnail. */
+                    /* Supported document types only — PDF, Word and images.
+                       Excel/PPT/CSV/TXT are intentionally excluded. */
                     fileMode
                     fileName={attachmentName}
-                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.gif,.webp,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/gif,image/webp"
                     preview={attachmentPreview ? [attachmentPreview] : []}
                     onPick={onAttachmentUpload}
                     onRemove={clearAttachment}
