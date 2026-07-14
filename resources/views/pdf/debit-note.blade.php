@@ -335,27 +335,30 @@
 
                 <!-- RIGHT: TITLE + DEBIT NOTE INFO GRID + SUPPLIER -->
                 <td style="width:50%; vertical-align:top;">
-                    <div style="height:80px;">
-                        <table style="width:100%; border-collapse:collapse;">
+                    <div style="min-height:80px;">
+                        {{-- Row 1: title on its own line, full width. --}}
+                        <h3 style="margin:0 0 6px 0; padding:0; font-weight:bold; font-size:20px; line-height:1; color:#777777; letter-spacing:-0.3px; white-space:nowrap; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
+                            {{ strtoupper($pdf_title ?? 'DEBIT NOTE') }}
+                        </h3>
+                        {{-- Row 2: the two fields (No + Date) on the left, barcode on the right.
+                             The right cell uses the SAME 55%/45% split as the info grid below,
+                             and the barcode is LEFT-aligned so its left edge lines up exactly
+                             with the "Debit Note Date / SPI Date / …" fields underneath it. --}}
+                        <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
                             <tr>
-                                <td style="vertical-align:top;">
-                                    <h3 style="margin:0; padding:0; font-weight:bold; font-size:20px; line-height:1; color:#777777; letter-spacing:-0.3px; white-space:nowrap; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
-                                        {{ strtoupper($pdf_title ?? 'DEBIT NOTE') }}
-                                    </h3>
-                                    <div style="margin-top:6px; font-size:9px;">
-                                        <div><strong>Debit Note No :</strong> {{ $dn->code }}</div>
-                                        <div><strong>Debit Note Date :</strong> {{ $dn->dn_date }}</div>
-                                    </div>
+                                <td style="width:55%; vertical-align:top; font-size:9px;">
+                                    <div><strong>Debit Note No :</strong> {{ $dn->code }}</div>
+                                    <div><strong>Debit Note Date :</strong> {{ $dn->dn_date }}</div>
                                 </td>
-                                <td style="width:140px; text-align:right; vertical-align:top;">
+                                <td style="width:45%; text-align:left; vertical-align:top;">
                                     @if(!empty($barcodeData))
                                         <img src="{{ $barcodeData }}" alt="Barcode" width="130" height="30"
-                                            style="width:130px; height:30px; display:block; margin-left:auto;">
-                                        <div style="font-size:7.5px; color:#333; text-align:center; word-break:break-all; line-height:9px; margin-top:2px; max-width:140px; margin-left:auto;">
+                                            style="width:130px; height:30px; display:block; margin:0;">
+                                        <div style="font-size:7.5px; color:#333; text-align:left; word-break:break-all; line-height:9px; margin-top:2px; max-width:140px;">
                                             {{ $barcodeText ?? ($companyDetails->website ?? '') }}
                                         </div>
                                     @else
-                                        <div style="font-size:11px; font-weight:bold; color:#666666; text-align:right; line-height:13px; max-width:140px; margin-left:auto;">
+                                        <div style="font-size:11px; font-weight:bold; color:#666666; text-align:left; line-height:13px; max-width:140px;">
                                             {{ $companyDetails->name ?? '' }}
                                         </div>
                                     @endif
@@ -375,12 +378,12 @@
                                 <div class="info-line"><strong>SPI No :</strong> {{ $dn->spi_code }}</div>
                                 <div class="info-line"><strong>PO No :</strong> {{ $dn->po_code }}</div>
                                 <div class="info-line"><strong>Invoice No :</strong> {{ $dn->invoice_no }}</div>
+                                <div class="info-line"><strong>Invoice Date :</strong> {{ $dn->invoice_date }}</div>
                             </td>
                             <td style="width:45%; vertical-align:top;">
                                 <div class="info-line"><strong>Debit Note Date :</strong> {{ $dn->dn_date }}</div>
                                 <div class="info-line"><strong>SPI Date :</strong> {{ $dn->spi_date }}</div>
                                 <div class="info-line"><strong>PO Date :</strong> {{ $dn->po_date }}</div>
-                                <div class="info-line"><strong>Invoice Date :</strong> {{ $dn->invoice_date }}</div>
                             </td>
                         </tr>
                     </table>
