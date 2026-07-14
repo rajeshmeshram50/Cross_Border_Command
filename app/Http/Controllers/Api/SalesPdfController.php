@@ -894,6 +894,13 @@ class SalesPdfController extends Controller
         return $this->streamPoPdf($po, true);
     }
 
+    /** Public signed PDF view for the Debit Note email's "View" button. */
+    public function publicViewDebitNote(int $id)
+    {
+        $dn = \App\Models\DebitNote::with(['items', 'charges'])->findOrFail($id);
+        return $this->streamDebitNotePdf($dn, true);
+    }
+
     /**
      * Tenant + branch isolation for PO PDF/email actions. Mirrors
      * PurchaseOrderController::assertScope so a branch user can't reach another
@@ -979,6 +986,73 @@ class SalesPdfController extends Controller
         @unlink($pdfPath);
 
         return response()->json(['status' => true, 'message' => "Purchase Order emailed to {$to}", 'to' => $to]);
+    }
+
+    /** Email the Debit Note PDF to the supplier using the shared PI/PO email template. */
+    public function emailDebitNote(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $dn = \App\Models\DebitNote::with(['items', 'charges'])->findOrFail($id);
+        $this->assertDnTenantScope($dn, $user);
+
+        // Recipient: an explicit override wins, else the supplier email snapshot
+        // stored on the debit note, else the linked vendor's primary contact.
+        $override = trim((string) $request->input('to', ''));
+        $to = ($override !== '' && filter_var($override, FILTER_VALIDATE_EMAIL)) ? $override : trim((string) ($dn->email ?? ''));
+        if ((!$to || !filter_var($to, FILTER_VALIDATE_EMAIL)) && $dn->vendor_id) {
+            $vendor = \App\Models\Vendor::with('primaryAddress')->find($dn->vendor_id);
+            $to = $vendor?->primaryAddress?->email ?: ($vendor?->primary_email ?: $to);
+        }
+        if (!$to || !filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            return response()->json(['status' => false, 'message' => 'No valid email address for this supplier. Set a supplier contact email first.'], 422);
+        }
+
+        $withSignature = $request->boolean('signature', true);
+        $viewData = $this->buildDebitNoteViewData($dn, $withSignature);
+        @set_time_limit(180);
+        $pdf = Pdf::loadView('pdf.debit-note', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true);
+
+        $tmpDir = storage_path('app/tmp/sales-pdfs');
+        if (!is_dir($tmpDir)) @mkdir($tmpDir, 0775, true);
+        $safeCode = preg_replace('/[^A-Za-z0-9_-]/', '_', $dn->code ?? ('id-' . $dn->id));
+        $pdfFilename = 'DN-' . $safeCode . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
+        $pdfPath = $tmpDir . '/' . uniqid('mail-', true) . '-' . $pdfFilename;
+        $pdf->save($pdfPath);
+
+        try {
+            $branch = \App\Models\Branch::find($dn->branch_id);
+            $viewUrl = \Illuminate\Support\Facades\URL::temporarySignedRoute('p2p.dn.view', now()->addDays(60), ['id' => $dn->id]);
+            Mail::to($to)->send(new SalesDocumentEmail([
+                'docKind' => 'Debit Note',
+                'docLabel' => 'DN',
+                'docCode' => $dn->code,
+                'docDate' => optional($dn->debit_note_date)->format('d/m/Y') ?: date('d/m/Y'),
+                'branchName' => $branch?->name ?: ($branch?->code ?: 'Procurement Team'),
+                'branchEmail' => $branch?->email ?: null,
+                'branchWebsite' => $branch?->website ?: null,
+                'customerName' => $dn->supplier_name ?: 'Sir/Madam',
+                'productSummary' => (string) (optional($dn->items->first())->product_name ?? ''),
+                'productsCount' => (int) $dn->items->count(),
+                'grandTotal' => (float) ($dn->grand_total ?? 0),
+                'currency' => 'INR',
+                'docType' => (string) ($dn->debit_note_type ?? ''),
+                'viewUrl' => $viewUrl,
+                'logoPath' => $this->branchAssetAbsolutePath($branch?->logo),
+                'pdfPath' => $pdfPath,
+                'pdfFilename' => $pdfFilename,
+            ]));
+        } catch (\Throwable $e) {
+            @unlink($pdfPath);
+            Log::error('Debit Note email failed', ['dn' => $dn->code, 'to' => $to, 'error' => $e->getMessage()]);
+            return response()->json([
+                'status' => false,
+                'message' => config('app.debug') ? "Could not send Debit Note email: {$e->getMessage()}" : 'Could not send Debit Note email. Please try again or contact support.',
+            ], 500);
+        }
+        @unlink($pdfPath);
+
+        return response()->json(['status' => true, 'message' => "Debit Note emailed to {$to}", 'to' => $to]);
     }
 
     /**
@@ -1164,6 +1238,232 @@ class SalesPdfController extends Controller
             'bankDetails' => $bankDetails,
             'po' => $poInfo,
             'products' => $poProducts,
+            'interState' => $isInterState,
+            'totals' => $totals,
+        ];
+    }
+
+    /* ══════════════════════════ DEBIT NOTE PDF ══════════════════════════ */
+
+    /** Authenticated inline PDF stream for the Debit Note list "View" actions. */
+    public function viewDebitNotePdf(Request $request, int $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $dn = \App\Models\DebitNote::with(['items', 'charges'])->findOrFail($id);
+        $this->assertDnTenantScope($dn, $user);
+        return $this->streamDebitNotePdf($dn, $request->boolean('signature', true));
+    }
+
+    /** Render a Debit Note to an inline PDF stream (same shell as the PO PDF). */
+    public function streamDebitNotePdf($dn, bool $withSignature = true)
+    {
+        $viewData = $this->buildDebitNoteViewData($dn, $withSignature);
+        @set_time_limit(180);
+        $pdf = Pdf::loadView('pdf.debit-note', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true);
+        $ref = $dn->code ?: ('id-' . ($dn->id ?? 'draft'));
+        $name = 'DN-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $ref) . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
+        return $pdf->stream($name);
+    }
+
+    /**
+     * Tenant + branch isolation for Debit Note PDF actions. Mirrors
+     * DebitNoteController::assertScope so a branch user can't reach another
+     * branch's debit note by id.
+     */
+    private function assertDnTenantScope(\App\Models\DebitNote $dn, $user): void
+    {
+        if ($user->user_type === 'super_admin') return;
+        if (!$user->client_id || (int) $dn->client_id !== (int) $user->client_id) abort(404);
+        if ($user->user_type !== 'branch_user' || !$user->branch_id) return;
+        if ((int) $dn->branch_id !== (int) $user->branch_id) abort(404);
+    }
+
+    /**
+     * Build view data for the Debit Note PDF (`pdf/debit-note.blade.php`).
+     * Reuses the shared PO letterhead/branding, bank block and QR, but swaps the
+     * PO's Bill-To / Deliver-To for the debit note's Debit-To (supplier) /
+     * Bill-To (our own company) blocks and the returned/adjusted item lines.
+     */
+    private function buildDebitNoteViewData($dn, bool $withSignature): array
+    {
+        $branch = \App\Models\Branch::find($dn->branch_id);
+        $client = !empty($dn->client_id) ? \App\Models\Client::find($dn->client_id) : null;
+
+        $branchAddress = trim(implode(', ', array_filter([$branch?->address, $branch?->city, $branch?->state, $branch?->pincode, $branch?->country]))) ?: '';
+        $clientAddress = trim(implode(', ', array_filter([$client?->address, $client?->city, $client?->state, $client?->pincode, $client?->country]))) ?: '';
+        $logoData = $this->branchAssetDataUri($branch?->logo) ?: $this->branchAssetDataUri($client?->logo);
+
+        $companyDetails = (object) [
+            'name' => ($branch?->name ?: $client?->org_name) ?: ($branch?->code ?: 'Branch'),
+            'address' => $branchAddress ?: $clientAddress,
+            'mobile' => $branch?->phone ?: ($client?->phone ?? ''),
+            'email' => $branch?->email ?: ($client?->email ?? ''),
+            'website' => $branch?->website ?: ($client?->website ?? ''),
+            'gst_no' => $branch?->gst_number ?: ($client?->gst_number ?? ''),
+            'pan_no' => $branch?->pan_number ?: ($client?->pan_number ?? ''),
+            'gst_state_code' => $branch?->gst_state_code ?? '',
+            'cin' => $branch?->cin ?? '',
+            'iec' => $branch?->iec ?? '',
+            'drug_license' => $branch?->drug_license ?? '',
+            'pcpndt_no' => $branch?->pcpndt_no ?? '',
+            'aeo_code' => $branch?->aeo_code ?? '',
+            'onestartfilename' => $branch?->one_star_file_no ?? '',
+            'onestarudinumber' => $branch?->one_star_udin_no ?? '',
+            'primary_color' => $primaryColor = ($this->normalizeHex($branch?->primary_color ?: $client?->primary_color) ?: '#7CB342'),
+            'secondary_color' => $this->normalizeHex($branch?->secondary_color ?: $client?->secondary_color) ?: '#37B1E0',
+            'primary_text_color' => $this->contrastColor($primaryColor),
+            'logo_data' => $logoData,
+            'signature_data' => $this->branchAssetDataUri($branch?->signature_path) ?? $this->publicImageDataUri('images/test-signature.png'),
+        ];
+
+        // Supplier's own invoice number + date come from the linked SPI form
+        // (the "Invoice No" / "Invoice Date" inputs), not the internal SPI code.
+        $spi = $dn->supplier_purchase_invoice_id
+            ? \App\Models\SupplierPurchaseInvoice::find($dn->supplier_purchase_invoice_id)
+            : null;
+        $invoiceNo = trim((string) ($spi?->invoice_no ?? ''));
+        $invoiceDate = $spi ? $spi->invoice_date : null;
+
+        // Supplier block — the debit note stores the supplier snapshot directly.
+        $supplier = (object) [
+            'name' => $dn->supplier_name ?: 'Supplier',
+            'address' => $this->composeAddress($dn->address, $dn->city, $dn->state, null, $dn->country),
+            'state_code' => (string) ($dn->state_code ?? ''),
+            'gstin' => (string) ($dn->gst_number ?? ''),
+            'contact_no' => (string) ($dn->contact_no ?? ''),
+            'email' => (string) ($dn->email ?? ''),
+        ];
+
+        // ─── Debit To (the supplier we are debiting) / Bill To (our company) ──
+        $debitTo = (object) [
+            'name' => $supplier->name,
+            'address' => $supplier->address,
+            'gstin' => $supplier->gstin,
+            'contact' => trim(implode('  ', array_filter([$dn->contact_name, $supplier->contact_no]))),
+        ];
+        // Bill To — the buyer (our company) issuing the debit note. Fixed to the
+        // INORBVICT legal entity, matching the reference PO layout.
+        $billTo = (object) [
+            'name' => 'INORBVICT HEALTHCARE INDIA PRIVATE LIMITED',
+            'address' => 'Office No. 821, 8th Floor, Solitaire Business Hub, Balewadi Highstreet, Baner, Pune - 411045',
+            'gstin' => '27AADCI6120M1ZH',
+            'contact' => '',
+        ];
+
+        // ─── Bank details (same reference block as the PO PDF) ───────────────
+        $bankDetails = (object) [
+            'bank_name'           => 'HDFC BANK LTD',
+            'account_holder_name' => 'INORBVICT HEALTHCARE INDIA PRIVATE LIMITED',
+            'address'             => 'HDFC BANK, SR NO. 244/3-5, OPP INDIAN OIL PETROL PUMP, RAJIV GANDHI IT PARK, HINJEWADI, PUNE, MAHARASHTRA 411057 INDIA SWIFT : HDFCINBB',
+            'branch'              => 'HINJEWADI, PUNE',
+            'branch_code'         => '794',
+            'ad_code'             => '0510573',
+            'account_no'          => '59209850100030',
+            'ifsc'                => 'HDFC0000794',
+            'swift_code'          => 'HDFCINBB',
+        ];
+
+        $dnProducts = collect($dn->items)->map(function ($it) {
+            $code = (string) ($it->product_code ?? '');
+            $name = (string) ($it->product_name ?? '');
+            $gstPct = (float) ($it->gst_pct ?: ((float) $it->cgst_pct + (float) $it->sgst_pct + (float) $it->igst_pct));
+            return [
+                'product_name' => $name . ($code !== '' ? " ({$code})" : ''),
+                'hsn_code' => (string) ($it->hsn_code ?? ''),
+                'quantity' => (float) $it->debit_qty,
+                'rate' => (float) $it->rate,
+                'gst_pct' => $gstPct,
+                'amount' => (float) $it->cost,
+            ];
+        })->values()->all();
+
+        // Place of supply: a non-zero IGST total on the debit note means it was
+        // raised inter-state (single IGST); otherwise show CGST + SGST.
+        $totalCgst = (float) $dn->total_cgst;
+        $totalSgst = (float) $dn->total_sgst;
+        $totalIgst = (float) $dn->total_igst;
+        $isInterState = $totalIgst > 0;
+
+        $subTotal = round((float) $dn->total_product_cost - $totalCgst - $totalSgst - $totalIgst, 2);
+        $additions = (float) $dn->additions_total;
+        $deductions = (float) $dn->deductions_total;
+        $grandTotal = (float) $dn->grand_total;
+
+        // Every date on the debit note PDF reads like "14-July-2026".
+        $fmtDate = fn ($d) => $d ? \Illuminate\Support\Carbon::parse($d)->format('d-F-Y') : '';
+
+        $dnInfo = (object) [
+            'code' => $dn->code,
+            'dn_date' => $fmtDate($dn->debit_note_date) ?: date('d-F-Y'),
+            'dn_type' => $dn->debit_note_type ?: '',
+            'expected_debit_date' => $fmtDate($dn->expected_debit_date) ?: 'NA',
+            'spi_code' => $dn->spi_code ?: 'NA',
+            'spi_date' => $fmtDate($dn->spi_date) ?: 'NA',
+            'invoice_no' => $invoiceNo ?: 'NA',
+            'invoice_date' => $fmtDate($invoiceDate) ?: 'NA',
+            'po_code' => $dn->po_code ?: 'NA',
+            'po_date' => $fmtDate($dn->po_date) ?: 'NA',
+            'shipment_code' => $dn->shipment_code ?: 'NA',
+            'procurement_code' => $dn->procurement_code ?: 'NA',
+            'currency' => 'INR',
+            'reason' => $dn->reason ?: null,
+            'terms' => $dn->terms ?: null,
+        ];
+
+        $totals = (object) [
+            'sub_total' => $subTotal,
+            'igst' => $isInterState ? $totalIgst : 0.0,
+            'cgst' => $isInterState ? 0.0 : $totalCgst,
+            'sgst' => $isInterState ? 0.0 : $totalSgst,
+            'additions' => $additions,
+            'deductions' => $deductions,
+            'grand_total' => $grandTotal,
+        ];
+
+        // Master Terms & Conditions — every active CLM T&C library row tagged
+        // under the "Debit Note" category, scoped to this debit note's tenant
+        // (globals + client-level + the DN's own branch, mirroring branch read
+        // visibility so it also works on the public email-link render where no
+        // user is present). Rendered on the PDF ABOVE the free-text form terms.
+        $masterTerms = \App\Models\ClmTncLibrary::query()
+            ->whereRaw('LOWER(TRIM(category)) = ?', ['debit note'])
+            ->whereRaw('LOWER(TRIM(COALESCE(status, ?))) = ?', ['active', 'active'])
+            ->where(fn ($w) => $w->whereNull('client_id')->orWhere('client_id', $dn->client_id))
+            ->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $dn->branch_id))
+            ->orderBy('id')
+            ->pluck('content')
+            ->map(fn ($c) => trim((string) $c))
+            ->filter(fn ($c) => $c !== '')
+            ->values()
+            ->all();
+
+        $branchWebsite = trim((string) ($branch?->website ?? ''));
+        $orgName = trim((string) ($branch?->name ?? '')) ?: trim((string) ($branch?->code ?? ''));
+        $barcodeValue = $branchWebsite !== '' ? $branchWebsite : $orgName;
+
+        return [
+            'pdf_title' => 'DEBIT NOTE',
+            'masterTerms' => $masterTerms,
+            'signature' => $withSignature ? 'Yes' : 'No',
+            'barcodeData' => $barcodeValue !== '' ? $this->makeCode128($barcodeValue) : null,
+            'barcodeText' => $barcodeValue,
+            'qrData' => $this->makeBankQr([
+                'bank_name' => $bankDetails->bank_name ?: '',
+                'account_holder' => $bankDetails->account_holder_name ?: '',
+                'account_number' => $bankDetails->account_no ?: '',
+                'ifsc_code' => $bankDetails->ifsc ?: '',
+                'swift_code' => $bankDetails->swift_code ?: '',
+                'branch_name' => $bankDetails->branch ?: '',
+                'doc_code' => $dn->code, 'amount' => $grandTotal, 'currency' => 'INR',
+            ]),
+            'companyDetails' => $companyDetails,
+            'supplier' => $supplier,
+            'debitTo' => $debitTo,
+            'billTo' => $billTo,
+            'bankDetails' => $bankDetails,
+            'dn' => $dnInfo,
+            'products' => $dnProducts,
             'interState' => $isInterState,
             'totals' => $totals,
         ];

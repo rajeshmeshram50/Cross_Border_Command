@@ -51,4 +51,5 @@ class DebitNote extends Model
     public function supplierPurchaseInvoice(): BelongsTo { return $this->belongsTo(SupplierPurchaseInvoice::class); }
     public function items(): HasMany { return $this->hasMany(DebitNoteItem::class)->orderBy('line_no')->orderBy('id'); }
     public function charges(): HasMany { return $this->hasMany(DebitNoteCharge::class)->orderBy('line_no')->orderBy('id'); }
+    public function payments(): HasMany { return $this->hasMany(DebitNotePayment::class)->orderBy('id'); }
 }

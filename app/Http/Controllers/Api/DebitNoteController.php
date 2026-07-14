@@ -105,6 +105,15 @@ class DebitNoteController extends Controller
         $dn = DebitNote::findOrFail($id);
         $this->assertScope($dn, $user, 'write');
 
+        // Once any amount has been recovered against this debit note it is locked
+        // for editing — the figures back a recorded payment, so it's view-only.
+        if ($dn->payments()->exists()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This debit note has a recorded payment recovery and can no longer be edited — it is view-only now.',
+            ], 422);
+        }
+
         $data = $this->validatePayload($request);
 
         DB::transaction(function () use ($dn, $user, $data) {
@@ -409,7 +418,11 @@ class DebitNoteController extends Controller
     {
         $line = 0;
         foreach ($items as $it) {
+            $qtySpi = (float) ($it['qty_spi'] ?? 0);
             $qty = (float) ($it['debit_qty'] ?? 0);
+            // Debit Qty can never exceed the SPI (invoiced) quantity — mirrors the
+            // client-side cap so a crafted payload can't over-return an item.
+            if ($qtySpi > 0 && $qty > $qtySpi) $qty = $qtySpi;
             $rate = (float) ($it['rate'] ?? 0);
             $cgstP = (float) ($it['cgst_pct'] ?? 0);
             $sgstP = (float) ($it['sgst_pct'] ?? 0);
@@ -502,6 +515,10 @@ class DebitNoteController extends Controller
             'supplier' => $dn->supplier_name,
             'exp' => optional($dn->expected_debit_date)->toDateString(),
             'total' => (float) $dn->grand_total,
+            'paid' => (float) $dn->total_paid,
+            'balance' => (float) $dn->balance,
+            // Locked once any recovery is recorded — the form becomes view-only.
+            'locked' => (float) $dn->total_paid > 0,
             'status' => $dn->status,
             'zoho' => $dn->zoho_status === 'Sync' ? 'sync' : 'not',
         ];
