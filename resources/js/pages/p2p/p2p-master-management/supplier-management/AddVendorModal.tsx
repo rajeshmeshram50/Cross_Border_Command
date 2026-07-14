@@ -4090,6 +4090,15 @@ const FILE_MAX_BYTES  = 2 * 1024 * 1024; // 2 MB
 const FILE_TYPE_LABEL = 'JPG / PNG / PDF / DOC / DOCX';
 const FILE_ALLOWED_EXT_RE   = /\.(jpe?g|png|pdf|docx?)$/i;
 const FILE_ALLOWED_MIME_RE  = /^(image\/(jpeg|png)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document))$/i;
+
+/* Cancelled-cheque proof accepts ONLY images + PDF (matches the backend rule
+ * "jpg, jpeg, png, webp, pdf") — NOT DOC/DOCX, unlike the generic doc uploads.
+ * FileChooser's `imagesPdfOnly` prop swaps to this stricter set so an unsupported
+ * file (e.g. a .docx) is rejected inline the moment it's picked, not on Save. */
+const IMG_PDF_ACCEPT    = '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf';
+const IMG_PDF_LABEL     = 'JPG / JPEG / PNG / WEBP / PDF';
+const IMG_PDF_EXT_RE    = /\.(jpe?g|png|webp|pdf)$/i;
+const IMG_PDF_MIME_RE   = /^(image\/(jpe?g|png|webp)|application\/pdf)$/i;
 /* Dangerous extension blacklist — script-style and executable files that
  * must never reach storage even if a mistuned MIME-sniff or an empty type
  * lets them past the allow-list. Belt-and-suspenders behind the whitelist. */
@@ -4130,9 +4139,18 @@ function FileChooser(props: {
   existingName?: string;
   /** When true the chooser is locked — no upload, no delete (view-only link). */
   readOnly?: boolean;
+  /** Restrict to images + PDF only (no DOC/DOCX) — used for the cancelled-cheque
+   *  proof, which the backend accepts only as jpg/jpeg/png/webp/pdf. */
+  imagesPdfOnly?: boolean;
 }) {
-  const { file, onPick, placeholder, existingPath, existingUrl, existingName, readOnly } = props;
+  const { file, onPick, placeholder, existingPath, existingUrl, existingName, readOnly, imagesPdfOnly } = props;
   const toast = useToast();
+
+  // Swap to the stricter images+PDF allow-list when the caller asks for it.
+  const ACCEPT   = imagesPdfOnly ? IMG_PDF_ACCEPT   : FILE_ACCEPT;
+  const EXT_RE   = imagesPdfOnly ? IMG_PDF_EXT_RE   : FILE_ALLOWED_EXT_RE;
+  const MIME_RE  = imagesPdfOnly ? IMG_PDF_MIME_RE  : FILE_ALLOWED_MIME_RE;
+  const LABEL    = imagesPdfOnly ? IMG_PDF_LABEL    : FILE_TYPE_LABEL;
 
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0] ?? null;
@@ -4150,10 +4168,10 @@ function FileChooser(props: {
       e.target.value = '';
       return;
     }
-    const mimeOk = picked.type && FILE_ALLOWED_MIME_RE.test(picked.type);
-    const extOk  = FILE_ALLOWED_EXT_RE.test(name);
+    const mimeOk = picked.type && MIME_RE.test(picked.type);
+    const extOk  = EXT_RE.test(name);
     if (!mimeOk && !extOk) {
-      toast.error('Unsupported file', `Only ${FILE_TYPE_LABEL} files are allowed`);
+      toast.error('Unsupported file', `Only ${LABEL} files are allowed`);
       e.target.value = '';
       return;
     }
@@ -4196,7 +4214,7 @@ function FileChooser(props: {
         <input
           type="file"
           className="avm-filechooser-input"
-          accept={FILE_ACCEPT}
+          accept={ACCEPT}
           onChange={onChange}
         />
         {/* Upload-cloud icon for the EMPTY state so it reads as "upload here",
@@ -4239,7 +4257,7 @@ function FileChooser(props: {
             onClick={(e) => e.stopPropagation()}
           >
             <i className="ri-refresh-line" />
-            <input type="file" hidden accept={FILE_ACCEPT} onChange={onChange} />
+            <input type="file" hidden accept={ACCEPT} onChange={onChange} />
           </label>
         )}
         {!readOnly && (
@@ -5771,7 +5789,8 @@ function BankAddPopup(props: {
             file={draft.chequeFile}
             existingPath={draft.existingPath}
             existingUrl={draft.existingUrl}
-            onPick={f => { setDraft({ ...draft, chequeFile: f, chequeFileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath, existingUrl: f ? undefined : draft.existingUrl }); setErrors(p => ({ ...p, cheque: undefined })); }}
+            imagesPdfOnly
+            onPick={f => { setDraft({ ...draft, chequeFile: f, chequeFileName: f?.name ?? '', existingPath: undefined, existingUrl: undefined }); setErrors(p => ({ ...p, cheque: undefined })); }}
             placeholder="Upload Cancelled Cheque"
           />
         </Field>

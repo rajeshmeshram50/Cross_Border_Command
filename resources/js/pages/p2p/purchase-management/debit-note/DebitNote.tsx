@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import Tooltip from '../../../../components/ui/Tooltip';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -48,7 +48,9 @@ export default function DebitNote() {
   const [debQ, setDebQ] = useState('');
   const [page, setPage] = useState(1);
   const [rpp, setRpp] = useState(10);
-  const [menu, setMenu] = useState<{ row: DnRow; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ row: DnRow; x: number; top: number; bottom: number } | null>(null);
+  const [payRow, setPayRow] = useState<DnRow | null>(null);   // Payment Recovery popup
+  const [syncConfirm, setSyncConfirm] = useState<DnRow | null>(null);   // "Sync with Zohobook?" confirm
   const [detailOpen, setDetailOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
 
@@ -60,6 +62,26 @@ export default function DebitNote() {
 
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // More-Actions menu: measure the real popup size, then anchor it to the kebab
+  // button — flip above when it would overflow the bottom, and clamp to the
+  // viewport on every side so it is never clipped, at any screen size.
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!menu) { setMenuPos(null); return; }
+    const pop = menuRef.current;
+    if (!pop) return;
+    const pw = pop.offsetWidth, ph = pop.offsetHeight, gap = 6, pad = 8;
+    let left = menu.x - pw;
+    if (left < pad) left = pad;
+    if (left + pw > window.innerWidth - pad) left = window.innerWidth - pad - pw;
+    let top = menu.bottom + gap;
+    if (top + ph > window.innerHeight - pad) {
+      const above = menu.top - gap - ph;
+      top = above >= pad ? above : Math.max(pad, window.innerHeight - pad - ph);
+    }
+    setMenuPos({ left, top });
+  }, [menu]);
   const autoFitRef = useRef(true); // false once the user picks a rows-per-page manually
   const [fillH, setFillH] = useState<number | undefined>(undefined); // stretch the card to the viewport
 
@@ -106,6 +128,18 @@ export default function DebitNote() {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [page, rpp, debQ, reloadKey]);
+
+  // Lock background scroll while any popup/overlay is open. Must lock BOTH
+  // <html> and <body> — a body-only overflow:hidden doesn't stop the page from
+  // scrolling behind the modal.
+  useEffect(() => {
+    if (!(payRow || syncConfirm || menu || detailOpen)) return;
+    const html = document.documentElement, body = document.body;
+    const ph = html.style.overflow, pb = body.style.overflow;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    return () => { html.style.overflow = ph; body.style.overflow = pb; };
+  }, [payRow, syncConfirm, menu, detailOpen]);
 
   const openCreate = () => { setEditId(null); setDetailOpen(true); };
   const openEdit = (r: DnRow) => { setEditId(r.id); setDetailOpen(true); };
@@ -231,11 +265,11 @@ export default function DebitNote() {
                     <span className="spi-acts">
                       {r.zoho === 'sync'
                         ? <Tooltip label="Already synced to Zohobook"><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
-                        : <Tooltip label="Sync this debit note to Zohobook"><button type="button" className="spi-zohobtn" onClick={() => syncRow(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
+                        : <Tooltip label="Sync this debit note to Zohobook"><button type="button" className="spi-zohobtn" onClick={() => setSyncConfirm(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
                       <Tooltip label="Edit debit note"><button type="button" className="spi-iconbtn" onClick={() => openEdit(r)}><IcoEdit /></button></Tooltip>
                       <Tooltip label="Email debit note"><button type="button" className="spi-iconbtn" onClick={soon}><IcoMail /></button></Tooltip>
-                      <Tooltip label="Record payment"><button type="button" className="spi-iconbtn" onClick={soon}><IcoRupee /></button></Tooltip>
-                      <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => { const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ row: r, x: b.right, y: b.bottom + 6 }); }}><IcoMore /></button></Tooltip>
+                      <Tooltip label="Payment recovery"><button type="button" className="spi-iconbtn" onClick={() => setPayRow(r)}><IcoRupee /></button></Tooltip>
+                      <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => { const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ row: r, x: b.right, top: b.top, bottom: b.bottom }); }}><IcoMore /></button></Tooltip>
                     </span>
                   </td>
                 </tr>
@@ -248,21 +282,69 @@ export default function DebitNote() {
       </div>
 
       {menu && (
-        <div className="spi-menu-backdrop" onMouseDown={() => setMenu(null)}>
-          <div className="spi-menu" style={{ top: menu.y, left: Math.max(8, menu.x - 280) }} onMouseDown={e => e.stopPropagation()}>
-            <div className="spi-menu-head">
-              <div className="spi-menu-head-l"><span className="spi-menu-head-ico"><IcoMore /></span> More Actions</div>
-              <button type="button" className="spi-menu-x" onClick={() => setMenu(null)}><IcoX /></button>
+        <div className="pomore-backdrop" onMouseDown={() => setMenu(null)}>
+          <div ref={menuRef} className={`pomore-pop${menuPos ? ' is-open' : ''}`}
+            style={menuPos ? { left: menuPos.left, top: menuPos.top } : { left: -9999, top: 0 }}
+            onMouseDown={e => e.stopPropagation()}>
+            <div className="pomore-hd">
+              <span className="pomore-hd__ico"><IcoMore /></span>
+              <span className="pomore-hd__txt">
+                <span className="pomore-hd__t">More Actions</span>
+                <span className="pomore-hd__chip"><IcoDocSm /><b>{menu.row.no}</b></span>
+                <span className="pomore-hd__sup">Supplier: <b>{menu.row.supplier ?? '—'}</b></span>
+              </span>
+              <button type="button" className="pomore-x" onClick={() => setMenu(null)} aria-label="Close">✕</button>
             </div>
-            <div className="spi-menu-info">
-              <span className="spi-pill spi-pill-spi">{menu.row.no}</span>
-              <div className="spi-menu-sup">Supplier: {menu.row.supplier ?? '—'}</div>
+            <button type="button" className="pomore-item pomore-item--sync" onClick={() => { const r = menu.row; setMenu(null); setSyncConfirm(r); }}><span className="pomore-item__ico pomore-item__ico--sync"><IcoSync size={15} /></span> Sync with Zohobook</button>
+            <div className="pomore-divider" />
+            <div className="pomore-sec pomore-sec--view"><IcoEye size={13} /> View</div>
+            <button type="button" className="pomore-item" onClick={() => { setMenu(null); soon(); }}><span className="pomore-item__ico pomore-item__ico--view"><IcoEye size={15} /></span> With Signature</button>
+            <button type="button" className="pomore-item" onClick={() => { setMenu(null); soon(); }}><span className="pomore-item__ico pomore-item__ico--view"><IcoEye size={15} /></span> Without Signature</button>
+            <div className="pomore-sec pomore-sec--dl"><IcoDownload size={13} /> Download</div>
+            <button type="button" className="pomore-item" onClick={() => { setMenu(null); soon(); }}><span className="pomore-item__ico pomore-item__ico--dl"><IcoDownload size={15} /></span> With Signature</button>
+            <button type="button" className="pomore-item" onClick={() => { setMenu(null); soon(); }}><span className="pomore-item__ico pomore-item__ico--dl"><IcoDownload size={15} /></span> Without Signature</button>
+          </div>
+        </div>
+      )}
+
+      {syncConfirm && (
+        <div className="dn-modal-backdrop" onMouseDown={() => setSyncConfirm(null)}>
+          <div className="dn-sync" onMouseDown={e => e.stopPropagation()}>
+            <span className="dn-sync-ico"><IcoSync size={24} /></span>
+            <div className="dn-sync-title">Sync with Zohobook?</div>
+            <div className="dn-sync-sub">This will push the latest debit note data to your Zohobook account and update its sync status.</div>
+            <div className="dn-sync-dn"><span className="po">{syncConfirm.no}</span> <span className="sup">· {syncConfirm.supplier ?? '—'}</span></div>
+            <div className="dn-sync-foot">
+              <button type="button" className="dn-pay-cancel" onClick={() => setSyncConfirm(null)}>Cancel</button>
+              <button type="button" className="dn-pay-record" onClick={() => { const r = syncConfirm; setSyncConfirm(null); syncRow(r); }}>Yes, Sync</button>
             </div>
-            <div className="spi-menu-items">
-              <button type="button" className="spi-menu-item is-teal" onClick={() => { const r = menu.row; setMenu(null); syncRow(r); }}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
-              <button type="button" className="spi-menu-item" onClick={() => { const r = menu.row; setMenu(null); openEdit(r); }}><span className="spi-menu-item-ico"><IcoEdit /></span> Edit Debit Note</button>
-              <button type="button" className="spi-menu-item" onClick={() => { setMenu(null); soon(); }}><span className="spi-menu-item-ico"><IcoDoc size={15} /></span> Download Debit Note</button>
-              <button type="button" className="spi-menu-item is-danger" onClick={() => { const r = menu.row; setMenu(null); delRow(r); }}><span className="spi-menu-item-ico"><IcoTrash /></span> Delete Debit Note</button>
+          </div>
+        </div>
+      )}
+
+      {payRow && (
+        <div className="dn-modal-backdrop" onMouseDown={() => setPayRow(null)}>
+          <div className="dn-pay" onMouseDown={e => e.stopPropagation()}>
+            <div className="dn-pay-head">
+              <span className="dn-pay-ico"><IcoRupee size={18} /></span>
+              <div>
+                <div className="dn-pay-title">Payment Recovery</div>
+                <div className="dn-pay-sub">Record recovered amount &amp; attach proof of payment</div>
+              </div>
+            </div>
+            <div className="dn-pay-dn"><span className="po">{payRow.no}</span> <span className="sup">· {payRow.supplier ?? '—'}</span></div>
+            <div className="dn-pay-stats">
+              <div className="dn-pay-stat"><div className="dn-pay-stat-k">TOTAL DEBIT</div><div className="dn-pay-stat-v">{inr(payRow.total)}</div></div>
+              <div className="dn-pay-stat"><div className="dn-pay-stat-k">ALREADY PAID</div><div className="dn-pay-stat-v">{inr(0)}</div></div>
+              <div className="dn-pay-stat"><div className="dn-pay-stat-k">BALANCE</div><div className="dn-pay-stat-v">{inr(payRow.total)}</div></div>
+            </div>
+            <label className="dn-pay-lbl">AMOUNT RECOVERED (₹)</label>
+            <input className="dn-pay-input" type="number" placeholder="Enter recovered / debit amount" />
+            <label className="dn-pay-lbl">PROOF OF PAYMENT</label>
+            <button type="button" className="dn-pay-attach"><IcoUpload size={15} /> Click to attach proof (PDF, JPG, PNG)</button>
+            <div className="dn-pay-foot">
+              <button type="button" className="dn-pay-cancel" onClick={() => setPayRow(null)}>Cancel</button>
+              <button type="button" className="dn-pay-record" onClick={() => { setPayRow(null); soon(); }}>Record Payment</button>
             </div>
           </div>
         </div>
@@ -333,6 +415,99 @@ const DN_CSS = `
 [data-bs-theme="dark"] .dn-st-partial { background:rgba(180,83,9,.18); color:#fcd34d; }
 [data-bs-theme="dark"] .dn-st-overdue { background:rgba(220,38,38,.18); color:#fca5a5; }
 [data-bs-theme="dark"] .dn-st-unpaid  { background:rgba(148,163,184,.16); color:#cbd5e1; }
+
+/* ── More-Actions popup menu (Figma pomore-*) — fixed 248px card, anchored to the
+ * kebab button and clamped to the viewport in JS so it never gets clipped. ── */
+.dn-scope .pomore-backdrop { position:fixed; inset:0; z-index:2700000; background:transparent; }
+.dn-scope .pomore-pop { position:fixed; z-index:2700001; width:248px; background:#fff; border:1px solid #e6eef3; border-radius:16px; box-shadow:0 20px 48px rgba(8,40,60,.20), 0 2px 6px rgba(8,40,60,.08); padding:9px; opacity:0; transform:translateY(-6px) scale(.97); transform-origin:top right; transition:opacity .15s ease, transform .17s cubic-bezier(.22,1,.36,1); }
+.dn-scope .pomore-pop.is-open { opacity:1; transform:translateY(0) scale(1); }
+.dn-scope .pomore-hd { display:flex; align-items:flex-start; gap:9px; padding:5px 6px 10px; border-bottom:1px solid #eef3f6; margin-bottom:6px; }
+.dn-scope .pomore-hd__ico { width:28px; height:28px; border-radius:9px; background:linear-gradient(135deg,#0e7490,#0891b2 60%,#06b6d4); color:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 2px 6px rgba(8,145,178,.32); margin-top:1px; }
+.dn-scope .pomore-hd__txt { flex:1; min-width:0; }
+.dn-scope .pomore-hd__t { font-size:13px; font-weight:800; color:#0f2333; line-height:1.2; }
+.dn-scope .pomore-hd__chip { display:inline-flex; align-items:center; gap:5px; margin-top:6px; background:#eefcff; border:1px solid #cdeef6; border-radius:7px; padding:3px 9px; font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; font-size:10.5px; font-weight:600; color:#0e7490; max-width:100%; }
+.dn-scope .pomore-hd__chip svg { flex-shrink:0; opacity:.85; }
+.dn-scope .pomore-hd__chip b { font-family:inherit; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dn-scope .pomore-hd__sup { display:block; margin-top:5px; font-size:10.5px; font-weight:600; color:#64798c; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dn-scope .pomore-hd__sup b { color:#334155; font-weight:700; }
+.dn-scope .pomore-x { width:26px; height:26px; border-radius:8px; border:1px solid #e6eef3; background:#f7fafc; color:#7a8ba0; font-size:13px; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; transition:background .14s,color .14s,border-color .14s; }
+.dn-scope .pomore-x:hover { background:#eef3f6; color:#334155; border-color:#dbe5ec; }
+.dn-scope .pomore-sec { font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; display:flex; align-items:center; gap:6px; padding:9px 8px 5px; }
+.dn-scope .pomore-sec--view { color:#7c3aed; }
+.dn-scope .pomore-sec--dl { color:#0e7490; }
+.dn-scope .pomore-item { display:flex; align-items:center; gap:11px; width:100%; border:none; background:transparent; text-align:left; padding:8px; border-radius:11px; cursor:pointer; font-family:inherit; font-size:12.5px; font-weight:700; color:#243648; transition:background .14s,transform .12s; }
+.dn-scope .pomore-item:hover { background:#f4f8fb; transform:translateX(2px); }
+.dn-scope .pomore-item:active { transform:translateX(2px) scale(.99); }
+.dn-scope .pomore-item__ico { width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.dn-scope .pomore-item__ico--sync { background:#dcfaf2; color:#0e7c6b; }
+.dn-scope .pomore-item__ico--view { background:#f1ecfe; color:#7c3aed; }
+.dn-scope .pomore-item__ico--dl { background:#e2f5fb; color:#0e7490; }
+.dn-scope .pomore-item--sync { background:#f6fffd; border:1px solid #d6f5ec; }
+.dn-scope .pomore-item--sync:hover { background:#ecfdf7; }
+.dn-scope .pomore-divider { height:1px; background:#eef3f6; margin:7px 4px; }
+[data-bs-theme="dark"] .dn-scope .pomore-pop { background:#0e1b24; border-color:rgba(34,211,238,.2); box-shadow:0 20px 48px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .dn-scope .pomore-hd { border-bottom-color:rgba(148,163,184,.16); }
+[data-bs-theme="dark"] .dn-scope .pomore-hd__t { color:#e8f2f6; }
+[data-bs-theme="dark"] .dn-scope .pomore-hd__chip { background:rgba(34,211,238,.1); border-color:rgba(34,211,238,.3); color:#67e8f9; }
+[data-bs-theme="dark"] .dn-scope .pomore-hd__sup { color:#94a3b8; }
+[data-bs-theme="dark"] .dn-scope .pomore-hd__sup b { color:#cbd5e1; }
+[data-bs-theme="dark"] .dn-scope .pomore-x { background:#0c1c24; border-color:rgba(148,163,184,.25); color:#94a3b8; }
+[data-bs-theme="dark"] .dn-scope .pomore-item { color:#cbd5e1; }
+[data-bs-theme="dark"] .dn-scope .pomore-item:hover { background:rgba(148,163,184,.1); }
+[data-bs-theme="dark"] .dn-scope .pomore-item--sync { background:rgba(16,185,129,.08); border-color:rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .dn-scope .pomore-divider { background:rgba(148,163,184,.16); }
+[data-bs-theme="dark"] .dn-scope .pomore-sec--view { color:#c4b5fd; }
+[data-bs-theme="dark"] .dn-scope .pomore-sec--dl { color:#67e8f9; }
+
+/* ── Payment Recovery popup (₹ action) ── */
+.dn-modal-backdrop { position:fixed; inset:0; z-index:100000; background:rgba(8,30,42,.45); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; padding:20px; }
+.dn-pay { width:100%; max-width:460px; background:#fff; border-radius:18px; overflow:hidden; box-shadow:0 24px 60px rgba(8,40,60,.32); }
+.dn-pay-head { display:flex; align-items:center; gap:12px; padding:22px 22px 0; margin-bottom:14px; }
+.dn-pay-ico { width:54px; height:54px; border-radius:16px; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff; background:linear-gradient(140deg,#22d3ee,#0891b2 60%,#0e7490); box-shadow:0 10px 22px -6px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.4); }
+.dn-pay-title { font-size:15px; font-weight:800; color:#0f2333; line-height:1.2; }
+.dn-pay-sub { font-size:11.5px; font-weight:600; color:#64798c; margin-top:2px; }
+.dn-pay-dn { display:inline-flex; align-items:center; gap:6px; margin:0 22px 15px; background:#eefcff; border:1px solid #cdeef6; border-radius:9px; padding:7px 13px; font-size:11.5px; font-weight:700; color:#0e7490; }
+.dn-pay-dn .po { font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; font-weight:600; }
+.dn-pay-dn .sup { color:#52708a; font-weight:600; }
+.dn-pay-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:0 22px; margin-bottom:17px; }
+.dn-pay-stat { border:1px solid #e3eef3; border-radius:10px; background:#f9fdfe; padding:9px 10px; text-align:center; }
+.dn-pay-stat-k { font-size:8.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#7c97a8; }
+.dn-pay-stat-v { font-size:13px; font-weight:800; color:#0c4a6e; margin-top:4px; font-variant-numeric:tabular-nums; }
+.dn-pay-lbl { display:block; margin:0 22px 7px; font-size:10.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#5f7d92; }
+.dn-pay-input { display:block; width:calc(100% - 44px); margin:0 22px 16px; height:40px; padding:0 12px; border:1.5px solid #e6eef3; border-radius:9px; font-size:12.5px; font-weight:600; color:#0f172a; background:#f9fdfe; box-sizing:border-box; }
+.dn-pay-input:focus { outline:none; border-color:#22d3ee; background:#fff; box-shadow:0 0 0 4px rgba(34,211,238,.12); }
+.dn-pay-input::placeholder { color:#9fb0bf; }
+.dn-pay-attach { display:flex; align-items:center; gap:10px; width:calc(100% - 44px); margin:0 22px 8px; padding:13px 14px; border:1.5px dashed #bfe5ee; border-radius:11px; background:#f9fdfe; color:#0e7490; font-size:12.5px; font-weight:700; cursor:pointer; transition:background .15s,border-color .15s; }
+.dn-pay-attach:hover { background:#eef9fc; border-color:#7fc3d8; }
+.dn-pay-foot { display:flex; gap:10px; padding:8px 22px 22px; }
+.dn-pay-foot > button { flex:1; }
+.dn-pay-cancel { display:inline-flex; align-items:center; justify-content:center; padding:11px 14px; border:1px solid #e1e9ef; border-radius:12px; background:#f1f5f8; color:#506478; font-size:13px; font-weight:800; cursor:pointer; transition:background .14s,color .14s; }
+.dn-pay-cancel:hover { background:#e7eef3; color:#334155; }
+.dn-pay-record { display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:11px 14px; border:1px solid transparent; border-radius:12px; color:#fff; font-size:13px; font-weight:800; cursor:pointer; background:linear-gradient(135deg,#0e7490,#0891b2 60%,#06b6d4); box-shadow:0 6px 16px rgba(8,145,178,.34); transition:transform .14s,box-shadow .14s; }
+.dn-pay-record:hover { transform:translateY(-1px); box-shadow:0 9px 20px rgba(8,145,178,.44); }
+[data-bs-theme="dark"] .dn-pay { background:#0e1b24; }
+[data-bs-theme="dark"] .dn-pay-title { color:#e8f2f6; }
+[data-bs-theme="dark"] .dn-pay-dn { color:#cbd5e1; }
+[data-bs-theme="dark"] .dn-pay-stat { background:#0c1c24; border-color:rgba(34,211,238,.2); }
+[data-bs-theme="dark"] .dn-pay-stat-v { color:#7dd3fc; }
+[data-bs-theme="dark"] .dn-pay-input, [data-bs-theme="dark"] .dn-pay-attach { background:#0c1c24; border-color:rgba(34,211,238,.22); color:#e2e8f0; }
+[data-bs-theme="dark"] .dn-pay-cancel { background:#0c1c24; border-color:rgba(148,163,184,.25); color:#cbd5e1; }
+
+/* ── "Sync with Zohobook?" confirm popup (centered) ── */
+.dn-sync { width:400px; max-width:100%; background:#fff; border-radius:18px; padding:22px; text-align:center; box-shadow:0 24px 60px rgba(8,40,60,.32); }
+.dn-sync-ico { width:54px; height:54px; margin:0 auto 14px; border-radius:16px; display:flex; align-items:center; justify-content:center; color:#fff; background:linear-gradient(140deg,#22d3ee,#0891b2 60%,#0e7490); box-shadow:0 10px 22px -6px rgba(8,145,178,.55), inset 0 1px 0 rgba(255,255,255,.4); }
+.dn-sync-title { font-size:16.5px; font-weight:800; color:#0c2c3a; letter-spacing:-.3px; }
+.dn-sync-sub { font-size:12.5px; font-weight:500; color:#5e7888; line-height:1.55; margin:8px auto 0; max-width:340px; }
+.dn-sync-dn { display:inline-flex; align-items:center; gap:6px; margin:13px auto 18px; background:#eefcff; border:1px solid #cdeef6; border-radius:9px; padding:7px 13px; font-size:11.5px; font-weight:700; color:#0e7490; }
+.dn-sync-dn .po { font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; font-weight:600; }
+.dn-sync-dn .sup { color:#52708a; font-weight:600; }
+.dn-sync-foot { display:flex; gap:10px; }
+.dn-sync-foot > button { flex:1; }
+[data-bs-theme="dark"] .dn-sync { background:#0e1b24; }
+[data-bs-theme="dark"] .dn-sync-title { color:#e8f2f6; }
+[data-bs-theme="dark"] .dn-sync-sub { color:#7c9fb0; }
+[data-bs-theme="dark"] .dn-sync-dn { background:rgba(34,211,238,.1); border-color:rgba(34,211,238,.3); color:#67e8f9; }
+[data-bs-theme="dark"] .dn-sync-dn .sup { color:#94a3b8; }
 `;
 
 /* ── Inline icons ── */
@@ -357,3 +532,7 @@ function StepIco3() { return <StepSvg><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 
 function StepIco4() { return <StepSvg><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></StepSvg>; }
 function StepIco5() { return <StepSvg><path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-6.7-3M3 12a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3"/><polyline points="21 3 18.7 6 15.6 5.4"/><polyline points="3 21 5.3 18 8.4 18.6"/></StepSvg>; }
 function IcoX({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>; }
+function IcoEye({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>; }
+function IcoDownload({ size = 14 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>; }
+function IcoDocSm({ size = 11 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>; }
+function IcoUpload({ size = 15 }: { size?: number }) { return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>; }
