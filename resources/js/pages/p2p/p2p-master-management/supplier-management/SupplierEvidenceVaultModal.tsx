@@ -11,6 +11,7 @@ import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } fro
 import { downloadFile } from '../../../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 import { CEV_CSS } from '../../../sales/core-masters/customer/CustomerEvidenceVaultModal';
+import { SegmentRefUploadPopup, SCOPED_CSS as AVM_SCOPED_CSS } from './AddVendorModal';
 
 /* Fetch a stored attachment as a Blob for the ZIP export. Our own uploads
  * (segment_doc_uploads/…) stream THROUGH the backend so Azure's cross-origin
@@ -1323,6 +1324,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const [downloading, setDownloading] = useState(false);
   const canViewOrDownload = !!doc.attachment_url;
   const canReupload = !!ownerId && !!doc.doc_code;
+  // Standard docs reuse the supplier form's exact upload popup (SegmentRefUploadPopup)
+  // so KYC / DD / Trade License all look identical to the "inside" Edit form.
+  const isStdCat = category === 'kyc' || category === 'dd' || category === 'tl';
   // Signing lifecycle for Trade Document rows:
   //   • signed (completed)   → no Send / no Reminder, View signed + cert only
   //   • sent (inprogress)    → no Send, Reminder only
@@ -1386,7 +1390,22 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 
   return (
     <div className="cev-row-actions">
-      {reupOpen && (
+      {reupOpen && (isStdCat ? (
+        <>
+          <style>{AVM_SCOPED_CSS}</style>
+          {/* The vault modal sits at z-index 11400; lift the reused popup's
+              backdrop above it so it opens ON TOP, not behind the vault — and the
+              date-picker calendar (default 11100) above the popup. */}
+          <style>{'.avm-cp-backdrop{z-index:13000!important;}.master-datepicker-popup{z-index:13100!important;}'}</style>
+          <SegmentRefUploadPopup
+            title={category === 'dd' ? 'DD Document Name' : category === 'kyc' ? 'Owner KYC Document Name' : 'Trade License Document Name'}
+            row={{ code: doc.reference || doc.doc_code || '', name: doc.name, authority: doc.authority, requirement: (doc.requirement as 'M' | 'O') || 'M' }}
+            existing={doc.attachment ? { file: null, url: doc.attachment_url || '', name: doc.attachment, expiry: doc.expiry || undefined } : undefined}
+            onClose={() => setReupOpen(false)}
+            onSubmit={async (f, expiryDate) => { const ok = await onPick(f, { expiryDate }); if (ok) setReupOpen(false); }}
+          />
+        </>
+      ) : (
         <VaultReuploadPopup
           doc={doc}
           category={category}
@@ -1394,7 +1413,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           onClose={() => setReupOpen(false)}
           onSubmit={async (f, opts) => { const ok = await onPick(f, opts); if (ok) setReupOpen(false); }}
         />
-      )}
+      ))}
       {canSend && (
         <Tooltip label="Send for signature">
           <button

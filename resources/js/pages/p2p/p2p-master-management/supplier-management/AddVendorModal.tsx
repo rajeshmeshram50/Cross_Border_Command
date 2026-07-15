@@ -4218,8 +4218,11 @@ function FileChooser(props: {
   /** Restrict to images + PDF only (no DOC/DOCX) — used for the cancelled-cheque
    *  proof, which the backend accepts only as jpg/jpeg/png/webp/pdf. */
   imagesPdfOnly?: boolean;
+  /** Hide the Delete (trash) action — for a MANDATORY upload the file can only be
+   *  Replaced, never cleared (you can't leave a required field empty). */
+  noDelete?: boolean;
 }) {
-  const { file, onPick, placeholder, existingPath, existingUrl, existingName, readOnly, imagesPdfOnly } = props;
+  const { file, onPick, placeholder, existingPath, existingUrl, existingName, readOnly, imagesPdfOnly, noDelete } = props;
   const toast = useToast();
 
   // Swap to the stricter images+PDF allow-list when the caller asks for it.
@@ -4326,26 +4329,28 @@ function FileChooser(props: {
             the attachment. Replace swaps the file in place (re-upload without
             deleting first); Delete clears it. Both hidden when read-only. */}
         {!readOnly && (
-          <label
-            className="avm-fc-action avm-fc-replace"
-            data-tooltip="Replace file"
-            aria-label="Replace file"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <i className="ri-refresh-line" />
-            <input type="file" hidden accept={ACCEPT} onChange={onChange} />
-          </label>
+          <Tooltip label="Replace file">
+            <label
+              className="avm-fc-action avm-fc-replace"
+              aria-label="Replace file"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <i className="ri-refresh-line" />
+              <input type="file" hidden accept={ACCEPT} onChange={onChange} />
+            </label>
+          </Tooltip>
         )}
-        {!readOnly && (
-          <button
-            type="button"
-            className="avm-fc-action avm-fc-delete"
-            data-tooltip="Delete attachment"
-            aria-label="Delete attachment"
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPick(null); }}
-          >
-            <i className="ri-delete-bin-line" />
-          </button>
+        {!readOnly && !noDelete && (
+          <Tooltip label="Delete attachment">
+            <button
+              type="button"
+              className="avm-fc-action avm-fc-delete"
+              aria-label="Delete attachment"
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPick(null); }}
+            >
+              <i className="ri-delete-bin-line" />
+            </button>
+          </Tooltip>
         )}
       </div>
     </div>
@@ -4507,25 +4512,32 @@ function SupplierSegmentRefTable(props: {
                     <div className="avm-kyc-actions">
                       {uploaded ? (
                         <>
-                          <a href={uploaded.url} target="_blank" rel="noreferrer" className="avm-kyc-act view" data-tooltip={`View ${uploaded.name}`} aria-label="View"><i className="ri-eye-line" /></a>
-                          <button
-                            type="button"
-                            className="avm-kyc-act down"
-                            data-tooltip={downloadingKey === refKey ? 'Downloading…' : `Download ${uploaded.name}`}
-                            aria-label="Download"
-                            disabled={downloadingKey === refKey}
-                            onClick={() => doDownload(refKey, uploaded.url, uploaded.name)}
-                          >
-                            <i className={downloadingKey === refKey ? 'ri-loader-4-line avm-spin' : 'ri-download-2-line'} />
-                          </button>
-                          <button type="button" className="avm-kyc-act reup" data-tooltip="Re-upload" aria-label="Re-upload" onClick={() => setPopupRow(r)}>
-                            <i className="ri-refresh-line" />
-                          </button>
+                          <Tooltip label={`View ${uploaded.name}`}>
+                            <a href={uploaded.url} target="_blank" rel="noreferrer" className="avm-kyc-act view" aria-label="View"><i className="ri-eye-line" /></a>
+                          </Tooltip>
+                          <Tooltip label={downloadingKey === refKey ? 'Downloading…' : `Download ${uploaded.name}`}>
+                            <button
+                              type="button"
+                              className="avm-kyc-act down"
+                              aria-label="Download"
+                              disabled={downloadingKey === refKey}
+                              onClick={() => doDownload(refKey, uploaded.url, uploaded.name)}
+                            >
+                              <i className={downloadingKey === refKey ? 'ri-loader-4-line avm-spin' : 'ri-download-2-line'} />
+                            </button>
+                          </Tooltip>
+                          <Tooltip label="Re-upload">
+                            <button type="button" className="avm-kyc-act reup" aria-label="Re-upload" onClick={() => setPopupRow(r)}>
+                              <i className="ri-refresh-line" />
+                            </button>
+                          </Tooltip>
                         </>
                       ) : (
-                        <button type="button" className="avm-kyc-act up" data-tooltip="Upload" aria-label="Upload" onClick={() => setPopupRow(r)}>
-                          <i className="ri-upload-2-line" />
-                        </button>
+                        <Tooltip label="Upload">
+                          <button type="button" className="avm-kyc-act up" aria-label="Upload" onClick={() => setPopupRow(r)}>
+                            <i className="ri-upload-2-line" />
+                          </button>
+                        </Tooltip>
                       )}
                     </div>
                   </td>
@@ -4557,7 +4569,7 @@ function SupplierSegmentRefTable(props: {
  * user only chooses whether the document has an expiry (Yes → date picker,
  * No → N/A) and picks the file. Save fires the optimistic upload; the row
  * then flips to "Uploaded" in the list. */
-function SegmentRefUploadPopup(props: {
+export function SegmentRefUploadPopup(props: {
   title: string;
   row: SegRefRow;
   existing?: { file: File | null; url: string; name: string; expiry?: string };
@@ -4615,6 +4627,7 @@ function SegmentRefUploadPopup(props: {
             onPick={f => setFile(f)}
             placeholder="Upload document (JPG / PNG / PDF, max 2 MB)"
             imagesPdfOnly
+            noDelete
           />
         </Field>
       </div>
@@ -4715,25 +4728,29 @@ function DdTable(props: {
                         instead of going through the Add modal, since their
                         row metadata is already populated. */}
                     {props.onAttach && (
-                      <label className="btn btn-sm btn-soft-primary mb-0" data-tooltip="Upload" aria-label="Upload">
-                        <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
-                        <input type="file" hidden accept={IMG_PDF_ACCEPT} onChange={e => {
-                          const f = e.target.files?.[0];
-                          e.currentTarget.value = '';
-                          if (!f) return;
-                          // Only JPG / JPEG / PNG / PDF — no DOC/DOCX (backend rejects them too).
-                          if (!IMG_PDF_EXT_RE.test(f.name) || !IMG_PDF_MIME_RE.test(f.type || '')) {
-                            toast.error('Unsupported file type', 'Only JPG, JPEG, PNG or PDF files are allowed.');
-                            return;
-                          }
-                          if (props.onAttach) props.onAttach(r.id, f);
-                        }} />
-                      </label>
+                      <Tooltip label="Upload">
+                        <label className="btn btn-sm btn-soft-primary mb-0" aria-label="Upload">
+                          <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
+                          <input type="file" hidden accept={IMG_PDF_ACCEPT} onChange={e => {
+                            const f = e.target.files?.[0];
+                            e.currentTarget.value = '';
+                            if (!f) return;
+                            // Only JPG / JPEG / PNG / PDF — no DOC/DOCX (backend rejects them too).
+                            if (!IMG_PDF_EXT_RE.test(f.name) || !IMG_PDF_MIME_RE.test(f.type || '')) {
+                              toast.error('Unsupported file type', 'Only JPG, JPEG, PNG or PDF files are allowed.');
+                              return;
+                            }
+                            if (props.onAttach) props.onAttach(r.id, f);
+                          }} />
+                        </label>
+                      </Tooltip>
                     )}
                     {props.onRemove && !r.mandatory && (
-                      <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
-                        <i className="ri-delete-bin-line" />
-                      </button>
+                      <Tooltip label="Remove">
+                        <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
+                          <i className="ri-delete-bin-line" />
+                        </button>
+                      </Tooltip>
                     )}
                   </div>
                 </td>
@@ -4796,9 +4813,11 @@ function OwnerKycTable(props: {
               </td>
               {!props.readOnly && (
                 <td>
-                  <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
-                    <i className="ri-delete-bin-line" />
-                  </button>
+                  <Tooltip label="Remove">
+                    <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
+                      <i className="ri-delete-bin-line" />
+                    </button>
+                  </Tooltip>
                 </td>
               )}
             </tr>
@@ -4858,18 +4877,22 @@ function TradeLicenseTable(props: {
                   <td>
                     <div className="hstack gap-1">
                       {props.onAttach && (
-                        <label className="btn btn-sm btn-soft-primary mb-0" data-tooltip="Upload" aria-label="Upload">
-                          <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
-                          <input type="file" hidden onChange={e => {
-                            const f = e.target.files?.[0];
-                            if (f && props.onAttach) props.onAttach(r.id, f);
-                          }} />
-                        </label>
+                        <Tooltip label="Upload">
+                          <label className="btn btn-sm btn-soft-primary mb-0" aria-label="Upload">
+                            <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
+                            <input type="file" hidden onChange={e => {
+                              const f = e.target.files?.[0];
+                              if (f && props.onAttach) props.onAttach(r.id, f);
+                            }} />
+                          </label>
+                        </Tooltip>
                       )}
                       {props.onRemove && !isSeed && (
-                        <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
-                          <i className="ri-delete-bin-line" />
-                        </button>
+                        <Tooltip label="Remove">
+                          <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
+                            <i className="ri-delete-bin-line" />
+                          </button>
+                        </Tooltip>
                       )}
                     </div>
                   </td>
@@ -4925,9 +4948,11 @@ function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; on
               <td>
                 <div className="d-inline-flex gap-1">
                   {props.onEdit && (
-                    <button type="button" className="btn btn-sm btn-soft-primary" onClick={() => props.onEdit?.(r)} data-tooltip="Edit" aria-label="Edit">
-                      <i className="ri-pencil-line" />
-                    </button>
+                    <Tooltip label="Edit">
+                      <button type="button" className="btn btn-sm btn-soft-primary" onClick={() => props.onEdit?.(r)} aria-label="Edit">
+                        <i className="ri-pencil-line" />
+                      </button>
+                    </Tooltip>
                   )}
                   <Tooltip label="Remove">
                     <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
@@ -5112,29 +5137,31 @@ function TradeDocsTable(props: {
                   </td>
                   <td>
                     <div className="hstack gap-1">
-                      <a
-                        href={r.signedUrl || viewHref}
-                        target={r.signedUrl ? '_blank' : undefined}
-                        rel={r.signedUrl ? 'noreferrer' : undefined}
-                        onClick={e => { if (!canView) e.preventDefault(); }}
-                        className="btn btn-sm btn-soft-secondary"
-                        data-tooltip={r.signedUrl ? 'View signed document' : 'View'}
-                        aria-label={r.signedUrl ? 'View signed document' : 'View'}
-                        style={{ opacity: canView ? 1 : 0.5, pointerEvents: canView ? 'auto' : 'none' }}
-                      >
-                        <i className="ri-eye-line" />
-                      </a>
-                      <a
-                        href={r.signedUrl || '#'}
-                        download={r.signedUrl ? '' : undefined}
-                        onClick={e => { if (!r.signedUrl) e.preventDefault(); }}
-                        className="btn btn-sm btn-soft-secondary"
-                        data-tooltip={r.signedUrl ? 'Download signed document' : 'Download'}
-                        aria-label={r.signedUrl ? 'Download signed document' : 'Download'}
-                        style={{ opacity: r.signedUrl ? 1 : 0.5, pointerEvents: r.signedUrl ? 'auto' : 'none' }}
-                      >
-                        <i className="ri-download-2-line" />
-                      </a>
+                      <Tooltip label={r.signedUrl ? 'View signed document' : 'View'}>
+                        <a
+                          href={r.signedUrl || viewHref}
+                          target={r.signedUrl ? '_blank' : undefined}
+                          rel={r.signedUrl ? 'noreferrer' : undefined}
+                          onClick={e => { if (!canView) e.preventDefault(); }}
+                          className="btn btn-sm btn-soft-secondary"
+                          aria-label={r.signedUrl ? 'View signed document' : 'View'}
+                          style={{ opacity: canView ? 1 : 0.5, pointerEvents: canView ? 'auto' : 'none' }}
+                        >
+                          <i className="ri-eye-line" />
+                        </a>
+                      </Tooltip>
+                      <Tooltip label={r.signedUrl ? 'Download signed document' : 'Download'}>
+                        <a
+                          href={r.signedUrl || '#'}
+                          download={r.signedUrl ? '' : undefined}
+                          onClick={e => { if (!r.signedUrl) e.preventDefault(); }}
+                          className="btn btn-sm btn-soft-secondary"
+                          aria-label={r.signedUrl ? 'Download signed document' : 'Download'}
+                          style={{ opacity: r.signedUrl ? 1 : 0.5, pointerEvents: r.signedUrl ? 'auto' : 'none' }}
+                        >
+                          <i className="ri-download-2-line" />
+                        </a>
+                      </Tooltip>
                       {/* Certificate of Completion — third action only
                           when the request is completed and Zoho has
                           minted the certificate. Matches the Customer /
@@ -5143,18 +5170,19 @@ function TradeDocsTable(props: {
                           rows from before the live-status polling
                           landed still see the button. */}
                       {(r.status === 'completed' || r.status === 'Signed') && r.certificateUrl && (
-                        <a
-                          href={r.certificateUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          download=""
-                          className="btn btn-sm btn-soft-info"
-                          data-tooltip="Download Certificate of Completion"
-                          aria-label="Download Certificate of Completion"
-                          style={{ pointerEvents: 'auto' }}
-                        >
-                          <i className="ri-award-line" />
-                        </a>
+                        <Tooltip label="Download Certificate of Completion">
+                          <a
+                            href={r.certificateUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            download=""
+                            className="btn btn-sm btn-soft-info"
+                            aria-label="Download Certificate of Completion"
+                            style={{ pointerEvents: 'auto' }}
+                          >
+                            <i className="ri-award-line" />
+                          </a>
+                        </Tooltip>
                       )}
                     </div>
                   </td>
@@ -5214,13 +5242,17 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td>
                 <div className="avm-row-actions">
                   {props.onEdit && (
-                    <button type="button" className="avm-row-btn" onClick={() => props.onEdit?.(r.id)} data-tooltip="Edit product" aria-label="Edit product">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                    </button>
+                    <Tooltip label="Edit product">
+                      <button type="button" className="avm-row-btn" onClick={() => props.onEdit?.(r.id)} aria-label="Edit product">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                      </button>
+                    </Tooltip>
                   )}
-                  <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove(r.id)} data-tooltip="Remove product" aria-label="Remove product">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                  </button>
+                  <Tooltip label="Remove product">
+                    <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove(r.id)} aria-label="Remove product">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                    </button>
+                  </Tooltip>
                 </div>
               </td>
             </tr>
@@ -5296,12 +5328,16 @@ function DocTable(props: {
                   )}
                   <td>
                     <div className="hstack gap-1">
-                      <button type="button" className={`btn btn-sm ${done ? 'btn-soft-success' : 'btn-soft-primary'}`} onClick={() => props.onUpload(r.code)} data-tooltip={done ? 'Uploaded' : 'Upload'} aria-label={done ? 'Uploaded' : 'Upload'}>
-                        <i className={done ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
-                      </button>
-                      <button type="button" className="btn btn-sm btn-soft-secondary" data-tooltip="Download" aria-label="Download" disabled={!done}>
-                        <i className="ri-download-2-line" />
-                      </button>
+                      <Tooltip label={done ? 'Uploaded' : 'Upload'}>
+                        <button type="button" className={`btn btn-sm ${done ? 'btn-soft-success' : 'btn-soft-primary'}`} onClick={() => props.onUpload(r.code)} aria-label={done ? 'Uploaded' : 'Upload'}>
+                          <i className={done ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Download">
+                        <button type="button" className="btn btn-sm btn-soft-secondary" aria-label="Download" disabled={!done}>
+                          <i className="ri-download-2-line" />
+                        </button>
+                      </Tooltip>
                     </div>
                   </td>
                 </tr>
@@ -6067,7 +6103,7 @@ function AddProductMappingPopup(props: {
 /* ──────────────────────────────────────────────────────────────────────────
  * Scoped CSS — light + dark mode
  * ────────────────────────────────────────────────────────────────────── */
-const SCOPED_CSS = `
+export const SCOPED_CSS = `
 .avm-backdrop {
   position: fixed; inset: 0; z-index: 1090;
   background: rgba(40, 44, 52, .42);
@@ -7725,16 +7761,6 @@ const SCOPED_CSS = `
    clipping at the card's right edge because the table wrapper clipped overflow —
    the wrappers below are set to overflow:visible so the centred tooltip shows in
    full. (These tables are table-layout:fixed / width:100%, so nothing else spills.) */
-/* FileChooser action tooltips (Replace / Delete) sit at a field's RIGHT edge in
-   every context — table cell, popup, contact card. Keep them ABOVE the button but
-   anchor right so they extend LEFT and never clip, whatever the container clips. */
-.avm-filechooser-actions [data-tooltip]::after {
-  left: auto; right: 0;
-  transform: translateX(0) translateY(4px);
-}
-.avm-filechooser-actions [data-tooltip]:hover::after {
-  transform: translateX(0) translateY(0);
-}
 .avm-kyc-act {
   width: 27px; height: 27px; border-radius: 7px; cursor: pointer;
   /* margin:0 — the Upload is a <label>, which Bootstrap gives a default
