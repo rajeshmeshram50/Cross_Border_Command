@@ -13,6 +13,11 @@ import { ClmSkeletonRows, SimpleDescModal, useScrollLock } from '../shared/clmCo
 
 /* Central CLM → Quality & Compliance Documents Master. 3-card faithful port. */
 
+/* Keep toast messages concise — a QC doc / authority name can run to 100 chars,
+   which wraps a success toast across several lines (reported bug). Clip the
+   dynamic name to ~40 chars with an ellipsis so the toast stays a tidy line. */
+const clip = (s: string, n = 40): string => (s && s.length > n ? s.slice(0, n).trimEnd() + '…' : s);
+
 type Qc = {
   // `issued_by` holds the authority ID; `issued_by_names` is the resolved
   // display name returned by the API.
@@ -89,8 +94,8 @@ export default function ClmQcPage() {
 
   const onSave = async (form: Omit<Qc, 'id'|'code'|'status'>, id?: number) => {
     try {
-      if (id) { await api.put(`/clm/qc-documents/${id}`, form); toast.success('Updated', `${form.name} saved`); }
-      else    { await api.post('/clm/qc-documents', form);     toast.success('Added',   `${form.name} added`); }
+      if (id) { await api.put(`/clm/qc-documents/${id}`, form); toast.success('Updated', `${clip(form.name)} saved`); }
+      else    { await api.post('/clm/qc-documents', form);     toast.success('Added',   `${clip(form.name)} added`); }
       setModalOpen(false); setEditing(null); reload();
     } catch (e: any) {
       const status = e?.response?.status;
@@ -107,7 +112,7 @@ export default function ClmQcPage() {
   const onDelete = async () => {
     if (!pendingDelete || deleting) return;
     setDeleting(true);
-    try { await api.delete(`/clm/qc-documents/${pendingDelete.id}`); toast.success('Deleted', `${pendingDelete.name} removed`); setPendingDelete(null); reload(); }
+    try { await api.delete(`/clm/qc-documents/${pendingDelete.id}`); toast.success('Deleted', `${clip(pendingDelete.name)} removed`); setPendingDelete(null); reload(); }
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
     finally { setDeleting(false); }
   };
@@ -261,7 +266,7 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
       setIssuedBy(String(created.id));
       setErrors(p => ({ ...p, issuedBy: '' }));
       setQuickAddOpen(false);
-      toast.success('Added', created.name);
+      toast.success('Added', clip(created.name));
     } catch (e: any) {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not add authority');
     }

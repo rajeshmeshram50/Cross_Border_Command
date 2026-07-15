@@ -424,13 +424,21 @@ export default function AddVendorModal(props: {
    * quick-add. We fetch current segments first so the previewed code + the
    * duplicate-name guard are accurate. */
   const [segAdd, setSegAdd] = useState<{ nextCode: string; names: string[] } | null>(null);
+  /* Opening the Segment quick-add needs a /clm/segments round-trip first (to
+   * allocate the next code). Drive a spinner on the "+" button so the user sees
+   * it's loading and doesn't click again. */
+  const [segAddLoading, setSegAddLoading] = useState(false);
   const openSegmentAdd = async () => {
+    if (segAddLoading) return;
+    setSegAddLoading(true);
     try {
       const { data } = await api.get<{ data: { code: string; name: string }[] }>('/clm/segments');
       const segRows = data.data ?? [];
       setSegAdd({ nextCode: nextSegmentCode(segRows), names: segRows.map(r => r.name) });
     } catch {
       setSegAdd({ nextCode: 'SG-001', names: [] });
+    } finally {
+      setSegAddLoading(false);
     }
   };
 
@@ -589,6 +597,12 @@ export default function AddVendorModal(props: {
      Contact card, the contact surfaces as a locked (non-edit/non-delete)
      "Primary" row in the contacts table below. Edit-mode starts saved. */
   const [primarySaved, setPrimarySaved] = useState(false);
+  /* Snapshot of the LAST-SAVED primary contact. The "Primary" row in the
+     contacts table renders from THIS, not the live form fields — so typing /
+     editing the primary card above never mutates the row below until the user
+     actually clicks "Save Contact". Null = no saved primary yet (row hidden). */
+  type PrimarySnapshot = { name: string; designation: string; phone: string; email: string; whatsapp: boolean; attachmentName: string; attachmentHref: string };
+  const [savedPrimary, setSavedPrimary] = useState<PrimarySnapshot | null>(null);
   /* In-flight flag for the primary contact's own "Save Contact" button. */
   const [savingPrimary, setSavingPrimary] = useState(false);
   /* When the user clicks Edit on the primary row, this overrides the
@@ -1306,6 +1320,19 @@ export default function AddVendorModal(props: {
           setWhatsappEnabled(pa.whatsapp_enabled ?? true);
           setPrimaryAttachmentPath(pa.attachment_path ?? '');
           setPrimaryAttachmentUrl(pa.attachment_url ?? '');
+          // Seed the saved-primary snapshot from what's actually persisted, so
+          // the "Primary" row below reflects the saved contact (not live edits).
+          if ((pa.contact_name ?? '').trim() || (pa.email ?? '').trim() || (pa.contact_no ?? '').trim()) {
+            setSavedPrimary({
+              name: pa.contact_name ?? '',
+              designation: pa.designation ?? '',
+              phone: pa.contact_no ?? '',
+              email: pa.email ?? '',
+              whatsapp: pa.whatsapp_enabled ?? true,
+              attachmentName: basename(pa.attachment_path),
+              attachmentHref: pa.attachment_url || (pa.attachment_path ? resolveFileUrl(pa.attachment_path) : ''),
+            });
+          }
         }
         setExtraContacts((v.extra_contacts ?? []).map(c => ({
           id: c.id,
@@ -1603,6 +1630,17 @@ export default function AddVendorModal(props: {
       const savedPa = data?.data?.primary_address as { attachment_path?: string; attachment_url?: string } | undefined;
       setPrimaryAttachmentPath(savedPa?.attachment_path ?? '');
       setPrimaryAttachmentUrl(savedPa?.attachment_url ?? '');
+      // Refresh the saved-primary snapshot so the row below now reflects the
+      // values the user just persisted (and only now, after a real save).
+      setSavedPrimary({
+        name: contactName, designation, phone: contactNo, email,
+        whatsapp: whatsappEnabled,
+        // Inline basename — the `basename` helper is scoped to the edit-load
+        // function, not accessible here (Vite build doesn't type-check, so an
+        // out-of-scope ref throws only at runtime → false "Save failed").
+        attachmentName: attachment?.name ?? (savedPa?.attachment_path ? (savedPa.attachment_path.split('/').pop() ?? '') : ''),
+        attachmentHref: savedPa?.attachment_url || (savedPa?.attachment_path ? resolveFileUrl(savedPa.attachment_path) : ''),
+      });
       if (attachment) setAttachment(null);
       setFieldErrors({});
       toast.success('Contacts saved', 'Address & contact persons captured');
@@ -2574,8 +2612,8 @@ export default function AddVendorModal(props: {
 
   const removeExtraContact = async (id: number) => {
     const ok = await confirm({
-      title: 'Remove Contact Person?',
-      message: 'This contact person will be permanently removed from this supplier. This action cannot be undone.',
+      title: 'Delete Contact Person?',
+      message: 'This contact person will be permanently deleted from this supplier. This action cannot be undone.',
       confirmLabel: 'Delete',
       cancelLabel: 'Cancel',
       tone: 'danger',
@@ -2613,7 +2651,11 @@ export default function AddVendorModal(props: {
     // and the top-right X are the only dismissal paths.
     <div className="avm-backdrop">
       <style>{SCOPED_CSS}</style>
-      <div className="avm-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="avm-modal" onClick={(e) => e.stopPropagation()} style={{ position: 'relative' }}>
+        {/* While a step save is in flight, a veil over the whole modal blocks
+            EVERY other action (Map Product, tab switch, Add buttons, etc.) until
+            the save resolves. Popups have their own veil (PopupShell). */}
+        {(saving || savingPrimary) && <div className="avm-busy-veil" aria-hidden />}
         {/* ─── Header ─── */}
         <div className="avm-head">
           <div className="avm-head-left">
@@ -2880,7 +2922,7 @@ export default function AddVendorModal(props: {
                     <Field label="Company Website">
                       <input className="avm-input" placeholder="https://abclogistics.com" value={website} onChange={e => setWebsite(e.target.value)} />
                     </Field>
-                    <Field label="Supplier Segment" required addNew onAdd={openSegmentAdd} error={fieldErrors.segment}>
+                    <Field label="Supplier Segment" required addNew addLoading={segAddLoading} onAdd={openSegmentAdd} error={fieldErrors.segment}>
                       {/* masterFormKit's MasterMultiSelect renders visible violet
                           chips with × buttons + a checkbox-marked dropdown so
                           multi-select is obvious. `value` prop is plural despite
@@ -2910,7 +2952,7 @@ export default function AddVendorModal(props: {
                         />
                       </div>
                     </Field>
-                    <Field label="Risk Level" required addNew onAdd={() => setQuickAdd('risk_levels')} error={fieldErrors.riskLevel}>
+                    <Field label="Risk Level" required error={fieldErrors.riskLevel}>
                       <SelectInput value={riskLevel} onChange={(v) => { setRiskLevel(v); clearFieldError('riskLevel'); }} placeholder="Select" options={riskLevelOpts} />
                     </Field>
                   </div>
@@ -2967,21 +3009,21 @@ export default function AddVendorModal(props: {
                           clearFieldError('state');
                           clearFieldError('stateCode');
                         }}
-                        placeholder="Select State"
+                        placeholder={country ? 'Select State' : 'Select country first'}
                         options={stateOpts}
+                        disabled={!country}
                       />
                     </Field>
                     <Field label="State Code" required error={fieldErrors.stateCode}>
                       {/* Derived from the selected State — read-only so it can't drift
                           out of sync with the State (GST state code is fixed per state). */}
                       <input
-                        className="avm-input"
+                        className="avm-input avm-input-ro"
                         placeholder="Auto-filled from State"
                         value={stateCode}
                         readOnly
                         tabIndex={-1}
                         title="GST state code — automatically set from the selected State"
-                        style={{ background: '#f1f5f9', color: '#475569', cursor: 'default' }}
                       />
                     </Field>
                     <Field label="City" required error={fieldErrors.city}>
@@ -3049,7 +3091,11 @@ export default function AddVendorModal(props: {
                         </div>
                       </Field>
                       <Field label="Attachment (Business Card)">
-                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) { setPrimaryAttachmentPath(''); setPrimaryAttachmentUrl(''); } }} existingPath={primaryAttachmentPath} existingUrl={primaryAttachmentUrl || undefined} placeholder="No files attached" readOnly={primaryLocked} />
+                        {/* Business card stays uploadable even when the primary
+                            contact's identity fields are locked (mirrors the Bank
+                            attachment). A new / replaced / removed file persists
+                            on Save Contact or Update & Next via saveContacts(). */}
+                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) { setPrimaryAttachmentPath(''); setPrimaryAttachmentUrl(''); } }} existingPath={primaryAttachmentPath} existingUrl={primaryAttachmentUrl || undefined} placeholder="No files attached" />
                       </Field>
                     </div>
                   </SectionCard>
@@ -3081,25 +3127,21 @@ export default function AddVendorModal(props: {
                         attachmentHref: string;
                       };
                       const rows: Row[] = [];
-                      // Primary contact surfaces as the first, locked row once it
-                      // has been saved (or always, in edit mode where it already
-                      // exists). Marked "Primary" — no edit/delete actions.
-                      const primaryHasData = !!(contactName.trim() || email.trim() || contactNo.trim());
-                      if ((primarySaved || isEdit) && primaryHasData) {
-                        const freshHref = attachment ? URL.createObjectURL(attachment) : '';
-                        // Prefer the backend file_url() (works on the server / Azure);
-                        // only fall back to composing the URL from the raw path.
-                        const savedHref = primaryAttachmentUrl || (primaryAttachmentPath ? resolveFileUrl(primaryAttachmentPath) : '');
+                      // Primary contact surfaces as the first, locked "Primary" row —
+                      // but ONLY from the saved snapshot. Typing / editing the primary
+                      // card above never adds or mutates this row until the user
+                      // actually clicks "Save Contact" (which refreshes savedPrimary).
+                      if (savedPrimary) {
                         rows.push({
                           key: 'primary',
                           isPrimary: true,
-                          name: contactName,
-                          designation,
-                          phone: contactNo,
-                          email,
-                          whatsapp: whatsappEnabled,
-                          attachmentName: attachment?.name ?? (primaryAttachmentPath ? (primaryAttachmentPath.split('/').pop() ?? '') : ''),
-                          attachmentHref: freshHref || savedHref,
+                          name: savedPrimary.name,
+                          designation: savedPrimary.designation,
+                          phone: savedPrimary.phone,
+                          email: savedPrimary.email,
+                          whatsapp: savedPrimary.whatsapp,
+                          attachmentName: savedPrimary.attachmentName,
+                          attachmentHref: savedPrimary.attachmentHref,
                         });
                       }
                       extraContacts.forEach(c => rows.push({
@@ -3138,14 +3180,20 @@ export default function AddVendorModal(props: {
                                 <tr key={r.key}>
                                   <td>{idx + 1}</td>
                                   <td>
-                                    <strong>{r.name || '—'}</strong>
+                                    <Tooltip label={r.name || '—'}>
+                                      <strong>{r.name && r.name.length > 20 ? r.name.slice(0, 20) + '…' : (r.name || '—')}</strong>
+                                    </Tooltip>
                                     {r.isPrimary && (
                                       <span className="avm-primary-tag ms-2">Primary</span>
                                     )}
                                   </td>
                                   <td>{r.designation || '—'}</td>
                                   <td><span className="font-monospace fs-13">{r.phone || '—'}</span></td>
-                                  <td>{r.email || '—'}</td>
+                                  <td>
+                                    {r.email
+                                      ? <Tooltip label={r.email}><span>{r.email.length > 24 ? r.email.slice(0, 24) + '…' : r.email}</span></Tooltip>
+                                      : '—'}
+                                  </td>
                                   <td>
                                     <span className={r.whatsapp ? 'avm-wa-yes' : 'avm-wa-no'}>
                                       {r.whatsapp ? '✓ Yes' : '— No'}
@@ -3154,19 +3202,22 @@ export default function AddVendorModal(props: {
                                   <td>
                                     {r.attachmentName ? (
                                       r.attachmentHref ? (
-                                        <a
-                                          href={r.attachmentHref}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="fs-13 d-inline-flex align-items-center text-truncate"
-                                          style={{ maxWidth: 200, color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
-                                          title={`Open ${r.attachmentName}`}
-                                        >
-                                          <i className="ri-attachment-line me-1" />
-                                          {r.attachmentName}
-                                        </a>
+                                        <Tooltip label={r.attachmentName}>
+                                          <a
+                                            href={r.attachmentHref}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="fs-13 d-inline-flex align-items-center"
+                                            style={{ color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                                          >
+                                            <i className="ri-attachment-line me-1" />
+                                            {r.attachmentName.length > 20 ? r.attachmentName.slice(0, 20) + '…' : r.attachmentName}
+                                          </a>
+                                        </Tooltip>
                                       ) : (
-                                        <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.attachmentName}</span>
+                                        <Tooltip label={r.attachmentName}>
+                                          <span className="fs-13"><i className="ri-attachment-line text-muted me-1" />{r.attachmentName.length > 20 ? r.attachmentName.slice(0, 20) + '…' : r.attachmentName}</span>
+                                        </Tooltip>
                                       )
                                     ) : (
                                       <span className="text-muted fs-13">—</span>
@@ -3203,8 +3254,8 @@ export default function AddVendorModal(props: {
                                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                                             </button>
                                           </Tooltip>
-                                          <Tooltip label="Remove">
-                                            <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} aria-label="Remove">
+                                          <Tooltip label="Delete">
+                                            <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => r.contactId !== undefined && removeExtraContact(r.contactId)} aria-label="Delete">
                                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                                             </button>
                                           </Tooltip>
@@ -3502,6 +3553,15 @@ export default function AddVendorModal(props: {
             const id = String(row.id ?? '');
             if (!id) { setQuickAdd(null); return; }
             bustVendorMasterBundle();
+            // Only ACTIVE master records belong in the supplier dropdowns (the
+            // master bundle already filters to Active). If the user creates an
+            // Inactive one via the "+" quick-add, save it but do NOT add/select
+            // it here — tell them to activate it first.
+            if (row.status && String(row.status).toLowerCase() !== 'active') {
+              toast.info('Saved as Inactive', 'Only Active records appear in this dropdown. Set it to Active to select it here.');
+              setQuickAdd(null);
+              return;
+            }
             switch (quickAdd) {
               case 'vendor_types': {
                 const label = String(row.name ?? '');
@@ -3824,7 +3884,7 @@ function ContactAddPopup(props: {
   const { draft, setDraft, onClose, onSave } = props;
   const confirm = useConfirm();
   const set = <K extends keyof ContactDraft>(k: K, v: ContactDraft[K]) => setDraft({ ...draft, [k]: v });
-  const [errors, setErrors] = useState<{ name?: string; designation?: string }>({});
+  const [errors, setErrors] = useState<{ name?: string; designation?: string; phone?: string; email?: string }>({});
   /* Local in-flight flag so the popup's OWN Save button shows the spinner
    * (the save no longer toggles the parent's shared `saving`). */
   const [saving, setSaving] = useState(false);
@@ -3873,7 +3933,7 @@ function ContactAddPopup(props: {
                 onChange={e => handleDesignationChange(e.target.value)}
               />
             </Field>
-            <Field label="Contact No" required>
+            <Field label="Contact No" required error={errors.phone}>
               <input
                 className="avm-input"
                 placeholder="Enter contact number"
@@ -3881,11 +3941,11 @@ function ContactAddPopup(props: {
                 pattern="\d*"
                 maxLength={15}
                 value={draft.phone}
-                onChange={e => set('phone', digitsOnly(e.target.value))}
+                onChange={e => { set('phone', digitsOnly(e.target.value)); setErrors(prev => ({ ...prev, phone: undefined })); }}
               />
             </Field>
-            <Field label="Email" required>
-              <input className="avm-input" placeholder="Enter email" value={draft.email} onChange={e => set('email', e.target.value)} />
+            <Field label="Email" required error={errors.email}>
+              <input className="avm-input" placeholder="Enter email" value={draft.email} onChange={e => { set('email', e.target.value); setErrors(prev => ({ ...prev, email: undefined })); }} />
             </Field>
           </div>
 
@@ -3946,6 +4006,15 @@ function ContactAddPopup(props: {
             disabled={saving}
             onClick={async () => {
               if (saving) return;
+              // Highlight empty required fields in red before handing off to the
+              // parent save (which still runs format / uniqueness checks).
+              const errs: typeof errors = { ...errors };
+              errs.name        = draft.name.trim()        ? errs.name        : 'Contact Person Name is required';
+              errs.designation = draft.designation.trim() ? errs.designation : 'Designation is required';
+              errs.phone       = draft.phone.trim()       ? undefined        : 'Contact No is required';
+              errs.email       = draft.email.trim()       ? undefined        : 'Email is required';
+              setErrors(errs);
+              if (Object.values(errs).some(Boolean)) return;
               setSaving(true);
               try { await onSave(); } finally { setSaving(false); }
             }}
@@ -4016,6 +4085,7 @@ function Field(props: {
   label: string;
   required?: boolean;
   addNew?: boolean;
+  addLoading?: boolean;
   onAdd?: () => void;
   error?: string;
   hint?: ReactNode;
@@ -4036,9 +4106,10 @@ function Field(props: {
             type="button"
             className="avm-field-plus"
             tabIndex={-1}
-            title={`Add new ${props.label}`}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onAdd?.(); }}
-          >+</button>
+            disabled={props.addLoading}
+            title={props.addLoading ? 'Opening…' : `Add new ${props.label}`}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (!props.addLoading) props.onAdd?.(); }}
+          >{props.addLoading ? <span className="avm-spinner avm-spinner-sm" role="status" aria-hidden="true" /> : '+'}</button>
         )}
         {props.hint}
       </span>
@@ -4057,6 +4128,7 @@ function SelectInput(props: {
   onChange: (v: string) => void;
   placeholder?: string;
   options: Array<string | { value: string; label: string }>;
+  disabled?: boolean;
 }) {
   const normalized = props.options.map(o => typeof o === 'string' ? { value: o, label: o } : o);
   return (
@@ -4066,6 +4138,7 @@ function SelectInput(props: {
         options={normalized}
         placeholder={props.placeholder ?? 'Select'}
         onChange={props.onChange}
+        disabled={props.disabled}
       />
     </div>
   );
@@ -4085,6 +4158,9 @@ function SelectInput(props: {
  *  `existingPath` is set on rows hydrated from /vendors/{id} so the
  *  View link works on previously-uploaded files without re-uploading.
  */
+/* Local (not UTC) YYYY-MM-DD for "today" — used as the min for EXPIRY pickers so
+ * a document can't be given an expiry that's already in the past. */
+const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
 const FILE_ACCEPT     = '.jpg,.jpeg,.png,.pdf,.doc,.docx,image/jpeg,image/png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const FILE_MAX_BYTES  = 2 * 1024 * 1024; // 2 MB
 const FILE_TYPE_LABEL = 'JPG / PNG / PDF / DOC / DOCX';
@@ -4142,8 +4218,11 @@ function FileChooser(props: {
   /** Restrict to images + PDF only (no DOC/DOCX) — used for the cancelled-cheque
    *  proof, which the backend accepts only as jpg/jpeg/png/webp/pdf. */
   imagesPdfOnly?: boolean;
+  /** Hide the Delete (trash) action — for a MANDATORY upload the file can only be
+   *  Replaced, never cleared (you can't leave a required field empty). */
+  noDelete?: boolean;
 }) {
-  const { file, onPick, placeholder, existingPath, existingUrl, existingName, readOnly, imagesPdfOnly } = props;
+  const { file, onPick, placeholder, existingPath, existingUrl, existingName, readOnly, imagesPdfOnly, noDelete } = props;
   const toast = useToast();
 
   // Swap to the stricter images+PDF allow-list when the caller asks for it.
@@ -4250,26 +4329,28 @@ function FileChooser(props: {
             the attachment. Replace swaps the file in place (re-upload without
             deleting first); Delete clears it. Both hidden when read-only. */}
         {!readOnly && (
-          <label
-            className="avm-fc-action avm-fc-replace"
-            data-tooltip="Replace file"
-            aria-label="Replace file"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <i className="ri-refresh-line" />
-            <input type="file" hidden accept={ACCEPT} onChange={onChange} />
-          </label>
+          <Tooltip label="Replace file">
+            <label
+              className="avm-fc-action avm-fc-replace"
+              aria-label="Replace file"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <i className="ri-refresh-line" />
+              <input type="file" hidden accept={ACCEPT} onChange={onChange} />
+            </label>
+          </Tooltip>
         )}
-        {!readOnly && (
-          <button
-            type="button"
-            className="avm-fc-action avm-fc-delete"
-            data-tooltip="Delete attachment"
-            aria-label="Delete attachment"
-            onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPick(null); }}
-          >
-            <i className="ri-delete-bin-line" />
-          </button>
+        {!readOnly && !noDelete && (
+          <Tooltip label="Delete attachment">
+            <button
+              type="button"
+              className="avm-fc-action avm-fc-delete"
+              aria-label="Delete attachment"
+              onClick={(e) => { e.stopPropagation(); e.preventDefault(); onPick(null); }}
+            >
+              <i className="ri-delete-bin-line" />
+            </button>
+          </Tooltip>
         )}
       </div>
     </div>
@@ -4431,25 +4512,32 @@ function SupplierSegmentRefTable(props: {
                     <div className="avm-kyc-actions">
                       {uploaded ? (
                         <>
-                          <a href={uploaded.url} target="_blank" rel="noreferrer" className="avm-kyc-act view" data-tooltip={`View ${uploaded.name}`} aria-label="View"><i className="ri-eye-line" /></a>
-                          <button
-                            type="button"
-                            className="avm-kyc-act down"
-                            data-tooltip={downloadingKey === refKey ? 'Downloading…' : `Download ${uploaded.name}`}
-                            aria-label="Download"
-                            disabled={downloadingKey === refKey}
-                            onClick={() => doDownload(refKey, uploaded.url, uploaded.name)}
-                          >
-                            <i className={downloadingKey === refKey ? 'ri-loader-4-line avm-spin' : 'ri-download-2-line'} />
-                          </button>
-                          <button type="button" className="avm-kyc-act reup" data-tooltip="Re-upload" aria-label="Re-upload" onClick={() => setPopupRow(r)}>
-                            <i className="ri-refresh-line" />
-                          </button>
+                          <Tooltip label={`View ${uploaded.name}`}>
+                            <a href={uploaded.url} target="_blank" rel="noreferrer" className="avm-kyc-act view" aria-label="View"><i className="ri-eye-line" /></a>
+                          </Tooltip>
+                          <Tooltip label={downloadingKey === refKey ? 'Downloading…' : `Download ${uploaded.name}`}>
+                            <button
+                              type="button"
+                              className="avm-kyc-act down"
+                              aria-label="Download"
+                              disabled={downloadingKey === refKey}
+                              onClick={() => doDownload(refKey, uploaded.url, uploaded.name)}
+                            >
+                              <i className={downloadingKey === refKey ? 'ri-loader-4-line avm-spin' : 'ri-download-2-line'} />
+                            </button>
+                          </Tooltip>
+                          <Tooltip label="Re-upload">
+                            <button type="button" className="avm-kyc-act reup" aria-label="Re-upload" onClick={() => setPopupRow(r)}>
+                              <i className="ri-refresh-line" />
+                            </button>
+                          </Tooltip>
                         </>
                       ) : (
-                        <button type="button" className="avm-kyc-act up" data-tooltip="Upload" aria-label="Upload" onClick={() => setPopupRow(r)}>
-                          <i className="ri-upload-2-line" />
-                        </button>
+                        <Tooltip label="Upload">
+                          <button type="button" className="avm-kyc-act up" aria-label="Upload" onClick={() => setPopupRow(r)}>
+                            <i className="ri-upload-2-line" />
+                          </button>
+                        </Tooltip>
                       )}
                     </div>
                   </td>
@@ -4481,7 +4569,7 @@ function SupplierSegmentRefTable(props: {
  * user only chooses whether the document has an expiry (Yes → date picker,
  * No → N/A) and picks the file. Save fires the optimistic upload; the row
  * then flips to "Uploaded" in the list. */
-function SegmentRefUploadPopup(props: {
+export function SegmentRefUploadPopup(props: {
   title: string;
   row: SegRefRow;
   existing?: { file: File | null; url: string; name: string; expiry?: string };
@@ -4524,7 +4612,7 @@ function SegmentRefUploadPopup(props: {
             </div>
             {hasExpiry && (
               <div className="avm-expiry-date">
-                <MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" />
+                <MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={todayIso()} />
               </div>
             )}
           </div>
@@ -4538,6 +4626,8 @@ function SegmentRefUploadPopup(props: {
             existingName={existing && !existing.file ? existing.name : undefined}
             onPick={f => setFile(f)}
             placeholder="Upload document (JPG / PNG / PDF, max 2 MB)"
+            imagesPdfOnly
+            noDelete
           />
         </Field>
       </div>
@@ -4638,18 +4728,29 @@ function DdTable(props: {
                         instead of going through the Add modal, since their
                         row metadata is already populated. */}
                     {props.onAttach && (
-                      <label className="btn btn-sm btn-soft-primary mb-0" data-tooltip="Upload" aria-label="Upload">
-                        <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
-                        <input type="file" hidden accept={FILE_ACCEPT} onChange={e => {
-                          const f = e.target.files?.[0];
-                          if (f && props.onAttach) props.onAttach(r.id, f);
-                        }} />
-                      </label>
+                      <Tooltip label="Upload">
+                        <label className="btn btn-sm btn-soft-primary mb-0" aria-label="Upload">
+                          <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
+                          <input type="file" hidden accept={IMG_PDF_ACCEPT} onChange={e => {
+                            const f = e.target.files?.[0];
+                            e.currentTarget.value = '';
+                            if (!f) return;
+                            // Only JPG / JPEG / PNG / PDF — no DOC/DOCX (backend rejects them too).
+                            if (!IMG_PDF_EXT_RE.test(f.name) || !IMG_PDF_MIME_RE.test(f.type || '')) {
+                              toast.error('Unsupported file type', 'Only JPG, JPEG, PNG or PDF files are allowed.');
+                              return;
+                            }
+                            if (props.onAttach) props.onAttach(r.id, f);
+                          }} />
+                        </label>
+                      </Tooltip>
                     )}
                     {props.onRemove && !r.mandatory && (
-                      <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
-                        <i className="ri-delete-bin-line" />
-                      </button>
+                      <Tooltip label="Remove">
+                        <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
+                          <i className="ri-delete-bin-line" />
+                        </button>
+                      </Tooltip>
                     )}
                   </div>
                 </td>
@@ -4712,9 +4813,11 @@ function OwnerKycTable(props: {
               </td>
               {!props.readOnly && (
                 <td>
-                  <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
-                    <i className="ri-delete-bin-line" />
-                  </button>
+                  <Tooltip label="Remove">
+                    <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
+                      <i className="ri-delete-bin-line" />
+                    </button>
+                  </Tooltip>
                 </td>
               )}
             </tr>
@@ -4774,18 +4877,22 @@ function TradeLicenseTable(props: {
                   <td>
                     <div className="hstack gap-1">
                       {props.onAttach && (
-                        <label className="btn btn-sm btn-soft-primary mb-0" data-tooltip="Upload" aria-label="Upload">
-                          <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
-                          <input type="file" hidden onChange={e => {
-                            const f = e.target.files?.[0];
-                            if (f && props.onAttach) props.onAttach(r.id, f);
-                          }} />
-                        </label>
+                        <Tooltip label="Upload">
+                          <label className="btn btn-sm btn-soft-primary mb-0" aria-label="Upload">
+                            <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
+                            <input type="file" hidden onChange={e => {
+                              const f = e.target.files?.[0];
+                              if (f && props.onAttach) props.onAttach(r.id, f);
+                            }} />
+                          </label>
+                        </Tooltip>
                       )}
                       {props.onRemove && !isSeed && (
-                        <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
-                          <i className="ri-delete-bin-line" />
-                        </button>
+                        <Tooltip label="Remove">
+                          <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
+                            <i className="ri-delete-bin-line" />
+                          </button>
+                        </Tooltip>
                       )}
                     </div>
                   </td>
@@ -4841,13 +4948,17 @@ function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; on
               <td>
                 <div className="d-inline-flex gap-1">
                   {props.onEdit && (
-                    <button type="button" className="btn btn-sm btn-soft-primary" onClick={() => props.onEdit?.(r)} data-tooltip="Edit" aria-label="Edit">
-                      <i className="ri-pencil-line" />
-                    </button>
+                    <Tooltip label="Edit">
+                      <button type="button" className="btn btn-sm btn-soft-primary" onClick={() => props.onEdit?.(r)} aria-label="Edit">
+                        <i className="ri-pencil-line" />
+                      </button>
+                    </Tooltip>
                   )}
-                  <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
-                    <i className="ri-delete-bin-line" />
-                  </button>
+                  <Tooltip label="Remove">
+                    <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
+                      <i className="ri-close-line" />
+                    </button>
+                  </Tooltip>
                 </div>
               </td>
             </tr>
@@ -4890,9 +5001,11 @@ function GstScrutinyTable(props: { rows: GstScrutinyRow[]; onRemove?: (id: strin
               <td>{r.prevNonGst2aInvoice || '—'}</td>
               <td>{r.redFlags || '—'}</td>
               <td>
-                <button type="button" className="btn btn-sm btn-soft-danger" onClick={() => props.onRemove?.(r.id)} data-tooltip="Remove" aria-label="Remove">
-                  <i className="ri-delete-bin-line" />
-                </button>
+                <Tooltip label="Remove">
+                  <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
+                    <i className="ri-close-line" />
+                  </button>
+                </Tooltip>
               </td>
             </tr>
           ))}
@@ -5024,29 +5137,31 @@ function TradeDocsTable(props: {
                   </td>
                   <td>
                     <div className="hstack gap-1">
-                      <a
-                        href={r.signedUrl || viewHref}
-                        target={r.signedUrl ? '_blank' : undefined}
-                        rel={r.signedUrl ? 'noreferrer' : undefined}
-                        onClick={e => { if (!canView) e.preventDefault(); }}
-                        className="btn btn-sm btn-soft-secondary"
-                        data-tooltip={r.signedUrl ? 'View signed document' : 'View'}
-                        aria-label={r.signedUrl ? 'View signed document' : 'View'}
-                        style={{ opacity: canView ? 1 : 0.5, pointerEvents: canView ? 'auto' : 'none' }}
-                      >
-                        <i className="ri-eye-line" />
-                      </a>
-                      <a
-                        href={r.signedUrl || '#'}
-                        download={r.signedUrl ? '' : undefined}
-                        onClick={e => { if (!r.signedUrl) e.preventDefault(); }}
-                        className="btn btn-sm btn-soft-secondary"
-                        data-tooltip={r.signedUrl ? 'Download signed document' : 'Download'}
-                        aria-label={r.signedUrl ? 'Download signed document' : 'Download'}
-                        style={{ opacity: r.signedUrl ? 1 : 0.5, pointerEvents: r.signedUrl ? 'auto' : 'none' }}
-                      >
-                        <i className="ri-download-2-line" />
-                      </a>
+                      <Tooltip label={r.signedUrl ? 'View signed document' : 'View'}>
+                        <a
+                          href={r.signedUrl || viewHref}
+                          target={r.signedUrl ? '_blank' : undefined}
+                          rel={r.signedUrl ? 'noreferrer' : undefined}
+                          onClick={e => { if (!canView) e.preventDefault(); }}
+                          className="btn btn-sm btn-soft-secondary"
+                          aria-label={r.signedUrl ? 'View signed document' : 'View'}
+                          style={{ opacity: canView ? 1 : 0.5, pointerEvents: canView ? 'auto' : 'none' }}
+                        >
+                          <i className="ri-eye-line" />
+                        </a>
+                      </Tooltip>
+                      <Tooltip label={r.signedUrl ? 'Download signed document' : 'Download'}>
+                        <a
+                          href={r.signedUrl || '#'}
+                          download={r.signedUrl ? '' : undefined}
+                          onClick={e => { if (!r.signedUrl) e.preventDefault(); }}
+                          className="btn btn-sm btn-soft-secondary"
+                          aria-label={r.signedUrl ? 'Download signed document' : 'Download'}
+                          style={{ opacity: r.signedUrl ? 1 : 0.5, pointerEvents: r.signedUrl ? 'auto' : 'none' }}
+                        >
+                          <i className="ri-download-2-line" />
+                        </a>
+                      </Tooltip>
                       {/* Certificate of Completion — third action only
                           when the request is completed and Zoho has
                           minted the certificate. Matches the Customer /
@@ -5055,18 +5170,19 @@ function TradeDocsTable(props: {
                           rows from before the live-status polling
                           landed still see the button. */}
                       {(r.status === 'completed' || r.status === 'Signed') && r.certificateUrl && (
-                        <a
-                          href={r.certificateUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          download=""
-                          className="btn btn-sm btn-soft-info"
-                          data-tooltip="Download Certificate of Completion"
-                          aria-label="Download Certificate of Completion"
-                          style={{ pointerEvents: 'auto' }}
-                        >
-                          <i className="ri-award-line" />
-                        </a>
+                        <Tooltip label="Download Certificate of Completion">
+                          <a
+                            href={r.certificateUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            download=""
+                            className="btn btn-sm btn-soft-info"
+                            aria-label="Download Certificate of Completion"
+                            style={{ pointerEvents: 'auto' }}
+                          >
+                            <i className="ri-award-line" />
+                          </a>
+                        </Tooltip>
                       )}
                     </div>
                   </td>
@@ -5126,13 +5242,17 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td>
                 <div className="avm-row-actions">
                   {props.onEdit && (
-                    <button type="button" className="avm-row-btn" onClick={() => props.onEdit?.(r.id)} data-tooltip="Edit product" aria-label="Edit product">
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                    </button>
+                    <Tooltip label="Edit product">
+                      <button type="button" className="avm-row-btn" onClick={() => props.onEdit?.(r.id)} aria-label="Edit product">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+                      </button>
+                    </Tooltip>
                   )}
-                  <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove(r.id)} data-tooltip="Remove product" aria-label="Remove product">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                  </button>
+                  <Tooltip label="Remove product">
+                    <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove(r.id)} aria-label="Remove product">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                    </button>
+                  </Tooltip>
                 </div>
               </td>
             </tr>
@@ -5208,12 +5328,16 @@ function DocTable(props: {
                   )}
                   <td>
                     <div className="hstack gap-1">
-                      <button type="button" className={`btn btn-sm ${done ? 'btn-soft-success' : 'btn-soft-primary'}`} onClick={() => props.onUpload(r.code)} data-tooltip={done ? 'Uploaded' : 'Upload'} aria-label={done ? 'Uploaded' : 'Upload'}>
-                        <i className={done ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
-                      </button>
-                      <button type="button" className="btn btn-sm btn-soft-secondary" data-tooltip="Download" aria-label="Download" disabled={!done}>
-                        <i className="ri-download-2-line" />
-                      </button>
+                      <Tooltip label={done ? 'Uploaded' : 'Upload'}>
+                        <button type="button" className={`btn btn-sm ${done ? 'btn-soft-success' : 'btn-soft-primary'}`} onClick={() => props.onUpload(r.code)} aria-label={done ? 'Uploaded' : 'Upload'}>
+                          <i className={done ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Download">
+                        <button type="button" className="btn btn-sm btn-soft-secondary" aria-label="Download" disabled={!done}>
+                          <i className="ri-download-2-line" />
+                        </button>
+                      </Tooltip>
                     </div>
                   </td>
                 </tr>
@@ -5310,11 +5434,16 @@ function PopupShell(props: {
               {props.subtitle && <div className="avm-cp-subtitle">{props.subtitle}</div>}
             </div>
           </div>
-          <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close">
+          <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close" disabled={saving}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
-        <div className="avm-cp-body">{props.children}</div>
+        {/* While saving, a veil over the body blocks ALL interaction (editing a
+            field, opening an attached image, etc.) until the save resolves. */}
+        <div className="avm-cp-body" style={{ position: 'relative' }}>
+          {props.children}
+          {saving && <div className="avm-cp-saving-veil" aria-hidden />}
+        </div>
         <div className="avm-cp-foot">
           <button className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Cancel</button>
           <button
@@ -5394,6 +5523,15 @@ const sanitizeKycAlpha = (raw: string, maxLen = 60): SanitizeResult => {
   const cleaned = raw.replace(VENDOR_ALPHA_INVALID_RE, '').slice(0, maxLen);
   if (cleaned === raw) return { cleaned };
   return { cleaned, error: 'Only alphabetic characters are allowed' };
+};
+
+/* Alphanumeric fields — Bank Branch (e.g. "Sector-21", "Branch 2",
+ * "M.G. Road"). Letters + digits + spaces + . , ' - ; no other specials. */
+const VENDOR_ALPHANUM_INVALID_RE = /[^A-Za-z0-9\s.,'-]/g;
+const sanitizeKycAlphaNum = (raw: string, maxLen = 60): SanitizeResult => {
+  const cleaned = raw.replace(VENDOR_ALPHANUM_INVALID_RE, '').slice(0, maxLen);
+  if (cleaned === raw) return { cleaned };
+  return { cleaned, error: 'Only letters and numbers are allowed' };
 };
 
 /* Designation — same alphabet base, plus `/` for combined titles
@@ -5737,7 +5875,7 @@ function BankAddPopup(props: {
     setErrors(prev => ({ ...prev, bankName: error }));
   };
   const handleBranchChange = (raw: string) => {
-    const { cleaned, error } = sanitizeKycAlpha(raw, 60);
+    const { cleaned, error } = sanitizeKycAlphaNum(raw, 60);
     setDraft({ ...draft, branchName: cleaned });
     setErrors(prev => ({ ...prev, branchName: error }));
   };
@@ -5965,7 +6103,7 @@ function AddProductMappingPopup(props: {
 /* ──────────────────────────────────────────────────────────────────────────
  * Scoped CSS — light + dark mode
  * ────────────────────────────────────────────────────────────────────── */
-const SCOPED_CSS = `
+export const SCOPED_CSS = `
 .avm-backdrop {
   position: fixed; inset: 0; z-index: 1090;
   background: rgba(40, 44, 52, .42);
@@ -6389,8 +6527,9 @@ const SCOPED_CSS = `
   transition: background .15s, border-color .15s;
 }
 .avm-row-btn:hover { background: #ede9fe; border-color: #c4b5fd; }
-.avm-row-btn-del { color: #ef4444; }
+.avm-row-btn-del { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
 .avm-row-btn-del:hover { background: #fee2e2; border-color: #fca5a5; }
+[data-bs-theme="dark"] .avm-row-btn-del { color: #fca5a5; border-color: rgba(220,38,38,.4); background: rgba(220,38,38,.14); }
 [data-bs-theme="dark"] .avm-row-btn { background: #1a1430; border-color: #3b2a6b; }
 [data-bs-theme="dark"] .avm-row-btn:hover { background: #2a1d5c; border-color: #6d28d9; }
 
@@ -6470,6 +6609,11 @@ const SCOPED_CSS = `
   font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
 }
+.avm-field-plus:disabled { opacity: .85; cursor: progress; }
+/* Read-only input (State Code auto-fill) — light in light mode, dark in dark mode. */
+.avm-input-ro { background: #f1f5f9; color: #475569; cursor: default; }
+[data-bs-theme="dark"] .avm-input-ro { background: #1a1430; color: #9db3c1; border-color: #3b2a6b; }
+.avm-spinner-sm { width: 10px; height: 10px; border-width: 1.5px; vertical-align: 0; }
 /* Inputs — mirror .master-modal .form-control from masterFormKit so the
    wizard reads as part of the same form family as Clients / Recruitment.
    Subtle blue-tinted surface, indigo focus ring, 10px radius. */
@@ -7429,6 +7573,13 @@ const SCOPED_CSS = `
   border-color: rgba(167,139,250,.3); color: #a89fc7;
 }
 .avm-cp-body .avm-grid-2, .avm-cp-body .avm-grid-3 { gap: 12px; }
+/* Interaction-blocking veil shown over the popup body while a save is in flight
+ * so no field can be edited and no attachment opened until it resolves. */
+.avm-cp-saving-veil { position: absolute; inset: 0; z-index: 20; background: rgba(255,255,255,.45); cursor: progress; border-radius: inherit; }
+[data-bs-theme="dark"] .avm-cp-saving-veil { background: rgba(10,6,24,.45); }
+/* Whole-modal veil during a step save — blocks Map Product / tabs / everything. */
+.avm-busy-veil { position: absolute; inset: 0; z-index: 60; background: rgba(245,243,255,.35); cursor: progress; border-radius: inherit; }
+[data-bs-theme="dark"] .avm-busy-veil { background: rgba(10,6,24,.4); }
 .avm-cp-foot {
   display: flex; justify-content: flex-end; gap: 11px;
   padding: 14px 22px 20px;
@@ -7610,16 +7761,6 @@ const SCOPED_CSS = `
    clipping at the card's right edge because the table wrapper clipped overflow —
    the wrappers below are set to overflow:visible so the centred tooltip shows in
    full. (These tables are table-layout:fixed / width:100%, so nothing else spills.) */
-/* FileChooser action tooltips (Replace / Delete) sit at a field's RIGHT edge in
-   every context — table cell, popup, contact card. Keep them ABOVE the button but
-   anchor right so they extend LEFT and never clip, whatever the container clips. */
-.avm-filechooser-actions [data-tooltip]::after {
-  left: auto; right: 0;
-  transform: translateX(0) translateY(4px);
-}
-.avm-filechooser-actions [data-tooltip]:hover::after {
-  transform: translateX(0) translateY(0);
-}
 .avm-kyc-act {
   width: 27px; height: 27px; border-radius: 7px; cursor: pointer;
   /* margin:0 — the Upload is a <label>, which Bootstrap gives a default

@@ -115,6 +115,10 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
   const [expDate, setExpDate] = useState('');
   const [reason, setReason] = useState('');
   const [terms, setTerms] = useState('');
+  // Inline field validation for the mandatory fields (keys: spi, type, expDate,
+  // reason). Set on Save & Next / final save, cleared as each field is edited.
+  const [errors, setErrors] = useState<{ spi?: string; type?: string; expDate?: string; reason?: string }>({});
+  const clearErr = (k: 'spi' | 'type' | 'expDate' | 'reason') => setErrors(p => ({ ...p, [k]: undefined }));
   const [sel, setSel] = useState<SupplierView | null>(null);
   const [products, setProducts] = useState<ProdRow[]>([]);
   const [additions, setAdditions] = useState<ChargeRow[]>([{ amount: '', note: '' }]);
@@ -269,7 +273,20 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
 
   // ── Save ──
   const save = async () => {
-    if (!spiId) { toast.info('SPI required', 'Select an SPI number first.'); setStep(1); return; }
+    // Mandatory fields — SPI number, debit note type, expected debit date
+    // (Step 1) and reason (Step 2). Flag each inline and jump to the step that
+    // owns the first missing field so the user lands right on it.
+    const e: typeof errors = {};
+    if (!spiId)         e.spi = 'SPI number is required';
+    if (!dnTypeId)      e.type = 'Debit note type is required';
+    if (!expDate)       e.expDate = 'Expected debit date is required';
+    if (!reason.trim()) e.reason = 'Reason is required';
+    if (Object.keys(e).length) {
+      setErrors(e);
+      setStep(e.spi || e.type || e.expDate ? 1 : 2);
+      return;
+    }
+    setErrors({});
     setSaving(true);
     const payload = {
       debit_note_type_id: dnTypeId,
@@ -300,6 +317,20 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
     } catch (e: any) {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save the debit note.');
     } finally { setSaving(false); }
+  };
+
+  // Step-1 gate — the mandatory Basic-Details fields (SPI number, debit note
+  // type, expected debit date) are validated here so the check surfaces on the
+  // "Save & Next" button before advancing to Step 2.
+  const goNext = () => {
+    const e: typeof errors = {};
+    if (!spiId)    e.spi = 'SPI number is required';
+    if (!dnTypeId) e.type = 'Debit note type is required';
+    if (!expDate)  e.expDate = 'Expected debit date is required';
+    // Only touch the Step-1 keys so a pending reason error (if any) is left intact.
+    setErrors(prev => ({ ...prev, spi: e.spi, type: e.type, expDate: e.expDate }));
+    if (Object.keys(e).length) return;
+    setStep(2);
   };
 
   // Step-2 "SPI Details" auto fields. Everything is fetched from the linked SPI
@@ -392,14 +423,14 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
               <div className="spi-dt-grid4">
                 <Field label="DEBIT NOTE NO."><div className="spi-dt-inp-auto"><input className="spi-dt-inp" value={code} readOnly /><span className="spi-dt-auto"><IcoLock /> AUTO</span></div></Field>
                 <Field label="DEBIT NOTE DATE"><div className="spi-dt-inp-auto"><input className="spi-dt-inp" value={todayDisp} readOnly /><span className="spi-dt-auto"><IcoLock /> AUTO</span></div></Field>
-                <Field label="DEBIT NOTE TYPE">
+                <Field label="DEBIT NOTE TYPE" req error={errors.type}>
                   <div className="dn-typewrap">
-                    <DnSelect value={dnTypeName} options={types.map(t => t.name)} placeholder="— Select Type —" onChange={v => setDnTypeId(types.find(t => t.name === v)?.id ?? null)} />
+                    <DnSelect value={dnTypeName} options={types.map(t => t.name)} placeholder="— Select Type —" invalid={!!errors.type} onChange={v => { setDnTypeId(types.find(t => t.name === v)?.id ?? null); clearErr('type'); }} />
                     <Tooltip label="Manage debit note types"><button type="button" className="dn-typeadd" onClick={() => setTypeModalOpen(true)}><IcoPlus size={15} /></button></Tooltip>
                   </div>
                 </Field>
-                <Field label="EXPECTED DEBIT DATE"><MasterDatePicker value={expDate} onChange={setExpDate} minDate={todayISO} placeholder="Select date" popupClassName="dncr-cal" /></Field>
-                <Field label="SPI NUMBER"><DnSelect value={spiCode} options={spis.map(s => s.code)} placeholder="— Select SPI Number —" onChange={v => selectSpi(spis.find(s => s.code === v) ?? null)} /></Field>
+                <Field label="EXPECTED DEBIT DATE" req error={errors.expDate}><MasterDatePicker value={expDate} onChange={v => { setExpDate(v); clearErr('expDate'); }} minDate={todayISO} placeholder="Select date" popupClassName="dncr-cal" invalid={!!errors.expDate} /></Field>
+                <Field label="SPI NUMBER" req error={errors.spi}><DnSelect value={spiCode} options={spis.map(s => s.code)} placeholder="— Select SPI Number —" invalid={!!errors.spi} onChange={v => { selectSpi(spis.find(s => s.code === v) ?? null); clearErr('spi'); }} /></Field>
                 <AutoField label="SPI DATE" value={fmtDate(spiDate)} loading={spiLoading} />
                 <AutoField label="PO NUMBER" value={poCode} loading={spiLoading} />
                 <AutoField label="PO DATE" value={fmtDate(poDate)} loading={spiLoading} />
@@ -696,7 +727,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
               <div className="spi-dt-sec-toggle"><IcoChevron /></div>
             </div>
             <div className="spi-dt-sec-body">
-              <div className="spi-dt-field spi-dt-field-full"><label className="spi-dt-field-lbl">REASON</label><input className="spi-dt-inp" value={reason} onChange={e => setReason(e.target.value)} placeholder="Enter debit note reason…" /></div>
+              <div className="spi-dt-field spi-dt-field-full"><label className="spi-dt-field-lbl">REASON<span className="spi-dt-req">*</span></label><input className={`spi-dt-inp ${errors.reason ? 'is-invalid' : ''}`} value={reason} onChange={e => { setReason(e.target.value); clearErr('reason'); }} placeholder="Enter debit note reason…" />{errors.reason && <div className="spi-dt-fielderr">{errors.reason}</div>}</div>
             </div>
           </div>
 
@@ -732,7 +763,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
             </div>
             <div className="spi-dt-foot-r">
               <button type="button" className="spi-dt-btn-ghost" onClick={onClose}><IcoChevronL /> Cancel</button>
-              <button type="button" className="spi-dt-btn-next" onClick={() => setStep(2)} disabled={hydrating}>Save &amp; Next <IcoChevronR /></button>
+              <button type="button" className="spi-dt-btn-next" onClick={goNext} disabled={hydrating}>Save &amp; Next <IcoChevronR /></button>
             </div>
           </div>
         ) : (
@@ -807,8 +838,8 @@ function HeadPill({ icon, label, value, alt, mono }: { icon: ReactNode; label: s
   );
 }
 
-function Field({ label, children, full, req }: { label: string; children: ReactNode; full?: boolean; req?: boolean }) {
-  return <div className={`spi-dt-field ${full ? 'spi-dt-field-full' : ''}`}><label className="spi-dt-field-lbl">{label}{req && <span className="spi-dt-req">*</span>}</label>{children}</div>;
+function Field({ label, children, full, req, error }: { label: string; children: ReactNode; full?: boolean; req?: boolean; error?: string }) {
+  return <div className={`spi-dt-field ${full ? 'spi-dt-field-full' : ''}`}><label className="spi-dt-field-lbl">{label}{req && <span className="spi-dt-req">*</span>}</label>{children}{error && <div className="spi-dt-fielderr">{error}</div>}</div>;
 }
 
 /* Read-only AUTO field — shows the (SPI-derived) value locked, or a muted
@@ -864,7 +895,7 @@ function ChargeBlock({ variant, label, rows, setRows }: { variant: 'add' | 'ded'
 
 /* App-style selective dropdown — same portal-popover pattern & .spi-dt-select styling
  * as the SPI wizard's EditSelect, so Debit Note dropdowns match the rest of the app. */
-function DnSelect({ value, options, onChange, placeholder }: { value: string; options: string[]; onChange: (v: string) => void; placeholder?: string }) {
+function DnSelect({ value, options, onChange, placeholder, invalid }: { value: string; options: string[]; onChange: (v: string) => void; placeholder?: string; invalid?: boolean }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const [pos, setPos] = useState({ left: 0, top: 0, width: 0 });
@@ -899,7 +930,7 @@ function DnSelect({ value, options, onChange, placeholder }: { value: string; op
 
   return (
     <>
-      <button type="button" ref={btnRef} title={value || undefined} className={`spi-dt-select spi-dt-select-edit ${open ? 'is-open' : ''} ${!value ? 'is-muted' : ''}`} onClick={() => setOpen(o => !o)}>
+      <button type="button" ref={btnRef} title={value || undefined} className={`spi-dt-select spi-dt-select-edit ${open ? 'is-open' : ''} ${!value ? 'is-muted' : ''} ${invalid ? 'is-invalid' : ''}`} onClick={() => setOpen(o => !o)}>
         <span>{value || placeholder || '— Select —'}</span>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
       </button>
@@ -918,6 +949,9 @@ function DnSelect({ value, options, onChange, placeholder }: { value: string; op
 }
 
 const DNCR_CSS = `
+/* Inline field validation message shown under a mandatory field. */
+.spi-dt-fielderr { margin-top:4px; font-size:11px; font-weight:600; color:#dc2626; display:flex; align-items:center; gap:4px; }
+[data-bs-theme="dark"] .spi-dt-fielderr { color:#f87171; }
 /* Action-button spinner + edit-mode shimmer skeleton. */
 .dncr-spin { animation:dncr-spin .7s linear infinite; }
 @keyframes dncr-spin { to { transform:rotate(360deg); } }

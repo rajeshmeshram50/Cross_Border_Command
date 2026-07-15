@@ -478,7 +478,7 @@ function CreateAnnouncementModal({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<AnnType>('General');
-  const [priority, setPriority] = useState<AnnPriority>('Normal');
+  const [priority, setPriority] = useState<AnnPriority>('High');
   const [attachment, setAttachment] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -502,6 +502,18 @@ function CreateAnnouncementModal({
   const [saving, setSaving] = useState<'draft' | 'publish' | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // For a brand-new announcement the Live Preview meta box starts blank ("—")
+  // and each line only fills once the user actively touches that control, so
+  // the preview reflects real choices rather than silent defaults. When
+  // editing/viewing an existing row every value is already real, so treat all
+  // as touched. `reachedReview` reveals the fixed Status/Publish lines once the
+  // user pages to the final Review & Publish step.
+  const [touched, setTouched] = useState<{ priority: boolean; audience: boolean; notify: boolean }>(
+    { priority: false, audience: false, notify: false }
+  );
+  const [reachedReview, setReachedReview] = useState(false);
+  useEffect(() => { if (step === 4) setReachedReview(true); }, [step]);
+
   // A published announcement is a record of what went out — the View action
   // opens this wizard read-only: the user can page through the steps to see
   // the details, but Save Draft / Publish are hidden so it can't be re-saved.
@@ -515,6 +527,9 @@ function CreateAnnouncementModal({
     setSaving(null);
     setAttachment(null);
     setSavedId(editing?.id ?? null);
+    // Existing row → all values are real, show them. New → start blank.
+    setTouched({ priority: !!editing, audience: !!editing, notify: !!editing });
+    setReachedReview(!!editing);
 
     if (editing) {
       setTitle(editing.title || '');
@@ -532,7 +547,7 @@ function CreateAnnouncementModal({
       setNotifyEmail(!!editing.notify_email);
     } else {
       setTitle(''); setDescription('');
-      setType('General'); setPriority('Normal');
+      setType('General'); setPriority('High');
       setAudienceType('all_employees'); setRoleIds([]); setDesignationIds([]); setExcludeIds([]);
       setNotifyEmail(true);
     }
@@ -816,25 +831,28 @@ function CreateAnnouncementModal({
                 title={title} setTitle={setTitle}
                 description={description} setDescription={setDescription}
                 type={type} setType={setType}
-                priority={priority} setPriority={setPriority}
+                priority={priority} setPriority={(v: AnnPriority) => { setPriority(v); setTouched(t => ({ ...t, priority: true })); }}
                 attachment={attachment} setAttachment={setAttachment}
                 fileRef={fileRef}
+                existingName={editing?.attachment_original_name || null}
+                existingUrl={editing?.attachment_url || null}
+                readOnly={readOnly}
                 errors={errors}
               />
             )}
             {step === 2 && (
               <Step2Audience
-                audienceType={audienceType} setAudienceType={setAudienceType}
-                roles={roles} roleIds={roleIds} setRoleIds={setRoleIds}
-                designations={designations} designationIds={designationIds} setDesignationIds={setDesignationIds}
-                employees={employees} excludeIds={excludeIds} setExcludeIds={setExcludeIds}
+                audienceType={audienceType} setAudienceType={(v: AudienceType) => { setAudienceType(v); setTouched(t => ({ ...t, audience: true })); }}
+                roles={roles} roleIds={roleIds} setRoleIds={(v: any) => { setRoleIds(v); setTouched(t => ({ ...t, audience: true })); }}
+                designations={designations} designationIds={designationIds} setDesignationIds={(v: any) => { setDesignationIds(v); setTouched(t => ({ ...t, audience: true })); }}
+                employees={employees} excludeIds={excludeIds} setExcludeIds={(v: any) => { setExcludeIds(v); setTouched(t => ({ ...t, audience: true })); }}
                 audienceCount={audienceCount}
                 errors={errors}
               />
             )}
             {step === 3 && (
               <Step3Notify
-                notifyEmail={notifyEmail} setNotifyEmail={setNotifyEmail}
+                notifyEmail={notifyEmail} setNotifyEmail={(v: boolean) => { setNotifyEmail(v); setTouched(t => ({ ...t, notify: true })); }}
               />
             )}
             {step === 4 && (
@@ -870,11 +888,11 @@ function CreateAnnouncementModal({
               </div>
             </div>
             <div style={{ background: 'rgba(56,189,248,0.08)', border: '1px solid rgba(56,189,248,0.22)', borderRadius: 10, padding: 12, fontSize: 12.5, color: 'var(--vz-body-color, #0c4a6e)' }}>
-              <div><strong>Status:</strong> {editing?.status || 'Active'}</div>
-              <div><strong>Priority:</strong> {priority}</div>
-              <div><strong>Audience:</strong> {audienceLabel.replace(/^(Roles|Desig): /, '')} ({audienceCount})</div>
-              <div><strong>Publish:</strong> Immediately</div>
-              <div><strong>Notify:</strong> {notifyEmail ? 'Email' : '—'}</div>
+              <div><strong>Status:</strong> {reachedReview ? (editing?.status || 'Active') : '—'}</div>
+              <div><strong>Priority:</strong> {touched.priority ? priority : '—'}</div>
+              <div><strong>Audience:</strong> {touched.audience ? `${audienceLabel.replace(/^(Roles|Desig): /, '')} (${audienceCount})` : '—'}</div>
+              <div><strong>Publish:</strong> {reachedReview ? 'Immediately' : '—'}</div>
+              <div><strong>Notify:</strong> {touched.notify ? (notifyEmail ? 'Email' : '—') : '—'}</div>
             </div>
           </div>
         </div>
@@ -934,7 +952,7 @@ function CreateAnnouncementModal({
 function Step1Basic({
   title, setTitle, description, setDescription,
   type, setType, priority, setPriority,
-  attachment, setAttachment, fileRef, errors,
+  attachment, setAttachment, fileRef, existingName, existingUrl, readOnly, errors,
 }: any) {
   // Client-side guard for the 20 MB attachment cap — the input only restricts
   // file type, so without this an oversize file was silently accepted.
@@ -996,18 +1014,38 @@ function Step1Basic({
       <div className="mt-3">
         <label className="rec-form-label">Attachment (Optional)</label>
         <div
-          onClick={() => fileRef.current?.click()}
+          onClick={() => { if (!readOnly) fileRef.current?.click(); }}
           style={{
             border: '1px dashed rgba(99,102,241,0.45)', borderRadius: 10,
-            padding: '20px', textAlign: 'center', cursor: 'pointer',
-            background: attachment ? 'rgba(99,102,241,0.12)' : 'var(--vz-secondary-bg, #fafafa)',
+            padding: '20px', textAlign: 'center', cursor: readOnly ? 'default' : 'pointer',
+            background: (attachment || existingName) ? 'rgba(99,102,241,0.12)' : 'var(--vz-secondary-bg, #fafafa)',
           }}
         >
           <i className="ri-upload-cloud-line" style={{ fontSize: 24, color: '#6366f1' }} />
           <div style={{ fontSize: 13, fontWeight: 600, marginTop: 4, color: 'var(--vz-body-color)' }}>
-            {attachment ? attachment.name : 'Click to upload (PNG, JPG, PDF · max 20MB)'}
+            {attachment ? (
+              attachment.name
+            ) : existingName ? (
+              existingUrl ? (
+                // pointerEvents:auto re-enables the link inside the read-only
+                // (disabled) fieldset so the file stays openable when viewing.
+                <a href={existingUrl} target="_blank" rel="noreferrer"
+                   onClick={e => e.stopPropagation()}
+                   className="d-inline-flex align-items-center gap-1"
+                   style={{ color: '#4338ca', pointerEvents: 'auto' }}>
+                  <i className="ri-attachment-line" />{existingName}
+                </a>
+              ) : (
+                <span className="d-inline-flex align-items-center gap-1">
+                  <i className="ri-attachment-line" />{existingName}
+                </span>
+              )
+            ) : (
+              'Click to upload (PNG, JPG, PDF · max 20MB)'
+            )}
           </div>
-          {!attachment && <div style={{ fontSize: 11, color: 'var(--vz-secondary-color, #6b7280)' }}>or drag and drop here</div>}
+          {!attachment && !existingName && <div style={{ fontSize: 11, color: 'var(--vz-secondary-color, #6b7280)' }}>or drag and drop here</div>}
+          {!attachment && existingName && !readOnly && <div style={{ fontSize: 11, color: 'var(--vz-secondary-color, #6b7280)' }}>Click to replace</div>}
           <input
             ref={fileRef}
             type="file"
@@ -1284,21 +1322,6 @@ function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; se
           <span style={{ fontSize: 12, color: 'var(--vz-secondary-color, #6b7280)' }}>Send directly to each recipient's inbox when you publish</span>
         </div>
       </label>
-
-      {/* Info note — styled as a proper Note/Info alert (icon + "Note:" label
-          + light-blue highlight) so it reads as guidance, not a disabled field. */}
-      <div
-        style={{
-          display: 'flex', alignItems: 'flex-start', gap: 8,
-          background: 'rgba(56,189,248,0.10)', border: '1px solid rgba(56,189,248,0.28)', borderRadius: 10,
-          padding: '10px 14px', color: 'var(--vz-body-color, #0c4a6e)', fontSize: 12.5,
-        }}
-      >
-        <i className="ri-information-line" style={{ fontSize: 16, color: '#0ea5e9', flexShrink: 0, marginTop: 1 }} />
-        <span>
-          <strong>Note:</strong> Email notification is optional. The announcement will still be visible in the system regardless.
-        </span>
-      </div>
     </>
   );
 }

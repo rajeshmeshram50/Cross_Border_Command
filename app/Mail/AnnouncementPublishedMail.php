@@ -48,6 +48,8 @@ class AnnouncementPublishedMail extends Mailable
 
     public function content(): Content
     {
+        $attachmentUrl = $this->resolveAttachmentUrl();
+
         return new Content(
             view: 'emails.announcement-published',
             with: [
@@ -57,28 +59,43 @@ class AnnouncementPublishedMail extends Mailable
                 // because the in-app /gmail viewer renders the stored HTML in a
                 // browser, which can't resolve cid: references. Null for
                 // non-image attachments (PDF/DOCX) — those keep the text notice.
-                'inlineImageUrl' => $this->resolveInlineImageUrl(),
+                'inlineImageUrl' => $this->isImageAttachment() ? $attachmentUrl : null,
+                // Public http(s) URL of the attachment for ANY file type, so the
+                // template can render the filename as a clickable open/download
+                // link. The in-app /gmail viewer only renders the HTML body (the
+                // real MIME attachment isn't reachable there), so without this a
+                // PDF/DOCX shows as plain, un-openable text.
+                'attachmentUrl' => $attachmentUrl,
             ],
         );
     }
 
     /**
-     * Returns a public URL for the attachment when it is an image we can
-     * preview inline, otherwise null. Kept separate from attachments() so the
-     * file is BOTH shown in the body and offered as a download.
+     * True when the stored attachment is an image we can preview inline.
      */
-    private function resolveInlineImageUrl(): ?string
+    private function isImageAttachment(): bool
+    {
+        $rel = $this->announcement->attachment_path;
+        if (!$rel) return false;
+
+        $ext = strtolower(pathinfo($rel, PATHINFO_EXTENSION));
+        return in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'], true);
+    }
+
+    /**
+     * Returns a public URL for the attachment (any file type), or null when
+     * there's no attachment or the file is missing on disk. Used BOTH to
+     * preview images inline and to turn the filename into a clickable
+     * open/download link — the in-app /gmail viewer renders only the HTML
+     * body, so the MIME attachment isn't reachable there without this URL.
+     */
+    private function resolveAttachmentUrl(): ?string
     {
         $rel = $this->announcement->attachment_path;
         if (!$rel) return null;
 
         $abs = storage_path('app/public/' . ltrim($rel, '/'));
         if (!is_file($abs)) return null;
-
-        $ext = strtolower(pathinfo($abs, PATHINFO_EXTENSION));
-        if (!in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'], true)) {
-            return null;
-        }
 
         // Build a fully-qualified URL via asset() so it includes the app's
         // base path (e.g. /Cross_Border_Command/public). file_url() leans on

@@ -149,7 +149,11 @@ class AnnouncementController extends Controller
 
          
             if ($row->status === 'Active') {
-                $this->announcementMailer->sendForAnnouncement($row, $auth);
+                // Run after the response is flushed (no queue worker needed) so
+                // a slow SMTP host can't block the publish or roll back this
+                // committed row via PHP's max_execution_time.
+                $mailer = $this->announcementMailer;
+                defer(fn () => $mailer->sendForAnnouncement($row, $auth));
             }
 
             return response()->json($row, 201);
@@ -213,7 +217,11 @@ class AnnouncementController extends Controller
         $row->load(self::WITH);
 
         if ($previousStatus !== 'Active' && $row->status === 'Active') {
-            $this->announcementMailer->sendForAnnouncement($row, $request->user());
+            // See store(): deliver after the response so SMTP never blocks/rolls
+            // back the publish, without depending on a queue worker.
+            $mailer = $this->announcementMailer;
+            $publisher = $request->user();
+            defer(fn () => $mailer->sendForAnnouncement($row, $publisher));
         }
 
         return response()->json($row);

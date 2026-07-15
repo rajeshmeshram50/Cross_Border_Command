@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
@@ -144,13 +144,30 @@ export default function Vendors() {
   const [contactsTarget, setContactsTarget] = useState<Vendor | null>(null);
   /* Segment "+N" popover — fixed-positioned card anchored to the clicked badge
      so the table's overflow can't clip it. */
-  const [segPop, setSegPop] = useState<{ segments: string[]; x: number; y: number } | null>(null);
+  const [segPop, setSegPop] = useState<{ segments: string[]; x: number; y: number; top: number } | null>(null);
+  // Measured placement for the segment popover — anchor to the badge, clamp to
+  // the viewport, and flip ABOVE when there isn't room below (never clipped).
+  const segPopRef = useRef<HTMLDivElement>(null);
+  const [segPopPos, setSegPopPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!segPop) { setSegPopPos(null); return; }
+    const el = segPopRef.current;
+    if (!el) return;
+    const w = el.offsetWidth, h = el.offsetHeight, gap = 6, pad = 8;
+    const left = Math.max(pad, Math.min(segPop.x, window.innerWidth - w - pad));
+    let top = segPop.y;
+    if (top + h > window.innerHeight - pad) {
+      const above = segPop.top - gap - h;
+      top = above >= pad ? above : Math.max(pad, window.innerHeight - h - pad);
+    }
+    setSegPopPos({ left, top });
+  }, [segPop]);
 
   /* Scroll lock — while ANY overlay (Segments / Contact Persons) is open, freeze
      the page behind it. Lock BOTH <html> and <body>; a body-only lock still lets
      the html element scroll on some layouts. */
   useEffect(() => {
-    const anyOpen = segPop !== null || contactsTarget !== null;
+    const anyOpen = contactsTarget !== null;
     if (!anyOpen) return;
     const b = document.body.style.overflow;
     const h = document.documentElement.style.overflow;
@@ -158,6 +175,24 @@ export default function Vendors() {
     document.documentElement.style.overflow = 'hidden';
     return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
   }, [segPop, contactsTarget]);
+
+  /* The Segment "+N" popover is anchored to fixed x/y captured on click, so on a
+     window resize OR a page/table scroll it would float at stale coordinates.
+     Close it in those cases — but ignore scrolling INSIDE the popover's own list
+     (so a 20-segment list can still be scrolled). */
+  useEffect(() => {
+    if (!segPop) return;
+    const close = () => setSegPop(null);
+    const onScroll = (e: Event) => {
+      const el = e.target as HTMLElement | null;
+      if (el && typeof el.closest === 'function' && el.closest('.sl-seg-pop')) return;
+      setSegPop(null);
+    };
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', onScroll, true);
+    return () => { window.removeEventListener('resize', close); window.removeEventListener('scroll', onScroll, true); };
+  }, [segPop]);
+
   const [loading, setLoading] = useState(true);
   /* "What We Are Doing Here" stepper — collapsible, open by default to
      mirror the Figma. Purely presentational. */
@@ -167,6 +202,9 @@ export default function Vendors() {
   const [page, setPage] = useState(1);
   const [rpp, setRpp] = useState(10);
   const autoFitRef = useRef(true); // false once the user picks a rows-per-page manually
+  // Stretch the card to the viewport while auto-fitting (default / empty state) so
+  // the screen always fills like CLM Segment / T&C Master. A manual rows-per-page
+  // pick turns this off so a small count sits compact (no big internal gap).
   const [fillH, setFillH] = useState<number | undefined>(undefined);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -226,8 +264,12 @@ export default function Vendors() {
     };
   };
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    // `silent` = refresh in the background WITHOUT flashing the loading skeleton
+    // (used after closing the Edit/Add modal — the list is already on screen, so
+    // showing the full skeleton again reads as a slow reload). Initial mount and
+    // manual reloads still show the skeleton.
+    if (!opts?.silent) setLoading(true);
     try {
       const res = await api.get<{ data: ApiVendor[] }>('/vendors?per_page=200');
       const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
@@ -235,7 +277,7 @@ export default function Vendors() {
     } catch {
       toast.error('Load failed', 'Could not load suppliers');
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -255,22 +297,34 @@ export default function Vendors() {
       const el = scrollRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const THEAD = 42, ROW = 56;
-      // Page size fills the SAME stretched card height as fillH, so the rows
-      // actually use the visible card (no big empty gap under a half-full table,
-      // and short lists — e.g. 6 — fit on one page instead of spilling to 2).
-      const cardH = Math.max(0, window.innerHeight - top - 64);
-      const avail = cardH - THEAD;
+      const THEAD = 42, ROW = 54, PAGER = 56;
+      // Card is CONTENT-HEIGHT (no forced stretch) — the footer always sits right
+      // after the rows, so a short list never leaves an internal gap. The row
+      // count auto-fits the space between the table's top and the viewport bottom,
+      // so on default load the rows fill the screen; a manual rows-per-page pick
+      // simply shows that many (compact, empty page background below — never a gap).
+      // Card height = space from the table's top down to the viewport bottom, so
+      // the whole thing fits WITHOUT the page itself scrolling. Auto-fit the row
+      // count into that space; the card always stretches to fill it (footer pinned
+      // to the bottom) — mirrors CLM Segment Master.
+      const cardH = Math.max(0, window.innerHeight - top - 16);
+      const avail = cardH - THEAD - PAGER;
       const fit = Math.max(4, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       setFillH(prev => (prev === cardH ? prev : cardH));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    if (rootRef.current) ro.observe(rootRef.current);
-    window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
+    // Mirror CLM Segment Master: measure only on mount, on a SETTLED window
+    // resize (debounced), and when the tab/search/data changes — NOT via a
+    // ResizeObserver on the root. Observing the root re-measured `top` mid-scroll
+    // / on the info-box collapse, so it read a stale (scrolled) top and stretched
+    // the card too tall → the page started scrolling and the layout looked broken
+    // until a hard refresh. A debounced window-resize keeps it stable.
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
+    const recomputeDebounced = () => { if (settleTimer) clearTimeout(settleTimer); settleTimer = setTimeout(recompute, 140); };
+    window.addEventListener('resize', recomputeDebounced);
+    return () => { if (settleTimer) clearTimeout(settleTimer); window.removeEventListener('resize', recomputeDebounced); cancelAnimationFrame(raf); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, search, loading, brefOpen]);
 useEffect(() => {
@@ -343,7 +397,7 @@ useEffect(() => {
     setAddOpen(false);
     setEditingId(null);
     setEditingStep(null);
-    void refresh();
+    void refresh({ silent: true });
   };
 
   if (!allowed) {
@@ -544,16 +598,18 @@ useEffect(() => {
                                   <>
                                     <Tooltip label={v.segments[0]}><span className="sl-seg sl-trunc">{v.segments[0]}</span></Tooltip>
                                     {v.segments.length > 1 && (
+                                      <Tooltip label={`View all ${v.segments.length} segments`}>
                                       <button
                                         type="button"
                                         className="sl-seg-more"
                                         onClick={(e) => {
                                           const r = e.currentTarget.getBoundingClientRect();
-                                          setSegPop({ segments: v.segments ?? [], x: r.left, y: r.bottom + 6 });
+                                          setSegPop({ segments: v.segments ?? [], x: r.left, y: r.bottom + 6, top: r.top });
                                         }}
                                       >
                                         +{v.segments.length - 1}
                                       </button>
+                                      </Tooltip>
                                     )}
                                   </>
                                 ) : <span className="sl-seg">—</span>}
@@ -633,10 +689,11 @@ useEffect(() => {
                       })}
                     </tbody>
                   </table>
+                  {/* Shared dynamic pager lives INSIDE the stretched scroll card and
+                      is pushed to its bottom (margin-top:auto) so a short list leaves
+                      no gap between the table and the footer — mirrors CLM Segment. */}
+                  <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} pageSizeOptions={[5, 10, 25, 50]} />
                 </div>
-                {/* Shared dynamic pager — same "Showing X–Y of Z · page/pages · ‹ ›"
-                    component the CLM Segment Master uses. */}
-                <WorklistPager total={total} page={curPage} pageSize={rpp} onPage={setPage} onPageSize={(n) => { autoFitRef.current = false; setRpp(n); setPage(1); }} pageSizeOptions={[5, 10, 25, 50]} />
               </>
             )}
           </div>
@@ -649,35 +706,28 @@ useEffect(() => {
         <AddVendorModal
           vendorId={editingId}
           initialStep={editingStep ?? undefined}
-          onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); void refresh(); }}
+          onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); void refresh({ silent: true }); }}
           onSubmit={handleSave}
         />
       )}
 
-      {/* Segment "+N" popover — small floating card listing every segment. */}
+      {/* Segment "+N" popover — small anchored card at the badge (mirrors the
+          Customer list's segment overflow popover), not a full centered modal. */}
       {segPop && (
         <div className="sup-fig">
-          <div className="sc-ov" onClick={(e) => { if (e.target === e.currentTarget) setSegPop(null); }}>
-            <div className="sc-pop seg-modal" role="dialog" aria-modal="true">
-              <div className="sc-head">
-                <div className="sc-head-ico">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></svg>
+          <div className="sl-seg-pop-backdrop" onClick={() => setSegPop(null)} />
+          <div
+            ref={segPopRef}
+            className="sl-seg-pop"
+            style={segPopPos ? { left: segPopPos.left, top: segPopPos.top, width: 214 } : { left: -9999, top: 0, width: 214, visibility: 'hidden' }}
+          >
+            <div className="sl-seg-pop-title">Segments ({segPop.segments.length})</div>
+            <div className="sl-seg-pop-list" style={{ maxHeight: 148 }}>
+              {segPop.segments.map((s, idx) => (
+                <div key={`${s}-${idx}`} className={`sl-seg-pop-row ${idx % 2 ? 'alt' : ''}`}>
+                  <span className="sl-seg" title={s}>{s.length > 20 ? s.slice(0, 20) + '…' : s}</span>
                 </div>
-                <div className="min-w-0">
-                  <div className="sc-title">Segments</div>
-                </div>
-                <span className="seg-count-badge">{segPop.segments.length} segment{segPop.segments.length !== 1 ? 's' : ''}</span>
-                <button type="button" className="sc-close" onClick={() => setSegPop(null)} aria-label="Close">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                </button>
-              </div>
-              <div className="sc-body">
-                <div className="seg-modal-grid">
-                  {segPop.segments.map((s, idx) => (
-                    <span key={`${s}-${idx}`} className="seg-modal-chip" title={s}>{s}</span>
-                  ))}
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>

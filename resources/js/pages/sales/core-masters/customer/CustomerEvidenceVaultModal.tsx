@@ -1974,13 +1974,13 @@ export const CEV_CSS = `
 .cev-group-overview {
   flex-shrink: 0;
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 13px; border-radius: 9px;
-  background: rgba(8,145,178,.08); color: #0e7490; border: 1.5px solid #a5f3fc;
-  font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer;
-  white-space: nowrap; transition: all .18s ease;
+  padding: 7px 13px; border-radius: 8px; border: none;
+  background: linear-gradient(135deg, #06b6d4, #0891b2); color: #fff;
+  font-family: inherit; font-size: 10px; font-weight: 800; letter-spacing: .01em; cursor: pointer;
+  white-space: nowrap; box-shadow: 0 2px 8px rgba(8,145,178,.3); transition: all .18s ease;
 }
-.cev-group-overview:hover { background: #ecfeff; border-color: #06b6d4; color: #0891b2; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.22); }
-.cev-group-overview i { font-size: 14px; }
+.cev-group-overview:hover { background: linear-gradient(135deg, #0891b2, #0e7490); transform: translateY(-1px); box-shadow: 0 5px 14px rgba(8,145,178,.42); }
+.cev-group-overview i { font-size: 13px; }
 /* ACTIVE (selected) card → SOLID WHITE button (the prominent one). */
 .cev-group.is-active .cev-group-overview { background: #fff; color: #0891b2; border-color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.14); }
 .cev-group.is-active .cev-group-overview:hover { background: #f0fdff; color: #0891b2; border-color: #fff; }
@@ -2499,8 +2499,8 @@ export const CEV_CSS = `
   cursor: pointer; border: 1px solid transparent;
   transition: all .15s;
 }
-.cev-btn-light { background: #fff; color: #0891b2; border-color: rgba(8,145,178,.30); }
-.cev-btn-light:hover { background: #ecfeff; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(8,145,178,.20); }
+.cev-btn-light { background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%); color: #0e7490; border: 1.5px solid rgba(6,182,212,.30); box-shadow: 0 2px 8px rgba(6,182,212,.15), inset 0 1px 0 rgba(255,255,255,.6); letter-spacing: .01em; }
+.cev-btn-light:hover { background: linear-gradient(135deg, #a5f3fc 0%, #67e8f9 100%); transform: translateY(-1px); box-shadow: 0 5px 14px rgba(6,182,212,.28), inset 0 1px 0 rgba(255,255,255,.6); }
 .cev-btn-dark  { background: linear-gradient(135deg, #0c4a6e, #06b6d4); color: #fff; box-shadow: 0 4px 14px rgba(12,74,110,.30); }
 .cev-btn-dark:hover  { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(12,74,110,.45); }
 /* Spinner used by the Export All button while the XLSX workbook is
@@ -2516,8 +2516,8 @@ export const CEV_CSS = `
 [data-bs-theme="dark"] .cev-group:hover { background: #0c3540; border-color: rgba(34,211,238,.5); }
 [data-bs-theme="dark"] .cev-group.is-active { background: linear-gradient(120deg,#0c4a6e,#0891b2); border-color: #06b6d4; }
 /* Inactive ghost button readable on the dark card; active stays solid white. */
-[data-bs-theme="dark"] .cev-group-overview { background: rgba(103,232,249,.10); color: #a5f3fc; border-color: rgba(103,232,249,.35); }
-[data-bs-theme="dark"] .cev-group-overview:hover { background: rgba(103,232,249,.18); color: #cffafe; border-color: #67e8f9; }
+[data-bs-theme="dark"] .cev-group-overview { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #fff; border: none; }
+[data-bs-theme="dark"] .cev-group-overview:hover { background: linear-gradient(135deg, #22d3ee, #0891b2); color: #fff; }
 [data-bs-theme="dark"] .cev-group.is-active .cev-group-overview { background: #fff; color: #0891b2; border-color: #fff; }
 [data-bs-theme="dark"] .cev-group.is-active .cev-group-overview:hover { background: #f0fdff; color: #0891b2; }
 [data-bs-theme="dark"] .cev-group-icon { background: rgba(8,145,178,.22); color: #67e8f9; border-color: rgba(34,211,238,.3); }

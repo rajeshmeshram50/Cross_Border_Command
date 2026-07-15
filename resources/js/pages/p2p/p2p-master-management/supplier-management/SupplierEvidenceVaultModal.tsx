@@ -4,12 +4,14 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { useToast } from '../../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../../../utils/vaultSignatureRows';
 import { downloadFile } from '../../../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 import { CEV_CSS } from '../../../sales/core-masters/customer/CustomerEvidenceVaultModal';
+import { SegmentRefUploadPopup, SCOPED_CSS as AVM_SCOPED_CSS } from './AddVendorModal';
 
 /* Fetch a stored attachment as a Blob for the ZIP export. Our own uploads
  * (segment_doc_uploads/…) stream THROUGH the backend so Azure's cross-origin
@@ -488,6 +490,19 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
    * CORS doesn't block them) and dropped into the matching folder. */
   const handleExportAll = async () => {
     if (!vault || !supplier || exporting) return;
+    // Guard: if not a single uploaded file exists anywhere in the vault, don't
+    // build an empty ZIP (of placeholder .txt files) — tell the user instead.
+    const everyDoc: VaultDoc[] = [
+      ...(vault.company_dd ?? []),
+      ...(vault.owner_kyc ?? []),
+      ...(vault.trade_licenses ?? []),
+      ...(vault.vendor_with_shipment ?? []).flatMap(d => [...(d.docs ?? []), ...(d.agreements ?? [])]),
+      ...(vault.vendor_without_shipment ?? []).flatMap(d => [...(d.docs ?? []), ...(d.agreements ?? [])]),
+    ];
+    if (!everyDoc.some(d => d.attachment_url)) {
+      toast.info('Nothing to export', 'There are no uploaded documents in this vault yet.');
+      return;
+    }
     setExporting(true);
     let added = 0, missing = 0;
     try {
@@ -552,11 +567,12 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
   /* ─── Status pill renderer — Verified (mint), Expiring (amber),
    *      Pending (rose), Signed (sky). Same palette across all tabs. */
-  const StatusPill = ({ s }: { s: VaultStatus }) => {
+  const StatusPill = ({ s }: { s: VaultStatus | 'Expired' }) => {
     const tone =
       s === 'Verified' ? { bg: '#ecfdf5', fg: '#059669', mark: '✓' }
       : s === 'Signed'   ? { bg: '#dbeafe', fg: '#1e40af', mark: '✓' }
       : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e', mark: '⚠' }
+      : s === 'Expired'  ? { bg: '#fef2f2', fg: '#b91c1c', mark: '⌛' }
       :                    { bg: '#fef2f2', fg: '#dc2626', mark: '⌛' };
     return (
       <span className="cev-pill" data-status={s} style={{ background: tone.bg, color: tone.fg }}>
@@ -671,7 +687,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   const extra = segs.length - shown.length;
                   return (
                     <>
-                      {shown.map((s, i) => <span key={`${s}-${i}`}>{s}</span>)}
+                      {shown.map((s, i) => <Tooltip key={`${s}-${i}`} label={s}><span>{s.length > 20 ? s.slice(0, 20) + '…' : s}</span></Tooltip>)}
                       {extra > 0 && (
                         <button
                           type="button"
@@ -827,11 +843,14 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           <div className="cev-footer-actions">
             <Tooltip label="Download all files as a foldered ZIP">
               <button type="button" className="cev-btn cev-btn-light" onClick={handleExportAll} disabled={exporting}>
-                <i className={exporting ? 'ri-loader-4-line cev-spin' : 'ri-download-cloud-2-line'} />
-                {exporting ? ' Exporting…' : ' Export All'}
+                {exporting
+                  ? <i className="ri-loader-4-line cev-spin" />
+                  : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>}
+                {exporting ? 'Exporting…' : 'Export All'}
               </button>
             </Tooltip>
             <button type="button" className="cev-btn cev-btn-dark" onClick={onClose}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               Close Vault
             </button>
           </div>
@@ -901,7 +920,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                         <tr key={`${overview}-${absIdx}`}>
                           <td className="cev-ov-num">{absIdx + 1}</td>
                           <td className="cev-ov-name">{d.name}</td>
-                          <td><StatusPill s={d.status as VaultStatus} /></td>
+                          <td><StatusPill s={evEffectiveStatus(d)} /></td>
                           <td>
                             {(() => {
                               const dlKey = `${overview}-${absIdx}`;
@@ -949,7 +968,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             <div className="cev-seg-pop-title">Segments ({segPop.names.length})</div>
             {segPop.names.map((name, i) => (
               <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                <span className="cev-seg-pop-pill">{name}</span>
+                <span className="cev-seg-pop-pill" title={name}>{name.length > 20 ? name.slice(0, 20) + '…' : name}</span>
               </div>
             ))}
           </div>
@@ -1011,42 +1030,40 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
 }) {
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
+  // Figma column label for the reference/number cell — "Document Number" for
+  // Owner KYC, "License / Number" for Company DD & Trade Licenses.
+  const codeLbl = tab === 'owner-kyc' ? 'Document Number' : tab === 'trade-documents' ? 'Reference' : 'License / Number';
   /* Tab → SegmentDocUpload category for the re-upload endpoint. */
   const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
   return (
     <div className="cev-table-wrap">
       <div className="cev-table-scroll">
 
-      {/* Columns: Sr No · Auto Code · Document Name · Issuing Authority ·
-          Requirement · Attachment · Actions. */}
+      {/* Columns (mirrors Figma): Sr No · Document Name · License/Number ·
+          Issuing Authority · Issue Date · Expiry · Attachment · Status · Actions. */}
       <table className="cev-table">
         <thead>
           <tr>
             <th style={{ width: 56 }}>Sr No</th>
-            <th>Auto Code</th>
             <th>Document Name</th>
+            <th>{codeLbl}</th>
             <th>{authorityLbl}</th>
-            <th>Requirement</th>
+            <th>Expiry</th>
             <th>Attachment</th>
+            <th>Status</th>
             <th style={{ width: 140 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={7} className="cev-empty">No documents in this bucket yet.</td></tr>
+            <tr><td colSpan={8} className="cev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
             <tr key={`${d.doc_code ?? 'doc'}-${i}`}>
               <td>{i + 1}</td>
-              <td className="cev-mono">{d.reference || d.doc_code || '—'}</td>
               <td className="cev-doc-name">{d.name}</td>
+              <td className="cev-mono">{d.reference || d.doc_code || '—'}</td>
               <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
-              <td>
-                {d.requirement === 'M' ? (
-                  <span className="cev-req cev-req-m" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
-                ) : (
-                  <span className="cev-req cev-req-o" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
-                )}
-              </td>
+              <td>{evFmtExpiry(d.expiry)}</td>
               <td>
                 {d.attachment_url ? (
                   <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cev-attach"><i className="ri-download-2-line" /> {d.attachment || 'View'}</a>
@@ -1054,6 +1071,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                   <span className="cev-attach cev-attach-muted"><i className="ri-file-line" /> {d.attachment}</span>
                 ) : <span style={{ color: '#9ca3af' }}>—</span>}
               </td>
+              <td><VaultStatusPill status={evEffectiveStatus(d)} /></td>
               <td>
                 <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} />
               </td>
@@ -1063,6 +1081,50 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
       </table>
       </div>
     </div>
+  );
+}
+
+/* Expiry helpers — parse whatever the row carries (yyyy-mm-dd, dd/mm/yyyy,
+ * mm/yyyy, "Lifetime"/"N/A"/"—") and render it as "12-Jan-2027". */
+const EV_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function evParseExpiry(s?: string | null): Date | null {
+  if (!s) return null;
+  const t = s.trim();
+  if (/^(n\/a|—|-|lifetime|varies|)$/i.test(t)) return null;
+  let m: RegExpMatchArray | null;
+  if ((m = t.match(/^(\d{4})-(\d{2})-(\d{2})/)))          return new Date(+m[1], +m[2] - 1, +m[3]);
+  if ((m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)))   return new Date(+m[3], +m[2] - 1, +m[1]); // dd/mm/yyyy
+  if ((m = t.match(/^(\d{1,2})\/(\d{4})$/)))              return new Date(+m[2], +m[1] - 1, 1);     // mm/yyyy
+  const d = new Date(t);
+  return isNaN(d.getTime()) ? null : d;
+}
+function evFmtExpiry(s?: string | null): string {
+  const d = evParseExpiry(s);
+  if (!d) return s && s.trim() && s.trim() !== '-' ? s.trim() : '—';
+  return `${String(d.getDate()).padStart(2, '0')}-${EV_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+}
+/* Effective status: a document whose expiry is already in the past reads as
+ * "Expired" regardless of its stored status. */
+function evEffectiveStatus(d: VaultDoc): VaultStatus | 'Expired' {
+  const exp = evParseExpiry(d.expiry);
+  if (exp) { const today = new Date(); today.setHours(0, 0, 0, 0); if (exp < today) return 'Expired'; }
+  return d.status;
+}
+
+/* Status pill (Figma): Verified / Expiring / Pending / Signed / Expired — coloured dot + label. */
+function VaultStatusPill({ status }: { status: VaultStatus | 'Expired' }) {
+  const map: Record<VaultStatus | 'Expired', { bg: string; color: string; border: string; dot: string }> = {
+    Verified: { bg: '#dcfce7', color: '#15803d', border: '#bbf7d0', dot: '#22c55e' },
+    Expiring: { bg: '#fef3c7', color: '#b45309', border: '#fde68a', dot: '#f59e0b' },
+    Pending:  { bg: '#fee2e2', color: '#dc2626', border: '#fecaca', dot: '#ef4444' },
+    Signed:   { bg: '#cffafe', color: '#0e7490', border: '#a5f3fc', dot: '#06b6d4' },
+    Expired:  { bg: '#fee2e2', color: '#b91c1c', border: '#fca5a5', dot: '#dc2626' },
+  };
+  const s = map[status] ?? map.Pending;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: s.bg, color: s.color, border: `1px solid ${s.border}`, whiteSpace: 'nowrap' }}>
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.dot, flexShrink: 0 }} /> {status}
+    </span>
   );
 }
 
@@ -1083,14 +1145,30 @@ function clipFileName(s: string, max = 42): string {
 /* Re-upload / Upload popup for an Evidence Vault row. Shows the CURRENT file
  * (so the user sees what's already there), lets them pick a replacement, previews
  * the picked file, then saves. Mirrors the AddVendorModal SegmentRefUploadPopup. */
-function VaultReuploadPopup({ doc, busy, onClose, onSubmit }: {
+function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
   doc: VaultDoc;
+  category: 'kyc' | 'dd' | 'tl' | 'td' | 'agreement';
   busy: boolean;
   onClose: () => void;
-  onSubmit: (f: File) => void | Promise<void>;
+  onSubmit: (f: File, opts?: { docName?: string; expiryDate?: string }) => void | Promise<void>;
 }) {
   const toast = useToast();
+  // Standard documents (Company DD / Owner KYC / Trade Licenses) get the rich
+  // form (Auto Code · Document Name · Issuing Authority · Expiry) mirroring the
+  // supplier Edit form's upload popup. Case-to-Case rows keep the plain uploader.
+  const isStd = category === 'kyc' || category === 'dd' || category === 'tl';
+  const noExpiry = (s?: string | null) => !s || /^(lifetime|n\/a|—|-|varies|)$/i.test(s.trim());
+  const toISO = (s?: string | null) => {
+    if (!s) return '';
+    const t = s.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+    const m = t.match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+  };
   const [file, setFile] = useState<File | null>(null);
+  const [docName, setDocName] = useState(doc.name || '');
+  const [hasExpiry, setHasExpiry] = useState(isStd && !noExpiry(doc.expiry));
+  const [expiryDate, setExpiryDate] = useState(toISO(doc.expiry));
   const inputRef = useRef<HTMLInputElement | null>(null);
   const pick = (f: File | undefined) => {
     if (!f) return;
@@ -1104,36 +1182,68 @@ function VaultReuploadPopup({ doc, busy, onClose, onSubmit }: {
     }
     setFile(f);
   };
+  const save = () => {
+    if (!file) return;
+    if (isStd && hasExpiry && !expiryDate) { toast.error('Expiry required', 'Pick an expiry date or set Expiry to “No”.'); return; }
+    void onSubmit(file, isStd ? { docName, expiryDate: hasExpiry ? expiryDate : undefined } : undefined);
+  };
   return createPortal(
     <div className="cev-reup-ov" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
       <style>{CEV_REUP_CSS}</style>
       <div className="cev-reup-card" role="dialog" aria-modal="true">
         <div className="cev-reup-hd">
-          <div>
-            <div className="cev-reup-ttl">{doc.attachment ? 'Re-upload Document' : 'Upload Document'}</div>
-            <div className="cev-reup-sub">{doc.name || doc.doc_code}</div>
+          <div className="cev-reup-hd-l">
+            <span className="cev-reup-hd-ico"><i className="ri-upload-cloud-2-line" /></span>
+            <div>
+              <div className="cev-reup-ttl">{(doc.attachment ? 'Re-upload ' : 'Upload ') + (category === 'dd' ? 'Due Diligence' : category === 'kyc' ? 'Owner KYC' : category === 'tl' ? 'Trade License' : '') + ' Document'}</div>
+              <div className="cev-reup-sub">{doc.name || doc.doc_code}</div>
+            </div>
           </div>
           <button type="button" className="cev-reup-x" onClick={onClose} aria-label="Close" disabled={busy}><i className="ri-close-line" /></button>
         </div>
         <div className="cev-reup-bd">
+          {isStd && (
+            <div className="cev-reup-grid">
+              <div className="cev-reup-fld">
+                <label>Auto Code</label>
+                <div className="cev-reup-ro cev-mono" style={{ color: '#d97706', fontWeight: 700 }}>{doc.reference || doc.doc_code || '—'}</div>
+              </div>
+              <div className="cev-reup-fld">
+                <label>Document Name</label>
+                <div className="cev-reup-ro">{doc.name || '—'}</div>
+              </div>
+              <div className="cev-reup-fld">
+                <label>Issuing Authority</label>
+                <div className="cev-reup-ro">{doc.authority && doc.authority !== '—' ? doc.authority : '—'}</div>
+              </div>
+              <div className="cev-reup-fld">
+                <label>Expiry <span className="cev-reup-hint">Has an expiry date?</span></label>
+                <div className="cev-reup-toggle">
+                  <button type="button" className={hasExpiry ? 'on' : ''} onClick={() => setHasExpiry(true)}>Yes</button>
+                  <button type="button" className={!hasExpiry ? 'on' : ''} onClick={() => { setHasExpiry(false); setExpiryDate(''); }}>No</button>
+                </div>
+                {hasExpiry && <div style={{ marginTop: 8 }}><MasterDatePicker value={expiryDate} onChange={setExpiryDate} placeholder="Select expiry date" minDate={new Date().toISOString().slice(0, 10)} /></div>}
+              </div>
+            </div>
+          )}
+          {doc.attachment && (
+            <div className="cev-reup-fld">
+              <label>Current File</label>
+              <a className="cev-reup-cur" href={doc.attachment_url} target="_blank" rel="noreferrer"><i className="ri-file-text-line" /><span>{doc.attachment}</span></a>
+            </div>
+          )}
           <div className="cev-reup-fld">
-            <label>Current file</label>
-            {doc.attachment
-              ? <a className="cev-reup-cur" href={doc.attachment_url} target="_blank" rel="noreferrer"><i className="ri-file-text-line" /><span>{doc.attachment}</span></a>
-              : <span className="cev-reup-none">No file uploaded yet</span>}
-          </div>
-          <div className="cev-reup-fld">
-            <label>{doc.attachment ? 'Replace with new file' : 'Choose file'} <span className="cev-reup-req">*</span></label>
+            <label>Upload Document <span className="cev-reup-req">*</span></label>
             <input ref={inputRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png" onChange={e => { pick(e.target.files?.[0] ?? undefined); e.currentTarget.value = ''; }} />
             <button type="button" className={`cev-reup-drop${file ? ' has' : ''}`} onClick={() => inputRef.current?.click()}>
               <i className={file ? 'ri-file-check-line' : 'ri-upload-cloud-2-line'} />
-              <span>{file ? file.name : 'Choose a file (PDF / JPG / PNG, max 2 MB)'}</span>
+              <span>{file ? file.name : 'Upload document (JPG / PNG / PDF, max 2 MB)'}</span>
             </button>
           </div>
         </div>
         <div className="cev-reup-ft">
           <button type="button" className="cev-reup-cancel" onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="button" className="cev-reup-save" disabled={!file || busy} onClick={() => file && void onSubmit(file)}>
+          <button type="button" className="cev-reup-save" disabled={!file || busy} onClick={save}>
             {busy ? <><i className="ri-loader-4-line cev-spin" /> Uploading…</> : 'Save'}
           </button>
         </div>
@@ -1145,14 +1255,16 @@ function VaultReuploadPopup({ doc, busy, onClose, onSubmit }: {
 
 const CEV_REUP_CSS = `
 .cev-reup-ov { position:fixed; inset:0; z-index:100000; background:rgba(15,23,42,.5); display:flex; align-items:center; justify-content:center; padding:16px; }
-.cev-reup-card { width:100%; max-width:460px; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 24px 60px rgba(8,40,60,.32); font-family:'DM Sans',system-ui,sans-serif; }
+.cev-reup-card { width:100%; max-width:640px; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 24px 60px rgba(8,40,60,.32); font-family:'DM Sans',system-ui,sans-serif; }
 .cev-reup-hd { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:16px 18px; background:linear-gradient(120deg,#6d28d9,#7c3aed 55%,#8b5cf6); color:#fff; }
+.cev-reup-hd-l { display:flex; align-items:center; gap:12px; min-width:0; }
+.cev-reup-hd-ico { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.18); color:#fff; font-size:20px; }
 .cev-reup-ttl { font-size:15px; font-weight:800; }
 .cev-reup-sub { font-size:12px; opacity:.85; margin-top:2px; }
 .cev-reup-x { background:rgba(255,255,255,.18); border:none; color:#fff; width:30px; height:30px; border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; }
 .cev-reup-x:hover:not(:disabled) { background:rgba(255,255,255,.3); }
 .cev-reup-bd { padding:18px; display:flex; flex-direction:column; gap:16px; }
-.cev-reup-fld label { display:block; font-size:11px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; color:#64748b; margin-bottom:6px; }
+.cev-reup-fld label { display:block; font-size:11px; font-weight:700; letter-spacing:0; text-transform:none; color:#3b0764; margin-bottom:6px; }
 .cev-reup-req { color:#dc2626; }
 .cev-reup-cur { display:inline-flex; align-items:center; gap:7px; max-width:100%; padding:8px 12px; border-radius:9px; background:#f5f3ff; border:1px solid #ddd6fe; color:#6d28d9; font-size:12.5px; font-weight:600; text-decoration:none; }
 .cev-reup-cur span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -1173,6 +1285,26 @@ const CEV_REUP_CSS = `
 [data-bs-theme="dark"] .cev-reup-cur { background:rgba(139,92,246,.14); border-color:rgba(139,92,246,.35); color:#c4b5fd; }
 [data-bs-theme="dark"] .cev-reup-ft { border-top-color:#1c3a45; }
 [data-bs-theme="dark"] .cev-reup-cancel { background:#16303b; border-color:#2a4a56; color:#9db3c1; }
+/* Rich fields (standard docs): Auto Code · Document Name · Issuing Authority · Expiry. */
+.cev-reup-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.cev-reup-ro { height:38px; padding:0 12px; border-radius:10px; background:#f7f4ff; border:1px solid #e4dcf7; color:#495057; font-family:inherit; font-size:13px; font-weight:400; display:flex; align-items:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; box-sizing:border-box; }
+.cev-reup-in { width:100%; height:38px; padding:5px 12px; border-radius:10px; border:1px solid #e4dcf7; background:#f7f4ff; font-family:inherit; font-size:13px; font-weight:400; color:#495057; box-sizing:border-box; transition:border-color .18s ease, box-shadow .18s ease; }
+.cev-reup-in:focus { outline:none; border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,.12); background:#fff; }
+.cev-reup-hint { font-size:11px; font-weight:500; text-transform:none; letter-spacing:0; color:#94a3b8; margin-left:6px; }
+.cev-reup-toggle { display:inline-flex; height:38px; border:1.5px solid #e9e2f7; background:#faf8ff; border-radius:9px; overflow:hidden; }
+.cev-reup-toggle button { min-width:46px; padding:0 15px; border:none; border-right:1.5px solid #e9e2f7; background:transparent; color:#6b7280; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; transition:background .14s, color .14s; }
+.cev-reup-toggle button:last-child { border-right:0; }
+.cev-reup-toggle button:hover { background:#f1ebfe; color:#7c3aed; }
+.cev-reup-toggle button.on { background:#7c3aed; color:#fff; }
+.cev-mono { font-family:'Geist Mono',ui-monospace,Menlo,Consolas,monospace; }
+[data-bs-theme="dark"] .cev-reup-ro { background:#16303b; border-color:#2a4a56; color:#cbd5e1; }
+[data-bs-theme="dark"] .cev-reup-in { background:#16303b; border-color:#2a4a56; color:#e2e8f0; }
+[data-bs-theme="dark"] .cev-reup-toggle { border-color:#2a4a56; }
+[data-bs-theme="dark"] .cev-reup-toggle button { background:#16303b; color:#9db3c1; }
+[data-bs-theme="dark"] .cev-reup-fld label { color:#c4b5fd; }
+[data-bs-theme="dark"] .cev-reup-none { color:#7c93a8; }
+[data-bs-theme="dark"] .cev-reup-cancel:hover:not(:disabled) { background:#1c3a45; }
+@media (max-width:560px) { .cev-reup-grid { grid-template-columns:1fr; } }
 `;
 
 function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTradeDoc, onRemindTradeDoc }: {
@@ -1192,6 +1324,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const [downloading, setDownloading] = useState(false);
   const canViewOrDownload = !!doc.attachment_url;
   const canReupload = !!ownerId && !!doc.doc_code;
+  // Standard docs reuse the supplier form's exact upload popup (SegmentRefUploadPopup)
+  // so KYC / DD / Trade License all look identical to the "inside" Edit form.
+  const isStdCat = category === 'kyc' || category === 'dd' || category === 'tl';
   // Signing lifecycle for Trade Document rows:
   //   • signed (completed)   → no Send / no Reminder, View signed + cert only
   //   • sent (inprogress)    → no Send, Reminder only
@@ -1223,7 +1358,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
     finally { setDownloading(false); }
   };
 
-  const onPick = async (f: File | undefined): Promise<boolean> => {
+  const onPick = async (f: File | undefined, opts?: { docName?: string; expiryDate?: string }): Promise<boolean> => {
     if (!f || !ownerId || !doc.doc_code) return false;
     // Only PDF / JPG / PNG may be uploaded (Word / Excel are blocked so every
     // stored attachment can be previewed in-browser via View).
@@ -1236,7 +1371,8 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
       const fd = new FormData();
       fd.append('category', category);
       fd.append('doc_code', doc.doc_code);
-      fd.append('doc_name', doc.name || doc.doc_code);
+      fd.append('doc_name', (opts?.docName?.trim()) || doc.name || doc.doc_code);
+      if (opts?.expiryDate) fd.append('expiry_date', opts.expiryDate);
       fd.append('attachment', f);
       await api.post(`/segment-uploads/${ownerType}/${ownerId}`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -1254,14 +1390,30 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
 
   return (
     <div className="cev-row-actions">
-      {reupOpen && (
+      {reupOpen && (isStdCat ? (
+        <>
+          <style>{AVM_SCOPED_CSS}</style>
+          {/* The vault modal sits at z-index 11400; lift the reused popup's
+              backdrop above it so it opens ON TOP, not behind the vault — and the
+              date-picker calendar (default 11100) above the popup. */}
+          <style>{'.avm-cp-backdrop{z-index:13000!important;}.master-datepicker-popup{z-index:13100!important;}'}</style>
+          <SegmentRefUploadPopup
+            title={category === 'dd' ? 'DD Document Name' : category === 'kyc' ? 'Owner KYC Document Name' : 'Trade License Document Name'}
+            row={{ code: doc.reference || doc.doc_code || '', name: doc.name, authority: doc.authority, requirement: (doc.requirement as 'M' | 'O') || 'M' }}
+            existing={doc.attachment ? { file: null, url: doc.attachment_url || '', name: doc.attachment, expiry: doc.expiry || undefined } : undefined}
+            onClose={() => setReupOpen(false)}
+            onSubmit={async (f, expiryDate) => { const ok = await onPick(f, { expiryDate }); if (ok) setReupOpen(false); }}
+          />
+        </>
+      ) : (
         <VaultReuploadPopup
           doc={doc}
+          category={category}
           busy={busy}
           onClose={() => setReupOpen(false)}
-          onSubmit={async f => { const ok = await onPick(f); if (ok) setReupOpen(false); }}
+          onSubmit={async (f, opts) => { const ok = await onPick(f, opts); if (ok) setReupOpen(false); }}
         />
-      )}
+      ))}
       {canSend && (
         <Tooltip label="Send for signature">
           <button

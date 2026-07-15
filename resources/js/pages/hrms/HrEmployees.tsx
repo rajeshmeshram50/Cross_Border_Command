@@ -4539,9 +4539,15 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
             width: 200,
             padding: 10,
             borderRadius: 12,
-            background: 'var(--vz-card-bg, #fff)',
-            border: '1px solid var(--vz-border-color)',
-            boxShadow: '0 18px 38px -8px rgba(15,23,42,0.22), 0 6px 14px rgba(15,23,42,0.08)',
+            // Explicit theme-aware colours — this popover is portalled to
+            // document.body, where the card-scoped --vz-card-bg / --vz-border-color
+            // variables don't resolve and fell back to white (a light box in dark
+            // mode). isDark from useTheme drives the surface instead.
+            background: isDark ? '#1f2937' : '#fff',
+            border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'var(--vz-border-color, #e5e7eb)'}`,
+            boxShadow: isDark
+              ? '0 18px 38px -8px rgba(0,0,0,0.55), 0 6px 14px rgba(0,0,0,0.38)'
+              : '0 18px 38px -8px rgba(15,23,42,0.22), 0 6px 14px rgba(15,23,42,0.08)',
           }}
         >
           <div
@@ -4549,7 +4555,7 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
               fontSize: 10,
               fontWeight: 700,
               letterSpacing: '0.06em',
-              color: 'var(--vz-secondary-color)',
+              color: isDark ? 'rgba(255,255,255,0.55)' : '#6b7280',
               textTransform: 'uppercase',
               marginBottom: 4,
             }}

@@ -728,7 +728,7 @@
 [data-bs-theme="dark"] .spi-dt-inp.is-invalid, [data-bs-theme="dark"] .spi-dt-file.is-invalid { background: rgba(239,68,68,.1); }
 .spi-dt-select-edit.is-open svg { transform:rotate(180deg); }
 .spi-dt-esel-pop { position:fixed; z-index:9999; background:#fff; border:1.5px solid #d5e6ee; border-radius:10px; box-shadow:0 12px 32px rgba(15,23,42,.16); padding:5px; max-height:224px; overflow-y:auto; }
-.spi-dt-esel-opt { padding:9px 12px; border-radius:7px; font-size:12.5px; font-weight:600; color:#1e293b; cursor:pointer; transition:background .12s; }
+.spi-dt-esel-opt { padding:9px 12px; border-radius:7px; font-size:12.5px; font-weight:500; color:#1e293b; cursor:pointer; transition:background .12s; }
 .spi-dt-esel-opt:hover { background:#eefaff; }
 .spi-dt-esel-opt.is-active { background:#0891b2; color:#fff; }
 .spi-dt-esel-lbl { display:inline-flex; align-items:center; gap:7px; min-width:0; }

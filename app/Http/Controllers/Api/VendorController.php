@@ -188,6 +188,10 @@ class VendorController extends Controller
         $this->deleteAllVendorFiles($vendor);
 
         $vendor->delete();
+        // Invalidate the cached master bundles (Product "Map Supplier" dropdown
+        // + Vendor list) so the soft-deleted supplier stops appearing — the
+        // bundles are cached per-user for 5 min and would otherwise linger.
+        MasterBundleCache::bump();
         return response()->json(['id' => $vendor->id, 'deleted' => true]);
     }
 
@@ -321,6 +325,10 @@ class VendorController extends Controller
                 }
             }
         });
+
+        // New supplier / renamed identity → refresh the cached Map-Supplier
+        // dropdown (company name, code, type, segment, status all live here).
+        MasterBundleCache::bump();
 
         $vendor->load(self::SHOW_WITH);
         return response()->json(['data' => $this->shape($vendor)]);

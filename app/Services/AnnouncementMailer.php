@@ -68,6 +68,12 @@ class AnnouncementMailer
 
             foreach ($recipients as $email => $name) {
                 try {
+                    // Delivered synchronously, but the CALLER wraps this whole
+                    // method in defer() so it runs AFTER the HTTP response is
+                    // flushed — the publish request never blocks on SMTP, and a
+                    // slow/unreachable host can't time the request out or roll
+                    // back the already-committed announcement. This keeps
+                    // delivery working without a running queue worker.
                     Mail::to($email)->send(new AnnouncementPublishedMail(
                         $announcement,
                         $name ?: 'there',

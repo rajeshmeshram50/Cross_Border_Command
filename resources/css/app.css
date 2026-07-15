@@ -2653,7 +2653,12 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   letter-spacing: 0.01em;
   padding: 5px 10px;
   border-radius: 6px;
-  white-space: nowrap;
+  /* Wrap + cap so a long label doesn't render as one giant nowrap line that
+     overflows the viewport/modal. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: min(320px, calc(100vw - 16px));
+  width: max-content;
   box-shadow: 0 6px 14px -4px rgba(15,23,42,0.35), 0 2px 4px rgba(15,23,42,0.18);
   /* default = above */
   bottom: calc(100% + 8px);

@@ -424,7 +424,7 @@ export default function GenerateDocument() {
                 return (
                   <div key={g.id} className="gd-success-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 14px', border: '1px solid #e5e7eb', borderRadius: 10, background: '#fff' }}>
                     <div className="d-flex align-items-center gap-3">
-                      <span style={{ width: 32, height: 32, borderRadius: 999, background: '#dcfce7', color: '#15803d', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span className="gd-success-tick" style={{ width: 32, height: 32, borderRadius: 999, background: '#dcfce7', color: '#15803d', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                         <i className="ri-check-line" />
                       </span>
                       <div>
@@ -442,7 +442,7 @@ export default function GenerateDocument() {
             </div>
           </CardBody>
           <div style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'flex-end', gap: 8 }} className="gd-footer">
-            <button type="button" onClick={() => navigate('/hr/doc-templates')}
+            <button type="button" onClick={() => navigate('/hr/doc-templates')} className="gd-cancel"
               style={{ padding: '8px 18px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
               Done
             </button>
@@ -528,14 +528,14 @@ export default function GenerateDocument() {
                     (preserves the custom values filled in this wizard). Styled
                     Tooltip to match the doc-templates list action column. */}
                 <Tooltip label="Send into the configured signing workflow for the selected employee(s)">
-                  <button type="button" onClick={onSendForSignature} disabled={saving || sending}
+                  <button type="button" onClick={onSendForSignature} disabled={saving || sending} className="gd-outline-btn"
                     style={{ padding: '8px 18px', background: '#fff', border: '2px solid #7c3aed', borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#7c3aed', cursor: (saving || sending) ? 'default' : 'pointer', opacity: (saving || sending) ? 0.6 : 1 }}>
                     <i className="ri-quill-pen-line me-1" />{sending ? 'Sending…' : 'Send for Signature'}
                   </button>
                 </Tooltip>
                 {/* Generate + download the document(s) in one click. */}
                 <Tooltip label="Generate and download the document(s) right away">
-                  <button type="button" onClick={onDownload} disabled={saving || sending}
+                  <button type="button" onClick={onDownload} disabled={saving || sending} className="gd-outline-btn"
                     style={{ padding: '8px 18px', background: '#fff', border: '2px solid #7c3aed', borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#7c3aed', cursor: (saving || sending) ? 'default' : 'pointer', opacity: (saving || sending) ? 0.6 : 1 }}>
                     <i className="ri-download-2-line me-1" />{saving ? 'Working…' : `Download document${selectedEmployees.length === 1 ? '' : 's'}`}
                   </button>
@@ -626,7 +626,7 @@ function Step1(props: {
     <div>
       <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
         <h5 className="fw-bold mb-0 gd-title">Select Employees</h5>
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999 }}>
+        <span className="gd-count-badge" style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999 }}>
           {props.selectedIds.size} selected
         </span>
       </div>
@@ -856,7 +856,7 @@ function Step3(props: {
             {' '}Unfilled placeholders are highlighted below.
           </div>
         </div>
-        <span style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999 }}>
+        <span className="gd-count-badge" style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', background: '#e0e7ff', padding: '4px 10px', borderRadius: 999 }}>
           {selectedEmployees.length} document{selectedEmployees.length === 1 ? '' : 's'}
         </span>
       </div>
@@ -1237,6 +1237,41 @@ function ScopedStyles() {
       [data-layout-mode="dark"] .gd-page .gd-success-name { color: #f1f5f9 !important; }
       [data-bs-theme="dark"] .gd-page .gd-success-sub,
       [data-layout-mode="dark"] .gd-page .gd-success-sub { color: rgba(255,255,255,0.65) !important; }
+
+      /* Success tick circle — was a hardcoded light green (#dcfce7) that read as
+         a pale disc on the dark success row. Translucent green + brighter check. */
+      [data-bs-theme="dark"] .gd-page .gd-success-tick,
+      [data-layout-mode="dark"] .gd-page .gd-success-tick {
+        background: rgba(16,185,129,0.20) !important; color: #4ade80 !important;
+      }
+
+      /* Count pills ("N selected" / "N documents") — were a hardcoded light
+         indigo (#e0e7ff / #4338ca) that glowed white on the dark surface. */
+      [data-bs-theme="dark"] .gd-page .gd-count-badge,
+      [data-layout-mode="dark"] .gd-page .gd-count-badge {
+        background: rgba(99,102,241,0.22) !important; color: #c7d2fe !important;
+      }
+
+      /* Outline action buttons ("Send for Signature" / "Download document(s)")
+         — were white-background/purple-outline, unreadable in dark mode. */
+      [data-bs-theme="dark"] .gd-page .gd-outline-btn,
+      [data-layout-mode="dark"] .gd-page .gd-outline-btn {
+        background: rgba(124,58,237,0.16) !important; border-color: #a78bfa !important; color: #ddd6fe !important;
+      }
+      [data-bs-theme="dark"] .gd-page .gd-outline-btn:hover:not(:disabled),
+      [data-layout-mode="dark"] .gd-page .gd-outline-btn:hover:not(:disabled) {
+        background: rgba(124,58,237,0.28) !important;
+      }
+
+      /* Back / Cancel hover must stay dark — the base light-mode hover rule
+         (background:#f9fafb) applies in both themes and flipped these buttons
+         to a white background on hover in dark mode. */
+      [data-bs-theme="dark"] .gd-page .gd-cancel:hover:not(:disabled),
+      [data-bs-theme="dark"] .gd-page .gd-back:hover:not(:disabled),
+      [data-layout-mode="dark"] .gd-page .gd-cancel:hover:not(:disabled),
+      [data-layout-mode="dark"] .gd-page .gd-back:hover:not(:disabled) {
+        background: rgba(255,255,255,0.12) !important; border-color: rgba(129,140,248,0.55) !important; color: #f1f5f9 !important;
+      }
     `}</style>
   );
 }

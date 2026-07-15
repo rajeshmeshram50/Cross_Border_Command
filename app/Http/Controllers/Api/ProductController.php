@@ -185,19 +185,23 @@ class ProductController extends Controller
         return $payload;
     }
 
-    private function nextProductCode(?int $clientId): string
+    private function nextProductCode(?int $clientId, ?int $branchId): string
     {
-        // Scan every code this client owns and pick the true numeric
-        // max. Previously this used orderByDesc('id')->value which
-        // returns the MOST-RECENTLY-INSERTED code, not the highest one
-        // — a draft created at P-01 after P-02 already existed would
-        // make this hand out P-02 again and trip the unique index.
-        // We also pull from withTrashed so soft-deleted rows don't
-        // release their code back into the pool, matching how vendors
-        // and customers handle theirs.
-        $codes = Product::withTrashed()
-            ->where('client_id', $clientId)
-            ->pluck('product_code');
+        // Scan every code this BRANCH owns and pick the true numeric max.
+        // Codes are per-branch sequential — each branch restarts at P-01 so a
+        // new branch doesn't inherit another branch's running count (bug: a
+        // product created under Branch 2 was handed P-15 because the counter
+        // was client-wide). Matches the branch-scoped CLM/vendor code counters
+        // and the (client_id, branch_id, product_code) unique index.
+        //
+        // Previously this used orderByDesc('id')->value which returns the
+        // MOST-RECENTLY-INSERTED code, not the highest one. We also pull from
+        // withTrashed so soft-deleted rows don't release their code back into
+        // the pool, matching how vendors and customers handle theirs.
+        $q = Product::withTrashed();
+        $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
+        $codes = $q->pluck('product_code');
 
         $max = 0;
         foreach ($codes as $code) {
@@ -349,7 +353,9 @@ class ProductController extends Controller
             'name'                  => 'required|string|max:255',
             'generic_name'          => 'nullable|string|max:255',
             'description'           => 'nullable|string',
-            'brand'                 => 'nullable|string|max:255',
+            // Make / Brand / Specifications — no character cap (column widened to
+            // TEXT); description is likewise uncapped (already TEXT).
+            'brand'                 => 'nullable|string',
             'segment_id'            => 'nullable|integer',
             'haz_type'              => 'nullable|string|max:20',
             'haz_class_id'          => 'nullable|integer',
@@ -357,7 +363,7 @@ class ProductController extends Controller
             'hsn_id'                => 'nullable|integer',
             'condition_id'          => 'nullable|integer',
             'packaging_material_id' => 'nullable|integer',
-            'confidential_info'     => 'nullable|string',
+            'confidential_info'     => 'nullable|string|max:2000',
 
             // Image inputs — see the doc block above for the upload contract:
             //   primary_image          existing path the client wants to keep
@@ -379,7 +385,9 @@ class ProductController extends Controller
             //   product_attachment       existing path the client wants to keep
             //   product_attachment_file  new file replacing it
             'product_attachment'      => 'nullable|string|max:500',
-            'product_attachment_file' => 'nullable|file|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,jpg,jpeg,png,gif,webp|max:10240',
+            // Supported formats only — PDF, Word, images. Excel/PPT/CSV/TXT are
+            // intentionally rejected (a spreadsheet isn't a valid product doc).
+            'product_attachment_file' => 'nullable|file|mimes:pdf,doc,docx,jpg,jpeg,png,gif,webp|max:10240',
         ]);
 
         $product = isset($data['id'])
@@ -393,7 +401,7 @@ class ProductController extends Controller
 
         if (!$product->exists) {
             $product->fill($ownership);
-            $product->product_code = $this->nextProductCode($ownership['client_id']);
+            $product->product_code = $this->nextProductCode($ownership['client_id'], $ownership['branch_id']);
             $product->status = 'draft';
         }
 
@@ -585,8 +593,39 @@ class ProductController extends Controller
         }
         $product->save();
 
+        // A supplier's GST is locked to the product's GST, so a change here must
+        // cascade to every already-mapped supplier — otherwise they keep the
+        // stale rate captured at map time (bug: supplier GST didn't update after
+        // the product GST changed). Recompute each map's %/amount/total from its
+        // own purchase price and mirror onto the vendor side.
+        $gstPct = (float) (optional(GstPercentage::find($product->gst_id))->percentage ?? 0);
+        DB::transaction(function () use ($product, $gstPct) {
+            foreach ($product->vendorMaps()->get() as $map) {
+                $price  = (float) ($map->purchase_price ?? 0);
+                $gstAmt = round($price * $gstPct / 100, 2);
+                $total  = round($price + $gstAmt, 2);
+                $map->gst_percentage = $gstPct;
+                $map->gst_amount     = $gstAmt;
+                $map->total_amount   = $total;
+                $map->save();
+
+                if ($map->vendor_id) {
+                    \App\Models\VendorProductMapping::where('vendor_id', $map->vendor_id)
+                        ->where('product_id', $map->product_id)
+                        ->update([
+                            'gst_percentage' => $gstPct,
+                            'gst_amount'     => $gstAmt,
+                            'total_amount'   => $total,
+                        ]);
+                }
+            }
+        });
+
         return response()->json(
-            $this->maskProductArray($product->fresh()->toArray(), $this->departmentHiddenGroups($request))
+            $this->maskProductArray(
+                $product->fresh(['vendorMaps', 'vendorMaps.vendor:id,vendor_code'])->toArray(),
+                $this->departmentHiddenGroups($request)
+            )
         );
     }
 
@@ -749,6 +788,41 @@ class ProductController extends Controller
     }
 
     /* ──────────────────────────────────────────────────────────────────
+     * DELETE /products/{id}/vendor-maps/{mapId}
+     * Unmap a single supplier from the product. Kept separate from
+     * storeVendors (full-list replace) so both the Product-Detail-View list
+     * and the Edit-form list can delete one row and stay in sync — the
+     * vendor side (vendor_product_mappings) is cleared to match.
+     * ────────────────────────────────────────────────────────────── */
+    public function destroyVendorMap(Request $request, int $id, int $mapId)
+    {
+        $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
+        if ($denial = $this->editDenial($request->user(), $product, 'edit')) {
+            return response()->json(['message' => $denial], 403);
+        }
+
+        $map = ProductVendorMap::where('product_id', $product->id)->findOrFail($mapId);
+
+        DB::transaction(function () use ($map) {
+            // Mirror-delete the vendor side so a supplier removed here also
+            // drops off the vendor's mapped-products list.
+            if ($map->vendor_id) {
+                \App\Models\VendorProductMapping::where('vendor_id', $map->vendor_id)
+                    ->where('product_id', $map->product_id)
+                    ->delete();
+            }
+            $map->delete();
+        });
+
+        return response()->json(
+            $this->maskProductArray(
+                $product->fresh(['vendorMaps', 'vendorMaps.vendor:id,vendor_code', 'qcRecords'])->toArray(),
+                $this->departmentHiddenGroups($request)
+            )
+        );
+    }
+
+    /* ──────────────────────────────────────────────────────────────────
      * PUT /products/{id}/step/vendors
      * Final step. Saves vendor mappings and activates the product.
      * ────────────────────────────────────────────────────────────── */
@@ -809,7 +883,12 @@ class ProductController extends Controller
             }
         }
 
-        DB::transaction(function () use ($product, $data, $request) {
+        // Supplier GST is locked to the PRODUCT's GST — derive it server-side so
+        // a stale/hand-crafted payload can't persist a mismatched rate (the
+        // frontend already mirrors this, but the DB is the source of truth).
+        $gstPct = (float) (optional(GstPercentage::find($product->gst_id))->percentage ?? 0);
+
+        DB::transaction(function () use ($product, $data, $request, $gstPct) {
             $userId = $request->user()?->id;
 
             // Replace the product's vendor list.
@@ -824,6 +903,13 @@ class ProductController extends Controller
             $nowMappedVendorIds = [];
 
             foreach ($data['vendors'] as $v) {
+                // Force the GST to the product's current rate + recompute the
+                // amount/total from this row's own purchase price.
+                $price = (float) ($v['purchase_price'] ?? 0);
+                $v['gst_percentage'] = $gstPct;
+                $v['gst_amount']     = round($price * $gstPct / 100, 2);
+                $v['total_amount']   = round($price + $v['gst_amount'], 2);
+
                 $product->vendorMaps()->create($v);
 
                 $vendorId = $v['vendor_id'] ?? null;
