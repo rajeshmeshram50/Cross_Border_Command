@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './product-management.css';
 import { useNavigate, useParams } from 'react-router-dom';
-import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import AddProductModal from './AddProductModal';
-import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 
 
 type AnyRec = Record<string, unknown>;
@@ -20,19 +18,6 @@ function formatProductCode(raw: string): string {
   if (!m) return raw;
   const prefix = m[1] || 'P-';
   return `${prefix}${m[2].padStart(3, '0')}`;
-}
-
-// A mapping's stored vendor_code can be stale (captured at map time). Resolve
-// the supplier code live from the linked vendor — same rule the supplier list
-// uses (vendor_code ?? S-<id>) — so renames/code changes always propagate.
-function resolveSupplierCode(v: Record<string, unknown>): string {
-  const vendor = v.vendor as { vendor_code?: string | null } | null | undefined;
-  const vendorId = v.vendor_id as number | null | undefined;
-  const raw =
-    (vendor?.vendor_code && String(vendor.vendor_code)) ||
-    (vendorId ? `S-${String(vendorId).padStart(3, '0')}` : '') ||
-    (v.vendor_code ? String(v.vendor_code) : '');
-  return raw ? formatProductCode(raw) : '—';
 }
 
 type ProductDto = {
@@ -100,20 +85,11 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   // Qty stepper for the buy bar (presentation only — mirrors the prototype).
   // Declared with the other hooks so it always runs before any early return.
   const [qty, setQty] = useState(1);
-  // Mapped Suppliers popup (opened from the header button).
-  const [suppliersOpen, setSuppliersOpen] = useState(false);
-  // When true, the Edit modal opens straight into the Map Supplier form.
-  const [supplierMapMode, setSupplierMapMode] = useState(false);
-  // Inline price-edit for a single mapped-supplier row. Only the purchase
-  // price is editable; GST amount and total recompute live from the row's
-  // fixed GST %.
-  const [priceEditId, setPriceEditId] = useState<number | null>(null);
-  const [priceEditVal, setPriceEditVal] = useState('');
-  const [priceSaving, setPriceSaving] = useState(false);
-  // Single-row supplier delete — mirrors the Edit-form list so a supplier
-  // removed here (or there) drops from the DB and both views stay in sync.
-  const [vendorMapDelete, setVendorMapDelete] = useState<{ id: number; name: string } | null>(null);
-  const [vendorMapDeleting, setVendorMapDeleting] = useState(false);
+  /* Mapped Suppliers is AddProductModal's popup running in supplier-only mode
+     — this page owns no second copy of that list or of the Map Supplier form,
+     so the two entry points can't drift apart. False = the modal is either
+     shut or open on the normal Edit Product wizard. */
+  const [supplierOnly, setSupplierOnly] = useState(false);
 
   /* QC documents come from the same `segment_doc_uploads` table the Add
    * Product wizard writes to (category = 'qc'). Surfaced here so the
@@ -283,50 +259,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   const baseStr   = fmtMoney(product.base_price);
   const totalStr  = fmtMoney(product.total_price);
 
-  const startPriceEdit = (mapId: number, current: string | number | null) => {
-    setPriceEditId(mapId);
-    setPriceEditVal(current == null || current === '' ? '' : String(Number(current)));
-  };
-  const cancelPriceEdit = () => { setPriceEditId(null); setPriceEditVal(''); };
-  const savePriceEdit = async (mapId: number) => {
-    const price = Number(priceEditVal);
-    if (priceEditVal.trim() === '' || !Number.isFinite(price) || price < 0) {
-      toast.error('Invalid price', 'Enter a purchase price of 0 or more.');
-      return;
-    }
-    setPriceSaving(true);
-    try {
-      const res = await api.patch(`/products/${product.id}/vendor-maps/${mapId}`, { purchase_price: price });
-      // The PATCH response only carries vendorMaps/qcRecords, not the
-      // display relations (segment, hsn, uom, …). Merge just the refreshed
-      // mappings so the rest of the loaded product stays intact.
-      const fresh = res.data as ProductDto;
-      setProduct(prev => (prev ? { ...prev, vendor_maps: fresh.vendor_maps ?? prev.vendor_maps } : prev));
-      cancelPriceEdit();
-      toast.success('Price updated', 'Purchase price, GST and total have been recalculated.');
-    } catch {
-      toast.error('Update failed', 'Could not update the purchase price. Please try again.');
-    } finally {
-      setPriceSaving(false);
-    }
-  };
-
-  const confirmDeleteVendorMap = async () => {
-    if (!vendorMapDelete) return;
-    setVendorMapDeleting(true);
-    try {
-      const res = await api.delete(`/products/${product.id}/vendor-maps/${vendorMapDelete.id}`);
-      const fresh = res.data as ProductDto;
-      setProduct(prev => (prev ? { ...prev, vendor_maps: fresh.vendor_maps ?? prev.vendor_maps } : prev));
-      setVendorMapDelete(null);
-      toast.success('Supplier removed', 'The supplier has been unmapped from this product.');
-    } catch {
-      toast.error('Remove failed', 'Could not remove the supplier. Please try again.');
-    } finally {
-      setVendorMapDeleting(false);
-    }
-  };
-
   return (
     <div className="pv2-root pv2pd-root">
 
@@ -347,7 +279,7 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
             {/* Sales can't manage suppliers — the button is hidden entirely
                 (not just disabled) so there's no dead control / denial toast. */}
             {!isSalesDept && (
-              <button className="pv2pd-hbtn pv2pd-hbtn--suppliers" onClick={() => setSuppliersOpen(true)}>
+              <button className="pv2pd-hbtn pv2pd-hbtn--suppliers" onClick={() => { setSupplierOnly(true); setEditOpen(true); }}>
                 {/* Exact prototype icon (Feather "users" — two people). */}
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> Mapped Suppliers
               </button>
@@ -532,8 +464,8 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
            * own /products/{id} refetch. Production network panel
            * showed that duplicate call costing ~2 sec. */
           initialProduct={product}
-          openSupplierMap={supplierMapMode}
-          onClose={() => { setEditOpen(false); setSupplierMapMode(false); }}
+          supplierOnly={supplierOnly}
+          onClose={() => { setEditOpen(false); setSupplierOnly(false); }}
           onSaved={(_pid, finalised) => {
             // Silent refresh — see load()'s note. We want the underlying
             // ProductView card to reflect the new data once the user
@@ -544,207 +476,6 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
           }}
         />
       )}
-
-      {/* Mapped Suppliers popup — opened from the header "Mapped Suppliers"
-          button. Lists this product's vendor mappings (prototype design). */}
-      {suppliersOpen && createPortal((
-        <div className="pv2pd-sup-overlay" onClick={() => setSuppliersOpen(false)}>
-          <div className="pv2pd-sup-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="pv2pd-sup-head">
-              <div className="pv2pd-sup-head-ico"><i className="ri-team-line" /></div>
-              <div className="pv2pd-sup-head-txt">
-                <div className="pv2pd-sup-title">Mapped Suppliers</div>
-                <div className="pv2pd-sup-sub">Suppliers linked to this product with purchase price &amp; GST</div>
-              </div>
-              <button className="pv2pd-sup-close" onClick={() => setSuppliersOpen(false)} aria-label="Close">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
-            </div>
-            <div className="pv2pd-sup-body">
-              <div className="pv2pd-sup-bar">
-                <span className="pv2pd-sup-countpill">{product.vendor_maps.length} supplier{product.vendor_maps.length !== 1 ? 's' : ''} mapped</span>
-                <button className="pv2pd-sup-map" onClick={() => { setSuppliersOpen(false); setSupplierMapMode(true); setEditOpen(true); }}>
-                  <i className="ri-add-line" /> Map Supplier
-                </button>
-              </div>
-              {product.vendor_maps.length === 0 ? (
-                <div className="pv2pd-sup-empty">No suppliers mapped yet. Click "Map Supplier" to begin.</div>
-              ) : (
-                <div className="pv2pd-sup-tablewrap">
-                  <table className="pv2pd-sup-table">
-                    <thead>
-                      <tr>
-                        <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>State</th><th>Contact</th>
-                        <th>Price (₹)</th><th>GST %</th><th>GST (₹)</th><th>Total (₹)</th><th>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {product.vendor_maps.map((v, i) => {
-                        const mapId = Number(v.id);
-                        const rowGstPct = Number(v.gst_percentage ?? 0);
-                        return (
-                        <tr key={String((v.id as number | string) ?? i)}>
-                          <td><span className="pv2pd-sup-sr">{String(i + 1).padStart(2, '0')}</span></td>
-                          <td className="pv2pd-sup-cname">{String(v.vendor_name ?? '—')}</td>
-                          <td><span className="pv2pd-sup-code">{resolveSupplierCode(v)}</span></td>
-                          <td>{String(v.vendor_type ?? v.type ?? '—')}</td>
-                          <td>{String(v.state ?? '—')}</td>
-                          <td className="pv2pd-sup-cperson">{String(v.contact_person ?? '—')}</td>
-                          <td>{fmtMoney(v.purchase_price as string | number | null)}</td>
-                          <td>{`${rowGstPct.toFixed(0)}%`}</td>
-                          <td>{fmtMoney(v.gst_amount as string | number | null)}</td>
-                          <td className="pv2pd-sup-ctotal">{fmtMoney(v.total_amount as string | number | null)}</td>
-                          <td>
-                            {/* Same icon actions as the Edit-form list so both
-                                views match. Edit tweaks price; Delete unmaps the
-                                supplier (persists immediately → both stay in sync). */}
-                            <div className="apm-sup-actions">
-                              <button
-                                type="button"
-                                className="apm-sup-edit"
-                                title="Edit purchase price"
-                                aria-label="Edit purchase price"
-                                onClick={() => startPriceEdit(mapId, v.purchase_price as string | number | null)}
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                              </button>
-                              <button
-                                type="button"
-                                className="apm-sup-del"
-                                title="Remove supplier"
-                                aria-label="Remove supplier"
-                                onClick={() => setVendorMapDelete({ id: mapId, name: String(v.vendor_name ?? 'this supplier') })}
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-            <div className="pv2pd-sup-foot">
-              <button className="pv2pd-sup-closebtn" onClick={() => setSuppliersOpen(false)}>Close</button>
-            </div>
-          </div>
-        </div>
-      ), document.body)}
-
-      {/* Edit Mapped Supplier — the same Map Supplier form (apm-mv design)
-          re-opened in edit mode. Everything is read-only except the purchase
-          price; GST amount and total recompute live from the row's fixed
-          GST %. Save posts only the price to the per-row PATCH endpoint so
-          the other columns can't be clobbered. Backdrop click does NOT close
-          (matches the Map Supplier form) — header ✕ / Cancel only. */}
-      {priceEditId != null && (() => {
-        const editRow = product.vendor_maps.find(v => Number(v.id) === priceEditId);
-        if (!editRow) return null;
-        const mapId = priceEditId;
-        const rowGstPct = Number(editRow.gst_percentage ?? 0);
-        const p = Number(priceEditVal);
-        const valid = priceEditVal.trim() !== '' && Number.isFinite(p) && p >= 0;
-        const gstAmt = valid ? (p * rowGstPct) / 100 : 0;
-        const total = valid ? p + gstAmt : 0;
-        return createPortal((
-          <div className="apm-mv-backdrop">
-            <div className="apm-mv-popup">
-              <div className="apm-mv-popup-head">
-                <div className="apm-mv-popup-title">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-                  <div>
-                    <div className="apm-mv-popup-title-main">Edit Mapped Supplier</div>
-                    <div className="apm-mv-popup-title-sub">Update the purchase price — GST &amp; total recalculate automatically</div>
-                  </div>
-                </div>
-                <button className="apm-close apm-mv-close" onClick={cancelPriceEdit} aria-label="Close">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                </button>
-              </div>
-
-              <div className="apm-mv-popup-body">
-                <div className="apm-grid-3">
-                  <div className="apm-field">
-                    <span className="apm-field-label">Supplier Name</span>
-                    <input className="apm-input apm-readonly" value={String(editRow.vendor_name ?? '')} readOnly />
-                  </div>
-                  <div className="apm-field">
-                    <span className="apm-field-label">Supplier Code</span>
-                    <input className="apm-input apm-readonly" value={resolveSupplierCode(editRow)} readOnly placeholder="—" />
-                  </div>
-                  <div className="apm-field">
-                    <span className="apm-field-label">Supplier Type</span>
-                    <input className="apm-input apm-readonly" value={String(editRow.vendor_type ?? editRow.type ?? '—')} readOnly />
-                  </div>
-
-                  <div className="apm-field">
-                    <span className="apm-field-label">State</span>
-                    <input className="apm-input apm-readonly" value={String(editRow.state ?? '—')} readOnly />
-                  </div>
-                  <div className="apm-field">
-                    <span className="apm-field-label">Contact Person</span>
-                    <input className="apm-input apm-readonly" value={String(editRow.contact_person ?? '—')} readOnly />
-                  </div>
-                  <div className="apm-field">
-                    <span className="apm-field-label">Purchase Price (₹) <span className="apm-req">*</span></span>
-                    <div className="apm-input-icon">
-                      <span className="apm-input-icon-prefix">₹</span>
-                      <input
-                        className="apm-input has-prefix"
-                        type="number" min="0" step="0.01" autoFocus
-                        placeholder="Enter purchase price"
-                        value={priceEditVal}
-                        disabled={priceSaving}
-                        onChange={(e) => setPriceEditVal(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') savePriceEdit(mapId); if (e.key === 'Escape') cancelPriceEdit(); }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="apm-field">
-                    <span className="apm-field-label">GST %</span>
-                    <input className="apm-input apm-readonly" value={rowGstPct ? `${rowGstPct.toFixed(0)}%` : '—'} readOnly title="GST % comes from the product's Sales Config" />
-                  </div>
-                  <div className="apm-field">
-                    <span className="apm-field-label">GST Amount (₹)</span>
-                    <div className="apm-input-icon">
-                      <span className="apm-input-icon-prefix">₹</span>
-                      <input className="apm-input has-prefix apm-readonly" value={valid ? gstAmt.toFixed(2) : ''} readOnly placeholder="Auto-computed" />
-                    </div>
-                  </div>
-                  <div className="apm-field">
-                    <span className="apm-field-label">Total Amount (₹)</span>
-                    <div className="apm-input-icon">
-                      <span className="apm-input-icon-prefix">₹</span>
-                      <input className="apm-input has-prefix apm-readonly apm-total" value={valid ? total.toFixed(2) : ''} readOnly placeholder="Auto-computed" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="apm-mv-popup-foot">
-                <button className="apm-btn-ghost" onClick={cancelPriceEdit} disabled={priceSaving}>Cancel</button>
-                <button className="apm-btn-primary" onClick={() => savePriceEdit(mapId)} disabled={priceSaving || !valid}>
-                  {priceSaving ? 'Saving…' : 'Save Changes'}
-                </button>
-              </div>
-            </div>
-          </div>
-        ), document.body);
-      })()}
-
-      <DeleteConfirmModal
-        open={vendorMapDelete !== null}
-        itemName={vendorMapDelete?.name}
-        title="Remove Mapped Supplier"
-        subMessage="This unmaps the supplier from the product and saves immediately."
-        loading={vendorMapDeleting}
-        onClose={() => { if (!vendorMapDeleting) setVendorMapDelete(null); }}
-        onConfirm={confirmDeleteVendorMap}
-      />
     </div>
   );
 }

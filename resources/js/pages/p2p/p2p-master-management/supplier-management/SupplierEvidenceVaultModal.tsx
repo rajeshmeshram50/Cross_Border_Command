@@ -968,7 +968,9 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             <div className="cev-seg-pop-title">Segments ({segPop.names.length})</div>
             {segPop.names.map((name, i) => (
               <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                <span className="cev-seg-pop-pill" title={name}>{name.length > 20 ? name.slice(0, 20) + '…' : name}</span>
+                <Tooltip label={name}>
+                  <span className="cev-seg-pop-pill">{name.length > 20 ? name.slice(0, 20) + '…' : name}</span>
+                </Tooltip>
               </div>
             ))}
           </div>
@@ -1103,6 +1105,16 @@ function evFmtExpiry(s?: string | null): string {
   if (!d) return s && s.trim() && s.trim() !== '-' ? s.trim() : '—';
   return `${String(d.getDate()).padStart(2, '0')}-${EV_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 }
+/* Vault expiry → ISO (yyyy-mm-dd) for MasterDatePicker, or '' when the row
+ * carries no real date ("Lifetime", "N/A", "—", or anything unparseable).
+ * The picker feeds its value straight into `new Date(...)`, so handing it a
+ * label produces an Invalid Date and NaNs the whole day grid. */
+function evExpiryIso(s?: string | null): string {
+  const d = evParseExpiry(s);
+  if (!d) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 /* Effective status: a document whose expiry is already in the past reads as
  * "Expired" regardless of its stored status. */
 function evEffectiveStatus(d: VaultDoc): VaultStatus | 'Expired' {
@@ -1395,12 +1407,16 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           <style>{AVM_SCOPED_CSS}</style>
           {/* The vault modal sits at z-index 11400; lift the reused popup's
               backdrop above it so it opens ON TOP, not behind the vault — and the
-              date-picker calendar (default 11100) above the popup. */}
-          <style>{'.avm-cp-backdrop{z-index:13000!important;}.master-datepicker-popup{z-index:13100!important;}'}</style>
+              date-picker calendar (default 11100) above the popup.
+              MasterDatePicker.css sets the calendar's z-index via
+              `div.master-datepicker-popup` (specificity 0,1,1) with !important, so a
+              plain `.master-datepicker-popup` override loses and the calendar stays
+              trapped under this backdrop. `html div...` (0,1,2) wins outright. */}
+          <style>{'.avm-cp-backdrop{z-index:13000!important;}html div.master-datepicker-popup{z-index:13100!important;}'}</style>
           <SegmentRefUploadPopup
             title={category === 'dd' ? 'DD Document Name' : category === 'kyc' ? 'Owner KYC Document Name' : 'Trade License Document Name'}
             row={{ code: doc.reference || doc.doc_code || '', name: doc.name, authority: doc.authority, requirement: (doc.requirement as 'M' | 'O') || 'M' }}
-            existing={doc.attachment ? { file: null, url: doc.attachment_url || '', name: doc.attachment, expiry: doc.expiry || undefined } : undefined}
+            existing={doc.attachment ? { file: null, url: doc.attachment_url || '', name: doc.attachment, expiry: evExpiryIso(doc.expiry) || undefined } : undefined}
             onClose={() => setReupOpen(false)}
             onSubmit={async (f, expiryDate) => { const ok = await onPick(f, { expiryDate }); if (ok) setReupOpen(false); }}
           />

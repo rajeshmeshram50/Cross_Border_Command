@@ -171,7 +171,23 @@
 .prd-filter-btn:active { transform: translateY(0) scale(.99); }
 .prd-filter-btn.is-active { box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 -2px 6px rgba(76,29,149,.4) inset, 0 0 0 3px rgba(167,139,250,.5), 0 8px 24px rgba(124,58,237,.55); }
 .prd-filter-badge { position: relative; z-index: 3; display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: #fff; color: #7c3aed; font-size: 10px; font-weight: 800; }
-@media (max-width: 640px) { .prd-toolbar { flex-direction: column; align-items: stretch; } .prd-tabs { justify-content: center; flex-wrap: wrap; } }
+/* ─── Toolbar + switch tabs — tablet portrait and below ───
+   Above this the toolbar is one row (tabs + search + Filter); on a wide tablet
+   or laptop it simply wraps, and the tabs keep their natural width, so nothing
+   here applies.
+   Once the toolbar stacks, the tabs stack with it. Each tab holds an icon + a
+   long label ("Supplier Mapped Products") + a status badge — roughly 275px of
+   `white-space: nowrap` content — so two of them cannot share a narrow row.
+   Full-width rows fit that content down to the smallest phones. */
+@media (max-width: 640px) {
+  .prd-toolbar { flex-direction: column; align-items: stretch; }
+  .prd-tabs { width: 100%; flex-direction: column; gap: 6px; }
+  .prd-tab { width: 100%; flex: none; justify-content: flex-start; }
+  /* Truncate rather than clip mid-word if a label still can't fit; the badge
+     carries the count, so it's pinned and never shrinks. */
+  .prd-tab-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .prd-tab-badge { flex-shrink: 0; }
+}
 /* ─── Product list — tablet / mobile ─── */
 @media (max-width: 560px) {
   .prd-root { padding: 10px 12px 20px; gap: 10px; }
@@ -179,8 +195,8 @@
   .prd-hero-sub { font-size: 10px; }
   .prd-hero-btn { width: 100%; justify-content: center; }
   .prd-bref-head-sub { display: none; }
-  .prd-tabs { width: 100%; }
-  .prd-tab { flex: 1; justify-content: center; }
+  /* Layout for the tabs is handled at 640px above — phones only tighten it. */
+  .prd-tab { padding: 9px 12px; }
   .prd-tab-label { font-size: 11.5px; }
   .prd-filter-btn { width: 100%; justify-content: center; }
   .prd-detail-overlay { padding: 10px; }
@@ -418,10 +434,49 @@
 .prd-view-btn.on { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 2px 6px rgba(124,58,237,.4); }
 
 /* Meta */
-.prd-meta { display: flex; align-items: center; gap: 10px; padding: 0 4px; flex-wrap: wrap; }
+/* ─── Applied-filter bar ───
+   Sits between the toolbar and the card grid and lists every active filter as
+   a removable chip. Uses the same violet language as the drawer it mirrors. */
+.prd-meta { display: flex; align-items: center; gap: 7px; padding: 0 4px; flex-wrap: wrap; }
 .prd-meta-count { font-size: 13px; font-weight: 800; color: #5b21b6; }
-.prd-meta-chip { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 99px; background: #ede9fe; border: 1px solid #c4b5fd; color: #6d28d9; font-size: 11px; font-weight: 600; }
-.prd-meta-chip strong { font-weight: 800; margin-left: 4px; }
+.prd-meta-label {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  color: #7c3aed; padding-right: 2px;
+}
+.prd-meta-label svg { opacity: .8; }
+.prd-meta-label-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px;
+  background: #7c3aed; color: #fff; font-size: 9.5px; font-weight: 800;
+}
+.prd-meta-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 5px 4px 9px; border-radius: 99px;
+  background: #ede9fe; border: 1px solid #c4b5fd; color: #6d28d9;
+  font-size: 11px; font-weight: 600; max-width: 260px;
+  transition: border-color .14s, background .14s;
+}
+.prd-meta-chip:hover { background: #e4dcfd; border-color: #a78bfa; }
+/* Group name stays quiet so the VALUE is what the eye lands on. */
+.prd-meta-chip-g { color: #8b7bb8; font-weight: 700; }
+.prd-meta-chip-g::after { content: ':'; }
+.prd-meta-chip strong { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prd-meta-chip-x {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; padding: 0; border: none; border-radius: 99px;
+  background: rgba(124,58,237,.14); color: #6d28d9; cursor: pointer;
+  transition: background .14s, color .14s;
+}
+.prd-meta-chip-x:hover { background: #7c3aed; color: #fff; }
+.prd-meta-clear {
+  margin-left: 2px; padding: 4px 11px; border-radius: 99px;
+  border: 1px dashed #c4b5fd; background: transparent; color: #7c3aed;
+  font-family: inherit; font-size: 11px; font-weight: 800; cursor: pointer;
+  transition: background .14s, border-color .14s, color .14s;
+}
+.prd-meta-clear:hover { background: #7c3aed; border-color: transparent; color: #fff; }
 
 /* Vendor deep-link filter banner */
 .prd-vendor-banner {
@@ -1070,18 +1125,28 @@
   border-top: 1px solid #ede9fe;
   background: #faf5ff;
 }
-.prd-filter-btn {
+/* Drawer footer buttons.
+   Named prd-fbtn rather than prd-filter-btn on purpose: that class is the
+   animated "Filter" trigger pill further up this file, and it carries a
+   ::before glow + an infinitely-looping ::after shine sweep. Sharing the name
+   meant both pseudo-elements rendered on Reset and Apply too, so Reset had a
+   shine animation running across a plain white button. Same base as Apply
+   below — the two differ only in colour, not in shape or motion. */
+.prd-fbtn {
   flex: 1;
   height: 40px; border-radius: 10px;
   font-family: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  transition: transform .12s, background .15s, box-shadow .15s;
+  border: 1.5px solid transparent;
+  transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
 }
-.prd-filter-btn.ghost { background: #fff; color: #5b21b6; border: 1.5px solid #ddd6fe; }
-.prd-filter-btn.ghost:hover { background: #ede9fe; border-color: #c4b5fd; }
-.prd-filter-btn.primary { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; border: none; box-shadow: 0 4px 12px rgba(124,58,237,.4); }
-.prd-filter-btn.primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.5); }
-.prd-filter-btn-count {
+.prd-fbtn.ghost { background: #fff; color: #5b21b6; border-color: #ddd6fe; }
+.prd-fbtn.ghost:hover { background: #ede9fe; border-color: #c4b5fd; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124,58,237,.16); }
+.prd-fbtn.ghost:active { transform: translateY(0); }
+.prd-fbtn.primary { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 4px 12px rgba(124,58,237,.4); }
+.prd-fbtn.primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.5); }
+.prd-fbtn.primary:active { transform: translateY(0); }
+.prd-fbtn-count {
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px;
   background: rgba(255,255,255,.22); color: #fff;
   font-size: 10.5px; font-weight: 800;
@@ -1255,6 +1320,13 @@
   border-color: #4c1d95;
   color: #ddd6fe;
 }
+[data-bs-theme="dark"] .prd-meta-chip:hover { background: #35257a; border-color: #7c3aed; }
+[data-bs-theme="dark"] .prd-meta-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-meta-chip-g { color: #a394d4; }
+[data-bs-theme="dark"] .prd-meta-chip-x { background: rgba(196,181,253,.18); color: #ddd6fe; }
+[data-bs-theme="dark"] .prd-meta-chip-x:hover { background: #7c3aed; color: #fff; }
+[data-bs-theme="dark"] .prd-meta-clear { border-color: #4c1d95; color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-meta-clear:hover { background: #7c3aed; border-color: transparent; color: #fff; }
 
 /* Grid cards — dark variant mirrors .plan-card-v2's deep accent mesh
    so the spinning border still pops against a near-black surface. */
@@ -1495,12 +1567,12 @@
   background: #14102a;
   border-top-color: #3b2a6b;
 }
-[data-bs-theme="dark"] .prd-filter-btn.ghost {
+[data-bs-theme="dark"] .prd-fbtn.ghost {
   background: #1a1430;
   border-color: #3b2a6b;
   color: #c4b5fd;
 }
-[data-bs-theme="dark"] .prd-filter-btn.ghost:hover {
+[data-bs-theme="dark"] .prd-fbtn.ghost:hover {
   background: #221852;
   border-color: #7c3aed;
 }
@@ -2089,8 +2161,6 @@
   .pv2pd-act { width: 100%; }
   .pv2pd-tab { min-width: 0; padding: 7px 6px; font-size: 10px; }
   .pv2pd-tab-body { height: 260px; }
-  .pv2pd-sup-modal { max-width: 100%; }
-  .pv2pd-sup-body { padding: 12px 14px; }
 }
 /* No drop shadow on the tiles (per request) — the left strip + right-side
    accent shade carry the styling instead. */
@@ -2126,7 +2196,12 @@
 .pv2pd-tab-body::-webkit-scrollbar-thumb { background: #d8cef0; border-radius: 6px; }
 .pv2pd-tab-body::-webkit-scrollbar-track { background: transparent; }
 [data-bs-theme="dark"] .pv2pd-tab-body::-webkit-scrollbar-thumb { background: rgba(167,139,250,.3); }
-.pv2pd-tab-text { margin: 0 0 9px; }
+/* Description / brand / confidential are free-text fields typed or pasted into
+   a textarea, so their newlines and blank lines ARE the author's paragraph
+   structure. Without pre-wrap the browser collapses every run of whitespace and
+   the whole thing renders as one blob. break-word keeps a pasted URL or an
+   unbroken code string from overflowing the tab body sideways. */
+.pv2pd-tab-text { margin: 0 0 9px; white-space: pre-wrap; overflow-wrap: break-word; }
 .pv2pd-muted { color: #94a3b8; }
 .pv2pd-tab-rich { display: flex; flex-direction: column; }
 .pv2pd-tab-h { font-size: 11.5px; font-weight: 800; color: #4c1d95; margin: 12px 0 5px; }
@@ -2157,62 +2232,6 @@
 [data-bs-theme="dark"] .pv2pd-qty input { color: #ede9fe; }
 [data-bs-theme="dark"] .pv2pd-act--wish { background: rgba(124,58,237,.16); border-color: rgba(167,139,250,.3); color: #d6c9f5; }
 
-/* ═══ Mapped Suppliers popup ═══ */
-.pv2pd-sup-overlay { position: fixed; inset: 0; z-index: 1060; background: rgba(66, 65, 71, 0.6); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 24px; overflow-y: auto; font-family: var(--font-sans); }
-.pv2pd-sup-modal { width: 100%; max-width: 1060px; margin: auto; background: linear-gradient(180deg,#fbf9ff,#f5f1fe); border: 1px solid rgba(196,181,253,.6); border-radius: 18px; overflow: hidden; box-shadow: 0 30px 80px rgba(20,10,60,.45); animation: pv2pdSupPop .24s cubic-bezier(.22,1,.36,1); }
-@keyframes pv2pdSupPop { from { transform: translateY(16px) scale(.98); opacity: 0; } to { transform: none; opacity: 1; } }
-.pv2pd-sup-head { position: relative; display: flex; align-items: center; gap: 12px; padding: 15px 20px; background: linear-gradient(115deg,#4c1d95 0%,#6d28d9 50%,#8b5cf6 100%); color: #fff; }
-.pv2pd-sup-head-ico { width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.25); display: flex; align-items: center; justify-content: center; font-size: 18px; }
-.pv2pd-sup-head-txt { flex: 1; min-width: 0; }
-.pv2pd-sup-title { font-size: 16px; font-weight: 800; letter-spacing: -.2px; }
-.pv2pd-sup-sub { font-size: 11.5px; color: rgba(255,255,255,.82); margin-top: 1px; }
-.pv2pd-sup-close { width: 32px; height: 32px; border-radius: 9px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.14); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s; }
-.pv2pd-sup-close:hover { background: rgba(255,255,255,.26); }
-.pv2pd-sup-body { padding: 16px 20px; background: #fff; }
-.pv2pd-sup-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.pv2pd-sup-countpill { font-size: 12px; font-weight: 700; color: #6d28d9; background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 20px; padding: 6px 14px; }
-.pv2pd-sup-map { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff; border: none; border-radius: 10px; padding: 8px 16px; cursor: pointer; background: linear-gradient(135deg,#8b5cf6,#7c3aed,#6d28d9); box-shadow: 0 5px 14px rgba(124,58,237,.4); transition: transform .15s, box-shadow .15s; }
-.pv2pd-sup-map:hover { transform: translateY(-1px); box-shadow: 0 8px 20px rgba(124,58,237,.5); }
-.pv2pd-sup-empty { text-align: center; color: #7c3aed; font-weight: 600; font-size: 13px; padding: 34px 16px; border: 1.5px dashed #d6cbf7; border-radius: 12px; background: #fbf9ff; }
-.pv2pd-sup-tablewrap { overflow-x: auto; border: 1px solid #efe9fb; border-radius: 12px; }
-.pv2pd-sup-table { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
-.pv2pd-sup-table thead th { text-align: left; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #94a3b8; padding: 10px 14px; border-bottom: 1px solid #efe9fb; }
-.pv2pd-sup-table tbody td { padding: 11px 14px; border-bottom: 1px solid #f4f0fc; color: #334155; font-weight: 600; vertical-align: middle; }
-.pv2pd-sup-table tbody tr:last-child td { border-bottom: none; }
-.pv2pd-sup-table tbody tr:hover { background: #faf8ff; }
-.pv2pd-sup-sr { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; border-radius: 6px; font-size: 10.5px; font-weight: 800; color: #6d28d9; background: #f5f1fe; border: 1px solid #e2d4fa; }
-.pv2pd-sup-cname { font-weight: 800; color: #1e1b4b; }
-.pv2pd-sup-cperson { color: #7c3aed; font-weight: 700; }
-.pv2pd-sup-code { font-size: 10.5px; font-weight: 800; color: #5b21b6; background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 6px; padding: 2px 8px; }
-.pv2pd-sup-ctotal { font-weight: 800; color: #0f172a; }
-.pv2pd-sup-del { width: 26px; height: 26px; border-radius: 7px; border: 1px solid #fecaca; background: #fef2f2; color: #dc2626; font-size: 15px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .14s, color .14s; }
-.pv2pd-sup-del:hover { background: #dc2626; color: #fff; border-color: transparent; }
-/* Per-row "Edit" button (Mapped Suppliers table) — opens the Edit
-   Mapped Supplier form (apm-mv design) with only the price editable. */
-.pv2pd-sup-edit { display: inline-flex; align-items: center; gap: 4px; font-family: inherit; font-size: 11px; font-weight: 700; color: #6d28d9; background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 7px; padding: 5px 10px; cursor: pointer; transition: background .14s, color .14s, border-color .14s; }
-.pv2pd-sup-edit:hover { background: #7c3aed; color: #fff; border-color: transparent; }
-.pv2pd-sup-foot { display: flex; justify-content: flex-end; padding: 12px 20px; background: #faf8ff; border-top: 1px solid #efe9fb; }
-.pv2pd-sup-closebtn { font-family: inherit; font-size: 13px; font-weight: 700; color: #475569; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 9px 22px; cursor: pointer; transition: background .15s, border-color .15s; }
-.pv2pd-sup-closebtn:hover { background: #f8fafc; border-color: #cbd5e1; }
-[data-bs-theme="dark"] .pv2pd-sup-modal { background: #1c1633; border-color: rgba(167,139,250,.28); }
-[data-bs-theme="dark"] .pv2pd-sup-body { background: #1a1430; }
-[data-bs-theme="dark"] .pv2pd-sup-table thead th { color: #9a93b3; border-bottom-color: rgba(167,139,250,.16); }
-[data-bs-theme="dark"] .pv2pd-sup-table tbody td { color: #cbd5e1; border-bottom-color: rgba(167,139,250,.1); }
-[data-bs-theme="dark"] .pv2pd-sup-table tbody tr:hover { background: rgba(124,58,237,.12); }
-[data-bs-theme="dark"] .pv2pd-sup-cname { color: #f1f5f9; }
-[data-bs-theme="dark"] .pv2pd-sup-ctotal { color: #f1f5f9; }
-[data-bs-theme="dark"] .pv2pd-sup-foot { background: rgba(255,255,255,.03); border-top-color: rgba(167,139,250,.16); }
-[data-bs-theme="dark"] .pv2pd-sup-closebtn { background: #241a47; color: #cbd5e1; border-color: rgba(167,139,250,.25); }
-[data-bs-theme="dark"] .pv2pd-sup-countpill { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .pv2pd-sup-sr { background: rgba(124,58,237,.2); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .pv2pd-sup-code { background: rgba(124,58,237,.2); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .pv2pd-sup-cperson { color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2pd-sup-tablewrap { border-color: rgba(167,139,250,.16); }
-[data-bs-theme="dark"] .pv2pd-sup-empty { background: rgba(124,58,237,.08); border-color: rgba(167,139,250,.3); color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2pd-sup-del { background: rgba(220,38,38,.16); border-color: rgba(248,113,113,.35); color: #fca5a5; }
-[data-bs-theme="dark"] .pv2pd-sup-del:hover { background: #dc2626; color: #fff; border-color: transparent; }
-[data-bs-theme="dark"] .pv2pd-sup-edit { background: rgba(124,58,237,.2); border-color: rgba(167,139,250,.3); color: #c4b5fd; }
-[data-bs-theme="dark"] .pv2pd-sup-edit:hover { background: #7c3aed; color: #fff; border-color: transparent; }
 
 
 /* ============================ AddProductModal.tsx ============================ */
@@ -2316,10 +2335,22 @@
   text-shadow: 0 1px 2px rgba(0,0,0,.18);
   transition: background .15s, transform .15s, box-shadow .15s;
 }
-.apm-head-btn:hover {
+.apm-head-btn:hover:not(:disabled) {
   background: linear-gradient(135deg, rgba(255,255,255,.42), rgba(255,255,255,.22));
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(0,0,0,.22), 0 1px 0 rgba(255,255,255,.4) inset;
+}
+/* Both header pills stay disabled until Stage 1 (Product Core) is saved —
+   they act on a product row that doesn't exist yet. Without this they read as
+   fully active against the purple header and still lift on hover. */
+.apm-head-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  transform: none;
+  background: rgba(255,255,255,.1);
+  border-color: rgba(255,255,255,.22);
+  box-shadow: none;
+  text-shadow: none;
 }
 
 /* ─── Stepper — pill-card style matching the Customer Legal Identity sample.
@@ -3580,7 +3611,8 @@
 .apm-sup-title { font-size: 16px; font-weight: 800; letter-spacing: -.2px; }
 .apm-sup-sub { font-size: 11.5px; color: rgba(255,255,255,.82); margin-top: 1px; }
 .apm-sup-close { width: 32px; height: 32px; border-radius: 9px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.14); color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background .15s; }
-.apm-sup-close:hover { background: rgba(255,255,255,.26); }
+.apm-sup-close:hover:not(:disabled) { background: rgba(255,255,255,.26); }
+.apm-sup-close:disabled { opacity: .5; cursor: not-allowed; }
 .apm-sup-body { padding: 16px 20px; background: #fff; max-height: calc(100vh - 220px); overflow-y: auto; }
 .apm-sup-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 20px; background: #faf8ff; border-top: 1px solid #efe9fb; }
 .apm-sup-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -3603,9 +3635,11 @@
 .apm-sup-ctotal { font-weight: 800; color: #0f172a; }
 .apm-sup-actions { display: inline-flex; align-items: center; gap: 6px; }
 .apm-sup-edit { width: 26px; height: 26px; padding: 0; border-radius: 7px; border: 1px solid #ddd6fe; background: #f5f1fe; color: #6d28d9; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .14s, color .14s, border-color .14s; }
-.apm-sup-edit:hover { background: #6d28d9; color: #fff; border-color: transparent; }
+.apm-sup-edit:hover:not(:disabled) { background: #6d28d9; color: #fff; border-color: transparent; }
+.apm-sup-edit:disabled { opacity: .45; cursor: not-allowed; }
 .apm-sup-del { width: 26px; height: 26px; border-radius: 7px; border: 1px solid #fecaca; background: #fef2f2; color: #dc2626; font-size: 15px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .14s, color .14s; }
-.apm-sup-del:hover { background: #dc2626; color: #fff; border-color: transparent; }
+.apm-sup-del:hover:not(:disabled) { background: #dc2626; color: #fff; border-color: transparent; }
+.apm-sup-del:disabled { opacity: .45; cursor: not-allowed; }
 [data-bs-theme="dark"] .apm-sup-table thead th { color: #9a93b3; border-bottom-color: rgba(167,139,250,.16); }
 [data-bs-theme="dark"] .apm-sup-table tbody td { color: #cbd5e1; border-bottom-color: rgba(167,139,250,.1); }
 [data-bs-theme="dark"] .apm-sup-table tbody tr:hover { background: rgba(124,58,237,.12); }

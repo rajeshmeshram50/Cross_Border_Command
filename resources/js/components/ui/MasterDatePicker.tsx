@@ -147,8 +147,13 @@ export function MasterDatePicker({
 
   // When the bound value changes externally (e.g. record loaded in edit mode),
   // pull the month view into the selected month so it's visible on open.
+  // Ignore an unparseable value — `new Date('Lifetime')` is an Invalid Date,
+  // and letting it reach viewDate NaNs getFullYear()/getMonth() and renders the
+  // day grid blank, which reads to the user as "the calendar doesn't open".
   useEffect(() => {
-    if (currentValue) setViewDate(new Date(currentValue));
+    if (!currentValue) return;
+    const d = new Date(currentValue);
+    if (!Number.isNaN(d.getTime())) setViewDate(d);
   }, [currentValue]);
 
   const pad = (n: number) => String(n).padStart(2, '0');

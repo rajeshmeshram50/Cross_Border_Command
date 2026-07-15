@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ClmSegment;
+use App\Support\MasterBundleCache;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -165,6 +166,10 @@ class ClmSegmentController extends Controller
             ]);
         });
 
+        // Segments feed the cached Vendor / Customer / Product form bundles —
+        // without this they keep serving the old list until the 5-min TTL lapses.
+        MasterBundleCache::bump();
+
         return response()->json(['status' => true, 'data' => $row], 201);
     }
 
@@ -228,6 +233,9 @@ class ClmSegmentController extends Controller
 
         $data['updated_by'] = $user->id;
         $row->update($data);
+
+        // A renamed / deactivated segment must reach the form dropdowns now.
+        MasterBundleCache::bump();
 
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
@@ -308,6 +316,11 @@ class ClmSegmentController extends Controller
         }
 
         $row->delete();
+
+        // Drop the deleted segment from the cached form bundles immediately —
+        // otherwise it keeps appearing (and stays selectable) in the Supplier /
+        // Customer / Product dropdowns until the TTL lapses.
+        MasterBundleCache::bump();
 
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
