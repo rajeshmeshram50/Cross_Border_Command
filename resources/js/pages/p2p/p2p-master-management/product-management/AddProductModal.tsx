@@ -184,14 +184,17 @@ export default function AddProductModal(props: {
    * the raw show() response (data fields + segment_uploads). When
    * absent, the modal falls back to fetching itself. */
   initialProduct?: any | null;
-  /* When true (and the product already exists), the modal jumps straight to
-   * the supplier-mapping step and pops the "Map Supplier" form on mount —
-   * used by ProductView's "Map Supplier" action. */
-  openSupplierMap?: boolean;
+  /* Supplier-only mode (the product must already exist): the edit wizard is
+   * hidden and the Mapped Suppliers popup is the whole UI, so ProductView's
+   * "Mapped Suppliers" action drives this same list + Map Supplier form rather
+   * than keeping its own copy of both. Each map / edit / remove auto-saves to
+   * the server instead of waiting for a Save Product click. */
+  supplierOnly?: boolean;
   onClose: () => void;
   onSaved: (productId: number, finalised: boolean) => void;
 }) {
   const { productId: initialId, initialProduct, onClose, onSaved } = props;
+  const supplierOnly = props.supplierOnly === true;
   const toast = useToast();
   // Department gating: Sales can't map suppliers; Purchase has no Sales (Step 2)
   // stage. Admins / branch users (no department) get the full flow.
@@ -719,6 +722,9 @@ export default function AddProductModal(props: {
      delete icon stages the entry; DeleteConfirmModal hits the
      actual remove on confirm. Mirrors the QC delete flow. */
   const [vendorDeleteTarget, setVendorDeleteTarget] = useState<VendorEntry | null>(null);
+  // Drives the confirm dialog's spinner while the unmap write is in flight
+  // (supplier-only mode saves immediately, so the click has real latency).
+  const [vendorDeleting, setVendorDeleting] = useState(false);
 
   /* Edit-mode for an existing QC row: opens the same QcAddPopup
      pre-filled with the row's data. On save we update the existing
@@ -789,6 +795,24 @@ export default function AddProductModal(props: {
     if (t.length < REMARKS_MIN)  return `Remarks must be at least ${REMARKS_MIN} characters`;
     if (val.length > REMARKS_MAX) return `Remarks must be ${REMARKS_MAX} characters or fewer`;
     return undefined;
+  };
+
+  /* Commit a mutated supplier list and report the outcome.
+   *
+   * In supplier-only mode the write hits the server immediately, so the
+   * success toast must wait for it to land — and a failed write rolls the list
+   * back, or the popup would keep showing a change the server never took
+   * (persistVendors has already toasted the reason). In wizard mode the list
+   * is still a draft that Save Product persists, so there's nothing to await. */
+  const commitVendorList = async (newList: VendorEntry[], successTitle: string, successMsg: string): Promise<boolean> => {
+    const prevList = vendors;
+    setVendors(newList);
+    if (supplierOnly && !(await autoPersistVendors(newList))) {
+      setVendors(prevList);
+      return false;
+    }
+    toast.success(successTitle, successMsg);
+    return true;
   };
 
   const saveVendorDraft = async () => {
@@ -868,15 +892,10 @@ export default function AddProductModal(props: {
           remarks:       vendorRemarks,
         }
       );
-      setVendors(newList);
-      setVendorDraftOpen(false);
-      setVendorEditingId(null);
-      setVendorSelectedCode('');
-      setVendorPurchasePrice('');
-      setVendorGstPct('');
-      setVendorRemarks('');
-      if (props.openSupplierMap) await autoPersistVendors(newList);
-      toast.success('Supplier updated', `${vendorSelected.name} mapping updated`);
+      // Keep the form open on a failed save so the edits aren't lost.
+      if (await commitVendorList(newList, 'Supplier updated', `${vendorSelected.name} mapping updated`)) {
+        closeVendorDraft();
+      }
       return;
     }
 
@@ -902,14 +921,9 @@ export default function AddProductModal(props: {
       remarks: vendorRemarks,
     };
     const newList = [...vendors, entry];
-    setVendors(newList);
-    setVendorDraftOpen(false);
-    setVendorSelectedCode('');
-    setVendorPurchasePrice('');
-    setVendorGstPct('');
-    setVendorRemarks('');
-    if (props.openSupplierMap) await autoPersistVendors(newList);
-    toast.success('Supplier mapped', `${entry.vendorName} added to this product`);
+    if (await commitVendorList(newList, 'Supplier mapped', `${entry.vendorName} added to this product`)) {
+      closeVendorDraft();
+    }
   };
 
   /* Open the Map Vendor draft in EDIT mode — preselect the vendor in
@@ -917,7 +931,11 @@ export default function AddProductModal(props: {
    * the row. saveVendorDraft sees vendorEditingId and updates in place. */
   const openVendorEdit = (v: VendorEntry) => {
     setVendorEditingId(v.id);
-    setVendorSelectedCode(v.vendorCode);
+    /* The dropdown keys off the master's code, so match on vendor id first —
+       a row whose code drifted from the master would otherwise open the form
+       with an empty Supplier Name. */
+    const opt = vendorOpts.find(o => (v.vendorId && o.id === String(v.vendorId)) || (v.vendorCode && o.code === v.vendorCode));
+    setVendorSelectedCode(opt?.code ?? v.vendorCode);
     setVendorPurchasePrice(v.purchasePrice ? String(v.purchasePrice) : '');
     setVendorGstPct(v.gstPct ? String(v.gstPct) : '');
     setVendorRemarks(v.remarks ?? '');
@@ -939,8 +957,11 @@ export default function AddProductModal(props: {
      product's "Map Supplier" action) the wizard is hidden, so dismissing the
      popup must close the whole modal and return to the product view. */
   const closeSupplierPopup = () => {
+    // Never tear the popup down mid-write — the save would land with no UI
+    // left to report the outcome to.
+    if (saving) return;
     setSupplierPopupOpen(false);
-    if (props.openSupplierMap) onClose();
+    if (supplierOnly) onClose();
   };
 
   /* ── GST (%) master — add / remove available rates from the popup ── */
@@ -982,10 +1003,15 @@ export default function AddProductModal(props: {
     }
   };
 
-  const removeVendor = async (id: string) => {
-    const newList = vendors.filter(v => v.id !== id);
-    setVendors(newList);
-    if (props.openSupplierMap) await autoPersistVendors(newList);
+  const removeVendor = async (id: string): Promise<boolean> => {
+    const target = vendors.find(v => v.id === id);
+    return commitVendorList(
+      vendors.filter(v => v.id !== id),
+      'Supplier removed',
+      supplierOnly
+        ? `${target?.vendorName ?? 'The supplier'} has been unmapped from this product.`
+        : `${target?.vendorName ?? 'The supplier'} removed — save the product to apply it.`,
+    );
   };
 
   // Lock the page scroll so the modal feels like a true overlay rather
@@ -1343,7 +1369,15 @@ export default function AddProductModal(props: {
           id: String(v.id),
           vendorId: (v as Record<string, unknown>).vendor_id ? String((v as Record<string, unknown>).vendor_id) : '',
           productCode: p.product_code ?? '',
-          vendorCode: String(v.vendor_code ?? ''),
+          /* A mapping's stored vendor_code is a snapshot from map time and goes
+             stale when the supplier is renamed / recoded. Prefer the live code
+             off the eager-loaded vendor relation so the list, the Map Supplier
+             dropdown preselect, and the save payload all track the master. */
+          vendorCode: String(
+            (v.vendor as { vendor_code?: string | null } | null | undefined)?.vendor_code
+            ?? v.vendor_code
+            ?? ''
+          ),
           vendorName: String(v.vendor_name ?? ''),
           website: String(v.vendor_website ?? ''),
           contactPerson: String(v.contact_person ?? ''),
@@ -1710,7 +1744,7 @@ export default function AddProductModal(props: {
   };
 
   /* Auto-save the vendor list to the product and silently refresh the parent
-     (openSupplierMap = managing an existing product's suppliers). */
+     (supplier-only mode = managing an existing product's suppliers). */
   const autoPersistVendors = async (list: VendorEntry[]): Promise<boolean> => {
     if (!productId) return false;
     setSaving(true);
@@ -1738,34 +1772,28 @@ export default function AddProductModal(props: {
     setSaving(false);
   };
 
-  /* One-shot: when opened via ProductView's "Map Supplier" action, jump to
-     the supplier step and pop the Map Supplier form once the product and
-     masters have finished loading. */
-  const supplierMapFiredRef = useRef(false);
+  /* One-shot: in supplier-only mode, open the Mapped Suppliers popup once the
+     product and masters have loaded — the popup needs the vendor master to
+     resolve each row's type / state. The popup's own "Map Supplier" button
+     takes it from there. */
+  const supplierPopupFiredRef = useRef(false);
   useEffect(() => {
-    if (props.openSupplierMap && !supplierMapFiredRef.current && productId && !mastersLoading && !loadingEdit) {
-      supplierMapFiredRef.current = true;
+    if (supplierOnly && !supplierPopupFiredRef.current && productId && !mastersLoading && !loadingEdit) {
+      supplierPopupFiredRef.current = true;
       setSupplierPopupOpen(true);
-      // Only pop the Map Supplier form when the product has a GST % — otherwise
-      // land on the (empty) supplier list and tell the user what's missing.
-      if (canMapSupplier) {
-        setVendorDraftOpen(true);
-      } else {
-        toast.error('GST % required', 'Set a GST % on this product (Sales Config step) before you can map a supplier.');
-      }
     }
-  }, [props.openSupplierMap, productId, mastersLoading, loadingEdit]);
+  }, [supplierOnly, productId, mastersLoading, loadingEdit]);
 
   return createPortal((
     // Backdrop click intentionally does NOT close the wizard — the
     // user has multi-step form data in flight; an accidental click
     // outside would wipe everything. The Cancel button and the
     // top-right X are the only dismissal paths.
-    <div className={`apm-backdrop ${props.openSupplierMap ? 'apm-backdrop-supplieronly' : ''}`}>
-      {/* Supplier-only mode (opened from a product's "Map Supplier"): the
-          full edit wizard is hidden so only the standalone Map Supplier
-          popup shows over the dim backdrop. */}
-      <div className={`apm-modal ${props.openSupplierMap ? 'apm-modal-hidden' : ''}`} onClick={(e) => e.stopPropagation()}>
+    <div className={`apm-backdrop ${supplierOnly ? 'apm-backdrop-supplieronly' : ''}`}>
+      {/* Supplier-only mode (opened from a product's "Mapped Suppliers" /
+          "Map Supplier" action): the full edit wizard is hidden so only the
+          standalone Mapped Suppliers popup shows over the dim backdrop. */}
+      <div className={`apm-modal ${supplierOnly ? 'apm-modal-hidden' : ''}`} onClick={(e) => e.stopPropagation()}>
         {/* Save-time interaction lock — swallows every click while a step save
             is in flight so no second action can be triggered mid-save (bug:
             "buttons remain clickable during a loading action"). Auto-clears
@@ -1806,8 +1834,10 @@ export default function AddProductModal(props: {
             <button
               type="button"
               className="apm-head-btn"
-              title="Map / manage GST %"
-              disabled={saving}
+              // Same Stage-1 gate as Map Supplier: a GST % is mapped onto a
+              // product row, which only exists once Core has been saved.
+              title={productId ? 'Map / manage GST %' : 'Save Product Core Information (Stage 1) before mapping a GST %'}
+              disabled={saving || !productId}
               onClick={() => {
                 if (!productId) {
                   toast.error('Complete Core Information first', 'Save Product Core Information (Save & Next) before mapping a GST %.');
@@ -2290,7 +2320,7 @@ export default function AddProductModal(props: {
                     <div className="apm-sup-title">Mapped Suppliers</div>
                     <div className="apm-sup-sub">Suppliers linked to this product with purchase price &amp; GST</div>
                   </div>
-                  <button className="apm-sup-close" onClick={closeSupplierPopup} aria-label="Close">
+                  <button className="apm-sup-close" onClick={closeSupplierPopup} disabled={saving} aria-label="Close">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                   </button>
                 </div>
@@ -2300,7 +2330,7 @@ export default function AddProductModal(props: {
                 <button
                   type="button"
                   className="apm-sup-map"
-                  disabled={!canMapSupplier}
+                  disabled={!canMapSupplier || saving}
                   title={canMapSupplier ? undefined : 'Set a GST % on this product (Sales Config) before mapping a supplier.'}
                   onClick={() => {
                     if (!canMapSupplier) {
@@ -2328,7 +2358,7 @@ export default function AddProductModal(props: {
                           <div className="apm-mv-popup-title-sub">Link a supplier with purchase price &amp; GST for this product</div>
                         </div>
                       </div>
-                      <button className="apm-close apm-mv-close" onClick={closeVendorDraft} aria-label="Close">
+                      <button className="apm-close apm-mv-close" onClick={closeVendorDraft} disabled={saving} aria-label="Close">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                       </button>
                     </div>
@@ -2404,12 +2434,15 @@ export default function AddProductModal(props: {
                     </div>
 
                     <div className="apm-mv-popup-foot">
-                      <button className="apm-btn-ghost" onClick={closeVendorDraft}>Cancel</button>
+                      <button className="apm-btn-ghost" onClick={closeVendorDraft} disabled={saving}>Cancel</button>
                       {/* Not disabled on missing fields — saveVendorDraft validates
                           and toasts exactly what's missing (e.g. Purchase Price), so
-                          the user isn't left staring at a silently-dead button. */}
-                      <button className="apm-btn-primary" onClick={saveVendorDraft}>
-                        {vendorEditingId ? 'Save Changes' : 'Save'}
+                          the user isn't left staring at a silently-dead button.
+                          It IS disabled mid-save: in supplier-only mode this writes
+                          to the server, so a second click would fire a duplicate PUT. */}
+                      <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={saving}>
+                        {saving ? <span className="apm-spinner" /> : null}
+                        {saving ? 'Saving…' : (vendorEditingId ? 'Save Changes' : 'Save')}
                       </button>
                     </div>
                   </div>
@@ -2425,7 +2458,7 @@ export default function AddProductModal(props: {
                     <thead>
                       <tr>
                         <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>State</th><th>Contact</th>
-                        <th>Price (₹)</th><th>GST %</th><th>GST (₹)</th><th>Total (₹)</th><th aria-label="Remove" />
+                        <th>Price (₹)</th><th>GST %</th><th>GST (₹)</th><th>Total (₹)</th><th>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2453,10 +2486,10 @@ export default function AddProductModal(props: {
                           <td className="apm-sup-ctotal">₹{v.totalAmt.toLocaleString()}</td>
                           <td>
                             <div className="apm-sup-actions">
-                              <button type="button" className="apm-sup-edit" title="Edit supplier" aria-label="Edit supplier" onClick={() => openVendorEdit(v)}>
+                              <button type="button" className="apm-sup-edit" title="Edit supplier" aria-label="Edit supplier" disabled={saving} onClick={() => openVendorEdit(v)}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                               </button>
-                              <button type="button" className="apm-sup-del" title="Remove supplier" onClick={() => setVendorDeleteTarget(v)}>
+                              <button type="button" className="apm-sup-del" title="Remove supplier" aria-label="Remove supplier" disabled={saving} onClick={() => setVendorDeleteTarget(v)}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                               </button>
                             </div>
@@ -2470,11 +2503,11 @@ export default function AddProductModal(props: {
               )}
                 </div>
                 <div className="apm-sup-foot">
-                  <button className="apm-btn-ghost" onClick={closeSupplierPopup}>Close</button>
+                  <button className="apm-btn-ghost" onClick={closeSupplierPopup} disabled={saving}>Close</button>
                   {/* Managing an existing product's suppliers auto-saves each
                       map/edit/remove, so no separate "Save Product" is needed —
                       only the add-wizard flow shows it. */}
-                  {!props.openSupplierMap && (
+                  {!supplierOnly && (
                     <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving || vendors.length === 0}>
                       {saving ? 'Saving…' : 'Save Product'}
                     </button>
@@ -2571,13 +2604,21 @@ export default function AddProductModal(props: {
         open={vendorDeleteTarget !== null}
         itemName={vendorDeleteTarget?.vendorName}
         title="Remove Mapped Supplier"
-        subMessage={props.openSupplierMap
+        subMessage={supplierOnly
           ? 'This unmaps the supplier from the product and saves immediately.'
           : 'This unmaps the supplier from the product on this form. The product must be saved (Save Product) for the change to persist on the server.'}
-        onClose={() => setVendorDeleteTarget(null)}
-        onConfirm={() => {
-          if (vendorDeleteTarget) removeVendor(vendorDeleteTarget.id);
-          setVendorDeleteTarget(null);
+        loading={vendorDeleting}
+        confirmLabel="Remove"
+        confirmingLabel="Removing..."
+        onClose={() => { if (!vendorDeleting) setVendorDeleteTarget(null); }}
+        onConfirm={async () => {
+          if (!vendorDeleteTarget || vendorDeleting) return;
+          setVendorDeleting(true);
+          const ok = await removeVendor(vendorDeleteTarget.id);
+          setVendorDeleting(false);
+          // Stay open on failure — the error toast explains why, and the user
+          // can retry without hunting for the row again.
+          if (ok) setVendorDeleteTarget(null);
         }}
       />
 
