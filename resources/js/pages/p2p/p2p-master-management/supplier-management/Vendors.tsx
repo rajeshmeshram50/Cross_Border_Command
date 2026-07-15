@@ -725,7 +725,9 @@ useEffect(() => {
             <div className="sl-seg-pop-list" style={{ maxHeight: 148 }}>
               {segPop.segments.map((s, idx) => (
                 <div key={`${s}-${idx}`} className={`sl-seg-pop-row ${idx % 2 ? 'alt' : ''}`}>
-                  <span className="sl-seg" title={s}>{s.length > 20 ? s.slice(0, 20) + '…' : s}</span>
+                  <Tooltip label={s}>
+                    <span className="sl-seg">{s.length > 20 ? s.slice(0, 20) + '…' : s}</span>
+                  </Tooltip>
                 </div>
               ))}
             </div>

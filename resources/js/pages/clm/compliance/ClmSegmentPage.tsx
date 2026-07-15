@@ -10,6 +10,21 @@ import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { ClmSkeletonRows, useScrollLock } from '../shared/clmCommon';
+import { bustCustomerMasterBundle } from '../../sales/core-masters/customer/customerBundleCache';
+import { bustProductMasterBundle } from '../../p2p/p2p-master-management/product-management/productBundleCache';
+import { bustVendorMasterBundle } from '../../p2p/p2p-master-management/supplier-management/vendorBundleCache';
+
+/* Segments feed the cached Supplier / Customer / Product form bundles
+ * (sessionStorage, 5-min TTL). Without dropping them here, a segment renamed or
+ * deleted on this page keeps showing — and staying selectable — in those
+ * dropdowns until the TTL lapses. MasterPage does the same for the masters it
+ * owns; segments live on this page instead, so they were missed.
+ * (Client / Branch bundles carry no segments — nothing to drop there.) */
+function bustSegmentConsumerBundles(): void {
+  bustCustomerMasterBundle();
+  bustProductMasterBundle();
+  bustVendorMasterBundle();
+}
 
 /* Central CLM → Segment Master.
  * Faithful 3-card port of the CLM-Master.html prototype:
@@ -157,6 +172,7 @@ export default function ClmSegmentPage() {
     try {
       if (id) { await api.put(`/clm/segments/${id}`, form); toast.success('Updated', `${clipName(form.name)} saved`); }
       else    { await api.post('/clm/segments', form);     toast.success('Added',   `${clipName(form.name)} added`); }
+      bustSegmentConsumerBundles();
       setModalOpen(false); setEditing(null); reload();
       return { ok: true };
     } catch (e: any) {
@@ -179,7 +195,7 @@ export default function ClmSegmentPage() {
   const onDelete = async () => {
     if (!pendingDelete || deleting) return;
     setDeleting(true);
-    try { await api.delete(`/clm/segments/${pendingDelete.id}`); toast.success('Deleted', `${clipName(pendingDelete.name)} removed`); setPendingDelete(null); reload(); }
+    try { await api.delete(`/clm/segments/${pendingDelete.id}`); bustSegmentConsumerBundles(); toast.success('Deleted', `${clipName(pendingDelete.name)} removed`); setPendingDelete(null); reload(); }
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
     finally { setDeleting(false); }
   };

@@ -72,6 +72,11 @@ export type VendorPayload = {
   legalName: string;
   vendorType: string;
   website: string;
+  /* GST is captured once here on Stage 1 and flows read-only into every GST
+   * Scrutiny entry (Step 2) — mirrors the Customer master. gstNumber is only
+   * meaningful when gstApplicable is 'Yes'. */
+  gstApplicable: 'Yes' | 'No';
+  gstNumber: string;
   riskLevel: string;
   vendorBehaviour: string;
   segment: string;
@@ -470,6 +475,20 @@ export default function AddVendorModal(props: {
   const [legalName,   setLegalName]   = useState('');
   const [vendorType,  setVendorType]  = useState('');
   const [website,     setWebsite]     = useState('');
+  /* GST Applicable defaults to 'No' so a supplier that isn't GST-registered
+   * needs no extra clicks; picking 'Yes' reveals the GST Number field, whose
+   * value the GST Scrutiny popup then renders read-only. */
+  const [gstApplicable, setGstApplicable] = useState<'Yes' | 'No'>('No');
+  const [gstNumber,     setGstNumber]     = useState('');
+  /* GST Scrutiny only exists for a GST-registered supplier — with GST Applicable
+   * = 'No' there is no GSTIN to report on, so the Step-2 tab is dropped entirely
+   * and Bank Details becomes the last sub-tab. Save & Next / Previous / the
+   * "last tab?" footer check all walk THIS list, not the static KYC_TAB_ORDER,
+   * so navigation can never land on the hidden tab. */
+  const kycTabOrder = useMemo(
+    () => (gstApplicable === 'Yes' ? KYC_TAB_ORDER : KYC_TAB_ORDER.filter(t => t !== 'gst')),
+    [gstApplicable],
+  );
   const [riskLevel,   setRiskLevel]   = useState('');
   const [vendorBehaviour, setVendorBehaviour] = useState('');
   /* Segment is multi-valued — array of segment ids (as strings) so a
@@ -677,6 +696,12 @@ export default function AddVendorModal(props: {
   /* Id of the bank row being edited (null = the popup is in Add mode). */
   const [editingBankId,  setEditingBankId]  = useState<string | null>(null);
   const [gstPopupOpen,   setGstPopupOpen]   = useState(false);
+  /* Flipping GST Applicable to 'No' while standing ON the GST Scrutiny tab would
+   * strand the user on a tab that no longer has a pill to click back from — fall
+   * back to Bank Details (the new last tab). */
+  useEffect(() => {
+    if (gstApplicable !== 'Yes' && kycTab === 'gst') setKycTab('bank');
+  }, [gstApplicable, kycTab]);
 
   const [ddDraft,    setDdDraft]    = useState<DdDraft>(EMPTY_DD_DRAFT);
   const [ownerDraft, setOwnerDraft] = useState<OwnerDraft>(EMPTY_OWNER_DRAFT);
@@ -1209,6 +1234,7 @@ export default function AddVendorModal(props: {
       id: number;
       vendor_code?: string | null;
       company_name?: string | null; legal_name?: string | null; website?: string | null;
+      gst_applicable?: string | null; gst_number?: string | null;
       vendor_type_id?: number | null; vendor_type_name?: string | null; risk_level_id?: number | null;
       vendor_behaviour_id?: number | null; segment_id?: number | null;
       segment_ids?: Array<number | string> | string | null;
@@ -1282,6 +1308,10 @@ export default function AddVendorModal(props: {
         setCompanyName(v.company_name ?? '');
         setLegalName(v.legal_name ?? '');
         setWebsite(v.website ?? '');
+        // Legacy suppliers predate these columns — fall back to 'No'/'' rather
+        // than leaving the select empty (it has no blank option).
+        setGstApplicable(v.gst_applicable === 'Yes' ? 'Yes' : 'No');
+        setGstNumber(v.gst_number ?? '');
         // Supplier Type now binds to the fixed-vocabulary NAME.
         setVendorType(v.vendor_type_name ?? '');
         setRiskLevel(numStr(v.risk_level_id));
@@ -1481,6 +1511,7 @@ export default function AddVendorModal(props: {
      fold, or a Website that contains spaces). */
   const FIELD_LABELS: Record<string, string> = {
     companyName: 'Company Name', legalName: 'Legal Name', website: 'Company Website',
+    gstNumber: 'GST Number',
     vendorType: 'Supplier Type', riskLevel: 'Risk Level', vendorBehaviour: 'Supplier Behaviour',
     segment: 'Supplier Segment', complianceBehaviour: 'Compliance Behaviour',
     registeredOffice: 'Registered Office Address', country: 'Country', state: 'State',
@@ -1510,6 +1541,13 @@ export default function AddVendorModal(props: {
                               errs.segment             = 'Select at least one supplier segment';
     if (!complianceBehaviour) errs.complianceBehaviour = 'Compliance Behaviour is required';
     if (website)             { const e = validateWebsite(website); if (e) errs.website = e; }
+    // Only enforced when GST applies. The GST Scrutiny popup renders this number
+    // read-only, so a bad value has to be caught HERE — there's no second chance
+    // to fix it downstream.
+    if (gstApplicable === 'Yes') {
+      if (!gstNumber.trim()) errs.gstNumber = 'GST Number is required';
+      else { const e = validateGstin(gstNumber); if (e) errs.gstNumber = e; }
+    }
     // The Supplier Address block lives on THIS same tab, so validate it here too
     // — before the API call. A missing/invalid State Code (or any address field)
     // now blocks on the frontend and never wastes a /vendors/step/identity call.
@@ -1528,6 +1566,10 @@ export default function AddVendorModal(props: {
         company_name: companyName,
         legal_name: legalName || null,
         website: website || null,
+        gst_applicable: gstApplicable,
+        // Backend also nulls this when applicable is 'No' — belt and braces so a
+        // stale number can't reach the read-only Scrutiny field either way.
+        gst_number: gstApplicable === 'Yes' ? (gstNumber.trim() || null) : null,
         // Supplier Type is sent as the fixed-vocabulary NAME; the backend
         // resolves it to the master_vendor_types FK.
         vendor_type: vendorType || null,
@@ -1563,7 +1605,20 @@ export default function AddVendorModal(props: {
       toast.success('Identity saved', 'Vendor identity details captured');
       return true;
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save vendor identity';
+      const res = (err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } })?.response?.data;
+      const msg = res?.message || 'Could not save vendor identity';
+      // Surface field-keyed 422s (e.g. a duplicate GST number) UNDER the field
+      // as well as in the toast, and scroll it into view — the GST field can be
+      // below the fold, and a toast alone leaves the user hunting for it.
+      const apiErrs = res?.errors ?? {};
+      const mapped: Record<string, string> = {};
+      if (apiErrs.gst_number?.[0]) mapped.gstNumber = apiErrs.gst_number[0];
+      if (Object.keys(mapped).length) {
+        setFieldErrors(prev => ({ ...prev, ...mapped }));
+        setTimeout(() => {
+          document.querySelector('.avm-field.has-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 50);
+      }
       toast.error('Save failed', msg);
       return false;
     } finally {
@@ -1783,9 +1838,9 @@ export default function AddVendorModal(props: {
         // the wizard advance to Step 3.
         const ok = await saveKyc();
         if (!ok) return;
-        const idx = KYC_TAB_ORDER.indexOf(kycTab);
-        if (idx >= 0 && idx < KYC_TAB_ORDER.length - 1) {
-          setKycTab(KYC_TAB_ORDER[idx + 1]);
+        const idx = kycTabOrder.indexOf(kycTab);
+        if (idx >= 0 && idx < kycTabOrder.length - 1) {
+          setKycTab(kycTabOrder[idx + 1]);
         }
         // Last KYC sub-tab is the final step — the Save/Update button
         // (finishSupplier) closes the wizard; there is no Product step to
@@ -1801,8 +1856,8 @@ export default function AddVendorModal(props: {
     // Pure navigation — no save — so the user can flip back through sub-tabs.
     if (step > 2) { setStep((step - 1) as StepKey); return; }
     if (step === 2) {
-      const idx = KYC_TAB_ORDER.indexOf(kycTab);
-      if (idx > 0) { setKycTab(KYC_TAB_ORDER[idx - 1]); return; }   // back one KYC sub-tab
+      const idx = kycTabOrder.indexOf(kycTab);
+      if (idx > 0) { setKycTab(kycTabOrder[idx - 1]); return; }   // back one KYC sub-tab
       // First KYC sub-tab → step back into Step 1's LAST sub-tab (Contact Person).
       setStep(1);
       setIdTab('address');
@@ -1831,7 +1886,7 @@ export default function AddVendorModal(props: {
       if (!okProd) return;
     }
     onSubmit({
-      companyName, legalName, vendorType, website, riskLevel,
+      companyName, legalName, vendorType, website, gstApplicable, gstNumber, riskLevel,
       vendorBehaviour, segment, complianceBehaviour,
       registeredOffice, country, state, stateCode, city, pincode,
       contactName, designation, contactNo, email, whatsappEnabled,
@@ -1890,7 +1945,22 @@ export default function AddVendorModal(props: {
     setDdPopupOpen(false);
     toast.success('Document added', `${row.code} ${row.documentName} added`);
   };
-  const removeDdRow = (id: string) => setDdRows(prev => prev.filter(r => r.id !== id));
+  /* Local-only removal (the KYC payload is replace-all, so it becomes permanent
+   * on the next Update & Next) — but with no confirm, one stray click on a saved
+   * document was unrecoverable short of abandoning the whole wizard. Matches
+   * removeBankRow / removeGstRow / removeMapRow, which all confirm. */
+  const removeDdRow = async (id: string) => {
+    const ok = await confirm({
+      title: 'Remove Due Diligence Document?',
+      message: 'This due-diligence document will be removed from this supplier. It is deleted for good once you save.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
+    setDdRows(prev => prev.filter(r => r.id !== id));
+  };
 
   const openOwnerPopup = () => { setOwnerDraft(EMPTY_OWNER_DRAFT); setOwnerPopupOpen(true); };
   const saveOwnerDraft = () => {
@@ -1902,7 +1972,18 @@ export default function AddVendorModal(props: {
     setOwnerPopupOpen(false);
     toast.success('Owner KYC added', `${row.code} ${row.documentName} added`);
   };
-  const removeOwnerRow = (id: string) => setOwnerRows(prev => prev.filter(r => r.id !== id));
+  const removeOwnerRow = async (id: string) => {
+    const ok = await confirm({
+      title: 'Remove Owner KYC Document?',
+      message: 'This KYC document will be removed from this supplier. It is deleted for good once you save.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
+    setOwnerRows(prev => prev.filter(r => r.id !== id));
+  };
 
   const openLicPopup = () => {
     setLicDraft(EMPTY_LIC_DRAFT);
@@ -1923,7 +2004,18 @@ export default function AddVendorModal(props: {
     setLicPopupOpen(false);
     toast.success('Trade license added', `${row.code} ${row.licenseType} added`);
   };
-  const removeLicRow = (id: string) => setLicenseRows(prev => prev.filter(r => r.id !== id));
+  const removeLicRow = async (id: string) => {
+    const ok = await confirm({
+      title: 'Remove Trade License?',
+      message: 'This trade license will be removed from this supplier. It is deleted for good once you save.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
+    setLicenseRows(prev => prev.filter(r => r.id !== id));
+  };
 
   /** Strip the storage slug prefix → original filename for table labels. */
   const lastName = (p?: string | null): string => {
@@ -2043,13 +2135,15 @@ export default function AddVendorModal(props: {
   };
 
   const openGstPopup = () => {
-    // Start each new scrutiny entry with a BLANK GST number so it is clearly
-    // its own independent record. The old code pre-filled it from the previous
-    // row, which made a fresh entry look like it "carried over" and matched the
-    // existing rows — so a user adding a 2nd GST thought all rows had changed.
-    // (Every row is stored separately server-side; adding one never alters the
-    // others — this just removes the misleading pre-fill.)
-    setGstDraft({ ...EMPTY_GST_DRAFT });
+    // Every scrutiny entry reports on the SAME GSTIN — the supplier's own, taken
+    // from Stage 1 — so seed it here and render it read-only in the popup.
+    // Without a Stage-1 number the popup's required read-only field would be an
+    // unfixable dead end (nothing to type into), so send the user to the source.
+    if (gstApplicable !== 'Yes' || !gstNumber.trim()) {
+      toast.error('GST Number missing', 'Set GST Applicable to “Yes” and enter the GST Number on Supplier Identification (Stage 1) first.');
+      return;
+    }
+    setGstDraft({ ...EMPTY_GST_DRAFT, gstNumber: gstNumber.trim().toUpperCase() });
     setGstPopupOpen(true);
   };
   const saveGstDraft = async () => {
@@ -2304,6 +2398,11 @@ export default function AddVendorModal(props: {
    * delete saves right away — no waiting for the final "Save Supplier". Stays
    * local (no-op) while the vendor doesn't exist yet (mid add-flow). Returns
    * false on failure so the caller can keep the popup open. */
+  /* In-flight flag for the replace-all product-mapping write. Locks the Mapped
+   * Products popup (Map Product / Edit / Remove / Close) so a second write can't
+   * race the first — see removeMapRow. */
+  const [mappingBusy, setMappingBusy] = useState(false);
+
   const persistMappings = async (list: ProductMappingRow[]): Promise<boolean> => {
     if (!vendorId) return true;   // add-flow: vendor not created yet → keep local
     try {
@@ -2389,6 +2488,11 @@ export default function AddVendorModal(props: {
     toast.success('Product mapped', `${row.productCode} ${row.productName} added`);
   };
   const removeMapRow = async (id: string) => {
+    // persistMappings is a REPLACE-ALL post. Two overlapping removes each build
+    // `next` from the same stale productMappings closure, so the later response
+    // silently resurrects the row the earlier one deleted. Guard at the top —
+    // the popup's disabled/veil is a UI courtesy, this is the correctness fix.
+    if (mappingBusy) return;
     const ok = await confirm({
       title: 'Remove Mapped Product?',
       message: 'This product mapping will be permanently removed from this supplier. This action cannot be undone.',
@@ -2398,9 +2502,17 @@ export default function AddVendorModal(props: {
       icon: 'delete-bin-line',
     });
     if (!ok) return;
-    const next = productMappings.filter(r => r.id !== id);
-    if (!(await persistMappings(next))) return;
-    setProductMappings(next);
+    // Re-check: the confirm dialog is awaited, so another remove could have
+    // started while it was open.
+    if (mappingBusy) return;
+    setMappingBusy(true);
+    try {
+      const next = productMappings.filter(r => r.id !== id);
+      if (!(await persistMappings(next))) return;
+      setProductMappings(next);
+    } finally {
+      setMappingBusy(false);
+    }
   };
 
   /* Backfill HSN / Segment on existing mappings once productOpts arrive.
@@ -2489,13 +2601,27 @@ export default function AddVendorModal(props: {
      that ALREADY has a primary contact), UNLESS the user clicked Edit on its
      row — then editingPrimary re-opens it. If a supplier was created WITHOUT a
      primary contact, the card stays open on edit so it can finally be filled. */
-  // Only treat the primary contact as "saved/locked" when it is COMPLETE (all
-  // required fields present). An incomplete/partial contact — e.g. a supplier
-  // whose address was saved at Stage 1 but the contact person was never fully
-  // filled — must stay OPEN on edit so the user can finish it, instead of being
-  // locked behind the Edit-icon step with invalid data that blocks Save.
-  const hasPrimaryContact = !!(contactName.trim() && designation.trim() && contactNo.trim() && email.trim());
-  const primaryLocked = (primarySaved || (isEdit && hasPrimaryContact)) && !editingPrimary;
+  // Only treat the primary contact as "saved/locked" when the PERSISTED contact
+  // is COMPLETE. An incomplete/partial contact — e.g. a supplier whose address
+  // was saved at Stage 1 but the contact person was never fully filled — must
+  // stay OPEN on edit so the user can finish it.
+  //
+  // Derive this from savedPrimary (the last-loaded/last-saved snapshot), NOT the
+  // live form fields. Reading the live fields meant that filling in the LAST
+  // missing required field flipped the card to locked mid-keystroke: on a
+  // supplier with no email, typing the first character of one instantly set
+  // readOnly and fired the "locked" toast, so the email could never be finished.
+  // Using the snapshot also keeps the lock in step with the Primary row below —
+  // locked now always implies that row exists, so the toast's "click the Edit
+  // icon on the primary row" is always something the user can actually do.
+  const savedPrimaryComplete = !!(
+    savedPrimary
+    && savedPrimary.name.trim()
+    && savedPrimary.designation.trim()
+    && savedPrimary.phone.trim()
+    && savedPrimary.email.trim()
+  );
+  const primaryLocked = (primarySaved || (isEdit && savedPrimaryComplete)) && !editingPrimary;
   const startEditPrimary = () => {
     setEditingPrimary(true);
     primaryCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2654,8 +2780,12 @@ export default function AddVendorModal(props: {
       <div className="avm-modal" onClick={(e) => e.stopPropagation()} style={{ position: 'relative' }}>
         {/* While a step save is in flight, a veil over the whole modal blocks
             EVERY other action (Map Product, tab switch, Add buttons, etc.) until
-            the save resolves. Popups have their own veil (PopupShell). */}
-        {(saving || savingPrimary) && <div className="avm-busy-veil" aria-hidden />}
+            the save resolves. Popups have their own veil (PopupShell).
+            segAddLoading is here too: the Segment "+" needs a /clm/segments
+            round-trip before its form can open, and its own button spinner only
+            disabled THAT button — every other "+" and action stayed live, so the
+            user could stack a second popup on top of the one still opening. */}
+        {(saving || savingPrimary || segAddLoading) && <div className="avm-busy-veil" aria-hidden />}
         {/* ─── Header ─── */}
         <div className="avm-head">
           <div className="avm-head-left">
@@ -2968,6 +3098,38 @@ export default function AddVendorModal(props: {
                       <SelectInput value={complianceBehaviour} onChange={(v) => { setComplianceBehaviour(v); clearFieldError('complianceBehaviour'); }} placeholder="Select" options={complianceOpts} />
                     </Field>
                   </div>
+                  {/* GST — captured once here and reused read-only by every GST
+                      Scrutiny entry in Step 2 (mirrors the Customer master).
+                      GST Number only appears when GST is applicable. */}
+                  <div className="avm-grid-3">
+                    <Field label="GST Applicable" required>
+                      <SelectInput
+                        value={gstApplicable}
+                        onChange={(v) => {
+                          setGstApplicable(v as 'Yes' | 'No');
+                          // Switching to No drops the number (backend does the same)
+                          // so it can't resurface read-only in GST Scrutiny.
+                          if (v === 'No') { setGstNumber(''); clearFieldError('gstNumber'); }
+                        }}
+                        placeholder="Select"
+                        options={['Yes', 'No']}
+                      />
+                    </Field>
+                    {gstApplicable === 'Yes' && (
+                      <Field label="GST Number" required error={fieldErrors.gstNumber}>
+                        <input
+                          className="avm-input"
+                          placeholder="e.g. 27AADCI6120M1ZH"
+                          value={gstNumber}
+                          maxLength={15}
+                          onChange={e => {
+                            setGstNumber(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15));
+                            clearFieldError('gstNumber');
+                          }}
+                        />
+                      </Field>
+                    )}
+                  </div>
                 </SectionCard>
               )}
 
@@ -3094,8 +3256,11 @@ export default function AddVendorModal(props: {
                         {/* Business card stays uploadable even when the primary
                             contact's identity fields are locked (mirrors the Bank
                             attachment). A new / replaced / removed file persists
-                            on Save Contact or Update & Next via saveContacts(). */}
-                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) { setPrimaryAttachmentPath(''); setPrimaryAttachmentUrl(''); } }} existingPath={primaryAttachmentPath} existingUrl={primaryAttachmentUrl || undefined} placeholder="No files attached" />
+                            on Save Contact or Update & Next via saveContacts().
+                            imagesPdfOnly matches the backend's `primary_attachment`
+                            rule (mimes:jpg,jpeg,png,webp,pdf) so a .docx is rejected
+                            the moment it's picked, not after a round-trip. */}
+                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) { setPrimaryAttachmentPath(''); setPrimaryAttachmentUrl(''); } }} existingPath={primaryAttachmentPath} existingUrl={primaryAttachmentUrl || undefined} placeholder="No files attached" imagesPdfOnly />
                       </Field>
                     </div>
                   </SectionCard>
@@ -3288,7 +3453,11 @@ export default function AddVendorModal(props: {
               <button className={`avm-pill ${kycTab === 'owner'   ? 'on' : ''}`} onClick={() => setKycTab('owner')}>Owner KYC</button>
               <button className={`avm-pill ${kycTab === 'license' ? 'on' : ''}`} onClick={() => setKycTab('license')}>Trade Licence</button>
               <button className={`avm-pill ${kycTab === 'bank'    ? 'on' : ''}`} onClick={() => setKycTab('bank')}>Bank Details</button>
-              <button className={`avm-pill ${kycTab === 'gst'     ? 'on' : ''}`} onClick={() => setKycTab('gst')}>GST Scrutiny</button>
+              {/* Hidden entirely when the supplier isn't GST-registered — there
+                  is no GSTIN to scrutinise. See kycTabOrder. */}
+              {gstApplicable === 'Yes' && (
+                <button className={`avm-pill ${kycTab === 'gst'     ? 'on' : ''}`} onClick={() => setKycTab('gst')}>GST Scrutiny</button>
+              )}
             </div>
             <SectionCard tone="purple" icon={<i className="ri-file-line" style={{ transform: 'scaleX(-1)' }} />} title={KYC_TAB_TITLE[kycTab] ?? 'KYC / Due Diligence'} subtitle={KYC_TAB_SUB[kycTab] ?? 'Upload statutory & identity proofs'} headerAction={
               <div className="d-inline-flex align-items-center gap-2">
@@ -3393,12 +3562,15 @@ export default function AddVendorModal(props: {
           </div>
           <div className="avm-foot-right">
             {!(step === 1 && idTab === 'identification') && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
-            {!(step === 2 && KYC_TAB_ORDER.indexOf(kycTab) === KYC_TAB_ORDER.length - 1) ? (
+            {!(step === 2 && kycTabOrder.indexOf(kycTab) === kycTabOrder.length - 1) ? (
+              /* Only `saving` gets a spinner — that's the user's OWN click being
+                 worked on. During the initial load the button stays disabled but
+                 keeps its normal label: the body shimmer already says "loading",
+                 and a spinner here read as "your click is being processed" when
+                 nothing had been clicked. */
               <button className="avm-btn-primary" onClick={goNext} disabled={saving || loadingEdit || mastersLoading}>
                 {saving ? (
                   <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
-                ) : (loadingEdit || mastersLoading) ? (
-                  <><span className="avm-spinner" role="status" aria-hidden="true" /> Loading…</>
                 ) : (
                   <>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
@@ -3407,12 +3579,11 @@ export default function AddVendorModal(props: {
                 )}
               </button>
             ) : (
-              /* Last KYC sub-tab = final step. Saves + closes (no Product step). */
+              /* Last KYC sub-tab = final step. Saves + closes (no Product step).
+                 Spinner only for `saving` — see the Save & Next button above. */
               <button className="avm-btn-primary" onClick={finishSupplier} disabled={saving || loadingEdit || mastersLoading}>
                 {saving ? (
                   <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
-                ) : (loadingEdit || mastersLoading) ? (
-                  <><span className="avm-spinner" role="status" aria-hidden="true" /> Loading…</>
                 ) : (
                   <>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v13a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
@@ -3486,6 +3657,7 @@ export default function AddVendorModal(props: {
           onRemove={removeMapRow}
           onEdit={openMapEdit}
           onClose={() => setMappedListOpen(false)}
+          busy={mappingBusy}
         />
       )}
       {mapPopupOpen && (
@@ -3803,11 +3975,14 @@ function MasterQuickAddPopup(props: {
               <div className="avm-qa-sub">Fill in the details to register a new {schema.singular.toLowerCase()}</div>
             </div>
           </div>
-          <button className="avm-close avm-qa-close" onClick={onClose} aria-label="Close">
+          <button className="avm-close avm-qa-close" onClick={onClose} aria-label="Close" disabled={saving}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
         <div className="avm-qa-body">
+          {/* Footer Cancel was already guarded; the ✕ was not — closing mid-POST
+              let the user reopen and submit the same master row twice. */}
+          {saving && <div className="avm-cp-saving-veil" />}
           {schema.fields.map(f => (
             <Field key={f.name} label={f.label} required={f.required} error={errors[f.name]}>
               {f.type === 'textarea' ? (
@@ -3908,12 +4083,16 @@ function ContactAddPopup(props: {
           <div className="avm-cp-title">
             <i className="ri-user-add-line" /> Add Contact Person
           </div>
-          <button className="avm-close avm-cp-close" onClick={onClose} aria-label="Close">
+          <button className="avm-close avm-cp-close" onClick={onClose} aria-label="Close" disabled={saving}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
 
         <div className="avm-cp-body">
+          {/* This popup hand-rolls the .avm-cp-* chrome instead of using
+              PopupShell, so it needs its own veil — otherwise every field stays
+              editable mid-save and the attachment-delete confirm can fire. */}
+          {saving && <div className="avm-cp-saving-veil" />}
           <div className="avm-grid-4">
             <Field label="Contact Person Name" required error={errors.name}>
               <input
@@ -3965,8 +4144,11 @@ function ContactAddPopup(props: {
                  state filename / View / Delete actions. Swapping in here
                  so the contact popup matches the rest of the wizard's
                  file fields and the user can preview / remove an
-                 attachment without retyping the form. */}
+                 attachment without retyping the form.
+                 imagesPdfOnly matches the backend's validateContact() rule
+                 (mimes:jpg,jpeg,png,webp,pdf) — same as the primary card. */}
               <FileChooser
+                imagesPdfOnly
                 file={draft.attachmentFile ?? null}
                 existingPath={draft.attachmentFile ? undefined : draft.attachmentPath}
                 existingUrl={draft.attachmentFile ? undefined : draft.attachmentUrl}
@@ -4311,18 +4493,21 @@ function FileChooser(props: {
   return (
     <div className="avm-filechooser avm-filechooser-has-file">
       {viewHref ? (
-        <a
-          href={viewHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="avm-filechooser-text avm-filechooser-link"
-          title={`Open ${fileName}`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {fileName}
-        </a>
+        <Tooltip label={`Open ${fileName}`}>
+          <a
+            href={viewHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="avm-filechooser-text avm-filechooser-link"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {fileName}
+          </a>
+        </Tooltip>
       ) : (
-        <span className="avm-filechooser-text" title={fileName}>{fileName}</span>
+        <Tooltip label={fileName}>
+          <span className="avm-filechooser-text">{fileName}</span>
+        </Tooltip>
       )}
       <div className="avm-filechooser-actions">
         {/* View (eye) removed — the filename above is itself a link that opens
@@ -4659,20 +4844,23 @@ function AttachmentCell(props: {
   // No separate view (eye) or delete-attachment icons (the row's own Action
   // column handles removal).
   return href ? (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="fs-13 text-truncate d-inline-flex align-items-center"
-      style={{ maxWidth: 260, color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
-      title={`Open ${fileName}`}
-    >
-      {fileName || 'Attachment'}
-    </a>
+    <Tooltip label={`Open ${fileName || 'Attachment'}`}>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="fs-13 text-truncate d-inline-flex align-items-center"
+        style={{ maxWidth: 260, color: '#6d28d9', textDecoration: 'underline', textUnderlineOffset: 2 }}
+      >
+        {fileName || 'Attachment'}
+      </a>
+    </Tooltip>
   ) : (
-    <span className="fs-13 text-truncate d-inline-flex align-items-center" style={{ maxWidth: 260 }} title={fileName}>
-      {fileName || 'Attachment'}
-    </span>
+    <Tooltip label={fileName || 'Attachment'}>
+      <span className="fs-13 text-truncate d-inline-flex align-items-center" style={{ maxWidth: 260 }}>
+        {fileName || 'Attachment'}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -4683,6 +4871,10 @@ function DdTable(props: {
   onClearFile?: (id: string) => void;
   readOnly?: boolean;
 }) {
+  // Must sit ABOVE the empty-rows early return — a hook after it would be
+  // conditional. The inline upload's reject path needs this; without it the
+  // handler threw a ReferenceError instead of showing the error toast.
+  const toast = useToast();
   if (props.rows.length === 0) return <EmptyTable label="No due-diligence documents added yet. Use “+ Add More Due Diligence” to begin." />;
   return (
     <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
@@ -4736,7 +4928,9 @@ function DdTable(props: {
                             e.currentTarget.value = '';
                             if (!f) return;
                             // Only JPG / JPEG / PNG / PDF — no DOC/DOCX (backend rejects them too).
-                            if (!IMG_PDF_EXT_RE.test(f.name) || !IMG_PDF_MIME_RE.test(f.type || '')) {
+                            // Ext OR mime (never AND) — some browsers / OSes ship an empty
+                            // `type` for a perfectly valid file, and requiring both rejected it.
+                            if (!IMG_PDF_EXT_RE.test(f.name) && !IMG_PDF_MIME_RE.test(f.type || '')) {
                               toast.error('Unsupported file type', 'Only JPG, JPEG, PNG or PDF files are allowed.');
                               return;
                             }
@@ -4835,6 +5029,8 @@ function TradeLicenseTable(props: {
   onClearFile?: (id: string) => void;
   readOnly?: boolean;
 }) {
+  // Above the early return — see DdTable.
+  const toast = useToast();
   if (props.rows.length === 0) return <EmptyTable label="No trade licenses added yet. Use “+ Add Trade License” to begin." />;
   return (
     <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
@@ -4880,9 +5076,18 @@ function TradeLicenseTable(props: {
                         <Tooltip label="Upload">
                           <label className="btn btn-sm btn-soft-primary mb-0" aria-label="Upload">
                             <i className={r.fileName ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
-                            <input type="file" hidden onChange={e => {
+                            {/* Same allow-list as DdTable — the backend's tl_files.*
+                                rule is mimes:jpg,jpeg,png,webp,pdf, so reject
+                                DOC/DOCX inline instead of on Update & Next. */}
+                            <input type="file" hidden accept={IMG_PDF_ACCEPT} onChange={e => {
                               const f = e.target.files?.[0];
-                              if (f && props.onAttach) props.onAttach(r.id, f);
+                              e.currentTarget.value = '';
+                              if (!f) return;
+                              if (!IMG_PDF_EXT_RE.test(f.name) && !IMG_PDF_MIME_RE.test(f.type || '')) {
+                                toast.error('Unsupported file type', 'Only JPG, JPEG, PNG or PDF files are allowed.');
+                                return;
+                              }
+                              if (props.onAttach) props.onAttach(r.id, f);
                             }} />
                           </label>
                         </Tooltip>
@@ -5208,7 +5413,7 @@ function TradeDocsTable(props: {
  * with purchase price + GST + total. Empty state until "+ Add More
  * Products" is clicked.
  * ────────────────────────────────────────────────────────────────────── */
-function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void }) {
+function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void; busy?: boolean }) {
   if (props.rows.length === 0) return <EmptyTable label="No products mapped yet. Use “+ Add More Products” to link this vendor to one or more products." />;
   return (
     <div className="table-responsive border rounded avm-kyc-table-wrap avm-mapped-wrap">
@@ -5243,13 +5448,13 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
                 <div className="avm-row-actions">
                   {props.onEdit && (
                     <Tooltip label="Edit product">
-                      <button type="button" className="avm-row-btn" onClick={() => props.onEdit?.(r.id)} aria-label="Edit product">
+                      <button type="button" className="avm-row-btn" onClick={() => props.onEdit?.(r.id)} aria-label="Edit product" disabled={props.busy}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                       </button>
                     </Tooltip>
                   )}
                   <Tooltip label="Remove product">
-                    <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove(r.id)} aria-label="Remove product">
+                    <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove(r.id)} aria-label="Remove product" disabled={props.busy}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
                     </button>
                   </Tooltip>
@@ -5368,8 +5573,13 @@ function MappedProductsPopup(props: {
   onRemove: (id: string) => void;
   onEdit: (id: string) => void;
   onClose: () => void;
+  /** A mapping write is in flight — freeze the whole popup. This popup portals
+   *  to document.body, so the wizard's .avm-busy-veil (which lives inside
+   *  .avm-modal) does NOT cover it; it needs its own. */
+  busy?: boolean;
 }) {
   const n = props.rows.length;
+  const busy = !!props.busy;
   return createPortal((
     <div className="avm-cp-backdrop">
       <div className="avm-cp-popup avm-cp-popup-wide">
@@ -5381,25 +5591,26 @@ function MappedProductsPopup(props: {
               <div className="avm-cp-subtitle">Products linked to this supplier with price &amp; GST</div>
             </div>
           </div>
-          <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close">
+          <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close" disabled={busy}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
         <div className="avm-cp-body">
+          {busy && <div className="avm-cp-saving-veil" />}
           <div className="avm-mapped-toolbar">
             <span className="avm-mapped-count">{n} product{n === 1 ? '' : 's'} mapped</span>
-            <button className="avm-section-add-btn" onClick={props.onAdd}>
+            <button className="avm-section-add-btn" onClick={props.onAdd} disabled={busy}>
               <i className="ri-add-line" /> Map Product
             </button>
           </div>
           {n === 0 ? (
             <div className="avm-empty avm-empty-accent">No products mapped yet. Click "Map Product" to begin.</div>
           ) : (
-            <ProductMappingTable rows={props.rows} onRemove={props.onRemove} onEdit={props.onEdit} />
+            <ProductMappingTable rows={props.rows} onRemove={props.onRemove} onEdit={props.onEdit} busy={busy} />
           )}
         </div>
         <div className="avm-cp-foot">
-          <button className="avm-btn-ghost" onClick={props.onClose}>Close</button>
+          <button className="avm-btn-ghost" onClick={props.onClose} disabled={busy}>Close</button>
         </div>
       </div>
     </div>
@@ -5648,6 +5859,7 @@ function DdAddPopup(props: {
             existingPath={draft.existingPath}
             onPick={f => setDraft({ ...draft, file: f, fileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath })}
             placeholder="Upload DD document (JPG / PNG / PDF, max 2 MB)"
+            imagesPdfOnly
           />
         </Field>
       </div>
@@ -5750,6 +5962,7 @@ function OwnerKycAddPopup(props: {
           existingPath={draft.existingPath}
           onPick={f => setDraft({ ...draft, file: f, fileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath })}
           placeholder="Upload KYC document (JPG / PNG / PDF, max 2 MB)"
+          imagesPdfOnly
         />
       </Field>
     </PopupShell>
@@ -5828,6 +6041,7 @@ function TradeLicenseAddPopup(props: {
           existingPath={draft.existingPath}
           onPick={f => setDraft({ ...draft, file: f, fileName: f?.name ?? '', existingPath: f ? undefined : draft.existingPath })}
           placeholder="Upload License document (JPG / PNG / PDF, max 2 MB)"
+          imagesPdfOnly
         />
       </Field>
     </PopupShell>
@@ -5947,18 +6161,8 @@ function GstScrutinyAddPopup(props: {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
   const [errors, setErrors] = useState<{ gstNumber?: string; prevNonGst2aInvoice?: string; redFlags?: string; lastFilingDate?: string }>({});
-  /* GST number is strictly alphanumeric (15 chars: 27AADCI6120M1ZH style).
-   * Strip everything else and uppercase; backend still validates the full
-   * regex, this just keeps obvious garbage out of the picker. */
-  const handleGstNumberChange = (raw: string) => {
-    const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15);
-    set('gstNumber', cleaned);
-    if (cleaned !== raw.toUpperCase().slice(0, 15)) {
-      setErrors(prev => ({ ...prev, gstNumber: 'Only letters and digits (e.g. 27AADCI6120M1ZH)' }));
-    } else {
-      setErrors(prev => ({ ...prev, gstNumber: undefined }));
-    }
-  };
+  /* GST number is no longer typed here — it is seeded read-only from Stage 1
+   * (see openGstPopup), which owns the sanitising + GSTIN validation. */
   const handlePrevInvoiceChange = (raw: string) => {
     const { cleaned, error } = sanitizeKycId(raw, 50);
     set('prevNonGst2aInvoice', cleaned);
@@ -5993,13 +6197,20 @@ function GstScrutinyAddPopup(props: {
     <PopupShell title="Add GST Scrutiny" icon="ri-file-text-line" onClose={onClose} onSave={handleSave}>
       <div className="avm-grid-3">
         <Field label="GST Number" required error={errors.gstNumber}>
-          <input
-            className="avm-input"
-            placeholder="e.g. 29ABCDE1234F1Z5"
-            value={draft.gstNumber}
-            maxLength={15}
-            onChange={e => handleGstNumberChange(e.target.value)}
-          />
+          {/* Read-only — the supplier's GST number is captured once on Stage 1
+              (Supplier Identification) and flows in here. Every scrutiny entry
+              reports on that same GSTIN, so it is never retyped per row; change
+              it on Stage 1 instead. openGstPopup() seeds it and blocks opening
+              when Stage 1 has none, so this can't be an empty dead end. */}
+          <Tooltip label="Comes from the supplier's GST Number on Stage 1 — change it there">
+            <input
+              className="avm-input avm-input-ro"
+              placeholder="—"
+              value={draft.gstNumber}
+              readOnly
+              tabIndex={-1}
+            />
+          </Tooltip>
         </Field>
         <Field label="GST Status" required>
           <SelectInput value={draft.status} onChange={v => set('status', v as 'Active' | 'Inactive')} placeholder="Select GST status" options={['Active', 'Inactive']} />
@@ -7457,7 +7668,10 @@ export const SCOPED_CSS = `
   transition: background .15s, transform .12s;
 }
 .avm-qa-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
-.avm-qa-body { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+/* position:relative so .avm-cp-saving-veil (absolute; inset:0) sizes to THIS
+   body. Without it the veil's containing block is .avm-qa-backdrop (fixed;
+   inset:0) and the 45% wash covers the whole viewport instead of the popup. */
+.avm-qa-body { padding: 18px; display: flex; flex-direction: column; gap: 12px; position: relative; }
 .avm-qa-foot {
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 12px 18px; border-top: 1px solid #ede9fe;
@@ -7547,7 +7761,9 @@ export const SCOPED_CSS = `
   transition: background .15s, transform .12s;
 }
 .avm-cp-close:hover { background: rgba(255,255,255,.32); transform: rotate(90deg); }
-.avm-cp-body  { padding: 22px; display: flex; flex-direction: column; gap: 12px; }
+/* position:relative — see .avm-qa-body. Anchors .avm-cp-saving-veil to the body
+   (PopupShell, ContactAddPopup, MappedProductsPopup all rely on this). */
+.avm-cp-body  { padding: 22px; display: flex; flex-direction: column; gap: 12px; position: relative; }
 /* Popup field labels — match the Figma .sf-pop-body .sf-label: 11.5px, bold,
    dark-purple (the main form uses a lighter slate medium-weight label). */
 /* No margin-bottom here — the .avm-field flex gap (5px) already spaces the
