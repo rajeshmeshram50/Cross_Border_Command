@@ -3374,7 +3374,11 @@ export default function AddVendorModal(props: {
                                       <span className="avm-primary-tag ms-2">Primary</span>
                                     )}
                                   </td>
-                                  <td>{r.designation || '—'}</td>
+                                  <td>
+                                    {r.designation
+                                      ? <Tooltip label={r.designation}><span>{r.designation.length > 25 ? r.designation.slice(0, 25) + '…' : r.designation}</span></Tooltip>
+                                      : '—'}
+                                  </td>
                                   <td><span className="font-monospace fs-13">{r.phone || '—'}</span></td>
                                   <td>
                                     {r.email
