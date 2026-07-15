@@ -847,6 +847,11 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   };
   const back = () => { if (stage > 1) setStage(s => s - 1); else backToChoice(); };
 
+  // While creating, the stepper may only jump back to a stage already passed — moving
+  // forward has to go through Save & Next so each stage is validated and the PO persisted.
+  // Editing / view-only work on a PO that already exists, so any stage is reachable.
+  const canJumpTo = (n: number) => isEdit || viewOnly || n <= stage;
+
   /* ── Trade docs helpers ── */
   /* ═══════════════════ CHOICE MODAL ═══════════════════ */
   if (phase === 'choice') {
@@ -948,10 +953,11 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
               <div className="p2pj-stages-grid">
                 {CPO_STAGES.map((s, i) => {
                   const n = i + 1;
-                  const cls = n === stage ? 'p2sc-active' : (n < stage ? 'p2sc-done' : '');
+                  const stepLocked = !canJumpTo(n);
+                  const cls = `${n === stage ? 'p2sc-active' : (n < stage ? 'p2sc-done' : '')}${stepLocked ? ' p2sc-locked' : ''}`;
                   const nn = (n < 10 ? '0' : '') + n;
                   return (
-                    <div key={n} className={`p2sc ${cls}`} onClick={() => setStage(n)}>
+                    <div key={n} className={`p2sc ${cls}`} onClick={() => { if (!stepLocked) setStage(n); }}>
                       <div className="p2sc-pill">Active</div>
                       <div className="p2sc-done-pill"><Check /> Done</div>
                       <div className="p2sc-step">Step {nn}</div><div className="p2sc-num">{nn}</div>
@@ -1102,7 +1108,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
               {stage === 2 && (<>
                 {locked && <LockNote />}
                 <Box label="Products" title="Product Details" sub={withShip ? 'PI vs PO product mapping with live tax & cost computation' : 'Add PO products with live tax & cost computation'} ico={boxIco}
-                  extra={<>
+                  extra={
                     <div className="cpd-ref">
                     {[{ l: 'Supplier Code', v: sup.code || 'S-001', mono: true }, { l: 'Supplier Name', v: sup.name || 'AgroSource Materials Pvt Ltd', mono: false }, { l: 'State Code', v: sup.stateCode || '27', mono: true }, { l: 'PI Number', v: 'PI/2025-26/001', mono: true }].map((f, i, arr) => (
                       <span key={f.l} style={{ display: 'contents' }}>
@@ -1111,15 +1117,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                       </span>
                     ))}
                     </div>
-                    <button type="button" className={`cpd-viewtgl ${poView ? 'is-view' : ''}`} disabled={locked}
-                      title={locked ? 'This PO is read-only — editing is disabled' : (poView ? 'Switch to edit mode' : 'Switch to read-only view')}
-                      onClick={e => { e.stopPropagation(); if (!locked) setPoView(v => !v); }}>
-                      {poView
-                        ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
-                        : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>}
-                      <span>{poView ? 'Edit' : 'View'}</span>
-                    </button>
-                  </>}>
+                  }>
                   <div className={`cpd-scroll ${poView ? 'cpd-scroll--ro' : ''}`}>
                     <table className={`cpd-tbl ${withShip ? '' : 'cpd-tbl--po'}`}>
                       <thead><tr>
@@ -1222,7 +1220,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                     <div className="cpd-scroll"><table className="cpd-tbl">
                       <thead><tr><th className="cpd-c">Sr. No</th><th>Product Code</th><th>Product Name (PI)</th><th className="cpd-c">Quantity (PI)</th><th>Product Name (PO)</th><th className="cpd-c">Missing Qty</th></tr></thead>
                       <tbody>{missing.map((m, idx) => (
-                        <tr key={m.code}><td className="cpd-c">{idx + 1}</td><td className="cpd-c"><span className="cpd-code">{m.code}</span></td><td className="cpd-name"><Tooltip label={m.piName} disabled={!m.piName}><span className="cpd-name__txt">{m.piName}</span></Tooltip></td><td className="cpd-c">{m.piQty}</td><td><Tooltip label={m.poName} disabled={!m.poName || m.poName === '—'}><span className="cpd-name__txt">{m.poName}</span></Tooltip></td><td className="cpd-c" style={{ color: '#dc2626', fontWeight: 800 }}>{m.miss}</td></tr>
+                        <tr key={m.code}><td className="cpd-c">{idx + 1}</td><td className="cpd-c"><span className="cpd-code">{formatProductCode(m.code) || '—'}</span></td><td className="cpd-name"><Tooltip label={m.piName} disabled={!m.piName}><span className="cpd-name__txt">{m.piName}</span></Tooltip></td><td className="cpd-c">{m.piQty}</td><td><Tooltip label={m.poName} disabled={!m.poName || m.poName === '—'}><span className="cpd-name__txt">{m.poName}</span></Tooltip></td><td className="cpd-c" style={{ color: '#dc2626', fontWeight: 800 }}>{m.miss}</td></tr>
                       ))}</tbody>
                     </table></div>
                   )}
