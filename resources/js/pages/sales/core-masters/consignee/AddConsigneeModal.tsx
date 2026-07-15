@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useTheme } from '../../../../contexts/ThemeContext';
 import api from '../../../../api';
 import { MasterSelect, MasterDatePicker } from '../../../master/masterFormKit';
-import Tooltip from '../../../../components/ui/Tooltip';
+import BaseTooltip from '../../../../components/ui/Tooltip';
 import { downloadFile } from '../../../../utils/downloadFile';
+// Consignee-form tooltips follow the active app theme (light pill in light
+// mode) instead of the shared component's always-dark default — QA #34.
+const Tooltip = (props: ComponentProps<typeof BaseTooltip>) => <BaseTooltip themed {...props} />;
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
@@ -6069,7 +6072,7 @@ const SCOPED_CSS = `
 
 .acm-close {
   position: absolute; top: 14px; right: 14px;
-  width: 32px; height: 32px; border-radius: 50%;
+  width: 34px; height: 34px; border-radius: 10px;
   background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.30);
   color: #fff; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
