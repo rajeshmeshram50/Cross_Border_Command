@@ -246,6 +246,12 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    /* min-width:0 + max-width:100% let a long tag (e.g. a pasted-junk segment
+       name) truncate within the popup instead of stretching to its min-content
+       width and leaking outside the modal — a flex item defaults to
+       min-width:auto, which overrode the ellipsis. */
+    min-width: 0;
+    max-width: 100%;
   }
   [data-bs-theme="dark"] .master-select-badge-pop,
   [data-layout-mode="dark"] .master-select-badge-pop {
