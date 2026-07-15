@@ -1517,7 +1517,9 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
   const [contacts, setContacts] = useState<SignContact[][]>(() => cps.map(() => []));
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [days, setDays] = useState('14');
+  /* No setter — the on-screen stepper was removed (see the render below). Kept
+   * so onSend's signature is unchanged; the receiver ignores it anyway. */
+  const [days] = useState('14');
 
   // For each counterparty, pull the contact persons captured on its own form
   // (customer / consignee / vendor addresses). Primary contacts pre-selected.
@@ -1610,15 +1612,12 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
               <span style={{ padding: '4px 11px', borderRadius: 20, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.5)' : '#6EE7B7'}`, fontSize: 8.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#059669', flexShrink: 0 }}>Initiator</span>
             </div>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF' }}>
-            <div style={{ width: 32, height: 32, borderRadius: 9, background: t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></div>
-            <div style={{ flex: 1 }}><div style={{ fontSize: 9.5, fontWeight: 600, color: t.textStrong }}>Days to Sign</div><div style={{ fontSize: 8, color: t.textMuted, marginTop: 1 }}>Deadline for all parties to complete signing</div></div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button onClick={() => setDays(String(Math.max(1, (Number(days) || 14) - 1)))} style={{ width: 28, height: 28, borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 15, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit' }}>−</button>
-              <span style={{ minWidth: 30, textAlign: 'center', fontSize: 15, fontWeight: 800, color: t.textStrong }}>{days}</span>
-              <button onClick={() => setDays(String(Math.min(365, (Number(days) || 14) + 1)))} style={{ width: 28, height: 28, borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 15, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit' }}>+</button>
-            </div>
-          </div>
+          {/* "Days to Sign" stepper removed — it was misleading. Its value was
+              already discarded: onSend → onSendForSigning → sendForSigning(_days)
+              never reads it. The signing window that actually applies is set on
+              the NEXT step (Position Signatures → expiry_days, fixed at 30), so
+              setting 14 here changed nothing. Mirrors ApprovalWorkflowModal,
+              where the steppers were dropped but the value kept. */}
         </div>
         {/* footer */}
         <div style={{ flexShrink: 0, padding: '12px 18px', borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>

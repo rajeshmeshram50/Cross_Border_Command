@@ -659,6 +659,11 @@ body > .dropdown-menu.master-select-menu,
   display: flex; flex-direction: column;
   background: #fff;
   margin: auto;
+  /* Anchors .clm-saving-veil. Deliberately on the CARD, not on
+     .clm-modal-body — the body is overflow-y:auto, so a veil anchored there
+     would scroll away from the visible area instead of pinning over it.
+     Anchoring here also lets the veil cover the head + footer. */
+  position: relative;
   box-shadow:
     0 28px 70px rgba(15,23,42,.45),
     0 12px 32px rgba(6,182,212,.22),
@@ -727,6 +732,20 @@ body > .dropdown-menu.master-select-menu,
   display: flex; flex-direction: column; gap: 6px;
   overflow-y: auto;
 }
+
+/* Interaction blocker shown over the whole modal card while a save is in
+ * flight. Without it every CLM form left its fields fully editable mid-save —
+ * the user could keep typing (or open a nested quick-add) into a form whose
+ * payload had already been posted, so what they saw no longer matched what was
+ * being written. Covers head + body + footer, so the ✕ and Cancel are blocked
+ * too; the buttons still carry their own 'disabled' as the real guard.
+ * Faint teal wash to match the CLM palette (P2P's equivalent uses white). */
+.clm-saving-veil {
+  position: absolute; inset: 0; z-index: 50;
+  background: rgba(240, 253, 255, .45);
+  cursor: progress; border-radius: inherit;
+}
+[data-bs-theme="dark"] .clm-saving-veil { background: rgba(7, 30, 50, .45); }
 
 /* MasterSelect / native select trigger inside a CLM modal must read
  * solid white — the modal body has a light cyan gradient which would

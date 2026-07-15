@@ -609,6 +609,9 @@ function SegmentRuleModal(props: {
   };
 
   const handleSave = async () => {
+    // Guard at the TOP, not just `disabled` on the button — the button attribute
+    // doesn't stop an Enter-key handler or a programmatic call.
+    if (saving) return;
     if (!reg || segCodes.length === 0) {
       toast.error('Incomplete form', 'Select a regulatory status and segment first.');
       setStage(1);
@@ -648,6 +651,7 @@ function SegmentRuleModal(props: {
   return createPortal((
     <div className="clm-modal-bd">
       <div className="clm-modal" style={{ maxWidth: 1080, width: '100%' }}>
+        {saving && <div className="clm-saving-veil" aria-hidden />}
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
@@ -656,7 +660,7 @@ function SegmentRuleModal(props: {
               <div className="clm-modal-head-sub">{isEdit ? 'Update document rules for this segment across CLM workflows.' : 'Configure document rules for a business segment across CLM workflows.'}</div>
             </div>
           </div>
-          <button className="clm-modal-close" onClick={onClose}>×</button>
+          <button className="clm-modal-close" onClick={onClose} disabled={saving}>×</button>
         </div>
 
         {/* Stage tabs */}
@@ -894,10 +898,10 @@ function SegmentRuleModal(props: {
 
         <div className="clm-modal-foot" style={{ justifyContent: 'space-between' }}>
           <div>
-            {stage === 2 && <button className="clm-btn-cancel" onClick={() => setStage(1)}>← Back</button>}
+            {stage === 2 && <button className="clm-btn-cancel" onClick={() => setStage(1)} disabled={saving}>← Back</button>}
           </div>
           <div style={{ display: 'flex', gap: 7 }}>
-            <button className="clm-btn-cancel" onClick={onClose}>Cancel</button>
+            <button className="clm-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
             {stage === 1
               ? <button className="clm-btn-save" onClick={goStage2}>Next: CLM Documents →</button>
               : <button className="clm-btn-save" onClick={() => void handleSave()} disabled={saving}>

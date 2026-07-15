@@ -407,6 +407,9 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
   const regLocked = isEdit;
 
   const handleSave = async () => {
+    // Guard at the TOP, not just `disabled` on the button — the button attribute
+    // doesn't stop an Enter-key handler or a programmatic call.
+    if (saving) return;
     const trimmed = name.trim();
     const next: Record<string, string> = {};
     if (!trimmed) next.name = 'Name is required';
@@ -453,6 +456,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
   return createPortal((
     <div className="clm-modal-bd">
       <div className="clm-modal">
+        {saving && <div className="clm-saving-veil" aria-hidden />}
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico">{isEdit ? (
@@ -465,7 +469,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
               <div className="clm-modal-head-sub">{isEdit ? 'Update the segment details below.' : 'Define a business or trade segment with regulatory classification and customer-consignee rules.'}</div>
             </div>
           </div>
-          <button className="clm-modal-close" onClick={onClose}>×</button>
+          <button className="clm-modal-close" onClick={onClose} disabled={saving}>×</button>
         </div>
 
         <div className="clm-modal-body">

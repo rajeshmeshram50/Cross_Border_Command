@@ -48,7 +48,10 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [expiryDays, setExpiryDays] = useState(30);   // Zoho Sign default validity — 30 days
+  // Zoho Sign validity — fixed at 30 days. No setter: the field is read-only,
+  // and this is the ONLY signing window in the flow (the earlier Send-for-Signing
+  // popup's stepper was removed because its value was never used).
+  const [expiryDays] = useState(30);
   const [notes, setNotes] = useState('Please review and sign this agreement.');
   const [wrapW, setWrapW] = useState(0);
   // Page count of the preview PDF + a flag that flips once the blob has
@@ -285,7 +288,8 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
             )}
             {/* send options */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
-              <div><div style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', marginBottom: 3 }}>Days to Sign</div><input type="number" min={1} max={180} value={expiryDays} onChange={e => setExpiryDays(Number(e.target.value) || 30)} style={ipt} /></div>
+              {/* Fixed at the 30-day Zoho Sign validity — read-only, not user-tunable. */}
+              <div><div style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', marginBottom: 3 }}>Days to Sign</div><input type="number" value={expiryDays} readOnly tabIndex={-1} title="Fixed signing window — 30 days" style={{ ...ipt, background: t.dark ? 'rgba(255,255,255,.03)' : '#F1F5F9', color: t.textMuted, cursor: 'default' }} /></div>
               <div><div style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', marginBottom: 3 }}>Note to Signers</div><textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...ipt, height: 'auto', padding: '7px 9px', resize: 'vertical' }} /></div>
             </div>
           </div>
