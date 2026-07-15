@@ -427,6 +427,17 @@ class LeaveRequestController extends Controller
                 $q->where('branch_id', $branchId);
             }
         }
+
+        // Exclude the leave applicant themselves — you don't notify yourself.
+        // Prefer the explicit employee_id (admin raising a request on behalf of
+        // someone) and fall back to the authenticated user's own linked employee
+        // (the normal self-service flow). Mirrors how store() resolves the applicant.
+        $selfId = $request->integer('employee_id')
+            ?: Employee::where('user_id', $user->id)->value('id');
+        if ($selfId) {
+            $q->where('id', '!=', $selfId);
+        }
+
         if ($search !== '') {
             $like = '%' . $search . '%';
             $q->where(function ($w) use ($like) {

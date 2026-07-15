@@ -93,17 +93,21 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     if (!debouncedSearch) { setNotifyOptions([]); setSearchError(null); return; }
     let alive = true;
     setSearchError(null);
-    api.get('/leave-requests/colleagues', { params: { search: debouncedSearch, limit: 12 } })
+    api.get('/leave-requests/colleagues', { params: { search: debouncedSearch, limit: 12, employee_id: employeeId } })
       .then(r => {
         if (!alive) return;
         const raw = r.data?.data ?? [];
-        const list: NotifyEmployee[] = (Array.isArray(raw) ? raw : []).map((e: any) => ({
-          id: e.id,
-          name: e.name || `Employee #${e.id}`,
-          emp_code: e.emp_code || `EMP-${e.id}`,
-          designation: e.designation || null,
-          photo_url: e.photo_url || null,
-        }));
+        const list: NotifyEmployee[] = (Array.isArray(raw) ? raw : [])
+          // Never let the applicant notify themselves — backend already excludes
+          // them, but guard here too in case an admin flow omits the id.
+          .filter((e: any) => Number(e.id) !== Number(employeeId))
+          .map((e: any) => ({
+            id: e.id,
+            name: e.name || `Employee #${e.id}`,
+            emp_code: e.emp_code || `EMP-${e.id}`,
+            designation: e.designation || null,
+            photo_url: e.photo_url || null,
+          }));
         setNotifyOptions(list);
       })
       .catch(err => {
@@ -113,7 +117,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
         setNotifyOptions([]);
       });
     return () => { alive = false; };
-  }, [debouncedSearch]);
+  }, [debouncedSearch, employeeId]);
 
   // Half-day is only meaningful on a single calendar day (matches the backend
   // rule) AND only for leave types whose setup enables "Allow half day leave".

@@ -817,6 +817,12 @@ class AttendanceController extends Controller
         $start  = \Carbon\Carbon::parse($from);
         while ($cursor->greaterThanOrEqualTo($start)) {
             $iso = $cursor->toDateString();
+            // Future days haven't happened yet — never list them in the log
+            // (bug #23). The window runs to end-of-month, so the current month
+            // would otherwise emit synthesised 'Absent' rows for days still to
+            // come. The calendar flags future cells on its own, so hiding them
+            // from the log list is safe.
+            if ($iso > $todayLocal) { $cursor->subDay(); continue; }
             $r   = $byIso[$iso] ?? null;
             $isWO = isset($weeklyOffSet[$cursor->dayOfWeek]);
             $isHoliday = isset($holidaySet[$iso]);
