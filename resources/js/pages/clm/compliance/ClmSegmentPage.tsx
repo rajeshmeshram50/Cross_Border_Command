@@ -10,6 +10,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { ClmSkeletonRows, useScrollLock } from '../shared/clmCommon';
+import { bustAllMasterBundles } from '../../../utils/bustMasterBundles';
 
 /* Central CLM → Segment Master.
  * Faithful 3-card port of the CLM-Master.html prototype:
@@ -157,6 +158,10 @@ export default function ClmSegmentPage() {
     try {
       if (id) { await api.put(`/clm/segments/${id}`, form); toast.success('Updated', `${clipName(form.name)} saved`); }
       else    { await api.post('/clm/segments', form);     toast.success('Added',   `${clipName(form.name)} added`); }
+      // Segments feed the cached Customer/Consignee/Product/Vendor dropdown
+      // bundles (5-min sessionStorage TTL) — drop them so the new/renamed
+      // segment shows on the next form open instead of after a refresh.
+      bustAllMasterBundles();
       setModalOpen(false); setEditing(null); reload();
       return { ok: true };
     } catch (e: any) {
@@ -179,7 +184,7 @@ export default function ClmSegmentPage() {
   const onDelete = async () => {
     if (!pendingDelete || deleting) return;
     setDeleting(true);
-    try { await api.delete(`/clm/segments/${pendingDelete.id}`); toast.success('Deleted', `${clipName(pendingDelete.name)} removed`); setPendingDelete(null); reload(); }
+    try { await api.delete(`/clm/segments/${pendingDelete.id}`); toast.success('Deleted', `${clipName(pendingDelete.name)} removed`); bustAllMasterBundles(); setPendingDelete(null); reload(); }
     catch (e: any) { toast.error('Delete failed', e?.response?.data?.message ?? 'Could not delete'); }
     finally { setDeleting(false); }
   };

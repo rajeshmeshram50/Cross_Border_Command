@@ -156,15 +156,28 @@ export default function SalesCustomers() {
   }, [wdhOpen, loading, manualSize]);
 
   const debouncedQ = useDebouncedValue(q, 300);
+  /* Monotonic request id — only the newest in-flight fetch may write state.
+   * Rapidly clicking All → Fresh → Recurring fires overlapping requests, and
+   * without this an earlier/slower response could land last and paint the
+   * wrong tab's rows (and drop the shimmer early). */
+  const reqIdRef = useRef(0);
   const fetchCustomers = useCallback(() => {
+    const reqId = ++reqIdRef.current;
     setLoading(true);
     api.get('/customers', { params: { tab, q: debouncedQ } })
       .then(r => {
+        if (reqId !== reqIdRef.current) return;
         const list = Array.isArray(r.data?.data) ? r.data.data : [];
         setCustomers(list);
       })
-      .catch(() => setCustomers([]))
-      .finally(() => setLoading(false));
+      .catch(() => { if (reqId === reqIdRef.current) setCustomers([]); })
+      .finally(() => {
+        if (reqId !== reqIdRef.current) return;
+        setLoading(false);
+        // Hold the tab-switch shimmer until the NEW tab's rows have actually
+        // arrived, so the previous tab's entries are never shown mid-switch.
+        setTabSwitching(false);
+      });
   }, [tab, debouncedQ]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
@@ -189,9 +202,13 @@ export default function SalesCustomers() {
 
   const switchTab = (next: 'all' | 'fresh' | 'recurring') => {
     if (next === tab) return;
+    // Show the shimmer immediately; changing `tab` re-runs fetchCustomers and
+    // its finally() clears the flag once the new rows land. (This used to be a
+    // fixed 450ms timer — when the fetch ran longer than that the shimmer went
+    // away early and the OLD tab's rows showed through until the new ones
+    // arrived.)
     setTabSwitching(true);
     setTab(next);
-    window.setTimeout(() => setTabSwitching(false), 450);
   };
   const onSearch = (v: string) => { setQ(v); };
 

@@ -22,28 +22,8 @@ import {
 } from './masterConfigs';
 import { MasterSelect, MasterDatePicker, MasterFileInput, MasterFormStyles } from './masterFormKit';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
-import { bustCustomerMasterBundle } from '../sales/core-masters/customer/customerBundleCache';
-import { bustProductMasterBundle } from '../p2p/p2p-master-management/product-management/productBundleCache';
-import { bustVendorMasterBundle } from '../p2p/p2p-master-management/supplier-management/vendorBundleCache';
-import { bustClientFormBundle } from '../client/clientFormBundleCache';
-import { bustBranchFormBundle } from '../branch/branchFormBundleCache';
+import { bustAllMasterBundles } from '../../utils/bustMasterBundles';
 import '../../../css/master.css';
-
-/**
- * Master rows (risk levels, segments, customer types, designations …) feed
- * the cached "*-bundle" dropdown payloads used by the Customer, Consignee,
- * Product, Vendor, Client and Branch forms. Those bundles live in
- * sessionStorage with a 5-min TTL, so a master added here wouldn't appear in
- * those dropdowns until the TTL expired. Clearing every bundle on any master
- * create/update/delete makes the new entry show on the next form open.
- */
-function bustAllMasterBundles(): void {
-  bustCustomerMasterBundle();
-  bustProductMasterBundle();
-  bustVendorMasterBundle();
-  bustClientFormBundle();
-  bustBranchFormBundle();
-}
 
 export default function MasterPage() {
   const { slug } = useParams<{ slug: string }>();
