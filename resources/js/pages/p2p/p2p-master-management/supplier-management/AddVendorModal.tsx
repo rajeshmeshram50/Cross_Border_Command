@@ -1709,7 +1709,10 @@ export default function AddVendorModal(props: {
     }
   };
 
-  const saveKyc = async (): Promise<boolean> => {
+  /* @param opts.silentToast Suppress the per-tab toast — finishSupplier sets this
+   *   so the final completion notice is the last thing the user sees, instead of
+   *   a per-tab "saved" firing right before the wizard closes. */
+  const saveKyc = async (opts?: { silentToast?: boolean }): Promise<boolean> => {
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return false; }
     const missingDd = ddRows.filter(r => r.mandatory && !r.fileName);
     if (missingDd.length) {
@@ -1768,7 +1771,17 @@ export default function AddVendorModal(props: {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setFieldErrors({});
-      toast.success('KYC saved', 'Due-diligence details captured');
+      // Name the tab that was actually saved. The old blanket "KYC saved /
+      // Due-diligence details captured" fired identically on Company DD, Owner
+      // KYC, Trade Licence and Bank Details, so it told the user nothing about
+      // what had just been persisted — and on Bank Details it even said
+      // "due-diligence", which is a different tab.
+      if (!opts?.silentToast) {
+        toast.success(
+          `${KYC_TAB_TITLE[kycTab] ?? 'KYC'} saved`,
+          KYC_TAB_SUB[kycTab] ?? 'Details captured',
+        );
+      }
       return true;
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save KYC';
@@ -1879,12 +1892,21 @@ export default function AddVendorModal(props: {
       setKycTab('bank');
       return;
     }
-    const okKyc = await saveKyc();
+    // silentToast: this is the FINAL submit, so the completion notice below is
+    // the message the user should be left with — not a per-tab "saved".
+    const okKyc = await saveKyc({ silentToast: true });
     if (!okKyc) return;
     if (productMappings.length > 0) {
       const okProd = await saveProducts();
       if (!okProd) return;
     }
+    // The list page's onSubmit handler only closes + refreshes — it shows no
+    // toast of its own, so without this the wizard would vanish with the last
+    // word being a per-tab "saved" and no confirmation the supplier was done.
+    toast.success(
+      isEdit ? 'Supplier updated' : 'Supplier saved',
+      `${vendorCode ? vendorCode + ' — ' : ''}${companyName.trim() || 'Supplier'} completed and saved.`,
+    );
     onSubmit({
       companyName, legalName, vendorType, website, gstApplicable, gstNumber, riskLevel,
       vendorBehaviour, segment, complianceBehaviour,

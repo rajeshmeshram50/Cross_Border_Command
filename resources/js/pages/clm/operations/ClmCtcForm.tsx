@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import PdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import { useToast } from '../../../contexts/ToastContext';
@@ -1201,7 +1201,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               })()}
               {/* Only the drafted agreement content — no auto-generated title / id / parties scaffold. */}
               {draft
-                ? <div className="ctc-editor" style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7, overflowWrap: 'anywhere', wordBreak: 'break-word' }} dangerouslySetInnerHTML={{ __html: previewDraft }} />
+                ? <div className="ctc-editor" style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: previewDraft }} />
                 : <div style={{ fontSize: 10, color: t.textMuted, lineHeight: 1.7, textAlign: 'center', padding: '40px 10px', fontStyle: 'italic' }}>No agreement content drafted yet.</div>}
               {/* Configured document footer (text + pagination) from Stage 1 */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: 6, marginTop: 26, paddingTop: 10, borderTop: '1.5px solid rgba(124,58,237,.18)', background: footer.background, color: footer.text_color, fontSize: 9, fontWeight: 500 }}>
@@ -1981,7 +1981,17 @@ function GreenChoice({ t, sel, onClick, title, sub, icon }: { t: OpsTokens; sel:
 function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy, active = true }: { t: OpsTokens; draft: string; onInsert: (tok: string) => void; summary: string[][]; declineReason?: string; declinedBy?: string; active?: boolean }) {
   // Grammarly-style live review: score = % of words spelled correctly, with
   // the flagged misspellings (and suggestions) listed below the score.
-  const { score, words, issues } = checkSpelling(draft);
+  //
+  // Memoised on `draft` — this is the expensive part of the Stage-1 render. On a
+  // long agreement (~5k words) checkSpelling does several regex passes over the
+  // whole HTML plus per-token work across every word, and it used to run on
+  // EVERY render of this component. RightTools takes inline props from the
+  // parent, so it re-rendered on any parent state change at all — the 10s
+  // record poll, opening the link/placeholder/clause dialogs — each time
+  // re-scanning a document that hadn't changed. Combined with a format action
+  // (which syncs the draft ~250ms later) that main-thread block is what read as
+  // "the editor is slow / formatting takes ages" (CBC-576).
+  const { score, words, issues } = useMemo(() => checkSpelling(draft), [draft]);
   const clean = score >= 90, mild = score >= 60 && score < 90;
   const scoreClr = words === 0 ? '#EF4444' : clean ? (t.dark ? '#6ee7b7' : '#059669') : mild ? (t.dark ? '#fcd34d' : '#D97706') : (t.dark ? '#fca5a5' : '#DC2626');
   const statusLabel = words === 0 ? 'Not Started' : clean ? 'Looks Clean' : mild ? 'Minor Issues' : 'Needs Review';
@@ -2505,7 +2515,13 @@ const CTC_FORM_CSS = `
    instead of overflowing, so the scrollbar never appears. */
 .ctc-noshrink > * { flex-shrink: 0; }
 /* Default browser scrollbar — no custom colour. */
-.ctc-editor { overflow-wrap: anywhere; word-break: break-word; }
+/* break-word, NOT anywhere. Both break mid-word when a word can't fit, but
+   'anywhere' additionally makes the browser count a break opportunity at every
+   character when computing min-content intrinsic size — so every relayout of a
+   long agreement (i.e. after every formatting command) does per-character work
+   instead of per-word. 'word-break: break-word' was a deprecated alias doing the
+   same job twice; dropped. Wrapping behaviour is unchanged. */
+.ctc-editor { overflow-wrap: break-word; }
 .ctc-editor:empty:before { content: attr(data-ph); color: #94a3b8; pointer-events: none; white-space: pre-wrap; }
 .ctc-editor h1, .ctc-editor h2, .ctc-editor h3 { font-weight: 800; margin: 8px 0 4px; }
 .ctc-editor ul, .ctc-editor ol { padding-left: 22px; margin: 6px 0; }

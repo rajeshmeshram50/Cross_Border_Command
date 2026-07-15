@@ -15,6 +15,7 @@ use App\Models\Lead;
 use App\Models\LeadProduct;
 use App\Models\Vendor;
 use App\Services\ZohoSignService;
+use App\Support\CtcAuditTime;
 use Illuminate\Database\Eloquent\Model;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
@@ -1340,36 +1341,22 @@ class ClmSignatureController extends Controller
 
     /**
      * Convert a CTC's audit arrays (versions / clarifications / approvers) from
-     * stored UTC to the display timezone — mirrors CtcContractController::show()
-     * so this endpoint's live-polled record renders the SAME timestamps as the
-     * Version History modal. Without it the Stage-3 Negotiation timeline showed
-     * raw UTC times while show()-fed views showed IST (CBC-574). Keep the two
-     * conversions (here + CtcContractController::istStr/istEntries) in sync.
+     * stored UTC to the display timezone, so this endpoint's live-polled record
+     * renders the SAME timestamps as show()-fed views. Without it the Stage-3
+     * Negotiation timeline showed raw UTC while show() showed IST (CBC-574).
+     *
+     * Both controllers now delegate to the ONE implementation in CtcAuditTime.
+     * They previously held two hand-maintained copies with a "keep these in
+     * sync" comment — which is exactly how CBC-574 happened.
      */
-    private const CTC_DISPLAY_TZ = 'Asia/Kolkata';
-
     private function istCtcStr(?string $s): string
     {
-        if ($s === null || $s === '' || $s === '—') return $s ?? '—';
-        try {
-            $hasTime = (bool) preg_match('/\d{1,2}:\d{2}/', $s);
-            $c = \Illuminate\Support\Carbon::parse($s, 'UTC')->setTimezone(self::CTC_DISPLAY_TZ);
-            return $hasTime ? $c->format('d M Y H:i') : $c->format('d M Y');
-        } catch (\Throwable $e) {
-            return $s;
-        }
+        return CtcAuditTime::str($s);
     }
 
     private function istCtcEntries($arr): array
     {
-        return array_map(function ($e) {
-            if (is_array($e)) {
-                if (!empty($e['date']))          $e['date']          = $this->istCtcStr($e['date']);
-                if (!empty($e['acted_at']))      $e['acted_at']      = $this->istCtcStr($e['acted_at']);
-                if (!empty($e['response_date'])) $e['response_date'] = $this->istCtcStr($e['response_date']);
-            }
-            return $e;
-        }, array_values($arr ?? []));
+        return CtcAuditTime::entries($arr);
     }
 
     /** Append an audit/version entry to a CTC contract (mirrors CtcContractController). */
