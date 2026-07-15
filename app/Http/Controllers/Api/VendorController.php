@@ -309,9 +309,18 @@ class VendorController extends Controller
                 $vendor->status     = 'draft';
                 $vendor->step_completed = 1;
                 $vendor->save();
-                // V-01, V-02 … computed after insert so a soft-deleted vendor
-                // doesn't release its code back into the pool.
-                $vendor->vendor_code = $this->nextVendorCode($user->client_id);
+                // S-001, S-002 … computed after insert so a soft-deleted vendor
+                // doesn't release its code back into the pool. Scoped to the
+                // creating user's branch, so every branch runs its own sequence.
+                //
+                // Serialise allocation on the client row, as CustomerController
+                // does: nextVendorCode() reads the current max and the caller
+                // writes max+1, so two concurrent creates would otherwise read
+                // the same max and collide on the vendor_code unique index.
+                if ($user->client_id !== null) {
+                    DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
+                }
+                $vendor->vendor_code = $this->nextVendorCode($user->client_id, $user->branch_id);
                 $vendor->save();
             }
 
@@ -1134,7 +1143,11 @@ class VendorController extends Controller
      * Helpers
      * ────────────────────────────────────────────────────────────── */
 
-    /** Compute the next vendor_code (SUP-01, SUP-02 …) scoped to one client.
+    /** Compute the next vendor_code (S-001, S-002 …) scoped to one client AND
+     *  branch — each branch owns its own S-001, S-002 … run, mirroring
+     *  CustomerController::nextCustomerCode. Before this the sequence was
+     *  client-wide, so a client's second branch inherited the first branch's
+     *  running count instead of starting at S-001.
      *
      *  Earlier this used `orderByDesc('id')->value('vendor_code')` which
      *  returns the most-recently-inserted code, not the numerically
@@ -1143,10 +1156,17 @@ class VendorController extends Controller
      *  vendor_code unique index. We now scan every code (including
      *  soft-deleted) and pick the true max so the sequence is
      *  monotonic regardless of insert order. */
-    private function nextVendorCode(?int $clientId): string
+    private function nextVendorCode(?int $clientId, ?int $branchId = null): string
     {
         $codes = Vendor::withTrashed()
             ->where('client_id', $clientId)
+            // whereNull for the NULL-branch bucket: `where('branch_id', null)`
+            // compiles to `= NULL`, which matches nothing.
+            ->when(
+                $branchId === null,
+                fn ($q) => $q->whereNull('branch_id'),
+                fn ($q) => $q->where('branch_id', $branchId)
+            )
             ->pluck('vendor_code');
 
         $max = 0;

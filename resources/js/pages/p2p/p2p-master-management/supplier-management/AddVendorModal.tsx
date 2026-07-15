@@ -912,12 +912,20 @@ export default function AddVendorModal(props: {
       );
     };
 
-    // Cache hit — hydrate immediately, skip the network.
+    // Stale-while-revalidate. A cache hit paints the dropdowns with no
+    // roundtrip, but must NOT end there: this cache lives in sessionStorage,
+    // which is per-tab. bustAllMasterBundles() only reaches the tab that did
+    // the mutation, so a master deleted in another tab — or by another user
+    // entirely — kept being offered here until the 5-min TTL lapsed. Masters
+    // are hard-deleted, so picking one 422s on save ("The selected risk level
+    // id is invalid"). Always revalidate against the server and re-hydrate with
+    // its truth. hydrate() only replaces option lists (never form values), so
+    // running it twice is safe, and the server bundle is itself cached for
+    // 5 minutes behind a version stamp — this costs one cheap request.
     const cached = readVendorMasterBundle<Bundle>();
     if (cached) {
       hydrate(cached);
       setMastersLoading(false);
-      return;
     }
 
     (async () => {
@@ -926,9 +934,10 @@ export default function AddVendorModal(props: {
         hydrate(res.data);
         writeVendorMasterBundle(res.data);
       } catch {
-        // Dropdowns stay empty; the form still renders and individual
-        // saves will surface validation errors if a required option is
-        // missing.
+        // Network failed. With a cache hit the user keeps the cached options
+        // (better than blanking a form they may be mid-way through); without
+        // one the dropdowns stay empty and individual saves will surface
+        // validation errors if a required option is missing.
       } finally {
         setMastersLoading(false);
       }
