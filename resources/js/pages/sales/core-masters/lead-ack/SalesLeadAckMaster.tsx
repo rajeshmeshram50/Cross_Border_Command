@@ -95,7 +95,12 @@ export default function SalesLeadAckMaster() {
   // scroll area and show exactly as many rows as fit. Picking a value from the
   // Rows-per-page dropdown turns auto-fit off (manual override).
   const wrapRef     = useRef<HTMLDivElement>(null);
-  const autoFitRef  = useRef(true);
+  // Auto-fit was deriving rows-per-page from the container height, which
+  // produced an unpredictable "random" number (e.g. 13, 17) that changed
+  // with the viewport and made the pagination footer read as broken. Keep
+  // rows-per-page at the stable default (10) so "Showing 1–10 of N" and the
+  // page count stay consistent; the user can still override via the dropdown.
+  const autoFitRef  = useRef(false);
   const APPROX_THEAD = 46;   // sticky header height (px)
   const APPROX_ROW   = 38;   // one compact row height (px)
   useEffect(() => {
@@ -478,14 +483,14 @@ export default function SalesLeadAckMaster() {
                   <td style={{ textAlign: 'center', paddingLeft: 50 }}>
                     <div className="lam-actions">
                       {canEdit && (
-                        <Tooltip label="Edit reason">
+                        <Tooltip label="Edit reason" themed>
                           <button type="button" aria-label="Edit" className="lam-ab lam-edit" onClick={() => openEdit(r)}>
                             <i className="ri-pencil-line" />
                           </button>
                         </Tooltip>
                       )}
                       {canDelete && (
-                        <Tooltip label={r.status === 'inactive' ? 'Already inactive' : 'Mark inactive'}>
+                        <Tooltip label={r.status === 'inactive' ? 'Already inactive' : 'Mark inactive'} themed>
                           <button
                             type="button"
                             aria-label={r.status === 'inactive' ? 'Already inactive' : 'Mark inactive'}
@@ -761,7 +766,7 @@ function ReasonCell({ text }: { text: string }) {
   const raw = text ?? '';
   if (raw.length <= REASON_MAX_CHARS) return <>{raw}</>;
   return (
-    <Tooltip label={raw} maxWidth={420}>
+    <Tooltip label={raw} maxWidth={420} themed>
       <span className="lam-reason-trunc">{raw.slice(0, REASON_MAX_CHARS).trimEnd()}…</span>
     </Tooltip>
   );
@@ -1420,16 +1425,16 @@ const SCOPED_CSS = `
 .lam-modal-close {
   position: absolute; right: 18px; top: 50%; transform: translateY(-50%);
   z-index: 2;
-  width: 30px; height: 30px; border-radius: 50%;
-  background: rgba(255,255,255,0.18); color: #fff;
-  border: 1px solid rgba(255,255,255,0.24);
+  width: 34px; height: 34px; border-radius: 10px;
+  background: rgba(255,255,255,0.12); color: #fff;
+  border: 1px solid rgba(255,255,255,0.25);
   cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 14px;
-  transition: all .18s ease;
+  transition: background .15s, transform .12s;
 }
 .lam-modal-close:hover {
-  background: rgba(244,63,94,0.85);
+  background: rgba(255,255,255,0.22);
   border-color: rgba(255,255,255,0.40);
   transform: translateY(-50%) rotate(90deg);
 }

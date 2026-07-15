@@ -355,7 +355,7 @@
   flex-wrap: wrap;
   position: relative;
   z-index: 1;
-  margin-bottom: 3px;
+  margin-bottom: 0;
 }
 .smc-toolbar .smc-search {
   position: relative;
@@ -411,11 +411,12 @@
   position: relative;
   background: var(--vz-card-bg, #fff);
   border: 1px solid var(--vz-border-color);
-  border-radius: 0;
+  /* Rounded, single-frame card — matches the Consignee list outline. */
+  border-radius: 16px;
   overflow: hidden;
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  box-shadow: 0 2px 0 rgba(255,255,255,0.85) inset, 0 8px 28px rgba(124,58,237,0.10), 0 2px 8px rgba(0,0,0,0.05);
 }
 
 .smc-tabs-bar {
@@ -461,7 +462,8 @@
   flex-direction: column;
   overflow: hidden;
   flex: 1; min-height: 0;
-  padding: 14px 14px 12px;
+  /* Flush — single outline, no card-within-a-card (matches Consignee). */
+  padding: 0;
 
   position: relative;
 
@@ -516,8 +518,13 @@
 
 .smc-table-wrap .table-responsive {
   background: var(--vz-card-bg, #fff) !important;
-  border: 1px solid var(--vz-border-color) !important;
-  border-radius: 10px !important;
+  /* No inner border/radius — the outer card provides the single frame. */
+  border: none !important;
+  border-radius: 0 !important;
+  /* Reset Velzon .table-card's negative margin (-$card-spacer) — with the
+     flush layout it would drag the header up under the toolbar and bleed the
+     sides past the card edge. */
+  margin: 0 !important;
 
   flex: 1; min-height: 0;
   overflow-x: auto;
@@ -608,10 +615,21 @@
   background: #faf7ff;
 }
 
+/* Worklist footer: TableContainerReactTable renders `.tc-wl-pag`, whose base
+   rule uses `margin: 10px -16px -16px` to bleed into a 16px-padded wrap. The
+   flush layout (QA #35) removed that padding, so those negatives shoved the
+   footer outside the rounded card. Reset the side/bottom bleed so it sits
+   inside the card at the bottom; keep the top gap as a divider. */
+.smc-table-wrap .tc-wl-pag {
+  margin: 0 !important;
+}
+
 .smc-table-wrap > .row {
-  margin: 8px 0 0 !important;
+  margin: 0 !important;
   --bs-gutter-x: 0; --bs-gutter-y: 0;
-  padding: 8px 4px 0;
+  /* Flush table → footer carries its own inset + a top divider. */
+  padding: 12px 16px;
+  border-top: 1px solid var(--vz-border-color);
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 8px;
 
@@ -1256,7 +1274,7 @@
   .smc-pill-group { width: 100%; }
   .smc-pill { flex: 1 1 0; justify-content: center; padding: 0 8px; }
   .smc-toolbar .smc-search { min-width: 0; flex: 1 1 100%; }
-  .smc-table-wrap { padding: 8px !important; }
+  .smc-table-wrap { padding: 0 !important; }
   .smc-table-wrap .table thead.table-light th { padding: 8px 10px !important; font-size: 10.5px !important; }
   .smc-table-wrap .table tbody td { padding: 8px 10px !important; font-size: 12px !important; }
 }

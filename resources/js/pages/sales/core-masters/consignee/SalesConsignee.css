@@ -354,7 +354,7 @@
   flex-wrap: wrap;
   position: relative;
   z-index: 1;
-  margin-bottom: 3px;
+  margin-bottom: 0;
 }
 .smcg-toolbar .smcg-search {
   position: relative;
@@ -430,12 +430,13 @@
   position: relative;
   background: var(--vz-card-bg, #fff);
   border: 1px solid var(--vz-border-color);
-  /* Square box (no rounded corners) to match the Customer list card. */
-  border-radius: 0;
+  /* Rounded, single-frame card — the whole table (toolbar + grid + footer)
+     sits inside one clean outline like the Supplier list (QA #35). */
+  border-radius: 16px;
   overflow: hidden;
   display: flex; flex-direction: column;
   flex: 1; min-height: 0;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  box-shadow: 0 2px 0 rgba(255,255,255,0.85) inset, 0 8px 28px rgba(13,148,136,0.10), 0 2px 8px rgba(0,0,0,0.05);
 }
 
 .smcg-table-wrap {
@@ -444,7 +445,9 @@
   flex-direction: column;
   overflow: hidden;
   flex: 1; min-height: 0;
-  padding: 14px 14px 12px;
+  /* No padding — the table sits flush against the card frame so there is a
+     single outline, not a card-within-a-card (QA #35). */
+  padding: 0;
 
   position: relative;
   scrollbar-width: thin;
@@ -479,8 +482,14 @@
 
 .smcg-table-wrap .table-responsive {
   background: var(--vz-card-bg, #fff) !important;
-  border: 1px solid var(--vz-border-color) !important;
-  border-radius: 10px !important;
+  /* No inner border/radius — the outer card provides the single frame. */
+  border: none !important;
+  border-radius: 0 !important;
+  /* Velzon's .table-card applies a negative margin (-$card-spacer) that used
+     to be absorbed by the wrap's padding. With the flush layout (QA #35) that
+     padding is gone, so the negative top margin dragged the header up under
+     the toolbar and the sides bled past the card edge. Reset it. */
+  margin: 0 !important;
 
   flex: 1; min-height: 0;
   overflow-x: auto;
@@ -513,14 +522,16 @@
 .smcg-table-wrap .table thead th i { font-size: 12px; opacity: 0.85; color: #ffffff; }
 
 .smcg-table-wrap .table th:first-child,
-.smcg-table-wrap .table td:first-child { width: 46px; padding-left: 8px !important; padding-right: 8px !important; }
+.smcg-table-wrap .table td:first-child { width: 64px; padding-left: 10px !important; padding-right: 10px !important; }
 
 .smcg-table-wrap .table th:nth-child(6),
 .smcg-table-wrap .table td:nth-child(6) { width: 96px; padding-left: 8px !important; padding-right: 8px !important; }
 
 .smcg-table-wrap .table th:nth-child(7),
-.smcg-table-wrap .table td:nth-child(7) { width: 84px; padding-left: 8px !important; padding-right: 8px !important; }
-.smcg-table-wrap .table thead th:nth-child(7) { white-space: normal !important; line-height: 1.2; }
+.smcg-table-wrap .table td:nth-child(7) { width: 150px; padding-left: 8px !important; padding-right: 8px !important; }
+/* "SAME AS CUSTOMER" stays on a single line — the column is wide enough to
+   hold it so it never wraps or clips (QA follow-up). */
+.smcg-table-wrap .table thead th:nth-child(7) { white-space: nowrap !important; }
 
 /* No background transition on rows — it animated the background on every theme
    flip, contributing to the white flicker when switching Dark/Light. Instant. */
@@ -540,10 +551,21 @@
 }
 .smcg-table-wrap .table tbody tr:last-child td { border-bottom: none !important; }
 
+/* Worklist footer: TableContainerReactTable renders `.tc-wl-pag`, whose base
+   rule uses `margin: 10px -16px -16px` to bleed into a 16px-padded wrap. The
+   flush layout (QA #35) removed that padding, so reset the side/bottom bleed
+   to keep the footer inside the rounded card. */
+.smcg-table-wrap .tc-wl-pag {
+  margin: 0 !important;
+}
+
 .smcg-table-wrap > .row {
-  margin: 8px 0 0 !important;
+  margin: 0 !important;
   --bs-gutter-x: 0; --bs-gutter-y: 0;
-  padding: 8px 4px 0;
+  /* Table is now flush to the card, so the footer carries its own inset
+     plus a top divider that separates it from the grid (QA #35). */
+  padding: 12px 16px;
+  border-top: 1px solid var(--vz-border-color);
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 8px;
 
@@ -1108,7 +1130,7 @@
 @media (max-width: 640px) {
   .smcg-toolbar { padding: 8px; gap: 8px; }
   .smcg-toolbar .smcg-search { min-width: 0; }
-  .smcg-table-wrap { padding: 8px !important; }
+  .smcg-table-wrap { padding: 0 !important; }
   .smcg-table-wrap .table thead.table-light th { padding: 8px 10px !important; font-size: 10.5px !important; }
   .smcg-table-wrap .table tbody td { padding: 8px 10px !important; font-size: 12px !important; }
 }

@@ -1,11 +1,14 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import './SalesConsignee.css';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { useTheme } from '../../../../contexts/ThemeContext';
-import Tooltip from '../../../../components/ui/Tooltip';
+import BaseTooltip from '../../../../components/ui/Tooltip';
+// Consignee tooltips follow the active app theme (light pill in light mode)
+// instead of the shared component's always-dark default — QA #34.
+const Tooltip = (props: ComponentProps<typeof BaseTooltip>) => <BaseTooltip themed {...props} />;
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { type ConsigneeRow } from './AddConsigneeModal';
 import { type ConsigneeVaultTarget } from './ConsigneeEvidenceVaultModal';
