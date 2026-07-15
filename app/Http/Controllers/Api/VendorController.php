@@ -211,6 +211,12 @@ class VendorController extends Controller
             'company_name'             => 'required|string|max:255',
             'legal_name'               => 'required|string|max:255',
             'website'                  => 'nullable|string|max:500',
+            // Captured once on Stage 1 and reused read-only by every GST
+            // Scrutiny entry. gst_number is only meaningful when applicable
+            // is "Yes"; storeIdentity() clears it otherwise so a stale number
+            // can't leak into the scrutiny form after a Yes → No switch.
+            'gst_applicable'           => 'nullable|string|in:Yes,No',
+            'gst_number'               => 'nullable|string|max:20',
             'vendor_type_id'           => 'nullable|integer|exists:master_vendor_types,id',
             // Supplier Type is now a fixed frontend vocabulary (Logistic /
             // Material / Tech Services / Advisory Services / Risk Services).
@@ -261,6 +267,13 @@ class VendorController extends Controller
         $data['segment_id'] = $segIds[0] ?? null;
         unset($data['segment_ids']);   // synced separately, not a vendors column
 
+        // A GST number only means anything when GST is applicable. Clear it on a
+        // Yes → No switch so a stale number can't flow into the GST Scrutiny
+        // form, which renders it read-only and therefore can't correct it.
+        if (($data['gst_applicable'] ?? null) === 'No') {
+            $data['gst_number'] = null;
+        }
+
         // Resolve + authorise the target row up-front so the 403 short-circuit
         // stays outside the write transaction.
         $isEdit = isset($data['id']);
@@ -270,6 +283,17 @@ class VendorController extends Controller
             if ($denial = MasterVisibility::hierarchicalDenial($user, $vendor, 'edit')) {
                 return response()->json(['message' => $denial], 403);
             }
+        }
+
+        // GST number is unique per tenant. Check it HERE, on the step that owns
+        // the field — the GST Scrutiny save also guards it, but by then the user
+        // is two stages past where they typed it.
+        if (($data['gst_applicable'] ?? null) === 'Yes' && !empty($data['gst_number'])) {
+            $this->assertGstUniqueForClient(
+                (int) $user->client_id,
+                $data['gst_number'],
+                $isEdit ? (int) $data['id'] : null,
+            );
         }
 
         DB::transaction(function () use (&$vendor, $isEdit, $user, $data, $segIds, $address) {
@@ -778,14 +802,39 @@ class VendorController extends Controller
      */
     private function assertGstNumberUnique(Vendor $vendor, string $gstNumber): void
     {
+        $this->assertGstUniqueForClient((int) $vendor->client_id, $gstNumber, (int) $vendor->id);
+    }
+
+    /**
+     * Same guard, but callable before a Vendor row exists (the Stage-1 add flow),
+     * so the clash surfaces on the GST Number field the user is actually typing
+     * into rather than three tabs later on the GST Scrutiny save.
+     *
+     * Checks BOTH sources: vendors.gst_number (Stage 1 — the source of truth
+     * since GST moved there) AND vendor_gst_scrutiny.gst_number (rows created
+     * before that, and the per-entry records). Checking only the latter would let
+     * two suppliers claim the same GSTIN on Stage 1 and only collide later.
+     *
+     * @param int|null $exceptVendorId Supplier being edited — it may keep its own GST.
+     */
+    private function assertGstUniqueForClient(int $clientId, string $gstNumber, ?int $exceptVendorId = null): void
+    {
         $gst = strtoupper(trim($gstNumber));
-        $clientId = (int) $vendor->client_id;
-        $takenByOther = VendorGstScrutiny::query()
+        if ($gst === '') return;
+
+        $onVendor = Vendor::query()
+            ->where('client_id', $clientId)
             ->where('gst_number', $gst)
-            ->where('vendor_id', '!=', $vendor->id)
+            ->when($exceptVendorId, fn ($q) => $q->where('id', '!=', $exceptVendorId))
+            ->exists();
+
+        $onScrutiny = VendorGstScrutiny::query()
+            ->where('gst_number', $gst)
+            ->when($exceptVendorId, fn ($q) => $q->where('vendor_id', '!=', $exceptVendorId))
             ->whereHas('vendor', fn ($q) => $q->where('client_id', $clientId))
             ->exists();
-        if ($takenByOther) {
+
+        if ($onVendor || $onScrutiny) {
             abort(response()->json([
                 'message' => "GST number {$gst} is already registered to another supplier.",
                 'errors'  => ['gst_number' => ['This GST number is already registered to another supplier.']],
@@ -1164,6 +1213,8 @@ class VendorController extends Controller
             'company_name'   => $v->company_name,
             'legal_name'     => $v->legal_name,
             'website'        => $v->website,
+            'gst_applicable' => $v->gst_applicable,
+            'gst_number'     => $v->gst_number,
             'status'         => $v->status,
             'step_completed' => (int) $v->step_completed,
             'client_id'      => $v->client_id,

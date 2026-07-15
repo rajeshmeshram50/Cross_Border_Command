@@ -393,6 +393,78 @@ export default function Products() {
     return n;
   }, [filters]);
 
+  /* ─── Applied-filter chips ───
+   * Flattens the whole filter state into one removable chip per selected
+   * value. The drawer closes on Apply, so without this the only trace of a
+   * 13-panel filter set is a count badge — you had to reopen the drawer and
+   * expand each panel to see what was actually narrowing the list.
+   *
+   * Each chip carries its own remover, so the label the user reads and the
+   * state it clears can't drift apart. */
+  type FilterChip = { id: string; group: string; label: string; onRemove: () => void };
+
+  const appliedChips = useMemo<FilterChip[]>(() => {
+    const out: FilterChip[] = [];
+
+    // Multi-select panels whose stored value IS the display label.
+    const multi: Array<[keyof FilterState, string]> = [
+      ['gstRate', 'GST Rate'], ['segment', 'Segment'], ['hsn', 'HSN/SAC'],
+      ['hazType', 'Hazard'], ['hazClass', 'Haz Class'], ['uom', 'UOM'],
+      ['condition', 'Condition'], ['vendor', 'Supplier'],
+      ['scoreRange', 'Score'], ['inwardCount', 'Inward'],
+    ];
+    multi.forEach(([key, group]) => {
+      (filters[key] as string[]).forEach(v => {
+        out.push({ id: `${key}:${v}`, group, label: v, onRemove: () => toggleMulti(key, v) });
+      });
+    });
+
+    // Owner is the one panel storing ids rather than labels — resolve the name
+    // so the chip reads "Owner: Ravi", not "Owner: 42".
+    filters.productOwner.forEach(id => {
+      const owner = ownerOpts.find(o => String(o.id) === id);
+      out.push({
+        id: `productOwner:${id}`,
+        group: 'Owner',
+        label: owner?.name ?? `#${id}`,
+        onRemove: () => toggleMulti('productOwner', id),
+      });
+    });
+
+    // Single-value panels.
+    if (filters.topProducts) {
+      out.push({ id: 'topProducts', group: 'Top', label: filters.topProducts, onRemove: () => setFilters(p => ({ ...p, topProducts: '' })) });
+    }
+    if (filters.createdFrom) {
+      out.push({ id: 'createdFrom', group: 'Created from', label: filters.createdFrom, onRemove: () => setFilters(p => ({ ...p, createdFrom: '' })) });
+    }
+    if (filters.createdTo) {
+      out.push({ id: 'createdTo', group: 'Created to', label: filters.createdTo, onRemove: () => setFilters(p => ({ ...p, createdTo: '' })) });
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters, ownerOpts]);
+
+  /* The toolbar's own controls (search / segment / status) live outside
+     `filters`, but to a user they are filters too — so they get chips in the
+     same bar and are cleared by the same "Clear all". */
+  const toolbarChips = useMemo<FilterChip[]>(() => {
+    const out: FilterChip[] = [];
+    if (q.trim())                    out.push({ id: 'q',       group: 'Search',  label: q,            onRemove: () => setQ('') });
+    if (segment !== 'All Segments')  out.push({ id: 'segment', group: 'Segment', label: segment,      onRemove: () => setSegment('All Segments') });
+    if (statusFilter !== 'All Status') out.push({ id: 'status', group: 'Status',  label: statusFilter, onRemove: () => setStatusFilter('All Status') });
+    return out;
+  }, [q, segment, statusFilter]);
+
+  const allChips = useMemo(() => [...toolbarChips, ...appliedChips], [toolbarChips, appliedChips]);
+
+  const clearAllFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    setQ('');
+    setSegment('All Segments');
+    setStatusFilter('All Status');
+  };
+
   // Hard guard — even if someone types /products directly, only branch_user
   // and employee can use the module.
   const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
@@ -766,7 +838,7 @@ export default function Products() {
             onClick={() => setStatusTab('active')}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
-            <span>Supplier Mapped Products</span>
+            <span className="prd-tab-label">Supplier Mapped Products</span>
             <span className="prd-tab-badge prd-tab-badge--active"><span className="prd-tab-badge-dot" />Active<span className="prd-tab-badge-count">{stats.active}</span></span>
           </button>
           <button
@@ -775,7 +847,7 @@ export default function Products() {
             onClick={() => setStatusTab('inactive')}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /><line x1="3.5" y1="20.5" x2="20.5" y2="3.5" /></svg>
-            <span>Zero Supplier Products</span>
+            <span className="prd-tab-label">Zero Supplier Products</span>
             <span className="prd-tab-badge prd-tab-badge--inactive"><span className="prd-tab-badge-dot" />Inactive<span className="prd-tab-badge-count">{stats.inactive}</span></span>
           </button>
         </div>
@@ -831,13 +903,32 @@ export default function Products() {
         </div>
       )}
 
-      {/* Active-filter chips — only rendered when at least one is set, so the
-          panel shows no empty gap between the toolbar and the card grid. */}
-      {(q || segment !== 'All Segments' || statusFilter !== 'All Status') && (
+      {/* Applied filters — every active narrowing in one place, toolbar controls
+          and sidebar panels alike, each individually removable. Only rendered
+          when something is set, so there's no empty gap above the card grid. */}
+      {allChips.length > 0 && (
         <div className="prd-meta">
-          {q && <span className="prd-meta-chip">Search: <strong>{q}</strong></span>}
-          {segment !== 'All Segments' && <span className="prd-meta-chip">Segment: <strong>{segment}</strong></span>}
-          {statusFilter !== 'All Status' && <span className="prd-meta-chip">Status: <strong>{statusFilter}</strong></span>}
+          <span className="prd-meta-label">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+            Applied
+            <span className="prd-meta-label-n">{allChips.length}</span>
+          </span>
+          {allChips.map(chip => (
+            <span key={chip.id} className="prd-meta-chip">
+              <span className="prd-meta-chip-g">{chip.group}</span>
+              <strong>{chip.label}</strong>
+              <button
+                type="button"
+                className="prd-meta-chip-x"
+                onClick={chip.onRemove}
+                aria-label={`Remove ${chip.group} filter ${chip.label}`}
+                title={`Remove ${chip.group}: ${chip.label}`}
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </span>
+          ))}
+          <button type="button" className="prd-meta-clear" onClick={clearAllFilters}>Clear all</button>
         </div>
       )}
 
@@ -1151,10 +1242,14 @@ export default function Products() {
           </FilterPanel>
         </div>
 
+        {/* prd-fbtn, NOT prd-filter-btn: that class belongs to the animated
+            "Filter" trigger pill, whose ::before glow and ::after shine-sweep
+            were bleeding onto these footer buttons — a shine animation running
+            across a white Reset button. */}
         <div className="prd-filter-footer">
-          <button className="prd-filter-btn ghost" onClick={resetFilters}>Reset</button>
-          <button className="prd-filter-btn primary" onClick={() => setFilterOpen(false)}>
-            Apply {activeFilterCount > 0 && <span className="prd-filter-btn-count">{activeFilterCount}</span>}
+          <button className="prd-fbtn ghost" onClick={resetFilters}>Reset</button>
+          <button className="prd-fbtn primary" onClick={() => setFilterOpen(false)}>
+            Apply {activeFilterCount > 0 && <span className="prd-fbtn-count">{activeFilterCount}</span>}
           </button>
         </div>
       </aside>

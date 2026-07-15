@@ -171,7 +171,23 @@
 .prd-filter-btn:active { transform: translateY(0) scale(.99); }
 .prd-filter-btn.is-active { box-shadow: 0 1px 0 rgba(255,255,255,.5) inset, 0 -2px 6px rgba(76,29,149,.4) inset, 0 0 0 3px rgba(167,139,250,.5), 0 8px 24px rgba(124,58,237,.55); }
 .prd-filter-badge { position: relative; z-index: 3; display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: #fff; color: #7c3aed; font-size: 10px; font-weight: 800; }
-@media (max-width: 640px) { .prd-toolbar { flex-direction: column; align-items: stretch; } .prd-tabs { justify-content: center; flex-wrap: wrap; } }
+/* ─── Toolbar + switch tabs — tablet portrait and below ───
+   Above this the toolbar is one row (tabs + search + Filter); on a wide tablet
+   or laptop it simply wraps, and the tabs keep their natural width, so nothing
+   here applies.
+   Once the toolbar stacks, the tabs stack with it. Each tab holds an icon + a
+   long label ("Supplier Mapped Products") + a status badge — roughly 275px of
+   `white-space: nowrap` content — so two of them cannot share a narrow row.
+   Full-width rows fit that content down to the smallest phones. */
+@media (max-width: 640px) {
+  .prd-toolbar { flex-direction: column; align-items: stretch; }
+  .prd-tabs { width: 100%; flex-direction: column; gap: 6px; }
+  .prd-tab { width: 100%; flex: none; justify-content: flex-start; }
+  /* Truncate rather than clip mid-word if a label still can't fit; the badge
+     carries the count, so it's pinned and never shrinks. */
+  .prd-tab-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .prd-tab-badge { flex-shrink: 0; }
+}
 /* ─── Product list — tablet / mobile ─── */
 @media (max-width: 560px) {
   .prd-root { padding: 10px 12px 20px; gap: 10px; }
@@ -179,8 +195,8 @@
   .prd-hero-sub { font-size: 10px; }
   .prd-hero-btn { width: 100%; justify-content: center; }
   .prd-bref-head-sub { display: none; }
-  .prd-tabs { width: 100%; }
-  .prd-tab { flex: 1; justify-content: center; }
+  /* Layout for the tabs is handled at 640px above — phones only tighten it. */
+  .prd-tab { padding: 9px 12px; }
   .prd-tab-label { font-size: 11.5px; }
   .prd-filter-btn { width: 100%; justify-content: center; }
   .prd-detail-overlay { padding: 10px; }
@@ -418,10 +434,49 @@
 .prd-view-btn.on { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 2px 6px rgba(124,58,237,.4); }
 
 /* Meta */
-.prd-meta { display: flex; align-items: center; gap: 10px; padding: 0 4px; flex-wrap: wrap; }
+/* ─── Applied-filter bar ───
+   Sits between the toolbar and the card grid and lists every active filter as
+   a removable chip. Uses the same violet language as the drawer it mirrors. */
+.prd-meta { display: flex; align-items: center; gap: 7px; padding: 0 4px; flex-wrap: wrap; }
 .prd-meta-count { font-size: 13px; font-weight: 800; color: #5b21b6; }
-.prd-meta-chip { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 99px; background: #ede9fe; border: 1px solid #c4b5fd; color: #6d28d9; font-size: 11px; font-weight: 600; }
-.prd-meta-chip strong { font-weight: 800; margin-left: 4px; }
+.prd-meta-label {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  color: #7c3aed; padding-right: 2px;
+}
+.prd-meta-label svg { opacity: .8; }
+.prd-meta-label-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 99px;
+  background: #7c3aed; color: #fff; font-size: 9.5px; font-weight: 800;
+}
+.prd-meta-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 5px 4px 9px; border-radius: 99px;
+  background: #ede9fe; border: 1px solid #c4b5fd; color: #6d28d9;
+  font-size: 11px; font-weight: 600; max-width: 260px;
+  transition: border-color .14s, background .14s;
+}
+.prd-meta-chip:hover { background: #e4dcfd; border-color: #a78bfa; }
+/* Group name stays quiet so the VALUE is what the eye lands on. */
+.prd-meta-chip-g { color: #8b7bb8; font-weight: 700; }
+.prd-meta-chip-g::after { content: ':'; }
+.prd-meta-chip strong { font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prd-meta-chip-x {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; padding: 0; border: none; border-radius: 99px;
+  background: rgba(124,58,237,.14); color: #6d28d9; cursor: pointer;
+  transition: background .14s, color .14s;
+}
+.prd-meta-chip-x:hover { background: #7c3aed; color: #fff; }
+.prd-meta-clear {
+  margin-left: 2px; padding: 4px 11px; border-radius: 99px;
+  border: 1px dashed #c4b5fd; background: transparent; color: #7c3aed;
+  font-family: inherit; font-size: 11px; font-weight: 800; cursor: pointer;
+  transition: background .14s, border-color .14s, color .14s;
+}
+.prd-meta-clear:hover { background: #7c3aed; border-color: transparent; color: #fff; }
 
 /* Vendor deep-link filter banner */
 .prd-vendor-banner {
@@ -1070,18 +1125,28 @@
   border-top: 1px solid #ede9fe;
   background: #faf5ff;
 }
-.prd-filter-btn {
+/* Drawer footer buttons.
+   Named prd-fbtn rather than prd-filter-btn on purpose: that class is the
+   animated "Filter" trigger pill further up this file, and it carries a
+   ::before glow + an infinitely-looping ::after shine sweep. Sharing the name
+   meant both pseudo-elements rendered on Reset and Apply too, so Reset had a
+   shine animation running across a plain white button. Same base as Apply
+   below — the two differ only in colour, not in shape or motion. */
+.prd-fbtn {
   flex: 1;
   height: 40px; border-radius: 10px;
   font-family: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  transition: transform .12s, background .15s, box-shadow .15s;
+  border: 1.5px solid transparent;
+  transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
 }
-.prd-filter-btn.ghost { background: #fff; color: #5b21b6; border: 1.5px solid #ddd6fe; }
-.prd-filter-btn.ghost:hover { background: #ede9fe; border-color: #c4b5fd; }
-.prd-filter-btn.primary { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; border: none; box-shadow: 0 4px 12px rgba(124,58,237,.4); }
-.prd-filter-btn.primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.5); }
-.prd-filter-btn-count {
+.prd-fbtn.ghost { background: #fff; color: #5b21b6; border-color: #ddd6fe; }
+.prd-fbtn.ghost:hover { background: #ede9fe; border-color: #c4b5fd; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(124,58,237,.16); }
+.prd-fbtn.ghost:active { transform: translateY(0); }
+.prd-fbtn.primary { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 4px 12px rgba(124,58,237,.4); }
+.prd-fbtn.primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.5); }
+.prd-fbtn.primary:active { transform: translateY(0); }
+.prd-fbtn-count {
   min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px;
   background: rgba(255,255,255,.22); color: #fff;
   font-size: 10.5px; font-weight: 800;
@@ -1255,6 +1320,13 @@
   border-color: #4c1d95;
   color: #ddd6fe;
 }
+[data-bs-theme="dark"] .prd-meta-chip:hover { background: #35257a; border-color: #7c3aed; }
+[data-bs-theme="dark"] .prd-meta-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-meta-chip-g { color: #a394d4; }
+[data-bs-theme="dark"] .prd-meta-chip-x { background: rgba(196,181,253,.18); color: #ddd6fe; }
+[data-bs-theme="dark"] .prd-meta-chip-x:hover { background: #7c3aed; color: #fff; }
+[data-bs-theme="dark"] .prd-meta-clear { border-color: #4c1d95; color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-meta-clear:hover { background: #7c3aed; border-color: transparent; color: #fff; }
 
 /* Grid cards — dark variant mirrors .plan-card-v2's deep accent mesh
    so the spinning border still pops against a near-black surface. */
@@ -1495,12 +1567,12 @@
   background: #14102a;
   border-top-color: #3b2a6b;
 }
-[data-bs-theme="dark"] .prd-filter-btn.ghost {
+[data-bs-theme="dark"] .prd-fbtn.ghost {
   background: #1a1430;
   border-color: #3b2a6b;
   color: #c4b5fd;
 }
-[data-bs-theme="dark"] .prd-filter-btn.ghost:hover {
+[data-bs-theme="dark"] .prd-fbtn.ghost:hover {
   background: #221852;
   border-color: #7c3aed;
 }
