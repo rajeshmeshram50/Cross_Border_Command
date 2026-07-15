@@ -3185,6 +3185,29 @@ const Stage1 = ({
      `&& !!customer` guard let a saved mirror's fields stay editable on edit.) */
   const lock = sameAsCustomer;
   const [segPopOpen, setSegPopOpen] = useState(false);
+  /* Segment "View all N segments" popover. It used to catch outside clicks with
+   * a full-screen fixed overlay, but that overlay also swallowed wheel events,
+   * so the form behind it couldn't scroll (QA #27 — "form gets stuck and does
+   * not scroll back to the top"). Instead close the popover from document-level
+   * listeners: an outside mousedown, any scroll outside it, or a resize. That
+   * keeps the page fully scrollable while the popover is open. */
+  const segBoxRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!segPopOpen) return;
+    const isInside = (t: EventTarget | null) => !!segBoxRef.current?.contains(t as Node);
+    const onDown = (e: MouseEvent) => { if (!isInside(e.target)) setSegPopOpen(false); };
+    // Scrolling INSIDE the popover (its own list) must not close it.
+    const onScroll = (e: Event) => { if (!isInside(e.target)) setSegPopOpen(false); };
+    const onResize = () => setSegPopOpen(false);
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [segPopOpen]);
   const set = (k: string, v: any) => {
     const nextForm = { ...form, [k]: v };
     setForm(nextForm);
@@ -3304,7 +3327,7 @@ const Stage1 = ({
                 const segVals = Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : []);
                 const labels = segVals.map(v => masters.segments.find(s => s.value === v)?.label ?? v);
                 return (
-                  <div className={`acm-seg-box ${errors.segment ? 'acm-input-error' : ''}`}>
+                  <div ref={segBoxRef} className={`acm-seg-box ${errors.segment ? 'acm-input-error' : ''}`}>
                     {labels.length === 0 ? (
                       <span style={{ color: '#94a3b8', fontSize: 13 }}>Inherited from customer</span>
                     ) : (
@@ -3318,15 +3341,12 @@ const Stage1 = ({
                       </>
                     )}
                     {segPopOpen && labels.length > 1 && (
-                      <>
-                        <div onClick={() => setSegPopOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 55 }} />
-                        <div className="acm-seg-pop">
-                          <div className="acm-seg-pop-title">SEGMENTS ({labels.length})</div>
-                          {labels.map((l, i) => (
-                            <div key={i} className="acm-seg-pop-row"><span className="acm-seg-dot" />{l}</div>
-                          ))}
-                        </div>
-                      </>
+                      <div className="acm-seg-pop">
+                        <div className="acm-seg-pop-title">SEGMENTS ({labels.length})</div>
+                        {labels.map((l: string, i: number) => (
+                          <div key={i} className="acm-seg-pop-row"><span className="acm-seg-dot" />{l}</div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 );

@@ -6,6 +6,7 @@ import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { useSelectionLock } from '../../../hooks/useSelectionLock';
 import { useScrollLock } from '../../../hooks/useScrollLock';
+import { bustAllMasterBundles } from '../../../utils/bustMasterBundles';
 import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -272,6 +273,10 @@ export default function ClmDcpPage() {
     try {
       if (id) { await api.put(`/clm/segment-rules/${id}`, form); toast.success('Updated', `${form.segment_code} rules saved`); }
       else    { await api.post('/clm/segment-rules', form);     toast.success('Added',   `${form.segment_code} rules created`); }
+      // A DCP rule decides whether a segment is exposed by the cached dropdown
+      // bundles at all (they only return segments with >=1 configured doc), so
+      // a rule change must drop those caches too — QA #23.
+      bustAllMasterBundles();
       setModalOpen(false); setEditing(null); reload();
     } catch (e: any) {
       // 409: another rule already exists for this segment — refresh rows
@@ -300,6 +305,7 @@ export default function ClmDcpPage() {
     if (created || updated) toast.success('Saved', `${created} created · ${updated} updated${failed.length ? ` · ${failed.length} skipped` : ''}`);
     if (failed.length && !created && !updated) toast.error('Save failed', failed.join('; '));
     else if (failed.length) toast.info('Some skipped', failed.join('; '));
+    if (created || updated) bustAllMasterBundles();
     setModalOpen(false); setEditing(null); reload();
   };
 

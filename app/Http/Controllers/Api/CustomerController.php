@@ -402,6 +402,52 @@ class CustomerController extends Controller
         return response()->json(['id' => $customer->id, 'deleted' => true]);
     }
 
+    /**
+     * Live "is this GSTIN free?" check for the Add/Edit Customer form.
+     *
+     * Purely a UX affordance — it tells the user a number is taken BEFORE
+     * they fill the rest of the form. It is NOT the guard: two users can
+     * pass this check in the same second and both submit, so the closure
+     * rule in validatePayload() is what actually enforces uniqueness.
+     *
+     * Scope: client + branch, resolved from the authenticated user via
+     * resolveOwnership() so it matches store()/update() exactly (a GSTIN may
+     * legitimately repeat across branches, but not within one). Never trust a
+     * client_id/branch_id from the request.
+     *
+     * Returns the holder's name so the UI can say WHO has it — deliberately
+     * limited to the caller's own branch, so nothing leaks across tenants.
+     */
+    public function gstAvailable(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        [$clientId, $branchId] = $this->resolveOwnership($user);
+
+        $gst = strtoupper(trim((string) $request->query('gst_number', '')));
+        if ($gst === '') {
+            return response()->json(['data' => ['available' => true, 'taken_by' => null]]);
+        }
+
+        $ignoreId = (int) $request->query('ignore_id', 0);
+
+        $row = Customer::query()
+            ->whereNull('deleted_at')
+            ->where('gst_number', $gst)
+            ->where(function ($q) use ($clientId) {
+                $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+            })
+            ->where(function ($q) use ($branchId) {
+                $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
+            })
+            ->when($ignoreId > 0, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->first(['id', 'company_name', 'legal_name']);
+
+        return response()->json(['data' => [
+            'available' => $row === null,
+            'taken_by'  => $row ? ($row->legal_name ?: $row->company_name) : null,
+        ]]);
+    }
+
     /* ──────────────────────────────────────────────────────────────────
      * GST Scrutiny — one row per GST number a domestic customer is
      * registered under. Mirrors VendorController's gst-scrutiny CRUD.
@@ -653,6 +699,33 @@ class CustomerController extends Controller
             'gst_number'     => [
                 'nullable', 'required_if:gst_applicable,Yes', 'string',
                 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/',
+                /* A GSTIN identifies ONE legal entity, so it can't repeat within
+                 * a branch. Branches of the same client are independent address
+                 * books, so the SAME GSTIN may legitimately appear once under
+                 * each — same branch-scoped reasoning as the primary phone /
+                 * email rules below. Closure (not Rule::unique) so the check can
+                 * skip itself when GST Applicable = No: the field is hidden then
+                 * and the controller stores null anyway, so a stale number left
+                 * in the payload must not trip a duplicate error. */
+                function ($attribute, $value, $fail) use ($request, $clientId, $customerId, $branchId) {
+                    if ($request->input('gst_applicable') !== 'Yes') return;
+                    $v = strtoupper(trim((string) $value));
+                    if ($v === '') return;
+                    $exists = \App\Models\Customer::query()
+                        ->whereNull('deleted_at')
+                        ->where('gst_number', $v)
+                        ->where(function ($q) use ($clientId) {
+                            $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+                        })
+                        ->where(function ($q) use ($branchId) {
+                            $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
+                        })
+                        ->when($customerId, fn ($q) => $q->where('id', '!=', $customerId))
+                        ->exists();
+                    if ($exists) {
+                        $fail('This GST Number is already used by another customer in this branch.');
+                    }
+                },
             ],
             'website'        => 'nullable|string|max:500',
             'status'         => 'nullable|in:Active,Inactive',

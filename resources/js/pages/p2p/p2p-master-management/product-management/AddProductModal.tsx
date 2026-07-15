@@ -13,8 +13,8 @@ import { CLM_CSS } from '../../../clm/shared/clmShared';
 import {
   readProductMasterBundle,
   writeProductMasterBundle,
-  bustProductMasterBundle,
 } from './productBundleCache';
+import { bustAllMasterBundles } from '../../../../utils/bustMasterBundles';
 export type VendorEntry = {
   id: string;
   vendorId: string;
@@ -1216,11 +1216,13 @@ export default function AddProductModal(props: {
   const onMasterAdded = (slug: MasterSlug, row: Record<string, unknown>) => {
     const id = String(row.id ?? '');
     if (!id) return;
-    // Inline master add — the cached bundle is now stale (missing this row).
-    // Bust it so the next modal open refetches; the in-memory opt* arrays
-    // below already get the new row appended, so the CURRENT dropdown
-    // updates instantly without needing a refetch.
-    bustProductMasterBundle();
+    // Inline master add — the cached bundles are now stale (missing this row).
+    // Bust ALL of them, not just the product one: masters added here (segments
+    // especially) also feed the Customer/Consignee/Vendor dropdowns, which
+    // would otherwise serve a stale list until their 5-min TTL expired
+    // (QA #23). The in-memory opt* arrays below already get the new row
+    // appended, so the CURRENT dropdown updates instantly without a refetch.
+    bustAllMasterBundles();
     const labelOf = (key: string) => String(row[key] ?? '');
     switch (slug) {
       case 'segments':

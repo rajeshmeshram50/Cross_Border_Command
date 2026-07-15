@@ -172,6 +172,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     
     Route::get   ('/customers/master-bundle',          [CustomerController::class, 'masterBundle']);
+    // Live GSTIN duplicate check for the customer form. MUST stay above the
+    // apiResource below, or `/customers/{customer}` would swallow it.
+    Route::get   ('/customers/gst-available',          [CustomerController::class, 'gstAvailable']);
     Route::apiResource('customers', CustomerController::class)
         ->only(['index', 'show', 'store', 'update', 'destroy']);
 

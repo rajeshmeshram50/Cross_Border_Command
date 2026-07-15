@@ -903,7 +903,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       coSeg:    (customer?.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
       coClass:  '',
       coRisk:   '',
-      coGstApplicable: (customer?.gstApplicable as 'Yes'|'No'|undefined) ?? 'Yes',
+      // Default to 'No' — GST only applies once the user explicitly says so.
+      coGstApplicable: (customer?.gstApplicable as 'Yes'|'No'|undefined) ?? 'No',
       coGstNumber: (customer?.gstNumber as string|undefined) ?? '',
       addrType: DEFAULT_ADDRESS_TYPE,
       addr:     '',
@@ -1015,7 +1016,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                       : String(d.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
           coClass:  d.classification ?? '',
           coRisk:   d.riskLevel     ?? '',
-          coGstApplicable: (d.gstApplicable as 'Yes'|'No'|undefined) ?? 'Yes',
+          // Fall back to 'No' (matching the create default) when the record
+          // has no stored GST flag — don't imply GST applies.
+          coGstApplicable: (d.gstApplicable as 'Yes'|'No'|undefined) ?? 'No',
           coGstNumber: (d.gstNumber as string|undefined) ?? '',
           // Primary address type is locked to "Registered Office" — even
           // if older data stored a different label, normalise here so
@@ -1761,18 +1764,26 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           )}
           {/* GST Scrutiny button + close grouped on the right so they sit
               together (the header is justify-content: space-between, which
-              would otherwise push them apart). Greyed/disabled when GST
-              Applicable = No (domestic only). */}
+              would otherwise push them apart). Greyed/disabled until GST
+              Applicable = Yes AND a GST Number has been entered — the
+              scrutiny form auto-fills from that number, so opening it before
+              one exists gives an empty popup. */}
           <div className="acm-header-right">
             {(() => {
               const gstOn = form.coGstApplicable === 'Yes';
+              const hasGstNo = !!(form.coGstNumber ?? '').trim();
+              const canScrutinise = gstOn && hasGstNo;
               return (
                 <button
                   type="button"
-                  className={`acm-gst-btn${gstOn ? '' : ' is-disabled'}`}
-                  onClick={() => { if (gstOn) setGstPopupOpen(true); }}
-                  disabled={!gstOn}
-                  title={gstOn ? 'Manage GST Scrutiny' : 'Set GST Applicable = Yes to enable'}
+                  className={`acm-gst-btn${canScrutinise ? '' : ' is-disabled'}`}
+                  onClick={() => { if (canScrutinise) setGstPopupOpen(true); }}
+                  disabled={!canScrutinise}
+                  title={
+                    canScrutinise ? 'Manage GST Scrutiny'
+                      : !gstOn ? 'Set GST Applicable = Yes to enable'
+                      : 'Enter the GST Number to enable'
+                  }
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                   GST Scrutiny
@@ -1868,7 +1879,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               additional fields populate. */}
           {stage === 1 && showShimmer && <Stage1FormShimmer />}
           {stage === 1 && !showShimmer && tab === 'identification' && (
-            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} guardSegmentRemove={(prev, vs) => {
+            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} guardSegmentRemove={(prev, vs) => {
               const removed = prev.filter(s => !vs.includes(s));
               if (!removed.length) return vs;
               // Doc codes with an ACTUAL upload (file or URL). Hydration seeds an
@@ -2569,8 +2580,11 @@ function Stage2Shimmer() {
 /* Stage 3 (Evidence Vault) shimmer removed along with the stage itself. */
 
 /* ───── Stage 1 — Identification + Primary Address & Contact ───── */
-function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onGstLocked }:
-  { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[]; gstLocked: boolean; onGstLocked: () => void }) {
+function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onGstLocked, currentCustomerId }:
+  { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[]; gstLocked: boolean; onGstLocked: () => void;
+    /** DB id of the customer being edited — excluded from the GST duplicate
+     *  check so editing a record doesn't collide with its own GST number. */
+    currentCustomerId?: number | null }) {
   // States filter against the selected country: look up the country
   // name → its id from the countries master, then filter states by it.
   const selectedCountry = masters.countries.find(c => c.name === form.country);
@@ -2584,6 +2598,52 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
     setF(k as any, v);
     validateField(k, { ...form, [k]: v });
   };
+
+  /* GST Number — debounced format check, then a duplicate check.
+   *
+   * Validating on every keystroke would flag a half-typed GSTIN as invalid, so
+   * hold off until the user pauses for 500ms. The cleanup clearTimeout cancels
+   * the pending timer on each new keystroke, so only a real pause fires it.
+   *
+   * Order matters: the FORMAT is checked locally first (free). Only a
+   * well-formed GSTIN is worth a round-trip, so the /gst-available call runs
+   * just once per completed number — never per keystroke, and never for a
+   * partial string that could not match anything anyway.
+   *
+   * `taken` is UX only; CustomerController::validatePayload() holds the real
+   * branch-scoped unique rule (two users can pass this check simultaneously). */
+  const [gstStatus, setGstStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid' | 'taken'>('idle');
+  const [gstTakenBy, setGstTakenBy] = useState<string | null>(null);
+  const gstRaw = (form.coGstNumber ?? '').trim();
+  const gstApplicable = form.coGstApplicable === 'Yes';
+  useEffect(() => {
+    if (!gstApplicable || !gstRaw) { setGstStatus('idle'); setGstTakenBy(null); return; }
+    setGstStatus('checking');
+    setGstTakenBy(null);
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      // validateField publishes the inline red error for a malformed number
+      // (and clears it once valid) via the shared errors map.
+      validateField('coGstNumber', { ...form, coGstNumber: gstRaw });
+      if (gstNumberError(gstRaw)) { setGstStatus('invalid'); return; }
+      // Well-formed — now ask the server whether this branch already has it.
+      api.get('/customers/gst-available', {
+        params: { gst_number: gstRaw, ignore_id: currentCustomerId ?? undefined },
+      })
+        .then(r => {
+          if (cancelled) return;
+          const d = r.data?.data ?? r.data ?? {};
+          if (d.available === false) { setGstTakenBy(d.taken_by ?? null); setGstStatus('taken'); }
+          else setGstStatus('valid');
+        })
+        // Network/permission failure must not block the user — the save-time
+        // rule still catches a genuine duplicate.
+        .catch(() => { if (!cancelled) setGstStatus('valid'); });
+    }, 500);
+    return () => { cancelled = true; window.clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gstRaw, gstApplicable]);
+
   return (
     <div>
       <div className="acm-section acm-section-purple">
@@ -2664,12 +2724,29 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                     GST Applicable Yes/No toggle stays locked (flipping to No
                     would orphan the records). */}
                 <input
-                  className={`acm-input ${errors.coGstNumber ? 'acm-input-error' : ''}`}
+                  className={`acm-input ${errors.coGstNumber || gstStatus === 'taken' ? 'acm-input-error' : ''} ${gstStatus === 'valid' ? 'acm-input-ok' : ''}`}
                   placeholder="e.g. 27AADCI6120M1ZH"
                   maxLength={15}
                   value={form.coGstNumber ?? ''}
-                  onChange={e => { set('coGstNumber', e.target.value.toUpperCase().replace(/\s+/g, '')); clearErr('coGstNumber'); }}
+                  /* setF (not set) — skip the per-keystroke validator; the
+                     debounced effect above owns this field's validation. */
+                  onChange={e => { setF('coGstNumber', e.target.value.toUpperCase().replace(/\s+/g, '')); clearErr('coGstNumber'); }}
                 />
+                {gstStatus === 'checking' && (
+                  <div className="acm-gst-hint acm-gst-checking">Checking GST Number…</div>
+                )}
+                {gstStatus === 'valid' && (
+                  <div className="acm-gst-hint acm-gst-ok">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                    GST Number is valid
+                  </div>
+                )}
+                {gstStatus === 'taken' && (
+                  <div className="acm-gst-hint acm-gst-taken">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    {gstTakenBy ? `Already used by ${gstTakenBy}` : 'This GST Number is already taken'}
+                  </div>
+                )}
               </Field>
             )}
             <Field label="Classification & Flags" required error={errors.coClass} fieldKey="coClass">
@@ -4853,6 +4930,19 @@ const SCOPED_CSS = `
 .acm-field input.acm-input-error { border-color: #ef4444; background: #fef2f2; }
 .acm-field input.acm-input-error:focus { box-shadow: 0 0 0 3.5px rgba(239,68,68,.15); }
 .acm-field-error { color: #ef4444; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; }
+
+/* GST Number debounced-check feedback — green "valid" confirmation mirrors
+   the red .acm-field-error styling so both read as one system. */
+.acm-field input.acm-input-ok { border-color: #10b981; background: #f0fdf4; }
+.acm-field input.acm-input-ok:focus { box-shadow: 0 0 0 3.5px rgba(16,185,129,.15); }
+.acm-gst-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; }
+.acm-gst-ok { color: #059669; }
+.acm-gst-checking { color: #94a3b8; }
+.acm-gst-taken { color: #ef4444; }
+[data-bs-theme="dark"] .acm-field input.acm-input-ok { border-color: rgba(16,185,129,.55); background: rgba(16,185,129,.10); }
+[data-bs-theme="dark"] .acm-gst-ok { color: #6ee7b7; }
+[data-bs-theme="dark"] .acm-gst-checking { color: #94a3b8; }
+[data-bs-theme="dark"] .acm-gst-taken { color: #fca5a5; }
 
 /* ── Stage 1 read-only summary (shown on Stage 2 / Stage 3) ─────────
    Dense horizontal layout — every Stage 1 field rendered as a tight
