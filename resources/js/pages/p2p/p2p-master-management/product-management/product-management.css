@@ -179,14 +179,34 @@
    long label ("Supplier Mapped Products") + a status badge — roughly 275px of
    `white-space: nowrap` content — so two of them cannot share a narrow row.
    Full-width rows fit that content down to the smallest phones. */
+/* Above 640px this wrapper is not a box at all — `contents` hoists search and
+   the Filter button back up to be direct flex children of .prd-toolbar, so the
+   original one-row desktop layout is byte-for-byte unchanged. */
+.prd-toolbar-find { display: contents; }
+
 @media (max-width: 640px) {
-  .prd-toolbar { flex-direction: column; align-items: stretch; }
+  /* flex-wrap: nowrap is required, not cosmetic. The base rule sets wrap; with
+     flex-direction: column that makes this a MULTI-LINE column, where each line
+     sizes to its widest item — so children take their own content width and
+     align-items: stretch never binds them to the toolbar. That is what let the
+     search+Filter row size itself to 338.8px and hang off a 360px screen.
+     Single-line column = children stretch to the toolbar and shrink properly. */
+  .prd-toolbar { flex-direction: column; align-items: stretch; flex-wrap: nowrap; }
   .prd-tabs { width: 100%; flex-direction: column; gap: 6px; }
   .prd-tab { width: 100%; flex: none; justify-content: flex-start; }
   /* Truncate rather than clip mid-word if a label still can't fit; the badge
      carries the count, so it's pinned and never shrinks. */
   .prd-tab-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .prd-tab-badge { flex-shrink: 0; }
+
+  /* Search + Filter share one row. min-width: 0 on the wrapper is what makes it
+     work: as a flex item it defaults to min-width: auto ("never shrink below my
+     content"), which floored it at search's 220px + Filter and pushed ~4px off
+     a 360px screen. Once the wrapper can shrink to the toolbar's width, search
+     is the one asked to give up the slack, and Filter keeps its natural size. */
+  .prd-toolbar-find { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .prd-search { flex: 1 1 auto; min-width: 0; }
+  .prd-filter-wrap { flex: 0 0 auto; }
 }
 /* ─── Product list — tablet / mobile ─── */
 @media (max-width: 560px) {
@@ -198,7 +218,10 @@
   /* Layout for the tabs is handled at 640px above — phones only tighten it. */
   .prd-tab { padding: 9px 12px; }
   .prd-tab-label { font-size: 11.5px; }
-  .prd-filter-btn { width: 100%; justify-content: center; }
+  /* Filter sits beside the search box (see .prd-toolbar-find at 640px), so it
+     keeps its natural width — a full-width Filter would force search onto its
+     own line again. Tighter padding buys the search box room. */
+  .prd-filter-btn { padding: 0 14px; }
   .prd-detail-overlay { padding: 10px; }
   .prd-pagination { justify-content: center; }
 }
@@ -929,7 +952,9 @@
      horizontal / mobile) and broke in subtle ways — flat 0 is the only
      position that's correct in all of them. */
   left: 0;
-  width: 340px; max-width: 88vw;
+  /* max-width keeps it a drawer rather than a full-screen takeover on small
+     viewports — the 480px block below hands phones the 88vw treatment. */
+  width: 380px; max-width: 88vw;
   background: #fff;
   border-right: 1.5px solid #ddd6fe;
   box-shadow: 14px 0 36px rgba(76, 29, 149, .18);
@@ -2072,7 +2097,15 @@
 @media (max-width: 860px) { .pv2pd-body { grid-template-columns: 1fr; } }
 .pv2pd-infocol { min-width: 0; }
 .pv2pd-info { display: flex; flex-direction: column; }
-.pv2pd-gallery { display: flex; flex-direction: column; gap: 8px; }
+/* min-width: 0 is load-bearing, exactly as on .pv2pd-infocol above.
+   As a grid item this defaults to min-width: auto, i.e. "never shrink below my
+   content" — and the content is .pv2pd-thumbs, whose natural width is the whole
+   thumbnail strip (8 x 50px + gaps = 456px). That floored the single-column
+   grid at 456px on a 360px phone, stretching the info column with it and
+   clipping the price card and buy bar off-screen. Letting the gallery shrink
+   lets the strip scroll horizontally instead, which is what the dot indicators
+   below it are for. */
+.pv2pd-gallery { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .pv2pd-main-img { position: relative; border-radius: 18px; overflow: hidden; background: #f1edfa; aspect-ratio: 1/.5; box-shadow: 0 10px 26px rgba(76,29,149,.15); display: flex; align-items: center; justify-content: center; }
 .pv2pd-main-img img { width: 100%; height: 100%; object-fit: fill; transition: transform .5s cubic-bezier(.22,1,.36,1); }
 .pv2pd-main-img:hover img { transform: scale(1.05); }
@@ -2154,11 +2187,36 @@
   .pv2pd-hbtn { flex: 1 1 auto; justify-content: center; }
   .pv2pd-body { padding: 14px; gap: 14px; }
 }
+/* Hero actions — keep Edit / Suppliers / Back on ONE row.
+   All three carry long labels (~396px together), so below this they wrapped and
+   "Back to Product List" dropped onto a line of its own. Collapsing the
+   optional words (.pv2pd-hbtn-more) gets the set to ~215px, which holds one row
+   down to 360px. Above 480px the labels are full and there's room to spare. */
+@media (max-width: 480px) {
+  .pv2pd-hero-btns { flex-wrap: nowrap; gap: 6px; }
+  .pv2pd-hbtn { flex: 1 1 0; min-width: 0; padding: 7px 8px; }
+  .pv2pd-hbtn-more { display: none; }
+}
 @media (max-width: 520px) {
-  .pv2pd-highlights { grid-template-columns: 1fr; }
-  .pv2pd-buybar { flex-direction: column; align-items: stretch; }
-  .pv2pd-qty { width: 100%; justify-content: center; }
-  .pv2pd-act { width: 100%; }
+  /* Product Details tiles stay 2-up on phones — the 560px rule above already
+     sets that, and dropping to a single column just made the section twice as
+     long to scroll for no gain; each tile only holds a short label + value. */
+  .pv2pd-hl { padding: 12px 9px 12px 10px; gap: 8px; border-radius: 13px; }
+
+  /* Buy bar — stepper + Wishlist + Cart share ONE row.
+     They used to stack (column / width:100%), which pushed the primary Cart
+     action a full screen-height down. Fitting three controls across ~340px
+     means the stepper shrinks to its digits and the buttons drop the "Add to"
+     verb (.pv2pd-act-verb) — the icons already carry the meaning. */
+  .pv2pd-buybar { flex-direction: row; align-items: center; flex-wrap: nowrap; gap: 6px; }
+  .pv2pd-qty { flex: 0 0 auto; width: auto; height: 38px; }
+  .pv2pd-qty button { width: 28px; font-size: 15px; }
+  .pv2pd-qty input { width: 28px; }
+  /* flex-basis 0 (not the base rule's 100% on Cart) so both buttons divide
+     whatever the stepper leaves, instead of Cart claiming its own row. */
+  .pv2pd-act, .pv2pd-act--cart { flex: 1 1 0; width: auto; min-width: 0; height: 38px; padding: 0 8px; font-size: 11px; gap: 5px; white-space: nowrap; }
+  .pv2pd-act-verb { display: none; }
+
   .pv2pd-tab { min-width: 0; padding: 7px 6px; font-size: 10px; }
   .pv2pd-tab-body { height: 260px; }
 }

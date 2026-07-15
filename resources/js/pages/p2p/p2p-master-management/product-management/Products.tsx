@@ -851,6 +851,11 @@ export default function Products() {
             <span className="prd-tab-badge prd-tab-badge--inactive"><span className="prd-tab-badge-dot" />Inactive<span className="prd-tab-badge-count">{stats.inactive}</span></span>
           </button>
         </div>
+        {/* Groups search + Filter so they can share a row once the toolbar
+            stacks. It is `display: contents` above 640px, so on wider screens
+            it disappears from the layout and the toolbar's original single-row
+            flex is untouched. */}
+        <div className="prd-toolbar-find">
         <div className="prd-search">
           <svg className="prd-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
           <input
@@ -877,6 +882,7 @@ export default function Products() {
             <span>Filter</span>
             {activeFilterCount > 0 && <span className="prd-filter-badge">{activeFilterCount}</span>}
           </button>
+        </div>
         </div>
       </div>
 
