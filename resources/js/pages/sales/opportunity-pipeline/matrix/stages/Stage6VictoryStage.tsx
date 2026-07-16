@@ -32,7 +32,7 @@ type LeadDetail = {
   qualified:     boolean;
   lead_stage_id: number;
   sender_country_iso?: string | null;
-  customer?:     { id: number; company_name: string | null; customer_code: string | null } | null;
+  customer?:     { id: number; company_name: string | null; customer_code: string | null; gst_number?: string | null } | null;
   consignee?:    { id: number; company_name: string | null; consignee_code?: string | null } | null;
 };
 
@@ -45,6 +45,9 @@ type DealDoc = {
   // Domestic / International — drives the Create-Shipment form's conditional
   // fields (INCO Term hidden + ports optional for Domestic).
   doc_type?:          string | null;
+  /* Place of supply — REQUIRED on a Domestic PI, and the authority for the
+   * shipment header's State Code. Stored as the full label ("27 – Maharashtra"). */
+  state_code?:        string | null;
   // Logistics fields carried over to the Create-Shipment form (PI rows
   // return the full model, so these are present on the latest PI).
   inco_term?:         string | null;
@@ -64,14 +67,23 @@ type Shipment = {
   proforma_invoice_id:  number | null;
   shipping_liability:   string | null;
   cold_chain:           boolean;
+  // Labelled "Mode of Transport" — one column, both flows.
+  shipping_mode:        string | null;
+  /* A row populates the export set OR the domestic set, never both — decided by
+   * its PI's doc_type. See the add_domestic_fields_to_shipment_orders migration. */
+  // International only
   zip_code:             string | null;
   freight_cost:         number | string | null;
-  shipping_mode:        string | null;
   inco_term:            string | null;
   port_of_loading:      string | null;
   port_of_unloading:    string | null;
   final_destination:    string | null;
   origin_country:       string | null;
+  // Domestic only
+  pin_code?:            string | null;
+  shipping_cost?:       number | string | null;
+  place_of_dispatch?:   string | null;
+  place_of_delivery?:   string | null;
   remarks:              string | null;
   attachments:          string[] | null;
   created_at:           string;
@@ -141,6 +153,20 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
   const [latestQt, setLatestQt]     = useState<DealDoc | null>(null);
   const [latestPi, setLatestPi]     = useState<DealDoc | null>(null);
   const [shipment, setShipment]     = useState<Shipment | null>(null);
+  /* Which flow the SAVED shipment used — drives the Logistics Instructions
+   * labels/fields below.
+   *
+   * The code prefix is the authority, not the PI: it was allocated from the
+   * PI's doc_type at save time, so it can never drift from the columns that
+   * were actually populated (a PI edited to a different doc_type afterwards
+   * would otherwise make us render the wrong — all-empty — field set).
+   * Fall back to the PI only for a legacy row with no recognisable code. */
+  const shipmentIsDomestic = (() => {
+    const code = (shipment?.shipment_code ?? '').toUpperCase();
+    if (code.startsWith('DSHP-')) return true;
+    if (code.startsWith('SHP-'))  return false;
+    return (latestPi?.doc_type ?? '').trim().toLowerCase() === 'domestic';
+  })();
   const [confetti, setConfetti]     = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   // KPI counts shown above the Create-Shipment CTA (figma): how many
@@ -259,6 +285,14 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
     docType:         latestPi?.doc_type ?? null,
     customerCode:    lead?.customer?.customer_code ?? null,
     customerName:    lead?.customer?.company_name ?? header.customer,
+    /* Domestic header only.
+     * State Code comes from the PI's own `state_code` — that is the PLACE OF
+     * SUPPLY the invoice was raised against (and what drives CGST/SGST vs
+     * IGST), so it is the authority. Only fall back to deriving it from the
+     * GSTIN's first 2 chars (27AADCI… → 27) on a legacy PI that has none. */
+    customerGstNumber: lead?.customer?.gst_number ?? null,
+    customerStateCode: latestPi?.state_code
+      ?? ((lead?.customer?.gst_number ?? '').trim().slice(0, 2) || null),
     consigneeCode:   lead?.consignee?.consignee_code ?? null,
     consigneeName:   lead?.consignee?.company_name ?? null,
     // Auto-fill the shipping/logistics fields shared with the Proforma
@@ -418,17 +452,41 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
                 <span className="s6-shp-ico">🚢</span>
                 LOGISTICS INSTRUCTIONS
               </div>
+              {/* Mirrors the Create-Shipment form exactly: a Domestic shipment
+                  stores pin_code / shipping_cost / place_* and leaves every
+                  export column NULL, so rendering the export labels here would
+                  just print a wall of "—". Labels follow the same rename
+                  (PIN Code, Shipping Cost, Mode of Transport). */}
               <div className="s6-shp-grid s6-shp-grid-3">
                 <Cell label="SHIPPING LIABILITY" value={shipment.shipping_liability ?? '—'} emerald />
                 <Cell label="COLD CHAIN"         value={shipment.cold_chain ? 'Yes — Required' : 'No — Not Required'} emerald />
-                <Cell label="ZIP CODE"           value={shipment.zip_code ?? '—'} />
-                <Cell label="FREIGHT COST"       value={fmtCcy(shipment.freight_cost)} emerald />
-                <Cell label="SHIPPING MODE"      value={shipment.shipping_mode ?? '—'} emerald />
-                <Cell label="INCO TERM"          value={shipment.inco_term ?? '—'} emerald />
-                <Cell label="PORT OF LOADING"    value={shipment.port_of_loading ?? '—'} />
-                <Cell label="PORT OF UNLOADING"  value={shipment.port_of_unloading ?? '—'} />
-                <Cell label="FINAL DESTINATION"  value={shipment.final_destination ?? '—'} amber />
-                <Cell label="ORIGIN COUNTRY"     value={shipment.origin_country ?? '—'} />
+                {shipmentIsDomestic ? (
+                  /* 9 cells → three even rows of 3 in the 3-col grid.
+                     GST Number + State Code are the buyer's GST identity: the
+                     GSTIN from the customer, and the place of supply from the
+                     PI (what drives CGST/SGST vs IGST). Export shipments have
+                     no Indian GST, so they're domestic-only. */
+                  <>
+                    <Cell label="PIN CODE"          value={shipment.pin_code ?? '—'} />
+                    <Cell label="SHIPPING COST"     value={fmtCcy(shipment.shipping_cost)} emerald />
+                    <Cell label="MODE OF TRANSPORT" value={shipment.shipping_mode ?? '—'} emerald />
+                    <Cell label="STATE CODE"        value={latestPi?.state_code ?? '—'} emerald />
+                    <Cell label="GST NUMBER"        value={lead?.customer?.gst_number ?? '—'} />
+                    <Cell label="PLACE OF DISPATCH" value={shipment.place_of_dispatch ?? '—'} />
+                    <Cell label="PLACE OF DELIVERY" value={shipment.place_of_delivery ?? '—'} amber />
+                  </>
+                ) : (
+                  <>
+                    <Cell label="ZIP CODE"           value={shipment.zip_code ?? '—'} />
+                    <Cell label="FREIGHT COST"       value={fmtCcy(shipment.freight_cost)} emerald />
+                    <Cell label="MODE OF TRANSPORT"  value={shipment.shipping_mode ?? '—'} emerald />
+                    <Cell label="INCO TERM"          value={shipment.inco_term ?? '—'} emerald />
+                    <Cell label="PORT OF LOADING"    value={shipment.port_of_loading ?? '—'} />
+                    <Cell label="PORT OF UNLOADING"  value={shipment.port_of_unloading ?? '—'} />
+                    <Cell label="FINAL DESTINATION"  value={shipment.final_destination ?? '—'} amber />
+                    <Cell label="ORIGIN COUNTRY"     value={shipment.origin_country ?? '—'} />
+                  </>
+                )}
                 {shipment.remarks && (
                   <div className="s6-shp-cell s6-shp-cell-wide">
                     <div className="s6-shp-label">REMARKS</div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
+import Tooltip from '../../../../components/ui/Tooltip';
 import { useToast } from '../../../../contexts/ToastContext';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -363,7 +364,7 @@ function ToShareTable({
                   </td>
                   <td>
                     <div className="prs-name-cell">
-                      <span className="prs-prod-name">{r.product_name ?? '—'}</span>
+                      <Tooltip label={r.product_name ?? ''} themed maxWidth={420}><span className="prs-prod-name">{r.product_name ?? '—'}</span></Tooltip>
                       {r.product_category && (
                         <span className="prs-cat-badge">{r.product_category.toUpperCase()}</span>
                       )}
@@ -505,7 +506,7 @@ function SharedTable({
               </td>
               <td>
                 <div className="prs-name-cell">
-                  <span className="prs-prod-name">{r.product_name ?? '—'}</span>
+                  <Tooltip label={r.product_name ?? ''} themed maxWidth={420}><span className="prs-prod-name">{r.product_name ?? '—'}</span></Tooltip>
                   {r.product_category && (
                     <span className="prs-cat-badge">{r.product_category.toUpperCase()}</span>
                   )}
@@ -682,7 +683,14 @@ const SCOPED_CSS = `
 
 /* ── Name + category ── */
 .prs-name-cell { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-.prs-prod-name { font-size: 12.5px; color: #0f172a; font-weight: 600; }
+/* Clamp to 2 lines -- a long name stacked to 5 lines and stretched every row.
+   Full name is on the (themed) tooltip. */
+.prs-prod-name {
+  font-size: 12.5px; color: #0f172a; font-weight: 600;
+  max-width: 340px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
 .prs-cat-badge {
   display: inline-block;
   padding: 2px 8px;

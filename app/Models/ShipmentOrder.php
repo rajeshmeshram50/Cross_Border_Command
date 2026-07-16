@@ -7,19 +7,26 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ShipmentOrder extends Model
 {
+    /* Export-only vs domestic-only columns are deliberately separate — see the
+     * add_domestic_fields_to_shipment_orders_table migration. A row populates
+     * one set or the other, never both, according to its PI's doc_type. */
     protected $fillable = [
         'client_id', 'branch_id', 'shipment_code', 'lead_id', 'proforma_invoice_id',
-        'shipping_liability', 'cold_chain', 'zip_code',
-        'freight_cost', 'shipping_mode', 'inco_term',
+        'shipping_liability', 'cold_chain', 'shipping_mode',
+        'attachments', 'remarks', 'created_by',
+        // International only
+        'zip_code', 'freight_cost', 'inco_term',
         'port_of_loading', 'port_of_unloading',
         'final_destination', 'origin_country',
-        'attachments', 'remarks', 'created_by',
+        // Domestic only
+        'pin_code', 'shipping_cost', 'place_of_dispatch', 'place_of_delivery',
     ];
 
     protected $casts = [
-        'cold_chain'   => 'boolean',
-        'freight_cost' => 'decimal:2',
-        'attachments'  => 'array',
+        'cold_chain'    => 'boolean',
+        'freight_cost'  => 'decimal:2',
+        'shipping_cost' => 'decimal:2',
+        'attachments'   => 'array',
     ];
 
     public function lead(): BelongsTo

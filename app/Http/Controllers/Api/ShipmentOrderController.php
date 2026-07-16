@@ -52,6 +52,19 @@ class ShipmentOrderController extends Controller
             // strict ISO-2 rule blocked perfectly valid input. Carriers
             // receive a downstream normalisation step elsewhere.
             'origin_country'      => 'nullable|string|max:64',
+
+            /* ── Domestic-only counterparts (see the add_domestic_fields
+             * migration). Nullable server-side, required on the frontend per
+             * doc type — the same pattern the port fields above already use.
+             * store() persists only the set matching the PI's doc_type, so an
+             * export value can never land in a domestic column or vice versa. */
+            // Indian 6-digit PIN — the domestic counterpart of zip_code.
+            'pin_code'            => 'nullable|string|max:12|regex:/^\d{6}$/',
+            // Domestic counterpart of freight_cost — same gt:0 reasoning.
+            'shipping_cost'       => 'nullable|numeric|gt:0',
+            'place_of_dispatch'   => 'nullable|string|max:128',
+            'place_of_delivery'   => 'nullable|string|max:128',
+
             'attachments'         => 'nullable|array',
             'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:5120',
             'remarks'             => 'nullable|string|max:2000',
@@ -103,28 +116,58 @@ class ShipmentOrderController extends Controller
             // collide or skip a number (mirrors Quotation/PI — CLAUDE rule #3).
             // This is what keeps the sequence gap-free and deterministic, so the
             // create-form preview and the saved code agree.
-            $shipment = DB::transaction(function () use ($user, $branchId, $data, $paths) {
+            /* The PI's doc_type decides BOTH the code prefix and which set of
+             * columns this row may populate. Derived server-side from the PI
+             * (never taken from the request) so a crafted payload can't write
+             * export values onto a domestic shipment or vice versa. */
+            $domestic = $this->isDomesticShipment(
+                $data['proforma_invoice_id'] ?? null,
+                $data['lead_id'] ?? null,
+            );
+
+            $shipment = DB::transaction(function () use ($user, $branchId, $data, $paths, $domestic) {
                 DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-                return ShipmentOrder::create([
-                'client_id'           => $user->client_id,
-                'branch_id'           => $branchId,
-                'shipment_code'       => $this->nextShipmentCode($user->client_id, $branchId),
-                'lead_id'             => $data['lead_id'],
-                'proforma_invoice_id' => $data['proforma_invoice_id']  ?? null,
-                'shipping_liability'  => $data['shipping_liability']   ?? null,
-                'cold_chain'          => (bool) ($data['cold_chain']   ?? false),
-                'zip_code'            => $data['zip_code']             ?? null,
-                'freight_cost'        => $data['freight_cost']         ?? null,
-                'shipping_mode'       => $data['shipping_mode']        ?? null,
-                'inco_term'           => $data['inco_term']            ?? null,
-                'port_of_loading'     => $data['port_of_loading']      ?? null,
-                'port_of_unloading'   => $data['port_of_unloading']    ?? null,
-                'final_destination'   => $data['final_destination']    ?? null,
-                'origin_country'      => $data['origin_country']       ?? null,
-                'attachments'         => $paths ?: null,
-                'remarks'             => $data['remarks']              ?? null,
-                'created_by'          => $user->id,
-                ]);
+
+                // Fields common to both flows.
+                $attrs = [
+                    'client_id'           => $user->client_id,
+                    'branch_id'           => $branchId,
+                    'shipment_code'       => $this->nextShipmentCode($user->client_id, $branchId, $domestic),
+                    'lead_id'             => $data['lead_id'],
+                    'proforma_invoice_id' => $data['proforma_invoice_id']  ?? null,
+                    'shipping_liability'  => $data['shipping_liability']   ?? null,
+                    'cold_chain'          => (bool) ($data['cold_chain']   ?? false),
+                    // Labelled "Mode of Transport" on the form; one column, both flows.
+                    'shipping_mode'       => $data['shipping_mode']        ?? null,
+                    'attachments'         => $paths ?: null,
+                    'remarks'             => $data['remarks']              ?? null,
+                    'created_by'          => $user->id,
+                ];
+
+                if ($domestic) {
+                    // Domestic: PIN + shipping cost + dispatch/delivery places.
+                    // The export columns stay NULL — no INCO term, no ports.
+                    $attrs += [
+                        'pin_code'          => $data['pin_code']          ?? null,
+                        'shipping_cost'     => $data['shipping_cost']     ?? null,
+                        'place_of_dispatch' => $data['place_of_dispatch'] ?? null,
+                        'place_of_delivery' => $data['place_of_delivery'] ?? null,
+                    ];
+                } else {
+                    // International: ZIP + freight cost + the full export block.
+                    // The domestic columns stay NULL.
+                    $attrs += [
+                        'zip_code'          => $data['zip_code']          ?? null,
+                        'freight_cost'      => $data['freight_cost']      ?? null,
+                        'inco_term'         => $data['inco_term']         ?? null,
+                        'port_of_loading'   => $data['port_of_loading']   ?? null,
+                        'port_of_unloading' => $data['port_of_unloading'] ?? null,
+                        'final_destination' => $data['final_destination'] ?? null,
+                        'origin_country'    => $data['origin_country']    ?? null,
+                    ];
+                }
+
+                return ShipmentOrder::create($attrs);
             });
         } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
             // B21: covers the race where two concurrent POSTs both pass
@@ -154,19 +197,50 @@ class ShipmentOrderController extends Controller
      * and the saved code disagreed. `highest_code + 1` is always above every
      * existing code, so it can never collide.)
      */
-    private function nextShipmentCode(int $clientId, ?int $branchId): string
+    /** Code prefix per PI doc type — Domestic shipments are DSHP-, exports SHP-. */
+    private function shipmentPrefix(bool $domestic): string
     {
+        return $domestic ? 'DSHP-' : 'SHP-';
+    }
+
+    /** True when the given PI (or lead's latest PI) is a Domestic document. */
+    private function isDomesticShipment(?int $proformaInvoiceId, ?int $leadId): bool
+    {
+        $docType = null;
+        if ($proformaInvoiceId) {
+            $docType = ProformaInvoice::where('id', $proformaInvoiceId)->value('doc_type');
+        }
+        if ($docType === null && $leadId) {
+            $docType = ProformaInvoice::where('opp_id', $leadId)
+                ->orderByDesc('id')
+                ->value('doc_type');
+        }
+        return strtolower(trim((string) $docType)) === 'domestic';
+    }
+
+    private function nextShipmentCode(int $clientId, ?int $branchId, bool $domestic = false): string
+    {
+        $prefix = $this->shipmentPrefix($domestic);
+
+        /* Scope the MAX to codes with the SAME prefix so Domestic and Export
+         * keep INDEPENDENT sequences — the first domestic shipment is DSHP-001
+         * even when SHP-001..009 already exist. This filter is essential: the
+         * regexp below strips every non-digit, so without it DSHP-001 and
+         * SHP-001 would both read as 1 and the two series would share a
+         * counter. LIKE 'SHP-%' can't match 'DSHP-…' (that starts with a D),
+         * so the two buckets stay disjoint. */
         $row = ShipmentOrder::query()
             ->where('client_id', $clientId)
             ->when($branchId !== null, fn ($q) => $q->where('branch_id', $branchId))
             ->when($branchId === null, fn ($q) => $q->whereNull('branch_id'))
+            ->where('shipment_code', 'like', $prefix . '%')
             ->selectRaw("
                 COALESCE(MAX(CAST(NULLIF(regexp_replace(COALESCE(shipment_code, ''), '\\D', '', 'g'), '') AS INTEGER)), 0) AS max_code
             ")
             ->first();
 
         $next = (int) ($row->max_code ?? 0) + 1;
-        return 'SHP-' . str_pad((string) $next, 3, '0', STR_PAD_LEFT);
+        return $prefix . str_pad((string) $next, 3, '0', STR_PAD_LEFT);
     }
 
     /** GET /sales/shipment-orders/next-code — preview the next Shipment ID for
@@ -183,7 +257,17 @@ class ShipmentOrderController extends Controller
         $branchId = $request->integer('lead_id')
             ? (Lead::where('id', $request->integer('lead_id'))->value('branch_id') ?? $user->branch_id)
             : $user->branch_id;
-        return response()->json(['status' => true, 'code' => $this->nextShipmentCode($user->client_id, $branchId)]);
+        /* Preview the prefix the PI's doc_type will actually produce (DSHP- vs
+         * SHP-), resolved the same way store() does — otherwise the form header
+         * would promise SHP-001 and then save a DSHP-001. */
+        $domestic = $this->isDomesticShipment(
+            $request->integer('proforma_invoice_id') ?: null,
+            $request->integer('lead_id') ?: null,
+        );
+        return response()->json([
+            'status' => true,
+            'code'   => $this->nextShipmentCode($user->client_id, $branchId, $domestic),
+        ]);
     }
 
     public function show(Request $request, int $id)
@@ -241,13 +325,15 @@ class ShipmentOrderController extends Controller
             'lead.salesperson:id,name',
             'lead.customer:id,company_name,customer_code',
             'lead.consignee:id,company_name,consignee_code',
-            'proformaInvoice:id,code,created_at',
+            // doc_type drives which logistics fields below are meaningful.
+            'proformaInvoice:id,code,created_at,doc_type',
             'creator:id,name',
         ])
             ->where('client_id', $user->client_id)
             ->orderByDesc('id')
             ->get()
             ->map(function ($s) {
+                $domestic = strtolower(trim((string) $s->proformaInvoice?->doc_type)) === 'domestic';
                 return [
                     'id'                 => $s->id,
                     'shipment_code'      => $s->shipment_code,
@@ -261,9 +347,23 @@ class ShipmentOrderController extends Controller
                     'pi_date'            => $s->proformaInvoice?->created_at,
                     'shipping_liability' => $s->shipping_liability,
                     'cold_chain'         => (bool) $s->cold_chain,
+                    'shipping_mode'      => $s->shipping_mode,
+                    /* Which flow this row belongs to, so the list can render the
+                     * right columns instead of showing blank INCO/ports for
+                     * every domestic shipment. */
+                    'doc_type'           => $domestic ? 'Domestic' : 'International',
+                    'is_domestic'        => $domestic,
+                    // International-only
                     'inco_term'          => $s->inco_term,
                     'port_of_loading'    => $s->port_of_loading,
                     'port_of_unloading'  => $s->port_of_unloading,
+                    'freight_cost'       => $s->freight_cost,
+                    'zip_code'           => $s->zip_code,
+                    // Domestic-only
+                    'place_of_dispatch'  => $s->place_of_dispatch,
+                    'place_of_delivery'  => $s->place_of_delivery,
+                    'shipping_cost'      => $s->shipping_cost,
+                    'pin_code'           => $s->pin_code,
                 ];
             });
 
@@ -292,12 +392,29 @@ class ShipmentOrderController extends Controller
             'port_of_unloading'   => 'nullable|string|max:128',
             'final_destination'   => 'nullable|string|max:128',
             'origin_country'      => 'nullable|string|max:64',
+            // Domestic-only counterparts — mirrors store().
+            'pin_code'            => 'nullable|string|max:12|regex:/^\d{6}$/',
+            'shipping_cost'       => 'nullable|numeric|gt:0',
+            'place_of_dispatch'   => 'nullable|string|max:128',
+            'place_of_delivery'   => 'nullable|string|max:128',
             'attachments'         => 'nullable|array',
             'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:5120',
             'remarks'             => 'nullable|string|max:2000',
         ]);
 
-        
+        /* Keep the two flows disjoint on edit too. update() writes $data
+         * wholesale, so without this a payload could populate export columns on
+         * a domestic shipment (or vice versa) — exactly the crossover the
+         * separate columns exist to prevent. Doc type comes from the row's own
+         * PI, never the request. */
+        $domesticRow  = $this->isDomesticShipment($row->proforma_invoice_id, $row->lead_id);
+        $exportOnly   = ['zip_code', 'freight_cost', 'inco_term', 'port_of_loading',
+                         'port_of_unloading', 'final_destination', 'origin_country'];
+        $domesticOnly = ['pin_code', 'shipping_cost', 'place_of_dispatch', 'place_of_delivery'];
+        foreach ($domesticRow ? $exportOnly : $domesticOnly as $k) {
+            unset($data[$k]);
+        }
+
         if ($request->hasFile('attachments')) {
             $existing = (array) ($row->attachments ?? []);
             foreach ((array) $request->file('attachments') as $file) {

@@ -6,17 +6,18 @@ import { useToast } from '../../../../../contexts/ToastContext';
 import { useAuth } from '../../../../../contexts/AuthContext';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../../../../components/ui/MasterDatePicker';
+import Tooltip from '../../../../../components/ui/Tooltip';
 
-/* Currency code → symbol (matches the Product Directory / Stage 3 modals). Falls
- * back to the raw code so an unmapped currency still reads sensibly. */
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$', INR: '₹', EUR: '€', GBP: '£', JPY: '¥', CNY: '¥', AUD: 'A$', SGD: 'S$', CAD: 'C$', AED: 'AED ',
-};
-const currencySymbol = (code: string | null | undefined): string => {
-  const c = (code ?? '').toUpperCase().trim();
-  if (!c) return '₹';
-  return CURRENCY_SYMBOLS[c] ?? `${c} `;
-};
+/* Target Price is a PROCUREMENT cost — what we pay the vendor — and it is
+ * sourced from the Product Directory, whose base_price / total_price are INR
+ * (the products table carries no currency column at all). So the prefix is
+ * always the Rupee.
+ *
+ * It used to render the lead product's `currency`, but that is the SELL-side
+ * currency the customer is quoted in — a lead quoted in CNY made the buy-side
+ * target price read "¥ 223432.00" even though the figure is Rupees. Different
+ * concept, wrong symbol. */
+const PROCUREMENT_CURRENCY_SYMBOL = '₹';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Create Product Sourcing modal — Sales Matrix → Stage 3 (Required tab).
@@ -445,7 +446,12 @@ export default function CreateProcurementModal({
                 <thead>
                   <tr>
                     <th style={{ width: 64 }}>SR. NO</th>
-                    <th>PRODUCT NAME</th>
+                    {/* Pinned width: every other column is fixed, so an
+                        unbounded PRODUCT NAME let a long name stretch the table
+                        past the modal and push Target Price / Attachment /
+                        Action out of view. Bounding it also finally gives
+                        MasterSelect's own label ellipsis something to bite on. */}
+                    <th style={{ width: 300 }}>PRODUCT NAME</th>
                     <th style={{ width: 130 }}>QUANTITY</th>
                     <th style={{ width: 150 }}>TARGET PRICE</th>
                     <th style={{ width: 120 }}>ATTACHMENT</th>
@@ -454,7 +460,6 @@ export default function CreateProcurementModal({
                 </thead>
                 <tbody>
                   {drafts.map((d, idx) => {
-                    const sel = d.lead_product_id != null ? productById.get(d.lead_product_id) : undefined;
                     const opts = productPool
                       .filter(p => p.id === d.lead_product_id || !usedLpIds.has(p.id))
                       .map(p => ({ value: String(p.id), label: `(${p.product_code ?? `P-${p.product_id}`}) ${p.product_name ?? ''}`.trim() }));
@@ -495,7 +500,7 @@ export default function CreateProcurementModal({
                             return (
                               <>
                                 <div className="cps-price-wrap">
-                                  <span className="cps-price-prefix">{currencySymbol(sel?.currency)}</span>
+                                  <span className="cps-price-prefix">{PROCUREMENT_CURRENCY_SYMBOL}</span>
                                   <input
                                     type="text" inputMode="decimal"
                                     className={`cps-row-input cps-row-price ${priceMsg ? 'cps-input-err' : ''}`}
@@ -566,9 +571,15 @@ function Field({ label, value, tone, mono, bold }: { label: string; value: React
   return (
     <div className="cps-opp-cell">
       <div className="cps-opp-label">{label}</div>
-      <div className={`cps-opp-val ${tone === 'amber' ? 'cps-opp-val-amber' : ''} ${mono ? 'cps-mono' : ''} ${bold ? 'cps-bold' : ''}`}>
-        {value}
-      </div>
+      {/* The clamp above hides overflow, so the full string must stay reachable
+          on hover. Use the app's themed Tooltip, not the native `title` — that
+          renders the browser's black tooltip and ignores the active theme. It
+          only wraps plain-text values (a node child may be interactive). */}
+      <Tooltip label={typeof value === 'string' ? value : ''} themed maxWidth={420}>
+        <div className={`cps-opp-val ${tone === 'amber' ? 'cps-opp-val-amber' : ''} ${mono ? 'cps-mono' : ''} ${bold ? 'cps-bold' : ''}`}>
+          {value}
+        </div>
+      </Tooltip>
     </div>
   );
 }
@@ -712,7 +723,13 @@ const SCOPED_CSS = `
   font-size: 9.5px; font-weight: 600; letter-spacing: .1em;
   color: #64748b; margin-bottom: 3px; text-transform: uppercase;
 }
-.cps-opp-val { font-size: 12.5px; color: #0c4a6e; font-weight: 600; }
+/* Clamp to 2 lines — a long PRODUCT name wrapped to 4+ lines and stretched
+   the whole Opportunity Summary card. Full value stays on the title tooltip. */
+.cps-opp-val {
+  font-size: 12.5px; color: #0c4a6e; font-weight: 600;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
 .cps-opp-val-amber { color: #0e7490; }
 .cps-mono { font-family: 'Inter', monospace; font-weight: 600; }
 .cps-bold { font-weight: 600; color: #155e75; }
@@ -806,7 +823,9 @@ const SCOPED_CSS = `
 
 /* ─── Sourcing Product Details ─── */
 .cps-prods-wrap { background: #fff; }
-.cps-prods-table { width: 100%; border-collapse: collapse; min-width: 760px; }
+.cps-prods-table { width: 100%; border-collapse: collapse; min-width: 760px; table-layout: fixed; }
+/* Keep the pinned PRODUCT NAME column from being widened by its content. */
+.cps-prods-table td:nth-child(2) { max-width: 300px; overflow: hidden; }
 .cps-prods-table thead th {
   padding: 10px 12px; text-align: left;
   font-size: 9.5px; font-weight: 700; letter-spacing: .1em; color: #0c4a6e;

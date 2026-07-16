@@ -97,6 +97,10 @@ export type OppHeaderData = {
    * whether the Customer / Consignee buttons open Edit or Picker. */
   customerId?:        number | null;
   customerRow?:       Record<string, unknown> | null;
+  /* Currency the lead's already-mapped products share (single-currency-per-lead
+   * rule). Null until the first product is mapped. Filters the Customer picker:
+   * INR ⇒ Indian customers only, non-INR ⇒ foreign customers only. */
+  lockedCurrency?:    string | null;
   consigneeId?:       number | null;
   consigneeRow?:      Record<string, unknown> | null;
   /* Lead's furthest-reached pipeline stage (leads.lead_stage_id, 1..6).
@@ -125,6 +129,13 @@ const DEFAULT_HEADER: OppHeaderData = {
 
 /* DD-Mon-YYYY (e.g. 04-Jul-2026) — the app-wide display date format. */
 const DMY_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** True for an Indian customer — accepts the country name or its ISO code.
+ *  Mirrors ProductDirectoryModal's `isIndia` (the other half of the same gate). */
+const isIndiaCountry = (c?: string | null): boolean => {
+  const v = (c ?? '').trim().toLowerCase();
+  return v === 'india' || v === 'in' || v === 'ind';
+};
 const fmtDmy = (iso: string): string => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
@@ -186,7 +197,6 @@ export default function SalesMatrixDetail() {
 
   /* ─── Customer / Consignee picker + add-edit modal state ─── */
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false);
-  const [customerOpts, setCustomerOpts] = useState<PickerOption[]>([]);
   const [customerLoading, setCustomerLoading] = useState(false);
   const [customerRows, setCustomerRows] = useState<Record<string, EditCustomer>>({});
   const [customerEditing, setCustomerEditing] = useState<EditCustomer | null>(null);
@@ -310,14 +320,13 @@ export default function SalesMatrixDetail() {
       const res = await api.get<{ data?: Row[] } | Row[]>('/customers', { params: { tab: 'all' } });
       const rows = Array.isArray(res.data) ? res.data : ((res.data as { data?: Row[] })?.data ?? []);
       const cache: Record<string, EditCustomer> = {};
-      const opts: PickerOption[] = [];
-      rows.forEach(r => {
-        if (!r.id) return;
-        cache[r.id] = r;
-        opts.push({ value: r.id, label: `${r.id} — ${r.company}` });
-      });
+      rows.forEach(r => { if (r.id) cache[r.id] = r; });
+      /* Cache EVERY customer unfiltered — the currency gate is applied in the
+       * `customerOpts` memo below, not here. Filtering at fetch time would mean
+       * re-hitting /customers every time the lock changed (slow), and would pin
+       * the list to whatever lockedCurrency happened to be in scope when this
+       * ran (stale). Deriving it keeps the filter instant and always current. */
       setCustomerRows(cache);
-      setCustomerOpts(opts);
     } catch {
       toast.error('Failed to load customers', 'Could not reach the Customer API');
     } finally {
@@ -426,6 +435,9 @@ export default function SalesMatrixDetail() {
       acknowledgements: StageAcknowledgement[];
       pi_signed_at: string | null;
       opportunity_date_iso: string | null;
+      /* Currency shared by the lead's mapped products; null until the first
+       * product is mapped. Gates which customers may be picked. */
+      locked_currency: string | null;
     }}>(`/sales/leads/${resolvedLeadId}`)
       .then(({ data }) => {
         const d = data.data;
@@ -440,6 +452,7 @@ export default function SalesMatrixDetail() {
           leadStageId:         d.lead_stage_id,
           customerId:          d.customer_id,
           customerRow:         d.customer,
+          lockedCurrency:      d.locked_currency ?? null,
           consigneeId:         d.consignee_id,
           consigneeRow:        d.consignee,
           remark:              d.remark,
@@ -454,7 +467,11 @@ export default function SalesMatrixDetail() {
       })
       .catch(() => toast.error('Load failed', 'Could not load this lead'))
       .finally(() => setHeaderLoaded(true));
-  }, [resolvedLeadId, toast]);
+    /* productsTick: mapping / editing / removing a product is what sets (or
+     * clears) the lead's locked_currency, and that drives the Customer
+     * picker's country filter. Without re-reading the lead here the filter
+     * would keep using the currency from page load until a manual refresh. */
+  }, [resolvedLeadId, toast, productsTick]);
 
   useEffect(() => { reloadLead(); }, [reloadLead]);
 
@@ -635,6 +652,36 @@ export default function SalesMatrixDetail() {
     return typeof raw === 'string'
       ? raw.split(',').map(s => s.trim()).filter(Boolean)
       : [];
+  }, [serverHeader.customerRow]);
+  /* Currency ⇄ country gate (the mirror of the Product Directory's rule).
+   * Once the lead's products have pinned a currency, only customers whose
+   * country agrees with it may be mapped:
+   *   INR      ⇒ Indian customers only  (domestic)
+   *   non-INR  ⇒ foreign customers only (export)
+   * No products mapped yet ⇒ no lock ⇒ every customer is selectable, and the
+   * customer chosen here drives the currency instead.
+   *
+   * Derived from the cached rows rather than filtered at fetch time, so
+   * flipping the lock re-filters instantly with no extra /customers round-trip. */
+  const customerOpts = useMemo<PickerOption[]>(() => {
+    const lc = (serverHeader.lockedCurrency ?? '').trim().toUpperCase();
+    const wantDomestic = lc === 'INR';
+    const out: PickerOption[] = [];
+    for (const r of Object.values(customerRows)) {
+      if (!r.id) continue;
+      if (lc && wantDomestic !== isIndiaCountry((r as { country?: string | null }).country)) continue;
+      out.push({ value: r.id, label: `${r.id} — ${r.company}` });
+    }
+    return out;
+  }, [customerRows, serverHeader.lockedCurrency]);
+
+  /* The mapped customer's country (customer.primary_address.country) → drives
+   * the Product Directory's Domestic/Export currency gate: India ⇒ INR only,
+   * abroad ⇒ INR excluded. Null when no customer is mapped yet. */
+  const customerCountry = useMemo<string | null>(() => {
+    const pa = serverHeader.customerRow?.primary_address as Record<string, unknown> | null | undefined;
+    const c = pa?.country;
+    return typeof c === 'string' && c.trim() ? c.trim() : null;
   }, [serverHeader.customerRow]);
   /* Deal lock — once the Proforma Invoice is e-signed, ONLY the centre stage
    * column (2nd column / StageComponent) becomes read-only. The action toolbar
@@ -1316,7 +1363,15 @@ export default function SalesMatrixDetail() {
       <EntityPickerModal
         open={customerPickerOpen}
         title="Customer"
-        subtitle="Pick an existing customer to edit, or click + to register a new one"
+        /* Spell out the currency gate — otherwise a filtered/empty list reads
+           as a bug rather than a rule. */
+        subtitle={
+          !serverHeader.lockedCurrency
+            ? 'Pick an existing customer to edit, or click + to register a new one'
+            : (serverHeader.lockedCurrency.toUpperCase() === 'INR'
+                ? 'This opportunity is in INR (domestic) — showing Indian customers only.'
+                : `This opportunity is in ${serverHeader.lockedCurrency} (export) — showing customers outside India only.`)
+        }
         fieldLabel="Select Customer"
         placeholder="Choose a customer"
         emptyHint="No customers yet — click + to add the first"
@@ -1369,7 +1424,8 @@ export default function SalesMatrixDetail() {
          * onSaved below. */
         onClose={() => { setCustomerAddOpen(false); setCustomerEditing(null); setClmInitialStage(undefined); }}
         onSaved={() => {
-          setCustomerOpts([]); setCustomerRows({});
+          // Clearing the cache is enough — customerOpts derives from it.
+          setCustomerRows({});
           setCustomerAddOpen(false); setCustomerEditing(null); setClmInitialStage(undefined);
           /* Bump BOTH ticks: editing the customer's Stage-3 docs here must
            * also move a "Same as Customer" consignee's bar (it mirrors the
@@ -1421,6 +1477,7 @@ export default function SalesMatrixDetail() {
         leadId={resolvedLeadId ?? null}
         leadStage={furthestStage}
         customerSegments={customerSegments}
+        customerCountry={customerCountry}
         onClose={() => setProductDirectoryOpen(false)}
         onChanged={() => setProductsTick(t => t + 1)}
         onAddProduct={() => {
