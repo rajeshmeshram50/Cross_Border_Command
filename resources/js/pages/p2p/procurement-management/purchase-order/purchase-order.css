@@ -697,6 +697,15 @@
 .pom .cptd-send:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none;}
 .pom .cptd-act{width:32px;height:32px;border-radius:8px;border:1.5px solid #d3e3ea;background:#fff;color:#0891b2;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .13s,background .13s;}
 .pom .cptd-act:hover{border-color:#22d3ee;background:#f0fbfe;}
+.pom .cptd-act:disabled{opacity:.5;cursor:not-allowed;}
+/* Reminder-count badge on the bell action — same "how many nudges have gone
+   out" cue as the Agreements popup's Remind button, restyled to this table's
+   palette. Amber (not the table's teal) so it reads as a counter, not a
+   selectable control. The ring matches the surface so it stays legible when it
+   overlaps the button's border. */
+.pom .cptd-act--count{position:relative;overflow:visible;}
+.pom .cptd-act__cnt{position:absolute;top:-5px;right:-5px;min-width:15px;height:15px;padding:0 4px;border-radius:999px;background:#f59e0b;color:#fff;font-size:9px;font-weight:800;line-height:15px;text-align:center;box-shadow:0 0 0 2px #fff;pointer-events:none;}
+[data-bs-theme="dark"] .pom .cptd-act__cnt{box-shadow:0 0 0 2px #0b1e27;}
 .pom .pof-reqstar{color:#e11d48;font-weight:800;}
 .pom .pof-dd.is-error{border-color:#f06548;background:#fff6f4;}
 .pom .pof-dd.is-error:hover{border-color:#f06548;}
@@ -731,6 +740,9 @@
 .pom .cptd-lbtn--signed:hover:not(:disabled){border-color:#34d399;background:#d1fae5;}
 .pom .cptd-lbtn--coo{color:#b45309;background:#fffbeb;border-color:#fde68a;}
 .pom .cptd-lbtn--coo:hover:not(:disabled){border-color:#f59e0b;background:#fef3c7;}
+/* Icon-only variant — same colour tokens (and dark-mode rules) as the labelled
+   pill, sized to line up with the .cptd-act icon buttons next to it. */
+.pom .cptd-lbtn--icon{width:32px;height:32px;padding:0;gap:0;justify-content:center;}
 .pom .cptd-attach{display:inline-flex;align-items:center;gap:6px;max-width:170px;font-family:inherit;font-size:11px;font-weight:700;color:#0e7490;background:#eafcff;border:1.5px solid #c8eef6;border-radius:8px;padding:5px 10px;cursor:pointer;transition:border-color .13s,background .13s;}
 .pom .cptd-attach:hover{border-color:#22d3ee;background:#e0f7fb;}
 .pom .cptd-attach span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
