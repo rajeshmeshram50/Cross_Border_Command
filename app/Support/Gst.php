@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Branch;
 use App\Models\Masters\StateCodes;
 use Illuminate\Support\Facades\DB;
 
@@ -24,6 +25,9 @@ final class Gst
 {
     /** India == domestic. Everything else is international. */
     public const DOMESTIC_COUNTRY = 'India';
+
+    /** Maharashtra — assumed home state when a branch has no GSTIN on file. */
+    public const DEFAULT_HOME_STATE_CODE = '27';
 
     /**
      * A blank/unknown country is NOT domestic. Callers that need to tell
@@ -81,5 +85,30 @@ final class Gst
     {
         $v = strtoupper(trim((string) $gstin));
         return preg_match('/^[0-9]{2}/', $v) ? substr($v, 0, 2) : null;
+    }
+
+    /**
+     * OUR OWN registered GST state code, for a branch.
+     *
+     * This is the other half of place-of-supply: a sale is intra-state
+     * (CGST + SGST) when the buyer's state code equals this, and inter-state
+     * (IGST) when it doesn't. Prefers the branch's explicit `gst_state_code`,
+     * then derives it from the branch GSTIN.
+     *
+     * Falls back to Maharashtra when the branch has neither on file — matching
+     * PurchaseOrderController/SupplierPurchaseInvoiceController, which each
+     * carry their own copy of this rule and default the same way. Those two
+     * predate this helper and still have private versions; new callers should
+     * use this one.
+     */
+    public static function homeStateCode(?int $branchId): string
+    {
+        $branch = $branchId ? Branch::find($branchId) : null;
+        $code = trim((string) (optional($branch)->gst_state_code ?: ''));
+        if ($code === '') {
+            $code = (string) (self::stateCodeFromGstin(optional($branch)->gst_number) ?? '');
+        }
+
+        return $code !== '' ? $code : self::DEFAULT_HOME_STATE_CODE;
     }
 }

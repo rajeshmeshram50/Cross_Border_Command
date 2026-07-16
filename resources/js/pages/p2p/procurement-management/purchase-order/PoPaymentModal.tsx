@@ -23,7 +23,9 @@ type Summary = {
     city?: string; contact?: string; phone?: string; gstNo?: string; gstStatus?: string;
   };
   amounts: {
-    base: number; gstPct: number; gstAmount: number; totalPo: number;
+    /* base EXCLUDES both GST and additional charges — TDS is levied on the
+     * goods value only; the charges are added back after the deduction. */
+    base: number; gstPct: number; gstAmount: number; additionalCharges?: number; totalPo: number;
     tdsPct: number; tdsAmount: number; tdsCut: boolean; netPayable: number;
     amountPaid: number; balance: number; paidCount: number; progressPct: number;
   };
@@ -54,13 +56,19 @@ function usePulse(): [boolean, () => void, () => void] {
 }
 
 export default function PoPaymentModal({
-  open, poId, spiId = null, onClose, onChanged,
+  open, poId, spiId = null, onClose, onChanged, onTdsCut,
 }: {
   open: boolean;
   poId: number | null;
   spiId?: number | null;
   onClose: () => void;
   onChanged?: () => void;
+  /** Fired once TDS has been successfully cut (one-time, irreversible).
+   *  The stored tds_amount was computed from the PO's amounts as they are RIGHT
+   *  NOW, so those amounts must not change afterwards — the opener (the PO
+   *  wizard) uses this to lock itself read-only immediately, instead of only
+   *  locking on the next reload. */
+  onTdsCut?: () => void;
 }) {
   const toast = useToast();
   useScrollLock(open);
@@ -111,10 +119,15 @@ export default function PoPaymentModal({
   const preview = useMemo(() => {
     if (!data || data.amounts.tdsCut) return null;
     const pct = Math.max(0, Math.min(100, Number(tdsInput) || 0));
+    // Base already excludes GST *and* additional charges — TDS is levied on the
+    // goods value only (mirrors PoPaymentController::saveTds).
     const tdsAmount = Math.round(data.amounts.base * pct) / 100;
-    // Net payable = (base − TDS) + GST = base + GST − TDS.
-    const baseGst = data.amounts.base + data.amounts.gstAmount;
-    return { tdsAmount, netPayable: Math.round((baseGst - tdsAmount) * 100) / 100 };
+    /* Net payable = (base − TDS) + GST + additional charges. The charges sit
+     * outside the base, so they must be added back here or the preview would
+     * under-state what the supplier is actually paid. */
+    const addl = data.amounts.additionalCharges ?? 0;
+    const payable = data.amounts.base + data.amounts.gstAmount + addl;
+    return { tdsAmount, netPayable: Math.round((payable - tdsAmount) * 100) / 100 };
   }, [data, tdsInput]);
 
   if (!open) return null;
@@ -140,6 +153,8 @@ export default function PoPaymentModal({
         `${apiBase}/payment-summary/tds`, { tds_percentage: Number(tdsInput) || 0 });
       setData(r.data); setTdsInput(String(r.data.amounts.tdsPct ?? 0));
       toast.success('TDS deducted', `TDS can be deducted only once for this ${label}.`);
+      // Tell the opener the amounts are now frozen — see onTdsCut.
+      onTdsCut?.();
     } catch (e: any) {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save TDS %.');
     } finally { setSavingTds(false); }
