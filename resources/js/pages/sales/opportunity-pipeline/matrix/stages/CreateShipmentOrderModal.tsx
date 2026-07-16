@@ -48,6 +48,10 @@ export type ShipmentInitialContext = {
   finalDestination?: string | null;
   originCountry?:  string | null;
   shippingCost?:   number | string | null;   // PI shipping cost → seeds Freight Cost (editable)
+  /* Domestic only — the PI's dispatch_from / deliver_to seed Place of Dispatch
+   * / Place of Delivery on the form (editable). */
+  placeOfDispatch?: string | null;
+  placeOfDelivery?: string | null;
 };
 
 type Props = {
@@ -142,6 +146,11 @@ export default function CreateShipmentOrderModal({
     setPOU(context.portOfDischarge ?? '');
     setFinalDest(context.finalDestination ?? '');
     setOrigin(context.originCountry ?? '');
+    // Domestic: seed Place of Dispatch / Delivery from the PI (dispatch_from /
+    // deliver_to) so ops doesn't re-key what the invoice already captured. Both
+    // stay editable.
+    setPlaceOfDispatch(context.placeOfDispatch ?? '');
+    setPlaceOfDelivery(context.placeOfDelivery ?? '');
     setRemarks('');
     setAttachments([]);
     setErrors({});
