@@ -7,8 +7,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 70px;
-  padding: 12px 18px;
+  /* Matches the Supplier list's .cstrip (58px, no vertical padding) — this
+     page was noticeably taller than Suppliers before the table even started. */
+  min-height: 58px;
+  padding: 0 20px;
   margin-bottom: 0;
 
   border: 1px solid #c4b5fd;
@@ -213,7 +215,9 @@
   background: transparent;
   padding: 0;
   margin: 0;
-  display: flex; flex-direction: column; gap: 16px;
+  /* 6px between the strips, as on the Supplier list (.sup-fig). 16px was
+     three separate 16px gaps stacked above the table. */
+  display: flex; flex-direction: column; gap: 6px;
   color: var(--vz-body-color);
 }
 .smc-root *, .smc-root *::before, .smc-root *::after { box-sizing: border-box; }
@@ -241,7 +245,7 @@
   width: 100%;
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px;
-  padding: 14px 18px 4px;
+  padding: 10px 14px 4px;
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -256,7 +260,10 @@
   background: transparent;
 }
 
-.smc-wdh-card:not(.is-open) .smc-wdh-toggle-row { padding: 9px 18px; }
+/* Collapsed height matches the Supplier list's .bref-box__header (~48px):
+   this strip is closed almost all the time, so its height is pure overhead
+   above the table. */
+.smc-wdh-card:not(.is-open) .smc-wdh-toggle-row { padding: 7px 14px; min-height: 48px; }
 .smc-wdh-card:not(.is-open) .smc-wdh-bulb { width: 32px; height: 32px; border-radius: 9px; font-size: 15px; }
 .smc-wdh-heading { display: flex; align-items: center; gap: 12px; }
 .smc-wdh-bulb {
@@ -360,6 +367,60 @@
   z-index: 1;
   margin-bottom: 0;
 }
+/* Region filter (Domestic / International). Fixed width so it doesn't compete
+   with the search field for the row's free space; flex-shrink:0 keeps it from
+   being squeezed to nothing before the toolbar wraps. The 42px height lines it
+   up with the search bar and the pill rail. */
+/* Filter button — replaced the old Region dropdown (.smc-filter-ms). Keeps the
+   42px height and 11px radius of the toolbar's other controls so it lines up
+   flush with the search field and the pill rail. */
+.smc-toolbar .smc-filter-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  flex-shrink: 0;
+  height: 42px; padding: 0 16px;
+  border-radius: 11px;
+  font-family: inherit;
+  font-size: 12.5px; font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  background: linear-gradient(135deg, #f5f1fe, #ede9fe);
+  border: 1.5px solid rgba(139,92,246,.28);
+  color: #6d28d9;
+  transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
+}
+.smc-toolbar .smc-filter-btn:hover {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  border-color: rgba(139,92,246,.42);
+  color: #5b21b6;
+}
+/* Active state mirrors .smc-pill.on — a filtered table must be obvious at a
+   glance, otherwise it reads as missing data. */
+.smc-toolbar .smc-filter-btn.on {
+  border: 0;
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 35%, #7c3aed 68%, #5b21b6 100%);
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(91,33,182,.3) inset;
+  text-shadow: 0 1px 2px rgba(76,29,149,.4);
+}
+.smc-toolbar .smc-filter-btn i { font-size: 14px; }
+.smc-filter-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.28);
+  border: 1px solid rgba(255,255,255,.45);
+  color: #fff;
+  font-size: 10.5px; font-weight: 800; line-height: 1;
+  text-shadow: none;
+}
+/* Inline "clear filters" action in the empty state — a link, not a button
+   chrome, so it doesn't compete with the toolbar. */
+.smc-empty-link {
+  background: none; border: 0; padding: 0;
+  font: inherit; font-weight: 700;
+  color: #7c3aed; cursor: pointer; text-decoration: underline;
+}
+.smc-empty-link:hover { color: #5b21b6; }
 .smc-toolbar .smc-search {
   /* Matches the Supplier .sl-search field. */
   position: relative;
@@ -567,10 +628,13 @@
   background: #6d28d9 !important;
   position: sticky; top: 0; z-index: 3;
   color: #ffffff !important;
-  font-size: 12px !important;
-  font-weight: 700 !important;
-  letter-spacing: .03em !important;
-  padding: 11px 14px !important;
+  /* 12px → 11px, and the side padding halved (14 → 7). With 13 columns the
+     table was overflowing on smaller screens; padding was the cheapest width to
+     give back, since it's pure gap between columns. */
+  font-size: 9.5px !important;
+  font-weight: 800 !important;
+  letter-spacing: .07em !important;
+  padding: 9px 9px !important;
   line-height: 1.3 !important;
   border: 0 !important;
   white-space: nowrap;
@@ -578,6 +642,73 @@
   vertical-align: middle !important;
 }
 .smc-table-wrap .table thead th i { font-size: 12px; opacity: 0.85; color: rgba(255,255,255,0.85); }
+
+
+/* Responsive compression — copied from the Supplier list (supplier-management
+ * .sup-fig media queries). Rather than letting a 13-column table push into a
+ * horizontal scroll, the cells give up font size and padding as the viewport
+ * narrows. Combined with the fixed percentage widths above, the table keeps
+ * fitting its container instead of overflowing it. */
+@media (max-width: 1500px) {
+  .smc-table-wrap .table thead th { padding: 8px 6px !important; font-size: 9px !important; }
+  .smc-table-wrap .table tbody td { padding: 6px 6px !important; font-size: 11px; }
+}
+@media (max-width: 1280px) {
+  .smc-table-wrap .table thead th { padding: 7px 5px !important; font-size: 8.5px !important; letter-spacing: .04em !important; }
+  .smc-table-wrap .table tbody td { padding: 5px 5px !important; font-size: 10.5px; }
+}
+/* Column widths — proportional, not content-driven.
+ *
+ * History worth knowing before touching this: with the default `auto` layout the
+ * table hands its leftover width to whichever columns aren't pinned. Pinning
+ * columns one at a time just moved the empty space along the row (Company Name →
+ * Segment → Email); pinning them ALL made the browser split the slack equally,
+ * so every column got a gap; leaving exactly one free dumped the entire
+ * remainder into that one column. None of those can be "tuned" into a table that
+ * fits every screen — auto layout sizes to CONTENT, and 13 columns of content
+ * have no reason to add up to the viewport.
+ *
+ * `table-layout: fixed` inverts it: these percentages ARE the widths. They
+ * always total 100%, so there is no leftover to place anywhere, and every column
+ * scales with the container — the same layout at 1280px and 2560px. Text longer
+ * than its share ellipsises (rule below) instead of widening the table.
+ *
+ * Percentages are budgeted by how much each column actually needs:
+ *   1 Sr No 4 · 2 Customer ID 7 · 3 Company Name 10 · 4 Cust Category 8
+ *   5 Customer Type 8 · 6 Segment 10 · 7 Country 5 · 8 Contact Person 10
+ *   9 Contact No 9 · 10 Email 12 · 11 WhatsApp 5 · 12 Consignees 5 · 13 Actions 7
+ * They MUST keep summing to 100 — a short sum re-creates the leftover problem.
+ */
+.smc-table-wrap .table {
+  table-layout: fixed;
+  width: 100%;
+  /* Below this the shares get too narrow to read, so the wrapper scrolls
+     instead of crushing every column. 13 columns cannot fit a phone without
+     dropping some — this is the floor where they all stay legible. */
+  min-width: 940px;
+}
+.smc-table-wrap .table thead th:nth-child(1),  .smc-table-wrap .table tbody td:nth-child(1)  { width: 4%; }
+.smc-table-wrap .table thead th:nth-child(2),  .smc-table-wrap .table tbody td:nth-child(2)  { width: 7%; }
+.smc-table-wrap .table thead th:nth-child(3),  .smc-table-wrap .table tbody td:nth-child(3)  { width: 10%; }
+.smc-table-wrap .table thead th:nth-child(4),  .smc-table-wrap .table tbody td:nth-child(4)  { width: 8%; }
+.smc-table-wrap .table thead th:nth-child(5),  .smc-table-wrap .table tbody td:nth-child(5)  { width: 8%; }
+.smc-table-wrap .table thead th:nth-child(6),  .smc-table-wrap .table tbody td:nth-child(6)  { width: 10%; }
+.smc-table-wrap .table thead th:nth-child(7),  .smc-table-wrap .table tbody td:nth-child(7)  { width: 5%; }
+.smc-table-wrap .table thead th:nth-child(8),  .smc-table-wrap .table tbody td:nth-child(8)  { width: 10%; }
+.smc-table-wrap .table thead th:nth-child(9),  .smc-table-wrap .table tbody td:nth-child(9)  { width: 9%; }
+.smc-table-wrap .table thead th:nth-child(10), .smc-table-wrap .table tbody td:nth-child(10) { width: 12%; }
+.smc-table-wrap .table thead th:nth-child(11), .smc-table-wrap .table tbody td:nth-child(11) { width: 5%; }
+.smc-table-wrap .table thead th:nth-child(12), .smc-table-wrap .table tbody td:nth-child(12) { width: 5%; }
+.smc-table-wrap .table thead th:nth-child(13), .smc-table-wrap .table tbody td:nth-child(13) { width: 7%; }
+
+/* Fixed layout can't grow a column to fit its content, so anything too long has
+   to be cut here rather than pushing the table wider. */
+.smc-table-wrap .table thead th,
+.smc-table-wrap .table tbody td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .smc-table-wrap .table tbody tr {
   background: #ffffff;
@@ -595,8 +726,10 @@
 .smc-table-wrap .table tbody td {
   --bs-table-bg: transparent !important;
   background: transparent !important;
-  padding: 12px 14px !important;
-  font-size: 13px;
+  /* Supplier's .sl-table tbody td — 7px 9px. The 12px vertical padding here
+     was what made these rows taller than the Supplier list's. */
+  padding: 7px 9px !important;
+  font-size: 11.5px;
   font-weight: 500;
   color: var(--vz-body-color);
   vertical-align: middle;
@@ -982,6 +1115,32 @@
   transition: filter .15s ease, transform .15s ease;
 }
 .smc-type-pill:hover { filter: brightness(1.05); transform: translateY(-1px); }
+
+/* Customer Type (Domestic / International) — same pill shape as the Category
+   pill beside it, but only two states, so the colours are fixed here rather
+   than looked up per value. Slate for Domestic, amber for International: two
+   plainly different hues, and neither reuses a Category colour (which would
+   read as a relationship between the two columns that doesn't exist). */
+.smc-trade-pill {
+  display: inline-flex; align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: .02em;
+  border: 1px solid; white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 1px 2px rgba(15,23,42,.06);
+}
+.smc-trade-pill.is-domestic {
+  background: rgba(100,116,139,0.14); color: #475569; border-color: rgba(100,116,139,0.38);
+}
+.smc-trade-pill.is-intl {
+  background: rgba(245,158,11,0.16); color: #b45309; border-color: rgba(245,158,11,0.40);
+}
+[data-bs-theme="dark"] .smc-trade-pill {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.25);
+}
+[data-bs-theme="dark"] .smc-trade-pill.is-domestic { color: #cbd5e1; }
+[data-bs-theme="dark"] .smc-trade-pill.is-intl     { color: #fbbf24; }
 [data-bs-theme="dark"] .smc-type-pill {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.25);
 }
@@ -1030,15 +1189,9 @@
 .smc-wa.yes { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
 .smc-wa.no  { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; }
 
-.smc-type-pill::before,
-.smc-seg::before,
-.smc-wa::before {
-  content: '';
-  width: 6px; height: 6px; border-radius: 50%;
-  background: currentColor;
-  margin-right: 6px;
-  flex-shrink: 0;
-}
+/* The leading dot on the Category / Segment / WhatsApp pills was removed — the
+   pill's own fill and border already carry the colour, so the dot repeated it.
+   (The Consignee list never had these dots, so the two lists now match.) */
 .smc-actions { display:flex; align-items:center; justify-content:center; gap:4px; flex-wrap:nowrap; }
 .smc-act {
   width:28px; height:28px; border-radius:8px;
@@ -1155,8 +1308,43 @@
   background: var(--vz-secondary-bg);
   border-color: var(--vz-border-color);
 }
-[data-bs-theme="dark"] .smc-pill.off       { color: #c4b5fd; }
-[data-bs-theme="dark"] .smc-pill.off:hover { background: rgba(167,139,250,0.10); color: #c4b5fd; }
+/* Inactive tabs in dark mode.
+   The old rule only recoloured the TEXT and left the light-mode background
+   (#f5f1fe → #ede9fe) in place, so "Fresh"/"Recurring" rendered as pale lavender
+   text on a pale lavender pill — near-invisible on the dark page. Dropping the
+   background is the fix, and it's what the Supplier list's .sl-tab already does
+   in dark: transparent pill, muted text, tint only on hover. */
+[data-bs-theme="dark"] .smc-pill.off {
+  background: transparent;
+  border-color: transparent;
+  color: #9b8fc4;
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .smc-pill.off:hover {
+  background: rgba(124,58,237,0.28);
+  border-color: transparent;
+  color: #fff;
+}
+
+/* Filter button had NO dark rules at all — it kept its light gradient and sat
+   as a bright block on the dark toolbar. Inactive follows the tabs above; the
+   active (filters applied) state keeps its purple gradient, since that state
+   has to stay obvious in either theme. */
+[data-bs-theme="dark"] .smc-toolbar .smc-filter-btn {
+  background: rgba(124,58,237,0.10);
+  border-color: rgba(167,139,250,0.22);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .smc-toolbar .smc-filter-btn:hover {
+  background: rgba(124,58,237,0.28);
+  border-color: rgba(167,139,250,0.40);
+  color: #fff;
+}
+[data-bs-theme="dark"] .smc-toolbar .smc-filter-btn.on {
+  background: linear-gradient(135deg, #a78bfa, #8b5cf6, #7c3aed, #5b21b6);
+  border-color: transparent;
+  color: #fff;
+}
 
 [data-bs-theme="dark"] .smc-toolbar {
 

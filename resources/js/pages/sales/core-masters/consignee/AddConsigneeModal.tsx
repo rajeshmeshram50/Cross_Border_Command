@@ -230,6 +230,10 @@ export type ConsigneeRow = {
   country: string;
   country_iso?: string | null;
   countryDetail: string;
+  /* Whatsapp-enabled flag of the PRIMARY address contact. The list endpoint has
+   * always returned it (ConsigneeController::shape); it just wasn't declared
+   * here until the Whatsapp filter facet needed to read it. */
+  whatsapp?: 'Yes' | 'No' | null;
   /* True iff this consignee was created with "Same as Customer" on.
    * Lets the edit flow keep the toggle ticked + lets the front-end
    * differentiate "this row IS the mirror" from "another consignee
@@ -2403,7 +2407,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                       <ReadInlineG label="Customer ID"          value={activeLinkedCust?.id} />
                       <ReadInlineG label="Company Name"         value={activeLinkedCust?.name} />
                       <ReadInlineG label="Company Legal Name"    value={activeLinkedCust?.legalName} />
-                      <ReadInlineG label="Customer Type"        value={activeLinkedCust?.type} />
+                      {/* The linked customer's Retailer/Wholesaler value — renamed
+                          to Category alongside the customer form, since "Type"
+                          now means Domestic vs International. */}
+                      <ReadInlineG label="Customer Category"    value={activeLinkedCust?.type} />
 
                       <ReadInlineG label="Customer Segment"     value={segDisplay(activeLinkedCust?.segment, mSegmentIds)} />
                       <ReadInlineG label="Classification"       value={activeLinkedCust?.classification} />

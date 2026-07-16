@@ -50,7 +50,7 @@ class Quotation extends Model
         'bank_account_id', 'bank_label',
         'currency', 'exchange_rate',
         'inco_term', 'port_of_loading', 'port_of_discharge', 'final_destination', 'origin_country',
-        'state_code',
+        'state_code', 'dispatch_from', 'deliver_to', 'customer_gst_no',
         'sales_manager_id', 'sales_manager_name',
         'sub_total', 'shipping', 'grand_total',
         'status',

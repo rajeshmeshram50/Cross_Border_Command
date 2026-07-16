@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { createPortal } from 'react-dom';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import api from '../../../api';
@@ -61,11 +61,6 @@ export type Quotation = {
   //                        Reminder enabled (badge shows count)
   emailedAt?: string | null;
   reminderCount?: number;
-  // Server-computed: true when the current user can mutate this row.
-  // Frontend uses it to grey out Edit / Delete / Email / Reminder /
-  // Convert-to-PI on read-only rows so the user gets immediate visual
-  // feedback before hitting a 403. Defaults to true so legacy rows (and
-  // shows where the backend hasn't stamped the flag yet) remain editable.
   canModify?: boolean;
   // Owning branch (eager-loaded). Drives the "Branch" column so
   // client-level users can tell which branch each record belongs to.
@@ -2058,6 +2053,11 @@ type BasicFormState = {
   portOfLoading: string; portOfDischarge: string; finalDestination: string;
   originCountry: string;
   stateCode: string;  // Domestic-only: replaces ports / inco / origin
+  // Domestic-only. Dispatch From / Deliver To are free text; Customer GST No
+  // is auto-fetched from the customer master and read-only.
+  dispatchFrom: string;
+  deliverTo: string;
+  customerGstNo: string;
 
   // Numeric FK ids — populated by the cascade alongside the display
   // labels above. These are what gets POSTed to /sales/quotations.
@@ -2087,6 +2087,9 @@ const EMPTY_BASIC: BasicFormState = {
   finalDestination:'',
   originCountry:   '',
   stateCode:       '',
+  dispatchFrom:    '',
+  deliverTo:       '',
+  customerGstNo:   '',
   oppId:           null,
   customerId:      null,
   consigneeId:     null,
@@ -2136,6 +2139,61 @@ function calcRow(p: ProductRow) {
   return { sub, taxAmt, rateWithTax, amount };
 }
 
+/* ── Domestic GST place-of-supply ────────────────────────────────────────
+ * Mirrors the Purchase Order wizard (CreatePoWizard.tsx) and the server's
+ * App\Support\Gst: the line's Tax % is the total GST, which splits into
+ * CGST + SGST at half each when the customer sits in OUR state, or becomes a
+ * single full-rate IGST when they don't.
+ *
+ * This is a display split only — cgstA + sgstA === igstA === calcRow().taxAmt
+ * for the same row, so Sub Total / Grand Total are identical either way and
+ * the server's totals never disagree with what the user saw. */
+
+/* Resolve a stored State Code down to its bare GST code.
+ *
+ * New documents store the customer's own `customer_addresses.state_code`, so
+ * this is normally already a bare "27". Documents written before State Code
+ * was derived from the customer stored the old dropdown's label instead
+ * ("27 – Maharashtra"), and those still have to open and tax correctly on
+ * edit — hence the en-dash case. */
+const stateCodeOf = (label: string): string => {
+  const v = (label || '').trim();
+  if (!v) return '';
+  const head = v.split(' – ')[0]?.trim() ?? '';
+  /* Only a 1-2 digit code counts. Anything else (a bare state name from some
+   * older row) is "unresolved" → intra below, rather than being compared as a
+   * string against "27" and silently reading as inter-state. */
+  return /^\d{1,2}$/.test(head) ? head : '';
+};
+// Leading zeros don't count: "07" === "7".
+const normStateCode = (code: string): string => {
+  const t = (code || '').trim();
+  return /^\d+$/.test(t) ? String(Number(t)) : '';
+};
+/* An unknown/unresolvable state code counts as intra-state — same default as
+ * the PO wizard, so a half-filled form doesn't flip to IGST. */
+const isIntraState = (stateCodeLabel: string, homeStateCode: string): boolean => {
+  const party = normStateCode(stateCodeOf(stateCodeLabel));
+  const home  = normStateCode(homeStateCode);
+  if (!party || !home) return true;
+  return party === home;
+};
+
+type TaxSplit = { cgstP: number; sgstP: number; igstP: number; cgstA: number; sgstA: number; igstA: number };
+function splitTax(p: ProductRow, intra: boolean): TaxSplit {
+  const base = p.qty * p.rate;
+  const gst = p.taxPct;
+  const cgstP = intra ? gst / 2 : 0;
+  const sgstP = intra ? gst / 2 : 0;
+  const igstP = intra ? 0 : gst;
+  return {
+    cgstP, sgstP, igstP,
+    cgstA: base * cgstP / 100,
+    sgstA: base * sgstP / 100,
+    igstA: base * igstP / 100,
+  };
+}
+
 /* ════════════════════════════════════════════════════════════════════════════
  * Masters hook — pulled once when either Create modal opens so every
  * dropdown gets real, fresh data instead of free-text inputs.
@@ -2161,11 +2219,18 @@ type LeadRow = {
   currency:        string | null;
 };
 type CustomerRow = {
-  dbId:     number;          // customers.id (numeric PK)
-  code:     string;          // "C-012" (display, from customer_code)
-  company:  string;
-  country:  string;
-  currency: string | null;
+  dbId:      number;          // customers.id (numeric PK)
+  code:      string;          // "C-012" (display, from customer_code)
+  company:   string;
+  country:   string;
+  currency:  string | null;
+  /* Both read straight off the customer's primary address — the customer form
+   * already derives `state_code` from the chosen state via the State Codes
+   * master, so Quotation/PI consume it rather than re-deriving it. Blank for a
+   * non-India customer (no GST state code exists) or one saved before the
+   * customer form gained the field. */
+  stateCode: string;          // customer_addresses.state_code, e.g. "27"
+  gstNumber: string;          // customers.gst_number, shown read-only on Domestic
 };
 type ConsigneeRow = {
   dbId:          number;          // consignees.id (numeric PK)
@@ -2195,8 +2260,10 @@ type LoadedMasters = {
   consignees:       MasterOpt[];
   banks:            MasterOpt[];
   opportunities:    MasterOpt[];
-  states:           MasterOpt[];   // Domestic-only "State Code" dropdown
   products:         MasterOpt[];   // Step 2 product dropdown
+  // Our own GST state code (branch.gst_state_code). Drives the Domestic
+  // CGST+SGST vs IGST split against the document's State Code.
+  homeStateCode:    string;
   // Raw rows for cascade lookups
   opportunitiesRaw: LeadRow[];
   customersRaw:     CustomerRow[];
@@ -2264,11 +2331,13 @@ function loadQpiMasters(branch: string): Promise<LoadedMasters> {
     api.get('/consignees').catch(() => ({ data: { data: [] } })),
     api.get('/master/bank_accounts').catch(() => ({ data: [] })),
     api.get('/sales/leads', { params: { per_page: 50 } }).catch(() => ({ data: { data: [] } })),
-    api.get('/master/state_codes').catch(() => ({ data: [] })),
-    api.get('/master/states').catch(() => ({ data: [] })),
+    /* /master/state_codes + /master/states used to be fetched here to build the
+     * State Code dropdown. State Code is now read straight off the selected
+     * customer, so both are gone — /master/states alone was ~1800 rows. */
     api.get('/products', { params: { per_page: 200, status: 'active' } }).catch(() => ({ data: { data: [] } })),
-  ]).then(([cur, inco, port, ctry, cust, cons, bank, lead, stCode, st, prod]): LoadedMasters => {
-    const next = shapeQpiMasters(cur, inco, port, ctry, cust, cons, bank, lead, stCode, st, prod);
+    api.get('/sales/gst-home-state').catch(() => ({ data: {} })),
+  ]).then(([cur, inco, port, ctry, cust, cons, bank, lead, prod, home]): LoadedMasters => {
+    const next = shapeQpiMasters(cur, inco, port, ctry, cust, cons, bank, lead, prod, home);
     qpiMastersCache    = { data: next, branchId: branch, loadedAt: Date.now() };
     qpiMastersInFlight = null;
     return next;
@@ -2285,7 +2354,7 @@ function loadQpiMasters(branch: string): Promise<LoadedMasters> {
 function shapeQpiMasters(
   cur: any, inco: any, port: any, ctry: any,
   cust: any, cons: any, bank: any, lead: any,
-  stCode: any, st: any, prod: any,
+  prod: any, home?: any,
 ): LoadedMasters {
   const arr = (x: any) => Array.isArray(x?.data?.data) ? x.data.data : (Array.isArray(x?.data) ? x.data : []);
   const optByCode = (rows: any[], codeKey = 'code', nameKey = 'name') =>
@@ -2352,6 +2421,9 @@ function shapeQpiMasters(
       dbId, code, company: co,
       country: r.country ?? r.country_iso ?? '',
       currency: r.currency ?? r.default_currency ?? null,
+      // CustomerController::shapeCustomer camelCases both of these.
+      stateCode: String(r.stateCode ?? r.state_code ?? ''),
+      gstNumber: String(r.gstNumber ?? r.gst_number ?? ''),
     });
   });
   const consigneeOpts: MasterOpt[] = [];
@@ -2402,32 +2474,20 @@ function shapeQpiMasters(
       currency:       r.currency ?? r.quote_currency ?? null,
     });
   });
-  const stateRows = arr(st);
-  const stateById = new Map<number, string>();
-  stateRows.forEach((s: any) => { if (s.id) stateById.set(Number(s.id), s.name ?? ''); });
-  const codeRows = arr(stCode);
-  const stateOpts: MasterOpt[] = codeRows.map((r: any) => {
-    const code = (r.state_code ?? r.code ?? '').toString().trim().toUpperCase();
-    const name = stateById.get(Number(r.state_id ?? r.state?.id ?? 0)) ?? (r.state?.name ?? '');
-    const label = code && name ? `${code} – ${name}` : (name || code);
-    return { value: label, label };
-  }).filter((o: MasterOpt) => o.label);
-  const statesFinal: MasterOpt[] = stateOpts.length > 0
-    ? stateOpts
-    : stateRows.map((s: any) => ({ value: s.name ?? '', label: s.name ?? '' })).filter((o: MasterOpt) => o.label);
-
   return {
     currencies: optByCode(arr(cur)),
     incoterms:  optByCode(arr(inco)),
     ports:      optByCode(arr(port)),
     countries:  arr(ctry).map((r: any) => ({ value: r.name ?? '', label: r.name ?? '' })).filter((o: MasterOpt) => o.label),
-    states:     statesFinal,
     customers:  customerOpts,
     consignees: consigneeOpts,
     banks:      bankOptList,
     banksRaw:   bankRawList,
     products:   productOptList,
     productsRaw: productRawList,
+    // Falls back to Maharashtra when the endpoint fails or the branch has no
+    // GSTIN on file — same default as the server's Gst::homeStateCode.
+    homeStateCode: String(home?.data?.data?.state_code ?? '') || '27',
     opportunities:    opportunityOpts,
     opportunitiesRaw,
     customersRaw,
@@ -2459,7 +2519,8 @@ export function useQpiMasters(open: boolean): LoadedMasters {
     return {
       currencies: [], incoterms: [], ports: [], countries: [],
       customers: [], consignees: [], banks: [], opportunities: [],
-      states: [], products: [],
+      products: [],
+      homeStateCode: '',
       opportunitiesRaw: [], customersRaw: [], consigneesRaw: [],
       banksRaw: [], productsRaw: [],
       loading: false,
@@ -2557,6 +2618,7 @@ export function CreateQuotationModal(props: {
       incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
       portOfDischarge: 'Port of Discharge', finalDestination: 'Final Destination',
       originCountry: 'Origin Country', stateCode: 'State Code',
+      dispatchFrom: 'Dispatch From', deliverTo: 'Deliver To',
     };
     if (!form.customerId)            errs.add('customer');
     if (!form.consigneeId)           errs.add('consignee');
@@ -2568,12 +2630,28 @@ export function CreateQuotationModal(props: {
       if (!form.finalDestination)    errs.add('finalDestination');
       if (!form.originCountry)       errs.add('originCountry');
     } else {
-      if (!form.stateCode)           errs.add('stateCode');
+      /* Only once a customer is picked — with none selected the Customer error
+       * below already covers it, and "fill State Code" would be noise. */
+      if (form.customerId && !form.stateCode) errs.add('stateCode');
+      if (!form.dispatchFrom.trim())          errs.add('dispatchFrom');
+      if (!form.deliverTo.trim())             errs.add('deliverTo');
     }
     setStep1Errors(errs);
     if (errs.size > 0) {
-      const list = Array.from(errs).map(k => labels[k]).join(', ');
-      toast.error('Missing required fields', `Please fill: ${list}`);
+      /* State Code is auto-fetched from the customer and read-only here, so
+       * "Please fill: State Code" would be a dead end. Report the fields the
+       * user CAN fix first; once only State Code is left, point them at the
+       * customer record that actually owns it. Either way the field itself
+       * still shows its red required highlight via setStep1Errors above. */
+      const fillable = Array.from(errs).filter(k => k !== 'stateCode');
+      if (fillable.length === 0) {
+        toast.error(
+          'Customer has no GST state code',
+          "State Code is taken from the customer's address. Open this customer's record, set the State, then reopen this form.",
+        );
+        return;
+      }
+      toast.error('Missing required fields', `Please fill: ${fillable.map(k => labels[k]).join(', ')}`);
       return;
     }
     setStep(2);
@@ -2645,6 +2723,9 @@ export function CreateQuotationModal(props: {
           finalDestination: r.final_destination ?? '',
           originCountry:    r.origin_country ?? '',
           stateCode:        r.state_code ?? '',
+          dispatchFrom:     r.dispatch_from ?? '',
+          deliverTo:        r.deliver_to ?? '',
+          customerGstNo:    r.customer_gst_no ?? '',
           oppId:            r.opp_id ?? null,
           customerId:       r.customer_id ?? null,
           consigneeId:      r.consignee_id ?? null,
@@ -2679,6 +2760,7 @@ export function CreateQuotationModal(props: {
     if (!form.consigneeId) { setStep1Errors(prev => new Set(prev).add('consignee')); setStep(1); toast.error('Consignee required', 'Select a consignee before saving.'); return; }
     if (products.length === 0) { toast.error('No products', 'Add at least one line item.'); return; }
     setSaving(true);
+    const isDomestic = form.docType === 'Domestic';
     try {
       const payload = {
         doc_type:          form.docType,
@@ -2694,6 +2776,12 @@ export function CreateQuotationModal(props: {
         final_destination: form.finalDestination|| null,
         origin_country:    form.originCountry   || null,
         state_code:        form.stateCode       || null,
+        // Domestic-only — the form doesn't render these on International, and
+        // the cascade may have pre-filled GST No / State Code from the
+        // customer regardless, so don't persist them onto an export document.
+        dispatch_from:     isDomestic ? (form.dispatchFrom  || null) : null,
+        deliver_to:        isDomestic ? (form.deliverTo     || null) : null,
+        customer_gst_no:   isDomestic ? (form.customerGstNo || null) : null,
         shipping:          Number(shipping) || 0,
         terms:             terms || null,
         items: products.map(p => ({
@@ -2852,6 +2940,7 @@ export function CreateQuotationModal(props: {
               productOptions={masters.products}
               productsRaw={masters.productsRaw}
               loadingProducts={masters.loading}
+              homeStateCode={masters.homeStateCode}
             />
           )}
         </div>
@@ -2953,6 +3042,7 @@ export function CreatePIModal(props: {
       incoTerm: 'INCO Term', portOfLoading: 'Port of Loading',
       portOfDischarge: 'Port of Discharge', finalDestination: 'Final Destination',
       originCountry: 'Origin Country', stateCode: 'State Code',
+      dispatchFrom: 'Dispatch From', deliverTo: 'Deliver To',
     };
     if (!form.customerId)            errs.add('customer');
     if (!form.consigneeId)           errs.add('consignee');
@@ -2964,12 +3054,28 @@ export function CreatePIModal(props: {
       if (!form.finalDestination)    errs.add('finalDestination');
       if (!form.originCountry)       errs.add('originCountry');
     } else {
-      if (!form.stateCode)           errs.add('stateCode');
+      /* Only once a customer is picked — with none selected the Customer error
+       * below already covers it, and "fill State Code" would be noise. */
+      if (form.customerId && !form.stateCode) errs.add('stateCode');
+      if (!form.dispatchFrom.trim())          errs.add('dispatchFrom');
+      if (!form.deliverTo.trim())             errs.add('deliverTo');
     }
     setStep1Errors(errs);
     if (errs.size > 0) {
-      const list = Array.from(errs).map(k => labels[k]).join(', ');
-      toast.error('Missing required fields', `Please fill: ${list}`);
+      /* State Code is auto-fetched from the customer and read-only here, so
+       * "Please fill: State Code" would be a dead end. Report the fields the
+       * user CAN fix first; once only State Code is left, point them at the
+       * customer record that actually owns it. Either way the field itself
+       * still shows its red required highlight via setStep1Errors above. */
+      const fillable = Array.from(errs).filter(k => k !== 'stateCode');
+      if (fillable.length === 0) {
+        toast.error(
+          'Customer has no GST state code',
+          "State Code is taken from the customer's address. Open this customer's record, set the State, then reopen this form.",
+        );
+        return;
+      }
+      toast.error('Missing required fields', `Please fill: ${fillable.map(k => labels[k]).join(', ')}`);
       return;
     }
     setStep(2);
@@ -3015,6 +3121,9 @@ export function CreatePIModal(props: {
           finalDestination: r.final_destination ?? '',
           originCountry:    r.origin_country ?? '',
           stateCode:        r.state_code ?? '',
+          dispatchFrom:     r.dispatch_from ?? '',
+          deliverTo:        r.deliver_to ?? '',
+          customerGstNo:    r.customer_gst_no ?? '',
           oppId:            r.opp_id ?? null,
           customerId:       r.customer_id ?? null,
           consigneeId:      r.consignee_id ?? null,
@@ -3048,6 +3157,7 @@ export function CreatePIModal(props: {
     if (!form.consigneeId) { setStep1Errors(prev => new Set(prev).add('consignee')); setStep(1); toast.error('Consignee required', 'Select a consignee before saving.'); return; }
     if (products.length === 0) { toast.error('No products', 'Add at least one line item.'); return; }
     setSaving(true);
+    const isDomestic = form.docType === 'Domestic';
     try {
       const payload = {
         pi_type:             piType,
@@ -3065,6 +3175,10 @@ export function CreatePIModal(props: {
         final_destination:   form.finalDestination|| null,
         origin_country:      form.originCountry   || null,
         state_code:          form.stateCode       || null,
+        // Domestic-only — see the Quotation payload for why these are gated.
+        dispatch_from:       isDomestic ? (form.dispatchFrom  || null) : null,
+        deliver_to:          isDomestic ? (form.deliverTo     || null) : null,
+        customer_gst_no:     isDomestic ? (form.customerGstNo || null) : null,
         shipping:            Number(shipping) || 0,
         terms:               terms || null,
         items: products.map(p => ({
@@ -3219,6 +3333,7 @@ export function CreatePIModal(props: {
               productOptions={masters.products}
               productsRaw={masters.productsRaw}
               loadingProducts={masters.loading}
+              homeStateCode={masters.homeStateCode}
             />
           )}
         </div>
@@ -3476,7 +3591,10 @@ function OpportunitySelect({
 
 /* ─── Basic form (Step 1) ─── */
 function BasicForm(props: {
-  form: BasicFormState; setForm: (f: BasicFormState) => void;
+  /* setForm is the raw useState dispatcher — the currency + customer-backfill
+   * effects below need the functional form to avoid clobbering concurrent
+   * field edits, so it can't be narrowed to (f: BasicFormState) => void. */
+  form: BasicFormState; setForm: Dispatch<SetStateAction<BasicFormState>>;
   masters: LoadedMasters;
   theme: 'teal' | 'purple'; titleLabel: string; partyKind: 'Quotation' | 'PI';
   /* Validation error keys for the required-field highlight. Parent owns
@@ -3566,6 +3684,8 @@ function BasicForm(props: {
     let nextCurrency  = form.currency;
     let nextCustomerId: number | null  = form.customerId;
     let nextConsigneeId: number | null = form.consigneeId;
+    let nextGstNo     = form.customerGstNo;
+    let nextStateCode = form.stateCode;
 
     // Resolve the customer for this lead by numeric FK first, fall back
     // to company-name match for legacy/sync'd rows missing customer_id.
@@ -3580,6 +3700,10 @@ function BasicForm(props: {
       nextCustomer    = `${custRow.code} – ${custRow.company}`;
       nextCustomerId  = custRow.dbId;
       if (custRow.currency) nextCurrency = custRow.currency;
+      // The opportunity fixes the customer, so its GST No + State Code
+      // auto-fill here too — same rule as picking the customer directly.
+      nextGstNo     = custRow.gstNumber;
+      nextStateCode = custRow.stateCode;
     }
 
     // Currency is driven by the opportunity's PRODUCTS (lead enforces a
@@ -3625,13 +3749,17 @@ function BasicForm(props: {
       currency:        nextCurrency,
       originCountry:   row.sender_country || form.originCountry,
       oppId:           row.leadId ?? form.oppId,
+      customerGstNo:   nextGstNo,
+      stateCode:       nextStateCode,
     });
+    if (nextStateCode) clearError?.('stateCode');
   };
 
   // ── Auto-fill on Customer selection ──────────────────────────
   // 1. Currency from customer master if set.
   // 2. Clear Opportunity if it doesn't belong to this customer.
   // 3. Filter Consignees — auto-pick single, clear stale, keep if still valid.
+  // 4. Domestic: GST No + State Code from the customer's primary address.
   const onCustomerChange = (custValue: string) => {
     const cust = masters.customersRaw.find(c => c.code === labelCode(custValue));
     let nextOpportunity = form.opportunity;
@@ -3639,9 +3767,23 @@ function BasicForm(props: {
     let nextCurrency    = form.currency;
     let nextOppId: number | null       = form.oppId;
     let nextConsigneeId: number | null = form.consigneeId;
+    // Cleared when the customer is deselected, so a stale GSTIN / state can't
+    // linger from a previously-picked customer.
+    let nextGstNo     = '';
+    let nextStateCode = '';
 
     if (cust) {
       if (cust.currency) nextCurrency = cust.currency;
+
+      /* Both auto-fetched from the customer master and read-only on the form —
+       * the customer record is the single source of truth for them. Set on both
+       * document types: only Domestic renders them, but pre-filling means
+       * switching International → Domestic doesn't land on empty fields.
+       * Assigned unconditionally (not `|| form.stateCode`) so a customer with
+       * no state code CLEARS a previous customer's code rather than inheriting
+       * it — silently taxing against the wrong state would be worse than blank. */
+      nextGstNo     = cust.gstNumber;
+      nextStateCode = cust.stateCode;
 
       // Clear opportunity only when the currently-selected opportunity
       // exists in the master list and does not belong to this customer.
@@ -3669,14 +3811,18 @@ function BasicForm(props: {
 
     setForm({
       ...form,
-      customer:    custValue,
-      customerId:  cust?.dbId ?? null,
-      opportunity: nextOpportunity,
-      oppId:       nextOppId,
-      consignee:   nextConsignee,
-      consigneeId: nextConsigneeId,
-      currency:    nextCurrency,
+      customer:      custValue,
+      customerId:    cust?.dbId ?? null,
+      opportunity:   nextOpportunity,
+      oppId:         nextOppId,
+      consignee:     nextConsignee,
+      consigneeId:   nextConsigneeId,
+      currency:      nextCurrency,
+      customerGstNo: nextGstNo,
+      stateCode:     nextStateCode,
     });
+    // The State Code error clears itself when the auto-fill resolved one.
+    if (nextStateCode) clearError?.('stateCode');
   };
 
   // Direct (non-cascade) onChange wrappers for fields that still need
@@ -3689,6 +3835,23 @@ function BasicForm(props: {
     const b = masters.banksRaw.find(b => b.label === v);
     setForm({ ...form, bankName: v, bankAccountId: b?.dbId ?? null });
   };
+
+  /* Backfill the customer-derived Domestic fields when neither cascade ran.
+   * Two cases: the modal was opened from a Sales Matrix lead (Customer is
+   * pre-seeded and read-only), or an older document is being edited that
+   * predates these fields. Only fills what's blank, so a value already on the
+   * record — or one the user just typed — always wins. */
+  useEffect(() => {
+    if (masters.loading || !form.customerId) return;
+    if (form.customerGstNo && form.stateCode) return;
+    const cust = masters.customersRaw.find(c => c.dbId === form.customerId);
+    if (!cust) return;
+    setForm(f => ({
+      ...f,
+      customerGstNo: f.customerGstNo || cust.gstNumber,
+      stateCode:     f.stateCode     || cust.stateCode,
+    }));
+  }, [masters.loading, masters.customersRaw, form.customerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Currency is owned by the opportunity's PRODUCTS (the lead enforces one
   // currency across them). Whenever an opportunity is active — whether the
@@ -3788,20 +3951,65 @@ function BasicForm(props: {
         </Field>
 
         {form.docType === 'Domestic' ? (
-          /* ── Domestic-only field — replaces the international shipping
-             block (Currency / Exchange Rate / INCO / Ports / Origin)
-             with a single State Code dropdown sourced from the State
-             Codes master. */
-          <Field label="State Code" required error={hasError('stateCode')}>
-            <MasterSelect
-              key={`st-${masters.states.length}`}
-              value={form.stateCode}
-              loading={masters.loading}
-              placeholder="— Select State —"
-              options={withCurrent(masters.states, form.stateCode)}
-              onChange={(v) => set('stateCode', v)}
-            />
-          </Field>
+          /* ── Domestic-only fields — replace the international shipping
+             block (Currency / Exchange Rate / INCO / Ports / Origin) with
+             State Code + the customer's GSTIN (both auto-fetched, read-only)
+             and free-text Dispatch From / Deliver To.
+
+             State Code and GST No are NOT editable here: the customer form
+             already derives state_code from the chosen state, so the customer
+             record owns both. A dropdown would let a quotation be taxed against
+             a state the customer isn't registered in. Blank means the customer
+             record is missing it — fix it there, not here. */
+          <>
+            <Field label="State Code" required error={hasError('stateCode')}>
+              <input
+                className="qpi-input qpi-input-readonly"
+                value={form.stateCode}
+                readOnly
+                tabIndex={-1}
+                placeholder={!form.customerId
+                  ? 'Select a customer'
+                  : (masters.loading ? 'Loading…' : 'No state code on this customer')}
+                title={form.customerId && !form.stateCode
+                  ? "This customer's address has no GST state code — set the State on the Customer record."
+                  : 'GST state code — auto-fetched from the customer'}
+              />
+            </Field>
+            {/* Same rule as State Code — the GSTIN belongs to the customer
+                master; editing it here would let an issued document disagree
+                with the record it was raised against. */}
+            <Field label="Customer GST No">
+              <input
+                className="qpi-input qpi-input-readonly"
+                value={form.customerGstNo}
+                readOnly
+                tabIndex={-1}
+                placeholder={form.customerId ? 'No GST number on this customer' : 'Select a customer'}
+                title={form.customerId
+                  ? 'Auto-fetched from the customer master — edit it on the Customer record.'
+                  : undefined}
+              />
+            </Field>
+            <Field label="Dispatch From" required error={hasError('dispatchFrom')}>
+              <input
+                className="qpi-input"
+                value={form.dispatchFrom}
+                maxLength={255}
+                placeholder="Enter dispatch location"
+                onChange={(e) => set('dispatchFrom', e.target.value)}
+              />
+            </Field>
+            <Field label="Deliver To" required error={hasError('deliverTo')}>
+              <input
+                className="qpi-input"
+                value={form.deliverTo}
+                maxLength={255}
+                placeholder="Enter delivery location"
+                onChange={(e) => set('deliverTo', e.target.value)}
+              />
+            </Field>
+          </>
         ) : (
           <>
             {/* Currency:
@@ -3951,9 +4159,12 @@ function ProductsStep(props: {
   productOptions: MasterOpt[];
   productsRaw:    ProductMasterRow[];
   loadingProducts: boolean;
+  // Our own GST state code — compared against form.stateCode to pick the
+  // Domestic tax split. See isIntraState.
+  homeStateCode: string;
 }) {
   const { form, products, removeProduct, draft, setDraft, addProduct, terms, setTerms, shipping, setShipping, subTotal, grandTotal, theme,
-          productOptions, productsRaw, loadingProducts } = props;
+          productOptions, productsRaw, loadingProducts, homeStateCode } = props;
 
   // Per-opportunity product filter. When the user picks an Opportunity
   // on Step 1, the Product Directory mapping (lead_products) tells us
@@ -4092,14 +4303,50 @@ function ProductsStep(props: {
    * list, or none are mapped) → the whole "add product" draft row is hidden. */
   const noMoreProducts = !loadingProducts && !loadingLeadProducts && !leadProductsPending && visibleProductOptions.length === 0;
 
-  // On product selection, auto-fill hsn + (qty/rate/tax) from masters.
-  // Priority for rate: latest QUOTED price (Stage 4) > lead-product
-  //   target_price > product master base_price.
-  // Priority for qty:  lead-product quantity (Product Directory) > draft qty.
-  // Tax: product master taxPct. Never overwrite a value the user has typed.
-  // International documents are tax-free → Tax % is locked at 0%; Domestic is
-  // free-entry. Drives the draft tax input + the value used when adding a line.
   const isIntl = form.docType === 'International';
+  /* Domestic GST split. International documents are tax-free, so they keep the
+   * plain "Tax % + Tax Amount" pair and never show a CGST/SGST/IGST
+   * breakdown. `intra` is only meaningful when !isIntl. */
+  const intra = isIntraState(form.stateCode, homeStateCode);
+  /* The tax block changes the column COUNT (8 / 10 / 8), so the colgroup is
+   * per-mode rather than one fixed list. Each set sums to 100% — the table is
+   * `table-layout: fixed`, so widths that overflow 100 get renormalised and
+   * silently drift from these numbers.
+   *
+   * Domestic drops the "Tax %" column entirely: CGST%+SGST% (or IGST%) already
+   * state the rate, so a Tax % beside them was the same number twice. Matches
+   * the PO wizard, which likewise shows only the split.
+   *   Name | Qty | Rate | …tax block… | Rate w/Tax | Amount | Action */
+  const colWidths = isIntl
+    // Tax % | Tax Amount
+    ? ['30%', '7%', '11%', '7%', '11%', '12%', '12%', '10%']
+    : intra
+      // CGST % | SGST % | CGST Amount | SGST Amount
+      ? ['20%', '7%', '10%', '8%', '8%', '11%', '11%', '11%', '9%', '5%']
+      // IGST % | IGST Amount
+      : ['28%', '8%', '11%', '9%', '12%', '12%', '12%', '8%'];
+  /* Domestic lines whose product carries no GST % in the master. They quote
+   * tax-free, and with the Tax % input gone there's no way to correct that from
+   * here — so say so rather than let a 0% quotation go out silently. */
+  const zeroTaxLines = useMemo(
+    () => (isIntl ? [] : products.filter(p => !(p.taxPct > 0))),
+    [isIntl, products],
+  );
+  // Domestic summary breakdown. cgst + sgst (or igst alone) always equals the
+  // tax already inside Sub Total — this only re-labels it.
+  const taxTotals = useMemo(() => {
+    let cgst = 0, sgst = 0, igst = 0;
+    products.forEach(p => {
+      const t = splitTax(p, intra);
+      cgst += t.cgstA; sgst += t.sgstA; igst += t.igstA;
+    });
+    return { cgst, sgst, igst };
+  }, [products, intra]);
+  /* On product selection, auto-fill hsn + (qty/rate/tax) from masters.
+   * Priority for rate: latest QUOTED price (Stage 4) > lead-product
+   *   target_price > product master base_price.
+   * Priority for qty:  lead-product quantity (Product Directory) > draft qty.
+   * Qty and rate keep anything the user already typed; tax does NOT — see below. */
   const onProductPick = (label: string) => {
     const code = (label || '').split(' – ')[0]?.trim() ?? '';
     const p = productsRaw.find(pr => pr.code === code);
@@ -4116,7 +4363,12 @@ function ProductsStep(props: {
       hsn:       p.hsn,
       qty:    draft.qty    > 0 ? draft.qty    : (leadPrice?.qty  ?? draft.qty),
       rate:   draft.rate   > 0 ? draft.rate   : (latestQuoted ?? leadPrice?.rate ?? p.rate),
-      taxPct: isIntl ? 0 : (draft.taxPct > 0 ? draft.taxPct : p.taxPct),
+      /* Tax always comes from the picked product's master GST — International
+       * is tax-free (0), Domestic has no Tax % input to type into any more.
+       * This must NOT preserve a non-zero draft.taxPct: with no input to clear,
+       * switching from an 18% product to a 28% one would otherwise silently
+       * keep taxing the new line at 18%. */
+      taxPct: isIntl ? 0 : p.taxPct,
     });
   };
 
@@ -4157,7 +4409,18 @@ function ProductsStep(props: {
             <SummaryItem label="Origin Country"    value={form.originCountry} />
           </>
         ) : (
-          <SummaryItem label="State Code" value={form.stateCode} />
+          <>
+            <SummaryItem label="State Code"      value={form.stateCode} />
+            <SummaryItem label="Customer GST No" value={form.customerGstNo} />
+            <SummaryItem label="Dispatch From"   value={form.dispatchFrom} />
+            <SummaryItem label="Deliver To"      value={form.deliverTo} />
+            {/* Says WHY the tax columns look the way they do — otherwise a
+                CGST/SGST vs IGST flip on the table below looks arbitrary. */}
+            <SummaryItem
+              label="Place of Supply"
+              value={intra ? 'Intra-state — CGST + SGST' : 'Inter-state — IGST'}
+            />
+          </>
         )}
       </div>
 
@@ -4168,27 +4431,41 @@ function ProductsStep(props: {
         </div>
       )}
 
+      {zeroTaxLines.length > 0 && (
+        <div className="qpi-product-warn">
+          <span className="qpi-product-warn-icon"><IconWarn /></span>
+          No GST % set on {zeroTaxLines.map(p => p.name.split(' – ')[0] || p.name).join(', ')} — {zeroTaxLines.length === 1 ? 'this line is' : 'these lines are'} quoted tax-free.
+          {' '}Tax comes from the product master; set the GST on the product record to change it.
+        </div>
+      )}
+
       <div className="qpi-products-wrap">
-        <table className={`qpi-products-table qpi-pt-${theme}`}>
+        {/* --wide gives the 10-column intra-state layout (CGST + SGST split)
+            room to breathe — the wrap scrolls horizontally rather than
+            crushing the numeric columns. */}
+        <table className={`qpi-products-table qpi-pt-${theme}${!isIntl && intra ? ' qpi-products-table--wide' : ''}`}>
           {/* Product Name is the dominant column (matches the figma); the
               numeric columns are sized just wide enough for their inputs. */}
           <colgroup>
-            <col style={{ width: '30%' }} />
-            <col style={{ width: '7%' }} />
-            <col style={{ width: '11%' }} />
-            <col style={{ width: '7%' }} />
-            <col style={{ width: '11%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '12%' }} />
-            <col style={{ width: '10%' }} />
+            {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
           </colgroup>
           <thead>
+            {/* Tax columns track the place of supply: intra-state splits the
+                product's GST into CGST + SGST at half each, inter-state shows a
+                single full-rate IGST. Domestic has no separate "Tax %" — the
+                split columns already state the rate. International, being
+                tax-free, keeps the plain Tax % + Tax Amount pair. */}
             <tr>
               <th>Product Name</th>
               <th>Qty</th>
               <th>Product Rate</th>
-              <th>Tax %</th>
-              <th>Tax Amount</th>
+              {isIntl ? (
+                <><th>Tax %</th><th>Tax Amount</th></>
+              ) : intra ? (
+                <><th>CGST (%)</th><th>SGST (%)</th><th>CGST Amount</th><th>SGST Amount</th></>
+              ) : (
+                <><th>IGST (%)</th><th>IGST Amount</th></>
+              )}
               <th>Rate with Tax</th>
               <th>Amount</th>
               <th>Action</th>
@@ -4197,13 +4474,27 @@ function ProductsStep(props: {
           <tbody>
             {products.map(p => {
               const c = calcRow(p);
+              const t = splitTax(p, intra);
               return (
                 <tr key={p.id}>
                   <td>{p.name}</td>
                   <td>{p.qty}</td>
                   <td>{p.rate.toFixed(2)}</td>
-                  <td>{p.taxPct}</td>
-                  <td>{c.taxAmt.toFixed(2)}</td>
+                  {isIntl ? (
+                    <><td>{p.taxPct}</td><td>{c.taxAmt.toFixed(2)}</td></>
+                  ) : intra ? (
+                    <>
+                      <td>{t.cgstP}</td>
+                      <td>{t.sgstP}</td>
+                      <td>{t.cgstA.toFixed(2)}</td>
+                      <td>{t.sgstA.toFixed(2)}</td>
+                    </>
+                  ) : (
+                    <>
+                      <td>{t.igstP}</td>
+                      <td>{t.igstA.toFixed(2)}</td>
+                    </>
+                  )}
                   <td>{c.rateWithTax.toFixed(2)}</td>
                   <td className="qpi-amt">{c.amount.toFixed(2)}</td>
                   <td>
@@ -4238,18 +4529,13 @@ function ProductsStep(props: {
               </td>
               <td><input className="qpi-input qpi-input-num" type="number" min="0" value={draft.qty || ''} onChange={(e) => setDraft({ ...draft, qty: Number(e.target.value) })} /></td>
               <td><input className="qpi-input qpi-input-num" type="number" min="0" value={draft.rate || ''} onChange={(e) => setDraft({ ...draft, rate: Number(e.target.value) })} /></td>
-              <td><input className="qpi-input qpi-input-num" type="number" min="0"
-                disabled={isIntl}
-                placeholder="0"
-                title={isIntl ? 'International documents are tax-free — Tax % is locked at 0%.' : undefined}
-                /* Show empty (not "0") when zero so typing replaces it instead of
-                 * leaving a leading zero like "012". International stays a fixed 0. */
-                value={isIntl ? 0 : (draft.taxPct || '')}
-                onChange={(e) => setDraft({ ...draft, taxPct: Number(e.target.value) })} /></td>
-              {/* Computed columns — read-only boxes that fill live from qty ×
-                  rate × tax once both qty and rate are entered (not editable). */}
+              {/* Tax block — all read-only. The rate comes from the picked
+                  product's master GST (International is tax-free at 0), so there
+                  is nothing to type here; the amounts fill live from qty × rate.
+                  Must emit the same columns as the header above. */}
               {(() => {
                 const dc = calcRow(draft);
+                const dt = splitTax(draft, intra);
                 const has = draft.qty > 0 && draft.rate > 0;
                 /* Computed columns are read-only — styled as disabled (grey)
                    boxes and showing 0.00 (not a dash) until qty × rate fill. */
@@ -4257,7 +4543,19 @@ function ProductsStep(props: {
                   <td><input className="qpi-input qpi-input-num qpi-input-readonly" type="text" readOnly tabIndex={-1}
                     value={has ? val.toFixed(2) : '0.00'} /></td>
                 );
-                return <>{cell(dc.taxAmt)}{cell(dc.rateWithTax)}{cell(dc.amount)}</>;
+                /* Rate cells (Tax % / CGST % / SGST % / IGST %) come straight
+                   from the product, so they show as soon as one is picked —
+                   they don't depend on qty × rate. */
+                const pctCell = (val: number, title?: string) => (
+                  <td><input className="qpi-input qpi-input-num qpi-input-readonly" type="text" readOnly tabIndex={-1}
+                    title={title} value={String(val)} /></td>
+                );
+                const taxCells = isIntl
+                  ? <>{pctCell(0, 'International documents are tax-free — Tax % is locked at 0%.')}{cell(dc.taxAmt)}</>
+                  : intra
+                    ? <>{pctCell(dt.cgstP)}{pctCell(dt.sgstP)}{cell(dt.cgstA)}{cell(dt.sgstA)}</>
+                    : <>{pctCell(dt.igstP)}{cell(dt.igstA)}</>;
+                return <>{taxCells}{cell(dc.rateWithTax)}{cell(dc.amount)}</>;
               })()}
               <td>
                 <button className={`qpi-prod-add qpi-prod-add-${theme}`} onClick={addProduct}>
@@ -4287,6 +4585,26 @@ function ProductsStep(props: {
             <span>Sub Total</span>
             <span className="qpi-summary-val">{subTotal.toFixed(2)}</span>
           </div>
+          {/* Domestic tax breakdown. Purely informational — Sub Total already
+              includes this tax, so these lines are NOT added into Grand Total
+              (that would double-count). */}
+          {!isIntl && (intra ? (
+            <>
+              <div className="qpi-summary-line">
+                <span>Total CGST Amount</span>
+                <span className="qpi-summary-val">{taxTotals.cgst.toFixed(2)}</span>
+              </div>
+              <div className="qpi-summary-line">
+                <span>Total SGST Amount</span>
+                <span className="qpi-summary-val">{taxTotals.sgst.toFixed(2)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="qpi-summary-line">
+              <span>Total IGST Amount</span>
+              <span className="qpi-summary-val">{taxTotals.igst.toFixed(2)}</span>
+            </div>
+          ))}
           <div className="qpi-summary-line">
             <span>Shipping Cost</span>
             <input
@@ -5776,6 +6094,9 @@ const SCOPED_CSS = `
 }
 .qpi-products-wrap::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 .qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; min-width: 800px; table-layout: fixed; }
+/* Domestic intra-state adds 3 columns (CGST %, SGST %, CGST Amt, SGST Amt in
+   place of one Tax Amount) — 11 columns need more than the 800px baseline. */
+.qpi-products-table--wide { min-width: 1020px; }
 /* Header matches the modal's popup chrome — teal gradient for the
    Quotation modal, purple for PI — using the same gradient as the modal
    header. The gradient lives on the ROW (with transparent cells) so it

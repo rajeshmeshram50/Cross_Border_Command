@@ -14,7 +14,9 @@ use App\Models\Masters\Designations;
 use App\Models\Masters\DocumentType;
 use App\Models\Masters\RiskLevels;
 use App\Models\Masters\Segments;
+use App\Models\Masters\StateCodes;
 use App\Models\Masters\States;
+use App\Support\Gst;
 use App\Support\MasterBundleCache;
 use App\Support\MasterVisibility;
 use Illuminate\Http\JsonResponse;
@@ -309,6 +311,17 @@ class CustomerController extends Controller
             ], 422);
         }
 
+        /* Country/consignee compatibility — the mirror of the guard
+         * ConsigneeController runs on its own pivot writes. Without this the
+         * rule was enforced on only one side: the consignee door was locked
+         * while the customer door stood open, so flipping an India customer to
+         * a foreign country silently stranded every India consignee mapped to
+         * it. (Live data already contained one such pair, created exactly this
+         * way.) */
+        if ($denial = $this->consigneeCountryDenial($customer, $data['primary_address']['country'] ?? null)) {
+            return $denial;
+        }
+
         $row = DB::transaction(function () use ($customer, $data) {
             $primary = $data['primary_address'];
 
@@ -565,6 +578,53 @@ class CustomerController extends Controller
      * Reshape a Customer + addresses to the frontend contract — the
      * list page and modal both read these keys.
      */
+    /**
+     * Blocks a customer country change that would strand its mapped consignees.
+     *
+     * The rule is the same one ConsigneeController enforces from the other
+     * side: an India customer may only be mapped to India consignees, and a
+     * non-India customer only to non-India ones. It compares domestic-NESS, not
+     * country strings — a USA customer shipping to a UAE consignee is
+     * legitimate; only the India boundary matters.
+     *
+     * Fires ONLY when the incoming country actually flips domestic-ness. Two
+     * reasons, both deliberate:
+     *   • An edit that doesn't touch the country can't create a violation, so
+     *     re-validating it would be pointless work.
+     *   • More importantly, a customer whose mappings ALREADY violate the rule
+     *     (they predate the guard) must stay editable. Checking unconditionally
+     *     would block every future save on that record over a mismatch its
+     *     editor didn't cause and often can't see from this screen.
+     * Pre-existing violations are therefore left alone here; repairing them is
+     * a data decision, not something an unrelated edit should force.
+     *
+     * @return JsonResponse|null 422 when the change is refused, null to proceed.
+     */
+    private function consigneeCountryDenial(Customer $customer, ?string $newCountry): ?JsonResponse
+    {
+        $wasDomestic = Gst::isDomestic(optional($customer->primaryAddress)->country);
+        $nowDomestic = Gst::isDomestic($newCountry);
+
+        if ($wasDomestic === $nowDomestic) return null;   // country side unchanged
+
+        $stranded = [];
+        foreach ($customer->consignees()->with('primaryAddress:id,consignee_id,country')->get() as $cn) {
+            $cnCountry = optional($cn->primaryAddress)->country;
+            if (Gst::isDomestic($cnCountry) !== $nowDomestic) {
+                $stranded[] = $cn->company_name . ' (' . (trim((string) $cnCountry) ?: 'no country') . ')';
+            }
+        }
+
+        if (empty($stranded)) return null;
+
+        $to = $nowDomestic ? 'India' : (trim((string) $newCountry) ?: 'no country');
+        return response()->json([
+            'message' => 'Cannot change this customer\'s country to ' . $to . ' — it is mapped to consignee(s) on the other side of the India border: '
+                . implode(', ', $stranded) . '. Unmap them first, or change their country to match.',
+            'errors'  => ['primary_address.country' => ['Customer and consignee must both be in India, or both outside it.']],
+        ], 422);
+    }
+
     private function shape(Customer $c): array
     {
         /* Derive `primary` from the already-loaded `addresses`
@@ -602,6 +662,7 @@ class CustomerController extends Controller
             // back to the raw value.
             'country_iso'     => \App\Models\Masters\Countries::isoFor($primary?->country),
             'state'           => $primary?->state,
+            'stateCode'       => $primary?->state_code,
             'city'            => $primary?->city,
             'pin'             => $primary?->pin,
             'addr'            => $primary?->address_line,
@@ -638,6 +699,7 @@ class CustomerController extends Controller
             'address_line'   => $a->address_line,
             'country'        => $a->country,
             'state'          => $a->state,
+            'state_code'     => $a->state_code,
             'city'           => $a->city,
             'pin'            => $a->pin,
             'cp_name'        => $a->cp_name,
@@ -663,6 +725,19 @@ class CustomerController extends Controller
         if ($request->filled('gst_number')) {
             $request->merge(['gst_number' => strtoupper(trim((string) $request->input('gst_number')))]);
         }
+
+        /* GST applicability is DERIVED from the primary address country, never
+         * taken from the request: India → GST applies, anything else → it
+         * doesn't. Overwriting the incoming value here (rather than validating
+         * it) is what makes the invariant hold for EVERY caller — the modal
+         * derives the same value for display, but a direct API call could
+         * otherwise store India + 'No' and sales/P2P read this flag straight
+         * from the column. Merging before validate() also means the existing
+         * required_if:gst_applicable,Yes rule below now keys off the country
+         * without needing to be rewritten. */
+        $request->merge([
+            'gst_applicable' => Gst::applicableFor($request->input('primary_address.country')),
+        ]);
 
         $data = $request->validate([
             'company_name'   => 'required|string|max:255',
@@ -691,7 +766,11 @@ class CustomerController extends Controller
             'segment'        => 'nullable|string|max:1024',
             'classification' => 'nullable|string|max:64',
             'risk_level'     => 'nullable|string|max:32',
-            // Stage 1 — domestic GST flag. 'Yes' gates the GST Scrutiny popup.
+            /* Stage 1 — domestic GST flag. 'Yes' gates the GST Scrutiny popup.
+             * Derived from primary_address.country in the merge() above, so by
+             * the time this rule runs the value is ours, not the caller's. The
+             * rule stays as a tripwire: if the merge is ever removed, a bad
+             * value fails loudly here instead of reaching the column. */
             'gst_applicable' => ['nullable', Rule::in(['Yes', 'No'])],
             // GST number captured on the customer itself when GST Applicable =
             // Yes; auto-fills the GST Scrutiny form. Required + strict GSTIN
@@ -735,6 +814,8 @@ class CustomerController extends Controller
             'primary_address.address_line'   => 'required|string|min:4|max:75',
             'primary_address.country'        => 'nullable|string|max:64',
             'primary_address.state'          => 'nullable|string|max:64',
+            // GST state code auto-derived from the state (domestic addresses only).
+            'primary_address.state_code'     => 'nullable|string|max:32',
             'primary_address.city'           => 'nullable|string|max:64',
             // PIN must be exactly 6 digits (Indian postal code format).
             'primary_address.pin'            => ['nullable', 'string', 'regex:/^\d{6}$/'],
@@ -796,7 +877,28 @@ class CustomerController extends Controller
             'locations.*.cp_contact'     => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],
             'locations.*.cp_email'       => ['nullable', 'email', 'max:255', 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/'],
             'locations.*.cp_whatsapp'    => 'nullable|in:yes,no',
+        ], [
+            /* The rule keys off gst_applicable, but that's derived now — the
+             * user never sees such a field, so the default "…when gst applicable
+             * is Yes" would name a control that isn't on screen. Point at the
+             * country, which is what they actually chose. */
+            'gst_number.required_if' => 'GST Number is required for an India (domestic) customer.',
+            'gst_number.regex'       => 'Invalid GST format. Expected 15 characters: 2 digits, 5 letters, 4 digits, 1 letter, 1 digit/letter, Z, 1 digit/letter (e.g. 27AADCI6120M1ZH).',
         ]);
+
+        /* GST state code is DERIVED from the state, for the same reason
+         * gst_applicable is: sales/P2P compare the buyer's code to the
+         * seller's to pick IGST vs CGST+SGST, so it can't be a value the
+         * caller supplies. The form auto-fills it read-only; this makes that
+         * authoritative rather than advisory.
+         *
+         * Only for a domestic address — the code master holds India's states
+         * only, and matching is by NAME, so a non-India state that happens to
+         * share a name (Punjab exists in Pakistan too) would otherwise pick up
+         * an Indian code. Null when the master has no code for the state. */
+        $data['primary_address']['state_code'] = Gst::isDomestic($data['primary_address']['country'] ?? null)
+            ? Gst::stateCodeFor($data['primary_address']['state'] ?? null)
+            : null;
 
         /* Cross-row uniqueness within the payload. Catches the case
          * where the user reuses the primary contact's email/phone on
@@ -954,6 +1056,15 @@ class CustomerController extends Controller
                 'address_types'            => $active(AddressTypes::class,            ['id', 'name']),
                 'countries'                => $active(Countries::class,               ['id', 'name']),
                 'states'                   => $active(States::class,                  ['id', 'name', 'country_id']),
+                // Drives the read-only State Code beside GST Number — the form
+                // maps the chosen state to its GST code without a second call.
+                // Same shape as the vendor bundle's state_codes.
+                'state_codes'              => StateCodes::query()
+                    ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->tap($scope)
+                    ->with('state:id,name,country_id')
+                    ->orderBy('id')
+                    ->get(['id', 'state_id', 'state_code', 'status']),
                 'designations'             => $active(Designations::class,            ['id', 'name']),
                 'document_type'            => $active(DocumentType::class,            ['id', 'title']),
             ];

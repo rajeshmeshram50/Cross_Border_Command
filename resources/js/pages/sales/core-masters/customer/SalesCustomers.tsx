@@ -11,6 +11,13 @@ import { ShimmerTable } from '../../../../components/ui/Shimmer';
 import api from '../../../../api';
 import TableContainer from '../../../../velzon/Components/Common/TableContainerReactTable';
 import { readCustomerMasterBundle, writeCustomerMasterBundle } from './customerBundleCache';
+import PartyFilterModal, {
+  applyPartyFilters,
+  countPartyFilterValues,
+  isDomesticParty,
+  CUSTOMER_FACETS,
+  type PartyFilters,
+} from '../PartyFilterModal';
 
 // Heavy modals are code-split: their chunks (and TipTap/face-api/pdf deps)
 // download only when first opened, not on the customer list's first paint.
@@ -25,15 +32,15 @@ type Customer = {
   hasSameAsCustomerConsignees?: boolean;
   sameAsCustomerConsigneeCount?: number;
 };
-const TYPE_COLORS: Record<string, { bg: string; color: string; border: string; dot: string }> = {
-  'Retailer':     { bg:'rgba(59,130,246,0.14)',  color:'#2563eb', border:'rgba(59,130,246,0.38)',  dot:'#3b82f6' },
-  'Exporter':     { bg:'rgba(34,197,94,0.14)',   color:'#16a34a', border:'rgba(34,197,94,0.38)',   dot:'#22c55e' },
-  'Reseller':     { bg:'rgba(239,68,68,0.14)',   color:'#dc2626', border:'rgba(239,68,68,0.38)',   dot:'#ef4444' },
-  'Wholesaler':   { bg:'rgba(245,158,11,0.16)',  color:'#d97706', border:'rgba(245,158,11,0.40)',  dot:'#f59e0b' },
-  'Manufacturer': { bg:'rgba(124,58,237,0.16)',  color:'#7c3aed', border:'rgba(124,58,237,0.40)',  dot:'#7c3aed' },
-  'Trader':       { bg:'rgba(6,182,212,0.16)',   color:'#0891b2', border:'rgba(6,182,212,0.40)',   dot:'#06b6d4' },
-  'Distributor':  { bg:'rgba(219,39,119,0.16)',  color:'#db2777', border:'rgba(219,39,119,0.40)',  dot:'#ec4899' },
-  'Importer':     { bg:'rgba(13,148,136,0.16)',  color:'#0d9488', border:'rgba(13,148,136,0.40)',  dot:'#14b8a6' },
+const TYPE_COLORS: Record<string, { bg: string; color: string; border: string }> = {
+  'Retailer':     { bg:'rgba(59,130,246,0.14)',  color:'#2563eb', border:'rgba(59,130,246,0.38)' },
+  'Exporter':     { bg:'rgba(34,197,94,0.14)',   color:'#16a34a', border:'rgba(34,197,94,0.38)' },
+  'Reseller':     { bg:'rgba(239,68,68,0.14)',   color:'#dc2626', border:'rgba(239,68,68,0.38)' },
+  'Wholesaler':   { bg:'rgba(245,158,11,0.16)',  color:'#d97706', border:'rgba(245,158,11,0.40)' },
+  'Manufacturer': { bg:'rgba(124,58,237,0.16)',  color:'#7c3aed', border:'rgba(124,58,237,0.40)' },
+  'Trader':       { bg:'rgba(6,182,212,0.16)',   color:'#0891b2', border:'rgba(6,182,212,0.40)' },
+  'Distributor':  { bg:'rgba(219,39,119,0.16)',  color:'#db2777', border:'rgba(219,39,119,0.40)' },
+  'Importer':     { bg:'rgba(13,148,136,0.16)',  color:'#0d9488', border:'rgba(13,148,136,0.40)' },
 };
 
 const ROWS_PER_PAGE = 10;
@@ -45,13 +52,13 @@ const titleCase = (s: string): string => {
   return s.slice(0, idx) + s[idx].toUpperCase() + s.slice(idx + 1);
 };
 
-const TruncatedCell = ({ value, className, max = 22, caseSensitive = false }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean }) => {
+const TruncatedCell = ({ value, className, max = 60, caseSensitive = false, maxWidth = '100%' }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean; maxWidth?: number | string }) => {
   const raw = (value ?? '').trim();
   if (!raw) return <span className="text-muted">—</span>;
   const v = caseSensitive ? raw : titleCase(raw);
   const needsTooltip = v.length > max;
   const display = needsTooltip ? v.slice(0, max) + '…' : v;
-  const inner = <span className={className} style={{ maxWidth: 220, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
+  const inner = <span className={className} style={{ maxWidth, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
   return needsTooltip ? <Tooltip label={v}>{inner}</Tooltip> : inner;
 };
 
@@ -74,6 +81,16 @@ export default function SalesCustomers() {
   const canEdit   = isSuperAdmin || !!customerPerm?.can_edit;
 
   const [tab, setTab] = useState<'all' | 'fresh' | 'recurring'>('all');
+  /* Customer Type (Domestic/India vs International), Segment, Country and
+   * Whatsapp — a separate axis from the Fresh/Recurring tabs, so they're
+   * filters rather than more pills; the two combine.
+   *
+   * Applied client-side: /customers returns the whole list in one response and
+   * the table paginates it locally, so there's nothing to ask the server for.
+   * (Replaces the old standalone "Region" dropdown, which is now the modal's
+   * Customer Type facet — same rule, same client-side application.) */
+  const [filters, setFilters] = useState<PartyFilters>({});
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const [tabSwitching, setTabSwitching] = useState(false);
   const [q, setQ] = useState('');
@@ -182,6 +199,20 @@ export default function SalesCustomers() {
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
+  /* Matches on `country` (the full name, e.g. "India") — the same field the
+   * Add/Edit form and the consignee mapping guard key off. Not country_iso:
+   * that's null whenever the stored country doesn't resolve to a master row,
+   * which would silently drop those rows from EVERY filter.
+   *
+   * The predicate lives in PartyFilterModal (applyPartyFilters) so the
+   * modal that collects the selections and the page that applies them can't
+   * drift on what a filter means. */
+  const visibleCustomers = useMemo(
+    () => applyPartyFilters(customers, filters),
+    [customers, filters],
+  );
+  const activeFilterCount = countPartyFilterValues(filters);
+
   useEffect(() => {
     if (readCustomerMasterBundle()) return;
     const warm = () => {
@@ -248,19 +279,43 @@ export default function SalesCustomers() {
     {
       header: 'Company Name',
       accessorKey: 'company',
-      cell: (info: any) => <TruncatedCell value={info.getValue()} className="smc-company" max={16} />,
+      cell: (info: any) => <TruncatedCell value={info.getValue()} className="smc-company" />,
     },
     {
-      header: 'Customer Type',
+      /* Retailer / Wholesaler — was headed "Customer Type" until that name was
+         handed to the Domestic/International column below. Only the header
+         changed; the accessor is still `type`.
+         Abbreviated to "Cust Category": every column is sized to its content
+         now, so the full header was the widest thing in the column and set its
+         width all by itself — the values ("Retailer") are far shorter. */
+      header: 'Cust Category',
       accessorKey: 'type',
       meta: { align: 'start' },
       cell: (info: any) => {
         const v = info.getValue() as string | null;
         if (!v) return <span className="text-muted">—</span>;
-        const t = TYPE_COLORS[v] || { bg: 'rgba(124,58,237,0.14)', color: '#7c3aed', border: 'rgba(124,58,237,0.40)', dot: '#7c3aed' };
+        const t = TYPE_COLORS[v] || { bg: 'rgba(124,58,237,0.14)', color: '#7c3aed', border: 'rgba(124,58,237,0.40)' };
         return (
           <span className="smc-type-pill" style={{ background: t.bg, color: t.color, borderColor: t.border }}>
             {v}
+          </span>
+        );
+      },
+    },
+    {
+      /* Domestic vs International — DERIVED from the country, not a stored
+         column, so it always agrees with the address on the form and with the
+         filter's Customer Type facet (both call isDomesticParty). Sorting and
+         the global search work off `country` for the same reason. */
+      header: 'Customer Type',
+      id: 'tradeType',
+      accessorFn: (row: Customer) => (isDomesticParty(row) ? 'Domestic' : 'International'),
+      meta: { align: 'start' },
+      cell: (info: any) => {
+        const domestic = info.getValue() === 'Domestic';
+        return (
+          <span className={`smc-trade-pill ${domestic ? 'is-domestic' : 'is-intl'}`}>
+            {info.getValue()}
           </span>
         );
       },
@@ -299,7 +354,11 @@ export default function SalesCustomers() {
       } },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-contact" max={16} /> },
     { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'center' }, cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
-    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-email" max={18} caseSensitive /> },
+    /* Email is the ONE column left free to absorb the table's leftover width
+       (see SalesCustomers.css). Its caps are raised to match: at 18 chars /
+       220px it truncated long before the column ran out, so the width it soaked
+       up showed as blank space instead of address. */
+    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-email" caseSensitive /> },
     {
       header: () => <div className="text-center">WhatsApp</div>,
       accessorKey: 'whatsapp',
@@ -454,6 +513,21 @@ export default function SalesCustomers() {
               <i className="ri-refresh-line" /> Recurring Customers
             </button>
           </div>
+          {/* Filter — independent of the tabs above (a customer is Fresh OR
+              Recurring, and separately Domestic OR International), so it sits
+              beside them rather than becoming a fourth pill. Opens the same
+              two-pane modal the Lead Worksheet uses. The badge shows how many
+              values are active, so a filtered table is never mistaken for an
+              empty one. */}
+          <button
+            type="button"
+            className={`smc-filter-btn ${activeFilterCount > 0 ? 'on' : ''}`}
+            onClick={() => setFilterOpen(true)}
+          >
+            <i className="ri-equalizer-line" />
+            Filter
+            {activeFilterCount > 0 && <span className="smc-filter-badge">{activeFilterCount}</span>}
+          </button>
           <div className="smc-search">
             <i className="ri-search-line smc-search-icon" />
             <input
@@ -467,11 +541,11 @@ export default function SalesCustomers() {
 
         <div className="smc-table-wrap">
           {(loading && customers.length === 0) || tabSwitching ? (
-            <ShimmerTable rows={pageSize} cols={12} />
+            <ShimmerTable rows={pageSize} cols={13} />
           ) : (
             <TableContainer
               columns={columns}
-              data={customers}
+              data={visibleCustomers}
               isGlobalFilter={false}
               customPageSize={pageSize}
               tableClass="table align-middle table-nowrap mb-0"
@@ -483,11 +557,39 @@ export default function SalesCustomers() {
               onPageSizeChange={(n) => { setManualSize(true); setPageSize(n); }}
             />
           )}
-          {!loading && !tabSwitching && customers.length === 0 && (
-            <div className="smc-empty py-4">No customers found</div>
+          {/* Says WHY the table is empty — a bare "No customers found" while a
+              filter is on reads as "there is no data" rather than "nothing
+              matches this filter", and the user can't see the selections from
+              here (they live inside the modal). Offers the way out too. */}
+          {!loading && !tabSwitching && visibleCustomers.length === 0 && (
+            <div className="smc-empty py-4">
+              {customers.length > 0 && activeFilterCount > 0 ? (
+                <>
+                  No customers match the {activeFilterCount} selected filter{activeFilterCount > 1 ? 's' : ''}
+                  {' — '}
+                  <button type="button" className="smc-empty-link" onClick={() => setFilters({})}>clear filters</button>
+                </>
+              ) : 'No customers found'}
+            </div>
           )}
         </div>
       </div>
+
+      {/* Options are derived from `customers` (the whole loaded tab), NOT
+          visibleCustomers — deriving from the already-filtered rows would make
+          each pick narrow the choices left, so a user could never widen a
+          filter without resetting it first. */}
+      <PartyFilterModal
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        onApply={setFilters}
+        initial={filters}
+        rows={customers}
+        facets={CUSTOMER_FACETS}
+        title="Filter Customers"
+        typeLabel="Customer Type"
+        theme="purple"
+      />
 
       {addOpen && (
         <Suspense fallback={null}>

@@ -438,6 +438,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     Route::get   ('/sales/quotations',                          [QuotationController::class, 'index']);
     Route::get   ('/sales/quotations/preview-code',             [QuotationController::class, 'previewCode']);
+    // Our own GST state code — drives the Domestic CGST+SGST vs IGST split on
+    // both the Quotation and the PI form (shared, hence the neutral path).
+    Route::get   ('/sales/gst-home-state',                      [QuotationController::class, 'gstHomeState']);
     Route::post  ('/sales/quotations',                          [QuotationController::class, 'store']);
     Route::get   ('/sales/quotations/{id}',                     [QuotationController::class, 'show'])->whereNumber('id');
     Route::put   ('/sales/quotations/{id}',                     [QuotationController::class, 'update'])->whereNumber('id');

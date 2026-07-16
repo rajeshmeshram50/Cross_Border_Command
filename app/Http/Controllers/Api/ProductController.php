@@ -824,7 +824,10 @@ class ProductController extends Controller
 
     /* ──────────────────────────────────────────────────────────────────
      * PUT /products/{id}/step/vendors
-     * Final step. Saves vendor mappings and activates the product.
+     * Final step. Saves vendor mappings; a non-empty list activates the
+     * product. The list is a full replace and MAY be empty — unmapping the
+     * last supplier is allowed and drops the product back to the same
+     * "ready, zero-supplier" state the Sales step leaves behind.
      * ────────────────────────────────────────────────────────────── */
     public function storeVendors(Request $request, int $id)
     {
@@ -834,7 +837,11 @@ class ProductController extends Controller
         }
 
         $data = $request->validate([
-            'vendors'                    => 'required|array|min:1',
+            // `present`, not `required` — an empty array is the legitimate
+            // payload for "the last supplier was removed". Under `required`
+            // Laravel rejects [] as empty, which made that removal impossible
+            // to persist from either supplier list.
+            'vendors'                    => 'present|array',
             'vendors.*.vendor_id'        => 'nullable|integer|exists:vendors,id',
             'vendors.*.vendor_code'      => 'nullable|string|max:50',
             'vendors.*.vendor_name'      => 'required|string|max:255',
@@ -951,8 +958,12 @@ class ProductController extends Controller
                 ->when(!empty($nowMappedVendorIds), fn ($q) => $q->whereNotIn('vendor_id', $nowMappedVendorIds))
                 ->delete();
 
-            $product->step_completed = 4;
-            $product->status = 'active';
+            if (empty($data['vendors'])) {
+                $product->status = 'inactive';
+            } else {
+                $product->step_completed = 4;
+                $product->status = 'active';
+            }
             $product->save();
         });
 

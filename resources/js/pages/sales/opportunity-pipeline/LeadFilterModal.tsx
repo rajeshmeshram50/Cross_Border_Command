@@ -466,8 +466,25 @@ export default function LeadFilterModal({ open, onClose, onApply, initial, optio
   ), document.body);
 }
 
-const LFM_CSS = `
+/* Exported so CustomerFilterModal can render the SAME stylesheet under the same
+ * lfm-* class names. The Customer filter is meant to be visually identical to
+ * this one, and a ~300-line copy would drift the first time either is touched. */
+export const LFM_CSS = `
 .lfm-backdrop {
+  /* Accent ramp. Every accent in this sheet reads from these, so a host can
+     re-theme the whole modal by overriding them on the backdrop — see
+     .lfm-purple below, used by the Customer filter to match that page's
+     violet. Defaults are the cyan this (Lead) modal has always used, so the
+     variables changed nothing for it.
+     The -rgb pairs exist because rgba() needs raw channels, not a hex. */
+  --lfm-c-050: #ecfeff;
+  --lfm-c-200: #67e8f9;
+  --lfm-c-500: #06b6d4;
+  --lfm-c-600: #0891b2;
+  --lfm-c-700: #0e7490;
+  --lfm-c-rgb: 8,145,178;
+  --lfm-c-200-rgb: 103,232,249;
+
   position: fixed; inset: 0; z-index: 1080;
   background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
@@ -475,9 +492,35 @@ const LFM_CSS = `
 }
 @keyframes lfm-fade { from { opacity: 0; } to { opacity: 1; } }
 
+/* Violet theme — used by the Customer filter, whose page (SalesCustomers) is
+   violet throughout; the default cyan read as a foreign modal dropped onto it.
+   Values are lifted from that page's own palette (.smc-pill.on gradient and the
+   rgba(139,92,246,…) hairlines) so the modal and the page behind it agree. */
+.lfm-backdrop.lfm-purple {
+  --lfm-c-050: #f5f1fe;
+  --lfm-c-200: #ddd6fe;
+  --lfm-c-500: #a78bfa;
+  --lfm-c-600: #8b5cf6;
+  --lfm-c-700: #6d28d9;
+  --lfm-c-rgb: 139,92,246;
+  --lfm-c-200-rgb: 221,214,254;
+}
+
+/* Emerald theme — used by the Consignee filter, whose page (SalesConsignee) is
+   green throughout. Values lifted from that page's own palette. */
+.lfm-backdrop.lfm-emerald {
+  --lfm-c-050: #ecfdf5;
+  --lfm-c-200: #6ee7b7;
+  --lfm-c-500: #34d399;
+  --lfm-c-600: #10b981;
+  --lfm-c-700: #047857;
+  --lfm-c-rgb: 16,185,129;
+  --lfm-c-200-rgb: 110,231,183;
+}
+
 .lfm-modal {
   width: min(94vw, 720px); height: 480px; max-height: 84vh;
-  background: #fff; border-radius: 22px; box-shadow: 0 24px 60px rgba(8,145,178,.18), 0 8px 24px rgba(15,23,42,.20);
+  background: #fff; border-radius: 22px; box-shadow: 0 24px 60px rgba(var(--lfm-c-rgb),.18), 0 8px 24px rgba(15,23,42,.20);
   overflow: hidden; display: flex; flex-direction: column;
   animation: lfm-pop .18s ease-out;
 }
@@ -488,7 +531,7 @@ const LFM_CSS = `
   position: relative;
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
   padding: 14px 20px;
-  background: linear-gradient(135deg, #0e7490 0%, #0891b2 60%, #06b6d4 100%);
+  background: linear-gradient(135deg, var(--lfm-c-700) 0%, var(--lfm-c-600) 60%, var(--lfm-c-500) 100%);
   color: #fff;
   overflow: hidden;
 }
@@ -562,26 +605,26 @@ const LFM_CSS = `
 }
 .lfm-menu-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lfm-menu-dot {
-  width: 7px; height: 7px; border-radius: 50%; background: #0891b2; flex-shrink: 0;
-  box-shadow: 0 0 0 3px rgba(8,145,178,.18);
+  width: 7px; height: 7px; border-radius: 50%; background: var(--lfm-c-600); flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(var(--lfm-c-rgb),.18);
 }
 /* Per-facet selected-count pill in the left menu (replaces the dot). */
 .lfm-menu-count {
   flex-shrink: 0; min-width: 20px; height: 20px; padding: 0 6px;
   display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 999px; background: #0891b2; color: #fff;
+  border-radius: 999px; background: var(--lfm-c-600); color: #fff;
   font-size: 11px; font-weight: 700; line-height: 1;
 }
-.lfm-menu-item.on .lfm-menu-count { background: #0e7490; }
+.lfm-menu-item.on .lfm-menu-count { background: var(--lfm-c-700); }
 .lfm-menu-item.on {
-  background: #ecfeff;
-  border-color: #67e8f9;
-  color: #0e7490; font-weight: 700;
+  background: var(--lfm-c-050);
+  border-color: var(--lfm-c-200);
+  color: var(--lfm-c-700); font-weight: 700;
 }
 .lfm-menu-item.on .lfm-menu-ico {
-  background: linear-gradient(135deg, #06b6d4, #0891b2);
-  border-color: #0891b2; color: #fff;
-  box-shadow: 0 4px 12px rgba(8,145,178,.30);
+  background: linear-gradient(135deg, var(--lfm-c-500), var(--lfm-c-600));
+  border-color: var(--lfm-c-600); color: #fff;
+  box-shadow: 0 4px 12px rgba(var(--lfm-c-rgb),.30);
 }
 
 .lfm-left-foot {
@@ -594,9 +637,9 @@ const LFM_CSS = `
   cursor: pointer; border: none; transition: all .15s;
 }
 .lfm-btn-primary {
-  background: linear-gradient(135deg, #06b6d4 0%, #0891b2 55%, #0e7490 100%);
+  background: linear-gradient(135deg, var(--lfm-c-500) 0%, var(--lfm-c-600) 55%, var(--lfm-c-700) 100%);
   color: #fff;
-  box-shadow: 0 4px 14px rgba(8,145,178,.35), 0 1px 0 rgba(255,255,255,.18) inset;
+  box-shadow: 0 4px 14px rgba(var(--lfm-c-rgb),.35), 0 1px 0 rgba(255,255,255,.18) inset;
 }
 .lfm-btn-primary:hover { transform: translateY(-1px); filter: brightness(1.05); }
 .lfm-btn-reset {
@@ -604,7 +647,7 @@ const LFM_CSS = `
   font: inherit; font-size: 12px; font-weight: 600; color: #94a3b8;
   padding: 4px 0; transition: color .15s;
 }
-.lfm-btn-reset:hover { color: #0891b2; }
+.lfm-btn-reset:hover { color: var(--lfm-c-600); }
 
 /* ── Right pane ── */
 .lfm-right { flex: 1; display: flex; flex-direction: column; padding: 12px 20px; min-width: 0; gap: 10px; background: #fff; }
@@ -622,7 +665,7 @@ const LFM_CSS = `
 }
 .lfm-search::placeholder { color: #94a3b8; }
 .lfm-search:hover { border-color: #cbd5e1; }
-.lfm-search:focus { background: #fff; border-color: #0891b2; box-shadow: 0 0 0 3px rgba(8,145,178,.15); }
+.lfm-search:focus { background: #fff; border-color: var(--lfm-c-600); box-shadow: 0 0 0 3px rgba(var(--lfm-c-rgb),.15); }
 
 /* Fills the fixed-height modal and scrolls internally — the popup size never
    changes, however many entries a facet has (e.g. Customer). */
@@ -630,7 +673,7 @@ const LFM_CSS = `
 .lfm-options::-webkit-scrollbar { width: 8px; }
 .lfm-options::-webkit-scrollbar-track { background: transparent; }
 .lfm-options::-webkit-scrollbar-thumb { background: #a5f3fc; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
-.lfm-options::-webkit-scrollbar-thumb:hover { background: #67e8f9; background-clip: content-box; }
+.lfm-options::-webkit-scrollbar-thumb:hover { background: var(--lfm-c-200); background-clip: content-box; }
 .lfm-empty { text-align: center; color: #94a3b8; font-style: italic; padding: 30px 12px; font-size: 12.5px; }
 
 /* Each radio option is a bordered card. Clicking anywhere on the card
@@ -644,10 +687,10 @@ const LFM_CSS = `
   cursor: pointer;
   transition: border-color .15s, background .15s, box-shadow .15s;
 }
-.lfm-card:hover { border-color: #67e8f9; background: #ecfeff; }
+.lfm-card:hover { border-color: var(--lfm-c-200); background: var(--lfm-c-050); }
 .lfm-card.on {
-  border-color: #0891b2; background: #ecfeff;
-  box-shadow: 0 0 0 1px #0891b2 inset;
+  border-color: var(--lfm-c-600); background: var(--lfm-c-050);
+  box-shadow: 0 0 0 1px var(--lfm-c-600) inset;
 }
 /* Native input is hidden — the circular .lfm-check indicator stands in
    for it so the checkbox matches the Figma's round blue checkmark. */
@@ -660,7 +703,7 @@ const LFM_CSS = `
 }
 .lfm-check svg { opacity: 0; transition: opacity .12s; }
 .lfm-card.on .lfm-check {
-  background: #0891b2; border-color: #0891b2;
+  background: var(--lfm-c-600); border-color: var(--lfm-c-600);
 }
 .lfm-card.on .lfm-check svg { opacity: 1; }
 .lfm-card-label {
@@ -670,7 +713,7 @@ const LFM_CSS = `
 }
 .lfm-card-code {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px; font-weight: 700; color: #0891b2;
+  font-size: 11.5px; font-weight: 700; color: var(--lfm-c-600);
   flex-shrink: 0; letter-spacing: .02em;
 }
 .lfm-card-sep { color: #94a3b8; font-weight: 600; flex-shrink: 0; }
@@ -678,7 +721,7 @@ const LFM_CSS = `
   min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.lfm-card.on .lfm-card-code { color: #0e7490; }
+.lfm-card.on .lfm-card-code { color: var(--lfm-c-700); }
 
 /* Divider label between the custom range picker and the preset list in
    the Date facet — small uppercase caption with hairlines on both sides. */
@@ -714,23 +757,23 @@ const LFM_CSS = `
 [data-bs-theme="dark"] .lfm-right { background: #0f172a; }
 [data-bs-theme="dark"] .lfm-left-label { color: #94a3b8; }
 [data-bs-theme="dark"] .lfm-menu-item { color: #cbd5e1; }
-[data-bs-theme="dark"] .lfm-menu-item:hover { background: rgba(8,145,178,.10); color: #ecfeff; }
+[data-bs-theme="dark"] .lfm-menu-item:hover { background: rgba(var(--lfm-c-rgb),.10); color: var(--lfm-c-050); }
 [data-bs-theme="dark"] .lfm-menu-ico { background: #1e293b; border-color: #334155; color: #94a3b8; }
-[data-bs-theme="dark"] .lfm-menu-item.on { background: rgba(8,145,178,.18); border-color: rgba(103,232,249,.45); color: #67e8f9; }
-[data-bs-theme="dark"] .lfm-menu-item.on .lfm-menu-ico { background: linear-gradient(135deg,#06b6d4,#0891b2); border-color: rgba(103,232,249,.6); color: #fff; }
+[data-bs-theme="dark"] .lfm-menu-item.on { background: rgba(var(--lfm-c-rgb),.18); border-color: rgba(var(--lfm-c-200-rgb),.45); color: var(--lfm-c-200); }
+[data-bs-theme="dark"] .lfm-menu-item.on .lfm-menu-ico { background: linear-gradient(135deg,var(--lfm-c-500),var(--lfm-c-600)); border-color: rgba(var(--lfm-c-200-rgb),.6); color: #fff; }
 [data-bs-theme="dark"] .lfm-btn-reset { color: #94a3b8; }
-[data-bs-theme="dark"] .lfm-btn-reset:hover { color: #67e8f9; }
+[data-bs-theme="dark"] .lfm-btn-reset:hover { color: var(--lfm-c-200); }
 [data-bs-theme="dark"] .lfm-search { background: #1e293b; border-color: #334155; color: #e2e8f0; }
 [data-bs-theme="dark"] .lfm-search:focus { background: #0f172a; }
 [data-bs-theme="dark"] .lfm-card { background: #1e293b; border-color: #334155; color: #e2e8f0; }
-[data-bs-theme="dark"] .lfm-card:hover { background: rgba(8,145,178,.12); border-color: rgba(103,232,249,.4); }
-[data-bs-theme="dark"] .lfm-card.on { background: rgba(8,145,178,.20); border-color: #67e8f9; box-shadow: 0 0 0 1px #67e8f9 inset; }
+[data-bs-theme="dark"] .lfm-card:hover { background: rgba(var(--lfm-c-rgb),.12); border-color: rgba(var(--lfm-c-200-rgb),.4); }
+[data-bs-theme="dark"] .lfm-card.on { background: rgba(var(--lfm-c-rgb),.20); border-color: var(--lfm-c-200); box-shadow: 0 0 0 1px var(--lfm-c-200) inset; }
 [data-bs-theme="dark"] .lfm-check { background: #0f172a; border-color: #475569; }
-[data-bs-theme="dark"] .lfm-card.on .lfm-check { background: #06b6d4; border-color: #06b6d4; }
+[data-bs-theme="dark"] .lfm-card.on .lfm-check { background: var(--lfm-c-500); border-color: var(--lfm-c-500); }
 [data-bs-theme="dark"] .lfm-custom-range { border-top-color: #334155; }
 [data-bs-theme="dark"] .lfm-custom-range-title { color: #94a3b8; }
 [data-bs-theme="dark"] .lfm-label { color: #cbd5e1; }
-[data-bs-theme="dark"] .lfm-card-code { color: #67e8f9; }
+[data-bs-theme="dark"] .lfm-card-code { color: var(--lfm-c-200); }
 [data-bs-theme="dark"] .lfm-card-sep  { color: #64748b; }
 [data-bs-theme="dark"] .lfm-card.on .lfm-card-code { color: #a5f3fc; }
 [data-bs-theme="dark"] .lfm-preset-divider { color: #64748b; }

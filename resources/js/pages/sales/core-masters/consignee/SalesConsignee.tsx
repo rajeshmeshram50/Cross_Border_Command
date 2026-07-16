@@ -16,6 +16,13 @@ import { ShimmerTable } from '../../../../components/ui/Shimmer';
 import api from '../../../../api';
 import TableContainer from '../../../../velzon/Components/Common/TableContainerReactTable';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
+import PartyFilterModal, {
+  applyPartyFilters,
+  countPartyFilterValues,
+  isDomesticParty,
+  CONSIGNEE_FACETS,
+  type PartyFilters,
+} from '../PartyFilterModal';
 
 // The two heavy consignee modals are code-split — their chunks download only
 // when first opened, not on the list's first paint. (DeleteConfirmModal stays
@@ -38,13 +45,13 @@ const titleCase = (s: string): string => {
   return s.slice(0, idx) + s[idx].toUpperCase() + s.slice(idx + 1);
 };
 
-const TruncatedCell = ({ value, className, max = 22, caseSensitive = false }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean }) => {
+const TruncatedCell = ({ value, className, max = 60, caseSensitive = false, maxWidth = '100%' }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean; maxWidth?: number | string }) => {
   const raw = (value ?? '').trim();
   if (!raw) return <span className="text-muted">—</span>;
   const v = caseSensitive ? raw : titleCase(raw);
   const needsTooltip = v.length > max;
   const display = needsTooltip ? v.slice(0, max) + '…' : v;
-  const inner = <span className={className} style={{ maxWidth: 220, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
+  const inner = <span className={className} style={{ maxWidth, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
   return needsTooltip ? <Tooltip label={v}>{inner}</Tooltip> : inner;
 };
 
@@ -74,8 +81,14 @@ export default function SalesConsignee() {
   const canEdit = isSuperAdmin || !!perm?.can_edit;
 
   const [q, setQ] = useState('');
-  // "Same as Customer" filter (Yes / No / All).
-  const [sacFilter, setSacFilter] = useState<'all'|'yes'|'no'>('all');
+  /* Customer Type (Domestic/India vs International), Segment, Country, Whatsapp
+   * and Same as Customer. Applied client-side: /consignees returns the whole
+   * list in one response and the table paginates it locally, so there's nothing
+   * to ask the server for.
+   * (Replaces the old standalone "Same as Customer: All" dropdown, which is now
+   * this modal's Same as Customer facet — same rule, same client-side pass.) */
+  const [filters, setFilters] = useState<PartyFilters>({});
+  const [filterOpen, setFilterOpen] = useState(false);
   const [wdhOpen, setWdhOpen] = useState(false);
   // Shared "chips overflow" popover — used by BOTH the Segment "+N" and the
   // Customer ID "+N" (the latter shows only the mapped customer IDs, not the
@@ -261,8 +274,10 @@ export default function SalesConsignee() {
   };
 
   const filtered = useMemo(() => {
-    let base = rows;
-    if (sacFilter !== 'all') base = base.filter(c => sacFilter === 'yes' ? !!c.same_as_customer : !c.same_as_customer);
+    /* Facet filters first, then the free-text search — the predicate lives in
+     * PartyFilterModal (applyPartyFilters) so the modal that collects the
+     * selections and this page can't drift on what a filter means. */
+    let base = applyPartyFilters(rows, filters);
     const lo = q.trim().toLowerCase();
     if (!lo) return base;
     const m = (v: unknown) => String(v ?? '').toLowerCase();
@@ -278,7 +293,8 @@ export default function SalesConsignee() {
       m(c.countryDetail).includes(lo)  ||
       m(c.risk).includes(lo),
     );
-  }, [q, rows, sacFilter]);
+  }, [q, rows, filters]);
+  const activeFilterCount = countPartyFilterValues(filters);
 
   const onSearch = (v: string) => { setQ(v); };
   const soon = (label: string) => toast.info(label, 'Coming in next phase');
@@ -393,6 +409,24 @@ export default function SalesConsignee() {
       },
     },
     {
+      /* Domestic vs International — DERIVED from the consignee's own country
+         (the one shown in the Country column), not stored, so it always agrees
+         with the address and with the filter's Consignee Type facet (both call
+         isDomesticParty). */
+      header: 'Consignee Type',
+      id: 'tradeType',
+      accessorFn: (row: ConsigneeRow) => (isDomesticParty(row) ? 'Domestic' : 'International'),
+      meta: { align: 'start' },
+      cell: (info: any) => {
+        const domestic = info.getValue() === 'Domestic';
+        return (
+          <span className={`smcg-trade-pill ${domestic ? 'is-domestic' : 'is-intl'}`}>
+            {info.getValue()}
+          </span>
+        );
+      },
+    },
+    {
       header: 'Risk Level',
       accessorKey: 'risk',
       meta: { align: 'start' },
@@ -418,7 +452,9 @@ export default function SalesConsignee() {
       },
     },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-contact" max={16} /> },
-    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-email" max={18} caseSensitive /> },
+    /* Email absorbs the table's leftover width (see SalesConsignee.css); its
+       caps are raised so that width shows address rather than blank space. */
+    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-email" caseSensitive /> },
     { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'center' }, cell: (i: any) => <span className="smcg-mono">{i.getValue() || '—'}</span> },
     {
       header: 'Country',
@@ -587,19 +623,18 @@ export default function SalesConsignee() {
               onChange={(e) => onSearch(e.target.value)}
             />
           </div>
-          <div className="smcg-sac-filter" style={{ width: 210, flexShrink: 0 }}>
-            <MasterSelect
-              value={sacFilter}
-              placeholder="Same as Customer"
-              searchable={false}
-              options={[
-                { value: 'all', label: 'Same as Customer: All' },
-                { value: 'yes', label: 'Same as Customer: Yes' },
-                { value: 'no',  label: 'Same as Customer: No' },
-              ]}
-              onChange={(v) => setSacFilter((v || 'all') as 'all'|'yes'|'no')}
-            />
-          </div>
+          {/* Filter — opens the same two-pane modal the Lead Worksheet and the
+              Customer list use. The badge shows how many values are active, so
+              a filtered table is never mistaken for an empty one. */}
+          <button
+            type="button"
+            className={`smcg-filter-btn ${activeFilterCount > 0 ? 'on' : ''}`}
+            onClick={() => setFilterOpen(true)}
+          >
+            <i className="ri-equalizer-line" />
+            Filter
+            {activeFilterCount > 0 && <span className="smcg-filter-badge">{activeFilterCount}</span>}
+          </button>
           {false && canAdd && (
             <button
               type="button"
@@ -614,7 +649,7 @@ export default function SalesConsignee() {
 
         <div className="smcg-table-wrap">
           {loading && rows.length === 0 ? (
-            <ShimmerTable rows={pageSize} cols={12} />
+            <ShimmerTable rows={pageSize} cols={13} />
           ) : (
             <TableContainer
               key={q.trim() ? 'search-mode' : 'all-mode'}
@@ -631,11 +666,38 @@ export default function SalesConsignee() {
               onPageSizeChange={(n) => { setManualSize(true); setPageSize(n); }}
             />
           )}
+          {/* Says WHY the table is empty — a bare "No consignees found" while a
+              filter is on reads as "there is no data" rather than "nothing
+              matches this filter", and the selections live inside the modal
+              where the user can't see them from here. */}
           {!loading && filtered.length === 0 && (
-            <div className="smcg-empty py-4">No consignees found</div>
+            <div className="smcg-empty py-4">
+              {rows.length > 0 && activeFilterCount > 0 ? (
+                <>
+                  No consignees match the {activeFilterCount} selected filter{activeFilterCount > 1 ? 's' : ''}
+                  {' — '}
+                  <button type="button" className="smcg-empty-link" onClick={() => setFilters({})}>clear filters</button>
+                </>
+              ) : 'No consignees found'}
+            </div>
           )}
         </div>
       </div>
+
+      {/* Options derive from `rows` (everything loaded), NOT `filtered` —
+          deriving from already-filtered rows would make each pick narrow the
+          choices left, so a user could never widen a filter without resetting. */}
+      <PartyFilterModal
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        onApply={setFilters}
+        initial={filters}
+        rows={rows}
+        facets={CONSIGNEE_FACETS}
+        title="Filter Consignees"
+        typeLabel="Consignee Type"
+        theme="emerald"
+      />
 
       {addOpen && (
         <Suspense fallback={null}>

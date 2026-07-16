@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\EnforcesSegmentBuyerConsignee;
 use App\Http\Controllers\Controller;
 use App\Models\Quotation;
 use App\Models\QuotationItem;
+use App\Support\Gst;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -182,6 +183,9 @@ class QuotationController extends Controller
                 'final_destination' => $data['final_destination'] ?? null,
                 'origin_country'    => $data['origin_country']   ?? null,
                 'state_code'        => $data['state_code']       ?? null,
+                'dispatch_from'     => $data['dispatch_from']    ?? null,
+                'deliver_to'        => $data['deliver_to']       ?? null,
+                'customer_gst_no'   => $data['customer_gst_no']  ?? null,
                 'sales_manager_id'  => $data['sales_manager_id'] ?? $user->id,
                 'sales_manager_name' => $smName,
                 'sub_total'         => $totals['sub_total'],
@@ -293,6 +297,9 @@ class QuotationController extends Controller
                 'final_destination' => $data['final_destination'] ?? null,
                 'origin_country'    => $data['origin_country']   ?? null,
                 'state_code'        => $data['state_code']       ?? null,
+                'dispatch_from'     => $data['dispatch_from']    ?? null,
+                'deliver_to'        => $data['deliver_to']       ?? null,
+                'customer_gst_no'   => $data['customer_gst_no']  ?? null,
                 'sales_manager_id'  => $data['sales_manager_id'] ?? $row->sales_manager_id,
                 'sales_manager_name' => $smName ?: $row->sales_manager_name,
                 'sub_total'         => $totals['sub_total'],
@@ -456,6 +463,11 @@ class QuotationController extends Controller
             // No upper cap on tax_pct — see ProformaInvoiceController.
 
             'items.*.tax_pct'      => 'nullable|numeric|min:0',
+
+            // GSTIN is 15 chars; the column allows 20 for slack. Snapshotted
+            // from the customer, so never required — a customer legitimately
+            // may not be GST-registered.
+            'customer_gst_no'      => 'nullable|string|max:20',
         ];
 
         if ($docType === Quotation::DOC_INTERNATIONAL) {
@@ -467,8 +479,14 @@ class QuotationController extends Controller
             $rules['final_destination'] = 'required|string|max:128';
             $rules['origin_country']    = 'required|string|max:64';
             $rules['state_code']        = 'nullable|string|max:64';
+            // The Domestic block below collects these; an export document has
+            // ports/destination instead, so they stay optional here.
+            $rules['dispatch_from']     = 'nullable|string|max:255';
+            $rules['deliver_to']        = 'nullable|string|max:255';
         } else {
             $rules['state_code']        = 'required|string|max:64';
+            $rules['dispatch_from']     = 'required|string|max:255';
+            $rules['deliver_to']        = 'required|string|max:255';
             $rules['inco_term']         = 'nullable|string|max:100';
             $rules['port_of_loading']   = 'nullable|string|max:128';
             $rules['port_of_discharge'] = 'nullable|string|max:128';
@@ -629,6 +647,23 @@ class QuotationController extends Controller
             $code = "QT/{$fy}/" . ($max + 1);
         }
         return response()->json(['status' => true, 'data' => ['code' => $code]]);
+    }
+
+    /**
+     * This tenant's own GST state code, so the Domestic Quotation / PI form
+     * can decide CGST+SGST (intra-state) vs IGST (inter-state) against the
+     * selected customer's state.
+     *
+     * Resolved from $user->branch_id — the same branch store() stamps onto the
+     * document — NOT the ?branch_id the switcher injects, which would let a
+     * user preview another branch's tax split on a doc they can't create there.
+     */
+    public function gstHomeState(Request $request): JsonResponse
+    {
+        return response()->json([
+            'status' => true,
+            'data'   => ['state_code' => Gst::homeStateCode($request->user()?->branch_id)],
+        ]);
     }
 
     private function nextCode(int $clientId, ?int $branchId): string

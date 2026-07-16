@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
+import { SigningTrackerModal } from '../../../sales/opportunity-pipeline/SigningTrackerModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Trade Documents table — shared by the Trade Documents & Agreements modal
@@ -33,6 +34,9 @@ const I = {
   eye: (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></svg>),
   down: (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>),
   cert: (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg>),
+  // Signed-PDF action. A document (not an eye) — the row already has an eye for
+  // the draft view, so two eyes side by side would read as the same action.
+  doc: (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>),
   fileSm: (<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>),
   tabDoc: (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>),
   tabAgr: (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>),
@@ -91,9 +95,6 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   // True when a BULK send bundles the PO PDF alongside CLM trade docs in one
   // Zoho request (the PO row was checked with ≥1 real trade document).
   const [bundlePoActive, setBundlePoActive] = useState(false);
-  // The shared sign modal (z ~265k) sits below the PO wizard/modal (z 2.5M+), so
-  // signal the parent to hide itself while the sign modal is open.
-  useEffect(() => { onSignActive?.(Array.isArray(sendDocIds) || poSign); }, [sendDocIds, poSign, onSignActive]);
   useEffect(() => {
     if (!supplierId) { setParty(null); return; }
     let cancelled = false;
@@ -103,6 +104,133 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [supplierId]);
+  /* ── Live signature status ────────────────────────────────────────────────
+   * The same party-scoped poll the Evidence Vault / Stage-5 tabs use: one list
+   * call with sync=1, which round-trips Zoho so an in-progress request flips to
+   * Signed on its own, every 20s.
+   *
+   * This is also what makes Track / Reminder possible at all: the send response
+   * carries a signature_request_id but the table never kept it, so there was
+   * nothing to track or remind against. Row status used to be in-memory only —
+   * reopening the modal reset every row to "Pending" even when the PO was
+   * already out for signature.
+   *
+   * Keyed to the row ids this table already uses ('po' | 'trade-<libId>' |
+   * 'agreement-<libId>'). Splitting on document_type matters: a trade doc and an
+   * agreement can share a numeric library id, so a flat map would overlay one
+   * onto the other (the same trap ClmSignatureController::index documents). */
+  type SigInfo = { id: number; status: string; reminderCount: number; lastReminderAt: string | null };
+  const [sigByRow, setSigByRow] = useState<Record<string, SigInfo>>({});
+  // Bumped after a send / reminder so the next poll runs at once, not up to 20s later.
+  const [sigTick, setSigTick] = useState(0);
+  const [trackSig, setTrackSig] = useState<{ id: number; code: string } | null>(null);
+  const [remindBusy, setRemindBusy] = useState<string | null>(null);
+
+  /* The shared sign modal (z ~265k) AND the signing tracker (z 12k) both sit
+   * below the PO wizard/modal (z 2.5M+), so signal the parent to hide itself
+   * while either is open — otherwise the tracker renders behind this modal. */
+  useEffect(() => {
+    onSignActive?.(Array.isArray(sendDocIds) || poSign || !!trackSig);
+  }, [sendDocIds, poSign, trackSig, onSignActive]);
+
+  useEffect(() => {
+    if (!supplierId) { setSigByRow({}); return; }
+    let alive = true;
+    const load = async () => {
+      try {
+        const r = await api.get('/clm/signature-requests', {
+          params: { party_id: supplierId, model_name: 'Vendor', sync: 1 },
+        });
+        if (!alive) return;
+        const rows: Array<Record<string, any>> = Array.isArray(r.data?.data) ? r.data.data : [];
+        const map: Record<string, SigInfo> = {};
+        // A document can be sent more than once (e.g. after a recall) — the
+        // newest request wins, matching the list's own latest-first ordering.
+        const consider = (key: string, row: Record<string, any>) => {
+          const info: SigInfo = {
+            id: Number(row.id),
+            status: String(row.status ?? '').toLowerCase(),
+            // Drives the "× N" badge on the Remind button, same as the
+            // Agreements popup — kept live on the poll tick.
+            reminderCount: Number(row.reminder_count ?? 0) || 0,
+            lastReminderAt: (row.last_reminder_sent_at ?? null) as string | null,
+          };
+          if (!map[key] || info.id > map[key].id) map[key] = info;
+        };
+        rows.forEach(row => {
+          const dt = String(row.document_type ?? 'trade_doc');
+          if (dt === 'purchase_order') {
+            // Sent on its own — the PO isn't a CLM library doc, so
+            // trade_doc_id holds the PO id.
+            if (poId && Number(row.trade_doc_id) === Number(poId)) consider('po', row);
+            return;
+          }
+          const prefix = dt === 'agreement' ? 'agreement' : 'trade';
+          const ids: unknown[] = Array.isArray(row.trade_doc_ids) && row.trade_doc_ids.length
+            ? row.trade_doc_ids
+            : (row.trade_doc_id != null ? [row.trade_doc_id] : []);
+          // A bulk send bundles many library ids behind one request, so every
+          // id in the bundle maps back to the same signature request.
+          ids.forEach(id => consider(`${prefix}-${Number(id)}`, row));
+          /* Bundled send: checking the PO alongside real trade docs rides the
+           * PO PDF inside THIS request instead of raising a 'purchase_order'
+           * one, so the PO appears nowhere in trade_doc_ids. The backend
+           * records it on metadata precisely "so the request can be resolved
+           * PO-side" (ClmSignatureController). Without this the PO row sat on
+           * Pending forever after a bundled send, even though it had gone out. */
+          if (poId && Number(row.metadata?.purchase_order_id) === Number(poId)) consider('po', row);
+        });
+        setSigByRow(map);
+      } catch { /* best-effort — signature status never blocks the table */ }
+    };
+    void load();
+    const t = setInterval(load, 20000);
+    return () => { alive = false; clearInterval(t); };
+  }, [supplierId, poId, sigTick]);
+
+  /* Effective row status. The poll is authoritative once it has seen the row;
+   * `d.status` only covers the optimistic window right after a send, before the
+   * first poll lands. A declined / recalled request falls back to Pending so the
+   * document can be sent again. */
+  const stateOf = (d: TradeDoc): TradeDoc['status'] => {
+    const sig = sigByRow[d.id];
+    if (!sig) return d.status;
+    if (sig.status === 'completed')  return 'signed';
+    if (sig.status === 'inprogress') return 'sent';
+    return 'pending';
+  };
+
+  const remindDoc = async (d: TradeDoc) => {
+    const sig = sigByRow[d.id];
+    if (!sig) return;
+    setRemindBusy(d.id);
+    try {
+      const { data: r } = await api.post(`/clm/signature-requests/${sig.id}/remind`);
+      toast.success('Reminder sent', r?.message ?? `The signer has been reminded to sign "${d.name}".`);
+      /* Bump the badge immediately rather than waiting up to 20s for the next
+       * poll. The server returns the authoritative counter, so prefer it and
+       * only fall back to a local +1. A bulk send shares ONE request across
+       * several rows, so every row backed by this signature id updates. */
+      const serverCount  = Number(r?.data?.reminder_count ?? NaN);
+      const serverLastAt = (r?.data?.last_reminder_sent_at ?? null) as string | null;
+      setSigByRow(prev => {
+        const next: Record<string, SigInfo> = {};
+        for (const [key, info] of Object.entries(prev)) {
+          next[key] = info.id !== sig.id ? info : {
+            ...info,
+            reminderCount: Number.isFinite(serverCount) ? serverCount : info.reminderCount + 1,
+            lastReminderAt: serverLastAt ?? new Date().toISOString(),
+          };
+        }
+        return next;
+      });
+    } catch (e: any) {
+      toast.error('Reminder failed', e?.response?.data?.message ?? 'Could not send the reminder.');
+    } finally {
+      setRemindBusy(null);
+    }
+  };
+
   // Parse a row id ("trade-5" / "agreement-3") → library id + kind; constants skip.
   const parseRow = (id: string): { libId: number; kind: 'trade' | 'agreement' } | null => {
     if (id === 'po' || id === 'pa') return null;
@@ -115,11 +243,11 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   const tradeCount = docs.filter(d => d.cat === 'trade').length;
   const agrCount = docs.filter(d => d.cat === 'agreement').length;
   const visible = docs.filter(d => d.cat === tab);
-  const pendingCount = visible.filter(d => d.status === 'pending').length;
-  const selCount = visible.filter(d => d.status === 'pending' && sel[d.id]).length;
+  const pendingCount = visible.filter(d => stateOf(d) === 'pending').length;
+  const selCount = visible.filter(d => stateOf(d) === 'pending' && sel[d.id]).length;
 
   const toggleDoc = (id: string, on: boolean) => setSel(s => { const n = { ...s }; if (on) n[id] = true; else delete n[id]; return n; });
-  const toggleAll = (on: boolean) => setSel(s => { const n = { ...s }; visible.forEach(d => { if (d.status === 'pending') { if (on) n[d.id] = true; else delete n[d.id]; } }); return n; });
+  const toggleAll = (on: boolean) => setSel(s => { const n = { ...s }; visible.forEach(d => { if (stateOf(d) === 'pending') { if (on) n[d.id] = true; else delete n[d.id]; } }); return n; });
   const launchSign = (rowIds: string[]) => {
     if (!party?.db_id) { toast.error('Supplier required', 'Select a supplier first to send documents for signature.'); return; }
     const parsed = rowIds.map(parseRow).filter(Boolean) as Array<{ libId: number; kind: 'trade' | 'agreement' }>;
@@ -152,11 +280,12 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
     }
     launchSign([id]);
   };
-  const sendSelected = () => { const ids = visible.filter(d => d.status === 'pending' && sel[d.id]).map(d => d.id); if (ids.length) launchSign(ids); };
+  const sendSelected = () => { const ids = visible.filter(d => stateOf(d) === 'pending' && sel[d.id]).map(d => d.id); if (ids.length) launchSign(ids); };
   const onSigSent = () => {
     setDocs(ds => ds.map(x => sentBatch.includes(x.id) ? { ...x, status: 'sent' } : x));
     setSel(s => { const n = { ...s }; sentBatch.forEach(id => delete n[id]); return n; });
     setSendDocIds(null); setSentBatch([]);
+    setSigTick(t => t + 1);   // pick up the new request (and its id) right away
     toast.success('Sent for signature via Zoho Sign');
   };
 
@@ -202,7 +331,9 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
         <tbody>{visible.length === 0 ? (
           <tr><td colSpan={7} style={{ padding: '30px', textAlign: 'center', color: '#9fb2c0', fontWeight: 600 }}>No {tab === 'trade' ? 'trade documents' : 'agreements'} for this purchase order.</td></tr>
         ) : visible.map((d, i) => {
-          const sent = d.status !== 'pending';
+          const st = stateOf(d);
+          const sent = st !== 'pending';
+          const sig = sigByRow[d.id];
           const checked = !!sel[d.id];
           return (
             <tr key={d.id} className={checked ? 'cptd-rowsel' : ''}>
@@ -211,12 +342,15 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
               <td className="cptd-l"><div className="cptd-docname">{d.name}</div><div className="cptd-docsub">{d.sub}</div></td>
               <td>{d.required ? <span className="cptd-req">Mandatory</span> : <span className="cptd-opt">Optional</span>}</td>
               <td className="cptd-date">{d.generated}</td>
-              <td><span className={`cptd-status cptd-status--${d.status}`}><span className="cptd-dot" />{d.status === 'pending' ? 'Pending' : d.status === 'sent' ? 'Sent' : 'Signed'}</span></td>
+              <td><span className={`cptd-status cptd-status--${st}`}><span className="cptd-dot" />{st === 'pending' ? 'Pending' : st === 'sent' ? 'Sent' : 'Signed'}</span></td>
               <td><div className="cptd-actions">
-                {d.status === 'signed' ? (
+                {st === 'signed' ? (
                   <>
-                    <button className="cptd-lbtn cptd-lbtn--signed" type="button" title="View signed PO" onClick={() => viewDoc(d, true)}>{I.eye} Signed PDF</button>
-                    <button className="cptd-lbtn cptd-lbtn--coo" type="button" title="Certificate of Origin" onClick={() => viewCoo(d)}>{I.cert} Certificate of Origin</button>
+                    {/* Icon-only — keeps the signed row's action strip the same
+                        width as every other row's. Colour still separates them:
+                        green = signed PDF, amber = certificate. */}
+                    <button className="cptd-lbtn cptd-lbtn--icon cptd-lbtn--signed" type="button" title="View signed PDF" aria-label="View signed PDF" onClick={() => viewDoc(d, true)}>{I.doc}</button>
+                    <button className="cptd-lbtn cptd-lbtn--icon cptd-lbtn--coo" type="button" title="Certificate of Origin" aria-label="Certificate of Origin" onClick={() => viewCoo(d)}>{I.cert}</button>
                   </>
                 ) : (
                   <button className="cptd-send" type="button" disabled={sent} onClick={() => sendDoc(d.id)}>{I.send} {sent ? 'Sent' : 'Send for Sign'}</button>
@@ -230,8 +364,34 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
                 {d.id === 'po' && (
                   <button className="cptd-act" type="button" title="Email document" onClick={() => toast.info(`Email composer opened for "${d.name}"`)}>{I.mail}</button>
                 )}
-                {d.status === 'sent' && <button className="cptd-act" type="button" title="Track signature status" onClick={() => toast.info(`Tracking signature status — ${d.name}`)}>{I.track}</button>}
-                {d.status === 'sent' && <button className="cptd-act" type="button" title="Send reminder" onClick={() => toast.info(`Reminder sent — ${d.name}`)}>{I.reminder}</button>}
+                {/* Track — the shared signing tracker (timeline + signer details
+                    + activity history), the same modal the PI rows open. Stays
+                    available on signed rows so the completed timeline is still
+                    readable. */}
+                {sig && (
+                  <button className="cptd-act" type="button" title="Track signature status"
+                    onClick={() => setTrackSig({ id: sig.id, code: d.sub || d.name })}>{I.track}</button>
+                )}
+                {/* Reminder — only while the request is actually in progress;
+                    Zoho rejects a reminder on a completed/recalled request. The
+                    count badge mirrors the Agreements popup so the sender can
+                    see how many nudges have already gone out. */}
+                {sig && st === 'sent' && (
+                  <button
+                    className={`cptd-act${sig.reminderCount > 0 ? ' cptd-act--count' : ''}`}
+                    type="button"
+                    title={sig.reminderCount > 0
+                      ? `Reminder sent ${sig.reminderCount} time${sig.reminderCount === 1 ? '' : 's'}${sig.lastReminderAt ? ` (last: ${new Date(sig.lastReminderAt).toLocaleString()})` : ''}`
+                      : 'Send reminder to the signer'}
+                    disabled={remindBusy === d.id}
+                    onClick={() => void remindDoc(d)}
+                  >
+                    {I.reminder}
+                    {sig.reminderCount > 0 && (
+                      <span className="cptd-act__cnt" aria-label={`Reminder sent ${sig.reminderCount} time${sig.reminderCount === 1 ? '' : 's'}`}>{sig.reminderCount}</span>
+                    )}
+                  </button>
+                )}
               </div></td>
             </tr>
           );
@@ -285,9 +445,17 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
         onSent={() => {
           setDocs(ds => ds.map(x => (x.id === 'po' ? { ...x, status: 'sent' } : x)));
           setPoSign(false);
+          setSigTick(t => t + 1);   // pick up the new request (and its id) right away
           toast.success('Sent for signature via Zoho Sign');
         }}
       />
+
+      {/* Signing tracker — shared with the PI / Quotation rows; everything it
+          renders derives from GET /clm/signature-requests/{id}, so it needs
+          nothing from this page beyond the request id. */}
+      {trackSig && (
+        <SigningTrackerModal sigId={trackSig.id} code={trackSig.code} onClose={() => setTrackSig(null)} />
+      )}
     </>
   );
 }
