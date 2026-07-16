@@ -61,8 +61,14 @@ const attFmtHM    = (secs: number) => {
   return `${h}h ${String(m).padStart(2, '0')}m`;
 };
 const attFmtDate  = (iso: string) => {
-  const d = new Date(iso);
-  return d.toLocaleDateString([], { day: '2-digit', month: 'short' });
+  // regularization_date can arrive date-only ("2026-07-10") or as a full ISO
+  // timestamp. Parse the Y-M-D off the front as a LOCAL date (new Date on a
+  // "…Z" string parses UTC and can render a day early), and pin the en-IN
+  // full-month format — "14 July 2026" — matching the approvals list (bug #25).
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  if (!m) return iso || '';
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
 };
 
 export default function AttendanceTab({ employeeId }: { employeeId: string }) {
