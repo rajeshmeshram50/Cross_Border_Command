@@ -83,9 +83,19 @@ export const FOOTER_HEIGHT = 50;
 
 // Max characters for the single-line footer text. The footer band is a fixed
 // 50px-high, 3-column strip; without a cap a long paste runs off the edge (and
-// would overflow the same way in the exported DOCX footer). 120 comfortably
-// fits a "Company Name Pvt. Ltd. | Confidential" style line.
-export const FOOTER_TEXT_MAX = 120;
+// would overflow the same way in the exported DOCX footer). 64 fits a
+// "Company Name Pvt. Ltd. | Confidential" style line while staying inside the
+// centre column — at the previous 120 the text still ran under the page-number
+// cell and got clipped mid-word.
+export const FOOTER_TEXT_MAX = 64;
+
+// Max characters for the header title / subtitle. The title block is centre-
+// anchored and capped at 60% of the header width, so an uncapped string wraps
+// into a tall stack that overlaps the logo and spills past the 90px header
+// band. Higher than FOOTER_TEXT_MAX because the header block is multi-line and
+// two-field (title + subtitle), so it has the vertical room the single-line
+// footer strip does not.
+export const HEADER_TEXT_MAX = 75;
 
 // ── Component ────────────────────────────────────────────────────────────────
 /**
@@ -197,6 +207,26 @@ export default function HeaderFooterPanel({
     LOGO_HEIGHT_MIN, LOGO_HEIGHT_MAX,
   );
 
+  /* The title block is absolutely positioned, so — unlike the logo, whose
+     height is a known config value — it contributes nothing to the header's
+     own height. A multi-line title therefore never grew the band: being
+     centre-anchored it overflowed equally above and below, and the shell's
+     overflow:hidden clipped the top. Measure the rendered block and feed it
+     into minHeight, mirroring what logoHeightPx already does for the logo. */
+  const titleBlockRef = useRef<HTMLDivElement | null>(null);
+  const [titleBlockH, setTitleBlockH] = useState(0);
+  useEffect(() => {
+    const el = titleBlockRef.current;
+    if (!el) { setTitleBlockH(0); return; }
+    const measure = () => setTitleBlockH(el.offsetHeight);
+    measure();
+    // Observes wrap changes from every source — typing, font/align changes,
+    // dragging (maxWidth is derived from title_pos), and container resize.
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [header.show_title]);
+
   const draggableItemStyle = (pos: PointPct): React.CSSProperties => ({
     position: 'absolute',
     left: `${pos.x}%`,
@@ -225,10 +255,11 @@ export default function HeaderFooterPanel({
         }}
         title={readOnly ? '' : 'Drag the logo / title; click any empty area to edit settings'}
         style={{
-          // Grow the header to fit the logo when the user scales it past the
-          // default. +28 keeps the same vertical breathing room the baked-in
-          // value used to provide.
-          minHeight: Math.max(HEADER_HEIGHT, logoHeightPx + 28),
+          // Grow the header to fit whichever of the logo / title is taller.
+          // +28 keeps the same vertical breathing room the baked-in value used
+          // to provide. Without the titleBlockH term a wrapped title spills out
+          // of the band and gets clipped.
+          minHeight: Math.max(HEADER_HEIGHT, logoHeightPx + 28, titleBlockH + 28),
           background: header.background, color: header.text_color,
           borderBottom: '2px solid #f3f4f6',
           cursor: readOnly ? 'default' : 'pointer',
@@ -259,6 +290,7 @@ export default function HeaderFooterPanel({
         )}
         {header.show_title && (
           <div
+            ref={titleBlockRef}
             data-tpl-no-popover="1"
             style={{
               ...draggableItemStyle(titlePos),
@@ -296,14 +328,16 @@ export default function HeaderFooterPanel({
               value={header.title}
               placeholder="Company Name"
               readOnly={readOnly}
-              onChange={(v) => setHeader({ ...header, title: v })}
+              maxLength={HEADER_TEXT_MAX}
+              onChange={(v) => setHeader({ ...header, title: v.slice(0, HEADER_TEXT_MAX) })}
               style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.3, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
             />
             <EditableText
               value={header.subtitle}
               placeholder="Subtitle (optional)"
               readOnly={readOnly}
-              onChange={(v) => setHeader({ ...header, subtitle: v })}
+              maxLength={HEADER_TEXT_MAX}
+              onChange={(v) => setHeader({ ...header, subtitle: v.slice(0, HEADER_TEXT_MAX) })}
               style={{ fontSize: 11.5, opacity: 0.7, marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
             />
           </div>
@@ -417,15 +451,27 @@ function HeaderEditor({
       <PopoverHeader title="Header Settings" onClose={onClose} />
       <div className="row g-3" style={{ padding: 14 }}>
         <div className="col-md-6">
-          <label className="tpl-popover-label" style={labelStyle}>Title <span style={{ fontWeight: 600, color: '#9ca3af' }}>(multi-line)</span></label>
-          <textarea rows={3} value={header.title} onChange={e => setHeader({ ...header, title: e.target.value })}
+          <div className="d-flex align-items-center justify-content-between mb-1">
+            <label className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 0 }}>Title <span style={{ fontWeight: 600, color: '#9ca3af' }}>(multi-line)</span></label>
+            <span className="tpl-popover-hint" style={{ fontSize: 11, color: (header.title || '').length >= HEADER_TEXT_MAX ? '#b45309' : '#9ca3af', fontWeight: 700 }}>
+              {(header.title || '').length}/{HEADER_TEXT_MAX}
+            </span>
+          </div>
+          <textarea rows={3} value={header.title} maxLength={HEADER_TEXT_MAX}
+            onChange={e => setHeader({ ...header, title: e.target.value.slice(0, HEADER_TEXT_MAX) })}
             placeholder={'e.g. Inorbvict Healthcare\nNew Delhi Office'}
             className="tpl-popover-input"
             style={{ ...inputStyle, resize: 'vertical', minHeight: 64, lineHeight: 1.4 }} />
         </div>
         <div className="col-md-6">
-          <label className="tpl-popover-label" style={labelStyle}>Subtitle <span style={{ fontWeight: 600, color: '#9ca3af' }}>(multi-line)</span></label>
-          <textarea rows={3} value={header.subtitle} onChange={e => setHeader({ ...header, subtitle: e.target.value })}
+          <div className="d-flex align-items-center justify-content-between mb-1">
+            <label className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 0 }}>Subtitle <span style={{ fontWeight: 600, color: '#9ca3af' }}>(multi-line)</span></label>
+            <span className="tpl-popover-hint" style={{ fontSize: 11, color: (header.subtitle || '').length >= HEADER_TEXT_MAX ? '#b45309' : '#9ca3af', fontWeight: 700 }}>
+              {(header.subtitle || '').length}/{HEADER_TEXT_MAX}
+            </span>
+          </div>
+          <textarea rows={3} value={header.subtitle} maxLength={HEADER_TEXT_MAX}
+            onChange={e => setHeader({ ...header, subtitle: e.target.value.slice(0, HEADER_TEXT_MAX) })}
             placeholder={'e.g. Confidential\nDocument: Offer Letter'}
             className="tpl-popover-input"
             style={{ ...inputStyle, resize: 'vertical', minHeight: 64, lineHeight: 1.4 }} />
@@ -632,13 +678,18 @@ function FooterEditor({
  * editing, so popover edits / external resets stay visible.
  */
 function EditableText({
-  value, placeholder, readOnly, onChange, style,
+  value, placeholder, readOnly, onChange, style, maxLength,
 }: {
   value: string;
   placeholder?: string;
   readOnly?: boolean;
   onChange: (next: string) => void;
   style?: React.CSSProperties;
+  /* Hard character cap. Enforced on three fronts: typing (beforeinput),
+     pasting (onPaste truncates to the remaining room), and commit (blur
+     slices as a backstop, which also trims any over-long value that was
+     saved before this cap existed). */
+  maxLength?: number;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [focused, setFocused] = useState(false);
@@ -668,8 +719,32 @@ function EditableText({
       onFocus={() => setFocused(true)}
       onBlur={(e) => {
         setFocused(false);
-        const next = e.currentTarget.innerText || '';
+        const raw = e.currentTarget.innerText || '';
+        const next = maxLength ? raw.slice(0, maxLength) : raw;
         if (next !== value) onChange(next);
+      }}
+      /* Refuse a keystroke that would push the field past the cap. Only
+         insertions carry `data`; deletions leave it null, so Backspace still
+         works on a value that is already over the limit (e.g. one saved
+         before this cap existed). */
+      onBeforeInput={(e) => {
+        if (!maxLength) return;
+        const incoming = (e.nativeEvent as InputEvent).data || '';
+        if (!incoming) return;
+        const selected = window.getSelection()?.toString().length ?? 0;
+        const len = (e.currentTarget.innerText || '').length;
+        if (len - selected + incoming.length > maxLength) e.preventDefault();
+      }}
+      /* Paste bypasses beforeinput's `data`, so handle it here: plain text
+         only (a rich paste would drag its own fonts/colours into the title),
+         truncated to whatever room is left. */
+      onPaste={(e) => {
+        if (!maxLength) return;
+        e.preventDefault();
+        const selected = window.getSelection()?.toString().length ?? 0;
+        const room = maxLength - ((e.currentTarget.innerText || '').length - selected);
+        if (room <= 0) return;
+        document.execCommand('insertText', false, e.clipboardData.getData('text/plain').slice(0, room));
       }}
       onMouseDown={stop}
       onClick={stop}

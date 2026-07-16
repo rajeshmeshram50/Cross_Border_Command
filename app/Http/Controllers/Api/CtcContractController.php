@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\HandlesDocxHtmlRoundtrip;
 use App\Http\Controllers\Controller;
 use App\Models\CtcContract;
 use App\Models\User;
+use App\Support\CtcAuditTime;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -44,19 +45,15 @@ class CtcContractController extends Controller
     /**
      * Convert a stored UTC date string (already formatted as "d M Y" or
      * "d M Y H:i" by now()->format() at write time) to the display timezone.
-     * Date-only strings stay date-only; strings carrying a time get the time
-     * shifted into IST. Returns the original on any parse failure.
+     *
+     * Delegates to CtcAuditTime — ClmSignatureController::ctcSignatureStatus()
+     * feeds the SAME Review Timeline as show(), and when each controller kept
+     * its own copy of this logic only one got fixed, so the timeline's times
+     * shifted by 5:30 as the SPA's poll switched endpoints (CBC-574).
      */
     private function istStr(?string $s): string
     {
-        if ($s === null || $s === '' || $s === '—') return $s ?? '—';
-        try {
-            $hasTime = (bool) preg_match('/\d{1,2}:\d{2}/', $s);
-            $c = \Illuminate\Support\Carbon::parse($s, 'UTC')->setTimezone(self::DISPLAY_TZ);
-            return $hasTime ? $c->format('d M Y H:i') : $c->format('d M Y');
-        } catch (\Throwable $e) {
-            return $s;
-        }
+        return CtcAuditTime::str($s);
     }
 
     /**
@@ -65,14 +62,7 @@ class CtcContractController extends Controller
      */
     private function istEntries($arr): array
     {
-        return array_map(function ($e) {
-            if (is_array($e)) {
-                if (!empty($e['date']))          $e['date']          = $this->istStr($e['date']);
-                if (!empty($e['acted_at']))      $e['acted_at']      = $this->istStr($e['acted_at']);
-                if (!empty($e['response_date'])) $e['response_date'] = $this->istStr($e['response_date']);
-            }
-            return $e;
-        }, array_values($arr ?? []));
+        return CtcAuditTime::entries($arr);
     }
 
     /** Append a content-snapshot version entry (append-only audit). */

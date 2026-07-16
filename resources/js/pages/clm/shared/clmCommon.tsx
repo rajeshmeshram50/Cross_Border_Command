@@ -189,6 +189,9 @@ export function SimpleNameModal(props: {
   };
 
   const handleSave = async () => {
+    // Guard at the TOP, not just `disabled` on the button — the button attribute
+    // doesn't stop an Enter-key handler or a programmatic call.
+    if (saving) return;
     const trimmed = name.trim();
     if (!trimmed) { setError('Name is required'); return; }
     if (!isMeaningfulClmValue(trimmed)) { setError('Name must contain letters or numbers, not only symbols'); return; }
@@ -204,6 +207,7 @@ export function SimpleNameModal(props: {
   return createPortal((
     <div className="clm-modal-bd">
       <div className="clm-modal">
+        {saving && <div className="clm-saving-veil" aria-hidden />}
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico">
@@ -218,7 +222,7 @@ export function SimpleNameModal(props: {
               <div className="clm-modal-head-sub">{isEdit ? 'Rename the entry below.' : 'Create a new lightweight master record.'}</div>
             </div>
           </div>
-          <button className="clm-modal-close" onClick={onClose}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+          <button className="clm-modal-close" onClick={onClose} disabled={saving}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
         </div>
         <div className="clm-modal-body">
           <div className="clm-autocode">
@@ -282,6 +286,7 @@ export function SimpleDescModal(props: {
   };
 
   const handleSave = async () => {
+    if (saving) return;   // see SimpleNameModal — `disabled` alone isn't a guard
     const next: Record<string, string> = {};
     const trimmedName = name.trim();
     const trimmedDesc = desc.trim();
@@ -302,6 +307,7 @@ export function SimpleDescModal(props: {
   return createPortal((
     <div className="clm-modal-bd">
       <div className="clm-modal">
+        {saving && <div className="clm-saving-veil" aria-hidden />}
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico">
@@ -316,7 +322,7 @@ export function SimpleDescModal(props: {
               <div className="clm-modal-head-sub">{isEdit ? 'Update the entry below.' : 'Register a new master record.'}</div>
             </div>
           </div>
-          <button className="clm-modal-close" onClick={onClose}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+          <button className="clm-modal-close" onClick={onClose} disabled={saving}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
         </div>
         <div className="clm-modal-body">
           <div className="clm-autocode">

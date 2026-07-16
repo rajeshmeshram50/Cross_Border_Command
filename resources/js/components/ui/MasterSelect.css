@@ -168,6 +168,10 @@
   .master-select-list {
     max-height: 152px;
     overflow-y: auto;
+    /* Long option labels used to widen the rows past the menu, which produced a
+       horizontal scrollbar and left hover/active highlighting only half-painted.
+       Labels now ellipsis instead; nothing should ever scroll sideways here. */
+    overflow-x: hidden;
   }
   .master-select-list::-webkit-scrollbar { width: 6px; }
   .master-select-list::-webkit-scrollbar-track { background: transparent; }

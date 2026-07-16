@@ -912,12 +912,20 @@ export default function AddVendorModal(props: {
       );
     };
 
-    // Cache hit — hydrate immediately, skip the network.
+    // Stale-while-revalidate. A cache hit paints the dropdowns with no
+    // roundtrip, but must NOT end there: this cache lives in sessionStorage,
+    // which is per-tab. bustAllMasterBundles() only reaches the tab that did
+    // the mutation, so a master deleted in another tab — or by another user
+    // entirely — kept being offered here until the 5-min TTL lapsed. Masters
+    // are hard-deleted, so picking one 422s on save ("The selected risk level
+    // id is invalid"). Always revalidate against the server and re-hydrate with
+    // its truth. hydrate() only replaces option lists (never form values), so
+    // running it twice is safe, and the server bundle is itself cached for
+    // 5 minutes behind a version stamp — this costs one cheap request.
     const cached = readVendorMasterBundle<Bundle>();
     if (cached) {
       hydrate(cached);
       setMastersLoading(false);
-      return;
     }
 
     (async () => {
@@ -926,9 +934,10 @@ export default function AddVendorModal(props: {
         hydrate(res.data);
         writeVendorMasterBundle(res.data);
       } catch {
-        // Dropdowns stay empty; the form still renders and individual
-        // saves will surface validation errors if a required option is
-        // missing.
+        // Network failed. With a cache hit the user keeps the cached options
+        // (better than blanking a form they may be mid-way through); without
+        // one the dropdowns stay empty and individual saves will surface
+        // validation errors if a required option is missing.
       } finally {
         setMastersLoading(false);
       }
@@ -1709,7 +1718,10 @@ export default function AddVendorModal(props: {
     }
   };
 
-  const saveKyc = async (): Promise<boolean> => {
+  /* @param opts.silentToast Suppress the per-tab toast — finishSupplier sets this
+   *   so the final completion notice is the last thing the user sees, instead of
+   *   a per-tab "saved" firing right before the wizard closes. */
+  const saveKyc = async (opts?: { silentToast?: boolean }): Promise<boolean> => {
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return false; }
     const missingDd = ddRows.filter(r => r.mandatory && !r.fileName);
     if (missingDd.length) {
@@ -1768,7 +1780,17 @@ export default function AddVendorModal(props: {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setFieldErrors({});
-      toast.success('KYC saved', 'Due-diligence details captured');
+      // Name the tab that was actually saved. The old blanket "KYC saved /
+      // Due-diligence details captured" fired identically on Company DD, Owner
+      // KYC, Trade Licence and Bank Details, so it told the user nothing about
+      // what had just been persisted — and on Bank Details it even said
+      // "due-diligence", which is a different tab.
+      if (!opts?.silentToast) {
+        toast.success(
+          `${KYC_TAB_TITLE[kycTab] ?? 'KYC'} saved`,
+          KYC_TAB_SUB[kycTab] ?? 'Details captured',
+        );
+      }
       return true;
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save KYC';
@@ -1879,12 +1901,21 @@ export default function AddVendorModal(props: {
       setKycTab('bank');
       return;
     }
-    const okKyc = await saveKyc();
+    // silentToast: this is the FINAL submit, so the completion notice below is
+    // the message the user should be left with — not a per-tab "saved".
+    const okKyc = await saveKyc({ silentToast: true });
     if (!okKyc) return;
     if (productMappings.length > 0) {
       const okProd = await saveProducts();
       if (!okProd) return;
     }
+    // The list page's onSubmit handler only closes + refreshes — it shows no
+    // toast of its own, so without this the wizard would vanish with the last
+    // word being a per-tab "saved" and no confirmation the supplier was done.
+    toast.success(
+      isEdit ? 'Supplier updated' : 'Supplier saved',
+      `${vendorCode ? vendorCode + ' — ' : ''}${companyName.trim() || 'Supplier'} completed and saved.`,
+    );
     onSubmit({
       companyName, legalName, vendorType, website, gstApplicable, gstNumber, riskLevel,
       vendorBehaviour, segment, complianceBehaviour,
@@ -3352,7 +3383,11 @@ export default function AddVendorModal(props: {
                                       <span className="avm-primary-tag ms-2">Primary</span>
                                     )}
                                   </td>
-                                  <td>{r.designation || '—'}</td>
+                                  <td>
+                                    {r.designation
+                                      ? <Tooltip label={r.designation}><span>{r.designation.length > 25 ? r.designation.slice(0, 25) + '…' : r.designation}</span></Tooltip>
+                                      : '—'}
+                                  </td>
                                   <td><span className="font-monospace fs-13">{r.phone || '—'}</span></td>
                                   <td>
                                     {r.email

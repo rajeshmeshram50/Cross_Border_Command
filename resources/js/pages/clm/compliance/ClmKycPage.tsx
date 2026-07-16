@@ -224,6 +224,9 @@ export function KycModal(props: { existing: Kyc | null; authorities: Authority[]
   useEffect(() => { setAuthorities(initialAuthorities); }, [initialAuthorities]);
 
   const handleSave = async () => {
+    // Guard at the TOP, not just `disabled` on the button — the button attribute
+    // doesn't stop an Enter-key handler or a programmatic call.
+    if (saving) return;
     const next: Record<string, string> = {};
     if (!name.trim()) next.name = 'Document name is required';
     if (!authList.length) next.auth = 'At least one authority is required';
@@ -258,6 +261,7 @@ export function KycModal(props: { existing: Kyc | null; authorities: Authority[]
   return createPortal((
     <div className="clm-modal-bd">
       <div className="clm-modal">
+        {saving && <div className="clm-saving-veil" aria-hidden />}
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div>
@@ -266,7 +270,7 @@ export function KycModal(props: { existing: Kyc | null; authorities: Authority[]
               <div className="clm-modal-head-sub">{isEdit ? 'Update KYC document details.' : 'Register a new KYC document for onboarding and verification.'}</div>
             </div>
           </div>
-          <button className="clm-modal-close" onClick={onClose}>×</button>
+          <button className="clm-modal-close" onClick={onClose} disabled={saving}>×</button>
         </div>
         <div className="clm-modal-body">
           <div className="clm-autocode">
@@ -298,7 +302,7 @@ export function KycModal(props: { existing: Kyc | null; authorities: Authority[]
                   onChange={(vals) => { setAuthList(vals); setErrors(p => ({ ...p, auth: '' })); }}
                 />
               </div>
-              <Tooltip label="Add new authority"><button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority">
+              <Tooltip label="Add new authority"><button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority" disabled={saving}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               </button></Tooltip>
             </div>

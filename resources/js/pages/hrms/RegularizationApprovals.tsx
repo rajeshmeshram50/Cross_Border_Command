@@ -26,7 +26,13 @@ const empName = (r: ApiRegularization) => {
 };
 
 const fmtDate = (iso: string) => {
-  const d = new Date(iso + 'T00:00:00');
+  // regularization_date can arrive either date-only ("2026-07-10") or as a
+  // full ISO timestamp ("2026-07-10T00:00:00.000000Z"). Pull the Y-M-D off the
+  // front so we never build an invalid Date (which used to fall through to the
+  // raw ISO string — bug #25).
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  if (!m) return iso || '';
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
@@ -81,8 +87,12 @@ export default function RegularizationApprovals() {
   };
 
   return (
-    <Card className="mt-2 shadow-none border">
-      <CardBody className="p-0">
+    // Mirror LogsRequestsCard's shell (transparent .att-logs-card → padded
+    // CardBody → inset bordered box) so this table's box lines up edge-to-edge
+    // with the Logs & Requests table above it instead of sitting wider (bug #26).
+    <Card className="att-logs-card mt-2 mb-0">
+      <CardBody>
+      <div className="border rounded overflow-hidden">
       <div className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 flex-wrap border-bottom">
         <div className="d-flex align-items-center gap-2">
           <i className="ri-checkbox-multiple-line fs-5 text-primary" />
@@ -185,6 +195,7 @@ export default function RegularizationApprovals() {
           )}
         </div>
       )}
+      </div>
       </CardBody>
     </Card>
   );

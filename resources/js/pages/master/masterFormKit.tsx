@@ -165,6 +165,7 @@ export function MasterMultiSelect({
                 {(expanded ? selectedOptions : selectedOptions.slice(0, maxChips)).map(o => (
                   <span
                     key={o.value}
+                    title={o.label}
                     className="d-inline-flex align-items-center master-multi-chip"
                     style={{
                       background: 'transparent',
@@ -277,7 +278,9 @@ export function MasterMultiSelect({
                   disabled={locked}
                   onClick={() => toggleVal(opt.value)}
                   className="master-select-item d-flex align-items-center"
-                  title={locked ? "Documents uploaded — can't be removed" : undefined}
+                  /* Full label in the tooltip — the visible text truncates with an
+                     ellipsis, so long names are only readable on hover. */
+                  title={locked ? `${opt.label} — documents uploaded, can't be removed` : opt.label}
                 >
                   <span
                     style={{
@@ -295,8 +298,22 @@ export function MasterMultiSelect({
                   >
                     {checked && <i className="ri-check-line" style={{ color: '#fff', fontSize: 12 }} />}
                   </span>
-                  <span style={{ flex: 1 }}>{opt.label}</span>
-                  {locked && <i className="ri-lock-2-line" style={{ fontSize: 12, opacity: 0.6, marginLeft: 6 }} />}
+                  {/* minWidth:0 is load-bearing — a flex child defaults to
+                      min-width:auto and refuses to shrink below its text, which
+                      pushed the row wider than the menu and left the hover/active
+                      background painting only part of it. */}
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {opt.label}
+                  </span>
+                  {locked && <i className="ri-lock-2-line" style={{ fontSize: 12, opacity: 0.6, marginLeft: 6, flexShrink: 0 }} />}
                 </DropdownItem>
               );
             })}

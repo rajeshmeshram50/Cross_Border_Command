@@ -235,6 +235,9 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
   useEffect(() => { setAuthorities(initialAuthorities); }, [initialAuthorities]);
 
   const handleSave = async () => {
+    // Guard at the TOP, not just `disabled` on the button — the button attribute
+    // doesn't stop an Enter-key handler or a programmatic call.
+    if (saving) return;
     const next: Record<string, string> = {};
     if (!name.trim())     next.name     = 'Name is required';
     else if (name.trim().length > 255) next.name = 'Name must not be greater than 255 characters';
@@ -275,6 +278,7 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
   return createPortal((
     <div className="clm-modal-bd">
       <div className="clm-modal clm-modal-wide">
+        {saving && <div className="clm-saving-veil" aria-hidden />}
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
@@ -283,7 +287,7 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
               <div className="clm-modal-head-sub">{isEdit ? 'Update QC document details.' : 'Register a new quality / compliance document.'}</div>
             </div>
           </div>
-          <button className="clm-modal-close" onClick={onClose}>×</button>
+          <button className="clm-modal-close" onClick={onClose} disabled={saving}>×</button>
         </div>
         <div className="clm-modal-body">
           <div className="clm-autocode">
@@ -321,7 +325,7 @@ export function QcModal(props: { existing: Qc | null; authorities: Authority[]; 
                   onChange={(v) => { setIssuedBy(v); setErrors(p => ({ ...p, issuedBy: '' })); }}
                 />
               </div>
-              <Tooltip label="Add new authority"><button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority">
+              <Tooltip label="Add new authority"><button type="button" className="clm-quick-add-btn" onClick={() => setQuickAddOpen(true)} aria-label="Add new authority" disabled={saving}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               </button></Tooltip>
             </div>

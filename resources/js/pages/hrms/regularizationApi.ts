@@ -27,6 +27,11 @@ export interface ApiRegularization {
   approver_comment: string | null;
   // Whether the logged-in user may Approve/Reject this row right now. Server-computed.
   can_act_now?: boolean;
+  // Only present on the create() response — the ACTUAL approver the request was
+  // routed to (or auto_approved when there's no one to act). Used for a truthful
+  // success toast instead of guessing from the org chart (bug #29).
+  auto_approved?: boolean;
+  pending_approver_label?: { name: string | null; role: string } | null;
   created_at: string;
   updated_at: string;
   approver?: { id: number; name: string } | null;

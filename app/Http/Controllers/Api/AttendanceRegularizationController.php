@@ -188,7 +188,30 @@ class AttendanceRegularizationController extends Controller
             $this->applyApprovedAdjustment($row);
         }
 
-        return response()->json(['data' => $row->load('approver:id,name')], 201);
+        // Resolve the ACTUAL pending approver so the client shows a truthful
+        // "Routed to X" toast instead of guessing from the org chart (bug #29).
+        // The chain is RM-based; whoever the RM resolves to (often the Branch
+        // User / HR) is the real approver — name them, don't assume.
+        $pendingApprover = null;
+        if (!$autoApproved) {
+            $lvl = $chain[$startLevel - 1] ?? null;
+            if ($lvl) {
+                $name = null;
+                if (!empty($lvl['approver_employee_id'])) {
+                    $ap = Employee::find($lvl['approver_employee_id']);
+                    $name = $ap?->display_name ?: trim(($ap?->first_name ?? '') . ' ' . ($ap?->last_name ?? '')) ?: null;
+                } elseif (!empty($lvl['approver_user_id'])) {
+                    $name = \App\Models\User::find($lvl['approver_user_id'])?->name;
+                }
+                $pendingApprover = ['name' => $name, 'role' => $lvl['approver_role'] ?? 'Reporting Manager'];
+            }
+        }
+
+        $payload = $row->load('approver:id,name')->toArray();
+        $payload['auto_approved']         = $autoApproved;
+        $payload['pending_approver_label'] = $pendingApprover;
+
+        return response()->json(['data' => $payload], 201);
     }
 
     // ─────────────────────────────────────────────────────────────────────

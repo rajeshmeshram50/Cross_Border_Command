@@ -144,7 +144,20 @@ export default function RegularizationModal({
         punches,
         reason: reason.trim(),
       });
-      toast.success('Submitted', managerName ? `Routed to ${managerName} for approval` : 'Routed for approval');
+      // Prefer the ACTUAL approver the backend routed to (bug #29) — the old
+      // `managerName` prop was just the org-chart reporting manager and could
+      // misname who really approves. Fall back to that prop, then generic.
+      const pa = row.pending_approver_label;
+      const approverText = row.auto_approved
+        ? 'Auto-approved — no approver assigned'
+        : pa?.name
+          ? `Routed to ${pa.name} for approval`
+          : pa?.role
+            ? `Routed to ${pa.role} for approval`
+            : managerName
+              ? `Routed to ${managerName} for approval`
+              : 'Routed for approval';
+      toast.success('Submitted', approverText);
       onSubmitted?.(row);
       onClose();
     } catch (err: any) {

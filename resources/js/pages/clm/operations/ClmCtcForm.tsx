@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import PdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import { useToast } from '../../../contexts/ToastContext';
@@ -562,15 +562,20 @@ function Stage1(p: {
     syncTimer.current = window.setTimeout(flushDraft, 250);
   };
   useEffect(() => () => { if (syncTimer.current) window.clearTimeout(syncTimer.current); }, []);
+  // preventScroll is load-bearing: the editor element IS the whole agreement, so
+  // a plain focus() makes the browser scroll it into view — i.e. jump the mid
+  // pane to the editor's top, Page 1 — every time a placeholder / clause was
+  // inserted from a side panel, which made continuous insertion impossible.
+  // The caret is re-applied below, so the view stays exactly where the user was.
   const restoreCaret = () => {
-    const el = editorRef.current; if (!el) return; el.focus();
+    const el = editorRef.current; if (!el) return; el.focus({ preventScroll: true });
     const sel = window.getSelection(); if (!sel) return;
     if (lastRange.current && el.contains(lastRange.current.commonAncestorContainer)) { sel.removeAllRanges(); sel.addRange(lastRange.current); }
     else { const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); sel.removeAllRanges(); sel.addRange(r); }
   };
   const insertText = (text: string) => { restoreCaret(); document.execCommand('insertText', false, text + ' '); syncDraft(); };
   const insertHtml = (html: string) => { restoreCaret(); document.execCommand('insertHTML', false, html); syncDraft(); };
-  const exec = (cmd: string, val?: string) => { editorRef.current?.focus(); document.execCommand(cmd, false, val); syncDraft(); };
+  const exec = (cmd: string, val?: string) => { editorRef.current?.focus({ preventScroll: true }); document.execCommand(cmd, false, val); syncDraft(); };
   // Apply the link from the themed dialog. restoreCaret() puts the stashed editor
   // selection back (the dialog input stole focus) so createLink wraps the right text.
   const applyLink = () => {
@@ -620,21 +625,47 @@ function Stage1(p: {
     if (!p.org)        { toast.error('Organisation required', 'Select your organisation details before continuing.'); setMidStep(1); return false; }
     return true;
   };
+  // End date must never precede the effective date. Both values are ISO
+  // (YYYY-MM-DD, from MasterDatePicker's fmt), and that format sorts
+  // lexicographically — so a plain string compare is exact and timezone-free,
+  // with no Date parsing to get wrong.
+  //
+  // The End Date picker already passes minDate={effDate}, but that only guards
+  // the moment End Date is picked. It never re-checks when the user moves
+  // Effective Date *forwards* afterwards, which is how an inverted pair still
+  // reached the server.
+  const endBeforeEff = !!p.effDate && !!p.endDate && p.endDate < p.effDate;
   const validateStep2 = (): boolean => {
-    // Mark every empty required field so all of them highlight inline at once…
-    const e = { title: !p.agTitle.trim(), type: !p.agType, effDate: !p.effDate, endDate: !p.endDate };
+    // Mark every invalid required field so all of them highlight inline at once…
+    const e = { title: !p.agTitle.trim(), type: !p.agType, effDate: !p.effDate, endDate: !p.endDate || endBeforeEff };
     setErrors(e);
     // …while the toaster still calls out the first one (unchanged behaviour).
-    if (e.title)   { toast.error('Agreement name required', 'Enter the agreement title.'); setMidStep(2); return false; }
-    if (e.type)    { toast.error('Agreement type required', 'Select the agreement type.'); setMidStep(2); return false; }
-    if (e.effDate) { toast.error('Effective date required', 'Select the effective date.'); setMidStep(2); return false; }
-    if (e.endDate) { toast.error('End date required', 'Select the end date.'); setMidStep(2); return false; }
+    if (e.title)      { toast.error('Agreement name required', 'Enter the agreement title.'); setMidStep(2); return false; }
+    if (e.type)       { toast.error('Agreement type required', 'Select the agreement type.'); setMidStep(2); return false; }
+    if (e.effDate)    { toast.error('Effective date required', 'Select the effective date.'); setMidStep(2); return false; }
+    if (!p.endDate)   { toast.error('End date required', 'Select the end date.'); setMidStep(2); return false; }
+    if (endBeforeEff) { toast.error('Invalid end date', 'End date cannot be earlier than the effective date.'); setMidStep(2); return false; }
     return true;
   };
   const validateAll = (): boolean => validateStep1() && validateStep2();
+  // Stepping forward does no I/O — but the render it triggers is heavy (Step 3
+  // mounts the editor with the entire agreement inside it), and that work blocks
+  // the main thread. On a long document the click therefore looked like a no-op:
+  // nothing moved until the render finished. Flip a busy flag and let the browser
+  // actually PAINT it before handing the thread over to that render. Two rAFs are
+  // required — the first fires before the pending paint, the second after it.
+  const [navBusy, setNavBusy] = useState(false);
+  const goStep = (n: 1 | 2 | 3) => {
+    setNavBusy(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      setMidStep(n);
+      setNavBusy(false);
+    }));
+  };
   const midNext = () => {
-    if (midStep === 1) { if (!validateStep1()) return; setMidStep(2); }
-    else if (midStep === 2) { if (!validateStep2()) return; setMidStep(3); }
+    if (navBusy) return;   // ignore double-clicks while the step is rendering
+    if (midStep === 1) { if (!validateStep1()) return; goStep(2); }
+    else if (midStep === 2) { if (!validateStep2()) return; goStep(3); }
     else p.onNext();
   };
   const midBack = () => { if (midStep > 1) setMidStep((midStep - 1) as 1 | 2 | 3); };
@@ -881,7 +912,11 @@ function Stage1(p: {
                   <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, alignItems: 'end' }}>
                       <Field t={t} label="Effective Date *" green error={errors.effDate && !p.effDate ? 'Effective date is required' : undefined}><MasterDatePicker value={p.effDate} onChange={p.setEffDate} placeholder="Select date" /></Field>
-                      <Field t={t} label="End Date *" green error={errors.endDate && !p.endDate ? 'End date is required' : undefined}><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={p.effDate || undefined} placeholder="Select date" /></Field>
+                      {/* The inverted-range error is NOT gated on `errors` — it is a live
+                          invariant, so it surfaces the instant the user creates the bad
+                          combination (typically by moving Effective Date past End Date)
+                          rather than waiting for them to press Next. It self-clears too. */}
+                      <Field t={t} label="End Date *" green error={errors.endDate && !p.endDate ? 'End date is required' : endBeforeEff ? 'End date cannot be earlier than the effective date' : undefined}><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={p.effDate || undefined} placeholder="Select date" /></Field>
                     </div>
                   </div>
                 </div>
@@ -971,9 +1006,11 @@ function Stage1(p: {
               </button>
             ) : <span />}
             {midStep < 3 ? (
-              <button onClick={midNext} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(79,70,229,.35)' }}>
-                <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff' }}>{MID_STEPS[midStep - 1].next}</span>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+              <button onClick={midNext} disabled={navBusy} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: navBusy ? 'wait' : 'pointer', opacity: navBusy ? .8 : 1, fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(79,70,229,.35)' }}>
+                <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff' }}>{navBusy ? 'Loading…' : MID_STEPS[midStep - 1].next}</span>
+                {navBusy
+                  ? <svg className="ctc-spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                  : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>}
               </button>
             ) : p.editLock ? (
               // Draft is locked (awaiting approval / out for signature / signed).
@@ -1201,7 +1238,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               })()}
               {/* Only the drafted agreement content — no auto-generated title / id / parties scaffold. */}
               {draft
-                ? <div className="ctc-editor" style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7, overflowWrap: 'anywhere', wordBreak: 'break-word' }} dangerouslySetInnerHTML={{ __html: previewDraft }} />
+                ? <div className="ctc-editor" style={{ fontSize: 10, color: t.textSub, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: previewDraft }} />
                 : <div style={{ fontSize: 10, color: t.textMuted, lineHeight: 1.7, textAlign: 'center', padding: '40px 10px', fontStyle: 'italic' }}>No agreement content drafted yet.</div>}
               {/* Configured document footer (text + pagination) from Stage 1 */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', alignItems: 'center', gap: 6, marginTop: 26, paddingTop: 10, borderTop: '1.5px solid rgba(124,58,237,.18)', background: footer.background, color: footer.text_color, fontSize: 9, fontWeight: 500 }}>
@@ -1517,7 +1554,9 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
   const [contacts, setContacts] = useState<SignContact[][]>(() => cps.map(() => []));
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [days, setDays] = useState('14');
+  /* No setter — the on-screen stepper was removed (see the render below). Kept
+   * so onSend's signature is unchanged; the receiver ignores it anyway. */
+  const [days] = useState('14');
 
   // For each counterparty, pull the contact persons captured on its own form
   // (customer / consignee / vendor addresses). Primary contacts pre-selected.
@@ -1610,15 +1649,12 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
               <span style={{ padding: '4px 11px', borderRadius: 20, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.5)' : '#6EE7B7'}`, fontSize: 8.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#059669', flexShrink: 0 }}>Initiator</span>
             </div>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderRadius: 12, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, background: t.dark ? 'rgba(255,255,255,.03)' : '#FAFBFF' }}>
-            <div style={{ width: 32, height: 32, borderRadius: 9, background: t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></div>
-            <div style={{ flex: 1 }}><div style={{ fontSize: 9.5, fontWeight: 600, color: t.textStrong }}>Days to Sign</div><div style={{ fontSize: 8, color: t.textMuted, marginTop: 1 }}>Deadline for all parties to complete signing</div></div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <button onClick={() => setDays(String(Math.max(1, (Number(days) || 14) - 1)))} style={{ width: 28, height: 28, borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 15, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit' }}>−</button>
-              <span style={{ minWidth: 30, textAlign: 'center', fontSize: 15, fontWeight: 800, color: t.textStrong }}>{days}</span>
-              <button onClick={() => setDays(String(Math.min(365, (Number(days) || 14) + 1)))} style={{ width: 28, height: 28, borderRadius: 8, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.14)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 15, cursor: 'pointer', flexShrink: 0, fontFamily: 'inherit' }}>+</button>
-            </div>
-          </div>
+          {/* "Days to Sign" stepper removed — it was misleading. Its value was
+              already discarded: onSend → onSendForSigning → sendForSigning(_days)
+              never reads it. The signing window that actually applies is set on
+              the NEXT step (Position Signatures → expiry_days, fixed at 30), so
+              setting 14 here changed nothing. Mirrors ApprovalWorkflowModal,
+              where the steppers were dropped but the value kept. */}
         </div>
         {/* footer */}
         <div style={{ flexShrink: 0, padding: '12px 18px', borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
@@ -1982,7 +2018,17 @@ function GreenChoice({ t, sel, onClick, title, sub, icon }: { t: OpsTokens; sel:
 function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy, active = true }: { t: OpsTokens; draft: string; onInsert: (tok: string) => void; summary: string[][]; declineReason?: string; declinedBy?: string; active?: boolean }) {
   // Grammarly-style live review: score = % of words spelled correctly, with
   // the flagged misspellings (and suggestions) listed below the score.
-  const { score, words, issues } = checkSpelling(draft);
+  //
+  // Memoised on `draft` — this is the expensive part of the Stage-1 render. On a
+  // long agreement (~5k words) checkSpelling does several regex passes over the
+  // whole HTML plus per-token work across every word, and it used to run on
+  // EVERY render of this component. RightTools takes inline props from the
+  // parent, so it re-rendered on any parent state change at all — the 10s
+  // record poll, opening the link/placeholder/clause dialogs — each time
+  // re-scanning a document that hadn't changed. Combined with a format action
+  // (which syncs the draft ~250ms later) that main-thread block is what read as
+  // "the editor is slow / formatting takes ages" (CBC-576).
+  const { score, words, issues } = useMemo(() => checkSpelling(draft), [draft]);
   const clean = score >= 90, mild = score >= 60 && score < 90;
   const scoreClr = words === 0 ? '#EF4444' : clean ? (t.dark ? '#6ee7b7' : '#059669') : mild ? (t.dark ? '#fcd34d' : '#D97706') : (t.dark ? '#fca5a5' : '#DC2626');
   const statusLabel = words === 0 ? 'Not Started' : clean ? 'Looks Clean' : mild ? 'Minor Issues' : 'Needs Review';
@@ -2506,10 +2552,34 @@ const CTC_FORM_CSS = `
    instead of overflowing, so the scrollbar never appears. */
 .ctc-noshrink > * { flex-shrink: 0; }
 /* Default browser scrollbar — no custom colour. */
-.ctc-editor { overflow-wrap: anywhere; word-break: break-word; }
+/* break-word, NOT anywhere. Both break mid-word when a word can't fit, but
+   'anywhere' additionally makes the browser count a break opportunity at every
+   character when computing min-content intrinsic size — so every relayout of a
+   long agreement (i.e. after every formatting command) does per-character work
+   instead of per-word. 'word-break: break-word' was a deprecated alias doing the
+   same job twice; dropped. Wrapping behaviour is unchanged. */
+.ctc-editor { overflow-wrap: break-word; }
 .ctc-editor:empty:before { content: attr(data-ph); color: #94a3b8; pointer-events: none; white-space: pre-wrap; }
 .ctc-editor h1, .ctc-editor h2, .ctc-editor h3 { font-weight: 800; margin: 8px 0 4px; }
 .ctc-editor ul, .ctc-editor ol { padding-left: 22px; margin: 6px 0; }
+/* Clause-library bodies routinely arrive wrapped in a pre block (monospace
+   signature blocks, dash rules). A pre element defaults to white-space:pre,
+   which ignores the editor's overflow-wrap and runs the line straight past the
+   page edge — that is what produced the horizontal scrollbar, and on print the
+   overflowing half is simply clipped. pre-wrap keeps the authored line breaks
+   and indentation but lets long lines wrap at the page width. */
+.ctc-editor pre {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  margin: 6px 0;
+}
+.ctc-editor code { white-space: pre-wrap; overflow-wrap: break-word; }
+/* Nothing in the sheet may exceed the printable width. table-layout:fixed stops
+   a wide table from expanding past its container to fit its content. */
+.ctc-editor img { max-width: 100%; height: auto; }
+.ctc-editor table { max-width: 100%; table-layout: fixed; }
+.ctc-editor td, .ctc-editor th { overflow-wrap: break-word; }
 .ctc-spin { animation: ctcSpin .7s linear infinite; }
 @keyframes ctcSpin { to { transform: rotate(360deg); } }
 @keyframes ataSlideUp { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }

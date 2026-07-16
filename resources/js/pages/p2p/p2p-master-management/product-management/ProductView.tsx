@@ -183,15 +183,38 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
     return () => clearInterval(t);
   }, [images.length, galleryPaused]);
 
-  // Keep the active thumbnail scrolled into view as the hero gallery
-  // auto-advances (or the user clicks a dot), so the highlighted thumb
-  // never hides off the edge of the strip.
+  /* Keep the active thumbnail scrolled into view as the hero gallery
+   * auto-advances (or the user clicks a dot), so the highlighted thumb never
+   * hides off the edge of the strip.
+   *
+   * This scrolls the strip itself rather than calling scrollIntoView on the
+   * thumb. scrollIntoView walks EVERY scrollable ancestor, the document
+   * included: on mobile, once the user has scrolled down to read the
+   * description the strip is off-screen above, so each 4s auto-advance yanked
+   * the page back to the top mid-sentence. Nothing outside the strip should
+   * move because a carousel ticked.
+   *
+   * Mirrors inline:'nearest' — scroll only when the thumb is actually outside
+   * the visible strip, and only far enough to bring it back in. */
   const thumbsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = thumbsRef.current;
     if (!el) return;
     const active = el.children[activeImg] as HTMLElement | undefined;
-    active?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+    if (!active) return;
+
+    const PAD = 8; // breathing room so the thumb isn't flush to the edge
+    // Offsets resolved from rects rather than offsetLeft, which is relative to
+    // the nearest positioned ancestor and needn't be the strip.
+    const left = active.getBoundingClientRect().left - el.getBoundingClientRect().left + el.scrollLeft;
+    const right = left + active.offsetWidth;
+
+    let target: number | null = null;
+    if (left < el.scrollLeft) target = left - PAD;
+    else if (right > el.scrollLeft + el.clientWidth) target = right - el.clientWidth + PAD;
+    if (target === null) return;
+
+    el.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
   }, [activeImg]);
 
   if (loading) {
@@ -274,18 +297,21 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
           <div className="pv2pd-hero-btns">
             <button className="pv2pd-hbtn pv2pd-hbtn--edit" onClick={() => setEditOpen(true)}>
               {/* Exact prototype icon (Feather "edit" — pen-to-square). */}
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg> Edit Product
+              {/* The trailing words collapse on narrow screens (see the 480px
+                  block in the CSS) so all three actions hold one row instead of
+                  wrapping "Back to Product List" onto a line of its own. */}
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg> <span>Edit<span className="pv2pd-hbtn-more"> Product</span></span>
             </button>
             {/* Sales can't manage suppliers — the button is hidden entirely
                 (not just disabled) so there's no dead control / denial toast. */}
             {!isSalesDept && (
               <button className="pv2pd-hbtn pv2pd-hbtn--suppliers" onClick={() => { setSupplierOnly(true); setEditOpen(true); }}>
                 {/* Exact prototype icon (Feather "users" — two people). */}
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> Mapped Suppliers
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg> <span><span className="pv2pd-hbtn-more">Mapped </span>Suppliers</span>
               </button>
             )}
             <button className="pv2pd-hbtn pv2pd-hbtn--ghost" onClick={goBack}>
-              <i className="ri-arrow-left-s-line" /> Back to Product List
+              <i className="ri-arrow-left-s-line" /> <span>Back<span className="pv2pd-hbtn-more"> to Product List</span></span>
             </button>
           </div>
         </div>
@@ -379,11 +405,14 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
               <input value={qty} readOnly />
               <button onClick={() => setQty(q => q + 1)} aria-label="Increase">+</button>
             </div>
+            {/* "Add to" is dropped on phones (see the 520px block in the CSS) so
+                the stepper and both actions fit on one row without truncating —
+                the icon already carries the verb. */}
             <button className="pv2pd-act pv2pd-act--wish" onClick={() => toast.info('Wishlist', `${product.name} added to wishlist`)}>
-              <i className="ri-heart-line" /> Add to Wishlist
+              <i className="ri-heart-line" /> <span><span className="pv2pd-act-verb">Add to </span>Wishlist</span>
             </button>
             <button className="pv2pd-act pv2pd-act--cart" onClick={() => toast.success('Cart', `${product.name} added to cart`)}>
-              <i className="ri-shopping-cart-2-line" /> Add to Cart
+              <i className="ri-shopping-cart-2-line" /> <span><span className="pv2pd-act-verb">Add to </span>Cart</span>
             </button>
           </div>
         </div>

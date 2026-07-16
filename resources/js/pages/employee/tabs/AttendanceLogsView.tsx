@@ -402,8 +402,16 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                                   <div className="att-log-pop-shift-time--v2">
                                     {fmtClock(employee.shiftStart)} - {fmtClock(employee.shiftEnd)}
                                   </div>
+                                </div>
+                              )}
 
-                                  <button type="button" className="att-log-pop-regularize" onClick={() => { setPopoverIdx(null); if (l.iso) onRegularize(l.iso); }}>
+                              {/* Regularize must always be reachable, even for a day
+                                  with no configured shift (l.shift === '—') — otherwise
+                                  the whole action disappears and the icon looks dead
+                                  (bug #24). */}
+                              {l.iso && (
+                                <div className="att-log-pop-body att-log-pop-body--tight">
+                                  <button type="button" className="att-log-pop-regularize" onClick={() => { setPopoverIdx(null); onRegularize(l.iso!); }}>
                                     <i className="ri-pencil-line" />
                                     Regularize
                                   </button>

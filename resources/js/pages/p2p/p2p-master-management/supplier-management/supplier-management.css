@@ -402,7 +402,24 @@
    the table itself already scrolls horizontally via .sl-table-scroll. */
 @media (max-width: 640px) {
   .sup-fig .sl-toolbar { flex-direction: column; align-items: stretch; }
-  .sup-fig .sl-tabs { justify-content: center; }
+  /* The three nowrap tabs don't fit a phone, so the strip MUST scroll.
+     `justify-content: center` (what this used to be) is the trap: when flex
+     content overflows a centred container the spill goes to BOTH ends and the
+     leading one is unreachable — "All Suppliers" was clipped to just "A" with
+     no way to scroll back to it. flex-start keeps the first tab at the origin
+     and overflow-x makes the rest reachable by swipe. */
+  .sup-fig .sl-tabs {
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    /* The strip is short and self-evidently swipeable — a scrollbar here just
+       eats vertical space and cuts into the pills. */
+    scrollbar-width: none;
+  }
+  .sup-fig .sl-tabs::-webkit-scrollbar { display: none; }
+  /* Without this the pills squash instead of overflowing, so the labels
+     collide with their count badges. */
+  .sup-fig .sl-tab { flex-shrink: 0; }
   .sup-fig .cstrip { flex-direction: column; align-items: flex-start; gap: 10px; }
 }
 
