@@ -91,8 +91,9 @@ const ICONS: Record<FacetKey, JSX.Element> = {
   ),
 };
 
-const LABELS: Record<FacetKey, string> = {
-  type:     'Customer Type',
+/* The 'type' facet is labelled by the HOST (Customer Type / Consignee Type) so
+ * it reads the same as that page's column; the rest are identical everywhere. */
+const LABELS: Record<Exclude<FacetKey, 'type'>, string> = {
   segment:  'Segment',
   country:  'Country',
   whatsapp: 'Whatsapp',
@@ -162,12 +163,16 @@ type Props = {
   /** Which facets to show. CUSTOMER_FACETS / CONSIGNEE_FACETS. */
   facets: FacetKey[];
   title: string;
+  /** Label for the Domestic/International facet — must match the host page's
+   *  column header ("Customer Type" / "Consignee Type"). */
+  typeLabel: string;
   /** Accent ramp — must match the host page, or the modal reads as foreign. */
   theme: 'purple' | 'emerald';
 };
 
-export default function PartyFilterModal({ open, onClose, onApply, initial, rows, facets, title, theme }: Props) {
+export default function PartyFilterModal({ open, onClose, onApply, initial, rows, facets, title, typeLabel, theme }: Props) {
   const toast = useToast();
+  const labelFor = (k: FacetKey): string => (k === 'type' ? typeLabel : LABELS[k]);
 
   const [active, setActive] = useState<FacetKey>(facets[0]);
   const [search, setSearch] = useState('');
@@ -348,7 +353,7 @@ export default function PartyFilterModal({ open, onClose, onApply, initial, rows
                     onClick={() => { setActive(k); setSearch(''); }}
                   >
                     <span className="lfm-menu-ico">{ICONS[k]}</span>
-                    <span className="lfm-menu-label">{LABELS[k]}</span>
+                    <span className="lfm-menu-label">{labelFor(k)}</span>
                     {count > 0 && <span className="lfm-menu-count" aria-hidden="true">{count}</span>}
                   </button>
                 );
@@ -368,7 +373,7 @@ export default function PartyFilterModal({ open, onClose, onApply, initial, rows
               </svg>
               <input
                 className="lfm-search"
-                placeholder={`Search ${LABELS[active].toLowerCase()}…`}
+                placeholder={`Search ${labelFor(active).toLowerCase()}…`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
               />

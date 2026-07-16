@@ -19,6 +19,7 @@ import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import PartyFilterModal, {
   applyPartyFilters,
   countPartyFilterValues,
+  isDomesticParty,
   CONSIGNEE_FACETS,
   type PartyFilters,
 } from '../PartyFilterModal';
@@ -44,13 +45,13 @@ const titleCase = (s: string): string => {
   return s.slice(0, idx) + s[idx].toUpperCase() + s.slice(idx + 1);
 };
 
-const TruncatedCell = ({ value, className, max = 22, caseSensitive = false }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean }) => {
+const TruncatedCell = ({ value, className, max = 60, caseSensitive = false, maxWidth = '100%' }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean; maxWidth?: number | string }) => {
   const raw = (value ?? '').trim();
   if (!raw) return <span className="text-muted">—</span>;
   const v = caseSensitive ? raw : titleCase(raw);
   const needsTooltip = v.length > max;
   const display = needsTooltip ? v.slice(0, max) + '…' : v;
-  const inner = <span className={className} style={{ maxWidth: 220, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
+  const inner = <span className={className} style={{ maxWidth, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
   return needsTooltip ? <Tooltip label={v}>{inner}</Tooltip> : inner;
 };
 
@@ -408,6 +409,24 @@ export default function SalesConsignee() {
       },
     },
     {
+      /* Domestic vs International — DERIVED from the consignee's own country
+         (the one shown in the Country column), not stored, so it always agrees
+         with the address and with the filter's Consignee Type facet (both call
+         isDomesticParty). */
+      header: 'Consignee Type',
+      id: 'tradeType',
+      accessorFn: (row: ConsigneeRow) => (isDomesticParty(row) ? 'Domestic' : 'International'),
+      meta: { align: 'start' },
+      cell: (info: any) => {
+        const domestic = info.getValue() === 'Domestic';
+        return (
+          <span className={`smcg-trade-pill ${domestic ? 'is-domestic' : 'is-intl'}`}>
+            {info.getValue()}
+          </span>
+        );
+      },
+    },
+    {
       header: 'Risk Level',
       accessorKey: 'risk',
       meta: { align: 'start' },
@@ -433,7 +452,9 @@ export default function SalesConsignee() {
       },
     },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-contact" max={16} /> },
-    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-email" max={18} caseSensitive /> },
+    /* Email absorbs the table's leftover width (see SalesConsignee.css); its
+       caps are raised so that width shows address rather than blank space. */
+    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-email" caseSensitive /> },
     { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'center' }, cell: (i: any) => <span className="smcg-mono">{i.getValue() || '—'}</span> },
     {
       header: 'Country',
@@ -628,7 +649,7 @@ export default function SalesConsignee() {
 
         <div className="smcg-table-wrap">
           {loading && rows.length === 0 ? (
-            <ShimmerTable rows={pageSize} cols={12} />
+            <ShimmerTable rows={pageSize} cols={13} />
           ) : (
             <TableContainer
               key={q.trim() ? 'search-mode' : 'all-mode'}
@@ -674,6 +695,7 @@ export default function SalesConsignee() {
         rows={rows}
         facets={CONSIGNEE_FACETS}
         title="Filter Consignees"
+        typeLabel="Consignee Type"
         theme="emerald"
       />
 

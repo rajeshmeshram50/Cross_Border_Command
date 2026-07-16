@@ -5,7 +5,8 @@
   background: transparent;
   padding: 0;
   margin: 0;
-  display: flex; flex-direction: column; gap: 16px;
+  /* 6px between strips, as on the Supplier list. */
+  display: flex; flex-direction: column; gap: 6px;
   color: var(--vz-body-color);
 }
 .smcg-root *, .smcg-root *::before, .smcg-root *::after { box-sizing: border-box; }
@@ -16,8 +17,9 @@
   overflow: hidden;
   display: flex; align-items: center; justify-content: space-between;
   gap: 16px;
-  min-height: 70px;
-  padding: 12px 18px;
+  /* Matches the Supplier list's .cstrip — see the Customer list. */
+  min-height: 58px;
+  padding: 0 20px;
   border: 1px solid transparent;
   border-radius: 16px;
   background:
@@ -191,7 +193,7 @@
   width: 100%;
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px;
-  padding: 14px 18px 4px;
+  padding: 10px 14px 4px;
   background: transparent;
   border: 0;
   cursor: pointer;
@@ -205,7 +207,10 @@
   background: linear-gradient(135deg, rgba(255,255,255,0.20), rgba(255,255,255,0.05));
 }
 
-.smcg-wdh-card:not(.is-open) .smcg-wdh-toggle-row { padding: 9px 18px; }
+/* Collapsed height matches the Supplier list's .bref-box__header (~48px):
+   this strip is closed almost all the time, so its height is pure overhead
+   above the table. */
+.smcg-wdh-card:not(.is-open) .smcg-wdh-toggle-row { padding: 7px 14px; min-height: 48px; }
 .smcg-wdh-card:not(.is-open) .smcg-wdh-bulb { width: 32px; height: 32px; border-radius: 9px; font-size: 15px; }
 .smcg-wdh-heading { display: flex; align-items: center; gap: 12px; }
 .smcg-wdh-bulb {
@@ -538,10 +543,13 @@
   background: #0d9488 !important;
   position: sticky; top: 0; z-index: 3;
   color: #ffffff !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  letter-spacing: .02em !important;
-  padding: 10px 14px !important;
+  /* 12px -> 11px, side padding halved (14 -> 7). With 13 columns the table
+     overflowed on smaller screens; padding is pure gap, so it's the cheapest
+     width to give back. Matches the Customer list. */
+  font-size: 9.5px !important;
+  font-weight: 800 !important;
+  letter-spacing: .07em !important;
+  padding: 9px 9px !important;
   line-height: 1.3 !important;
   border-bottom: 1px solid #0b7d72 !important;
   white-space: nowrap;
@@ -550,27 +558,79 @@
 }
 .smcg-table-wrap .table thead th i { font-size: 12px; opacity: 0.85; color: #ffffff; }
 
-.smcg-table-wrap .table th:first-child,
-.smcg-table-wrap .table td:first-child { width: 64px; padding-left: 10px !important; padding-right: 10px !important; }
-
-.smcg-table-wrap .table th:nth-child(6),
-.smcg-table-wrap .table td:nth-child(6) { width: 96px; padding-left: 8px !important; padding-right: 8px !important; }
-
-.smcg-table-wrap .table th:nth-child(7),
-.smcg-table-wrap .table td:nth-child(7) { width: 150px; padding-left: 8px !important; padding-right: 8px !important; }
-/* "SAME AS CUSTOMER" stays on a single line — the column is wide enough to
-   hold it so it never wraps or clips (QA follow-up). */
-.smcg-table-wrap .table thead th:nth-child(7) { white-space: nowrap !important; }
+/* Fixed widths for Sr No (64px), Risk Level (96px) and Same as Customer (150px)
+   used to live here, pinned by position. Inserting the Consignee Type column at
+   6 shifted every column after it, so those rules landed on the wrong ones —
+   including the "SAME AS CUSTOMER never wraps" fix, which ended up on Risk
+   Level. They also outranked the content-width rule below on specificity.
+   Removed rather than re-numbered: the blanket rule sizes every column to its
+   content and sets nowrap on all of them, which is what each of these was
+   reaching for, and it can't be broken by reordering again. */
 
 /* No background transition on rows — it animated the background on every theme
    flip, contributing to the white flicker when switching Dark/Light. Instant. */
 .smcg-table-wrap .table tbody tr { background: transparent; }
 .smcg-table-wrap .table tbody tr:hover { background: #f0fdf4 !important; }
+
+/* Responsive compression — copied from the Supplier list (supplier-management
+ * .sup-fig media queries). Rather than letting a 13-column table push into a
+ * horizontal scroll, the cells give up font size and padding as the viewport
+ * narrows. Combined with the fixed percentage widths above, the table keeps
+ * fitting its container instead of overflowing it. */
+@media (max-width: 1500px) {
+  .smcg-table-wrap .table thead th { padding: 8px 6px !important; font-size: 9px !important; }
+  .smcg-table-wrap .table tbody td { padding: 6px 6px !important; font-size: 11px; }
+}
+@media (max-width: 1280px) {
+  .smcg-table-wrap .table thead th { padding: 7px 5px !important; font-size: 8.5px !important; letter-spacing: .04em !important; }
+  .smcg-table-wrap .table tbody td { padding: 5px 5px !important; font-size: 10.5px; }
+}
+/* Column widths — proportional, not content-driven. See the long note on the
+ * Customer list for why `auto` layout can't be tuned into a responsive table.
+ * These percentages ARE the widths and always total 100, so there is no leftover
+ * width to pool anywhere and the layout is identical at every screen size.
+ *   1 Sr No 4 · 2 Consignee ID 7 · 3 Customer ID 7 · 4 Company Name 10
+ *   5 Segment 9 · 6 Consignee Type 8 · 7 Risk Level 7 · 8 Same as Customer 8
+ *   9 Contact Person 9 · 10 Email 11 · 11 Contact No 8 · 12 Country 5
+ *   13 Actions 7
+ * They MUST keep summing to 100.
+ */
+.smcg-table-wrap .table {
+  table-layout: fixed;
+  width: 100%;
+  /* Below this the shares get too narrow to read, so the wrapper scrolls rather
+     than crushing every column. */
+  min-width: 940px;
+}
+.smcg-table-wrap .table thead th:nth-child(1),  .smcg-table-wrap .table tbody td:nth-child(1)  { width: 4%; }
+.smcg-table-wrap .table thead th:nth-child(2),  .smcg-table-wrap .table tbody td:nth-child(2)  { width: 7%; }
+.smcg-table-wrap .table thead th:nth-child(3),  .smcg-table-wrap .table tbody td:nth-child(3)  { width: 7%; }
+.smcg-table-wrap .table thead th:nth-child(4),  .smcg-table-wrap .table tbody td:nth-child(4)  { width: 10%; }
+.smcg-table-wrap .table thead th:nth-child(5),  .smcg-table-wrap .table tbody td:nth-child(5)  { width: 9%; }
+.smcg-table-wrap .table thead th:nth-child(6),  .smcg-table-wrap .table tbody td:nth-child(6)  { width: 8%; }
+.smcg-table-wrap .table thead th:nth-child(7),  .smcg-table-wrap .table tbody td:nth-child(7)  { width: 7%; }
+.smcg-table-wrap .table thead th:nth-child(8),  .smcg-table-wrap .table tbody td:nth-child(8)  { width: 8%; }
+.smcg-table-wrap .table thead th:nth-child(9),  .smcg-table-wrap .table tbody td:nth-child(9)  { width: 9%; }
+.smcg-table-wrap .table thead th:nth-child(10), .smcg-table-wrap .table tbody td:nth-child(10) { width: 11%; }
+.smcg-table-wrap .table thead th:nth-child(11), .smcg-table-wrap .table tbody td:nth-child(11) { width: 8%; }
+.smcg-table-wrap .table thead th:nth-child(12), .smcg-table-wrap .table tbody td:nth-child(12) { width: 5%; }
+.smcg-table-wrap .table thead th:nth-child(13), .smcg-table-wrap .table tbody td:nth-child(13) { width: 7%; }
+
+/* Fixed layout can't grow a column to fit its content, so anything too long is
+   cut here rather than pushing the table wider. */
+.smcg-table-wrap .table thead th,
+.smcg-table-wrap .table tbody td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .smcg-table-wrap .table tbody td {
   --bs-table-bg: transparent !important;
   background: transparent !important;
-  padding: 12px 14px !important;
-  font-size: 13px;
+  /* Supplier's .sl-table tbody td — 7px 9px. */
+  padding: 7px 9px !important;
+  font-size: 11.5px;
   font-weight: 500;
   color: var(--vz-body-color);
   vertical-align: middle;
@@ -884,6 +944,31 @@
   transition: filter .15s ease, transform .15s ease;
 }
 .smcg-risk-pill:hover { filter: brightness(1.05); transform: translateY(-1px); }
+
+/* Consignee Type (Domestic / International) — same pill shape as the Risk pill,
+   with the same slate/amber pair the Customer list uses for this column, so the
+   two lists read identically. Deliberately NOT green: green is this page's own
+   chrome, and a green pill would blend into it instead of reading as a value. */
+.smcg-trade-pill {
+  display: inline-flex; align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: .02em;
+  border: 1px solid; white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 1px 2px rgba(15,23,42,.06);
+}
+.smcg-trade-pill.is-domestic {
+  background: rgba(100,116,139,0.14); color: #475569; border-color: rgba(100,116,139,0.38);
+}
+.smcg-trade-pill.is-intl {
+  background: rgba(245,158,11,0.16); color: #b45309; border-color: rgba(245,158,11,0.40);
+}
+[data-bs-theme="dark"] .smcg-trade-pill {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.25);
+}
+[data-bs-theme="dark"] .smcg-trade-pill.is-domestic { color: #cbd5e1; }
+[data-bs-theme="dark"] .smcg-trade-pill.is-intl     { color: #fbbf24; }
 [data-bs-theme="dark"] .smcg-risk-pill {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 2px rgba(0,0,0,.25);
 }
@@ -1029,6 +1114,27 @@
 [data-bs-theme="dark"] .smcg-toolbar .smcg-search input { color: var(--vz-body-color); }
 [data-bs-theme="dark"] .smcg-toolbar .smcg-search input::placeholder { color: var(--vz-secondary-color); }
 [data-bs-theme="dark"] .smcg-toolbar .smcg-search-icon { color: #6ee7b7; }
+
+/* Filter button in dark — it had no dark rules, so it kept the light green
+   gradient and sat as a bright block on the dark toolbar. Same treatment the
+   Customer list's Filter gets (and the Supplier tabs): tinted-transparent when
+   idle, and the active gradient kept when filters ARE applied, because that
+   state must stay obvious in either theme. */
+[data-bs-theme="dark"] .smcg-toolbar .smcg-filter-btn {
+  background: rgba(16,185,129,0.10);
+  border-color: rgba(110,231,183,0.22);
+  color: #6ee7b7;
+}
+[data-bs-theme="dark"] .smcg-toolbar .smcg-filter-btn:hover {
+  background: rgba(16,185,129,0.28);
+  border-color: rgba(110,231,183,0.40);
+  color: #fff;
+}
+[data-bs-theme="dark"] .smcg-toolbar .smcg-filter-btn.on {
+  background: linear-gradient(135deg, #10b981, #047857);
+  border-color: transparent;
+  color: #fff;
+}
 
 [data-bs-theme="dark"] .smcg-table-card {
   background: var(--vz-card-bg);

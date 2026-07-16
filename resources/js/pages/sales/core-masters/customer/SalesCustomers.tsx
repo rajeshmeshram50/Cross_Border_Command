@@ -14,6 +14,7 @@ import { readCustomerMasterBundle, writeCustomerMasterBundle } from './customerB
 import PartyFilterModal, {
   applyPartyFilters,
   countPartyFilterValues,
+  isDomesticParty,
   CUSTOMER_FACETS,
   type PartyFilters,
 } from '../PartyFilterModal';
@@ -31,15 +32,15 @@ type Customer = {
   hasSameAsCustomerConsignees?: boolean;
   sameAsCustomerConsigneeCount?: number;
 };
-const TYPE_COLORS: Record<string, { bg: string; color: string; border: string; dot: string }> = {
-  'Retailer':     { bg:'rgba(59,130,246,0.14)',  color:'#2563eb', border:'rgba(59,130,246,0.38)',  dot:'#3b82f6' },
-  'Exporter':     { bg:'rgba(34,197,94,0.14)',   color:'#16a34a', border:'rgba(34,197,94,0.38)',   dot:'#22c55e' },
-  'Reseller':     { bg:'rgba(239,68,68,0.14)',   color:'#dc2626', border:'rgba(239,68,68,0.38)',   dot:'#ef4444' },
-  'Wholesaler':   { bg:'rgba(245,158,11,0.16)',  color:'#d97706', border:'rgba(245,158,11,0.40)',  dot:'#f59e0b' },
-  'Manufacturer': { bg:'rgba(124,58,237,0.16)',  color:'#7c3aed', border:'rgba(124,58,237,0.40)',  dot:'#7c3aed' },
-  'Trader':       { bg:'rgba(6,182,212,0.16)',   color:'#0891b2', border:'rgba(6,182,212,0.40)',   dot:'#06b6d4' },
-  'Distributor':  { bg:'rgba(219,39,119,0.16)',  color:'#db2777', border:'rgba(219,39,119,0.40)',  dot:'#ec4899' },
-  'Importer':     { bg:'rgba(13,148,136,0.16)',  color:'#0d9488', border:'rgba(13,148,136,0.40)',  dot:'#14b8a6' },
+const TYPE_COLORS: Record<string, { bg: string; color: string; border: string }> = {
+  'Retailer':     { bg:'rgba(59,130,246,0.14)',  color:'#2563eb', border:'rgba(59,130,246,0.38)' },
+  'Exporter':     { bg:'rgba(34,197,94,0.14)',   color:'#16a34a', border:'rgba(34,197,94,0.38)' },
+  'Reseller':     { bg:'rgba(239,68,68,0.14)',   color:'#dc2626', border:'rgba(239,68,68,0.38)' },
+  'Wholesaler':   { bg:'rgba(245,158,11,0.16)',  color:'#d97706', border:'rgba(245,158,11,0.40)' },
+  'Manufacturer': { bg:'rgba(124,58,237,0.16)',  color:'#7c3aed', border:'rgba(124,58,237,0.40)' },
+  'Trader':       { bg:'rgba(6,182,212,0.16)',   color:'#0891b2', border:'rgba(6,182,212,0.40)' },
+  'Distributor':  { bg:'rgba(219,39,119,0.16)',  color:'#db2777', border:'rgba(219,39,119,0.40)' },
+  'Importer':     { bg:'rgba(13,148,136,0.16)',  color:'#0d9488', border:'rgba(13,148,136,0.40)' },
 };
 
 const ROWS_PER_PAGE = 10;
@@ -51,13 +52,13 @@ const titleCase = (s: string): string => {
   return s.slice(0, idx) + s[idx].toUpperCase() + s.slice(idx + 1);
 };
 
-const TruncatedCell = ({ value, className, max = 22, caseSensitive = false }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean }) => {
+const TruncatedCell = ({ value, className, max = 60, caseSensitive = false, maxWidth = '100%' }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean; maxWidth?: number | string }) => {
   const raw = (value ?? '').trim();
   if (!raw) return <span className="text-muted">—</span>;
   const v = caseSensitive ? raw : titleCase(raw);
   const needsTooltip = v.length > max;
   const display = needsTooltip ? v.slice(0, max) + '…' : v;
-  const inner = <span className={className} style={{ maxWidth: 220, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
+  const inner = <span className={className} style={{ maxWidth, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
   return needsTooltip ? <Tooltip label={v}>{inner}</Tooltip> : inner;
 };
 
@@ -278,19 +279,43 @@ export default function SalesCustomers() {
     {
       header: 'Company Name',
       accessorKey: 'company',
-      cell: (info: any) => <TruncatedCell value={info.getValue()} className="smc-company" max={16} />,
+      cell: (info: any) => <TruncatedCell value={info.getValue()} className="smc-company" />,
     },
     {
-      header: 'Customer Type',
+      /* Retailer / Wholesaler — was headed "Customer Type" until that name was
+         handed to the Domestic/International column below. Only the header
+         changed; the accessor is still `type`.
+         Abbreviated to "Cust Category": every column is sized to its content
+         now, so the full header was the widest thing in the column and set its
+         width all by itself — the values ("Retailer") are far shorter. */
+      header: 'Cust Category',
       accessorKey: 'type',
       meta: { align: 'start' },
       cell: (info: any) => {
         const v = info.getValue() as string | null;
         if (!v) return <span className="text-muted">—</span>;
-        const t = TYPE_COLORS[v] || { bg: 'rgba(124,58,237,0.14)', color: '#7c3aed', border: 'rgba(124,58,237,0.40)', dot: '#7c3aed' };
+        const t = TYPE_COLORS[v] || { bg: 'rgba(124,58,237,0.14)', color: '#7c3aed', border: 'rgba(124,58,237,0.40)' };
         return (
           <span className="smc-type-pill" style={{ background: t.bg, color: t.color, borderColor: t.border }}>
             {v}
+          </span>
+        );
+      },
+    },
+    {
+      /* Domestic vs International — DERIVED from the country, not a stored
+         column, so it always agrees with the address on the form and with the
+         filter's Customer Type facet (both call isDomesticParty). Sorting and
+         the global search work off `country` for the same reason. */
+      header: 'Customer Type',
+      id: 'tradeType',
+      accessorFn: (row: Customer) => (isDomesticParty(row) ? 'Domestic' : 'International'),
+      meta: { align: 'start' },
+      cell: (info: any) => {
+        const domestic = info.getValue() === 'Domestic';
+        return (
+          <span className={`smc-trade-pill ${domestic ? 'is-domestic' : 'is-intl'}`}>
+            {info.getValue()}
           </span>
         );
       },
@@ -329,7 +354,11 @@ export default function SalesCustomers() {
       } },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-contact" max={16} /> },
     { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'center' }, cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
-    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-email" max={18} caseSensitive /> },
+    /* Email is the ONE column left free to absorb the table's leftover width
+       (see SalesCustomers.css). Its caps are raised to match: at 18 chars /
+       220px it truncated long before the column ran out, so the width it soaked
+       up showed as blank space instead of address. */
+    { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-email" caseSensitive /> },
     {
       header: () => <div className="text-center">WhatsApp</div>,
       accessorKey: 'whatsapp',
@@ -512,7 +541,7 @@ export default function SalesCustomers() {
 
         <div className="smc-table-wrap">
           {(loading && customers.length === 0) || tabSwitching ? (
-            <ShimmerTable rows={pageSize} cols={12} />
+            <ShimmerTable rows={pageSize} cols={13} />
           ) : (
             <TableContainer
               columns={columns}
@@ -558,6 +587,7 @@ export default function SalesCustomers() {
         rows={customers}
         facets={CUSTOMER_FACETS}
         title="Filter Customers"
+        typeLabel="Customer Type"
         theme="purple"
       />
 

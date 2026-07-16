@@ -2407,7 +2407,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                       <ReadInlineG label="Customer ID"          value={activeLinkedCust?.id} />
                       <ReadInlineG label="Company Name"         value={activeLinkedCust?.name} />
                       <ReadInlineG label="Company Legal Name"    value={activeLinkedCust?.legalName} />
-                      <ReadInlineG label="Customer Type"        value={activeLinkedCust?.type} />
+                      {/* The linked customer's Retailer/Wholesaler value — renamed
+                          to Category alongside the customer form, since "Type"
+                          now means Domestic vs International. */}
+                      <ReadInlineG label="Customer Category"    value={activeLinkedCust?.type} />
 
                       <ReadInlineG label="Customer Segment"     value={segDisplay(activeLinkedCust?.segment, mSegmentIds)} />
                       <ReadInlineG label="Classification"       value={activeLinkedCust?.classification} />

@@ -1350,7 +1350,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         if (!/\p{L}/u.test(f.coLegal)) return 'Legal name must contain at least one letter';
         return null;
       case 'coType':
-        if (!f.coType) return 'Select a customer type';
+        if (!f.coType) return 'Select a customer category';
         return null;
       case 'coSeg':
         if (!f.coSeg || f.coSeg.length === 0) return 'Select at least one segment';
@@ -2770,8 +2770,13 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
           <div className="acm-row acm-row-4">
             <Field label="Company Name" required error={errors.coName} fieldKey="coName"><input className={errors.coName ? 'acm-input-error' : ''} value={form.coName} maxLength={30} onChange={e => set('coName', e.target.value.slice(0, 30))} placeholder="e.g. Shree Agro Pvt Ltd (max 30)" /></Field>
             <Field label="Company Legal Name" required error={errors.coLegal} fieldKey="coLegal"><input className={errors.coLegal ? 'acm-input-error' : ''} value={form.coLegal} onChange={e => set('coLegal', e.target.value)} placeholder="Registered legal entity name" /></Field>
-            <Field label="Customer Type" required error={errors.coType} fieldKey="coType">
-              <MasterSelect value={form.coType} options={optsWith(masters.customerTypes, form.coType)} placeholder="Select customer type" invalid={!!errors.coType} onChange={v => set('coType', v)} />
+            {/* "Customer Category" (was "Customer Type") — the Retailer /
+                Wholesaler master. Renamed because "Customer Type" now means
+                Domestic vs International on the list, and one label can't mean
+                two different things. The stored column is still `type`; only
+                the label moved. */}
+            <Field label="Customer Category" required error={errors.coType} fieldKey="coType">
+              <MasterSelect value={form.coType} options={optsWith(masters.customerTypes, form.coType)} placeholder="Select customer category" invalid={!!errors.coType} onChange={v => set('coType', v)} />
             </Field>
             <Field label="Company Website" error={errors.coWeb} fieldKey="coWeb"><input className={errors.coWeb ? 'acm-input-error' : ''} value={form.coWeb} onChange={e => set('coWeb', e.target.value)} placeholder="https://example.com" /></Field>
           </div>
@@ -4706,7 +4711,7 @@ function HistoryStage1({ form, locations, customerId, segments = [] }: { form: a
         <ReadInline label="Customer ID"               value={customerId} />
         <ReadInline label="Company Name"              value={form.coName} />
         <ReadInline label="Company Legal Name"        value={form.coLegal} />
-        <ReadInline label="Customer Type"             value={form.coType} />
+        <ReadInline label="Customer Category"         value={form.coType} />
 
         <ReadInline label="Company Website"           value={form.coWeb} />
         <ReadInline label="Customer Segment"          value={segDisplay(form.coSeg, segments)} />
