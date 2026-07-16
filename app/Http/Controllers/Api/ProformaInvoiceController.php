@@ -223,6 +223,9 @@ class ProformaInvoiceController extends Controller
                 'final_destination'   => $data['final_destination']   ?? null,
                 'origin_country'      => $data['origin_country']      ?? null,
                 'state_code'          => $data['state_code']          ?? null,
+                'dispatch_from'       => $data['dispatch_from']       ?? null,
+                'deliver_to'          => $data['deliver_to']          ?? null,
+                'customer_gst_no'     => $data['customer_gst_no']     ?? null,
                 'sales_manager_id'    => $data['sales_manager_id']    ?? $user->id,
                 'sales_manager_name'  => $smName,
                 'sub_total'           => $totals['sub_total'],
@@ -404,6 +407,9 @@ class ProformaInvoiceController extends Controller
                 'final_destination'   => $data['final_destination'] ?? null,
                 'origin_country'      => $data['origin_country']    ?? null,
                 'state_code'          => $data['state_code']        ?? null,
+                'dispatch_from'       => $data['dispatch_from']     ?? null,
+                'deliver_to'          => $data['deliver_to']        ?? null,
+                'customer_gst_no'     => $data['customer_gst_no']   ?? null,
                 'sales_manager_id'    => $data['sales_manager_id']  ?? $row->sales_manager_id,
                 'sales_manager_name'  => $smName ?: $row->sales_manager_name,
                 'sub_total'           => $totals['sub_total'],
@@ -581,6 +587,9 @@ class ProformaInvoiceController extends Controller
                 'final_destination'   => $qt->final_destination,
                 'origin_country'      => $qt->origin_country,
                 'state_code'          => $qt->state_code,
+                'dispatch_from'       => $qt->dispatch_from,
+                'deliver_to'          => $qt->deliver_to,
+                'customer_gst_no'     => $qt->customer_gst_no,
                 'sales_manager_id'    => $qt->sales_manager_id,
                 'sales_manager_name'  => $qt->sales_manager_name,
                 'sub_total'           => $qt->sub_total,
@@ -653,6 +662,11 @@ class ProformaInvoiceController extends Controller
             // No upper cap on tax_pct — handles cess-stacked rates (>100%
             // possible for compound taxes or special-jurisdiction surcharges).
             'items.*.tax_pct'      => 'nullable|numeric|min:0',
+
+            // GSTIN is 15 chars; the column allows 20 for slack. Snapshotted
+            // from the customer, so never required — a customer legitimately
+            // may not be GST-registered.
+            'customer_gst_no'      => 'nullable|string|max:20',
         ];
 
         if ($docType === ProformaInvoice::DOC_INTERNATIONAL) {
@@ -664,8 +678,14 @@ class ProformaInvoiceController extends Controller
             $rules['final_destination'] = 'required|string|max:128';
             $rules['origin_country']    = 'required|string|max:64';
             $rules['state_code']        = 'nullable|string|max:64';
+            // The Domestic block below collects these; an export document has
+            // ports/destination instead, so they stay optional here.
+            $rules['dispatch_from']     = 'nullable|string|max:255';
+            $rules['deliver_to']        = 'nullable|string|max:255';
         } else {
             $rules['state_code']        = 'required|string|max:64';
+            $rules['dispatch_from']     = 'required|string|max:255';
+            $rules['deliver_to']        = 'required|string|max:255';
             $rules['inco_term']         = 'nullable|string|max:100';
             $rules['port_of_loading']   = 'nullable|string|max:128';
             $rules['port_of_discharge'] = 'nullable|string|max:128';
