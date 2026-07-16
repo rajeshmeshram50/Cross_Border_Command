@@ -914,11 +914,13 @@
 .smcg-company { font-weight: 600; color: #064e3b; }
 
 .smcg-seg {
-  display: inline-flex; align-items: center;
+  /* Truncate a long segment name inside the pill (QA #43) — same as .smc-seg. */
+  display: inline-block; vertical-align: middle;
+  max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 11px; font-weight: 600; color: #047857;
   background: #ecfdf5;
   border: 1px solid #a7f3d0; border-radius: 20px;
-  padding: 3px 10px; white-space: nowrap;
+  padding: 3px 10px;
 }
 
 .smcg-seg-more {

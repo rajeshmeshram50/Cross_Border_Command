@@ -454,20 +454,31 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
         document.body,
       )}
 
-      {segOpen && createPortal(
-        <>
-          <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
-          <div className="ccm-seg-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 1091, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
-            <div className="ccm-seg-pop-title">Segments ({segOpen.names.length})</div>
-            {segOpen.names.map((name, i) => (
-              <div key={i} className={`ccm-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                <span className="ccm-seg">{name}</span>
+      {segOpen && (() => {
+        /* Clamp BOTH axes to the viewport so the popover can't bleed below the
+           fold (QA #37) — it previously clamped only `left`. Title stays pinned;
+           ~3 rows show, the rest scroll (mirrors the customer table popover). */
+        const ROWS_MAX_H = 108;                          // ≈ 3 rows (~34px each)
+        const estH = Math.min(24 + ROWS_MAX_H + 16, 40 + segOpen.names.length * 34);
+        const left = Math.max(8, Math.min(segOpen.x, window.innerWidth - 230));
+        const top  = Math.max(8, Math.min(segOpen.y, window.innerHeight - estH - 8));
+        return createPortal(
+          <>
+            <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
+            <div className="ccm-seg-pop" style={{ position: 'fixed', left, top, zIndex: 1091, width: 210, borderRadius: 12, padding: 8 }}>
+              <div className="ccm-seg-pop-title">Segments ({segOpen.names.length})</div>
+              <div style={{ maxHeight: ROWS_MAX_H, overflowY: 'auto' }}>
+                {segOpen.names.map((name, i) => (
+                  <div key={i} className={`ccm-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                    <span className="ccm-seg">{name}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </>,
-        document.body,
-      )}
+            </div>
+          </>,
+          document.body,
+        );
+      })()}
 
     </>,
     document.body,

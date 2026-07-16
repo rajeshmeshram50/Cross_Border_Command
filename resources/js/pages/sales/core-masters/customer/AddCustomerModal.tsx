@@ -511,6 +511,21 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   const gstRowsRef = useRef<GstRow[]>([]);
   useEffect(() => { gstRowsRef.current = gstRows; }, [gstRows]);
 
+  /* QA #41 — the customer's GSTIN is the single source of truth for its GST
+   * Scrutiny rows: on save the backend rewrites every row's gst_number to the
+   * customer's current GSTIN. Mirror that INSTANTLY in the UI so editing the
+   * GST Number in Stage 1 updates the numbers shown in the Scrutiny popup
+   * without a save + reopen. Gate on a complete 15-char GSTIN so half-typed
+   * values don't flicker the rows. */
+  useEffect(() => {
+    const gst = (form.coGstNumber ?? '').trim().toUpperCase();
+    if (gst.length !== 15) return;
+    setGstRows(prev => prev.some(r => r.gst_number !== gst)
+      ? prev.map(r => ({ ...r, gst_number: gst }))
+      : prev);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.coGstNumber]);
+
   const gstBody = (r: { gst_number: string; status: string; last_filing_date: string | null; prev_non_gst_2a_invoice: string | null; red_flags: string | null }) => ({
     gst_number:              r.gst_number,
     status:                  r.status,
@@ -847,6 +862,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   // DeleteConfirmModal — same component used by Branches / Clients /
   // Employees so the experience stays consistent across modules.
   const [delModal, setDelModal] = useState<{ open:boolean; id:string|null }>({ open:false, id:null });
+  // Brief spinner on the address/contact delete so the action has visible
+  // feedback (QA follow-up). The removal is client-side (persisted on Save), so
+  // there's no request to await — we show the loader for a short beat.
+  const [delLocBusy, setDelLocBusy] = useState(false);
 
   // Stage 2 — "Add Document / License" popup. Triggered from the
   // Company Due Diligence / Owner KYC / Trade Licence section headers.
@@ -1817,16 +1836,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               <div className="acm-subtitle">{isEdit ? 'Update customer details, KYC, and trade documents.' : 'Capture, verify, and onboard customers with complete compliance and product readiness.'}</div>
             </div>
           </div>
-          {hydrating && (
-            <div className="acm-loading-pill" aria-live="polite">
-              <span className="acm-loading-spinner" aria-hidden>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                  <path d="M12 2a10 10 0 0 1 10 10" />
-                </svg>
-              </span>
-              Loading customer details…
-            </div>
-          )}
+          {/* Header "Loading customer details…" pill removed — the body shimmer
+              already signals loading, so both together was redundant (QA #40). */}
           {/* GST Scrutiny button + close grouped on the right so they sit
               together (the header is justify-content: space-between, which
               would otherwise push them apart). Greyed/disabled until the
@@ -2141,10 +2152,17 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         title="Delete Address & Contact"
         itemName={delModal.id ? (locations.find(l => l.id === delModal.id)?.type || 'this location') : undefined}
         subMessage="This will remove the address and its contact person from this customer. The action cannot be undone."
-        onClose={() => setDelModal({ open:false, id:null })}
+        loading={delLocBusy}
+        onClose={() => { if (!delLocBusy) setDelModal({ open:false, id:null }); }}
         onConfirm={() => {
-          if (delModal.id) setLocations(prev => prev.filter(l => l.id !== delModal.id));
-          setDelModal({ open:false, id:null });
+          if (delLocBusy) return;
+          setDelLocBusy(true);
+          const id = delModal.id;
+          setTimeout(() => {
+            if (id) setLocations(prev => prev.filter(l => l.id !== id));
+            setDelLocBusy(false);
+            setDelModal({ open:false, id:null });
+          }, 450);
         }}
       />
 
@@ -4945,16 +4963,18 @@ const SCOPED_CSS = `
 .acm-title { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -.3px; line-height: 1.2; }
 .acm-subtitle { font-size: 12px; color: rgba(255,255,255,0.80); margin-top: 3px; }
 .acm-close {
-  width: 34px; height: 34px; border-radius: 50%;
-  border: 1.5px solid rgba(255,255,255,0.30);
+  /* Square (rounded) to match the project-standard close button, not a circle
+     (QA #32). */
+  width: 34px; height: 34px; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.25);
   background: rgba(255,255,255,0.12);
   color: #fff;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all .25s;
+  transition: background .15s, transform .12s;
   position: relative; z-index: 1;
 }
-.acm-close:hover { background: rgba(255,255,255,0.28); transform: rotate(90deg); }
+.acm-close:hover { background: rgba(255,255,255,0.22); transform: rotate(90deg); }
 
 /* ── Hydration feedback ───────────────────────────────────────────
  * A small "Loading…" pill in the modal header + an indeterminate

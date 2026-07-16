@@ -231,13 +231,59 @@ class ClmSegmentController extends Controller
             }
         }
 
+        // Capture the old name BEFORE the update so we can cascade a rename.
+        $oldName = (string) $row->name;
+
         $data['updated_by'] = $user->id;
         $row->update($data);
+
+        /* Cascade a rename onto the denormalised segment NAME stored on customer
+         * / consignee rows (customers.segment / consignees.segment are
+         * comma-joined names, not ids). Without this the master shows the new
+         * name but the party grids keep the old one until each row is re-saved
+         * (QA #38). Scoped to the segment's own client + branch so a rename in
+         * one branch never rewrites another branch's identically-named segment. */
+        if (isset($data['name']) && $oldName !== '' && strcasecmp($oldName, (string) $row->name) !== 0) {
+            $this->cascadeSegmentRename($row->client_id, $oldName, (string) $row->name);
+        }
 
         // A renamed / deactivated segment must reach the form dropdowns now.
         MasterBundleCache::bump();
 
         return response()->json(['status' => true, 'data' => $row->fresh()]);
+    }
+
+    /**
+     * Rewrite a renamed segment's NAME inside the comma-joined `segment`
+     * strings on customers + consignees. Replaces only WHOLE entries (an exact,
+     * case-insensitive match of a comma-separated part) so "Rice" never
+     * partially matches "Rice Bran". Scoped to the CLIENT (not branch): parties
+     * reference segments by name and a customer in one branch may reference a
+     * segment owned by another, so branch-scoping would miss them; names are
+     * effectively client-unique.
+     */
+    private function cascadeSegmentRename($clientId, string $old, string $new): void
+    {
+        foreach (['customers', 'consignees'] as $table) {
+            if (!\Illuminate\Support\Facades\Schema::hasColumn($table, 'segment')) continue;
+            $q = DB::table($table)
+                ->where('client_id', $clientId)
+                ->whereNull('deleted_at')
+                ->whereNotNull('segment')
+                ->where('segment', 'ilike', '%' . $old . '%');
+
+            foreach ($q->get(['id', 'segment']) as $r) {
+                $parts = array_map('trim', explode(',', (string) $r->segment));
+                $changed = false;
+                foreach ($parts as $i => $p) {
+                    if ($p !== '' && strcasecmp($p, $old) === 0) { $parts[$i] = $new; $changed = true; }
+                }
+                if ($changed) {
+                    DB::table($table)->where('id', $r->id)
+                        ->update(['segment' => implode(', ', array_filter($parts, fn ($p) => $p !== ''))]);
+                }
+            }
+        }
     }
 
     /**

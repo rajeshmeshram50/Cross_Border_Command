@@ -678,13 +678,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       setCustomer(null);
       setPhase('wizard');
     } else if (preselectedCustomerId || preselectedCustomerDbId) {
-      // Map-Consignee flow — the caller's customer is the LOCKED primary.
-      // If it has no same-as-customer consignee yet, ask "Same as Customer?"
-      // first; otherwise go straight to the multi-select list. `customer` is
-      // resolved (as the locked primary) by the fetch effect below.
+      // Map-Consignee flow — the caller's customer is the LOCKED primary. Open
+      // the consignee FORM directly (QA #29): both the customer-selection
+      // dropdown AND the "Same as Customer?" question are redundant, because the
+      // form itself carries a "Same as Customer" toggle the user can flip
+      // inside. `customer` is resolved (as the locked primary) by the fetch
+      // effect below and is included in customer_ids on save.
       setCustomer(null);
-      setPhase('pick-customer');
-      setMirrorStep((existingMirrorCount ?? 0) === 0);
+      setPhase('wizard');
+      setMirrorStep(false);
     } else {
       setCustomer(null);
       setPhase('pick-customer');
@@ -2150,7 +2152,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
             </div>
           </div>
           <div className="acm-pick-footer" style={{ gap: 10 }}>
-            <button className="acm-btn acm-btn-light" style={{ flex: 1, justifyContent: 'center' }} onClick={() => { setSameAsCustomer(false); setMirrorStep(false); }} disabled={!customer}>
+            <button className="acm-btn acm-btn-light" style={{ flex: 1, justifyContent: 'center' }} onClick={() => { setSameAsCustomer(false); setMirrorStep(false); setPhase('wizard'); setStage(1); }} disabled={!customer}>
               <IconClose size={14} /> No
             </button>
             <button className="acm-btn acm-btn-primary" style={{ flex: 1, minWidth: 0, justifyContent: 'center' }} onClick={() => { setSameAsCustomer(true); setMirrorStep(false); setPhase('wizard'); setStage(1); }} disabled={!customer}>

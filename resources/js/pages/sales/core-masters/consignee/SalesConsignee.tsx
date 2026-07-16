@@ -186,7 +186,9 @@ export default function SalesConsignee() {
 
       const toolbarH = (el.querySelector('.smcg-toolbar') as HTMLElement | null)?.offsetHeight || 0;
       const theadH   = (el.querySelector('.smcg-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
-      const footerH  = (el.querySelector('.smcg-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
+      // Worklist pager is `.tc-wl-pag`, not `.row` — measure the real footer so
+      // the row auto-fit isn't off by one (QA #31, mirrors the customer table).
+      const footerH  = (el.querySelector('.tc-wl-pag, .smcg-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
       const rowH     = (el.querySelector('.smcg-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 40;
       const avail = h - toolbarH - theadH - footerH - 26;
       const rowsFit = Math.floor(avail / rowH);
@@ -394,8 +396,10 @@ export default function SalesConsignee() {
         const extra = segList.length - 1;
         const rowId = (info.row.original as ConsigneeRow).id;
         return (
-          <span className="d-inline-flex align-items-center" style={{ gap: 4 }}>
-            <span className="smcg-seg">{segList[0]}</span>
+          <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
+            {segList[0].length > 18
+              ? <Tooltip label={segList[0]}><span className="smcg-seg">{segList[0]}</span></Tooltip>
+              : <span className="smcg-seg">{segList[0]}</span>}
             {extra > 0 && (
               <button
                 type="button"
@@ -897,7 +901,7 @@ export default function SalesConsignee() {
       {mappedSeg && createPortal(
         <>
           <div onClick={() => setMappedSeg(null)} style={{ position: 'fixed', inset: 0, zIndex: 1097 }} />
-          <div style={{ position: 'fixed', left: Math.min(mappedSeg.x, window.innerWidth - 220), top: mappedSeg.y + 10, zIndex: 1098, width: 200, maxHeight: 260, overflowY: 'auto', background: mc.popBg, borderRadius: 10, boxShadow: '0 14px 34px rgba(0,0,0,.35)', padding: 8, border: `1px solid ${mc.border}` }}>
+          <div style={{ position: 'fixed', left: Math.max(8, Math.min(mappedSeg.x, window.innerWidth - 220)), top: Math.max(8, Math.min(mappedSeg.y + 10, window.innerHeight - 268)), zIndex: 1098, width: 200, maxHeight: 260, overflowY: 'auto', background: mc.popBg, borderRadius: 10, boxShadow: '0 14px 34px rgba(0,0,0,.35)', padding: 8, border: `1px solid ${mc.border}` }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: mc.chipFg, marginBottom: 6, textTransform: 'uppercase', letterSpacing: .3 }}>Segments ({mappedSeg.names.length})</div>
             {mappedSeg.names.map((n, i) => (
               <div key={i} style={{ fontSize: 12.5, color: mc.textStrong, padding: '5px 7px', borderRadius: 6, background: i % 2 ? mc.rowAlt : 'transparent' }}>{n}</div>

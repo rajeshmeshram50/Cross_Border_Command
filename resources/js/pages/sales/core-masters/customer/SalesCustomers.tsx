@@ -153,7 +153,11 @@ export default function SalesCustomers() {
 
       const toolbarH = (el.querySelector('.smc-toolbar') as HTMLElement | null)?.offsetHeight || 0;
       const theadH   = (el.querySelector('.smc-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
-      const footerH  = (el.querySelector('.smc-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
+      /* Footer is the worklist pager `.tc-wl-pag` (TableContainerReactTable);
+       * the old `.smc-table-wrap > .row` selector matched the non-worklist
+       * pager, which this table doesn't render — so footerH came back 0 and the
+       * auto-fit over-counted rows by one (QA #31). Measure the real pager. */
+      const footerH  = (el.querySelector('.tc-wl-pag, .smc-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
       const rowH     = (el.querySelector('.smc-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 40;
       const avail = h - toolbarH - theadH - footerH - 26;
       const rowsFit = Math.floor(avail / rowH);
@@ -345,8 +349,12 @@ export default function SalesCustomers() {
         const extra = segList.length - 1;
         const rowId = (info.row.original as Customer).id;
         return (
-          <span className="d-inline-flex align-items-center" style={{ gap: 4 }}>
-            <span className="smc-seg">{segList[0]}</span>
+          <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
+            {/* Pill truncates via CSS (.smc-seg); a long name shows the full
+                value on hover (QA #39 / #43). */}
+            {segList[0].length > 18
+              ? <Tooltip label={segList[0]}><span className="smc-seg">{segList[0]}</span></Tooltip>
+              : <span className="smc-seg">{segList[0]}</span>}
             {extra > 0 && (
               <button
                 type="button"
@@ -368,7 +376,7 @@ export default function SalesCustomers() {
         return <TruncatedCell value={name} className="smc-country" max={16} />;
       } },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-contact" max={16} /> },
-    { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'center' }, cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
+    { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'start' }, cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
     /* Email is the ONE column left free to absorb the table's leftover width
        (see SalesCustomers.css). Its caps are raised to match: at 18 chars /
        220px it truncated long before the column ran out, so the width it soaked
