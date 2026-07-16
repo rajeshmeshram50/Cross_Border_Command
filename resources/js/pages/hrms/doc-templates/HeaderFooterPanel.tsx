@@ -397,7 +397,12 @@ export default function HeaderFooterPanel({
           const justify  = cell === 'left' ? 'flex-start' : cell === 'right' ? 'flex-end' : 'center';
           return (
             <div key={cell}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: justify, gap: 10, minWidth: 0 }}>
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: justify, gap: 10, minWidth: 0,
+                // Keep right-cell content (page number / footer text) clear of the
+                // floating "Edit Footer" hint chip pinned at the bottom-right.
+                ...(cell === 'right' && !readOnly ? { paddingRight: 96 } : {}),
+              }}>
               {showText && (
                 <span style={{ textAlign: cell, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
                   {footer.text || 'Footer text…'}

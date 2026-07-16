@@ -277,18 +277,29 @@ export function MasterSelect({
                 {badgesOf(selected).map((b, i) => <OptBadge key={i} b={b} staticPill />)}
               </span>
             </Tooltip>
-          ) : currentValue ? (
+          ) : currentValue && currentValueLabel ? (
             /* Value set but not in the currently-loaded options (e.g. a
                paginated/async list before its page loads, or an owner
-               excluded from the pickable list). Prefer a caller-supplied
-               label so the field shows a NAME, not the raw value/id. */
-            <Tooltip label={currentValueLabel || currentValue} position="bottom">
+               excluded from the pickable list). A caller-supplied label
+               shows a NAME instead of the raw value/id. */
+            <Tooltip label={currentValueLabel} position="bottom">
               <span className="master-select-value">
-                <span className="master-select-value-text">{currentValueLabel || currentValue}</span>
+                <span className="master-select-value-text">{currentValueLabel}</span>
               </span>
             </Tooltip>
           ) : loading ? (
+            /* Options still fetching — shimmer instead of the placeholder
+               AND instead of an unresolvable value: a saved id whose label
+               hasn't loaded yet must never flash as a raw number. */
             <span className="master-select-shimmer" aria-label="Loading" />
+          ) : currentValue ? (
+            /* Value not in options and nothing is loading — last-resort raw
+               value fallback (kept so a stale/orphaned id stays visible). */
+            <Tooltip label={currentValue} position="bottom">
+              <span className="master-select-value">
+                <span className="master-select-value-text">{currentValue}</span>
+              </span>
+            </Tooltip>
           ) : (
             <span className="master-select-placeholder">{placeholder}</span>
           )}

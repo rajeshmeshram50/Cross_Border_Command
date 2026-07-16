@@ -3046,7 +3046,7 @@ export default function HrEmployees() {
         keyboard={false}
       >
 
-        <ModalBody className="p-0" style={{ background: 'var(--vz-secondary-bg, #f7f8fc)', borderRadius: 'var(--bs-modal-border-radius, 12px)', overflow: 'hidden' }}>
+        <ModalBody className="p-0" style={{ background: 'var(--vz-secondary-bg, #f7f8fc)', borderRadius: 'var(--bs-modal-border-radius, 12px)', overflow: 'hidden', ...(saving ? { cursor: 'wait' as const } : {}) }}>
           <div
             style={{
               padding: '18px 22px',
@@ -3139,7 +3139,20 @@ export default function HrEmployees() {
             </div>
           </div>
 
-          <div ref={empScrollRef} style={{ padding: '18px 22px', maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' }}>
+          {/* While the step save is in flight the whole form freezes:
+              pointer-events:none kills every mouse interaction (and dims the
+              body as feedback), and the disabled <fieldset> below kills
+              keyboard edits — otherwise users could keep typing during the
+              PUT and the form looked saved while holding unsaved changes. */}
+          <div
+            ref={empScrollRef}
+            aria-busy={saving}
+            style={{
+              padding: '18px 22px', maxHeight: 'calc(100vh - 320px)', overflowY: 'auto',
+              ...(saving ? { pointerEvents: 'none' as const, opacity: 0.65 } : {}),
+            }}
+          >
+            <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minInlineSize: 0 }}>
             {empStep === 1 && (
               <>
                 <div className="emp-section">
@@ -4172,6 +4185,7 @@ export default function HrEmployees() {
                 </div>
               </>
             )}
+            </fieldset>
           </div>
 
           <div
@@ -4182,6 +4196,9 @@ export default function HrEmployees() {
               <button
                 type="button"
                 onClick={() => setEmpStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4) : s))}
+                // Back must freeze too — stepping away mid-save would swap the
+                // form under the in-flight PUT.
+                disabled={saving}
                 className="rec-btn-ghost"
               >
                 <i className="ri-arrow-left-s-line" /> Back
