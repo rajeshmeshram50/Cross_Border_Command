@@ -534,6 +534,24 @@
   color: #5b21b6;
 }
 .smc-pill i { font-size: 14px; }
+/* Count badge on each tab (like the Supplier list's .sl-tab-count). White pill
+   on the inactive tab; translucent-white on the active one so it stays legible
+   against the purple gradient. */
+.smc-pill-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 18px; padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10px; font-weight: 800; line-height: 1;
+}
+.smc-pill.off .smc-pill-count {
+  color: #7c3aed; background: #fff; border: 1px solid #ddd0f7;
+}
+.smc-pill.on .smc-pill-count {
+  color: #fff; background: rgba(255,255,255,.24); border: 1px solid rgba(255,255,255,.4);
+}
+[data-bs-theme="dark"] .smc-pill.off .smc-pill-count {
+  color: #c4b5fd; background: rgba(124,58,237,0.18); border-color: rgba(167,139,250,0.30);
+}
 
 .smc-table-wrap {
 
@@ -574,6 +592,23 @@
 .smc-table-wrap .table-responsive {
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
+  /* This element owns BOTH scrolls: vertical (its height is capped by the
+     viewport-fit JS on .smc-table-wrap) and horizontal (the table has a
+     min-width, so on a narrow screen it's wider than here). Without an explicit
+     overflow-x the last column — Actions — sat under the parent's
+     overflow:hidden and was clipped off with no way to scroll to it.
+     `.table-card` used to bleed this container past its parent with negative
+     margins too; it was removed from divClass for the same reason. */
+  overflow-x: auto;
+  overflow-y: auto;
+  /* min-width:0 is the actual fix. As a flex item of .smc-table-wrap this box
+     defaults to min-width:auto, which sizes it to its CONTENT — i.e. the table's
+     940px min-width. It then overflowed the parent (overflow:hidden) and got
+     clipped, so overflow-x:auto here never had anything to scroll. Forcing
+     min-width:0 lets it shrink to the flex width, at which point the 940px table
+     genuinely overflows THIS box and the scrollbar appears. */
+  min-width: 0;
+  max-width: 100%;
 }
 
 [data-bs-theme="dark"] .smc-table-wrap,
@@ -685,7 +720,7 @@
   /* Below this the shares get too narrow to read, so the wrapper scrolls
      instead of crushing every column. 13 columns cannot fit a phone without
      dropping some — this is the floor where they all stay legible. */
-  min-width: 940px;
+  min-width: 1160px;
 }
 .smc-table-wrap .table thead th:nth-child(1),  .smc-table-wrap .table tbody td:nth-child(1)  { width: 4%; }
 .smc-table-wrap .table thead th:nth-child(2),  .smc-table-wrap .table tbody td:nth-child(2)  { width: 7%; }
@@ -703,7 +738,16 @@
 
 /* Fixed layout can't grow a column to fit its content, so anything too long has
    to be cut here rather than pushing the table wider. */
-.smc-table-wrap .table thead th,
+/* Headers WRAP to a second line instead of clipping. Ellipsis on a th cut
+   labels down to "CUST CATEG" / "CONTACT PERSO" / "VHATSAP", which is worse than
+   a two-line header — you couldn't tell what the column was. Body cells still
+   ellipsis (values can be arbitrarily long; headers are fixed and short). */
+.smc-table-wrap .table thead th {
+  white-space: normal;
+  overflow: visible;
+  vertical-align: middle;
+  line-height: 1.15;
+}
 .smc-table-wrap .table tbody td {
   white-space: nowrap;
   overflow: hidden;

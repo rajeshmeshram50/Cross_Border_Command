@@ -659,7 +659,7 @@ export default function SalesConsignee() {
               customPageSize={pageSize}
               tableClass="table align-middle table-nowrap mb-0"
               theadClass="table-light"
-              divClass="table-responsive table-card border rounded"
+              divClass="table-responsive"
               SearchPlaceholder="Search consignees..."
               worklistPagination
               pageSizeOptions={[5, 10, 15, 25, 50]}

@@ -47,6 +47,15 @@ class CustomerController extends Controller
             ->withCount(['consignees', 'consignees as same_as_customer_consignees_count' => function ($q) {
                 $q->where('same_as_customer', true);
             }])
+            /* Per-row "has ≥1 non-deleted lead" flag — the Recurring test, same
+             * predicate as the tab filter and pill counts. Exposed on every row
+             * so the frontend can bucket Fresh vs Recurring (and count them)
+             * client-side without a separate request per tab. */
+            ->addSelect(['is_recurring' => \DB::table('leads')
+                ->selectRaw('1')
+                ->whereColumn('leads.customer_id', 'customers.id')
+                ->whereNull('leads.deleted_at')
+                ->limit(1)])
             /* Order on the indexed customer_id (PK) — same monotonic
              * sequence as created_at but uses the clustered PK index
              * directly, so no sort step at all. */
@@ -96,21 +105,34 @@ class CustomerController extends Controller
          * `leads()` HasMany relation on Customer (keeps the model lean).
          * Soft-deleted leads are excluded — a deleted lead doesn't keep
          * the customer in the recurring bucket. */
+        // "Has at least one non-deleted lead" — the recurring test. Shared by
+        // the tab filter and the pill counts so they can't drift apart.
+        $hasLead = function ($w) {
+            $w->select(\DB::raw(1))
+                ->from('leads')
+                ->whereColumn('leads.customer_id', 'customers.id')
+                ->whereNull('leads.deleted_at');
+        };
+
+        /* Tab pill counts — computed on the scope+search query BEFORE the tab
+         * filter narrows it, so every pill shows how many rows IT would show
+         * (not how many the active tab has). They honour the search box, so the
+         * counts track what the user is looking at. `fresh = all - recurring`
+         * because the two buckets partition the set — one COUNT query instead
+         * of two. */
+        $allCount       = (clone $q)->count();
+        $recurringCount = (clone $q)->whereExists($hasLead)->count();
+        $tabCounts = [
+            'all'       => $allCount,
+            'recurring' => $recurringCount,
+            'fresh'     => $allCount - $recurringCount,
+        ];
+
         $tab = $request->query('tab', 'fresh');
         if ($tab === 'recurring') {
-            $q->whereExists(function ($w) {
-                $w->select(\DB::raw(1))
-                    ->from('leads')
-                    ->whereColumn('leads.customer_id', 'customers.id')
-                    ->whereNull('leads.deleted_at');
-            });
+            $q->whereExists($hasLead);
         } elseif ($tab === 'fresh') {
-            $q->whereNotExists(function ($w) {
-                $w->select(\DB::raw(1))
-                    ->from('leads')
-                    ->whereColumn('leads.customer_id', 'customers.id')
-                    ->whereNull('leads.deleted_at');
-            });
+            $q->whereNotExists($hasLead);
         }
         // 'all' or anything else → no tab filter
 
@@ -131,20 +153,22 @@ class CustomerController extends Controller
                 ->map(fn ($c) => $this->shape($c))
                 ->all();
             return response()->json([
-                'tab'      => $tab,
-                'count'    => $total,
-                'page'     => $page,
-                'per_page' => $perPage,
-                'data'     => $rows,
+                'tab'        => $tab,
+                'count'      => $total,
+                'tab_counts' => $tabCounts,
+                'page'       => $page,
+                'per_page'   => $perPage,
+                'data'       => $rows,
             ]);
         }
 
         $rows = $q->get()->map(fn ($c) => $this->shape($c))->all();
 
         return response()->json([
-            'tab'   => $tab,
-            'count' => count($rows),
-            'data'  => $rows,
+            'tab'        => $tab,
+            'count'      => count($rows),
+            'tab_counts' => $tabCounts,
+            'data'       => $rows,
         ]);
     }
 
@@ -676,6 +700,11 @@ class CustomerController extends Controller
             // query so the list page doesn't N+1. Falls back to 0 for
             // show() / store() / update() responses that don't load the count.
             'consignees'      => (int) ($c->consignees_count ?? 0),
+            // Fresh vs Recurring bucket — true when the customer has ≥1
+            // non-deleted lead (see the is_recurring addSelect in index()).
+            // Lets the frontend split + count the tabs without a per-tab fetch.
+            // Guarded because show/store/update don't select the flag.
+            'recurring'       => (bool) ($c->is_recurring ?? false),
             // True when at least one consignee linked to this customer was
             // created with the "Same as Customer" toggle on — editing the
             // customer's Stage 1 fields would semantically affect those

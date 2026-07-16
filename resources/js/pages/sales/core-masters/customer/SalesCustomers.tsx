@@ -29,6 +29,9 @@ type Customer = {
   company: string; type: string; segment: string;
   country: string; country_iso?: string | null; contact: string; phone: string; email: string;
   whatsapp: 'Yes' | 'No'; consignees: number;
+  // True = Recurring (has ≥1 lead), false = Fresh. Drives the tab split and
+  // counts client-side. See CustomerController::index().
+  recurring?: boolean;
   hasSameAsCustomerConsignees?: boolean;
   sameAsCustomerConsigneeCount?: number;
 };
@@ -178,10 +181,14 @@ export default function SalesCustomers() {
    * without this an earlier/slower response could land last and paint the
    * wrong tab's rows (and drop the shimmer early). */
   const reqIdRef = useRef(0);
+  /* Always fetch the FULL set (no tab param) — the tabs, facet filters and all
+   * pill counts are derived from it client-side, so switching tabs or filters
+   * is instant and never needs another round-trip. Only the search box hits the
+   * server, so this re-runs on search alone. */
   const fetchCustomers = useCallback(() => {
     const reqId = ++reqIdRef.current;
     setLoading(true);
-    api.get('/customers', { params: { tab, q: debouncedQ } })
+    api.get('/customers', { params: { tab: 'all', q: debouncedQ } })
       .then(r => {
         if (reqId !== reqIdRef.current) return;
         const list = Array.isArray(r.data?.data) ? r.data.data : [];
@@ -191,11 +198,9 @@ export default function SalesCustomers() {
       .finally(() => {
         if (reqId !== reqIdRef.current) return;
         setLoading(false);
-        // Hold the tab-switch shimmer until the NEW tab's rows have actually
-        // arrived, so the previous tab's entries are never shown mid-switch.
         setTabSwitching(false);
       });
-  }, [tab, debouncedQ]);
+  }, [debouncedQ]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
@@ -207,10 +212,24 @@ export default function SalesCustomers() {
    * The predicate lives in PartyFilterModal (applyPartyFilters) so the
    * modal that collects the selections and the page that applies them can't
    * drift on what a filter means. */
-  const visibleCustomers = useMemo(
+  /* Facet filters apply FIRST, across every tab; the pill counts are then the
+     Fresh/Recurring split of that filtered set, and the visible rows are the
+     active tab's slice of it. Doing it in this order is what makes the counts
+     react to the filters — apply International and every pill drops to its
+     International total. */
+  const facetFiltered = useMemo(
     () => applyPartyFilters(customers, filters),
     [customers, filters],
   );
+  const tabCounts = useMemo(() => {
+    const recurring = facetFiltered.filter(c => c.recurring).length;
+    return { all: facetFiltered.length, recurring, fresh: facetFiltered.length - recurring };
+  }, [facetFiltered]);
+  const visibleCustomers = useMemo(() => {
+    if (tab === 'fresh')     return facetFiltered.filter(c => !c.recurring);
+    if (tab === 'recurring') return facetFiltered.filter(c => c.recurring);
+    return facetFiltered;
+  }, [facetFiltered, tab]);
   const activeFilterCount = countPartyFilterValues(filters);
 
   useEffect(() => {
@@ -233,12 +252,8 @@ export default function SalesCustomers() {
 
   const switchTab = (next: 'all' | 'fresh' | 'recurring') => {
     if (next === tab) return;
-    // Show the shimmer immediately; changing `tab` re-runs fetchCustomers and
-    // its finally() clears the flag once the new rows land. (This used to be a
-    // fixed 450ms timer — when the fetch ran longer than that the shimmer went
-    // away early and the OLD tab's rows showed through until the new ones
-    // arrived.)
-    setTabSwitching(true);
+    // Instant — tabs slice the already-loaded set client-side now, so there's
+    // no fetch to wait on and no shimmer to show.
     setTab(next);
   };
   const onSearch = (v: string) => { setQ(v); };
@@ -505,12 +520,15 @@ export default function SalesCustomers() {
           <div className="smc-pill-group">
             <button className={`smc-pill ${tab === 'all' ? 'on' : 'off'}`} onClick={() => switchTab('all')}>
               <i className="ri-list-check-2" /> All Customers
+              <span className="smc-pill-count">{tabCounts.all}</span>
             </button>
             <button className={`smc-pill ${tab === 'fresh' ? 'on' : 'off'}`} onClick={() => switchTab('fresh')}>
               <i className="ri-group-line" /> Fresh Customers
+              <span className="smc-pill-count">{tabCounts.fresh}</span>
             </button>
             <button className={`smc-pill ${tab === 'recurring' ? 'on' : 'off'}`} onClick={() => switchTab('recurring')}>
               <i className="ri-refresh-line" /> Recurring Customers
+              <span className="smc-pill-count">{tabCounts.recurring}</span>
             </button>
           </div>
           {/* Filter — independent of the tabs above (a customer is Fresh OR
@@ -550,7 +568,7 @@ export default function SalesCustomers() {
               customPageSize={pageSize}
               tableClass="table align-middle table-nowrap mb-0"
               theadClass="table-light"
-              divClass="table-responsive table-card border rounded "
+              divClass="table-responsive"
               SearchPlaceholder="Search customers..."
               worklistPagination
               pageSizeOptions={[5, 10, 15, 25, 50]}
