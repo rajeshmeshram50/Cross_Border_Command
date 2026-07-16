@@ -799,15 +799,25 @@ export default function AddProductModal(props: {
 
   /* Commit a mutated supplier list and report the outcome.
    *
-   * In supplier-only mode the write hits the server immediately, so the
+   * On an EXISTING product the write hits the server immediately, so the
    * success toast must wait for it to land — and a failed write rolls the list
    * back, or the popup would keep showing a change the server never took
-   * (persistVendors has already toasted the reason). In wizard mode the list
-   * is still a draft that Save Product persists, so there's nothing to await. */
+   * (persistVendors has already toasted the reason). This covers both ways in:
+   * the Mapped Suppliers popup (supplierOnly) and the Edit Product wizard.
+   * They render the same list, so a change made through one has to be real by
+   * the time the other is opened — staging it in the wizard meant a removal
+   * there never reached the server and the two lists disagreed.
+   *
+   * While ADDING a product the list is still a draft that Save Product
+   * persists: the product exists (Core was saved to get an id) but Sales may
+   * not be, and step/vendors activates whatever it writes — auto-saving here
+   * would flip a half-entered product to Active. */
+  const persistsImmediately = initialId != null;
+
   const commitVendorList = async (newList: VendorEntry[], successTitle: string, successMsg: string): Promise<boolean> => {
     const prevList = vendors;
     setVendors(newList);
-    if (supplierOnly && !(await autoPersistVendors(newList))) {
+    if (persistsImmediately && !(await autoPersistVendors(newList))) {
       setVendors(prevList);
       return false;
     }
@@ -1008,7 +1018,7 @@ export default function AddProductModal(props: {
     return commitVendorList(
       vendors.filter(v => v.id !== id),
       'Supplier removed',
-      supplierOnly
+      persistsImmediately
         ? `${target?.vendorName ?? 'The supplier'} has been unmapped from this product.`
         : `${target?.vendorName ?? 'The supplier'} removed — save the product to apply it.`,
     );
@@ -1760,16 +1770,16 @@ export default function AddProductModal(props: {
     if (!productId) {
       toast.error('Step blocked', 'Save Core information first.'); return;
     }
-    if (vendors.length === 0) {
-      toast.error('No vendors mapped', 'Map at least one vendor before saving the product.');
-      return;
-    }
     setFieldErrors({});
     setSaving(true);
     const ok = await persistVendors(vendors);
     if (ok) {
       onSaved(productId, true);
-      toast.success('Product saved', 'Suppliers mapped — product is now Active');
+      // Saving with no suppliers is allowed — it just can't activate the
+      // product, so say so rather than claiming it went Active.
+      toast.success('Product saved', vendors.length
+        ? 'Suppliers mapped — product is now Active'
+        : 'Saved with no suppliers — map one to activate the product.');
     }
     setSaving(false);
   };
@@ -2508,9 +2518,12 @@ export default function AddProductModal(props: {
                   <button className="apm-btn-ghost" onClick={closeSupplierPopup} disabled={saving}>Close</button>
                   {/* Managing an existing product's suppliers auto-saves each
                       map/edit/remove, so no separate "Save Product" is needed —
-                      only the add-wizard flow shows it. */}
-                  {!supplierOnly && (
-                    <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving || vendors.length === 0}>
+                      only the add-wizard flow shows it. It stays enabled at zero
+                      suppliers: an empty list is a valid save (it just leaves the
+                      product inactive), and disabling it there stranded a staged
+                      removal with no way to apply it. */}
+                  {!persistsImmediately && (
+                    <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving}>
                       {saving ? 'Saving…' : 'Save Product'}
                     </button>
                   )}
@@ -2606,7 +2619,7 @@ export default function AddProductModal(props: {
         open={vendorDeleteTarget !== null}
         itemName={vendorDeleteTarget?.vendorName}
         title="Remove Mapped Supplier"
-        subMessage={supplierOnly
+        subMessage={persistsImmediately
           ? 'This unmaps the supplier from the product and saves immediately.'
           : 'This unmaps the supplier from the product on this form. The product must be saved (Save Product) for the change to persist on the server.'}
         loading={vendorDeleting}

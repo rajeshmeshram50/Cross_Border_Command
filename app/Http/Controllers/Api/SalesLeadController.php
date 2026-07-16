@@ -530,7 +530,10 @@ class SalesLeadController extends Controller
                 // (cp_contact) — surfaced as customer.primary_address.cp_contact
                 // so the Add Meeting form can auto-fill the customer's primary
                 // contact number alongside its name + email.
-                'primaryAddress' => fn ($a) => $a->select('id', 'customer_id', 'cp_contact'),
+                // `country` drives the Domestic/Export currency gate: an Indian
+                // customer restricts the Product Directory to INR, a foreign one
+                // excludes INR.
+                'primaryAddress' => fn ($a) => $a->select('id', 'customer_id', 'cp_contact', 'country'),
             ]),
             'consignee' => fn ($r) => $r->withTrashed(),
             'ackReason',
@@ -613,6 +616,16 @@ class SalesLeadController extends Controller
             $piSentAt = $pi?->emailed_at ?? $pi?->created_at;
         }
         $lead->setAttribute('pi_sent_at', $piSentAt ? \Illuminate\Support\Carbon::parse($piSentAt)->toIso8601String() : null);
+
+        /* The lead's locked currency = the currency its products already share
+         * (single-currency-per-lead rule in storeProduct). Surfaced here so the
+         * Customer picker can filter by it: an INR opportunity may only be
+         * mapped to an Indian customer, a non-INR one only to a foreign
+         * customer. Null when no product is mapped yet — then the customer is
+         * free and it's the customer that drives the currency instead. */
+        $lead->setAttribute('locked_currency', LeadProduct::where('lead_id', $lead->id)
+            ->whereNotNull('currency')
+            ->value('currency'));
 
         return response()->json(['status' => true, 'data' => $lead]);
     }
@@ -1664,14 +1677,29 @@ class SalesLeadController extends Controller
             'quantity'     => 'nullable|numeric|min:0',
             'target_price' => 'nullable|numeric|min:0',
             'notes'        => 'nullable|string|max:1000',
+            /* Opt-in: apply a currency change to EVERY product on this lead
+             * instead of rejecting it. The single-currency rule still holds —
+             * this just re-denominates the whole lead in one go rather than
+             * forcing the user to delete and re-map every row. The client must
+             * confirm first (see ProductDirectoryModal), because the AMOUNTS
+             * ARE NOT CONVERTED — there is no FX rate here, so 223432 CNY
+             * becomes 223432 INR. Already-shared prices inherit their currency
+             * from their lead_product (lead_product_shared_prices has no
+             * currency column), so they re-denominate with it. */
+            'cascade_currency' => 'sometimes|boolean',
         ]);
+        $cascade = (bool) ($data['cascade_currency'] ?? false);
+        unset($data['cascade_currency']);
 
         /* Same single-currency-per-lead rule as storeLeadProduct, but
          * on edit. Allowed transitions:
          *   • This is the ONLY mapping on the lead → free to change.
          *   • Otherwise the picked currency must match every OTHER
-         *     mapping's currency on the same lead.
+         *     mapping's currency on the same lead …
+         *   • … UNLESS cascade_currency was sent, which re-denominates every
+         *     row to the picked currency instead of erroring.
          * Set the field to null/empty to leave currency unchanged. */
+        $cascadeTo = null;
         if (array_key_exists('currency', $data) && $data['currency'] !== null && $data['currency'] !== '') {
             $picked = strtoupper($data['currency']);
             $others = LeadProduct::where('lead_id', $lead->id)
@@ -1682,17 +1710,36 @@ class SalesLeadController extends Controller
                 ->unique()
                 ->values();
             if ($others->isNotEmpty() && !$others->contains($picked)) {
-                return response()->json([
-                    'status'  => false,
-                    'message' => "This opportunity already uses {$others->first()}. All products on a lead must share one currency — change the other rows first or remove them.",
-                    'locked_currency' => $others->first(),
-                ], 422);
+                if (!$cascade) {
+                    return response()->json([
+                        'status'  => false,
+                        'message' => "This opportunity already uses {$others->first()}. All products on a lead must share one currency — confirm the switch to re-price every product in {$picked}.",
+                        'locked_currency' => $others->first(),
+                        // Tells the client a cascade would resolve this.
+                        'cascade_available' => true,
+                    ], 422);
+                }
+                $cascadeTo = $picked;
             }
             $data['currency'] = $picked;
         }
 
-        $row->update($data);
-        return response()->json(['status' => true, 'data' => $row->fresh(['product:id,product_code,name'])]);
+        $cascaded = 0;
+        \Illuminate\Support\Facades\DB::transaction(function () use ($row, $data, $cascadeTo, $lead, &$cascaded) {
+            $row->update($data);
+            if ($cascadeTo !== null) {
+                $cascaded = LeadProduct::where('lead_id', $lead->id)
+                    ->where('id', '!=', $row->id)
+                    ->update(['currency' => $cascadeTo]);
+            }
+        });
+
+        return response()->json([
+            'status' => true,
+            'data'   => $row->fresh(['product:id,product_code,name']),
+            // How many OTHER products were re-denominated, so the UI can say so.
+            'cascaded_count' => $cascaded,
+        ]);
     }
 
     /* ─────────────────────────────────────────────────────────────────

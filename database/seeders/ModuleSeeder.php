@@ -31,9 +31,12 @@ class ModuleSeeder extends Seeder
             ['name' => 'Credentials Vault',            'slug' => 'credentials-vault', 'icon' => 'KeyRound',    'sort_order' => 14, 'is_default' => false, 'description' => 'Central store for tenant credentials, secrets & access keys'],
             ['name' => 'Project Navigator',            'slug' => 'project-navigator', 'icon' => 'Compass',     'sort_order' => 15, 'is_default' => false, 'description' => 'Cross-module project workspace'],
             ['name' => 'Procure to Pay (P2P)',         'slug' => 'p2p',               'icon' => 'ShoppingBag', 'sort_order' => 16, 'is_default' => false, 'description' => 'Procure-to-pay summary & operations'],
-            ['name' => 'GTS (E-Docs)',                 'slug' => 'gts',               'icon' => 'Globe',       'sort_order' => 17, 'is_default' => false, 'description' => 'Global trade services & electronic trade documents'],
-            ['name' => 'Inventory Management System',  'slug' => 'inventory',         'icon' => 'Boxes',       'sort_order' => 18, 'is_default' => false, 'description' => 'Stock, warehouse & movement tracking'],
-            ['name' => 'Developers',                   'slug' => 'developers',        'icon' => 'Code',        'sort_order' => 19, 'is_default' => false, 'description' => 'Operational tooling — Business Task (Shipment) list'],
+            // Shipment 360 (slug stays 'developers' so existing permission grants
+            // survive the rename) sorts right after P2P — it reports on the
+            // shipment orders P2P's procurement flow feeds.
+            ['name' => 'Shipment 360',                 'slug' => 'developers',        'icon' => 'Truck',       'sort_order' => 17, 'is_default' => false, 'description' => 'End-to-end shipment journey — order, dispatch, customs, transit & delivery'],
+            ['name' => 'GTS (E-Docs)',                 'slug' => 'gts',               'icon' => 'Globe',       'sort_order' => 18, 'is_default' => false, 'description' => 'Global trade services & electronic trade documents'],
+            ['name' => 'Inventory Management System',  'slug' => 'inventory',         'icon' => 'Boxes',       'sort_order' => 19, 'is_default' => false, 'description' => 'Stock, warehouse & movement tracking'],
         ];
 
         foreach ($topLevel as $mod) {
@@ -447,7 +450,7 @@ class ModuleSeeder extends Seeder
             }
         }
 
-        // ── Developers (level 2 category + level 3 leaves) ──
+        // ── Shipment 360 (level 2 category + level 3 leaves) ──
         // Marked is_default so client_admins receive it on plan (re)activation
         // (SubscriptionController grants is_default modules); branch users /
         // employees still need an explicit grant from the Permissions screen.

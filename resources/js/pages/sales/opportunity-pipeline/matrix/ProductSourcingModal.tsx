@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
+import Tooltip from '../../../../components/ui/Tooltip';
 import { formatProductCode } from '../../../../utils/formatProductCode';
 import { useToast } from '../../../../contexts/ToastContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
@@ -293,7 +294,7 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
                         </td>
                         <td>
                           <div className="psm-name-cell">
-                            <span className="psm-prod-name">{r.product_name ?? '—'}</span>
+                            <Tooltip label={r.product_name ?? ''} themed maxWidth={420}><span className="psm-prod-name">{r.product_name ?? '—'}</span></Tooltip>
                             {r.product_category && (
                               <span className="psm-cat-badge">{r.product_category.toUpperCase()}</span>
                             )}
@@ -624,7 +625,13 @@ const SCOPED_CSS = `
 
 /* ── Product name + category ── matches Product Directory. */
 .psm-name-cell { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-.psm-prod-name { font-size: 13px; color: #0f172a; font-weight: 700; line-height: 1.3; }
+/* Clamp to 2 lines -- see .prs-prod-name. */
+.psm-prod-name {
+  font-size: 13px; color: #0f172a; font-weight: 700; line-height: 1.3;
+  max-width: 340px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
 .psm-cat-badge {
   display: inline-block;
   padding: 2px 9px;

@@ -329,11 +329,14 @@ export default function IdimsHeader() {
     if (hasGroupView('clm.')) items.push({ id: 'clm', label: 'CLM', icon: IC.file, dd: 'clm' });
     // Shared rule (see utils/menuAccess) — parent grant OR any p2p.* leaf.
     if (moduleVisible(perms, 'p2p', isSuperAdmin, planExpired)) items.push({ id: 'p2p', label: 'Procure to Pay (P2P)', icon: IC.cart, dd: 'p2p' });
+    // Shipment 360 — sits directly after P2P because it reports on the
+    // shipment orders that P2P's procurement flow feeds. Direct-link tab,
+    // gated on the developers.shipment permission. The slug stays 'developers'
+    // (→ /developers/shipment) so existing permission grants keep working;
+    // only the visible label changed from the old "Dev Tools".
+    if (can('developers.shipment')) items.push({ id: 'developers', label: 'Shipment 360', icon: IC.truck });
     if (can('gts')) items.push({ id: 'gts', label: 'GTS (E-Docs)', icon: IC.globe });
     if (can('inventory')) items.push({ id: 'inventory', label: 'Inventory Management System', icon: IC.box });
-    // Developers → Shipment (Business Task). Direct-link tab, gated on the
-    // developers.shipment permission. (id 'developers' maps to /developers/shipment.)
-    if (can('developers.shipment')) items.push({ id: 'developers', label: 'Dev Tools', icon: IC.layers });
     if (hasGroupView('master.')) items.push({ id: 'master', label: 'Master', icon: IC.db });
     // Permissions — branch admins manage their team's access (employees do
     // not; they can't grant permissions). Super-admin / client-admin already
@@ -927,6 +930,7 @@ const IC = {
   chevSm: <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>,
   chevR: <svg className="idims-profile-item-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>,
   layers: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5M2 12l10 5 10-5" /></svg>,
+  truck: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17h4V5H2v12h3" /><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1" /><circle cx="7.5" cy="17.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></svg>,
   check: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>,
   moon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>,
   sun: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>,

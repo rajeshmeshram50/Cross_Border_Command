@@ -431,18 +431,21 @@ export const MENU_ITEMS: MenuItem[] = [
   // Procure to Pay (P2P) — promoted from a Sales Insights leaf to its own
   // top-level module. Links to the existing P2P Summary page.
   { id: 'p2p', icon: 'ShoppingBag', label: 'Procure to Pay (P2P)', roles: ALL_TENANT_ROLES },
+  // Shipment 360 — sits directly after P2P because it reports on the shipment
+  // orders that P2P's procurement flow feeds. The slug stays 'developers'
+  // (→ /developers/shipment) so existing permission grants and the routeAccess
+  // rule keep working; only the visible label changed from the old "Dev Tools".
+  {
+    id: 'developers',
+    icon: 'Truck',
+    label: 'Shipment 360',
+    roles: ALL_TENANT_ROLES,
+    groups: DEVELOPERS_GROUPS,
+  },
   // GTS (E-Docs) — top-level module (stub for now).
   { id: 'gts', icon: 'Globe', label: 'GTS (E-Docs)', roles: ALL_TENANT_ROLES },
   // Inventory Management System — top-level module (stub for now).
   { id: 'inventory', icon: 'Boxes', label: 'Inventory Management System', roles: ALL_TENANT_ROLES },
-  // Developers — operational tooling (Shipment / Business Task list).
-  {
-    id: 'developers',
-    icon: 'Code',
-    label: 'Dev Tools',
-    roles: ALL_TENANT_ROLES,
-    groups: DEVELOPERS_GROUPS,
-  },
   {
     id: 'master',
     icon: 'Database',

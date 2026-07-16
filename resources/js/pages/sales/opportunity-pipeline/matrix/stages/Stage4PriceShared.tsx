@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import api from '../../../../../api';
 import { formatProductCode } from '../../../../../utils/formatProductCode';
+import Tooltip from '../../../../../components/ui/Tooltip';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 
@@ -389,7 +390,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                       <tr key={h.id} className={pdfBusy?.id === h.id ? 's4-row-busy' : undefined}>
                         <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
                         <td><span className="s4-code s4-code-navy">{formatProductCode(historyHeader?.product_code) || '—'}</span></td>
-                        <td><div className="s4-prod-name">{historyHeader?.product_name ?? '—'}</div></td>
+                        <td><Tooltip label={historyHeader?.product_name ?? ""} themed maxWidth={420}><div className="s4-prod-name">{historyHeader?.product_name ?? "—"}</div></Tooltip></td>
                         <td><span className="s4-dt">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
                           {date} <span className="s4-dt-sep">/</span> {time}
@@ -512,7 +513,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
                             <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                             <td>
-                              <div className="s4-prod-name">{r.product_name ?? '—'}</div>
+                              <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s4-prod-name">{r.product_name ?? "—"}</div></Tooltip>
                               {r.product_category && <span className="s4-cat-badge">{r.product_category.toUpperCase()}</span>}
                             </td>
                             <td>
@@ -633,7 +634,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td><span className="s4-sr s4-sr-navy">{idx + 1}</span></td>
                             <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id ?? 0).padStart(3,'0')}`}</span></td>
                             <td>
-                              <div className="s4-prod-name">{r.product_name ?? '—'}</div>
+                              <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s4-prod-name">{r.product_name ?? "—"}</div></Tooltip>
                               {r.product_category && <span className="s4-cat-badge">{r.product_category.toUpperCase()}</span>}
                             </td>
                             <td><span className="s4-dt">
@@ -881,7 +882,15 @@ const STAGE4_CSS = `
 .s4-code-navy    { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
 .s4-code-emerald { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
 
-.s4-prod-name { font-weight: 700; color: #1e293b; font-size: 12.5px; }
+/* Clamp long product names to 2 lines — an unclamped 100+ char name stacked
+   to 5 lines and stretched every row of the Price Shared table. Full name
+   stays on the title tooltip. */
+.s4-prod-name {
+  font-weight: 700; color: #1e293b; font-size: 12.5px;
+  max-width: 340px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
 .s4-cat-badge { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; background: #ede9fe; color: #6d28d9; }
 
 .s4-pill {

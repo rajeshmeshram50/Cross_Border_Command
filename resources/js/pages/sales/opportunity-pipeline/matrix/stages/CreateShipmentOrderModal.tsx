@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { MasterSelect } from '../../../../../components/ui/MasterSelect';
+import Tooltip from '../../../../../components/ui/Tooltip';
 import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { useQpiMasters } from '../../SalesQPI';
 
@@ -33,6 +34,11 @@ export type ShipmentInitialContext = {
   docType?:        string | null;
   customerCode?:   string | null;
   customerName?:   string | null;
+  /* Domestic only — shown in the header next to the customer name.
+   * `customerStateCode` is the PI's place-of-supply state_code (e.g.
+   * "27 – Maharashtra"), falling back to the GSTIN's leading 2 digits. */
+  customerGstNumber?: string | null;
+  customerStateCode?: string | null;
   consigneeCode?:  string | null;
   consigneeName?:  string | null;
   /* Pre-fills carried over from the PI / quotation if available. */
@@ -103,6 +109,11 @@ export default function CreateShipmentOrderModal({
   const [portOfUnloading, setPOU]         = useState('');
   const [finalDestination, setFinalDest]  = useState('');
   const [originCountry, setOrigin]        = useState('');
+  /* Domestic-only fields. They persist to their OWN columns (pin_code /
+   * place_of_dispatch / place_of_delivery) rather than reusing the export ones,
+   * so the two flows' data can never blur together. */
+  const [placeOfDispatch, setPlaceOfDispatch] = useState('');
+  const [placeOfDelivery, setPlaceOfDelivery] = useState('');
   const [remarks, setRemarks]             = useState('');
   const [attachments, setAttachments]     = useState<File[]>([]);
   const [errors, setErrors]               = useState<Record<string, string>>({});
@@ -140,17 +151,29 @@ export default function CreateShipmentOrderModal({
     const e: Record<string, string> = {};
     if (!shippingLiability) e.shippingLiability = 'Required';
     if (!coldChain)         e.coldChain         = 'Required';
-    if (!zipCode.trim())    e.zipCode           = 'Required';
-    else if (zipCode.trim().length > 12) e.zipCode = 'Must be 12 characters or fewer';
+    if (!shippingMode)      e.shippingMode      = 'Required';   // "Mode of Transport"
+    // Cost is one required field in both flows, just under different labels
+    // (Shipping Cost / Freight Cost) writing to different columns.
     if (!freightCost || !Number.isFinite(Number(freightCost)) || Number(freightCost) < 0)
       e.freightCost = 'Positive number required';
-    if (!shippingMode)      e.shippingMode      = 'Required';
-    // INCO Term + both ports are International-only requirements. For a
-    // Domestic PI the INCO field is hidden and the two ports are optional.
-    if (!isDomestic && !incoTerm.trim())        e.incoTerm        = 'Required';
-    if (!isDomestic && !portOfLoading.trim())   e.portOfLoading   = 'Required';
-    if (!isDomestic && !portOfUnloading.trim()) e.portOfUnloading = 'Required';
-    if (!finalDestination.trim()) e.finalDestination = 'Required';
+
+    if (isDomestic) {
+      /* Domestic: PIN Code (strict Indian 6-digit, matching the server rule)
+       * plus Place of Dispatch / Delivery. No INCO term, no ports, no origin
+       * country — those fields aren't even rendered. */
+      if (!zipCode.trim()) e.zipCode = 'Required';
+      else if (!/^\d{6}$/.test(zipCode.trim())) e.zipCode = 'PIN Code must be exactly 6 digits';
+      if (!placeOfDispatch.trim()) e.placeOfDispatch = 'Required';
+      if (!placeOfDelivery.trim()) e.placeOfDelivery = 'Required';
+    } else {
+      // International: ZIP + the full export block.
+      if (!zipCode.trim()) e.zipCode = 'Required';
+      else if (zipCode.trim().length > 12) e.zipCode = 'Must be 12 characters or fewer';
+      if (!incoTerm.trim())        e.incoTerm        = 'Required';
+      if (!portOfLoading.trim())   e.portOfLoading   = 'Required';
+      if (!portOfUnloading.trim()) e.portOfUnloading = 'Required';
+      if (!finalDestination.trim()) e.finalDestination = 'Required';
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -173,15 +196,28 @@ export default function CreateShipmentOrderModal({
       if (context.piId) fd.append('proforma_invoice_id', String(context.piId));
       fd.append('shipping_liability', shippingLiability);
       fd.append('cold_chain',         coldChain === 'yes' ? '1' : '0');
-      fd.append('zip_code',           zipCode.trim());
-      fd.append('freight_cost',       freightCost);
+      // "Mode of Transport" — one column, both flows.
       fd.append('shipping_mode',      shippingMode);
-      // INCO Term is International-only (hidden for Domestic) → send only when set.
-      if (!isDomestic && incoTerm.trim()) fd.append('inco_term', incoTerm.trim());
-      if (portOfLoading.trim())    fd.append('port_of_loading',   portOfLoading.trim());
-      if (portOfUnloading.trim())  fd.append('port_of_unloading', portOfUnloading.trim());
-      fd.append('final_destination', finalDestination.trim());
-      if (originCountry.trim())   fd.append('origin_country',    originCountry.trim());
+
+      /* Post ONLY the fields belonging to this PI's doc type. The two flows
+       * have their own columns (pin_code/shipping_cost/place_* vs
+       * zip_code/freight_cost/port_*), so sending only one set keeps a row's
+       * data where it belongs. The server derives doc_type from the PI and
+       * ignores the other set anyway — this just avoids sending it at all. */
+      if (isDomestic) {
+        fd.append('pin_code',          zipCode.trim());        // PIN Code
+        fd.append('shipping_cost',     freightCost);           // Shipping Cost
+        fd.append('place_of_dispatch', placeOfDispatch.trim());
+        fd.append('place_of_delivery', placeOfDelivery.trim());
+      } else {
+        fd.append('zip_code',           zipCode.trim());
+        fd.append('freight_cost',       freightCost);
+        if (incoTerm.trim())         fd.append('inco_term',         incoTerm.trim());
+        if (portOfLoading.trim())    fd.append('port_of_loading',   portOfLoading.trim());
+        if (portOfUnloading.trim())  fd.append('port_of_unloading', portOfUnloading.trim());
+        fd.append('final_destination', finalDestination.trim());
+        if (originCountry.trim())    fd.append('origin_country',    originCountry.trim());
+      }
       if (remarks.trim())         fd.append('remarks',           remarks.trim());
       attachments.forEach((f, i) => fd.append(`attachments[${i}]`, f));
 
@@ -232,11 +268,16 @@ export default function CreateShipmentOrderModal({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    api.get<{ status: boolean; code: string }>('/sales/shipment-orders/next-code', { params: { lead_id: leadId ?? undefined } })
+    /* Send the PI id too: the prefix depends on its doc_type (DSHP- vs SHP-)
+       and each has its own sequence, so without it the header would preview a
+       code from the wrong series. */
+    api.get<{ status: boolean; code: string }>('/sales/shipment-orders/next-code', {
+      params: { lead_id: leadId ?? undefined, proforma_invoice_id: context.piId ?? undefined },
+    })
       .then(({ data }) => { if (!cancelled) setPreviewShpCode(data.code || '—'); })
       .catch(() => { if (!cancelled) setPreviewShpCode('—'); });
     return () => { cancelled = true; };
-  }, [open, leadId]);
+  }, [open, leadId, context.piId]);
 
   /* Master-backed dropdown options (INCO Term / Ports / Origin Country).
    * Reuses the cached QPI masters loader, so this is a no-op fetch when
@@ -266,7 +307,10 @@ export default function CreateShipmentOrderModal({
               </svg>
             </span>
             <div>
-              <div className="cso-head-title">Create Shipment ID</div>
+              {/* Name the flow in the title — the form's fields, the ID prefix
+                  (DSHP-/SHP-) and the columns written all differ by type, so
+                  it should be obvious which one you're filling in. */}
+              <div className="cso-head-title">Create Shipment — {isDomestic ? 'Domestic' : 'International'}</div>
               <div className="cso-head-sub">Fill in shipping &amp; logistics details to generate Shipment ID</div>
             </div>
           </div>
@@ -289,13 +333,20 @@ export default function CreateShipmentOrderModal({
 
         <div className="cso-body">
           {/* Opportunity / PI / Customer / Consignee strip */}
-          <div className="cso-strip">
+          {/* 5 columns for Domestic (10 cells → 5×2), 4 for International
+              (8 cells → 4×2). Either way the strip stays exactly 2 rows. */}
+          <div className={`cso-strip ${isDomestic ? 'cso-strip-5' : ''}`}>
             <Cell label="OPPORTUNITY ID"  value={context.oppCode || '—'}  highlight />
             <Cell label="OPPORTUNITY DATE" value={fmtDate(context.oppDate)} />
             <Cell label="PI NO"           value={context.piCode || '—'}    highlight />
             <Cell label="PI DATE"         value={fmtDate(context.piDate)} />
             <Cell label="CUSTOMER ID"     value={context.customerCode || '—'} highlight />
             <Cell label="CUSTOMER NAME"   value={context.customerName || '—'} />
+            {/* Domestic shipments carry the buyer's GST identity — the GSTIN and
+                its place-of-supply state code. Read-only, straight from the
+                customer record; export shipments have no Indian GST. */}
+            {isDomestic && <Cell label="GST NUMBER" value={context.customerGstNumber || '—'} highlight />}
+            {isDomestic && <Cell label="STATE CODE" value={context.customerStateCode || '—'} highlight />}
             <Cell label="CONSIGNEE ID"    value={context.consigneeCode || '—'} highlight />
             <Cell label="CONSIGNEE NAME"  value={context.consigneeName || '—'} />
           </div>
@@ -324,12 +375,24 @@ export default function CreateShipmentOrderModal({
                 placeholder="— Select —"
               />
             </Field>
-            <Field label="Zip Code" required error={errors.zipCode}>
+            {/* ZIP ⇄ PIN — same slot, different label + rule per doc type.
+                Domestic writes pin_code, International writes zip_code. */}
+            <Field label={isDomestic ? 'PIN Code' : 'Zip Code'} required error={errors.zipCode}>
               <input className={`cso-input ${errors.zipCode ? 'cso-input-err' : ''}`}
-                value={zipCode} onChange={(e) => { setZipCode(e.target.value); if (errors.zipCode) setErrors(p => ({ ...p, zipCode: '' })); }} placeholder="Enter zip code" />
+                value={zipCode}
+                inputMode={isDomestic ? 'numeric' : 'text'}
+                maxLength={isDomestic ? 6 : 12}
+                onChange={(e) => {
+                  // Domestic PIN is strictly 6 digits — block non-numeric input.
+                  const v = isDomestic ? e.target.value.replace(/\D/g, '') : e.target.value;
+                  setZipCode(v);
+                  if (errors.zipCode) setErrors(p => ({ ...p, zipCode: '' }));
+                }}
+                placeholder={isDomestic ? 'Enter 6-digit PIN code' : 'Enter zip code'} />
             </Field>
 
-            <Field label={`Freight Cost${curCode ? ` (${curCode})` : ''}`} required error={errors.freightCost}>
+            {/* Freight Cost ⇄ Shipping Cost — Domestic writes shipping_cost. */}
+            <Field label={`${isDomestic ? 'Shipping Cost' : 'Freight Cost'}${curCode ? ` (${curCode})` : ''}`} required error={errors.freightCost}>
               <div className="cso-input-prefix">
                 {/* Currency follows the PI — short code only (e.g. SGD), not $. */}
                 <span className="cso-input-cur">{curCode || '—'}</span>
@@ -338,7 +401,7 @@ export default function CreateShipmentOrderModal({
                   value={freightCost} onChange={(e) => setFreightCost(e.target.value)} placeholder="0.00" />
               </div>
             </Field>
-            <Field label="Shipping Mode" required error={errors.shippingMode}>
+            <Field label="Mode of Transport" required error={errors.shippingMode}>
               <MasterSelect
                 value={shippingMode}
                 onChange={(v) => { setShippingMode(String(v)); if (errors.shippingMode) setErrors(p => ({ ...p, shippingMode: '' })); }}
@@ -346,57 +409,73 @@ export default function CreateShipmentOrderModal({
                 placeholder="— Select —"
               />
             </Field>
-            {/* INCO Term is International-only — hidden entirely for Domestic PIs. */}
-            {!isDomestic && (
-            <Field label="INCO Term" required error={errors.incoTerm}>
-              <MasterSelect
-                key={`inco-${masters.incoterms.length}`}
-                value={incoTerm}
-                loading={masters.loading}
-                placeholder="— Select INCO Term —"
-                options={withCurrent(masters.incoterms, incoTerm)}
-                onChange={(v) => { setIncoTerm(String(v)); if (errors.incoTerm) setErrors(p => ({ ...p, incoTerm: '' })); }}
-              />
-            </Field>
+
+            {isDomestic ? (
+              /* Domestic: the whole export block (INCO Term, both ports, Final
+                 Destination, Origin Country) is replaced by these two. */
+              <>
+                <Field label="Place of Dispatch" required error={errors.placeOfDispatch}>
+                  <input className={`cso-input ${errors.placeOfDispatch ? 'cso-input-err' : ''}`}
+                    value={placeOfDispatch}
+                    onChange={(e) => { setPlaceOfDispatch(e.target.value); if (errors.placeOfDispatch) setErrors(p => ({ ...p, placeOfDispatch: '' })); }}
+                    placeholder="e.g. Pune, Maharashtra" />
+                </Field>
+                <Field label="Place of Delivery" required error={errors.placeOfDelivery}>
+                  <input className={`cso-input ${errors.placeOfDelivery ? 'cso-input-err' : ''}`}
+                    value={placeOfDelivery}
+                    onChange={(e) => { setPlaceOfDelivery(e.target.value); if (errors.placeOfDelivery) setErrors(p => ({ ...p, placeOfDelivery: '' })); }}
+                    placeholder="e.g. Delhi, Delhi" />
+                </Field>
+              </>
+            ) : (
+              <>
+                <Field label="INCO Term" required error={errors.incoTerm}>
+                  <MasterSelect
+                    key={`inco-${masters.incoterms.length}`}
+                    value={incoTerm}
+                    loading={masters.loading}
+                    placeholder="— Select INCO Term —"
+                    options={withCurrent(masters.incoterms, incoTerm)}
+                    onChange={(v) => { setIncoTerm(String(v)); if (errors.incoTerm) setErrors(p => ({ ...p, incoTerm: '' })); }}
+                  />
+                </Field>
+                <Field label="Port of Loading" required error={errors.portOfLoading}>
+                  <MasterSelect
+                    key={`pol-${masters.ports.length}`}
+                    value={portOfLoading}
+                    loading={masters.loading}
+                    placeholder="— Select Port —"
+                    options={withCurrent(masters.ports, portOfLoading)}
+                    onChange={(v) => { setPOL(String(v)); if (errors.portOfLoading) setErrors(p => ({ ...p, portOfLoading: '' })); }}
+                  />
+                </Field>
+                <Field label="Port of Unloading" required error={errors.portOfUnloading}>
+                  <MasterSelect
+                    key={`pou-${masters.ports.length}`}
+                    value={portOfUnloading}
+                    loading={masters.loading}
+                    placeholder="— Select Port —"
+                    options={withCurrent(masters.ports, portOfUnloading)}
+                    onChange={(v) => { setPOU(String(v)); if (errors.portOfUnloading) setErrors(p => ({ ...p, portOfUnloading: '' })); }}
+                  />
+                </Field>
+                <Field label="Final Destination" required error={errors.finalDestination}>
+                  <input className={`cso-input ${errors.finalDestination ? 'cso-input-err' : ''}`}
+                    value={finalDestination}
+                    onChange={(e) => setFinalDest(e.target.value)} placeholder="e.g. Dubai, UAE" />
+                </Field>
+                <Field label="Origin Country">
+                  <MasterSelect
+                    key={`oc-${masters.countries.length}`}
+                    value={originCountry}
+                    loading={masters.loading}
+                    placeholder="— Select Country —"
+                    options={withCurrent(masters.countries, originCountry)}
+                    onChange={(v) => setOrigin(String(v))}
+                  />
+                </Field>
+              </>
             )}
-
-            {/* Ports are mandatory (*) for International, optional for Domestic. */}
-            <Field label="Port of Loading" required={!isDomestic} error={errors.portOfLoading}>
-              <MasterSelect
-                key={`pol-${masters.ports.length}`}
-                value={portOfLoading}
-                loading={masters.loading}
-                placeholder="— Select Port —"
-                options={withCurrent(masters.ports, portOfLoading)}
-                onChange={(v) => { setPOL(String(v)); if (errors.portOfLoading) setErrors(p => ({ ...p, portOfLoading: '' })); }}
-              />
-            </Field>
-            <Field label="Port of Unloading" required={!isDomestic} error={errors.portOfUnloading}>
-              <MasterSelect
-                key={`pou-${masters.ports.length}`}
-                value={portOfUnloading}
-                loading={masters.loading}
-                placeholder="— Select Port —"
-                options={withCurrent(masters.ports, portOfUnloading)}
-                onChange={(v) => { setPOU(String(v)); if (errors.portOfUnloading) setErrors(p => ({ ...p, portOfUnloading: '' })); }}
-              />
-            </Field>
-            <Field label="Final Destination" required error={errors.finalDestination}>
-              <input className={`cso-input ${errors.finalDestination ? 'cso-input-err' : ''}`}
-                value={finalDestination}
-                onChange={(e) => setFinalDest(e.target.value)} placeholder="e.g. Dubai, UAE" />
-            </Field>
-
-            <Field label="Origin Country">
-              <MasterSelect
-                key={`oc-${masters.countries.length}`}
-                value={originCountry}
-                loading={masters.loading}
-                placeholder="— Select Country —"
-                options={withCurrent(masters.countries, originCountry)}
-                onChange={(v) => setOrigin(String(v))}
-              />
-            </Field>
             <Field label="Attachment">
               <div className="cso-att-row">
                 <button type="button" className="cso-att-btn" onClick={() => fileRef.current?.click()}>
@@ -496,7 +575,12 @@ function Cell({ label, value, highlight }: { label: string; value: string; highl
   return (
     <div className="cso-strip-cell">
       <div className="cso-strip-label">{label}</div>
-      <div className={`cso-strip-val ${highlight ? 'cso-strip-val-highlight' : ''}`}>{value}</div>
+      {/* Values are clipped to one line (see .cso-strip-val) so a long company
+          name can't stretch the strip — the full text is on the tooltip. No
+          tooltip for an empty "—" placeholder: there's nothing to reveal. */}
+      <Tooltip label={value && value !== '—' ? value : ''} themed maxWidth={420}>
+        <div className={`cso-strip-val ${highlight ? 'cso-strip-val-highlight' : ''}`}>{value}</div>
+      </Tooltip>
     </div>
   );
 }
@@ -564,15 +648,33 @@ const SCOPED_CSS = `
   padding: 10px 14px;
   border-right: 1px solid #fde68a;
   border-bottom: 1px solid #fde68a;
+  /* Grid items default to min-width:auto (= content width), which would let a
+     long value push the column wider instead of ellipsising. */
+  min-width: 0;
 }
 .cso-strip-cell:nth-child(4n)   { border-right: none; }
 .cso-strip-cell:nth-last-child(-n+4) { border-bottom: none; }
+
+/* Domestic adds GST Number + State Code = 10 cells. At 4 columns that spills to
+   a 3rd row, so switch to 5 columns and it lands as a clean 5×2. International
+   has 8 cells and stays 4×2. */
+.cso-strip-5 { grid-template-columns: repeat(5, 1fr); }
+.cso-strip-5 .cso-strip-cell:nth-child(4n)          { border-right: 1px solid #fde68a; }
+.cso-strip-5 .cso-strip-cell:nth-last-child(-n+4)   { border-bottom: 1px solid #fde68a; }
+.cso-strip-5 .cso-strip-cell:nth-child(5n)          { border-right: none; }
+.cso-strip-5 .cso-strip-cell:nth-last-child(-n+5)   { border-bottom: none; }
 .cso-strip-label {
   font-size: 10px; font-weight: 800; letter-spacing: .08em;
   color: #92400e; text-transform: uppercase;
   margin-bottom: 3px;
 }
-.cso-strip-val { font-size: 12.5px; font-weight: 700; color: #1e293b; }
+/* One line, ellipsis on overflow — a long customer/consignee name must not
+   widen its column or wrap the strip taller. min-width:0 on the cell is what
+   actually lets a grid item shrink below its content width. */
+.cso-strip-val {
+  font-size: 12.5px; font-weight: 700; color: #1e293b;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .cso-strip-val-highlight { color: #b45309; }
 
 /* Section header */

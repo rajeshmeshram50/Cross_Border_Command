@@ -473,7 +473,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         <td><span className="s3-sr s3-sr-violet">{idx + 1}</span></td>
                         <td><span className="s3-code s3-code-violet">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                         <td>
-                          <div className="s3-prod-name">{r.product_name ?? '—'}</div>
+                          <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s3-prod-name">{r.product_name ?? "—"}</div></Tooltip>
                           {r.product_category && <span className="s3-cat-badge s3-cat-badge-violet">{r.product_category.toUpperCase()}</span>}
                         </td>
                         <td>
@@ -617,7 +617,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           <td><span className="s3-sr s3-sr-amber">{idx + 1}</span></td>
                           <td><span className="s3-code s3-code-amber">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                           <td>
-                            <div className="s3-prod-name">{r.product_name ?? '—'}</div>
+                            <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s3-prod-name">{r.product_name ?? "—"}</div></Tooltip>
                             {r.product_category && <span className="s3-cat-badge s3-cat-badge-amber">{r.product_category.toUpperCase()}</span>}
                           </td>
                           <td>
@@ -780,7 +780,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         <td><span className="s3-sr s3-sr-mint">{idx + 1}</span></td>
                         <td><span className="s3-code s3-code-mint">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                         <td>
-                          <div className="s3-prod-name">{r.product_name ?? '—'}</div>
+                          <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s3-prod-name">{r.product_name ?? "—"}</div></Tooltip>
                           {r.product_category && <span className="s3-cat-badge s3-cat-badge-mint">{r.product_category.toUpperCase()}</span>}
                         </td>
                         <td>
@@ -1208,7 +1208,16 @@ const STAGE3_CSS = `
 .s3-code-amber  { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
 .s3-code-mint   { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
 
-.s3-prod-name { font-weight: 700; color: #1e293b; font-size: 12.5px; }
+/* Long product names used to expand the cell and blow the table out sideways
+   (a 100+ char name pushed the Target Price / Actions columns off-screen).
+   Clamp to 2 lines with an ellipsis and break mid-word for the pathological
+   no-space case; the full name stays available on the title tooltip. */
+.s3-prod-name {
+  font-weight: 700; color: #1e293b; font-size: 12.5px;
+  max-width: 340px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
 /* Segment badge under the product name — same chip in every tab, only the
    colour matches the tab theme (violet / amber / mint). */
 .s3-cat-badge {

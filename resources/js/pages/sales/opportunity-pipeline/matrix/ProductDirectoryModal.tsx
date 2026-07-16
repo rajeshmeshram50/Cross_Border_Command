@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { formatProductCode } from '../../../../utils/formatProductCode';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
+import Tooltip from '../../../../components/ui/Tooltip';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -124,10 +126,31 @@ type Props = {
    * user can't pick a product that would be rejected with a 422. Empty/absent
    * (customer has no segment) → nothing is disabled. */
   customerSegments?: string[];
+  /* The mapped customer's country (customer.primary_address.country). Drives the
+   * Domestic/Export currency gate — see `allowedCurrencies`. Absent/empty when
+   * no customer is mapped yet, which leaves the currency unrestricted. */
+  customerCountry?: string | null;
 };
 
-export default function ProductDirectoryModal({ open, leadId, onClose, onAddProduct, onChanged, leadStage, customerSegments }: Props) {
+/** True for an Indian customer — accepts the country name or its ISO code. */
+const isIndia = (c?: string | null): boolean => {
+  const v = (c ?? '').trim().toLowerCase();
+  return v === 'india' || v === 'in' || v === 'ind';
+};
+
+/* Appended to the currency-switch confirmation once the opportunity has moved
+ * past sourcing — from Stage 4 on, prices have been shared with the customer.
+ * Those rows (lead_product_shared_prices) carry no currency of their own; they
+ * read it from their lead_product, so a switch silently re-labels figures the
+ * customer has already been sent. Worth saying out loud before they commit. */
+const SHARED_PRICE_WARNING_STAGE = 4;
+
+export default function ProductDirectoryModal({ open, leadId, onClose, onAddProduct, onChanged, leadStage, customerSegments, customerCountry }: Props) {
   const toast = useToast();
+  const confirm = useConfirm();
+  const sharedPriceWarning = (leadStage ?? 1) >= SHARED_PRICE_WARNING_STAGE
+    ? <><br />Already-shared prices will be re-labelled too.</>
+    : null;
 
   /* Lowercased set of the customer's segment names — the yardstick for
    * greying out off-segment products. Empty when the customer has no segment,
@@ -258,15 +281,45 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
     return null;
   }, [rows]);
 
-  /* A fresh blank draft, but pre-pinned to the lead's locked currency when
-   * one exists. Using this (instead of the raw EMPTY_DRAFT) wherever we open
-   * the "Map Product" form guarantees draft.currency already matches the
-   * locked value — otherwise the form would submit the EMPTY_DRAFT default
-   * ('USD'), which the backend rejects with the "already using INR…" lock
-   * error even though the user never changed the (disabled) picker. */
+  /* ── Domestic / Export currency gate ────────────────────────────────
+   * The mapped customer's country decides which currencies this opportunity
+   * may use:
+   *   India  → INR only          (domestic sale)
+   *   abroad → everything BUT INR (export sale)
+   *   none   → unrestricted — no customer mapped yet, so the currency chosen
+   *            here constrains which customers can be mapped later instead.
+   * The single-currency-per-lead lock still takes precedence once products
+   * exist (that pins the picker to one option). */
+  const domestic = isIndia(customerCountry);
+  const hasCustomerCountry = !!(customerCountry ?? '').trim();
+  /* Once a customer is mapped, its country DECIDES the currency — so it is
+   * fixed and can never be edited here: the first product's currency applies
+   * to every product on the lead. Switching (which cascades to all products)
+   * is only offered while no customer is mapped yet, since then nothing
+   * constrains the choice. */
+  const currencyEditable = !hasCustomerCountry;
+  const allowedCurrencies = useMemo<CurrencyOpt[]>(() => {
+    if (!hasCustomerCountry) return currencies;
+    return currencies.filter(c =>
+      domestic ? c.code.toUpperCase() === 'INR' : c.code.toUpperCase() !== 'INR');
+  }, [currencies, hasCustomerCountry, domestic]);
+
+  /* A fresh blank draft, pre-pinned to whatever currency is actually valid:
+   * the lead's locked currency if products exist, else INR for a domestic
+   * customer, else the first allowed option. Using this (instead of the raw
+   * EMPTY_DRAFT) wherever we open the "Map Product" form guarantees
+   * draft.currency already matches — otherwise the form would submit the
+   * EMPTY_DRAFT default ('USD'), which the backend rejects with the "already
+   * using INR…" lock error even though the user never touched the picker. */
+  const defaultCurrency = (): string => {
+    if (lockedCurrency) return lockedCurrency;
+    if (domestic) return 'INR';
+    if (hasCustomerCountry) return allowedCurrencies[0]?.code ?? EMPTY_DRAFT.currency;
+    return EMPTY_DRAFT.currency;
+  };
   const freshDraft = (): DraftRow => ({
     ...EMPTY_DRAFT,
-    currency: lockedCurrency ?? EMPTY_DRAFT.currency,
+    currency: defaultCurrency(),
   });
 
   /* Pre-seed the draft's currency to the locked value so the user doesn't
@@ -276,9 +329,24 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
    * currency — so without re-seeding here the picker showed BLANK (the 'USD'
    * value had no matching option). */
   useEffect(() => {
-    if (!lockedCurrency) return;
-    setDraft(p => p.currency === lockedCurrency ? p : { ...p, currency: lockedCurrency });
-  }, [lockedCurrency, draftOpen]);
+    /* Editing a row on a customer-less lead: openEdit already loaded the row's
+     * own currency and the user may switch it (that cascades), so don't snap it
+     * back to the lock. With a customer mapped the currency is fixed, so the
+     * normal pinning below still applies. */
+    if (editingId && currencyEditable) return;
+    if (lockedCurrency) {
+      setDraft(p => p.currency === lockedCurrency ? p : { ...p, currency: lockedCurrency });
+      return;
+    }
+    /* No lock yet, but the customer's country may still have narrowed the
+     * options — snap the draft onto an allowed one so the picker never sits on
+     * a value that isn't in its own list (which renders BLANK). */
+    if (!hasCustomerCountry || allowedCurrencies.length === 0) return;
+    setDraft(p => allowedCurrencies.some(c => c.code.toUpperCase() === (p.currency ?? '').toUpperCase())
+      ? p
+      : { ...p, currency: defaultCurrency() });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedCurrency, draftOpen, hasCustomerCountry, allowedCurrencies, editingId, currencyEditable]);
 
   if (!open) return null;
 
@@ -306,20 +374,62 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
     setSaving(true);
     try {
       if (editingId) {
-        await api.put(`/sales/leads/${leadId}/products/${editingId}`, {
-          currency:     draft.currency,
-          quantity:     draft.quantity     ? Number(draft.quantity)     : null,
-          target_price: draft.target_price ? Number(draft.target_price) : null,
-          notes:        draft.notes || null,
-        });
-        setRows(prev => prev.map(r => r.id === editingId ? {
-          ...r,
-          currency:     draft.currency,
-          quantity:     draft.quantity     ? Number(draft.quantity)     : null,
-          target_price: draft.target_price ? Number(draft.target_price) : null,
-          notes:        draft.notes || null,
-        } : r));
-        toast.success('Updated', 'Mapping updated');
+        /* Currency switch on edit re-prices the WHOLE opportunity (the
+         * single-currency-per-lead rule). Confirm first and be explicit about
+         * the consequence: there is no FX conversion — the numbers stay and
+         * only the label changes — and any already-shared price inherits its
+         * currency from its product row, so it re-denominates too. */
+        const newCur = (draft.currency ?? '').toUpperCase();
+        const others = rows.filter(r => r.id !== editingId && r.currency);
+        const clash  = others.filter(r => String(r.currency).toUpperCase() !== newCur);
+        let cascade = false;
+        if (clash.length > 0) {
+          const from = String(clash[0].currency).toUpperCase();
+          const ok = await confirm({
+            title: `Switch this opportunity to ${newCur}?`,
+            tone: 'warning',
+            confirmLabel: `Yes, re-price all in ${newCur}`,
+            cancelLabel: 'Cancel',
+            message: (
+              <>
+                Also switches <strong>{clash.length} other product{clash.length > 1 ? 's' : ''}</strong> from{' '}
+                <strong>{from}</strong> to <strong>{newCur}</strong>.
+                <br />
+                Amounts are not converted — only the currency label changes.
+                {sharedPriceWarning}
+              </>
+            ),
+          });
+          if (!ok) { setSaving(false); return; }
+          cascade = true;
+        }
+        const { data: upd } = await api.put<{ status: boolean; cascaded_count?: number }>(
+          `/sales/leads/${leadId}/products/${editingId}`,
+          {
+            currency:     draft.currency,
+            quantity:     draft.quantity     ? Number(draft.quantity)     : null,
+            target_price: draft.target_price ? Number(draft.target_price) : null,
+            notes:        draft.notes || null,
+            ...(cascade ? { cascade_currency: true } : {}),
+          });
+        setRows(prev => prev.map(r => {
+          if (r.id === editingId) {
+            return {
+              ...r,
+              currency:     draft.currency,
+              quantity:     draft.quantity     ? Number(draft.quantity)     : null,
+              target_price: draft.target_price ? Number(draft.target_price) : null,
+              notes:        draft.notes || null,
+            };
+          }
+          // Cascade re-denominated every other row server-side — mirror it here
+          // so the table doesn't keep showing the old currency until a reload.
+          return cascade ? { ...r, currency: draft.currency } : r;
+        }));
+        const n = upd?.cascaded_count ?? 0;
+        if (cascade && n > 0) toast.success('Opportunity re-priced', `${n + 1} products now in ${newCur}`);
+        else toast.success('Updated', 'Mapping updated');
+        onChanged?.();
       } else {
         const { data } = await api.post<{ status: boolean; data: { id: number; product: { product_code: string; name: string; status: string; segment?: { name: string | null } | null } } }>(
           `/sales/leads/${leadId}/products`,
@@ -442,7 +552,24 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
               </svg>
               <span>
-                This opportunity is in <strong>{lockedCurrency}</strong>. All new mappings will be added in the same currency — remove every product first if you want to switch.
+                {currencyEditable
+                  ? <>This opportunity is in <strong>{lockedCurrency}</strong>. All products share one currency — edit any product below to switch the whole opportunity.</>
+                  : <>This opportunity is in <strong>{lockedCurrency}</strong>, fixed by the customer’s country ({customerCountry}). Every product uses it and it cannot be changed.</>}
+              </span>
+            </div>
+          )}
+          {/* No lock yet, but a mapped customer already narrows the choice:
+              domestic (India) ⇒ INR only, export ⇒ anything but INR. */}
+          {!lockedCurrency && hasCustomerCountry && (
+            <div className="pdm-curr-lock-banner" role="status">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                <circle cx="12" cy="12" r="10" /><path d="M2 12h20" />
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+              <span>
+                {domestic
+                  ? <>This customer is in <strong>India</strong> — a domestic opportunity, so products can only be priced in <strong>INR</strong>.</>
+                  : <>This customer is outside India (<strong>{customerCountry}</strong>) — an export opportunity, so <strong>INR is not available</strong>; pick a foreign currency.</>}
               </span>
             </div>
           )}
@@ -496,7 +623,9 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                       </td>
                       <td>
                         <div className="pdm-name-cell">
-                          <span className="pdm-prod-name">{r.product_name ?? '—'}</span>
+                          <Tooltip label={r.product_name ?? ''} themed maxWidth={420}>
+                            <span className="pdm-prod-name">{r.product_name ?? '—'}</span>
+                          </Tooltip>
                           {r.product_category && (
                             <span className="pdm-cat-badge">{r.product_category.toUpperCase()}</span>
                           )}
@@ -719,15 +848,21 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                   invalid={!!errors.currency}
                   onChange={(v) => { setDraft(p => ({ ...p, currency: v })); setErrors(e => ({ ...e, currency: undefined })); }}
                   options={
-                    lockedCurrency
+                    /* Pinned to the lead's currency when one exists — EXCEPT
+                       while editing a row on a lead with no customer mapped,
+                       where switching is allowed and cascades to every product
+                       after an explicit confirm (see saveDraft). With a
+                       customer mapped the currency is fixed by their country
+                       and stays read-only. */
+                    lockedCurrency && !(editingId && currencyEditable)
                       ? [{ value: lockedCurrency, label: lockedCurrency }]
-                      : currencies.map(c => ({
+                      : allowedCurrencies.map(c => ({
                           value: c.code,
                           label: c.name ? `${c.code} – ${c.name}` : c.code,
                         }))
                   }
                   placeholder="Select currency"
-                  disabled={!!lockedCurrency}
+                  disabled={!!lockedCurrency && !(editingId && currencyEditable)}
                   loading={currenciesLoading && currencies.length === 0}
                 />
                 {errors.currency && <div className="pdm-form-err">{errors.currency}</div>}
@@ -918,7 +1053,14 @@ const SCOPED_CSS = `
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 10.5px; color: #7c3aed; font-weight: 700;
 }
-.pdm-prod-name { font-size: 13px; color: #0f172a; font-weight: 700; line-height: 1.3; }
+/* Clamp to 2 lines — an unclamped 100+ char name stacked to 4 lines and
+   stretched the row. Full name is on the (themed) tooltip. */
+.pdm-prod-name {
+  font-size: 13px; color: #0f172a; font-weight: 700; line-height: 1.3;
+  max-width: 340px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
 
 /* ── SR NO badge ── compact pale-lilac chip with a soft violet
    outline. Squared corners (radius 8px) instead of the previous

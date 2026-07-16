@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { Card, Col, Row, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import ExpenseClaimsTable from '../../../components/ExpenseClaimsTable';
 import AdvanceRequestsTable from '../../../components/AdvanceRequestsTable';
+import WorklistPager from '../../../components/ui/WorklistPager';
 import DraftListView from './DraftListView';
 import { useToast } from '../../../contexts/ToastContext';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
@@ -24,6 +26,22 @@ export default function ExpenseTab() {
     setClaimOpen, setClaimMode, setEditingDraftId, setResumeFromDraft,
     exportOpen, setExportOpen, runProfileExport, readSavedDrafts,
   } = useEmployeeProfile();
+
+  // Client-side pagination — same WorklistPager (Showing X–Y of Z + rows-per-page
+  // + ‹ ›) the Clients / Branches lists use. Only one module's table is mounted at
+  // a time, so a single page index serves both; it resets whenever the visible set
+  // changes (module, My/Team, status filter, search) so we never land past the end.
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [expenseModuleTab, expenseSubTab, advanceSubTab, expenseFilter, expenseSearch]);
+
+  const isAdvance   = expenseModuleTab === 'advance';
+  const pagedTotal  = isAdvance ? filteredAdvances.length : filteredExpenses.length;
+  const totalPages  = Math.max(1, Math.ceil(pagedTotal / pageSize));
+  const safePage    = Math.min(page, totalPages);
+  const pageStart   = (safePage - 1) * pageSize;
+  const visibleAdvances = filteredAdvances.slice(pageStart, pageStart + pageSize);
+  const visibleExpenses = filteredExpenses.slice(pageStart, pageStart + pageSize);
 
   return (
         <div className="ep-tab-fill">
@@ -372,7 +390,7 @@ export default function ExpenseTab() {
                 />
               ) : expenseModuleTab === 'advance' ? (
                 <AdvanceRequestsTable
-                  rows={filteredAdvances}
+                  rows={visibleAdvances}
                   loading={loadingAdvances}
                   accent={accent}
                   fallbackInitials={initials}
@@ -383,7 +401,7 @@ export default function ExpenseTab() {
                 />
               ) : (
                 <ExpenseClaimsTable
-                  rows={filteredExpenses}
+                  rows={visibleExpenses}
                   loading={loadingClaims}
                   accent={accent}
                   fallbackInitials={initials}
@@ -394,14 +412,22 @@ export default function ExpenseTab() {
                 />
               )}
 
-              <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3 pt-2 border-top">
-                <small className="text-muted">
-                  {expenseModuleTab === 'advance' ? (
-                    <>Showing <strong className="text-body">{filteredAdvances.length}</strong> advance{filteredAdvances.length === 1 ? '' : 's'}</>
-                  ) : (
-                    <>Showing <strong className="text-body">{filteredExpenses.length}</strong> claim{filteredExpenses.length === 1 ? '' : 's'}</>
-                  )}
-                </small>
+              {/* Pagination — the shared WorklistPager, same as the Clients /
+                  Branches lists. It carries the "Showing X–Y of Z" count that
+                  used to live in the footer below. Drafts are a short resumable
+                  list rendered by DraftListView, so they stay unpaged and keep
+                  the plain bordered footer. */}
+              {expenseFilter !== 'draft' && (
+                <WorklistPager
+                  total={pagedTotal}
+                  page={safePage}
+                  pageSize={pageSize}
+                  onPage={setPage}
+                  onPageSize={(n) => { setPageSize(n); setPage(1); }}
+                />
+              )}
+
+              <div className={`d-flex justify-content-end align-items-center flex-wrap gap-2 ${expenseFilter === 'draft' ? 'mt-3 pt-2 border-top' : 'mt-2'}`}>
                 <small className="text-muted d-inline-flex align-items-center gap-1">
                   <span className="ext-status-dot" />
                   Last updated: Apr 2026
