@@ -1198,10 +1198,27 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                     </div>
                   </div>
                   <div className="cpd-saverow">
-                    <button type="button" className="cpd-save-btn" disabled={savingDetails || poView} onClick={() => {
+                    {/* Save Details used to just wait 500ms and toast "saved"
+                        without calling the API, so edited rows/charges stayed
+                        client-side only and PO Payment (which reads the summary
+                        from the server) kept showing the OLD stored totals.
+                        Now it really persists, so PO Payment reflects the edit.
+                        Flow is otherwise unchanged: save → then reveal Missing
+                        Product Details. */}
+                    <button type="button" className="cpd-save-btn" disabled={savingDetails || poView} onClick={async () => {
                       if (savingDetails || poView) return;
                       setSavingDetails(true);
-                      setTimeout(() => { setSavingDetails(false); setShowMissing(true); toast.success('Product details saved'); }, 500);
+                      try {
+                        // Only an existing PO can be written to — a new one is
+                        // created on leaving stage 3.
+                        if (savedPoId) await persistPo();
+                        setShowMissing(true);
+                        toast.success('Product details saved');
+                      } catch (e: any) {
+                        toast.error('Save failed', e?.response?.data?.message ?? 'Could not save the product details.');
+                      } finally {
+                        setSavingDetails(false);
+                      }
                     }}>
                       {savingDetails
                         ? <><Spin s={15} /> Saving…</>
@@ -1290,6 +1307,12 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
         open={payOpen}
         poId={savedPoId}
         onClose={() => setPayOpen(false)}
+        /* TDS is computed from the PO's amounts and can only be cut once, so
+           the moment it's cut those amounts must stop moving. Without this the
+           form stayed editable until the next reload — you could cut TDS, then
+           edit a rate/qty/charge and leave the stored tds_amount computed from
+           figures that no longer exist. */
+        onTdsCut={() => { setTdsLocked(true); setPoView(true); }}
       />
     </div>
   );

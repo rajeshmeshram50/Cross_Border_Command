@@ -50,10 +50,19 @@ class PoPaymentController extends Controller
             ], 422);
         }
 
-        // TDS is computed on the BASE amount = Total PO − GST (taxable value,
-        // excluding GST). Derived from the same figures the popup shows.
-        $gst = (float) $order->total_cgst + (float) $order->total_sgst;
-        $base = (float) $order->grand_total - $gst;
+        /* TDS is computed on the BASE amount = Total PO − GST − Additional
+         * Charges: the taxable value of the GOODS only.
+         *
+         * `grand_total` = total_product_cost + additional_charges, and
+         * total_product_cost already carries the line GST. So subtracting only
+         * GST would leave shipping/packaging/other inside the base and levy TDS
+         * on them. Those charges are not part of the purchase value — they're
+         * added back after the deduction, alongside GST (see buildSummary).
+         * Must match buildSummary()'s base exactly or the popup's preview and
+         * the saved figure disagree. */
+        $gst  = (float) $order->total_cgst + (float) $order->total_sgst;
+        $addl = (float) $order->additional_charges;
+        $base = (float) $order->grand_total - $gst - $addl;
         $tdsPct = round((float) $data['tds_percentage'], 2);
         $order->tds_percentage = $tdsPct;
         $order->tds_amount = round($base * $tdsPct / 100, 2);
@@ -147,8 +156,13 @@ class PoPaymentController extends Controller
 
     /* ────────────────────────── internals ────────────────────────── */
 
-    /** Net payable = (Base + GST) − TDS, where Base = Total PO − GST.
-     *  So Base + GST = Total PO → net payable = Total PO − TDS. */
+    /** Net payable = (Base − TDS) + GST + Additional Charges.
+     *
+     *  Base = Total PO − GST − Additional, so Base + GST + Additional collapses
+     *  back to Total PO, leaving net payable = Total PO − TDS. Excluding the
+     *  additional charges from the base therefore changes only how much TDS is
+     *  deducted (a smaller base ⇒ less TDS) — the supplier is still paid the
+     *  full charges, they're simply not taxed at source. */
     private function netPayable(PurchaseOrder $po): float
     {
         return round((float) $po->grand_total - (float) $po->tds_amount, 2);
@@ -159,7 +173,15 @@ class PoPaymentController extends Controller
     {
         $totalPo   = (float) $po->grand_total;
         $gstAmount = round((float) $po->total_cgst + (float) $po->total_sgst, 2);
-        $base      = round($totalPo - $gstAmount, 2);   // Base = Total PO − GST
+        /* Base = Total PO − GST − Additional Charges: the taxable value of the
+         * GOODS only, which is what TDS is levied on. grand_total bundles
+         * shipping/packaging/other on top of the GST-inclusive product cost, so
+         * subtracting GST alone would leave those charges in the base and tax
+         * them. They are added back after the deduction (see netPayable).
+         * Keep in lockstep with saveTds(). */
+        $addl      = round((float) $po->additional_charges, 2);
+        $base      = round($totalPo - $gstAmount - $addl, 2);
+        // GST % is effective-on-goods, so measure it against the goods base.
         $gstPct    = $base > 0 ? round($gstAmount / $base * 100, 2) : 0.0;
         $tdsPct    = (float) $po->tds_percentage;
         $tdsAmount = (float) $po->tds_amount;
@@ -184,6 +206,9 @@ class PoPaymentController extends Controller
                 'base'       => round($base, 2),
                 'gstPct'     => $gstPct,
                 'gstAmount'  => $gstAmount,
+                /* Excluded from the TDS base and added back after it, so the
+                 * popup needs it to preview: net = base − TDS + GST + addl. */
+                'additionalCharges' => $addl,
                 'totalPo'    => round($totalPo, 2),
                 'tdsPct'     => $tdsPct,
                 'tdsAmount'  => round($tdsAmount, 2),
