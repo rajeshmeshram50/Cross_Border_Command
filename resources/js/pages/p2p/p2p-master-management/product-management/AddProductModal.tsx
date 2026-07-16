@@ -2380,6 +2380,7 @@ export default function AddProductModal(props: {
                       <div className="apm-grid-3">
                         <Field label="Supplier Name" required>
                           <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select Supplier Name"
+                            disabled={saving}
                             options={vendorOpts.map(v => {
                               // Show the supplier's segment(s) as violet pills beside the
                               // name so the right supplier is easy to pick. Only the first
@@ -2421,7 +2422,7 @@ export default function AddProductModal(props: {
                         <Field label="Purchase Price (₹)" required>
                           <div className="apm-input-icon">
                             <span className="apm-input-icon-prefix">₹</span>
-                            <input className="apm-input has-prefix" type="number" placeholder="Enter purchase price" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} />
+                            <input className="apm-input has-prefix" type="number" placeholder="Enter purchase price" value={vendorPurchasePrice} onChange={e => setVendorPurchasePrice(e.target.value)} disabled={saving} />
                           </div>
                         </Field>
 
