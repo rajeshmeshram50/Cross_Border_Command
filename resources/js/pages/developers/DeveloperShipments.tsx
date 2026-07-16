@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import api from '../../api';
 import WorklistPager from '../../components/ui/WorklistPager';
+import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../contexts/ToastContext';
 import './shipment-360.css';
 
@@ -172,9 +173,18 @@ function EmptyCell() {
   return <td><span className="rvtbl-dash">—</span></td>;
 }
 
+/* Truncated-text cell (2-line clamp, 100px cap) — the full value shows on the
+ * shared themed Tooltip (same pill as the Lead Acknowledgement master's list),
+ * replacing the old browser-native title bubble. */
 function TxtCell({ v }: { v: string | null }) {
   const val = v ?? '—';
-  return <td className="rvtbl-txt" title={val}><span className="rvtbl-clip">{val}</span></td>;
+  return (
+    <td className="rvtbl-txt">
+      <Tooltip label={val} themed maxWidth={360} disabled={!v}>
+        <span className="rvtbl-clip">{val}</span>
+      </Tooltip>
+    </td>
+  );
 }
 
 function YnCell({ yes, warn }: { yes: boolean; warn?: boolean }) {
@@ -477,7 +487,9 @@ export default function DeveloperShipments() {
                       <td className="s360-port">{r.port_of_unloading ?? '—'}</td>
                       <td className="rvtbl-actcell">
                         <div className="rvtbl-act">
-                          <button type="button" className="rvtbl-actbtn" title="More actions">{Ico.dots}</button>
+                          <Tooltip label="More actions" themed>
+                            <button type="button" className="rvtbl-actbtn" aria-label="More actions">{Ico.dots}</button>
+                          </Tooltip>
                         </div>
                       </td>
                     </tr>
@@ -567,7 +579,9 @@ export default function DeveloperShipments() {
                       <td className="s360-port">{r.place_of_delivery ?? '—'}</td>
                       <td className="rvtbl-actcell">
                         <div className="rvtbl-act">
-                          <button type="button" className="rvtbl-actbtn" title="More actions">{Ico.dots}</button>
+                          <Tooltip label="More actions" themed>
+                            <button type="button" className="rvtbl-actbtn" aria-label="More actions">{Ico.dots}</button>
+                          </Tooltip>
                         </div>
                       </td>
                     </tr>
