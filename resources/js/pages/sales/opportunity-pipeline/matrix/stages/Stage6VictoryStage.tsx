@@ -56,6 +56,11 @@ type DealDoc = {
   final_destination?: string | null;
   origin_country?:    string | null;
   shipping?:          number | string | null;   // PI shipping cost → seeds Freight Cost
+  /* Domestic PI fields — seed the shipment's Place of Dispatch / Delivery and
+   * (preferred over the customer relation) the header GST number. */
+  dispatch_from?:     string | null;
+  deliver_to?:        string | null;
+  customer_gst_no?:   string | null;
 };
 
 type Shipment = {
@@ -290,9 +295,14 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
      * SUPPLY the invoice was raised against (and what drives CGST/SGST vs
      * IGST), so it is the authority. Only fall back to deriving it from the
      * GSTIN's first 2 chars (27AADCI… → 27) on a legacy PI that has none. */
-    customerGstNumber: lead?.customer?.gst_number ?? null,
+    /* Prefer the PI's own captured GST number; fall back to the customer
+     * record. (The PI snapshots it at issue time, so it's the authority.) */
+    customerGstNumber: latestPi?.customer_gst_no ?? lead?.customer?.gst_number ?? null,
     customerStateCode: latestPi?.state_code
-      ?? ((lead?.customer?.gst_number ?? '').trim().slice(0, 2) || null),
+      ?? ((latestPi?.customer_gst_no ?? lead?.customer?.gst_number ?? '').trim().slice(0, 2) || null),
+    // PI dispatch_from / deliver_to → seed the shipment's dispatch/delivery.
+    placeOfDispatch:   latestPi?.dispatch_from ?? null,
+    placeOfDelivery:   latestPi?.deliver_to ?? null,
     consigneeCode:   lead?.consignee?.consignee_code ?? null,
     consigneeName:   lead?.consignee?.company_name ?? null,
     // Auto-fill the shipping/logistics fields shared with the Proforma
