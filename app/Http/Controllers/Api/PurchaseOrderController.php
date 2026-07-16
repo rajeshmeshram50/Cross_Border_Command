@@ -452,13 +452,32 @@ class PurchaseOrderController extends Controller
         }
     }
 
-    /** True when this PO has a completed Zoho-Sign signature request. */
+    /**
+     * True when this PO has a completed Zoho-Sign signature request.
+     *
+     * Two send paths produce a signed PO:
+     *  - Direct send (sendForSignature above): a `purchase_order`-typed request
+     *    whose trade_doc_id holds the PO id.
+     *  - Bundled send (ClmSignatureController@send): the PO PDF rides inside a
+     *    `trade_doc` request alongside CLM trade documents; the PO appears
+     *    nowhere in trade_doc_ids and is resolved via metadata.purchase_order_id
+     *    — the same key the Trade Documents modal uses to mark the PO row
+     *    "Signed". Missing this case made the modal say Signed while the Zoho
+     *    Books sync still demanded "Sign the PO first".
+     */
     private function isPoSigned(PurchaseOrder $po): bool
     {
         return \App\Models\ClmSignatureRequest::query()
-            ->where('document_type', \App\Models\ClmSignatureRequest::DOC_PURCHASE_ORDER)
-            ->where('trade_doc_id', $po->id)
+            ->where('client_id', $po->client_id)
             ->where('status', 'completed')
+            ->where(function ($q) use ($po) {
+                $q->where(function ($direct) use ($po) {
+                    $direct->where('document_type', \App\Models\ClmSignatureRequest::DOC_PURCHASE_ORDER)
+                        ->where('trade_doc_id', $po->id);
+                })
+                // JSON ->> yields text in Postgres, so bind the id as a string.
+                ->orWhere('metadata->purchase_order_id', (string) $po->id);
+            })
             ->exists();
     }
 

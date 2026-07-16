@@ -441,6 +441,13 @@ class ClmSignatureController extends Controller
             $sigReq->created_by          = Auth::id();
             $sigReq->save();
 
+            // Mirror the direct PO send (PurchaseOrderController@sendForSignature):
+            // a bundled PO is now out for signature too, so reflect it on the PO
+            // row — the list shows "Sent for Sign" and the wizard locks editing.
+            if ($poDoc) {
+                $poDoc->update(['status' => 'Sent for Sign', 'updated_by' => $user->id]);
+            }
+
             $message = $finalStatus === 'inprogress'
                 ? 'Documents sent for signature successfully.'
                 : 'Documents created in Zoho but submission did not flip to inprogress.';
