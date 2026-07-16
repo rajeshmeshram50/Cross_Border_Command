@@ -342,7 +342,12 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
               <div className="s4-card-head-titlewrap">
                 <div className="s4-card-title s4-history-titlerow">
                   <span className="s4-history-code">{formatProductCode(historyHeader?.product_code) || '—'}</span>
-                  <span>{historyHeader?.product_name ?? '—'}</span>
+                  {/* Single-line ellipsis — a 100+ char name otherwise wraps the
+                      header and pushes the Back button off the card (QA #98).
+                      Full name stays on the tooltip. */}
+                  <Tooltip label={historyHeader?.product_name ?? ''} themed maxWidth={420}>
+                    <span className="s4-history-name">{historyHeader?.product_name ?? '—'}</span>
+                  </Tooltip>
                 </div>
               </div>
               {/* Right: back button. */}
@@ -980,7 +985,12 @@ const STAGE4_CSS = `
 }
 
 /* History header: product code + name on one row (no "Price History" title). */
-.s4-history-titlerow { display: flex; align-items: center; gap: 8px; }
+.s4-history-titlerow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* Truncate the header product name to one line with an ellipsis (QA #98). */
+.s4-history-name {
+  max-width: 360px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 /* Eye (view history) button with a corner count badge = # of times submitted. */
 .s4-eye-btn { position: relative; overflow: visible; }
 .s4-eye-count {

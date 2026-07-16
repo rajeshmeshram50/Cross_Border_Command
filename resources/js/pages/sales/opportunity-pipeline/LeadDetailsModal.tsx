@@ -52,15 +52,18 @@ type ServerLead = {
   ackReason?:          { id: number; reason: string } | null;
 };
 
+/* Stage IDs are the contiguous 1-6 pipeline (validated `between:1,6` in
+ * SalesLeadController; Stage 4 advances to 5, Stage 5 to 6). The earlier
+ * 8-stage map (Pre-PI CLM 5 / Post-PI CLM 7 / Victory 8) mislabelled
+ * stage-5 leads as "Pre-PI CLM" and Victory leads as "Quotation vs PI"
+ * (QA #96) — same fix as the dashboard's $stageMap. */
 const STAGE_LABEL: Record<number, string> = {
-  1: 'Inquiry Required',
+  1: 'Inquiry Received',
   2: 'Lead Acknowledgement',
   3: 'Product Sourcing',
   4: 'Price Shared',
-  5: 'Pre-PI CLM',
-  6: 'Quotation vs PI',
-  7: 'Post-PI CLM',
-  8: 'Victory',
+  5: 'Quotation vs PI',
+  6: 'Victory',
 };
 
 type Props = {

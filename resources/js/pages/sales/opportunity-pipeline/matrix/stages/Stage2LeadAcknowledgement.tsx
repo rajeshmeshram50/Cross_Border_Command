@@ -303,12 +303,16 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
           <div className="smd-st2-activity-head">
             <div className="smd-st2-activity-head-left">
               <div className="smd-st2-activity-icon">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4">
                   <path d="M3 3h18v4H3zM3 11h18v4H3zM3 19h18v2H3z"/>
                 </svg>
               </div>
-              <div className="smd-st2-activity-title">Activity Report</div>
-              <span className="smd-st2-activity-count">{acks.length}</span>
+              <div>
+                <div className="smd-st2-activity-title">
+                  Activity Report <span className="smd-st2-activity-count">{acks.length}</span>
+                </div>
+                <div className="smd-st2-activity-sub">Latest entry decides whether this lead can advance to Stage 3</div>
+              </div>
             </div>
           </div>
 
@@ -488,16 +492,14 @@ function BucketIcon({ bucket }: { bucket: Bucket }) {
 }
 
 const STAGE2_CSS = `
-/* ── Status selector card ── */
+/* ── Status selector card — same frame as Stage 3's .s3-card. ── */
 .smd-st2-status-block {
   background: #fff;
-  border: 1.5px solid #ede9fe;
-  border-radius: 12px;
-  padding: 11px 13px;
-  margin-bottom: 9px;
-  box-shadow:
-    0 2px 10px rgba(124,58,237,.07),
-    inset 0 1px 0 rgba(255,255,255,.90);
+  border: 1.5px solid #ddd6fe;
+  border-top: 3px solid #7c3aed;
+  border-radius: 14px;
+  padding: 13px 18px;
+  margin-bottom: 12px;
 }
 .smd-st2-status-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -590,48 +592,60 @@ const STAGE2_CSS = `
    the shared green pulsing ::before dot to avoid a doubled dot. */
 .smd-stg-head-badge::before { display: none; }
 
-/* ── Activity Report card ── */
+/* ── Activity Report card — mirrors Stage 3's "All Mapped Products" card
+      (.s3-card / .s3-card-head / .s3-table) so both stages read the same. ── */
 .smd-st2-activity {
   background: #fff;
-  /* Visible violet frame + thick violet top bar — same card treatment as the
-     "All Mapped Products" table so it reads as a clearly-bordered card (CBC-236). */
   border: 1.5px solid #ddd6fe;
   border-top: 3px solid #7c3aed;
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
-  box-shadow:
-    0 2px 10px rgba(124,58,237,.07),
-    inset 0 1px 0 rgba(255,255,255,.90);
 }
 .smd-st2-activity-head {
+  position: relative;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 9px 13px;
-  background: linear-gradient(135deg, #f8f5ff, #f0ebff);
+  padding: 13px 18px;
+  background: linear-gradient(180deg, #faf5ff, #f5f3ff);
   border-bottom: 1.5px solid #ede9fe;
+  gap: 12px; flex-wrap: wrap;
 }
-.smd-st2-activity-head-left { display: flex; align-items: center; gap: 7px; }
+/* Left vertical accent strip — same as Stage 3's card header. */
+.smd-st2-activity-head::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px; background: linear-gradient(180deg, #7c3aed, #6d28d9);
+}
+.smd-st2-activity-head-left { display: flex; align-items: center; gap: 10px; }
 .smd-st2-activity-icon {
-  width: 22px; height: 22px; border-radius: 6px;
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
+  width: 30px; height: 30px; border-radius: 9px;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 6px rgba(124,58,237,.30);
+  flex-shrink: 0;
 }
-.smd-st2-activity-icon svg { width: 11px; height: 11px; }
-.smd-st2-activity-title { font-size: 12.5px; font-weight: 800; color: #3b0764; }
+.smd-st2-activity-title {
+  font-size: 13.5px; font-weight: 800; color: #3b0764;
+  display: flex; align-items: center; gap: 8px;
+}
+.smd-st2-activity-sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
 .smd-st2-activity-count {
-  min-width: 20px; height: 20px;
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
-  color: #fff;
-  font-size: 10px; font-weight: 800;
-  padding: 0 7px; border-radius: 10px;
   display: inline-flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 5px rgba(124,58,237,.28);
+  min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
 }
 
-/* Visible outer frame so the grid reads as a table, not floating text (QA #70). */
-.smd-st2-table-wrap { max-height: 220px; overflow-y: auto; border: 1.5px solid #a78bfa; border-radius: 8px; }
-.smd-st2-table-wrap::-webkit-scrollbar { width: 4px; }
-.smd-st2-table-wrap::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 999px; }
+/* Table wrap — same as .s3-table-wrap (plain top border, neutral scrollbar);
+   keeps the vertical cap + sticky header for long histories. */
+.smd-st2-table-wrap {
+  max-height: 220px; overflow-y: auto; overflow-x: auto;
+  background: #fff;
+  border-top: 1px solid #ede9fe;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.smd-st2-table-wrap::-webkit-scrollbar { width: 9px; height: 9px; }
+.smd-st2-table-wrap::-webkit-scrollbar-track { background: transparent; }
+.smd-st2-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.smd-st2-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 .smd-st2-table {
   width: 100%; border-collapse: collapse;
   table-layout: fixed;
@@ -639,62 +653,52 @@ const STAGE2_CSS = `
 .smd-st2-table colgroup col:nth-child(1) { width: 62px; }
 .smd-st2-table colgroup col:nth-child(2) { width: 118px; }
 .smd-st2-table colgroup col:nth-child(3) { width: 150px; }
+/* Header cells — identical to .s3-table thead th. */
 .smd-st2-table thead th {
   position: sticky; top: 0; z-index: 1;
-  padding: 10px 12px;
-  font-size: 11px; font-weight: 800; color: #fff;
-  letter-spacing: .05em; text-transform: uppercase;
-  text-align: left; white-space: nowrap;   /* keep "SR NO" etc. on one line */
-  /* Solid violet header bar + white labels — same look as the "All Mapped
-     Products" table so the grid reads as a clearly-bordered table, not faint
-     floating text (QA #70 / CBC-236). */
+  padding: 11px 14px; text-align: left;
+  font-size: 10px; font-weight: 800; letter-spacing: .09em; color: #fff;
+  text-transform: uppercase; white-space: nowrap;
   background: linear-gradient(180deg, #7c3aed, #6d28d9);
   border-bottom: 1.5px solid #6d28d9;
-  border-right: 1px solid rgba(255, 255, 255, .18);
 }
-.smd-st2-table thead th:first-child { padding-left: 10px; padding-right: 6px; }
+/* Body cells — identical to .s3-table tbody td. */
 .smd-st2-table tbody td {
-  padding: 9px 12px;
-  font-size: 11.5px; font-weight: 500; color: #5b4d80;
-  border-bottom: 1px solid #c4b5fd;
-  border-right: 1px solid #ddd6fe;
+  padding: 8px 10px;
+  font-size: 11px; color: #1e293b;
+  border-bottom: 1px solid #f1f5f9; vertical-align: middle;
   white-space: nowrap;
 }
-.smd-st2-table thead th:last-child,
-.smd-st2-table tbody td:last-child { border-right: none; }
-.smd-st2-table tbody td:first-child { padding-left: 12px; }
+.smd-st2-table tbody td:first-child { padding-left: 14px; }
 .smd-st2-table tbody tr { background: #fff; transition: background .12s; }
-.smd-st2-table tbody tr:hover { background: #fdfaff; }
+.smd-st2-table tbody tr:hover { background: #faf5ff; }
 
+/* SR chip — identical to .s3-sr / .s3-sr-violet. */
 .smd-st2-row-num {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; border-radius: 8px;
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-  border: 1px solid #c4b5fd;
-  color: #5b21b6;
-  font-size: 11px; font-weight: 800;
+  width: 22px; height: 22px; border-radius: 7px;
+  background: #ede9fe; color: #6d28d9;
+  font-size: 10px; font-weight: 800;
 }
+/* Row status pill — identical shape to Stage 3's .s3-pill (solid tinted
+   fill, no border), with a ::before dot standing in for the literal ●. */
 .smd-st2-row-pill {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 12px; border-radius: 20px;
-  font-size: 11px; font-weight: 700;
-  border: 1px solid;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 800;
+  border: none;
   white-space: nowrap;
 }
 .smd-st2-row-pill::before {
   content: ''; width: 5px; height: 5px; border-radius: 50%;
   background: currentColor; flex-shrink: 0;
-  box-shadow: 0 0 4px currentColor;
 }
-.smd-st2-row-pill.smd-st2-pill-q { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
-.smd-st2-row-pill.smd-st2-pill-c { color: #b45309; background: #fffbeb; border-color: #fde68a; }
-.smd-st2-row-pill.smd-st2-pill-d { color: #dc2626; background: #fef2f2; border-color: #fecaca; }
-.smd-st2-row-pill.smd-st2-pill-q::before,
-.smd-st2-row-pill.smd-st2-pill-c::before,
-.smd-st2-row-pill.smd-st2-pill-d::before { background: currentColor; }
+.smd-st2-row-pill.smd-st2-pill-q { color: #047857; background: #d1fae5; }
+.smd-st2-row-pill.smd-st2-pill-c { color: #b45309; background: #fef3c7; }
+.smd-st2-row-pill.smd-st2-pill-d { color: #dc2626; background: #fee2e2; }
 
 .smd-st2-row-reason {
-  font-size: 11.5px; font-weight: 500; color: #2d1b69;
+  font-size: 11px; font-weight: 500; color: #1e293b;
   white-space: normal !important;
   /* Break even a long UNBROKEN string (e.g. "AAAA…") so the reason wraps
      inside its column instead of stretching the row and overlapping the
@@ -702,9 +706,10 @@ const STAGE2_CSS = `
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+/* Empty state — identical to .s3-empty. */
 .smd-st2-empty {
-  text-align: center; padding: 22px 12px;
-  color: #c4b5fd; font-style: italic; font-size: 10px;
+  text-align: center; padding: 26px 14px;
+  color: #94a3b8; font-style: italic;
 }
 
 /* ── Reason picker modal ── */
@@ -822,13 +827,16 @@ const STAGE2_CSS = `
 .st2-pick-foot.smd-st2-pill-d .st2-pick-btn-primary { background: linear-gradient(135deg, #f43f5e, #e11d48); box-shadow: 0 3px 10px rgba(244,63,94,.35); }
 
 /* ── Dark mode ─────────────────────────────────────────────── */
-[data-bs-theme="dark"] .smd-st2-status-block,
+[data-bs-theme="dark"] .smd-st2-status-block {
+  background: #14102a;
+  border-color: rgba(167,139,250,.30);
+  border-top-color: #7c3aed;
+}
+/* Activity card — same dark treatment as Stage 3's .s3-card. */
 [data-bs-theme="dark"] .smd-st2-activity {
-  background: #1a1538;
-  border-color: rgba(167,139,250,.25);
-  box-shadow:
-    0 2px 10px rgba(0,0,0,.30),
-    inset 0 1px 0 rgba(255,255,255,.05);
+  background: #14102a;
+  border-color: rgba(167,139,250,.30);
+  border-top-color: #7c3aed;
 }
 [data-bs-theme="dark"] .smd-st2-status-title  { color: #c4b5fd; }
 [data-bs-theme="dark"] .smd-st2-status-hint   { color: #a78bfa; opacity: .80; }
@@ -845,42 +853,42 @@ const STAGE2_CSS = `
 [data-bs-theme="dark"] .smd-st2-status-current.smd-st2-pill-c { background: linear-gradient(115deg, #b45309, #d97706, #f59e0b); border-color: transparent; color: #fff; }
 [data-bs-theme="dark"] .smd-st2-status-current.smd-st2-pill-d { background: linear-gradient(115deg, #be123c, #e11d48, #f43f5e); border-color: transparent; color: #fff; }
 
-/* Activity head — dark lavender wash so it stops being a bright bar. */
+/* Activity head — same dark wash as Stage 3's .s3-card-head. */
 [data-bs-theme="dark"] .smd-st2-activity-head {
-  background: linear-gradient(135deg, #20184a, #2a2150);
+  background: rgba(124,58,237,.10);
   border-bottom-color: rgba(167,139,250,.25);
 }
 [data-bs-theme="dark"] .smd-st2-activity-title { color: #ede9fe; }
-[data-bs-theme="dark"] .smd-st2-activity-icon  { box-shadow: 0 2px 6px rgba(124,58,237,.45); }
+[data-bs-theme="dark"] .smd-st2-activity-sub   { color: rgba(196,181,253,.55); }
 
-/* Table — sticky thead and rows on dark surfaces. Stronger separators mirror
-   the light-mode contrast bump (QA #70). */
-[data-bs-theme="dark"] .smd-st2-table-wrap { border-color: rgba(167,139,250,.50); }
+/* Table — identical dark treatment to Stage 3's .s3-table. */
+[data-bs-theme="dark"] .smd-st2-table-wrap {
+  background: #14102a;
+  border-top-color: rgba(167,139,250,.20);
+  scrollbar-color: rgba(148,163,184,.45) transparent;
+}
+[data-bs-theme="dark"] .smd-st2-table-wrap::-webkit-scrollbar-thumb { background: rgba(148,163,184,.45); }
+[data-bs-theme="dark"] .smd-st2-table-wrap::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,.65); }
 [data-bs-theme="dark"] .smd-st2-table thead th {
   background: linear-gradient(180deg, #7c3aed, #6d28d9);
   color: #fff;
   border-bottom-color: #6d28d9;
-  border-right-color: rgba(255, 255, 255, .16);
 }
-[data-bs-theme="dark"] .smd-st2-table tbody tr   { background: #1a1538; }
-[data-bs-theme="dark"] .smd-st2-table tbody tr:hover { background: #20184a; }
-[data-bs-theme="dark"] .smd-st2-table tbody td   { color: #d6cbf5; border-bottom-color: rgba(167,139,250,.42); border-right-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .smd-st2-table tbody tr   { background: #14102a; }
+[data-bs-theme="dark"] .smd-st2-table tbody tr:hover { background: rgba(124,58,237,.12); }
+[data-bs-theme="dark"] .smd-st2-table tbody td   { color: #ede9fe; border-bottom-color: rgba(167,139,250,.18); }
 [data-bs-theme="dark"] .smd-st2-row-reason       { color: #ede9fe; }
 [data-bs-theme="dark"] .smd-st2-row-num {
-  background: linear-gradient(135deg, #2a2150, #3b2f6e);
-  border-color: rgba(167,139,250,.35);
+  background: rgba(124,58,237,.22);
   color: #c4b5fd;
 }
 
-/* Row status pill — keep colored but tone down with semi-transparent fills. */
-[data-bs-theme="dark"] .smd-st2-row-pill.smd-st2-pill-q { background: rgba(34,197,94,.16);  border-color: rgba(74,222,128,.40);  color: #86efac; }
-[data-bs-theme="dark"] .smd-st2-row-pill.smd-st2-pill-c { background: rgba(245,158,11,.16); border-color: rgba(252,211,77,.40);  color: #fbbf24; }
-[data-bs-theme="dark"] .smd-st2-row-pill.smd-st2-pill-d { background: rgba(239,68,68,.16);  border-color: rgba(252,165,165,.40); color: #fca5a5; }
+/* Row status pill — same dark fills as Stage 3's .s3-pill variants. */
+[data-bs-theme="dark"] .smd-st2-row-pill.smd-st2-pill-q { background: rgba(16,185,129,.18); color: #6ee7b7; }
+[data-bs-theme="dark"] .smd-st2-row-pill.smd-st2-pill-c { background: rgba(245,158,11,.18); color: #fde68a; }
+[data-bs-theme="dark"] .smd-st2-row-pill.smd-st2-pill-d { background: rgba(239,68,68,.18);  color: #fca5a5; }
 
-[data-bs-theme="dark"] .smd-st2-empty { color: rgba(167,139,250,.40); }
-
-/* Custom violet scrollbar for the activity table. */
-[data-bs-theme="dark"] .smd-st2-table-wrap::-webkit-scrollbar-thumb { background: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .smd-st2-empty { color: rgba(196,181,253,.55); }
 
 /* ── Reason picker modal dark mode ── */
 [data-bs-theme="dark"] .st2-pick-modal {

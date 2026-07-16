@@ -3349,9 +3349,16 @@ function InitiateOnboardingModal({
   // ["Leave Policy"] list would leave the onboarding dropdown blank for
   // every employee assigned a real plan.
   const [leavePlanOpts, setLeavePlanOpts] = useState<{ value: string; label: string }[]>([]);
+  // While the master fetch below is in flight the async dropdowns shimmer
+  // instead of flashing the saved raw id (work country showed "101" until
+  // /master/countries landed, then swapped to the name). Starts true so the
+  // very first paint after opening — before the fetch effect commits —
+  // already shimmers.
+  const [mastersLoading, setMastersLoading] = useState(true);
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
+    setMastersLoading(true);
     Promise.allSettled([
       api.get('/master/countries').then(r => {
         if (cancelled) return;
@@ -3388,7 +3395,7 @@ function InitiateOnboardingModal({
             .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
         );
       }).catch(() => { if (!cancelled) setLeavePlanOpts([]); }),
-    ]);
+    ]).then(() => { if (!cancelled) setMastersLoading(false); });
     return () => { cancelled = true; };
   }, [isOpen]);
 
@@ -3419,15 +3426,19 @@ function InitiateOnboardingModal({
   const [laptopAssets, setLaptopAssets] = useState<AssetOpt[]>([]);
   const [mobileAssets, setMobileAssets] = useState<AssetOpt[]>([]);
   const [otherAssets, setOtherAssets]   = useState<AssetOpt[]>([]);
+  // Same shimmer treatment as mastersLoading — a saved asset FK must not
+  // flash as a raw id while the available-assets fetch is in flight.
+  const [assetsLoading, setAssetsLoading] = useState(true);
   useEffect(() => {
     if (!isOpen || !emp?.dbId) return;
     let cancelled = false;
+    setAssetsLoading(true);
     const url = (cat: string) => `/employees/available-assets?category=${cat}&exclude_employee_id=${emp.dbId}`;
     Promise.allSettled([
       api.get(url('laptop')).then(r => { if (!cancelled) setLaptopAssets((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
       api.get(url('mobile')).then(r => { if (!cancelled) setMobileAssets((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
       api.get(url('other')) .then(r => { if (!cancelled) setOtherAssets ((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
-    ]);
+    ]).then(() => { if (!cancelled) setAssetsLoading(false); });
     return () => { cancelled = true; };
   }, [isOpen, emp?.dbId]);
 
@@ -3596,6 +3607,14 @@ useEffect(() => {
   // ── Form validation state ──────────────────────────────────────────
 const [s1Errors, setS1Errors] = useState<Record<string, string>>({});
 const [nextLoading, setNextLoading] = useState(false);
+
+  // Freeze the whole stage form while an EXPLICIT save (Save Draft / Next
+  // Stage) is in flight — previously the fields stayed editable during the
+  // PUT, so users could keep typing mid-save and the form looked saved while
+  // holding unsaved edits. Silent background saves fired by stage navigation
+  // (goToStage) deliberately do NOT lock, preserving the BUG-030
+  // fire-and-forget navigation speed.
+  const [formLocked, setFormLocked] = useState(false);
 
   // ── Reporting-manager rule (org hierarchy: employee → dept HOD → Branch User).
   // A non-HOD hire reports to their department's HOD when one exists; until then
@@ -3844,6 +3863,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   // disappear on modal close.
   if (!skipValidate && !validateStage1()) return false;
   setS1Saving(true);
+  if (!silent) setFormLocked(true);
   // ... rest of the function
     const intOrNull = (v: string) => {
       const n = parseInt(v, 10);
@@ -3938,6 +3958,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       return false;
     } finally {
       setS1Saving(false);
+      if (!silent) setFormLocked(false);
     }
   };
 
@@ -4056,7 +4077,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 //   setS1Errors(errors);
 //   return Object.keys(errors).length === 0;
 // };
-  const saveStage4 = async (markComplete: boolean): Promise<boolean> => {
+  const saveStage4 = async (markComplete: boolean, silent = false): Promise<boolean> => {
     if (!emp?.dbId || s4Saving) return false;
 
     /* Hard validation — when salary mode is "bank" the full bank
@@ -4101,6 +4122,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     }
 
     setS4Saving(true);
+    if (!silent) setFormLocked(true);
     // Client-side PAN uniqueness check (best-effort). If backend supports filtering
     // by PAN this avoids a slow round-trip on Save. If not supported we fall back
     // to server-side validation.
@@ -4113,6 +4135,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         if (dup) {
           toast.error('PAN already in use', 'Another employee already has this PAN.');
           setS4Saving(false);
+          if (!silent) setFormLocked(false);
           return false;
         }
       } catch (err) {
@@ -4165,6 +4188,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       return false;
     } finally {
       setS4Saving(false);
+      if (!silent) setFormLocked(false);
     }
   };
 
@@ -4268,7 +4292,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     } else if (from === 3) {
       void saveStage1(false, true, true);
     } else if (from === 4) {
-      void saveStage4(false);
+      void saveStage4(false, true);
     }
   };
 
@@ -4541,7 +4565,18 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         </div>
 
         {/* Two-column body */}
-        <div className="onb-init-body">
+        <div className="onb-init-body" aria-busy={formLocked} style={{ position: 'relative' }}>
+          {/* While an explicit save is in flight, a transparent overlay blocks
+              every mouse interaction (sidebar navigation included) and shows a
+              wait cursor; the disabled <fieldset> below kills keyboard edits.
+              Without this, users could keep editing mid-save and the form
+              looked saved while still holding unsaved changes. */}
+          {formLocked && (
+            <div
+              title="Saving…"
+              style={{ position: 'absolute', inset: 0, zIndex: 30, cursor: 'wait', background: 'rgba(255,255,255,0.35)' }}
+            />
+          )}
           {/* Sidebar */}
           <div className="onb-init-side">
             <div className="onb-init-side-head">
@@ -4574,6 +4609,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
           {/* Main */}
           <div className="onb-init-main">
+            {/* Zero-styled fieldset: disabling it disables every native input /
+                select / textarea / button inside — including the field that had
+                focus when Save was clicked — for the duration of the save. */}
+            <fieldset disabled={formLocked} style={{ border: 0, margin: 0, padding: 0, minInlineSize: 0 }}>
             {/* Stage banner */}
             <div className="onb-init-stage-banner">
               <span className="onb-init-banner-icon">
@@ -4617,6 +4656,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 laptopAssets={laptopAssets}
                 mobileAssets={mobileAssets}
                 otherAssets={otherAssets}
+                assetsLoading={assetsLoading}
               />
             )}
             {activeStage === 4 && (
@@ -4651,6 +4691,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     <label className="onb-init-label">Work Country <span className="req">*</span></label>
                     <MasterSelect
                       options={countryOpts}
+                      loading={mastersLoading}
                       placeholder="Select country"
                       value={s1.work_country_id}
                       invalid={!!s1Errors.work_country_id}
@@ -4727,7 +4768,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Nationality</label>
-                    <MasterSelect options={countryOpts} placeholder="Select nationality" value={s1.nationality_country_id} onChange={(v) => setS1(p => ({ ...p, nationality_country_id: v }))} />
+                    <MasterSelect options={countryOpts} loading={mastersLoading} placeholder="Select nationality" value={s1.nationality_country_id} onChange={(v) => setS1(p => ({ ...p, nationality_country_id: v }))} />
                   </Col>
                 </Row>
 
@@ -4836,10 +4877,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     />
                     {s1Errors.date_of_joining && <div className="onb-error-msg">{s1Errors.date_of_joining}</div>}
                   </Col>
-                  <Col md={4} data-field="department_id"><label className="onb-init-label">Department<span className="req">*</span></label><MasterSelect options={departmentOpts} placeholder="Select department" value={s1.department_id} invalid={!!s1Errors.department_id} onChange={(v) => { setS1(p => { const mgr = managerOpts.find(m => m.value === p.reporting_manager); const keepMgr = !mgr || mgr.value.startsWith('branch_user:') || (mgr.deptId && mgr.deptId === String(v)); return { ...p, department_id: v, reporting_manager: keepMgr ? p.reporting_manager : '' }; }); setS1Errors(p => ({ ...p, department_id: '', reporting_manager: '' })); }} />{s1Errors.department_id && <div className="onb-error-msg">{s1Errors.department_id}</div>}</Col>
-                  <Col md={4} data-field="designation_id"><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} placeholder="Select designation" value={s1.designation_id} invalid={!!s1Errors.designation_id} onChange={(v) => { const nowHod = !!hodDesignationId && String(v) === hodDesignationId; setS1(p => { const rmIsBranchUser = String(p.reporting_manager || '').startsWith('branch_user:'); const clearMgr = nowHod && !!p.reporting_manager && !rmIsBranchUser; return { ...p, designation_id: v, reporting_manager: clearMgr ? '' : p.reporting_manager }; }); setS1Errors(p => ({ ...p, designation_id: '', reporting_manager: '' })); }} />{s1Errors.designation_id && <div className="onb-error-msg">{s1Errors.designation_id}</div>}</Col>
-                  <Col md={4} data-field="primary_role_id"><label className="onb-init-label">Primary Role<span className="req">*</span></label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.primary_role_id} invalid={!!s1Errors.primary_role_id} onChange={(v) => { setS1(p => ({ ...p, primary_role_id: v })); setS1Errors(p => ({ ...p, primary_role_id: '' })); }} />{s1Errors.primary_role_id && <div className="onb-error-msg">{s1Errors.primary_role_id}</div>}</Col>
-                  <Col md={4}><label className="onb-init-label">Ancillary Role</label><MasterSelect options={roleOpts} placeholder="Select role" value={s1.ancillary_role_id} onChange={(v) => setS1(p => ({ ...p, ancillary_role_id: v }))} /></Col>
+                  <Col md={4} data-field="department_id"><label className="onb-init-label">Department<span className="req">*</span></label><MasterSelect options={departmentOpts} loading={mastersLoading} placeholder="Select department" value={s1.department_id} invalid={!!s1Errors.department_id} onChange={(v) => { setS1(p => { const mgr = managerOpts.find(m => m.value === p.reporting_manager); const keepMgr = !mgr || mgr.value.startsWith('branch_user:') || (mgr.deptId && mgr.deptId === String(v)); return { ...p, department_id: v, reporting_manager: keepMgr ? p.reporting_manager : '' }; }); setS1Errors(p => ({ ...p, department_id: '', reporting_manager: '' })); }} />{s1Errors.department_id && <div className="onb-error-msg">{s1Errors.department_id}</div>}</Col>
+                  <Col md={4} data-field="designation_id"><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} loading={mastersLoading} placeholder="Select designation" value={s1.designation_id} invalid={!!s1Errors.designation_id} onChange={(v) => { const nowHod = !!hodDesignationId && String(v) === hodDesignationId; setS1(p => { const rmIsBranchUser = String(p.reporting_manager || '').startsWith('branch_user:'); const clearMgr = nowHod && !!p.reporting_manager && !rmIsBranchUser; return { ...p, designation_id: v, reporting_manager: clearMgr ? '' : p.reporting_manager }; }); setS1Errors(p => ({ ...p, designation_id: '', reporting_manager: '' })); }} />{s1Errors.designation_id && <div className="onb-error-msg">{s1Errors.designation_id}</div>}</Col>
+                  <Col md={4} data-field="primary_role_id"><label className="onb-init-label">Primary Role<span className="req">*</span></label><MasterSelect options={roleOpts} loading={mastersLoading} placeholder="Select role" value={s1.primary_role_id} invalid={!!s1Errors.primary_role_id} onChange={(v) => { setS1(p => ({ ...p, primary_role_id: v })); setS1Errors(p => ({ ...p, primary_role_id: '' })); }} />{s1Errors.primary_role_id && <div className="onb-error-msg">{s1Errors.primary_role_id}</div>}</Col>
+                  <Col md={4}><label className="onb-init-label">Ancillary Role</label><MasterSelect options={roleOpts} loading={mastersLoading} placeholder="Select role" value={s1.ancillary_role_id} onChange={(v) => setS1(p => ({ ...p, ancillary_role_id: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Work Type <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="Full Time" /></Col>
                 </Row>
 
@@ -4849,6 +4890,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     <label className="onb-init-label">Legal Entity<span className="req">*</span></label>
                     <MasterSelect
                       options={legalEntityOpts}
+                      loading={mastersLoading}
                       placeholder="Select entity"
                       value={s1.legal_entity_id}
                       invalid={!!s1Errors.legal_entity_id}
@@ -4876,7 +4918,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       placeholder={s1.legal_entity_id ? '—' : 'Select a Legal Entity first'}
                     />
                   </Col>
-                  <Col md={4} data-field="reporting_manager"><label className="onb-init-label">Reporting Manager<span className="req">*</span></label><MasterSelect options={reportingMgrOpts} placeholder="Select manager" value={s1.reporting_manager} invalid={!!s1Errors.reporting_manager} onChange={(v) => { const mgr = managerOpts.find(m => m.value === v); setS1(p => ({ ...p, reporting_manager: v, department_id: (mgr && mgr.deptId) ? mgr.deptId : p.department_id })); setS1Errors(p => ({ ...p, reporting_manager: '', department_id: '' })); }} />{s1Errors.reporting_manager && <div className="onb-error-msg">{s1Errors.reporting_manager}</div>}</Col>
+                  <Col md={4} data-field="reporting_manager"><label className="onb-init-label">Reporting Manager<span className="req">*</span></label><MasterSelect options={reportingMgrOpts} loading={mastersLoading} placeholder="Select manager" value={s1.reporting_manager} invalid={!!s1Errors.reporting_manager} onChange={(v) => { const mgr = managerOpts.find(m => m.value === v); setS1(p => ({ ...p, reporting_manager: v, department_id: (mgr && mgr.deptId) ? mgr.deptId : p.department_id })); setS1Errors(p => ({ ...p, reporting_manager: '', department_id: '' })); }} />{s1Errors.reporting_manager && <div className="onb-error-msg">{s1Errors.reporting_manager}</div>}</Col>
                 </Row>
 
                 <p className="onb-init-subgroup">Employment Terms</p>
@@ -4902,7 +4944,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={ONB_HOLIDAY} value={s1.holiday_list} placeholder="Select holiday list" onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={ONB_SHIFT} value={s1.shift} placeholder="Select shift" onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
@@ -4947,10 +4989,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       <label className="onb-init-label">Laptop Device</label>
                       <MasterSelect
                         options={laptopAssets}
+                        loading={assetsLoading}
                         placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                         value={s1.laptop_master_asset_id}
                         onChange={(v) => setS1(p => ({ ...p, laptop_master_asset_id: v }))}
-                        disabled={laptopAssets.length === 0}
+                        disabled={!assetsLoading && laptopAssets.length === 0}
                       />
                     </Col>
                   )}
@@ -4973,10 +5016,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       <label className="onb-init-label">Mobile Device</label>
                       <MasterSelect
                         options={mobileAssets}
+                        loading={assetsLoading}
                         placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                         value={s1.mobile_master_asset_id}
                         onChange={(v) => setS1(p => ({ ...p, mobile_master_asset_id: v }))}
-                        disabled={mobileAssets.length === 0}
+                        disabled={!assetsLoading && mobileAssets.length === 0}
                       />
                     </Col>
                   )}
@@ -5279,6 +5323,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
             </div>
             </>
             )}
+            </fieldset>
           </div>
         </div>
 
@@ -6959,7 +7004,7 @@ Stage2Documents.displayName = 'Stage2Documents';
  *  are the only persisted FK columns). Saving Stage 3 reuses
  *  `saveStage1(false)` from the modal scope. */
 function Stage3Provisioning({
-  emp, s1, setS1, s1Errors, setS1Errors, laptopAssets, mobileAssets, otherAssets,
+  emp, s1, setS1, s1Errors, setS1Errors, laptopAssets, mobileAssets, otherAssets, assetsLoading,
 }: {
   emp: OnboardRow;
   s1: any;
@@ -6969,6 +7014,9 @@ function Stage3Provisioning({
   laptopAssets: { value: string; label: string }[];
   mobileAssets: { value: string; label: string }[];
   otherAssets:  { value: string; label: string }[];
+  /* True while the available-assets fetch is in flight — the pickers shimmer
+   * instead of flashing a saved FK as a raw id. */
+  assetsLoading?: boolean;
 }) {
   // Cosmetic progress meter — counts each provisioning area that has
   // at least one filled value. Keeps the banner moving as the admin
@@ -7093,10 +7141,11 @@ function Stage3Provisioning({
                 <label className="onb-init-label">Laptop Device {autoLabel}</label>
                 <MasterSelect
                   options={laptopAssets}
+                  loading={assetsLoading}
                   placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                   value={s1.laptop_master_asset_id}
                   onChange={(v) => setS1((p: any) => ({ ...p, laptop_master_asset_id: v }))}
-                  disabled={laptopAssets.length === 0}
+                  disabled={!assetsLoading && laptopAssets.length === 0}
                 />
               </Col>
             )}
@@ -7117,10 +7166,11 @@ function Stage3Provisioning({
                 <label className="onb-init-label">Mobile Device {autoLabel}</label>
                 <MasterSelect
                   options={mobileAssets}
+                  loading={assetsLoading}
                   placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                   value={s1.mobile_master_asset_id}
                   onChange={(v) => setS1((p: any) => ({ ...p, mobile_master_asset_id: v }))}
-                  disabled={mobileAssets.length === 0}
+                  disabled={!assetsLoading && mobileAssets.length === 0}
                 />
               </Col>
             )}

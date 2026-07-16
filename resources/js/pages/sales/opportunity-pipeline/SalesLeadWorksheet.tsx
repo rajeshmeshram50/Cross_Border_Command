@@ -2006,7 +2006,9 @@ const SCOPED_CSS = `
 /* Left-align so every OPP-#### starts at the same edge — with justify-content
    center, Key-Opportunity rows (which add a star) shifted the id left of the
    plain rows, so the column didn't line up vertically. */
-.lwp-root .lwp-opp-cell { display: flex; align-items: center; justify-content: flex-start; gap: 5px; width: 100%; }
+/* Centered to match the centered "Opportunity ID" header — rows with the
+   "View only" badge / key star otherwise read as misaligned (QA #99). */
+.lwp-root .lwp-opp-cell { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; }
 .lwp-root .lwp-opp-link { color: #0891b2; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .lwp-root .lwp-opp-link:hover { text-decoration: underline; color: #0e7490; }
 .lwp-root .lwp-key-star { color: #f59e0b; flex: 0 0 auto; margin-left: auto; }

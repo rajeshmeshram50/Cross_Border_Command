@@ -718,13 +718,6 @@ export default function AddProductModal(props: {
      confirmation; backdrop click and Esc respect `qcDeleting` so the
      user can't cancel mid-action. */
   const [qcDeleteTarget, setQcDeleteTarget] = useState<QcRecord | null>(null);
-  /* Two-stage delete for mapped vendors — clicking the row's
-     delete icon stages the entry; DeleteConfirmModal hits the
-     actual remove on confirm. Mirrors the QC delete flow. */
-  const [vendorDeleteTarget, setVendorDeleteTarget] = useState<VendorEntry | null>(null);
-  // Drives the confirm dialog's spinner while the unmap write is in flight
-  // (supplier-only mode saves immediately, so the click has real latency).
-  const [vendorDeleting, setVendorDeleting] = useState(false);
 
   /* Edit-mode for an existing QC row: opens the same QcAddPopup
      pre-filled with the row's data. On save we update the existing
@@ -1011,17 +1004,6 @@ export default function AddProductModal(props: {
     } finally {
       setGstBusy(false);
     }
-  };
-
-  const removeVendor = async (id: string): Promise<boolean> => {
-    const target = vendors.find(v => v.id === id);
-    return commitVendorList(
-      vendors.filter(v => v.id !== id),
-      'Supplier removed',
-      persistsImmediately
-        ? `${target?.vendorName ?? 'The supplier'} has been unmapped from this product.`
-        : `${target?.vendorName ?? 'The supplier'} removed — save the product to apply it.`,
-    );
   };
 
   // Lock the page scroll so the modal feels like a true overlay rather
@@ -2502,9 +2484,8 @@ export default function AddProductModal(props: {
                               <button type="button" className="apm-sup-edit" title="Edit supplier" aria-label="Edit supplier" disabled={saving} onClick={() => openVendorEdit(v)}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                               </button>
-                              <button type="button" className="apm-sup-del" title="Remove supplier" aria-label="Remove supplier" disabled={saving} onClick={() => setVendorDeleteTarget(v)}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                              </button>
+                              {/* Delete removed by design (QA): a mapped supplier can be
+                                  edited but not unmapped from this table. */}
                             </div>
                           </td>
                         </tr>
@@ -2613,28 +2594,6 @@ export default function AddProductModal(props: {
         onConfirm={() => {
           if (qcDeleteTarget) removeQc(qcDeleteTarget.id);
           setQcDeleteTarget(null);
-        }}
-      />
-
-      <DeleteConfirmModal
-        open={vendorDeleteTarget !== null}
-        itemName={vendorDeleteTarget?.vendorName}
-        title="Remove Mapped Supplier"
-        subMessage={persistsImmediately
-          ? 'This unmaps the supplier from the product and saves immediately.'
-          : 'This unmaps the supplier from the product on this form. The product must be saved (Save Product) for the change to persist on the server.'}
-        loading={vendorDeleting}
-        confirmLabel="Remove"
-        confirmingLabel="Removing..."
-        onClose={() => { if (!vendorDeleting) setVendorDeleteTarget(null); }}
-        onConfirm={async () => {
-          if (!vendorDeleteTarget || vendorDeleting) return;
-          setVendorDeleting(true);
-          const ok = await removeVendor(vendorDeleteTarget.id);
-          setVendorDeleting(false);
-          // Stay open on failure — the error toast explains why, and the user
-          // can retry without hunting for the row again.
-          if (ok) setVendorDeleteTarget(null);
         }}
       />
 

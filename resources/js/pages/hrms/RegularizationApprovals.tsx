@@ -33,7 +33,9 @@ const fmtDate = (iso: string) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
   if (!m) return iso || '';
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return isNaN(d.getTime()) ? iso : d.toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
+  // Locale pinned to en-IN (the app standard) with the full month name —
+  // "14 July 2026" — so the format no longer varies with the browser locale.
+  return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
 };
 
 /** RM / HR approval queue for attendance regularizations. Embedded in the HR

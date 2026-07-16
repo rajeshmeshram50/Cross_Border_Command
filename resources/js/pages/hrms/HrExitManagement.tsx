@@ -673,8 +673,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   // HR fixes the manager on the employee record.
   const [reportingManagerDisabled, setReportingManagerDisabled] = useState(false);
   const [comments, setComments]           = useState('');
-  const [businessImpact, setBusinessImpact] = useState('Low');
-  const [replacementNeeded, setReplacementNeeded] = useState('Yes — Immediate');
+  // Impact Assessment starts BLANK (MasterSelect shows its "Select…"
+  // placeholder) — pre-selecting "Low" / "Yes — Immediate" let exits sail
+  // through with an assessment nobody actually made. '' saves as null.
+  const [businessImpact, setBusinessImpact] = useState('');
+  const [replacementNeeded, setReplacementNeeded] = useState('');
   const [stage1Saving, setStage1Saving] = useState(false);
   type Stage1FieldKey = 'exitType' | 'reasonForExit' | 'noticeDate' | 'lwd';
   const [s1Errors, setS1Errors] = useState<Set<Stage1FieldKey>>(new Set());
@@ -983,8 +986,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         setReportingManagerName(data.reporting_manager?.display_name || '');
         setReportingManagerDisabled(!!data.reporting_manager?.disabled);
         setComments(String(data.comments ?? ''));
-        setBusinessImpact(String(data.business_impact ?? 'Low'));
-        setReplacementNeeded(String(data.replacement_required ?? 'Yes — Immediate'));
+        // No fallback default — an exit saved without an assessment reopens
+        // blank, mirroring the initial state above.
+        setBusinessImpact(String(data.business_impact ?? ''));
+        setReplacementNeeded(String(data.replacement_required ?? ''));
 
         if (Array.isArray(data.clearances) && data.clearances.length) {
           setClearances(data.clearances.map((c: any) => ({
