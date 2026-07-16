@@ -29,7 +29,11 @@
 // v4 bump — the bundle now returns ONLY segments that have at least one
 // document configured in their DCP rule; older cached bundles still list
 // every segment, so discard them.
-const KEY = 'customer:master-bundle:v4';
+// v5 bump — the bundle now carries `state_codes`, which backs the read-only
+// State Code field beside GST Number. A cached v4 payload has no such key, so
+// the field would silently stay blank (and never auto-fill) until the TTL
+// lapsed — exactly the failure the earlier bumps guard against.
+const KEY = 'customer:master-bundle:v5';
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 type Envelope<T> = { v: 1; ts: number; data: T };

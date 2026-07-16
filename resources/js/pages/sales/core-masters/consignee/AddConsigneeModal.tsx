@@ -230,6 +230,10 @@ export type ConsigneeRow = {
   country: string;
   country_iso?: string | null;
   countryDetail: string;
+  /* Whatsapp-enabled flag of the PRIMARY address contact. The list endpoint has
+   * always returned it (ConsigneeController::shape); it just wasn't declared
+   * here until the Whatsapp filter facet needed to read it. */
+  whatsapp?: 'Yes' | 'No' | null;
   /* True iff this consignee was created with "Same as Customer" on.
    * Lets the edit flow keep the toggle ticked + lets the front-end
    * differentiate "this row IS the mirror" from "another consignee

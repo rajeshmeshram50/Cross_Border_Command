@@ -8,6 +8,7 @@ use App\Models\ConsigneeAddress;
 use App\Models\ConsigneeDocument;
 use App\Models\ConsigneeOwner;
 use App\Models\Customer;
+use App\Support\Gst;
 use App\Support\MasterVisibility;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -178,6 +179,7 @@ class ConsigneeController extends Controller
             $this->assertCustomerInScope($user, (int) $cid);
         }
         $this->assertSingleMirrorPerCustomer((int) $data['customer_id'], !empty($data['same_as_customer']), null);
+        $this->assertCountryCompatible($data['primary_address']['country'] ?? null, $data['customer_ids']);
 
         $row = DB::transaction(function () use ($data, $user, $clientId, $branchId) {
             $primary = $data['primary_address'];
@@ -244,6 +246,9 @@ class ConsigneeController extends Controller
         foreach ($data['customer_ids'] as $cid) {
             $this->assertCustomerInScope($user, (int) $cid);
         }
+        // Reads the INCOMING country — an edit can change the consignee's country
+        // and its customer list in the same request.
+        $this->assertCountryCompatible($data['primary_address']['country'] ?? null, $data['customer_ids']);
         // Carry the previous value forward if the payload omits the
         // key so the guard reads the user's *current* intent.
         $intendsMirror = array_key_exists('same_as_customer', $data)
@@ -470,6 +475,12 @@ class ConsigneeController extends Controller
         $this->assertCustomerInScope($user, (int) $data['customer_id']);
 
         $customer = Customer::query()->forUser($user)->findOrFail($data['customer_id']);
+
+        // Existing consignee, so its country comes from the stored primary address.
+        $this->assertCountryCompatible(
+            optional($consignee->primaryAddress)->country,
+            [(int) $customer->id],
+        );
 
         // Already mapped → tell the caller clearly instead of silently no-op'ing.
         if ($consignee->customers()->whereKey($customer->id)->exists()) {
@@ -810,6 +821,51 @@ class ConsigneeController extends Controller
             ->whereKey($customerId)
             ->exists();
         if (!$exists) abort(404, 'Customer not found');
+    }
+
+    /**
+     * Business rule: an India customer may only be mapped to an India consignee,
+     * and an India consignee only to India customers. The rule is about crossing
+     * the India boundary — two DIFFERENT non-India countries are fine (a USA
+     * customer shipping to a UAE consignee is legitimate), so this compares
+     * domestic-ness, not the country strings.
+     *
+     * Both countries live on the party's PRIMARY address, not the parent row.
+     * Runs on all three pivot writes (store / update / mapCustomer) — the guard
+     * has to sit here rather than in the form, because the customer picker
+     * appears in two different screens and the endpoint is reachable directly.
+     *
+     * @param string|null $consigneeCountry Primary-address country of the consignee.
+     * @param int[]       $customerIds      Customers about to be mapped.
+     */
+    private function assertCountryCompatible(?string $consigneeCountry, array $customerIds): void
+    {
+        $ids = array_values(array_filter(array_map('intval', $customerIds)));
+        if (empty($ids)) return;
+
+        $consigneeDomestic = Gst::isDomestic($consigneeCountry);
+
+        $customers = Customer::query()
+            ->whereIn('id', $ids)
+            ->with('primaryAddress:id,customer_id,country')
+            ->get(['id', 'company_name']);
+
+        $bad = [];
+        foreach ($customers as $c) {
+            $cCountry = optional($c->primaryAddress)->country;
+            if (Gst::isDomestic($cCountry) !== $consigneeDomestic) {
+                $bad[] = $c->company_name . ' (' . (trim((string) $cCountry) ?: 'no country') . ')';
+            }
+        }
+
+        if (!empty($bad)) {
+            $side = $consigneeDomestic ? 'in India' : 'outside India';
+            abort(response()->json([
+                'message' => 'This consignee is in ' . ($consigneeDomestic ? 'India' : (trim((string) $consigneeCountry) ?: 'no country'))
+                    . ', so it can only be mapped to customers ' . $side . '. Not allowed: ' . implode(', ', $bad) . '.',
+                'errors'  => ['customer_ids' => ['Customer and consignee must both be in India, or both outside it.']],
+            ], 422));
+        }
     }
 
     /**

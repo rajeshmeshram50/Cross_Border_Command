@@ -360,6 +360,60 @@
   z-index: 1;
   margin-bottom: 0;
 }
+/* Region filter (Domestic / International). Fixed width so it doesn't compete
+   with the search field for the row's free space; flex-shrink:0 keeps it from
+   being squeezed to nothing before the toolbar wraps. The 42px height lines it
+   up with the search bar and the pill rail. */
+/* Filter button — replaced the old Region dropdown (.smc-filter-ms). Keeps the
+   42px height and 11px radius of the toolbar's other controls so it lines up
+   flush with the search field and the pill rail. */
+.smc-toolbar .smc-filter-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  flex-shrink: 0;
+  height: 42px; padding: 0 16px;
+  border-radius: 11px;
+  font-family: inherit;
+  font-size: 12.5px; font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  background: linear-gradient(135deg, #f5f1fe, #ede9fe);
+  border: 1.5px solid rgba(139,92,246,.28);
+  color: #6d28d9;
+  transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
+}
+.smc-toolbar .smc-filter-btn:hover {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  border-color: rgba(139,92,246,.42);
+  color: #5b21b6;
+}
+/* Active state mirrors .smc-pill.on — a filtered table must be obvious at a
+   glance, otherwise it reads as missing data. */
+.smc-toolbar .smc-filter-btn.on {
+  border: 0;
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 35%, #7c3aed 68%, #5b21b6 100%);
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(91,33,182,.3) inset;
+  text-shadow: 0 1px 2px rgba(76,29,149,.4);
+}
+.smc-toolbar .smc-filter-btn i { font-size: 14px; }
+.smc-filter-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.28);
+  border: 1px solid rgba(255,255,255,.45);
+  color: #fff;
+  font-size: 10.5px; font-weight: 800; line-height: 1;
+  text-shadow: none;
+}
+/* Inline "clear filters" action in the empty state — a link, not a button
+   chrome, so it doesn't compete with the toolbar. */
+.smc-empty-link {
+  background: none; border: 0; padding: 0;
+  font: inherit; font-weight: 700;
+  color: #7c3aed; cursor: pointer; text-decoration: underline;
+}
+.smc-empty-link:hover { color: #5b21b6; }
 .smc-toolbar .smc-search {
   /* Matches the Supplier .sl-search field. */
   position: relative;

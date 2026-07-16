@@ -11,6 +11,12 @@ import { ShimmerTable } from '../../../../components/ui/Shimmer';
 import api from '../../../../api';
 import TableContainer from '../../../../velzon/Components/Common/TableContainerReactTable';
 import { readCustomerMasterBundle, writeCustomerMasterBundle } from './customerBundleCache';
+import PartyFilterModal, {
+  applyPartyFilters,
+  countPartyFilterValues,
+  CUSTOMER_FACETS,
+  type PartyFilters,
+} from '../PartyFilterModal';
 
 // Heavy modals are code-split: their chunks (and TipTap/face-api/pdf deps)
 // download only when first opened, not on the customer list's first paint.
@@ -74,6 +80,16 @@ export default function SalesCustomers() {
   const canEdit   = isSuperAdmin || !!customerPerm?.can_edit;
 
   const [tab, setTab] = useState<'all' | 'fresh' | 'recurring'>('all');
+  /* Customer Type (Domestic/India vs International), Segment, Country and
+   * Whatsapp — a separate axis from the Fresh/Recurring tabs, so they're
+   * filters rather than more pills; the two combine.
+   *
+   * Applied client-side: /customers returns the whole list in one response and
+   * the table paginates it locally, so there's nothing to ask the server for.
+   * (Replaces the old standalone "Region" dropdown, which is now the modal's
+   * Customer Type facet — same rule, same client-side application.) */
+  const [filters, setFilters] = useState<PartyFilters>({});
+  const [filterOpen, setFilterOpen] = useState(false);
 
   const [tabSwitching, setTabSwitching] = useState(false);
   const [q, setQ] = useState('');
@@ -181,6 +197,20 @@ export default function SalesCustomers() {
   }, [tab, debouncedQ]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
+
+  /* Matches on `country` (the full name, e.g. "India") — the same field the
+   * Add/Edit form and the consignee mapping guard key off. Not country_iso:
+   * that's null whenever the stored country doesn't resolve to a master row,
+   * which would silently drop those rows from EVERY filter.
+   *
+   * The predicate lives in PartyFilterModal (applyPartyFilters) so the
+   * modal that collects the selections and the page that applies them can't
+   * drift on what a filter means. */
+  const visibleCustomers = useMemo(
+    () => applyPartyFilters(customers, filters),
+    [customers, filters],
+  );
+  const activeFilterCount = countPartyFilterValues(filters);
 
   useEffect(() => {
     if (readCustomerMasterBundle()) return;
@@ -454,6 +484,21 @@ export default function SalesCustomers() {
               <i className="ri-refresh-line" /> Recurring Customers
             </button>
           </div>
+          {/* Filter — independent of the tabs above (a customer is Fresh OR
+              Recurring, and separately Domestic OR International), so it sits
+              beside them rather than becoming a fourth pill. Opens the same
+              two-pane modal the Lead Worksheet uses. The badge shows how many
+              values are active, so a filtered table is never mistaken for an
+              empty one. */}
+          <button
+            type="button"
+            className={`smc-filter-btn ${activeFilterCount > 0 ? 'on' : ''}`}
+            onClick={() => setFilterOpen(true)}
+          >
+            <i className="ri-equalizer-line" />
+            Filter
+            {activeFilterCount > 0 && <span className="smc-filter-badge">{activeFilterCount}</span>}
+          </button>
           <div className="smc-search">
             <i className="ri-search-line smc-search-icon" />
             <input
@@ -471,7 +516,7 @@ export default function SalesCustomers() {
           ) : (
             <TableContainer
               columns={columns}
-              data={customers}
+              data={visibleCustomers}
               isGlobalFilter={false}
               customPageSize={pageSize}
               tableClass="table align-middle table-nowrap mb-0"
@@ -483,11 +528,38 @@ export default function SalesCustomers() {
               onPageSizeChange={(n) => { setManualSize(true); setPageSize(n); }}
             />
           )}
-          {!loading && !tabSwitching && customers.length === 0 && (
-            <div className="smc-empty py-4">No customers found</div>
+          {/* Says WHY the table is empty — a bare "No customers found" while a
+              filter is on reads as "there is no data" rather than "nothing
+              matches this filter", and the user can't see the selections from
+              here (they live inside the modal). Offers the way out too. */}
+          {!loading && !tabSwitching && visibleCustomers.length === 0 && (
+            <div className="smc-empty py-4">
+              {customers.length > 0 && activeFilterCount > 0 ? (
+                <>
+                  No customers match the {activeFilterCount} selected filter{activeFilterCount > 1 ? 's' : ''}
+                  {' — '}
+                  <button type="button" className="smc-empty-link" onClick={() => setFilters({})}>clear filters</button>
+                </>
+              ) : 'No customers found'}
+            </div>
           )}
         </div>
       </div>
+
+      {/* Options are derived from `customers` (the whole loaded tab), NOT
+          visibleCustomers — deriving from the already-filtered rows would make
+          each pick narrow the choices left, so a user could never widen a
+          filter without resetting it first. */}
+      <PartyFilterModal
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        onApply={setFilters}
+        initial={filters}
+        rows={customers}
+        facets={CUSTOMER_FACETS}
+        title="Filter Customers"
+        theme="purple"
+      />
 
       {addOpen && (
         <Suspense fallback={null}>

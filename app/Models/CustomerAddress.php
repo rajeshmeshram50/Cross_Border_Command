@@ -17,7 +17,8 @@ class CustomerAddress extends Model
 {
     protected $fillable = [
         'customer_id',
-        'type', 'address_line', 'country', 'state', 'city', 'pin',
+        // state_code = GST state code derived from `state` (domestic only).
+        'type', 'address_line', 'country', 'state', 'state_code', 'city', 'pin',
         'cp_name', 'cp_designation', 'cp_contact', 'cp_email', 'cp_whatsapp',
         'is_primary',
     ];

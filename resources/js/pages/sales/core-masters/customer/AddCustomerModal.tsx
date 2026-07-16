@@ -68,6 +68,10 @@ const DEFAULT_ADDRESS_TYPE = 'Registered Office';
  *    country at the UI layer. */
 interface MasterOpt { id: number; name: string; code?: string; }
 interface StateOpt extends MasterOpt { country_id: number; }
+/** master_state_codes row, flattened. Keyed by state NAME (not id) because this
+ *  form's State dropdown stores the display name — the supplier form matches on
+ *  id instead, since its dropdown is id-based. */
+interface StateCodeOpt { stateName: string; code: string; }
 interface MasterLists {
   customerTypes:     MasterOpt[];
   segments:          MasterOpt[];
@@ -76,6 +80,7 @@ interface MasterLists {
   addressTypes:      MasterOpt[];
   countries:         MasterOpt[];
   states:            StateOpt[];
+  stateCodes:        StateCodeOpt[];
   designations:      MasterOpt[];
   /** Document Type master — backs the "Document / License Name"
    *  dropdown on the Stage 2 Add Document / License sub-modal.
@@ -84,7 +89,7 @@ interface MasterLists {
 }
 const EMPTY_MASTERS: MasterLists = {
   customerTypes: [], segments: [], classifications: [], riskLevels: [],
-  addressTypes: [], countries: [], states: [], designations: [], documentTypes: [],
+  addressTypes: [], countries: [], states: [], stateCodes: [], designations: [], documentTypes: [],
 };
 
 // MasterSelect expects `{ value, label }`. Customer/segment/classification/
@@ -255,6 +260,37 @@ type GstDraft = {
  * char, 'Z', 1 checksum char. e.g. 27AADCI6120M1ZH. */
 const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
+/* Domestic vs international is decided by the PRIMARY ADDRESS country: India →
+ * domestic (GST applies), any other country → international (no GST at all).
+ * GST Number and the GST Scrutiny button are hidden outright, not disabled.
+ *
+ * An unset country is NOT domestic: until the user picks one there is no answer
+ * yet, so the GST field stays hidden rather than guessing. This is safe now that
+ * GST Number sits in the same card as Country, directly beneath it — nothing
+ * appears above the field that decides it. Country is a required field, so by
+ * save time this always resolves to a real yes/no. */
+const DOMESTIC_COUNTRY = 'India';
+function isDomesticCountry(country?: string): boolean {
+  return (country ?? '').trim() === DOMESTIC_COUNTRY;
+}
+
+/* Only 86 of the 249 countries in the master have states; the other 163
+ * (Afghanistan, Croatia, Haiti …) have none at all.
+ *
+ * State was unconditionally required, so for those 163 the field sat empty,
+ * red and unsatisfiable — there was no option to pick, which made the customer
+ * impossible to save. The backend has always treated primary_address.state as
+ * nullable, so the form was the only thing blocking; this realigns it.
+ *
+ * Required-ness therefore follows the DATA: demand a state only where the
+ * master actually offers one. */
+function countryHasStates(masters: MasterLists, country?: string): boolean {
+  const name = (country ?? '').trim();
+  if (!name) return false;
+  const c = masters.countries.find(x => x.name === name);
+  return !!c && masters.states.some(s => s.country_id === c.id);
+}
+
 /* Progressive GSTIN validator — instead of one generic "invalid" message,
  * it pinpoints the first segment that's wrong in plain language so the
  * user understands the structure (2 digits → 5 letters → 4 digits → …).
@@ -328,6 +364,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       address_types: IdNamed[];
       countries: IdNamed[];
       states: Array<{ id: number | string; name?: string | null; country_id?: number | string | null }>;
+      /* master_state_codes with its parent state eager-loaded. `state` is null
+       * for any row whose state_id no longer resolves — those are filtered out
+       * below rather than offered as a blank code. */
+      state_codes?: Array<{ id: number | string; state_id?: number | string | null; state_code?: string | null; state?: { id: number | string; name?: string | null; country_id?: number | string | null } | null }>;
       designations: IdNamed[];
       document_type: Array<{ id: number | string; title?: string | null }>;
     };
@@ -354,6 +394,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       const documentTypes: MasterOpt[] = (b.document_type || [])
         .map(r => ({ id: Number(r.id), name: String(r.title ?? '') }))
         .filter(r => r.name);
+      /* GST state codes, flattened to stateName → code. Rows whose `state` is
+       * null are dropped: their state_id points at a state that no longer
+       * exists, so there's nothing to match the dropdown's value against. */
+      const stateCodes: StateCodeOpt[] = (b.state_codes || [])
+        .map(r => ({ stateName: String(r.state?.name ?? ''), code: String(r.state_code ?? '') }))
+        .filter(r => r.stateName && r.code);
 
       setMasters({
         customerTypes:   pickName(b.customer_types),
@@ -363,6 +409,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         addressTypes:    pickName(b.address_types),
         countries,
         states:          pickStates(b.states),
+        stateCodes,
         designations:    pickName(b.designations),
         documentTypes,
       });
@@ -405,7 +452,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     coGstNumber:'',
     /* Primary address type is locked to "Registered Office" in the UI
        — other types live on the Address & Contact Details tab. */
-    addrType: DEFAULT_ADDRESS_TYPE, addr:'', country:'', state:'', city:'', pin:'',
+    // stateCode is read-only, derived from `state` via the state_codes master.
+    addrType: DEFAULT_ADDRESS_TYPE, addr:'', country:'', state:'', stateCode:'', city:'', pin:'',
     cpName:'', cpDesig:'', cpTel:'', cpEmail:'', cpWa:'yes' as 'yes'|'no'|'',
   });
   const setF = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(prev => ({ ...prev, [k]: v }));
@@ -903,13 +951,17 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       coSeg:    (customer?.segment ?? '').split(',').map(s => s.trim()).filter(Boolean),
       coClass:  '',
       coRisk:   '',
-      // Default to 'No' — GST only applies once the user explicitly says so.
+      /* Derived from the country now, not entered — kept in the shape only
+         because the form object is typed around it. buildPayload recomputes it. */
       coGstApplicable: (customer?.gstApplicable as 'Yes'|'No'|undefined) ?? 'No',
       coGstNumber: (customer?.gstNumber as string|undefined) ?? '',
       addrType: DEFAULT_ADDRESS_TYPE,
       addr:     '',
       country:  customer?.country ?? '',
       state:    '',
+      // Blank here: this seed comes from the thin list row, which has no state.
+      // The full record's state_code arrives with the detail fetch below.
+      stateCode: '',
       city:     '',
       pin:      '',
       cpName:   customer?.contact ?? '',
@@ -1027,6 +1079,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           addr:     pa.address_line ?? d.addr    ?? '',
           country:  pa.country      ?? d.country ?? '',
           state:    pa.state        ?? d.state   ?? '',
+          stateCode: pa.state_code  ?? d.stateCode ?? '',
           city:     pa.city         ?? d.city    ?? '',
           pin:      pa.pin          ?? d.pin     ?? '',
           cpName:   pa.cp_name        ?? d.contact ?? '',
@@ -1309,11 +1362,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         if (!f.coRisk) return 'Select a risk level';
         return null;
       case 'coGstApplicable':
-        if (!f.coGstApplicable) return 'Select whether GST is applicable';
+        // No longer a user field — derived from the country at payload time.
+        // Kept as a no-op case so any stale caller can't fall through to an error.
         return null;
       case 'coGstNumber':
-        // Only required + format-checked when GST is applicable.
-        if (f.coGstApplicable !== 'Yes') return null;
+        // International → not rendered, so it can't be required; a hidden field
+        // holding an error would block Save with nothing on screen to fix.
+        if (!isDomesticCountry(f.country)) return null;
+        // Domestic → GST always applies, so the number is always required.
         return gstNumberError((f.coGstNumber ?? '').trim()) ?? null;
       case 'coWeb':
         if (!f.coWeb || !f.coWeb.trim()) return null;
@@ -1337,7 +1393,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         if (!f.country) return 'Select a country';
         return null;
       case 'state':
-        if (!f.state) return 'Select a state';
+        // Required only where the master actually has states to offer —
+        // see countryHasStates().
+        if (countryHasStates(masters, f.country) && !f.state) return 'Select a state';
         return null;
       case 'city':
         if (!f.city.trim()) return 'City is required';
@@ -1378,7 +1436,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   };
 
   const STAGE1_FIELD_KEYS = [
-    'coName','coLegal','coType','coSeg','coClass','coRisk','coGstApplicable','coGstNumber','coWeb',
+    // 'coGstApplicable' dropped — it's derived from the country now, not entered.
+    'coName','coLegal','coType','coSeg','coClass','coRisk','coGstNumber','coWeb',
     'addrType','addr','country','state','city','pin',
     'cpName','cpDesig','cpTel','cpEmail','cpWa',
   ];
@@ -1478,9 +1537,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     segment:        (form.coSeg ?? []).join(', '),
     classification: form.coClass,
     risk_level:     form.coRisk,
-    gst_applicable: form.coGstApplicable || null,
-    // Send the GST number only when applicable; the backend also clears it otherwise.
-    gst_number:     form.coGstApplicable === 'Yes' ? ((form.coGstNumber ?? '').trim().toUpperCase() || null) : null,
+    /* DERIVED from the primary address country, never from a user toggle:
+       India → domestic → GST always applies; anything else → international →
+       no GST. The Yes/No control was removed once country became the decider,
+       so this is the single source of truth for the flag. Legacy customers
+       stored as India + 'No' are corrected to 'Yes' on their next save. */
+    gst_applicable: isDomesticCountry(form.country) ? 'Yes' : 'No',
+    // Send the GST number only when domestic; the backend also clears it otherwise.
+    gst_number:     isDomesticCountry(form.country) ? ((form.coGstNumber ?? '').trim().toUpperCase() || null) : null,
     website:        form.coWeb,
     status:         'Active' as const,
     primary_address: {
@@ -1488,6 +1552,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       address_line:   form.addr,
       country:        form.country,
       state:          form.state,
+      state_code:     form.stateCode || null,
       city:           form.city,
       pin:            cleanPin(form.pin),
       cp_name:        form.cpName,
@@ -1764,13 +1829,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           )}
           {/* GST Scrutiny button + close grouped on the right so they sit
               together (the header is justify-content: space-between, which
-              would otherwise push them apart). Greyed/disabled until GST
-              Applicable = Yes AND a GST Number has been entered — the
-              scrutiny form auto-fills from that number, so opening it before
-              one exists gives an empty popup. */}
+              would otherwise push them apart). Greyed/disabled until the
+              customer is DOMESTIC (India) AND a GST Number has been entered —
+              the scrutiny form auto-fills from that number, so opening it
+              before one exists gives an empty popup. */}
           <div className="acm-header-right">
             {(() => {
-              const gstOn = form.coGstApplicable === 'Yes';
+              // GST exists only for a domestic (India) customer — the country
+              // decides, not a toggle.
+              const gstOn = isDomesticCountry(form.country);
               const hasGstNo = !!(form.coGstNumber ?? '').trim();
               const canScrutinise = gstOn && hasGstNo;
               return (
@@ -1899,7 +1966,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                 return [...vs, ...locked.filter(s => !vs.includes(s))];
               }
               return vs;
-            }} gstLocked={gstRows.length > 0} onGstLocked={() => toast.warning('GST Applicable is locked', 'Once you add a GST Scrutiny entry, you cannot change the GST Applicable status.')} />
+            }} gstLocked={gstRows.length > 0} onCountryBlockedByGst={() => toast.warning('Country is locked to India', 'This customer has GST Scrutiny entries. Delete them first — an international customer has no GST.')} />
           )}
           {stage === 1 && !showShimmer && tab === 'address-contact' && (
             <Stage1AdditionalLocations
@@ -2580,11 +2647,25 @@ function Stage2Shimmer() {
 /* Stage 3 (Evidence Vault) shimmer removed along with the stage itself. */
 
 /* ───── Stage 1 — Identification + Primary Address & Contact ───── */
-function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onGstLocked, currentCustomerId }:
-  { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[]; gstLocked: boolean; onGstLocked: () => void;
+function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onCountryBlockedByGst, currentCustomerId }:
+  { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[];
+    /** True when GST Scrutiny entries exist. Only guards the Country field now —
+     *  the GST Applicable toggle it used to lock no longer exists. */
+    gstLocked: boolean;
+    /** Fired when the user tries to go international while GST Scrutiny entries
+     *  exist — the change is refused rather than hiding those records. */
+    onCountryBlockedByGst: () => void;
     /** DB id of the customer being edited — excluded from the GST duplicate
      *  check so editing a record doesn't collide with its own GST number. */
     currentCustomerId?: number | null }) {
+  /* India (or not-yet-chosen) → domestic → GST fields render. Any other country
+   * → international → they're hidden. Driven by the Primary Address & Contact
+   * Person card's Country, which lives in this same component. */
+  const domestic = isDomesticCountry(form.country);
+  /* Whether the chosen country has any states at all — drives State's
+     required-ness, placeholder and disabled state together, so they can't
+     drift apart. */
+  const hasStates = countryHasStates(masters, form.country);
   // States filter against the selected country: look up the country
   // name → its id from the countries master, then filter states by it.
   const selectedCountry = masters.countries.find(c => c.name === form.country);
@@ -2615,7 +2696,9 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
   const [gstStatus, setGstStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid' | 'taken'>('idle');
   const [gstTakenBy, setGstTakenBy] = useState<string | null>(null);
   const gstRaw = (form.coGstNumber ?? '').trim();
-  const gstApplicable = form.coGstApplicable === 'Yes';
+  // Domestic == GST applies. (Was form.coGstApplicable === 'Yes' before the
+  // toggle was removed; the country is the decider now.)
+  const gstApplicable = domestic;
   useEffect(() => {
     if (!gstApplicable || !gstRaw) { setGstStatus('idle'); setGstTakenBy(null); return; }
     setGstStatus('checking');
@@ -2643,6 +2726,34 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
     return () => { cancelled = true; window.clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gstRaw, gstApplicable]);
+
+  /* Contact Person Name and Whatsapp are lifted out of the JSX because they sit
+   * in DIFFERENT slots depending on whether GST Number is rendered:
+   *
+   *   India        City | PIN | GST          Contact | Desig | Contact No | Email      Whatsapp
+   *   non-India    City | PIN | Contact      Desig | Contact No | Email | Whatsapp     —
+   *
+   * Hiding GST would otherwise leave a hole in the City/PIN row and strand
+   * Whatsapp alone on a row of its own. Everything shifts up one slot instead,
+   * so both layouts are full.
+   *
+   * Held as variables (not duplicated in each branch) so there is exactly one
+   * definition per field — a second copy would drift the moment either is
+   * edited, and React would remount the input on the domestic↔international
+   * switch, losing focus mid-typing. */
+  const contactPersonField = (
+    <Field label="Contact Person Name" required error={errors.cpName} fieldKey="cpName">
+      <input className={errors.cpName ? 'acm-input-error' : ''} value={form.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" />
+    </Field>
+  );
+  const whatsappField = (
+    <Field label="Whatsapp Enabled" required error={errors.cpWa} fieldKey="cpWa">
+      <div className="acm-radio-row">
+        <label className="acm-radio"><input type="radio" name="cpWa" value="yes" checked={form.cpWa === 'yes'} onChange={() => set('cpWa', 'yes')} /> YES</label>
+        <label className="acm-radio"><input type="radio" name="cpWa" value="no" checked={form.cpWa === 'no'} onChange={() => set('cpWa', 'no')} /> NO</label>
+      </div>
+    </Field>
+  );
 
   return (
     <div>
@@ -2687,68 +2798,9 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 maxChips={2}
               />
             </Field>
-            {/* GST flag — 'Yes' enables the GST Scrutiny button in the modal
-                header. Independent of country (a non-India customer may still
-                deal domestically). Required, defaults to Yes. */}
-            <Field label="GST Applicable" required error={errors.coGstApplicable} fieldKey="coGstApplicable">
-              {/* Locked once any GST Scrutiny entry exists — flipping to No
-                  would orphan the captured GST records. The lock is surfaced
-                  via a toast on click (no inline note, which would push the
-                  row out of grid alignment). A transparent overlay sits over
-                  the disabled control so the click reliably fires the toast
-                  (a disabled select swallows its own events). */}
-              <div style={{ position: 'relative' }}>
-                <MasterSelect
-                  value={form.coGstApplicable}
-                  options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
-                  placeholder="Select"
-                  invalid={!!errors.coGstApplicable}
-                  disabled={gstLocked}
-                  onChange={v => set('coGstApplicable', v as 'Yes' | 'No')}
-                />
-                {gstLocked && (
-                  <div
-                    onClick={onGstLocked}
-                    title="Locked — delete the GST Scrutiny entries to change this"
-                    style={{ position: 'absolute', inset: 0, zIndex: 3, cursor: 'not-allowed' }}
-                  />
-                )}
-              </div>
-            </Field>
-            {/* GST Number — only shown when GST is applicable. Captured here and
-                auto-filled into the GST Scrutiny form. */}
-            {form.coGstApplicable === 'Yes' && (
-              <Field label="GST Number" required error={errors.coGstNumber} fieldKey="coGstNumber">
-                {/* Editable even after GST Scrutiny entries exist — changing it
-                    on save propagates the new number to those records. Only the
-                    GST Applicable Yes/No toggle stays locked (flipping to No
-                    would orphan the records). */}
-                <input
-                  className={`acm-input ${errors.coGstNumber || gstStatus === 'taken' ? 'acm-input-error' : ''} ${gstStatus === 'valid' ? 'acm-input-ok' : ''}`}
-                  placeholder="e.g. 27AADCI6120M1ZH"
-                  maxLength={15}
-                  value={form.coGstNumber ?? ''}
-                  /* setF (not set) — skip the per-keystroke validator; the
-                     debounced effect above owns this field's validation. */
-                  onChange={e => { setF('coGstNumber', e.target.value.toUpperCase().replace(/\s+/g, '')); clearErr('coGstNumber'); }}
-                />
-                {gstStatus === 'checking' && (
-                  <div className="acm-gst-hint acm-gst-checking">Checking GST Number…</div>
-                )}
-                {gstStatus === 'valid' && (
-                  <div className="acm-gst-hint acm-gst-ok">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                    GST Number is valid
-                  </div>
-                )}
-                {gstStatus === 'taken' && (
-                  <div className="acm-gst-hint acm-gst-taken">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                    {gstTakenBy ? `Already used by ${gstTakenBy}` : 'This GST Number is already taken'}
-                  </div>
-                )}
-              </Field>
-            )}
+            {/* GST Number lives in the PRIMARY ADDRESS card below, directly under
+                the Country that decides whether it exists at all — a field can't
+                sit above the one that governs it. */}
             <Field label="Classification & Flags" required error={errors.coClass} fieldKey="coClass">
               <MasterSelect value={form.coClass} options={optsWith(masters.classifications, form.coClass)} placeholder="Select classification" invalid={!!errors.coClass} allowDeselect onChange={v => set('coClass', v)} />
             </Field>
@@ -2784,11 +2836,37 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
             </Field>
             <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={errors.addr ? 'acm-input-error' : ''} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" maxLength={75} /></Field>
           </div>
-          <div className="acm-row acm-row-4">
+          {/* Address geography splits 3 + 3 rather than 4 + 1: it's Country →
+              State → State Code, then City / PIN / GST Number. A 4-col split
+              would strand GST Number alone on its own row (and leave City or PIN
+              alone once it's hidden for an international customer). */}
+          <div className="acm-row acm-row-3">
             <Field label="Country" required error={errors.country} fieldKey="country">
-              <MasterSelect value={form.country} options={optsWith(masters.countries, form.country)} placeholder="Select country" invalid={!!errors.country} onChange={v => { setF('country', v); setF('state', ''); validateField('country', { ...form, country: v, state: '' }); validateField('state', { ...form, country: v, state: '' }); }} />
+              {/* This field decides domestic vs international, so it also decides
+                  whether the GST Number below it renders at all.
+                  Going international while GST Scrutiny entries exist is REFUSED
+                  rather than silently hiding them — those records would be
+                  stranded behind a field the user can no longer see, with no way
+                  to reach them. (The old GST Applicable lock only disabled its
+                  control; this has to refuse outright because the field vanishes.)
+                  The gst_applicable flag itself needs no handling here — it is
+                  derived from this country in buildPayload. */}
+              <MasterSelect value={form.country} options={optsWith(masters.countries, form.country)} placeholder="Select country" invalid={!!errors.country} onChange={v => {
+                if (gstLocked && !isDomesticCountry(v)) { onCountryBlockedByGst(); return; }
+                const nextForm = { ...form, country: v, state: '', stateCode: '' };
+                // State resets on a country change, so its derived code must go too.
+                setF('country', v); setF('state', ''); setF('stateCode', '');
+                // Going international hides GST Number — drop any error it left
+                // behind, or Save would block on an invisible field.
+                if (!isDomesticCountry(v)) clearErr('coGstNumber');
+                validateField('country', nextForm); validateField('state', nextForm);
+              }} />
             </Field>
-            <Field label="State" required error={errors.state} fieldKey="state">
+            {/* `required` tracks the data, not the field: a country the master
+                has no states for (163 of 249) shows no red star and can't be
+                marked invalid — a required-looking field with an empty dropdown
+                is a dead end the user cannot clear. */}
+            <Field label="State" required={hasStates} error={errors.state} fieldKey="state">
               <MasterSelect
                 value={form.state}
                 options={(() => {
@@ -2796,17 +2874,82 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                   if (form.state && !base.some(o => o.value === form.state)) return [{ value: form.state, label: form.state }, ...base];
                   return base;
                 })()}
-                placeholder={form.country ? 'Select state' : 'Select country first'}
-                disabled={!form.country}
+                placeholder={!form.country ? 'Select country first' : hasStates ? 'Select state' : 'No states for this country'}
+                disabled={!form.country || !hasStates}
                 invalid={!!errors.state}
-                onChange={v => set('state', v)}
+                onChange={v => {
+                  set('state', v);
+                  /* Auto-fill State Code from the master_state_codes row for this
+                     state. Matched by NAME because this dropdown's value is the
+                     state name (the supplier form matches by id — its dropdown is
+                     id-based). Blank when the master has no code for the state:
+                     only 10 of India's 36 are defined today, and non-India states
+                     have none at all. */
+                  set('stateCode', masters.stateCodes.find(sc => sc.stateName === v)?.code ?? '');
+                }}
               />
             </Field>
+            {/* Derived from the selected State — read-only so it can't drift out
+                of sync (the GST state code is fixed per state). Shown for every
+                country, like the supplier form; it simply stays blank where the
+                master defines no code. */}
+            <Field label="State Code" fieldKey="stateCode">
+              <input
+                className="acm-input acm-input-ro"
+                placeholder="Auto-filled from State"
+                value={form.stateCode ?? ''}
+                readOnly
+                tabIndex={-1}
+                title="GST state code — automatically set from the selected State"
+              />
+            </Field>
+          </div>
+          <div className="acm-row acm-row-3">
             <Field label="City" required error={errors.city} fieldKey="city"><input className={errors.city ? 'acm-input-error' : ''} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City name" /></Field>
             <Field label="Pin / Postal Code" required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" maxLength={6} placeholder="6-digit PIN" /></Field>
+            {/* Third slot: GST Number for a domestic customer, otherwise Contact
+                Person Name shifted up from the row below. Either way the row is
+                full — GST simply isn't a field an international customer has.
+                There is no "GST Applicable" toggle: the country is the only
+                input, and the flag is derived from it in buildPayload. */}
+            {!domestic && contactPersonField}
+            {domestic && (
+              <Field label="GST Number" required error={errors.coGstNumber} fieldKey="coGstNumber">
+                {/* Editable even after GST Scrutiny entries exist — changing it on
+                    save propagates the new number to those records. Switching the
+                    COUNTRY away from India is what's blocked in that case. */}
+                <input
+                  className={`acm-input ${errors.coGstNumber || gstStatus === 'taken' ? 'acm-input-error' : ''} ${gstStatus === 'valid' ? 'acm-input-ok' : ''}`}
+                  placeholder="e.g. 27AADCI6120M1ZH"
+                  maxLength={15}
+                  value={form.coGstNumber ?? ''}
+                  /* setF (not set) — skip the per-keystroke validator; the
+                     debounced effect above owns this field's validation. */
+                  onChange={e => { setF('coGstNumber', e.target.value.toUpperCase().replace(/\s+/g, '')); clearErr('coGstNumber'); }}
+                />
+                {gstStatus === 'checking' && (
+                  <div className="acm-gst-hint acm-gst-checking">Checking GST Number…</div>
+                )}
+                {gstStatus === 'valid' && (
+                  <div className="acm-gst-hint acm-gst-ok">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                    GST Number is valid
+                  </div>
+                )}
+                {gstStatus === 'taken' && (
+                  <div className="acm-gst-hint acm-gst-taken">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    {gstTakenBy ? `Already used by ${gstTakenBy}` : 'This GST Number is already taken'}
+                  </div>
+                )}
+              </Field>
+            )}
           </div>
+          {/* Contact row. Domestic: Contact Person leads it. International: it
+              moved up into the GST slot, so Designation leads and Whatsapp fills
+              the fourth column instead of needing a row of its own. */}
           <div className="acm-row acm-row-4">
-            <Field label="Contact Person Name" required error={errors.cpName} fieldKey="cpName"><input className={errors.cpName ? 'acm-input-error' : ''} value={form.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
+            {domestic && contactPersonField}
             <Field label="Designation" required error={errors.cpDesig} fieldKey="cpDesig">
               {/* Free-text input — matches AddConsigneeModal. The
                   /master/designations dropdown forced users to pick
@@ -2823,15 +2966,15 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
             </Field>
             <Field label="Contact No" required error={errors.cpTel} fieldKey="cpTel"><input className={errors.cpTel ? 'acm-input-error' : ''} type="tel" value={form.cpTel} onChange={e => set('cpTel', e.target.value)} placeholder="7–15 digit number" /></Field>
             <Field label="Email" required error={errors.cpEmail} fieldKey="cpEmail"><input className={errors.cpEmail ? 'acm-input-error' : ''} type="email" value={form.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
+            {!domestic && whatsappField}
           </div>
-          <div className="acm-row acm-row-1">
-            <Field label="Whatsapp Enabled" required error={errors.cpWa} fieldKey="cpWa">
-              <div className="acm-radio-row">
-                <label className="acm-radio"><input type="radio" name="cpWa" value="yes" checked={form.cpWa === 'yes'} onChange={() => set('cpWa', 'yes')} /> YES</label>
-                <label className="acm-radio"><input type="radio" name="cpWa" value="no" checked={form.cpWa === 'no'} onChange={() => set('cpWa', 'no')} /> NO</label>
-              </div>
-            </Field>
-          </div>
+          {/* Whatsapp gets its own row ONLY for a domestic customer — for an
+              international one it already rode along in the contact row above. */}
+          {domestic && (
+            <div className="acm-row acm-row-1">
+              {whatsappField}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -4359,7 +4502,8 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         if (!dd.country) return 'Select country';
         return null;
       case 'state':
-        if (!dd.state) return 'Select state';
+        // Same rule as the primary address — see countryHasStates().
+        if (countryHasStates(masters, dd.country) && !dd.state) return 'Select state';
         return null;
       case 'city':
         if (!dd.city.trim()) return 'City is required';
@@ -4432,6 +4576,9 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
   const states = selectedCountry
     ? masters.states.filter(s => s.country_id === selectedCountry.id)
     : [];
+  /* Keeps State's required-ness, placeholder and disabled state in step —
+     see countryHasStates(). */
+  const locHasStates = countryHasStates(masters, d.country);
   const submit = () => {
     const next: Record<string, string> = {};
     const keys = ['type','line','country','state','city','pin','cpName','cpDesignation','cpContact','cpEmail','cpWhatsapp'];
@@ -4477,7 +4624,8 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 });
               }} />
             </Field>
-            <Field label="State" required error={errs.state}>
+            {/* Mirrors the primary address — see countryHasStates(). */}
+            <Field label="State" required={locHasStates} error={errs.state}>
               <MasterSelect
                 value={d.state}
                 options={(() => {
@@ -4485,8 +4633,8 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                   if (d.state && !base.some(o => o.value === d.state)) return [{ value: d.state, label: d.state }, ...base];
                   return base;
                 })()}
-                placeholder={d.country ? 'Select state' : 'Select country first'}
-                disabled={!d.country}
+                placeholder={!d.country ? 'Select country first' : locHasStates ? 'Select state' : 'No states for this country'}
+                disabled={!d.country || !locHasStates}
                 invalid={!!errs.state}
                 onChange={v => set('state', v)}
               />

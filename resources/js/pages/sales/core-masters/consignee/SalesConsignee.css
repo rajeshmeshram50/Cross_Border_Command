@@ -406,25 +406,54 @@
 .smcg-add-btn:active { transform: translateY(0); }
 .smcg-add-btn i { font-size: 16px; }
 
-/* "Same as Customer" filter (a MasterSelect next to the search box) styled to
-   match the Add Consignee button — dark-green gradient with white text. Only
-   the toggle is themed; the portalled options menu keeps its default look. */
-.smcg-sac-filter .master-select-toggle {
-  background: linear-gradient(135deg, #0d9488, #065f46) !important;
-  border-color: transparent !important;
-  color: #fff !important;
-  box-shadow: 0 4px 12px rgba(16,185,129,0.30);
+/* Filter button — replaced the old "Same as Customer" MasterSelect, which is
+   now the filter modal's Same as Customer facet. Keeps the dark-green gradient
+   that dropdown had, so the toolbar looks unchanged at rest. */
+.smcg-filter-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  flex-shrink: 0;
+  height: 42px; padding: 0 16px;
+  border-radius: 11px;
+  font-family: inherit;
+  font-size: 12.5px; font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  background: linear-gradient(120deg, #f0fdf9 0%, #ecfdf5 40%, #d1fae5 100%);
+  border: 1.5px solid rgba(16,185,129,.30);
+  color: #047857;
+  transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
 }
-.smcg-sac-filter .master-select-toggle:hover { filter: brightness(1.06); }
-.smcg-sac-filter .master-select-value,
-.smcg-sac-filter .master-select-placeholder,
-.smcg-sac-filter .master-select-chev { color: #fff !important; }
-/* Truncate the long label so it never overflows the compact filter width
-   (kicks in on mobile where the field sits beside the search box). */
-.smcg-sac-filter .master-select-value,
-.smcg-sac-filter .master-select-placeholder {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+.smcg-filter-btn:hover {
+  background: linear-gradient(110deg, #ecfdf5 0%, #d1fae5 50%, #a7f3d0 100%);
+  border-color: rgba(16,185,129,.45);
+  color: #065f46;
 }
+/* Active state matches the Add Consignee button's dark-green gradient — a
+   filtered table must be obvious at a glance, or it reads as missing data. */
+.smcg-filter-btn.on {
+  border-color: transparent;
+  background: linear-gradient(135deg, #0d9488, #065f46);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(16,185,129,.30);
+}
+.smcg-filter-btn i { font-size: 14px; }
+.smcg-filter-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.28);
+  border: 1px solid rgba(255,255,255,.45);
+  color: #fff;
+  font-size: 10.5px; font-weight: 800; line-height: 1;
+}
+/* Inline "clear filters" action in the empty state — a link, not button
+   chrome, so it doesn't compete with the toolbar. */
+.smcg-empty-link {
+  background: none; border: 0; padding: 0;
+  font: inherit; font-weight: 700;
+  color: #047857; cursor: pointer; text-decoration: underline;
+}
+.smcg-empty-link:hover { color: #065f46; }
 
 .smcg-table-card {
   position: relative;
@@ -1109,11 +1138,11 @@
   .smcg-wdh-heading { flex: 1 1 auto; min-width: 0; align-items: flex-start; }
   .smcg-wdh-chev { flex-shrink: 0; }
 
-  /* Keep the search box and the "Same as Customer" filter SIDE BY SIDE on
-     mobile — search flexes to fill, the filter takes a fixed compact width. */
+  /* Keep the search box and the Filter button SIDE BY SIDE on mobile — search
+     flexes to fill, the button stays its intrinsic width. */
   .smcg-toolbar { flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 8px; }
   .smcg-toolbar .smcg-search { flex: 1 1 auto; min-width: 0; max-width: none; }
-  .smcg-toolbar .smcg-sac-filter { width: 150px !important; flex-shrink: 0; }
+  .smcg-toolbar .smcg-filter-btn { flex-shrink: 0; padding: 0 12px; }
 }
 @media (max-width: 480px) {
   .smcg-root { padding: 0; }
