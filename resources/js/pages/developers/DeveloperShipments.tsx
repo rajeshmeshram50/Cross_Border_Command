@@ -14,17 +14,18 @@ import './shipment-360.css';
  * collapsible 6-step "What We Are Doing Here" box, and an International /
  * Domestic tabbed worklist over the wide shipment-journey table.
  *
- * DATA — the backend is deliberately untouched (GET /sales/shipment-orders
- * returns the same 15 fields it always has). The prototype's table is much
- * wider than that payload, so every column the API does not carry renders as
- * an em-dash placeholder rather than inventing data. Columns backed by real
- * fields: Shipment ID, Opportunity ID, PI Number, Customer, Consignee, Owner,
- * Shipping Liability, Cold Chain, INCO Term, Port of Loading / Discharge.
+ * DATA — GET /sales/shipment-orders. The prototype's table is much wider than
+ * that payload, so every column the API does not carry renders as an em-dash
+ * placeholder rather than inventing data. Columns backed by real fields:
+ * Shipment ID, Opportunity ID, PI Number, Customer, Consignee, Owner,
+ * Shipping Liability, Cold Chain, INCO Term, Port of Loading / Discharge
+ * (international) and Dispatch From / Deliver To (domestic).
  *
- * The API only ever issues SHP- codes (ShipmentOrderController::nextShipmentCode)
- * and the shipment_orders table has no domestic flag, so every row is an
- * international shipment and the Domestic tab renders its empty state until a
- * domestic shipment model exists.
+ * DOMESTIC vs INTERNATIONAL — the API stamps every row with is_domestic /
+ * doc_type (derived from the PI's doc_type) and issues DSHP- codes for
+ * domestic shipments vs SHP- for exports, each with its own per-branch
+ * sequence (ShipmentOrderController::nextShipmentCode). The two tabs split
+ * the same payload on that flag.
  * ──────────────────────────────────────────────────────────────────────────── */
 
 type ShipmentRow = {
@@ -40,9 +41,16 @@ type ShipmentRow = {
   pi_date: string | null;
   shipping_liability: string | null;
   cold_chain: boolean;
+  /* Flow flag — true for DSHP- (domestic) rows, false for SHP- (export). */
+  is_domestic?: boolean;
+  doc_type?: string | null;
+  // International-only
   inco_term: string | null;
   port_of_loading: string | null;
   port_of_unloading: string | null;
+  // Domestic-only
+  place_of_dispatch?: string | null;
+  place_of_delivery?: string | null;
 };
 
 type S360Tab = 'intl' | 'dom';
@@ -237,15 +245,25 @@ export default function DeveloperShipments() {
     return () => { alive = false; };
   }, [toast]);
 
+  /* Split by flow — is_domestic is stamped by the API (from the PI's
+   * doc_type); the DSHP- code prefix is the fallback for any payload
+   * that predates the flag. Each tab lists ONLY its own flow, so a
+   * DSHP- id can never appear under International or vice versa. */
+  const isDom = (r: ShipmentRow) => r.is_domestic ?? !!r.shipment_code?.toUpperCase().startsWith('DSHP');
+  const intlRows = useMemo(() => rows.filter(r => !isDom(r)), [rows]);
+  const domRows  = useMemo(() => rows.filter(r =>  isDom(r)), [rows]);
+
   const filtered = useMemo(() => {
+    const base = tab === 'dom' ? domRows : intlRows;
     const lo = q.trim().toLowerCase();
-    if (!lo) return rows;
-    return rows.filter(r =>
+    if (!lo) return base;
+    return base.filter(r =>
       [r.shipment_code, r.owner_name, r.opp_code, r.customer_name, r.consignee_name, r.pi_no,
-        r.inco_term, r.port_of_loading, r.port_of_unloading, r.shipping_liability]
+        r.inco_term, r.port_of_loading, r.port_of_unloading, r.shipping_liability,
+        r.place_of_dispatch, r.place_of_delivery]
         .some(v => (v ?? '').toLowerCase().includes(lo)),
     );
-  }, [rows, q]);
+  }, [intlRows, domRows, tab, q]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rpp));
   const safePage = Math.min(page, totalPages);
@@ -254,7 +272,8 @@ export default function DeveloperShipments() {
 
   const switchTab = (t: S360Tab) => { setTab(t); setQ(''); setPage(1); };
 
-  /* Export the International list — only the columns the API actually carries. */
+  /* Export the ACTIVE tab's list — only the columns the API actually carries.
+   * Domestic swaps the export-only block (INCO/ports) for Dispatch/Deliver. */
   const exportShipments = () => {
     if (!filtered.length) { toast.error('Nothing to export', 'No shipments match the current search.'); return; }
     setExporting(true);
@@ -263,6 +282,7 @@ export default function DeveloperShipments() {
         'Sr No': i + 1,
         'Shipment ID': r.shipment_code ?? '',
         'Shipment Date': fmtDate(r.created_at),
+        'Type': tab === 'dom' ? 'Domestic' : 'International',
         'Opportunity ID': r.opp_code ?? '',
         'Opportunity Date': fmtDate(r.opp_date),
         'PI Number': r.pi_no ?? '',
@@ -272,9 +292,16 @@ export default function DeveloperShipments() {
         'Owner': r.owner_name ?? '',
         'Shipping Liability': r.shipping_liability ?? '',
         'Cold Chain': r.cold_chain ? 'Yes' : 'No',
-        'INCO Term': r.inco_term ?? '',
-        'Port of Loading': r.port_of_loading ?? '',
-        'Port of Discharge': r.port_of_unloading ?? '',
+        ...(tab === 'dom'
+          ? {
+              'Dispatch From': r.place_of_dispatch ?? '',
+              'Deliver To':    r.place_of_delivery ?? '',
+            }
+          : {
+              'INCO Term': r.inco_term ?? '',
+              'Port of Loading': r.port_of_loading ?? '',
+              'Port of Discharge': r.port_of_unloading ?? '',
+            }),
       }));
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
@@ -356,10 +383,10 @@ export default function DeveloperShipments() {
         <div className="s360-toolbar">
           <div className="s360-tabs">
             <button type="button" className={`s360-tab${tab === 'intl' ? ' is-active' : ''}`} onClick={() => switchTab('intl')}>
-              {Ico.globe}International Shipments <span className="s360-tab__cnt">{rows.length}</span>
+              {Ico.globe}International Shipments <span className="s360-tab__cnt">{intlRows.length}</span>
             </button>
             <button type="button" className={`s360-tab${tab === 'dom' ? ' is-active' : ''}`} onClick={() => switchTab('dom')}>
-              {Ico.home}Domestic Shipments <span className="s360-tab__cnt">0</span>
+              {Ico.home}Domestic Shipments <span className="s360-tab__cnt">{domRows.length}</span>
             </button>
           </div>
           <div className="s360-search">
@@ -471,12 +498,12 @@ export default function DeveloperShipments() {
           </div>
         )}
 
-        {/* ── Domestic — no domestic shipment model exists behind
-            /sales/shipment-orders yet, so this is an honest empty state rather
-            than a mis-labelled copy of the international list. ── */}
+        {/* ── Domestic — DSHP- rows (is_domestic, from the PI's doc_type).
+            Same journey table, with the domestic logistics columns
+            (Dispatch From / Deliver To) in place of INCO/ports. ── */}
         {tab === 'dom' && (
           <div className="s360-panel">
-            <div className="rvtbl-wrap">
+            <div className="rvtbl-wrap" ref={scrollRef}>
               <table className="rvtbl">
                 <thead>
                   <tr>
@@ -506,14 +533,58 @@ export default function DeveloperShipments() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td colSpan={DOM_COLS} className="rvtbl-empty">
-                      No domestic shipments. Every shipment order raised so far is an international (SHP) shipment.
-                    </td>
-                  </tr>
+                  {loading && <tr><td colSpan={DOM_COLS} className="rvtbl-empty">Loading shipment orders…</td></tr>}
+                  {!loading && pageRows.length === 0 && (
+                    <tr>
+                      <td colSpan={DOM_COLS} className="rvtbl-empty">
+                        No domestic shipments. Domestic (DSHP) shipments are raised from a Domestic Proforma Invoice.
+                      </td>
+                    </tr>
+                  )}
+                  {!loading && pageRows.map((r, i) => (
+                    <tr className="rvtbl-row" key={r.id}>
+                      <td className="rvtbl-sr">{startIdx + i}</td>
+                      <IdCell id={r.shipment_code} date={r.created_at} primary />
+                      <IdCell id={r.opp_code} date={r.opp_date} />
+                      <EmptyCell /> {/* Procurement ID */}
+                      <EmptyCell /> {/* GRN ID */}
+                      <EmptyCell /> {/* QA ID */}
+                      <EmptyCell /> {/* Domestic Receipt No. */}
+                      <EmptyCell /> {/* Domestic GST Invoice */}
+                      <EmptyCell /> {/* Outward ID */}
+                      <EmptyCell /> {/* PSD ID */}
+                      <EmptyCell /> {/* e-BRC ID */}
+                      <IdCell id={r.pi_no} date={r.pi_date} />
+                      <EmptyCell /> {/* PO Number */}
+                      <EmptyCell /> {/* SPI Number */}
+                      <EmptyCell /> {/* FFD PO Number */}
+                      <TxtCell v={r.customer_name} />
+                      <TxtCell v={r.consignee_name} />
+                      <EmptyCell /> {/* Supplier */}
+                      <EmptyCell /> {/* FFD / Transporter */}
+                      <YnCell yes={r.cold_chain} />
+                      <td className="s360-port">{r.place_of_dispatch ?? '—'}</td>
+                      <td className="s360-port">{r.place_of_delivery ?? '—'}</td>
+                      <td className="rvtbl-actcell">
+                        <div className="rvtbl-act">
+                          <button type="button" className="rvtbl-actbtn" title="More actions">{Ico.dots}</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
+            {!loading && (
+              <WorklistPager
+                total={filtered.length}
+                page={safePage}
+                pageSize={rpp}
+                onPage={setPage}
+                onPageSize={n => { autoFitRef.current = false; setRpp(n); setPage(1); }}
+                pageSizeOptions={[5, 10, 15, 25, 50]}
+              />
+            )}
           </div>
         )}
       </div>
