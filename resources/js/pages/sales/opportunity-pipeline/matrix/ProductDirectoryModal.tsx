@@ -642,26 +642,38 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                       </td>
                       <td><span className="pdm-curr-pill">{r.currency}</span></td>
                       <td className="pdm-act-cell">
-                        <button className="pdm-icon-btn pdm-icon-btn-edit" onClick={() => startEdit(r)} aria-label="Edit" title="Edit">
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                          </svg>
-                        </button>
-                        <button
-                          className="pdm-icon-btn pdm-icon-btn-del"
-                          onClick={() => setPendingDelete(r)}
-                          disabled={sourcingLocked}
-                          aria-label="Unmap"
-                          title={sourcingLocked
+                        {/* Themed Tooltip pills — same treatment as the Lead
+                            Acknowledgement master's action column (QA ask),
+                            replacing the browser-native title bubbles. */}
+                        <Tooltip label="Edit" themed>
+                          <button className="pdm-icon-btn pdm-icon-btn-edit" onClick={() => startEdit(r)} aria-label="Edit">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                        </Tooltip>
+                        <Tooltip
+                          label={sourcingLocked
                             ? "Can't unmap — Product Sourcing (Stage 3) is complete"
                             : 'Unmap'}
+                          themed
                         >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
-                          </svg>
-                        </button>
+                          {/* aria-disabled (not disabled) so the tooltip still
+                              shows on the locked button — a disabled element
+                              swallows the hover events the Tooltip needs. */}
+                          <button
+                            className={`pdm-icon-btn pdm-icon-btn-del ${sourcingLocked ? 'pdm-icon-btn-locked' : ''}`}
+                            onClick={() => { if (!sourcingLocked) setPendingDelete(r); }}
+                            aria-disabled={sourcingLocked}
+                            aria-label="Unmap"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
+                            </svg>
+                          </button>
+                        </Tooltip>
                       </td>
                     </tr>
                   );
@@ -1159,9 +1171,15 @@ const SCOPED_CSS = `
   background: #fef2f2; color: #b91c1c; border-color: #fecaca;
 }
 .pdm-icon-btn-del:hover:not(:disabled) { background: #fee2e2; border-color: #fca5a5; }
-.pdm-icon-btn:disabled {
+.pdm-icon-btn:disabled,
+.pdm-icon-btn.pdm-icon-btn-locked,
+.pdm-icon-btn.pdm-icon-btn-locked:hover {
   opacity: .45; cursor: not-allowed;
   background: #f8fafc; color: #94a3b8; border-color: #e2e8f0;
+}
+[data-bs-theme="dark"] .pdm-icon-btn.pdm-icon-btn-locked,
+[data-bs-theme="dark"] .pdm-icon-btn.pdm-icon-btn-locked:hover {
+  background: rgba(148,163,184,.12); color: #64748b; border-color: rgba(148,163,184,.25);
 }
 
 /* ── Footer ── pinned below the body, status text + Close button */
