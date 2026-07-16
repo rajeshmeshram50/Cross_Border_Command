@@ -108,6 +108,30 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
     void fetchRows(false);
   }, [refreshTick, fetchRows]);
 
+  /* A product's Active/Inactive status can flip OUTSIDE this screen — e.g.
+   * mapping a supplier in P2P → Product Management activates the product
+   * (vendors step complete). The productsTick re-sync only covers in-matrix
+   * popups, so ALSO revalidate silently whenever the user returns to this
+   * tab/window; the STATUS column + readiness checklist then update without
+   * a manual page refresh (QA #94). Throttled so focus + visibilitychange
+   * firing together (alt-tab back) costs one request, not two. */
+  const lastFocusFetchRef = useRef(0);
+  useEffect(() => {
+    const revalidate = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastFocusFetchRef.current < 1500) return;
+      lastFocusFetchRef.current = now;
+      void fetchRows(false);
+    };
+    window.addEventListener('focus', revalidate);
+    document.addEventListener('visibilitychange', revalidate);
+    return () => {
+      window.removeEventListener('focus', revalidate);
+      document.removeEventListener('visibilitychange', revalidate);
+    };
+  }, [fetchRows]);
+
   /* ── Bucketed views ─────────────────────────────────────────────── */
   const detailsRows     = useMemo(() => rows.filter(r => r.sourcing_status === null),         [rows]);
   const requiredRows    = useMemo(() => rows.filter(r => r.sourcing_status === 'required'),    [rows]);
