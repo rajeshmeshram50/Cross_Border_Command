@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { useToast } from '../../../../contexts/ToastContext';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
+import Tooltip from '../../../../components/ui/Tooltip';
+import { formatDmy } from '../../../../utils/formatDmy';
 import SupplierEvidenceVaultModal from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import PoPaymentModal from '../../procurement-management/purchase-order/PoPaymentModal';
 import api from '../../../../api';
@@ -79,7 +81,7 @@ const TRANSPORTS = ['By Road', 'By Sea', 'By Air'];
 const PAY_TYPES = ['Advanced Payment', 'Full Payment', 'Letter of Credit'];
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'AED', 'JPY', 'CNY', 'SGD', 'INR'];
 const INCO = ['FOB', 'CIF', 'EXW', 'C&F'];
-const todayDisp = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+const todayDisp = formatDmy(new Date());
 const todayIso = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD (local) — min for future-dated pickers
 
 /* Optional per-option meta for EditSelect (warehouse code + own/third badge). */
@@ -571,8 +573,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         </div>
         <div className="spi-dt-head-r">
           <span className="spi-dt-divider" />
+          <Tooltip label="Record a payment" position="bottom" zIndex={2999999}>
           <button type="button" className="spi-dt-btn-pay"
-            title="Record a payment"
             onClick={() => {
               // With-PO SPI → pay against the linked PO. Direct SPI → pay against
               // the SPI itself (needs the invoice saved first). TDS is deducted
@@ -584,6 +586,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
               setPayOpen(true);
             }}>
             <IcoCard /> SPI Payment</button>
+          </Tooltip>
           <span className="spi-dt-divider" />
           <button type="button" className="spi-dt-btn-close" onClick={onClose}><IcoX /> Close</button>
         </div>
@@ -636,8 +639,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 <Field label="PO TYPE"><Select value={dash(po?.po_type)} /></Field>
                 <Field label="DOCUMENT TYPE"><Select value={dash(po?.document_type)} /></Field>
                 <Field label="MODE OF TRANSPORT"><Select value={dash(po?.mode_of_transport)} /></Field>
-                <Field label="PO DATE"><div className="spi-dt-inp-auto"><input className="spi-dt-inp" value={dash(po?.po_date)} readOnly /><span className="spi-dt-auto"><IcoLock /> AUTO</span></div></Field>
-                <Field label="EXPECTED DELIVERY DATE"><input className="spi-dt-inp" value={dash(po?.expected_delivery_date)} readOnly /></Field>
+                <Field label="PO DATE"><div className="spi-dt-inp-auto"><input className="spi-dt-inp" value={po?.po_date ? formatDmy(po.po_date) : dash(po?.po_date)} readOnly /><span className="spi-dt-auto"><IcoLock /> AUTO</span></div></Field>
+                <Field label="EXPECTED DELIVERY DATE"><input className="spi-dt-inp" value={po?.expected_delivery_date ? formatDmy(po.expected_delivery_date) : dash(po?.expected_delivery_date)} readOnly /></Field>
                 <Field label="DELIVERY LOCATION"><input className="spi-dt-inp" value={po?.delivery_location ?? ''} placeholder="Enter delivery location" readOnly /></Field>
                 <Field label="PAYMENT TYPE"><Select value={dash(po?.payment_type)} /></Field>
               </>) : (<>
@@ -645,7 +648,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 <Field label="DOCUMENT TYPE" req><EditSelect value={basic.docType} options={DOC_TYPES} onChange={v => setBasic(b => ({ ...b, docType: v }))} /></Field>
                 <Field label="MODE OF TRANSPORT" req><EditSelect value={basic.transport} options={TRANSPORTS} onChange={v => setBasic(b => ({ ...b, transport: v }))} /></Field>
                 <Field label="PO DATE" req><div className="spi-dt-inp-auto"><input className="spi-dt-inp" value={todayDisp} readOnly /><span className="spi-dt-auto"><IcoLock /> AUTO</span></div></Field>
-                <Field label="EXPECTED DELIVERY DATE" req><MasterDatePicker value={basic.edd} onChange={v => { setBasic(b => ({ ...b, edd: v })); setErrs(e => ({ ...e, edd: false })); }} minDate={todayIso} invalid={!!errs.edd} placeholder="Select date" /></Field>
+                <Field label="EXPECTED DELIVERY DATE" req><MasterDatePicker value={basic.edd} onChange={v => { setBasic(b => ({ ...b, edd: v })); setErrs(e => ({ ...e, edd: false })); }} minDate={todayIso} invalid={!!errs.edd} placeholder="Select date" popupClassName="spi-cal" /></Field>
                 <Field label="DELIVERY LOCATION" req><EditSelect value={basic.deliveryLoc} options={warehouses.map(w => w.name)} meta={whMeta} invalid={!!errs.deliveryLoc} placeholder="— Select Warehouse —" onChange={v => { setBasic(b => ({ ...b, deliveryLoc: v })); setErrs(e => ({ ...e, deliveryLoc: false })); }} /></Field>
                 <Field label="PAYMENT TYPE"><EditSelect value={basic.payType} options={PAY_TYPES} placeholder="— Select —" onChange={v => setBasic(b => ({ ...b, payType: v }))} /></Field>
               </>)}
@@ -705,10 +708,10 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
               <div className="spi-dt-grid4">
                 <Field label="SELECT SUPPLIER">{withPo
                   ? <Select value={po?.supplier_name ?? '— Select Supplier —'} muted={!po?.supplier_name} />
-                  : <input className="spi-dt-inp" value={dash(stdSupName || sup?.name)} title={stdSupName || sup?.name || ''} readOnly />}
+                  : <Tooltip label={stdSupName || sup?.name || ''} disabled={!(stdSupName || sup?.name)} position="bottom" zIndex={2999999}><input className="spi-dt-inp" value={dash(stdSupName || sup?.name)} readOnly /></Tooltip>}
                 </Field>
                 <Field label="SUPPLIER CODE"><input className="spi-dt-inp" value={dash(sup?.code)} readOnly /></Field>
-                <Field label="COMPANY NAME"><input className="spi-dt-inp" value={dash(sup?.name)} title={sup?.name ?? ''} readOnly /></Field>
+                <Field label="COMPANY NAME"><Tooltip label={sup?.name ?? ''} disabled={!sup?.name} position="bottom" zIndex={2999999}><input className="spi-dt-inp" value={dash(sup?.name)} readOnly /></Tooltip></Field>
                 <Field label="SUPPLIER TYPE"><Select value={dash(sup?.type)} /></Field>
               </div>
             </div>
@@ -783,10 +786,10 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 <div className="spi-dt-scrutiny-warn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg><span><b>GST scrutiny date is old</b> (more than {SCRUTINY_STALE_MONTHS} months). Please do the scrutiny for this supplier before raising the invoice.</span></div>
               )}
               <div className="spi-dt-grid4">
-                <Field label="SCRUTINY DATE"><input className="spi-dt-inp" value={sup?.scrutiny ?? ''} placeholder="—" readOnly /></Field>
+                <Field label="SCRUTINY DATE"><input className="spi-dt-inp" value={sup?.scrutiny ? formatDmy(sup.scrutiny) : ''} placeholder="—" readOnly /></Field>
                 <Field label="GST NUMBER"><input className="spi-dt-inp" value={sup?.gstNo ?? ''} placeholder="15-digit GSTIN" readOnly /></Field>
                 <Field label="GST STATUS"><Select value={dash(sup?.gstStatus)} /></Field>
-                <Field label="LAST FILING DATE"><input className="spi-dt-inp" value={sup?.filing ?? ''} placeholder="—" readOnly /></Field>
+                <Field label="LAST FILING DATE"><input className="spi-dt-inp" value={sup?.filing ? formatDmy(sup.filing) : ''} placeholder="—" readOnly /></Field>
                 <Field label="PREV. INVOICE / REMARKS" full><textarea className="spi-dt-textarea" value={sup?.remarks ?? ''} placeholder="Notes on previous invoices, filing history or scrutiny remarks…" readOnly /></Field>
               </div>
             </div>
@@ -822,8 +825,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                   <RO label="PO TYPE" value={dash(withPo ? po?.po_type : basic.poType)} />
                   <RO label="DOCUMENT TYPE" value={dash(withPo ? po?.document_type : basic.docType)} />
                   <RO label="MODE OF TRANSPORT" value={dash(withPo ? po?.mode_of_transport : basic.transport)} />
-                  <RO label="PO DATE" value={dash(withPo ? po?.po_date : todayDisp)} />
-                  <RO label="EXPECTED DELIVERY DATE" value={(withPo ? po?.expected_delivery_date : basic.edd) || '— Not provided'} muted={!(withPo ? po?.expected_delivery_date : basic.edd)} />
+                  <RO label="PO DATE" value={withPo ? (po?.po_date ? formatDmy(po.po_date) : dash(po?.po_date)) : todayDisp} />
+                  <RO label="EXPECTED DELIVERY DATE" value={(withPo ? po?.expected_delivery_date : basic.edd) ? formatDmy((withPo ? po?.expected_delivery_date : basic.edd) as string) : '— Not provided'} muted={!(withPo ? po?.expected_delivery_date : basic.edd)} />
                   <RO label="DELIVERY LOCATION" value={(withPo ? po?.delivery_location : basic.deliveryLoc) || '— Not provided'} muted={!(withPo ? po?.delivery_location : basic.deliveryLoc)} />
                   <RO label="PAYMENT TYPE" value={(withPo ? po?.payment_type : basic.payType) || '— Not provided'} muted={!(withPo ? po?.payment_type : basic.payType)} />
                   <RO label="PHYSICAL INSPECTION REQUIRED" value={physInsp ? 'Yes' : 'No'} />
@@ -860,10 +863,10 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                   <RO label="EMAIL ID" value={dash(sup?.email)} />
                 </ROGroup>
                 <ROGroup label="GST Scrutiny Details">
-                  <RO label="SCRUTINY DATE" value={dash(sup?.scrutiny)} />
+                  <RO label="SCRUTINY DATE" value={sup?.scrutiny ? formatDmy(sup.scrutiny) : dash(sup?.scrutiny)} />
                   <RO label="GST NUMBER" value={dash(sup?.gstNo)} />
                   <RO label="GST STATUS" value={dash(sup?.gstStatus)} />
-                  <RO label="LAST FILING DATE" value={dash(sup?.filing)} />
+                  <RO label="LAST FILING DATE" value={sup?.filing ? formatDmy(sup.filing) : dash(sup?.filing)} />
                   <RO label="PREV. INVOICE / REMARKS" value={sup?.remarks || '— Not provided'} muted={!sup?.remarks} full />
                 </ROGroup>
               </div>
@@ -884,7 +887,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
           <div className="spi-dt-sec-body">
             <div className="spi-dt-grid3">
               <Field label="PURCHASE INVOICE NUMBER" req><input className={`spi-dt-inp ${errs.invoiceNo ? 'is-invalid' : ''}`} value={invoiceNo} onChange={e => { setInvoiceNo(e.target.value); setErrs(x => ({ ...x, invoiceNo: false })); }} placeholder="e.g. INV-2025-001" /></Field>
-              <Field label="PURCHASE INVOICE DATE" req><MasterDatePicker value={invoiceDate} onChange={v => { setInvoiceDate(v); setErrs(x => ({ ...x, invoiceDate: false })); }} invalid={!!errs.invoiceDate} placeholder="Select date" /></Field>
+              <Field label="PURCHASE INVOICE DATE" req><MasterDatePicker value={invoiceDate} onChange={v => { setInvoiceDate(v); setErrs(x => ({ ...x, invoiceDate: false })); }} invalid={!!errs.invoiceDate} placeholder="Select date" popupClassName="spi-cal" /></Field>
               <Field label="PURCHASE INVOICE ATTACHMENT" req>
                 <div className={`spi-dt-file is-clickable ${errs.file ? 'is-invalid' : ''}`} role="button" tabIndex={0} onClick={() => fileRef.current?.click()} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}>
                   <span className="spi-dt-file-txt"><IcoClip /> {file ? file.name : (existingAttach ? (existingAttach.split('/').pop() || 'Attached file') : 'Choose file…')}</span>
@@ -1063,7 +1066,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                         ? (<><td className="spi-dt-mc-c">{r.gst / 2}%</td><td className="spi-dt-mc-c">{r.gst / 2}%</td><td className="spi-dt-amt spi-dt-mc-c">{inr(c.cgstA)}</td><td className="spi-dt-amt spi-dt-mc-c">{inr(c.sgstA)}</td></>)
                         : (<><td className="spi-dt-mc-c">{r.gst}%</td><td className="spi-dt-amt spi-dt-mc-c">{inr(c.igstA)}</td></>)}
                       <td className="spi-dt-amt spi-dt-mc-c">{inr(c.cost)}</td>
-                      <td className="spi-dt-mc-c"><button type="button" className="spi-dt-rowdel" onClick={() => removeRow(i)} title="Remove product"><IcoX /></button></td>
+                      <td className="spi-dt-mc-c"><Tooltip label="Remove product" position="top" zIndex={2999999}><button type="button" className="spi-dt-rowdel" onClick={() => removeRow(i)}><IcoX /></button></Tooltip></td>
                     </tr>
                     );
                   })}
@@ -1177,7 +1180,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         </div>
         <div className="spi-dt-foot-r">
           <button type="button" className="spi-dt-btn-ghost" onClick={() => setStep(1)}><IcoChevronL /> Back</button>
-          <button type="button" className="spi-dt-btn-map" onClick={handleSave} disabled={saving || !detailsSaved || viewOnly} title={viewOnly ? 'This invoice is view-only' : (!detailsSaved ? 'Click "Save Details" in Product Details first' : undefined)}>{saving ? <><Spinner /> Saving…</> : <><IcoCheck /> Map Invoice</>}</button>
+          <Tooltip label={viewOnly ? 'This invoice is view-only' : 'Click "Save Details" in Product Details first'} disabled={!viewOnly && detailsSaved} position="top" zIndex={2999999}>
+          <button type="button" className="spi-dt-btn-map" onClick={handleSave} disabled={saving || !detailsSaved || viewOnly}>{saving ? <><Spinner /> Saving…</> : <><IcoCheck /> Map Invoice</>}</button>
+          </Tooltip>
         </div>
       </div>
       )}
@@ -1212,7 +1217,7 @@ function HeadPill({ icon, label, value, alt, mono }: { icon: React.ReactNode; la
   return (
     <div className="spi-dt-pill">
       <span className={`spi-dt-pill-ico ${alt ? 'spi-dt-pill-ico--alt' : ''}`}>{icon}</span>
-      <div className="spi-dt-pill-txt"><div className="spi-dt-pill-lbl">{label}</div><div className={`spi-dt-pill-val ${mono ? 'spi-dt-pill-val--mono' : ''}`} title={value}>{value}</div></div>
+      <div className="spi-dt-pill-txt"><div className="spi-dt-pill-lbl">{label}</div><Tooltip label={value} disabled={!value} position="bottom" zIndex={2999999}><div className={`spi-dt-pill-val ${mono ? 'spi-dt-pill-val--mono' : ''}`}>{value}</div></Tooltip></div>
     </div>
   );
 }
@@ -1251,10 +1256,12 @@ function SpiFormSkeleton() {
 }
 function Select({ value, muted }: { value: string; muted?: boolean }) {
   return (
-    <div className={`spi-dt-select ${muted ? 'is-muted' : ''}`} title={value}>
-      <span>{value}</span>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
-    </div>
+    <Tooltip label={value} disabled={!value} position="bottom" zIndex={2999999}>
+      <div className={`spi-dt-select ${muted ? 'is-muted' : ''}`}>
+        <span>{value}</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+      </div>
+    </Tooltip>
   );
 }
 /* Render an option label, optionally with a code prefix + own/third badge. */
@@ -1291,7 +1298,14 @@ function EditSelect({ value, options, onChange, placeholder, meta, invalid }: { 
       if (btnRef.current && !btnRef.current.contains(t) && !t.closest?.('.spi-dt-esel-pop')) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    const close = () => setOpen(false);
+    // A scroll INSIDE the dropdown's own option list must not close it — else
+    // the list snaps shut the moment you wheel-scroll it (no smooth scrolling).
+    // Only scrolls in an ancestor (page / panel) should dismiss the menu.
+    const close = (e?: Event) => {
+      const el = e && e.target instanceof Element ? e.target : null;
+      if (el && el.closest('.spi-dt-esel-pop')) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', close);
@@ -1306,10 +1320,12 @@ function EditSelect({ value, options, onChange, placeholder, meta, invalid }: { 
 
   return (
     <>
-      <button type="button" ref={btnRef} title={value || undefined} className={`spi-dt-select spi-dt-select-edit ${open ? 'is-open' : ''} ${!value ? 'is-muted' : ''} ${invalid ? 'is-invalid' : ''}`} onClick={() => setOpen(o => !o)}>
-        <span>{value ? eselLabel(value, meta?.[value]) : (placeholder || '— Select —')}</span>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
-      </button>
+      <Tooltip label={value} disabled={!value} position="bottom" zIndex={2999999}>
+        <button type="button" ref={btnRef} className={`spi-dt-select spi-dt-select-edit ${open ? 'is-open' : ''} ${!value ? 'is-muted' : ''} ${invalid ? 'is-invalid' : ''}`} onClick={() => setOpen(o => !o)}>
+          <span>{value ? eselLabel(value, meta?.[value]) : (placeholder || '— Select —')}</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+        </button>
+      </Tooltip>
       {open && createPortal(
         <div className="spi-dt-esel-pop" style={{ left: pos.left, top: pos.top, width: pos.width }}>
           {options.map(o => (
