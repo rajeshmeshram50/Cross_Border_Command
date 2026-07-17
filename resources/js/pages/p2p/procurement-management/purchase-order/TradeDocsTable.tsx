@@ -3,6 +3,7 @@ import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 import { SigningTrackerModal } from '../../../sales/opportunity-pipeline/SigningTrackerModal';
+import Tooltip from '../../../../components/ui/Tooltip';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Trade Documents table — shared by the Trade Documents & Agreements modal
@@ -308,11 +309,31 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
       toast.info('Select a supplier first', 'The Purchase Order preview needs a supplier and products.');
     }
   };
-  // Draft (no signature) / signed view. Only the "Purchase Order" row maps to
-  // the PO document; other rows are CLM library docs (placeholder for now).
+  // Draft view of a CLM library doc (Trade Document / Agreement) — render the
+  // SAME PDF the Send-for-Signature modal previews, via /signature-requests/
+  // preview. That endpoint renders with a null signature request, so the draft
+  // preview is byte-for-byte the sign preview MINUS the signature box (the box
+  // is a draggable overlay the modal paints on top, never baked into the PDF).
+  const openDraftPreview = (d: TradeDoc) => {
+    const parsed = parseRow(d.id);
+    if (!parsed) { toast.info(`Viewing ${d.name} (draft)`); return; }
+    if (!party?.db_id) { toast.error('Supplier required', 'Select a supplier first to preview this document.'); return; }
+    const w = window.open('', '_blank');
+    toast.info(`Preparing ${d.name} preview…`);
+    const body = parsed.kind === 'agreement'
+      ? { agreement_id: parsed.libId, party_id: party.db_id, model_name: 'Vendor' }
+      : { trade_doc_id: parsed.libId, party_id: party.db_id, model_name: 'Vendor' };
+    api.post('/clm/signature-requests/preview', body, { responseType: 'blob' })
+      .then(res => { const url = URL.createObjectURL(res.data as Blob); if (w) w.location.href = url; else window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); })
+      .catch(() => { if (w) w.close(); toast.error('Preview failed', 'Could not render the document. Check the draft content.'); });
+  };
+  // Draft (no signature) / signed view. The "Purchase Order" row maps to the PO
+  // PDF; other rows are CLM library docs previewed via openDraftPreview. The
+  // signed view for library docs stays a placeholder (fetched from Zoho later).
   const viewDoc = (d: TradeDoc, withSignature: boolean) => {
     if (d.id === 'po') { openPoPdf(withSignature); return; }
-    toast.info(`Viewing ${d.name} (${withSignature ? 'signed' : 'draft'})`);
+    if (withSignature) { toast.info(`Viewing ${d.name} (signed)`); return; }
+    openDraftPreview(d);
   };
   const viewCoo = (d: TradeDoc) => toast.info(`Certificate of Origin — ${d.name}`, 'Coming in a later phase');
 
@@ -349,48 +370,62 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
                     {/* Icon-only — keeps the signed row's action strip the same
                         width as every other row's. Colour still separates them:
                         green = signed PDF, amber = certificate. */}
-                    <button className="cptd-lbtn cptd-lbtn--icon cptd-lbtn--signed" type="button" title="View signed PDF" aria-label="View signed PDF" onClick={() => viewDoc(d, true)}>{I.doc}</button>
-                    <button className="cptd-lbtn cptd-lbtn--icon cptd-lbtn--coo" type="button" title="Certificate of Origin" aria-label="Certificate of Origin" onClick={() => viewCoo(d)}>{I.cert}</button>
+                    <Tooltip label="View signed PDF" themed zIndex={2999999}>
+                      <button className="cptd-lbtn cptd-lbtn--icon cptd-lbtn--signed" type="button" aria-label="View signed PDF" onClick={() => viewDoc(d, true)}>{I.doc}</button>
+                    </Tooltip>
+                    <Tooltip label="Certificate of Origin" themed zIndex={2999999}>
+                      <button className="cptd-lbtn cptd-lbtn--icon cptd-lbtn--coo" type="button" aria-label="Certificate of Origin" onClick={() => viewCoo(d)}>{I.cert}</button>
+                    </Tooltip>
                   </>
                 ) : (
                   <button className="cptd-send" type="button" disabled={sent} onClick={() => sendDoc(d.id)}>{I.send} {sent ? 'Sent' : 'Send for Sign'}</button>
                 )}
                 {/* Draft view — always available (unsigned PO PDF). Icon-only,
                     styled like the compact action buttons (e.g. Email). */}
-                <button className="cptd-act" type="button" title="View draft" onClick={() => viewDoc(d, false)}>{I.eye}</button>
+                <Tooltip label="View draft" themed zIndex={2999999}>
+                  <button className="cptd-act" type="button" onClick={() => viewDoc(d, false)}>{I.eye}</button>
+                </Tooltip>
                 {/* Email is only meaningful for the Purchase Order document —
                     the other trade documents / agreements are e-signed via Zoho,
                     not emailed from here. */}
                 {d.id === 'po' && (
-                  <button className="cptd-act" type="button" title="Email document" onClick={() => toast.info(`Email composer opened for "${d.name}"`)}>{I.mail}</button>
+                  <Tooltip label="Email document" themed zIndex={2999999}>
+                    <button className="cptd-act" type="button" onClick={() => toast.info(`Email composer opened for "${d.name}"`)}>{I.mail}</button>
+                  </Tooltip>
                 )}
                 {/* Track — the shared signing tracker (timeline + signer details
                     + activity history), the same modal the PI rows open. Stays
                     available on signed rows so the completed timeline is still
                     readable. */}
                 {sig && (
-                  <button className="cptd-act" type="button" title="Track signature status"
-                    onClick={() => setTrackSig({ id: sig.id, code: d.sub || d.name })}>{I.track}</button>
+                  <Tooltip label="Track signature status" themed zIndex={2999999}>
+                    <button className="cptd-act" type="button"
+                      onClick={() => setTrackSig({ id: sig.id, code: d.sub || d.name })}>{I.track}</button>
+                  </Tooltip>
                 )}
                 {/* Reminder — only while the request is actually in progress;
                     Zoho rejects a reminder on a completed/recalled request. The
                     count badge mirrors the Agreements popup so the sender can
                     see how many nudges have already gone out. */}
                 {sig && st === 'sent' && (
-                  <button
-                    className={`cptd-act${sig.reminderCount > 0 ? ' cptd-act--count' : ''}`}
-                    type="button"
-                    title={sig.reminderCount > 0
+                  <Tooltip
+                    label={sig.reminderCount > 0
                       ? `Reminder sent ${sig.reminderCount} time${sig.reminderCount === 1 ? '' : 's'}${sig.lastReminderAt ? ` (last: ${new Date(sig.lastReminderAt).toLocaleString()})` : ''}`
                       : 'Send reminder to the signer'}
-                    disabled={remindBusy === d.id}
-                    onClick={() => void remindDoc(d)}
+                    themed zIndex={2999999}
                   >
-                    {I.reminder}
-                    {sig.reminderCount > 0 && (
-                      <span className="cptd-act__cnt" aria-label={`Reminder sent ${sig.reminderCount} time${sig.reminderCount === 1 ? '' : 's'}`}>{sig.reminderCount}</span>
-                    )}
-                  </button>
+                    <button
+                      className={`cptd-act${sig.reminderCount > 0 ? ' cptd-act--count' : ''}`}
+                      type="button"
+                      disabled={remindBusy === d.id}
+                      onClick={() => void remindDoc(d)}
+                    >
+                      {I.reminder}
+                      {sig.reminderCount > 0 && (
+                        <span className="cptd-act__cnt" aria-label={`Reminder sent ${sig.reminderCount} time${sig.reminderCount === 1 ? '' : 's'}`}>{sig.reminderCount}</span>
+                      )}
+                    </button>
+                  </Tooltip>
                 )}
               </div></td>
             </tr>

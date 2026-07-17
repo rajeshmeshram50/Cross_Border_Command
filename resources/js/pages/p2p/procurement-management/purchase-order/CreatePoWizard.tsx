@@ -346,7 +346,7 @@ function Box({ label, title, sub, ico, extra, children, defaultOpen = true }: { 
           <div className="bref-box__header-sub">{sub}</div>
         </div>
         {extra}
-        <div className="bref-box__header-right"><div className="bref-box__toggle"><Chev c="" /></div></div>
+        <div className="bref-box__header-right"><Tooltip label={open ? 'Collapse section' : 'Expand section'} themed zIndex={2999999}><div className="bref-box__toggle"><Chev c="" /></div></Tooltip></div>
       </div>
       <div className="bref-box__body bref-box__body--cpo"><div style={{ padding: 14 }}>{children}</div></div>
     </div>
@@ -943,7 +943,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
             <div className="cpo-hd">
               <div className="cpo-hd__ico">{docHd}</div>
               <div className="cpo-hd__mid"><div className="cpo-hd__t">Create Purchase Order</div><div className="cpo-hd__s">Choose how to link this PO to your procurement workflow.</div></div>
-              <button type="button" className="cpo-hd__x" onClick={onClose} aria-label="Close"><XIco /></button>
+              <Tooltip label="Close" themed zIndex={2999999}><button type="button" className="cpo-hd__x" onClick={onClose} aria-label="Close"><XIco /></button></Tooltip>
             </div>
             <div className="cpo-bd">
               <div className="cpo-sec">Link to procurement workflow</div>
@@ -1175,7 +1175,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                 <Box label="Products" title="Product Details" sub={withShip ? 'PI vs PO product mapping with live tax & cost computation' : 'Add PO products with live tax & cost computation'} ico={boxIco}
                   extra={
                     <div className="cpd-ref">
-                    {[{ l: 'Supplier Code', v: sup.code || 'S-001', mono: true }, { l: 'Supplier Name', v: sup.name || 'AgroSource Materials Pvt Ltd', mono: false }, { l: 'State Code', v: sup.stateCode || '27', mono: true }, { l: 'PI Number', v: 'PI/2025-26/001', mono: true }].map((f, i, arr) => (
+                    {[{ l: 'Supplier Code', v: sup.code || 'S-001', mono: true }, { l: 'Supplier Name', v: sup.name || 'AgroSource Materials Pvt Ltd', mono: false }, { l: 'State Code', v: sup.stateCode || '27', mono: true }, { l: 'PI Number', v: (withShip ? selShip?.pi_number : null) || '—', mono: true }].map((f, i, arr) => (
                       <span key={f.l} style={{ display: 'contents' }}>
                         <div className="cpd-ref__pill"><div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{refIcoFor(f.l)}</div><div className="cpd-ref__txt"><div className="cpd-ref__l">{f.l}</div><div className={`cpd-ref__v ${f.mono ? 'cpd-ref__v--mono' : ''}`}>{f.v.length > 30 ? <Tooltip label={f.v} position="bottom" zIndex={2999999}><span>{`${f.v.slice(0, 30)}…`}</span></Tooltip> : f.v}</div></div></div>
                         {i < arr.length - 1 && <div className="cpd-ref__dots"><span /><span /><span /></div>}
@@ -1208,7 +1208,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                               <td className="cpd-c"><span className="cpd-code">{formatProductCode(r.code) || '—'}</span></td>
                               <td className="cpd-name">{(r.productId == null && !r.code && !r.piName)
                                 ? <div className="cpd-prodcell"><Dd value={PI_REPICK_PLACEHOLDER} options={[PI_REPICK_PLACEHOLDER, ...removedPi.map(piLabel)]} onChange={label => { if (label !== PI_REPICK_PLACEHOLDER) reAddPi(r.id, label); }} /></div>
-                                : <Tooltip label={r.piName} disabled={!r.piName}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
+                                : <Tooltip label={r.piName} disabled={!r.piName} zIndex={2999999}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
                               <td className="cpd-c">{r.piQty || 0}</td>
                               <td><input className="cpd-in cpd-in--name" disabled={poView} value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} max={r.piQty || undefined} value={r.qty} onChange={e => setLine(r.id, { qty: capQty(e.target.value, r.piQty) })} /></td>
@@ -1216,7 +1216,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                               <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
-                              <td className="cpd-c">{!poView && <button type="button" className="cpd-del" title="Remove product" onClick={() => removeLine(r.id)}>✕</button>}</td>
+                              <td className="cpd-c">{!poView && <Tooltip label="Remove product" themed zIndex={2999999}><button type="button" className="cpd-del" onClick={() => removeLine(r.id)}>✕</button></Tooltip>}</td>
                             </tr>
                           ) : (
                             <tr key={r.id}>
@@ -1227,7 +1227,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                               <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
-                              <td className="cpd-c">{!poView && <button type="button" className="cpd-del" title="Remove product" onClick={() => removeLine(r.id)}>✕</button>}</td>
+                              <td className="cpd-c">{!poView && <Tooltip label="Remove product" themed zIndex={2999999}><button type="button" className="cpd-del" onClick={() => removeLine(r.id)}>✕</button></Tooltip>}</td>
                             </tr>
                           );
                         })}

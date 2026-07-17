@@ -222,9 +222,11 @@ export default function PoPaymentModal({
 
           {/* ── Payment Details (TDS) ── */}
           <Section tag="Payment" title="Payment Details" sub={`Figures derived from ${label} line items · enter TDS % to compute net payable`}
-            right={<button type="button" className="pop-gstbtn" disabled={!entityId} onClick={(e) => { e.stopPropagation(); setGstOpen(true); }} title="View the per-product CGST / SGST breakdown">
-              <IcoPct /><span>GST Breakdown</span>
-            </button>}>
+            right={<Tooltip label="View the per-product CGST / SGST breakdown" themed zIndex={2999999}>
+              <button type="button" className="pop-gstbtn" disabled={!entityId} onClick={(e) => { e.stopPropagation(); setGstOpen(true); }}>
+                <IcoPct /><span>GST Breakdown</span>
+              </button>
+            </Tooltip>}>
             <div className="pop-tbl-wrap">
               <table className="pop-tbl pop-tbl-c">
                 <thead><tr>
@@ -245,7 +247,7 @@ export default function PoPaymentModal({
                        }} disabled={tdsLocked} /></td>
                   <td><span className="pop-ro">{inr(preview?.tdsAmount ?? a?.tdsAmount)}</span></td>
                   <td><span className="pop-ro">{inr(preview?.netPayable ?? a?.netPayable)}</span></td>
-                  <td><button className={`pop-btn-save ${a?.tdsCut ? 'is-cut' : ''}`} disabled={savingTds || tdsLocked} onClick={saveTds} title={a?.tdsCut ? `TDS already deducted for this ${label}` : 'Deduct the TDS'}>{savingTds ? '…' : (a?.tdsCut ? '✓ Deducted' : 'Deduct')}</button></td>
+                  <td><Tooltip label={a?.tdsCut ? `TDS already deducted for this ${label}` : 'Deduct the TDS'} themed zIndex={2999999}><button className={`pop-btn-save ${a?.tdsCut ? 'is-cut' : ''}`} disabled={savingTds || tdsLocked} onClick={saveTds}>{savingTds ? '…' : (a?.tdsCut ? '✓ Deducted' : 'Deduct')}</button></Tooltip></td>
                 </tr></tbody>
               </table>
             </div>
@@ -474,15 +476,21 @@ function UpdatePaymentModal({
                   <span className="upm-filerow-ico"><IcoClip /></span>
                   <span className="upm-filerow-name" title={file.name}>{file.name}</span>
                   <span className="upm-filerow-acts">
-                    <button type="button" className="upm-fbtn" title="View" onClick={() => { if (fileUrl) window.open(fileUrl, '_blank', 'noopener'); }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg> View
-                    </button>
-                    <a className="upm-fbtn" title="Download" href={fileUrl ?? '#'} download={file.name}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg> Download
-                    </a>
-                    <button type="button" className="upm-fbtn upm-fbtn--re" title="Reupload" onClick={() => fileRef.current?.click()}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg> Reupload
-                    </button>
+                    <Tooltip label="View" themed zIndex={2999999}>
+                      <button type="button" className="upm-fbtn" onClick={() => { if (fileUrl) window.open(fileUrl, '_blank', 'noopener'); }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg> View
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Download" themed zIndex={2999999}>
+                      <a className="upm-fbtn" href={fileUrl ?? '#'} download={file.name}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg> Download
+                      </a>
+                    </Tooltip>
+                    <Tooltip label="Reupload" themed zIndex={2999999}>
+                      <button type="button" className="upm-fbtn upm-fbtn--re" onClick={() => fileRef.current?.click()}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg> Reupload
+                      </button>
+                    </Tooltip>
                   </span>
                 </div>
               ) : (
