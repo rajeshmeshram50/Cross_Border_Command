@@ -2236,7 +2236,8 @@ type ConsigneeRow = {
   dbId:          number;          // consignees.id (numeric PK)
   code:          string;          // "CN-012"
   company:       string;
-  customerDbId:  number | null;   // FK → customers.id
+  customerDbId:  number | null;   // FK → customers.id (legacy primary customer)
+  customerDbIds: number[];        // all mapped customers (consignee_customer pivot)
   country:       string;
 };
 type BankRow = {
@@ -2436,9 +2437,18 @@ function shapeQpiMasters(
     if (!co) return;
     const label = `${code} – ${co}`;
     consigneeOpts.push({ value: label, label });
+    // A consignee can be mapped to MANY customers (consignee_customer pivot).
+    // Prefer the full customer_ids array; fall back to the single legacy
+    // customer_id so older rows still resolve.
+    const mappedIds: number[] = Array.isArray(r.customer_ids)
+      ? r.customer_ids.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)
+      : [];
+    const primaryId = r.customer_id != null ? Number(r.customer_id) : null;
+    if (primaryId && !mappedIds.includes(primaryId)) mappedIds.push(primaryId);
     consigneesRaw.push({
       dbId, code, company: co,
-      customerDbId: r.customer_id != null ? Number(r.customer_id) : null,
+      customerDbId: primaryId,
+      customerDbIds: mappedIds,
       country: r.country ?? '',
     });
   });
@@ -3678,18 +3688,20 @@ function BasicForm(props: {
   // via the leads `customer_id` param + paginated fetch — the old client-side
   // `filteredOpportunities` memo over the static 50-row list was removed.)
 
-  // Consignees filtered by selected customer — uses consignee.customer_id
-  // (numeric FK) matching the customer's numeric dbId. STRICT: only the
-  // consignees mapped to this customer are shown (whether the customer was
-  // picked directly or auto-filled from an opportunity). When the customer
-  // has none mapped, the list is empty and the field shows the
-  // "No consignees for this customer" placeholder — we no longer fall back
-  // to the full list, which used to leak every consignee.
+  // Consignees filtered by selected customer — matches the customer's numeric
+  // dbId against the consignee's full set of mapped customers (customerDbIds,
+  // from the consignee_customer pivot), NOT just the legacy primary customer.
+  // A consignee mapped to several customers must show for every one of them.
+  // STRICT: only the consignees mapped to this customer are shown (whether the
+  // customer was picked directly or auto-filled from an opportunity). When the
+  // customer has none mapped, the list is empty and the field shows the
+  // "No consignees for this customer" placeholder — we no longer fall back to
+  // the full list, which used to leak every consignee.
   const filteredConsignees = useMemo(() => {
     if (!selectedCustomerRow) return masters.consignees;
     const matchValues = new Set(
       masters.consigneesRaw
-        .filter(c => c.customerDbId === selectedCustomerRow.dbId)
+        .filter(c => c.customerDbIds.includes(selectedCustomerRow.dbId))
         .map(c => `${c.code} – ${c.company}`)
     );
     return masters.consignees.filter(opt => matchValues.has(opt.value));
@@ -3754,7 +3766,7 @@ function BasicForm(props: {
         nextConsigneeId = conRow.dbId;
       }
     } else if (custRow) {
-      const mine = masters.consigneesRaw.filter(c => c.customerDbId === custRow.dbId);
+      const mine = masters.consigneesRaw.filter(c => c.customerDbIds.includes(custRow.dbId));
       if (mine.length === 1) {
         nextConsignee   = `${mine[0].code} – ${mine[0].company}`;
         nextConsigneeId = mine[0].dbId;
@@ -3824,9 +3836,9 @@ function BasicForm(props: {
       );
       if (oppRow && !oppMatches) { nextOpportunity = ''; nextOppId = null; }
 
-      // Filter consignees by numeric FK — auto-pick if exactly one,
+      // Filter consignees by mapped customers — auto-pick if exactly one,
       // clear if the current selection no longer belongs to this customer.
-      const mine = masters.consigneesRaw.filter(c => c.customerDbId === cust.dbId);
+      const mine = masters.consigneesRaw.filter(c => c.customerDbIds.includes(cust.dbId));
       const stillValid = mine.find(c => `${c.code} – ${c.company}` === form.consignee);
       if (mine.length === 1) {
         nextConsignee   = `${mine[0].code} – ${mine[0].company}`;
