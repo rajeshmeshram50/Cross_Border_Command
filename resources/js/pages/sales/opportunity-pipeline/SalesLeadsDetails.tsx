@@ -322,11 +322,18 @@ export default function SalesLeadsDetails() {
 /* ─── Styles — amber/orange palette mirrors the prototype card. ──── */
 const LDD_CSS = `
 .ldd-page {
+  box-sizing: border-box;
   margin: -1rem -0.75rem;
   background: #fffbeb;
-  min-height: 100%;
+  /* Fixed available height (viewport minus the app header + horizontal menu)
+     so the page fills the screen, the table scrolls INSIDE the card, and the
+     header + pagination stay pinned — mirrors the Lead Distribution page
+     (.ldp-page) and the My Workplace worksheet (.lwp-root). Even padding keeps
+     the header clear of the navbar with equal spacing on all sides. */
+  height: calc(100vh - 130px);
+  overflow: hidden;
   display: flex; flex-direction: column;
-  padding: 10px 18px 16px;
+  padding: 14px 18px;
   gap: 8px;
   animation: ldd-fade .18s ease-out;
 }

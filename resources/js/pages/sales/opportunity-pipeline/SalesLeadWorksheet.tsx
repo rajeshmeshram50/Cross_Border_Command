@@ -1042,7 +1042,7 @@ export default function SalesLeadWorksheet() {
                 </th>
                 <th>Lead Type</th><th>Lead Date</th><th>Lead Source</th>
                 <th>Assigned To</th><th>WhatsApp Status</th>
-                <th style={{ textAlign: 'center' }}>Opportunity ID</th>
+                <th style={{ textAlign: 'left' }}>Opportunity ID</th>
                 <th>Customer Name</th><th>Customer Number</th><th>Customer Email</th>
                 <th>Product Name</th><th>Company</th><th>Country</th><th>Action</th>
               </tr>
@@ -2003,15 +2003,13 @@ const SCOPED_CSS = `
 }
 
 /* ─── Row sub-elements ─── */
-/* Left-align so every OPP-#### starts at the same edge — with justify-content
-   center, Key-Opportunity rows (which add a star) shifted the id left of the
-   plain rows, so the column didn't line up vertically. */
-/* Centered to match the centered "Opportunity ID" header — rows with the
-   "View only" badge / key star otherwise read as misaligned (QA #99). */
-.lwp-root .lwp-opp-cell { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; }
+/* Left-align so every OPP-#### starts at the same edge under the left-aligned
+   "Opportunity ID" header. The key star sits right after the id (gap:5px),
+   not pushed to the far right, so plain and Key-Opportunity rows line up. */
+.lwp-root .lwp-opp-cell { display: flex; align-items: center; justify-content: flex-start; gap: 5px; width: 100%; }
 .lwp-root .lwp-opp-link { color: #0891b2; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .lwp-root .lwp-opp-link:hover { text-decoration: underline; color: #0e7490; }
-.lwp-root .lwp-key-star { color: #f59e0b; flex: 0 0 auto; margin-left: auto; }
+.lwp-root .lwp-key-star { color: #f59e0b; flex: 0 0 auto; }
 .lwp-root .lwp-cust-name { font-weight: 600; color: #0f172a; }
 .lwp-root .lwp-wa-badge {
   display: inline-flex; align-items: center; gap: 3px;

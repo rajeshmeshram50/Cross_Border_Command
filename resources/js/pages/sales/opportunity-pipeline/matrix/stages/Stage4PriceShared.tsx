@@ -485,12 +485,15 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                       <tr>
                         <th style={{ width: 50 }}>Sr No</th>
                         <th style={{ width: 110 }}>Product Code</th>
-                        <th style={{ minWidth: 280 }}>Product Name</th>
+                        <th>Product Name</th>
                         <th style={{ width: 100 }}>Status</th>
                         <th style={{ width: 80 }}>Quantity</th>
                         <th style={{ width: 140 }}>Target Price</th>
                         <th style={{ width: 170 }}>Quoted Price</th>
-                        <th style={{ width: 140 }}>Action</th>
+                        {/* Wide enough for the Submit button (min-width 108) + the
+                            eye/history icon button + its corner badge + cell
+                            padding, so the eye no longer clips at the edge. */}
+                        <th style={{ width: 190 }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -606,12 +609,12 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                       <tr>
                         <th style={{ width: 50 }}>Sr No</th>
                         <th style={{ width: 110 }}>Product Code</th>
-                        <th style={{ minWidth: 280 }}>Product Name</th>
+                        <th>Product Name</th>
                         <th style={{ width: 150 }}>Date &amp; Time</th>
                         <th style={{ width: 80 }}>Quantity</th>
                         <th style={{ width: 140 }}>Target Price</th>
                         <th style={{ width: 140 }}>Quoted Price</th>
-                        <th style={{ width: 90 }}>Action</th>
+                        <th style={{ width: 104 }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -849,7 +852,11 @@ const STAGE4_CSS = `
 .s4-table-wrap::-webkit-scrollbar-track { background: transparent; }
 .s4-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 .s4-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-.s4-table { width: 100%; border-collapse: collapse; min-width: 880px; }
+/* table-layout:fixed + width:100% keeps every column inside the stage card
+   (no horizontal scroll) at any width — the flexible Product Name column
+   absorbs the slack and truncates (ellipsis + hover tooltip). Replaces the
+   old min-width:880px, which overflowed when the side panels were open. */
+.s4-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .s4-table thead th { position: sticky; top: 0; z-index: 2; }
 .s4-thead-navy th {
   padding: 12px 14px; text-align: left;

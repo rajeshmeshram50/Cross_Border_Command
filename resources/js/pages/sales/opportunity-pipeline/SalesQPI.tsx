@@ -4615,12 +4615,17 @@ function ProductsStep(props: {
       <div className="qpi-totals-row">
         <div className="qpi-terms">
           <div className={`qpi-form-heading qpi-form-heading-${theme}`}>TERMS &amp; CONDITIONS</div>
-          <textarea
-            className="qpi-textarea"
-            placeholder="Enter terms and conditions..."
-            value={terms}
-            onChange={(e) => setTerms(e.target.value)}
-          />
+          <div style={{ position: 'relative', display: 'flex' }}>
+            <textarea
+              className="qpi-textarea"
+              placeholder="Enter terms and conditions..."
+              value={terms}
+              onChange={(e) => setTerms(e.target.value)}
+            />
+            <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 11, color: 'var(--vz-secondary-color)', pointerEvents: 'none' }}>
+              {terms.length} characters
+            </div>
+          </div>
         </div>
 
         <div className={`qpi-summary qpi-summary-${theme}`}>

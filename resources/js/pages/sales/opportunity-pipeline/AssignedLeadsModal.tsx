@@ -97,8 +97,9 @@ export default function AssignedLeadsModal() {
 
   /* Roster shows only salespeople who actually hold leads — an empty
    * salesperson adds noise to the distribution view. The TOTAL SALES
-   * PERSONS KPI / header pill still count every active member (a
-   * separate metric); this filter is presentational to the table only. */
+   * PERSONS KPI / header pill count these same rows so the number always
+   * matches what's visible in the table (previously they counted every
+   * active member, which read as "3 rows but says 6"). */
   const leadRows   = rows.filter(r => (r.total_assigned_leads ?? 0) > 0);
   const totalCount = leadRows.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -141,7 +142,7 @@ export default function AssignedLeadsModal() {
              * "no data" reading instead of an error boundary. */}
             <span className="ldp-header-pill">
               <span className="ldp-header-pill-dot" />
-              {summary?.total_sales_persons ?? 0} Sales Members
+              {totalCount} Sales Members
             </span>
             <span className="ldp-header-pill">
               <span className="ldp-header-pill-dot" />
@@ -162,7 +163,7 @@ export default function AssignedLeadsModal() {
         <div className="ldp-stats">
           <StatCard
             label="TOTAL SALES PERSONS"
-            value={summary?.total_sales_persons ?? 0}
+            value={totalCount}
             sub="Active members"
             tone="slate"
             icon={
@@ -215,6 +216,7 @@ export default function AssignedLeadsModal() {
 
         {/* ── Table ────────────────────────────────────────────────── */}
         <div className="ldp-table-wrap">
+          <div className="ldp-table-scroll">
           <table className="ldp-table">
             <thead>
               <tr>
@@ -313,6 +315,7 @@ export default function AssignedLeadsModal() {
               })}
             </tbody>
           </table>
+          </div>
 
           {/* ── Pagination footer ──────────────────────────────────── */}
           {!loading && totalCount > 0 && (
@@ -327,10 +330,7 @@ export default function AssignedLeadsModal() {
                     value={pageSize}
                     onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
                   >
-                    <option value={10}>10</option>
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
+                    {[...new Set([pageSize, 10, 25, 50])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </label>
                 <div className="ldp-page-indicator">
@@ -453,11 +453,20 @@ const LDP_CSS = `
 /* Page wrapper — fills the in-app content area edge-to-edge. */
 .ldp-page {
   animation: ldp-fade .18s ease-out;
-  min-height: 100%;
-  /* Counter the parent layout's gutters so the shell hugs the side rails
-     like the rest of the matrix pages do. Adjust the negative margin if
-     the surrounding container's padding changes. */
+  box-sizing: border-box;
+  /* Counter the parent layout's gutters so the shell hugs the side rails,
+     then re-inset with even padding so the header card clears the navbar
+     (top) and sits with equal spacing on the left / right / bottom —
+     mirrors the My Workplace worksheet (.lwp-root margin + padding). */
   margin: -1rem -0.75rem;
+  padding: 12px 14px;
+  /* Fixed available height (viewport minus the app header + horizontal menu)
+     so the shell fills the screen, the table scrolls INSIDE it, and the
+     header card + KPI cards + pagination stay pinned — mirrors the My
+     Workplace worksheet layout (.lwp-root). */
+  height: calc(100vh - 130px);
+  overflow: hidden;
+  display: flex; flex-direction: column;
 }
 @keyframes ldp-fade { from { opacity: 0; } to { opacity: 1; } }
 
@@ -468,11 +477,15 @@ const LDP_CSS = `
   border: 1px solid #fde68a;
   box-shadow: 0 6px 22px rgba(217,119,6,.10);
   overflow: hidden;
+  /* Fill the remaining page height; KPI cards stay fixed, the table scrolls,
+     the pagination stays pinned at the bottom. */
+  display: flex; flex-direction: column; flex: 1; min-height: 0;
 }
 
 /* ── Header card (its own standalone container above the shell) ─── */
 .ldp-header-card {
   width: 100%;
+  flex-shrink: 0;
   margin-bottom: 12px;
   border-radius: 14px;
   border: 1px solid #fde68a;
@@ -484,7 +497,7 @@ const LDP_CSS = `
 /* ── Header ─────────────────────────────────────────────────────── */
 .ldp-header {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; padding: 14px 20px;
+  gap: 12px; padding: 12px 14px;
   background: linear-gradient(135deg, #fef9c3 0%, #fef3c7 50%, #fde68a 100%);
 }
 .ldp-header-left { display: flex; align-items: center; gap: 11px; min-width: 0; }
@@ -528,6 +541,7 @@ const LDP_CSS = `
 .ldp-stats {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
   padding: 12px 18px 4px;
+  flex-shrink: 0;
 }
 .ldp-stat {
   position: relative;
@@ -622,9 +636,16 @@ const LDP_CSS = `
 .ldp-table-wrap {
   margin: 14px 18px 18px;
   background: #fff; border: 1px solid #fde68a; border-radius: 10px;
-  overflow: auto;
+  overflow: hidden;
+  /* Fill remaining shell height; the inner scroll handles overflow so the
+     pagination footer stays pinned inside this card. */
+  display: flex; flex-direction: column; flex: 1; min-height: 0;
 }
+/* Scroll area — the wide/tall table scrolls here (x + y); the sticky header
+   stays pinned during vertical scroll. */
+.ldp-table-scroll { overflow: auto; flex: 1; min-height: 0; }
 .ldp-table { width: 100%; border-collapse: collapse; font-size: 11px; min-width: 1050px; }
+.ldp-table thead { position: sticky; top: 0; z-index: 5; }
 .ldp-table thead tr {
   background: linear-gradient(135deg, #92400e 0%, #b45309 50%, #d97706 100%);
 }
@@ -759,6 +780,7 @@ const LDP_CSS = `
 
 /* ── Pagination footer ──────────────────────────────────────────── */
 .ldp-pagination {
+  flex-shrink: 0;
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; padding: 10px 14px;
   background: #fffbeb; border-top: 1px solid #fde68a;

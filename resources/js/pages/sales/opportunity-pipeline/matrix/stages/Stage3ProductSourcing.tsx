@@ -501,8 +501,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           {r.product_category && <span className="s3-cat-badge s3-cat-badge-violet">{r.product_category.toUpperCase()}</span>}
                         </td>
                         <td>
-                          <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : statusLc === 'draft' ? 's3-pill-draft' : 's3-pill-inactive'}`}>
-                            ● {statusLc ? statusLc.charAt(0).toUpperCase() + statusLc.slice(1) : '—'}
+                          <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
+                            ● {statusLc === 'active' ? 'Active' : statusLc ? 'Inactive' : '—'}
                           </span>
                         </td>
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
@@ -645,8 +645,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                             {r.product_category && <span className="s3-cat-badge s3-cat-badge-amber">{r.product_category.toUpperCase()}</span>}
                           </td>
                           <td>
-                            <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : statusLc === 'draft' ? 's3-pill-draft' : 's3-pill-inactive'}`}>
-                              ● {statusLc ? statusLc.charAt(0).toUpperCase() + statusLc.slice(1) : '—'}
+                            <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
+                              ● {statusLc === 'active' ? 'Active' : statusLc ? 'Inactive' : '—'}
                             </span>
                           </td>
                           <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
@@ -808,8 +808,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           {r.product_category && <span className="s3-cat-badge s3-cat-badge-mint">{r.product_category.toUpperCase()}</span>}
                         </td>
                         <td>
-                          <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : statusLc === 'draft' ? 's3-pill-draft' : 's3-pill-inactive'}`}>
-                            ● {statusLc ? statusLc.charAt(0).toUpperCase() + statusLc.slice(1) : '—'}
+                          <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
+                            ● {statusLc === 'active' ? 'Active' : statusLc ? 'Inactive' : '—'}
                           </span>
                         </td>
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
@@ -1178,7 +1178,11 @@ const STAGE3_CSS = `
 .s3-table-wrap::-webkit-scrollbar-track { background: transparent; }
 .s3-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 .s3-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-.s3-table { width: 100%; border-collapse: collapse; min-width: 880px; }
+/* table-layout:fixed + width:100% keeps every column inside the stage card
+   (no horizontal scroll) at any width — the flexible Product Name column
+   absorbs the slack and truncates (ellipsis + hover tooltip). Replaces the
+   old min-width:880px, which overflowed when the side panels were open. */
+.s3-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 /* Table header — light lavender gradient matching the Product Sourcing
    popup's table (gradient on the tr so it sweeps the whole row; cells stay
    transparent). The amber Sourcing-Required table keeps its own header via
