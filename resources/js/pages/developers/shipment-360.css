@@ -134,7 +134,7 @@
 .s360m .s360-port{font-size:10.5px;font-weight:600;color:#164e63;white-space:nowrap;}
 
 /* ── Table ──────────────────────────────────────────────────────────────── */
-.s360m .rvtbl-wrap{position:relative;overflow-x:auto;background:#fff;}
+.s360m .rvtbl-wrap{position:relative;overflow-x:auto;background:#fff;-webkit-overflow-scrolling:touch;}
 .s360m .rvtbl{border-collapse:separate;border-spacing:0;width:100%;font-size:10.5px;table-layout:auto;}
 .s360m .rvtbl thead th{position:sticky;top:0;z-index:2;font-weight:800;letter-spacing:.03em;text-transform:uppercase;white-space:normal;vertical-align:middle;text-align:center;line-height:1.2;}
 .s360m .rvtbl tbody td{font-weight:600;vertical-align:middle;text-align:center;background:#fff;transition:background .12s;}
@@ -264,3 +264,40 @@
 [data-bs-theme="dark"] .s360m .tc-wl-info,[data-bs-theme="dark"] .s360m .tc-wl-rows,[data-bs-theme="dark"] .s360m .tc-wl-btn{color:#67e8f9;border-color:#173947;background:rgba(255,255,255,.05);}
 [data-bs-theme="dark"] .s360m .tc-wl-info .tc-wl-hl,[data-bs-theme="dark"] .s360m .tc-wl-rows select{color:#a5f3fc;}
 [data-bs-theme="dark"] .s360m .tc-wl-btn:hover:not(:disabled){background:rgba(255,255,255,.10);border-color:#22d3ee;}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Responsive — tablet & mobile.
+   The journey table itself deliberately keeps its natural width and scrolls
+   horizontally inside .rvtbl-wrap (28 columns can't collapse meaningfully);
+   everything around it stacks. Below 768px the .tsx auto-fit turns itself
+   off (fillH/rpp), so the page scrolls normally instead of pinning the pager.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 900px){
+  /* Header strip wraps: title row first, Export button drops to its own row. */
+  .s360m .cstrip{flex-wrap:wrap;gap:10px;padding:12px 14px;min-height:0;}
+  .s360m .cstrip__left{padding-left:4px;}
+  .s360m .cstrip__right{margin-left:auto;}
+}
+@media (max-width: 720px){
+  .s360m{gap:8px;}
+  .s360m .cstrip__right{width:100%;margin-left:0;}
+  .s360m .cstrip__action-btn{width:100%;justify-content:center;}
+  /* Tabs stretch edge-to-edge, one flexible half each; search is already
+     full-width from the ≤720 rule above. */
+  .s360m .s360-tabs{width:100%;}
+  .s360m .s360-tab{flex:1;justify-content:center;padding:8px 10px;}
+  /* Collapse the bref header to its title row — the one-line summary is
+     decorative and just forces a taller header on phones. */
+  .s360m .bref-box__header{min-height:42px;padding:6px 10px;}
+  .s360m .bref-box__header-sub{display:none;}
+}
+@media (max-width: 480px){
+  .s360m .cstrip__title{font-size:13px;}
+  .s360m .cstrip__sub{font-size:9.5px;}
+  .s360m .s360-toolbar{padding:8px 10px;gap:8px;}
+  .s360m .s360-tab{font-size:11px;gap:6px;padding:7px 6px;}
+  .s360m .s360-tab__cnt{padding:1px 6px;}
+  .s360m .bref-box__body{grid-template-columns:1fr;}
+  .s360m .s360-panel .rvtbl thead th{padding:8px 4px;}
+  .s360m .s360-search{height:36px;}
+}

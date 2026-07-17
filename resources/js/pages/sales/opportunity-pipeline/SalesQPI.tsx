@@ -2914,6 +2914,11 @@ export function CreateQuotationModal(props: {
                * quotation — the lead's FINAL consignee is fixed by the
                * first quotation and must not drift on later create/edit. */
               lockConsignee={isEdit || !!initialOpp?.consigneeId}
+              /* Same edit lock as the PI wizard: flipping International/
+               * Domestic on a saved quotation would break its tax/costing
+               * structure. (On create, the type follows the customer's
+               * country and locks automatically inside BasicForm.) */
+              lockDocType={isEdit}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
                 if (!prev.has(k)) return prev;
@@ -3644,6 +3649,31 @@ function BasicForm(props: {
     return masters.customersRaw.find(c => c.code === code) ?? null;
   }, [form.customer, masters.customersRaw]);
 
+  /* ── Document Type follows the CUSTOMER's country ─────────────────
+   * An Indian customer's documents are Domestic; a foreign customer's are
+   * International — the GST/tax structure follows the customer, so the
+   * user must not be able to pick the other type. When the customer's
+   * country is known the field auto-selects and renders read-only; with
+   * no customer picked (or a legacy customer saved without a country) the
+   * dropdown stays editable. Edit mode (lockDocType) never rewrites the
+   * saved type — the stored document keeps whatever it was created as. */
+  const isIndiaCountry = (c?: string | null): boolean => {
+    const v = (c ?? '').trim().toLowerCase();
+    return v === 'india' || v === 'in' || v === 'ind';
+  };
+  // customerId (set by every cascade + the matrix pre-seed) is the primary
+  // key; the label-parsed row is the fallback for older paths.
+  const custCountry = (
+    (form.customerId != null ? masters.customersRaw.find(c => c.dbId === form.customerId) : null)
+      ?? selectedCustomerRow
+  )?.country?.trim() ?? '';
+  const forcedDocType: 'International' | 'Domestic' | null =
+    custCountry === '' ? null : (isIndiaCountry(custCountry) ? 'Domestic' : 'International');
+  useEffect(() => {
+    if (lockDocType || !forcedDocType) return;
+    setForm(f => (f.docType === forcedDocType ? f : { ...f, docType: forcedDocType }));
+  }, [forcedDocType, lockDocType, setForm]);
+
   // (Opportunity filtering now happens server-side inside OpportunitySelect
   // via the leads `customer_id` param + paginated fetch — the old client-side
   // `filteredOpportunities` memo over the static 50-row list was removed.)
@@ -3877,9 +3907,11 @@ function BasicForm(props: {
 
       <div className="qpi-form-grid">
         <Field label="Document Type" required>
-          {lockDocType ? (
+          {lockDocType || forcedDocType ? (
             <input className="qpi-input qpi-input-readonly" value={form.docType} readOnly
-              title="Document Type can't be changed when editing — create a new document to switch International / Domestic." />
+              title={lockDocType
+                ? "Document Type can't be changed when editing — create a new document to switch International / Domestic."
+                : `Fixed by the customer's country (${custCountry}) — a ${forcedDocType === 'Domestic' ? 'domestic (Indian)' : 'foreign'} customer only gets ${forcedDocType} documents.`} />
           ) : (
           <MasterSelect
             value={form.docType}
@@ -5789,7 +5821,9 @@ const SCOPED_CSS = `
 }
 .qpi-modal-backdrop *, .qpi-modal-backdrop *::before, .qpi-modal-backdrop *::after { box-sizing: border-box; }
 .qpi-modal {
-  width: 100%; max-width: 1140px;
+  /* 1140 → 1280: the Step-2 product grid (rate/tax/amount columns) was
+     cramped and forced an inner horizontal scroll on 1366px+ screens. */
+  width: 100%; max-width: 1380px;
   background: #fff; border-radius: 12px;
   box-shadow: 0 20px 50px rgba(15, 23, 42, .40), 0 8px 24px rgba(124,58,237,.14);
   display: flex; flex-direction: column;
@@ -6093,10 +6127,11 @@ const SCOPED_CSS = `
   background: #d1d5db; border-radius: 999px;
 }
 .qpi-products-wrap::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
-.qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; min-width: 800px; table-layout: fixed; }
-/* Domestic intra-state adds 3 columns (CGST %, SGST %, CGST Amt, SGST Amt in
-   place of one Tax Amount) — 11 columns need more than the 800px baseline. */
-.qpi-products-table--wide { min-width: 1020px; }
+/* No min-width on desktop: the fixed layout + percentage colgroup squeeze
+   the columns into the (now 1280px) modal, so the wrap never grows a
+   horizontal scrollbar. Narrow viewports reinstate the min-widths below
+   (≤900px media block) and scroll instead of crushing the inputs. */
+.qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
 /* Header matches the modal's popup chrome — teal gradient for the
    Quotation modal, purple for PI — using the same gradient as the modal
    header. The gradient lives on the ROW (with transparent cells) so it
@@ -6144,10 +6179,11 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
 }
 .qpi-prod-add {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 14px; border-radius: 8px; border: none;
-  color: #fff; font-family: inherit; font-size: 12px; font-weight: 800; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 10px; border-radius: 7px; border: none;
+  color: #fff; font-family: inherit; font-size: 11px; font-weight: 800; cursor: pointer;
   box-shadow: 0 3px 10px rgba(124,58,237,.35);
+  white-space: nowrap;
 }
 .qpi-prod-add-teal   { background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 3px 10px rgba(14,116,144,.35); }
 .qpi-prod-add-purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
@@ -6684,6 +6720,10 @@ const SCOPED_CSS = `
   .qpi-tab { flex: 1; justify-content: center; }
   .qpi-wdh-step { min-height: 0; }
   .qpi-wdh-body { padding: 6px 12px 10px; gap: 10px; }
+  /* Below tablet width the percentage columns would crush the numeric
+     inputs — reinstate the natural min-widths and let the wrap scroll. */
+  .qpi-products-table { min-width: 800px; }
+  .qpi-products-table--wide { min-width: 1020px; }
 }
 
 @media (max-width: 680px) {
