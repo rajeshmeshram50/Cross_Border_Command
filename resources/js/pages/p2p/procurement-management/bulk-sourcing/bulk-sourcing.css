@@ -2612,6 +2612,33 @@
   box-shadow: 0 3px 9px -3px rgba(8,145,178,.4);
 }
 
+/* ── Team picker responsiveness ──────────────────────────────────────────
+   High browser zoom (and small screens) shrink the CSS viewport, which used
+   to leave the fixed-px picker dominating the screen with an oversized
+   search box. Scale the whole popup down as the viewport tightens so it
+   keeps the compact proportions of the 100% design. */
+@media (max-width: 900px) {
+  .astp-pop { max-width: min(360px, 90vw); border-radius: 13px; }
+  .astp-head { padding: 11px 12px; gap: 9px; }
+  .astp-head-ico { width: 27px; height: 27px; border-radius: 8px; }
+  .astp-head-ico svg { width: 14px; height: 14px; }
+  .astp-title { font-size: 12.5px; }
+  .astp-sub { font-size: 9.5px; }
+  .astp-close { width: 22px; height: 22px; border-radius: 6px; }
+  .astp-search { height: 34px; margin: 8px 10px 4px; padding: 0 10px; gap: 7px; border-radius: 8px; }
+  .astp-search input { font-size: 11.5px; }
+  .astp-search svg { width: 12px; height: 12px; }
+  .astp-body { padding: 7px; gap: 3px; }
+  .astp-row { gap: 9px; padding: 7px 9px; border-radius: 9px; }
+  .astp-av { width: 28px; height: 28px; font-size: 11.5px; }
+  .astp-name { font-size: 11.5px; }
+  .astp-role { font-size: 9.5px; }
+  .astp-radio { width: 15px; height: 15px; }
+  .astp-check svg { width: 15px; height: 15px; }
+  .astp-foot { padding: 9px 11px; gap: 8px; }
+  .astp-foot .ast-btn { padding: 7px 13px; font-size: 11px; }
+}
+
 /* clarity popup body */
 .ast-tabs {
   display: flex;

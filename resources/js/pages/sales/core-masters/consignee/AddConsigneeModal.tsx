@@ -6215,13 +6215,19 @@ const SCOPED_CSS = `
    inline "View all N" pill. */
 .acm-seg-box {
   position: relative;
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  /* Single row: the first (truncating) chip + the "View all N" pill stay on one
+     line — a long segment name no longer wraps the pill onto a second row. */
+  display: flex; align-items: center; flex-wrap: nowrap; gap: 8px;
   min-height: 40px; padding: 5px 12px;
   border: 1.5px solid #e2e8f0; border-radius: 10px; background: #fff;
+  overflow: hidden;
 }
 [data-bs-theme="dark"] .acm-seg-box { background: #0f1a17; border-color: rgba(148,163,184,.22); }
 .acm-seg-firstchip {
-  display: inline-flex; align-items: center;
+  /* inline-block (not inline-flex) so a long name ellipsis-truncates; min-width:0
+     lets the flex item shrink below its content so the "View all" pill fits. */
+  display: inline-block; vertical-align: middle;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 12.5px; font-weight: 600; color: #0f766e;
   background: #ecfdf5; border: 1px solid #a7f3d0;
   border-radius: 12px; padding: 2px 10px;
