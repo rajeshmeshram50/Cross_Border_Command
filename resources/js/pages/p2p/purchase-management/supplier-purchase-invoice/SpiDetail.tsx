@@ -372,6 +372,13 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   const pickProduct = (i: number, name: string) => {
     const p = prodOpts.find(x => x.name === name);
     if (!p) { setRow(i, { spiName: name }); return; }
+    // A product may appear on the invoice only once — block re-selecting one
+    // already on another row (the dropdown also hides used products; this is
+    // the defensive backstop).
+    if (rows.some((r, idx) => idx !== i && r.productId === p.id)) {
+      toast.warning('Already added', `"${p.name}" is already on this invoice. Each product can be added only once.`);
+      return;
+    }
     setRow(i, { productId: p.id, code: p.code, spiName: p.name, hsn: p.hsn, spiRate: String(p.price || ''), gst: p.gst });
   };
 
@@ -1058,7 +1065,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                       <td><span className="spi-dt-mcode">{r.code || '—'}</span></td>
                       <td>{r.productId != null
                         ? <input className="spi-dt-minp spi-dt-minp-name" value={r.spiName} placeholder="Product name" onChange={e => setRow(i, { spiName: e.target.value })} />
-                        : <EditSelect value={r.spiName} options={prodOpts.map(p => p.name)} placeholder="— Select Product —" onChange={v => pickProduct(i, v)} />}</td>
+                        : <EditSelect value={r.spiName} options={prodOpts.filter(o => o.id === r.productId || !rows.some((x, idx) => idx !== i && x.productId === o.id)).map(p => p.name)} placeholder="— Select Product —" onChange={v => pickProduct(i, v)} />}</td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiRate} onChange={e => setRow(i, { spiRate: e.target.value })} /></td>
