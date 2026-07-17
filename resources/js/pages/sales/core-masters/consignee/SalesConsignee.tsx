@@ -460,7 +460,7 @@ export default function SalesConsignee() {
     /* Email absorbs the table's leftover width (see SalesConsignee.css); its
        caps are raised so that width shows address rather than blank space. */
     { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-email" caseSensitive /> },
-    { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'center' }, cell: (i: any) => <span className="smcg-mono">{i.getValue() || '—'}</span> },
+    { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'start' }, cell: (i: any) => <span className="smcg-mono">{i.getValue() || '—'}</span> },
     {
       header: 'Country',
       accessorKey: 'country',
@@ -894,6 +894,14 @@ export default function SalesConsignee() {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Footer — mapping summary + Close, matching the header palette. */}
+            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 20px', borderTop: `1px solid ${mc.border}`, background: mc.rowAlt }}>
+              <span style={{ fontSize: 12.5, color: mc.textMuted, fontWeight: 600 }}>
+                <strong style={{ color: mc.textStrong }}>{(mappedTarget.customers ?? []).length}</strong> {(mappedTarget.customers ?? []).length === 1 ? 'customer' : 'customers'} linked to <strong style={{ color: mc.textStrong }}>{mappedTarget.id}</strong>
+              </span>
+              <button type="button" onClick={() => setMappedTarget(null)} style={{ border: 'none', background: 'linear-gradient(135deg,#6d28d9,#7c3aed)', color: '#fff', borderRadius: 9, padding: '8px 20px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>Close</button>
             </div>
           </div>
         </div>,

@@ -501,8 +501,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           {r.product_category && <span className="s3-cat-badge s3-cat-badge-violet">{r.product_category.toUpperCase()}</span>}
                         </td>
                         <td>
-                          <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : statusLc === 'draft' ? 's3-pill-draft' : 's3-pill-inactive'}`}>
-                            ● {statusLc ? statusLc.charAt(0).toUpperCase() + statusLc.slice(1) : '—'}
+                          <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
+                            ● {statusLc === 'active' ? 'Active' : statusLc ? 'Inactive' : '—'}
                           </span>
                         </td>
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
@@ -645,8 +645,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                             {r.product_category && <span className="s3-cat-badge s3-cat-badge-amber">{r.product_category.toUpperCase()}</span>}
                           </td>
                           <td>
-                            <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : statusLc === 'draft' ? 's3-pill-draft' : 's3-pill-inactive'}`}>
-                              ● {statusLc ? statusLc.charAt(0).toUpperCase() + statusLc.slice(1) : '—'}
+                            <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
+                              ● {statusLc === 'active' ? 'Active' : statusLc ? 'Inactive' : '—'}
                             </span>
                           </td>
                           <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
@@ -808,8 +808,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           {r.product_category && <span className="s3-cat-badge s3-cat-badge-mint">{r.product_category.toUpperCase()}</span>}
                         </td>
                         <td>
-                          <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : statusLc === 'draft' ? 's3-pill-draft' : 's3-pill-inactive'}`}>
-                            ● {statusLc ? statusLc.charAt(0).toUpperCase() + statusLc.slice(1) : '—'}
+                          <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
+                            ● {statusLc === 'active' ? 'Active' : statusLc ? 'Inactive' : '—'}
                           </span>
                         </td>
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
