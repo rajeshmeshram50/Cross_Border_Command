@@ -1175,7 +1175,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                 <Box label="Products" title="Product Details" sub={withShip ? 'PI vs PO product mapping with live tax & cost computation' : 'Add PO products with live tax & cost computation'} ico={boxIco}
                   extra={
                     <div className="cpd-ref">
-                    {[{ l: 'Supplier Code', v: sup.code || 'S-001', mono: true }, { l: 'Supplier Name', v: sup.name || 'AgroSource Materials Pvt Ltd', mono: false }, { l: 'State Code', v: sup.stateCode || '27', mono: true }, { l: 'PI Number', v: 'PI/2025-26/001', mono: true }].map((f, i, arr) => (
+                    {[{ l: 'Supplier Code', v: sup.code || 'S-001', mono: true }, { l: 'Supplier Name', v: sup.name || 'AgroSource Materials Pvt Ltd', mono: false }, { l: 'State Code', v: sup.stateCode || '27', mono: true }, { l: 'PI Number', v: (withShip ? selShip?.pi_number : null) || '—', mono: true }].map((f, i, arr) => (
                       <span key={f.l} style={{ display: 'contents' }}>
                         <div className="cpd-ref__pill"><div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{refIcoFor(f.l)}</div><div className="cpd-ref__txt"><div className="cpd-ref__l">{f.l}</div><div className={`cpd-ref__v ${f.mono ? 'cpd-ref__v--mono' : ''}`}>{f.v.length > 30 ? <Tooltip label={f.v} position="bottom" zIndex={2999999}><span>{`${f.v.slice(0, 30)}…`}</span></Tooltip> : f.v}</div></div></div>
                         {i < arr.length - 1 && <div className="cpd-ref__dots"><span /><span /><span /></div>}

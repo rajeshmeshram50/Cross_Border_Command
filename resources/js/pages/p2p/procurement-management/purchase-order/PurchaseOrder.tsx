@@ -588,20 +588,33 @@ export default function PurchaseOrder() {
                       <td>
                         <div className="polist-act">
                           {synced ? (
-                            <button type="button" className="polist-zoho is-synced" disabled title="Already synced with Zohobook">{Ico.sync(14)}<span>Synced</span></button>
+                            <Tooltip label="Already synced with Zohobook" themed>
+                              <button type="button" className="polist-zoho is-synced" disabled>{Ico.sync(14)}<span>Synced</span></button>
+                            </Tooltip>
                           ) : (
-                            <button type="button" className="polist-zoho" title="Sync with Zohobook" onClick={() => openZohoConfirm(r)}>{Ico.sync(14)}<span>Zoho Sync</span></button>
+                            <Tooltip label="Sync with Zohobook" themed>
+                              <button type="button" className="polist-zoho" onClick={() => openZohoConfirm(r)}>{Ico.sync(14)}<span>Zoho Sync</span></button>
+                            </Tooltip>
                           )}
-                          <button
-                            type="button"
-                            className="polist-ico"
-                            title={editLocked ? (synced ? 'View — locked (already synced to Zoho Books)' : (r.sent_for_sign || r.is_signed) ? 'View — locked (PO sent for signature)' : r.has_spi ? 'View — locked (a supplier invoice is mapped to this PO)' : 'View PO') : 'Edit PO'}
-                            onClick={() => setWizard({ editRow: r, viewOnly: editLocked })}
-                          >{editLocked ? Ico.eye(15) : Ico.edit(15)}</button>
-                          <button type="button" className="polist-ico" title="Send PO Via Email" disabled={!!(r.id && emailing[r.id])} onClick={() => doEmail(r)}>{Ico.mail(15)}</button>
-                          <button type="button" className="polist-ico" title="Trade Documents & Agreements" onClick={() => setTradeDoc(r)}>{Ico.vault(15)}</button>
-                          <button type="button" className="polist-ico" title="PO Payment" onClick={() => setPayTarget(r)}>{Ico.pay(15)}</button>
-                          <button type="button" className="polist-ico" title="More Actions" onClick={e => openMore(e, r)}>{Ico.kebab(15)}</button>
+                          <Tooltip label={editLocked ? (synced ? 'View — locked (already synced to Zoho Books)' : (r.sent_for_sign || r.is_signed) ? 'View — locked (PO sent for signature)' : r.has_spi ? 'View — locked (a supplier invoice is mapped to this PO)' : 'View PO') : 'Edit PO'} themed>
+                            <button
+                              type="button"
+                              className="polist-ico"
+                              onClick={() => setWizard({ editRow: r, viewOnly: editLocked })}
+                            >{editLocked ? Ico.eye(15) : Ico.edit(15)}</button>
+                          </Tooltip>
+                          <Tooltip label="Send PO Via Email" themed>
+                            <button type="button" className="polist-ico" disabled={!!(r.id && emailing[r.id])} onClick={() => doEmail(r)}>{Ico.mail(15)}</button>
+                          </Tooltip>
+                          <Tooltip label="Trade Documents & Agreements" themed>
+                            <button type="button" className="polist-ico" onClick={() => setTradeDoc(r)}>{Ico.vault(15)}</button>
+                          </Tooltip>
+                          <Tooltip label="PO Payment" themed>
+                            <button type="button" className="polist-ico" onClick={() => setPayTarget(r)}>{Ico.pay(15)}</button>
+                          </Tooltip>
+                          <Tooltip label="More Actions" themed>
+                            <button type="button" className="polist-ico" onClick={e => openMore(e, r)}>{Ico.kebab(15)}</button>
+                          </Tooltip>
                         </div>
                       </td>
                     </tr>
