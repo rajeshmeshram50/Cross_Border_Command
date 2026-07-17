@@ -267,7 +267,8 @@ class DebitNoteController extends Controller
         if (!$v) return null;
 
         $a = $v->primaryAddress;
-        $g = $v->gstScrutiny->first();
+        // Newest scrutiny = current GST status (order-safe; see PurchaseOrderController).
+        $g = $v->gstScrutiny->sortByDesc('id')->first();
         $country = $a && $a->country_id ? DB::table('master_countries')->where('id', $a->country_id)->value('name') : null;
         $state = $a && $a->state_id ? DB::table('master_states')->where('id', $a->state_id)->value('name') : null;
 

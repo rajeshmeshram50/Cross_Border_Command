@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useScrollLock } from '../../../hooks/useScrollLock';
+import { formatDmy } from '../../../utils/formatDmy';
 
 /* Shared Signing Tracker modal — reusable across the QPI list, Sales Matrix
    Stage 5, and Customer / Consignee signing flows. Self-contained: it injects
@@ -361,16 +362,15 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // Date + time in the app-wide format: "17-Jul-2026, 10:09 AM" — formatDmy
+  // gives the DD-Mon-YYYY date; the time keeps the 12-hour AM/PM clock.
   const fmt = (d?: string | null) => {
     if (!d) return '—';
     const dt = new Date(d);
-    return isNaN(dt.getTime()) ? '—' : dt.toLocaleString(undefined, { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    if (isNaN(dt.getTime())) return '—';
+    return `${formatDmy(dt)}, ${dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`;
   };
-  const fmtD = (d?: string | null) => {  // date only
-    if (!d) return '—';
-    const dt = new Date(d);
-    return isNaN(dt.getTime()) ? '—' : dt.toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
-  };
+  const fmtD = (d?: string | null) => formatDmy(d);  // date only
   const status   = String(data?.status ?? '').toLowerCase();
   const signers  = Array.isArray(data?.signers) ? data.signers : [];
   const remCount = Number(data?.reminder_count ?? 0);

@@ -659,7 +659,11 @@ class PurchaseOrderController extends Controller
             ->findOrFail($id);
 
         $a = $v->primaryAddress;
-        $g = $v->gstScrutiny->first();
+        // Newest scrutiny is the current GST status. The relation carries a
+        // baked-in orderBy('id') ASC, so a `latest('id')` in the eager-load
+        // closure only appends a redundant secondary sort and ->first() would
+        // return the OLDEST row — sort the loaded collection to be order-safe.
+        $g = $v->gstScrutiny->sortByDesc('id')->first();
         $country = $a && $a->country_id ? DB::table('master_countries')->where('id', $a->country_id)->value('name') : null;
         $state = $a && $a->state_id ? DB::table('master_states')->where('id', $a->state_id)->value('name') : null;
 

@@ -5,6 +5,8 @@ import CreatePoWizard from './CreatePoWizard';
 import TradeDocsModal from './TradeDocsModal';
 import PoPaymentModal from './PoPaymentModal';
 import WorklistPager from '../../../../components/ui/WorklistPager';
+import Tooltip from '../../../../components/ui/Tooltip';
+import { formatDmy } from '../../../../utils/formatDmy';
 import './purchase-order.css';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -343,33 +345,69 @@ export default function PurchaseOrder() {
       .finally(() => setEmailing(m => { const n = { ...m }; delete n[id]; return n; }));
   };
 
-  // PO PDF (same render as the PI PDF) — with/without signature. Used by the
-  // list-row "More" menu's View & Download actions.
+  // App-rendered PO PDF (same render as the PI PDF). `signature=1` only adds the
+  // ORG's static signatory block — it is NOT the Zoho-executed document.
   const poPdfBlob = (id: number, withSign: boolean) =>
     api.get(`/p2p/purchase-orders/${id}/pdf`, { params: { signature: withSign ? 1 : 0 }, responseType: 'blob' });
-  const viewPoPdf = (withSign: boolean) => {
+
+  // Resolve the PO's COMPLETED Zoho-Sign request id, if any. Mirrors the
+  // TradeDocsTable resolution: a direct send raises a 'purchase_order' request
+  // keyed by trade_doc_id, a bundled send records the PO on metadata. Newest
+  // completed request wins. Returns null when the PO isn't e-signed yet.
+  const resolveSignedSigId = async (r: PoRow): Promise<number | null> => {
+    if (!r.id || !r.vendor_id) return null;
+    try {
+      const res = await api.get('/clm/signature-requests', { params: { party_id: r.vendor_id, model_name: 'Vendor', sync: 1 } });
+      const list: Array<Record<string, any>> = Array.isArray(res.data?.data) ? res.data.data : [];
+      const match = list
+        .filter(row => String(row.status ?? '').toLowerCase() === 'completed'
+          && ((String(row.document_type) === 'purchase_order' && Number(row.trade_doc_id) === Number(r.id))
+            || Number(row.metadata?.purchase_order_id) === Number(r.id)))
+        .sort((a, b) => Number(b.id) - Number(a.id))[0];
+      return match ? Number(match.id) : null;
+    } catch { return null; }
+  };
+
+  // For "With Signature" on an e-signed PO, serve the ACTUAL Zoho-executed PDF
+  // (the one with the supplier's real signature) instead of re-rendering the
+  // app template. Falls back to the app render when not signed / unavailable.
+  const poPdfResolved = async (r: PoRow, withSign: boolean): Promise<Blob> => {
+    if (withSign && r.is_signed) {
+      const sigId = await resolveSignedSigId(r);
+      if (sigId) {
+        const res = await api.get(`/clm/signature-requests/${sigId}/view-file/0`, { responseType: 'blob' });
+        return new Blob([res.data as BlobPart], { type: 'application/pdf' });
+      }
+    }
+    const res = await poPdfBlob(r.id!, withSign);
+    return res.data as Blob;
+  };
+
+  const viewPoPdf = async (withSign: boolean) => {
     const r = rows.find(x => x.po === more?.po); setMore(null);
     if (!r?.id) return;
     const w = window.open('', '_blank');
     toast.info(`Preparing PO PDF${withSign ? ' (signed)' : ' (without signature)'}…`);
-    poPdfBlob(r.id, withSign)
-      .then(res => { const url = URL.createObjectURL(res.data as Blob); if (w) w.location.href = url; else window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); })
-      .catch(() => { if (w) w.close(); toast.error('Could not open PO PDF', 'Please try again.'); });
+    try {
+      const blob = await poPdfResolved(r, withSign);
+      const url = URL.createObjectURL(blob);
+      if (w) w.location.href = url; else window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch { if (w) w.close(); toast.error('Could not open PO PDF', 'Please try again.'); }
   };
-  const downloadPoPdf = (withSign: boolean) => {
+  const downloadPoPdf = async (withSign: boolean) => {
     const r = rows.find(x => x.po === more?.po); setMore(null);
     if (!r?.id) return;
     toast.info(`Downloading PO PDF${withSign ? ' (signed)' : ' (without signature)'}…`);
-    poPdfBlob(r.id, withSign)
-      .then(res => {
-        const url = URL.createObjectURL(res.data as Blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `PO-${r.po.replace(/[^A-Za-z0-9_-]/g, '_')}${withSign ? '_signed' : '_unsigned'}.pdf`;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-      })
-      .catch(() => toast.error('Could not download PO PDF', 'Please try again.'));
+    try {
+      const blob = await poPdfResolved(r, withSign);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `PO-${r.po.replace(/[^A-Za-z0-9_-]/g, '_')}${withSign ? '_signed' : '_unsigned'}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch { toast.error('Could not download PO PDF', 'Please try again.'); }
   };
 
   const doSync = () => {
@@ -392,6 +430,18 @@ export default function PurchaseOrder() {
     : ['Sr. No', 'PO Number', 'PO Type', 'Document Type', 'Procurement ID', 'Supplier Name', 'Expected Delivery Date', 'Zohobook Status', 'Action'];
 
   const Pill = ({ v }: { v?: string }) => <span className="polist-pill">{v}</span>;
+  // Long supplier / customer names blow the column wide — show the first 30
+  // chars with an ellipsis; the full name lives in the shared portal Tooltip.
+  const TruncName = ({ v }: { v?: string }) => {
+    const full = (v ?? '').trim();
+    if (!full) return <>—</>;
+    const shown = full.length > 30 ? `${full.slice(0, 30)}…` : full;
+    return (
+      <Tooltip label={full} disabled={full === shown}>
+        <span>{shown}</span>
+      </Tooltip>
+    );
+  };
   const DocPill = ({ d }: { d: string }) => (
     <span className={`polist-cat ${d.toLowerCase().indexOf('inter') > -1 ? 'polist-cat--intl' : 'polist-cat--dom'}`}>{d}</span>
   );
@@ -517,7 +567,7 @@ export default function PurchaseOrder() {
                       <td>
                         <div className="polist-pocell">
                           <Pill v={r.po} />
-                          {r.date && <span className="polist-podate">{r.date}</span>}
+                          {r.date && <span className="polist-podate">{formatDmy(r.date)}</span>}
                         </div>
                       </td>
                       <td>{r.type}</td>
@@ -527,13 +577,13 @@ export default function PurchaseOrder() {
                           <td><Pill v={r.ship} /></td>
                           <td><Pill v={r.opp} /></td>
                           <td><Pill v={r.proc} /></td>
-                          <td>{r.cust || '—'}</td>
+                          <td><TruncName v={r.cust} /></td>
                         </>
                       ) : (
                         <td>{r.proc ? <Pill v={r.proc} /> : '—'}</td>
                       )}
-                      <td>{r.supName}</td>
-                      <td>{r.edd}</td>
+                      <td><TruncName v={r.supName} /></td>
+                      <td>{formatDmy(r.edd)}</td>
                       <td><ZohoPill z={r.zoho} /></td>
                       <td>
                         <div className="polist-act">
@@ -610,7 +660,11 @@ export default function PurchaseOrder() {
               <div className="pocfm-ico">{Ico.sync(26)}</div>
               <div className="pocfm-t">Sync with Zohobook?</div>
               <div className="pocfm-msg">This will push the latest purchase order data to your Zohobook account and update its sync status.</div>
-              <div className="pocfm-chip"><span className="po">{sync.po}</span>{sync.supName && <span className="sup">· {sync.supName}</span>}</div>
+              <div className="pocfm-chip"><span className="po">{sync.po}</span>{sync.supName && (
+                <Tooltip label={sync.supName} disabled={sync.supName.length <= 30} position="bottom" zIndex={2999999}>
+                  <span className="sup">· {sync.supName.length > 30 ? `${sync.supName.slice(0, 30)}…` : sync.supName}</span>
+                </Tooltip>
+              )}</div>
             </div>
             <div className="pocfm-actions">
               <button type="button" className="pocfm-btn pocfm-btn--ghost" disabled={sync.busy} onClick={() => setSync(null)}>Cancel</button>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
+import Tooltip from '../../../../components/ui/Tooltip';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { formatDmy } from '../../../../utils/formatDmy';
@@ -369,7 +370,10 @@ function UpdatePaymentModal({
   else if (amtNum > outstanding + 0.001) errors.amount = `Cannot exceed the outstanding balance of ${inr(outstanding)}.`;
   if (!utrDate) errors.utrDate = 'Select the UTR / cheque date.';
   if (!bank.trim()) errors.bank = 'Enter the bank name.';
+  // UTR/cheque: letters+digits only, 6–22 chars — covers cheque (6 digits),
+  // IMPS/UPI (12), NEFT (16) and RTGS (22) without being bank-format strict.
   if (!utr.trim()) errors.utr = 'Enter the UTR / cheque number.';
+  else if (!/^[A-Za-z0-9]{6,22}$/.test(utr.trim())) errors.utr = 'Only letters and digits, 6–22 characters (no spaces or symbols).';
   if (!file) errors.file = 'Upload the proof of payment.';
   const showErr = (k: string) => ((touched[k] || submitAttempted) ? errors[k] : undefined);
   const mark = (k: string) => setTouched((t) => ({ ...t, [k]: true }));
@@ -405,7 +409,11 @@ function UpdatePaymentModal({
             <span className="upm-head-ico"><IcoCard w={18} /></span>
             <div>
               <div className="upm-title">Update {label} Payment</div>
-              <div className="upm-sub"><span className="upm-chip">{poCode}</span><span className="upm-dot">•</span>{supplierName}</div>
+              <div className="upm-sub"><span className="upm-chip">{poCode}</span><span className="upm-dot">•</span>
+                <Tooltip label={supplierName} disabled={supplierName.length <= 30} position="bottom" zIndex={2999999}>
+                  <span>{supplierName.length > 30 ? `${supplierName.slice(0, 30)}…` : supplierName}</span>
+                </Tooltip>
+              </div>
             </div>
           </div>
           <button className="upm-x" onClick={onClose} aria-label="Close">✕</button>
@@ -454,8 +462,10 @@ function UpdatePaymentModal({
             <label className="upm-fld">
               <span className="upm-fld-lab">UTR / CHEQUE NUMBER <span className="upm-req">*</span></span>
               <input className={`upm-in ${showErr('utr') ? 'is-error' : ''}`} value={utr}
-                onChange={(e) => setUtr(e.target.value)} onBlur={() => mark('utr')} placeholder="Enter UTR / cheque number" />
-              {showErr('utr') && <span className="upm-err">{errors.utr}</span>}
+                onChange={(e) => setUtr(e.target.value)} onBlur={() => mark('utr')} placeholder="e.g. 123456 or HDFCR52026123456789012" />
+              {showErr('utr')
+                ? <span className="upm-err">{errors.utr}</span>
+                : <span className="upm-help">Letters &amp; digits only · Cheque: 6 · IMPS/UPI: 12 · NEFT: 16 · RTGS: 22 chars</span>}
             </label>
             <div className="upm-fld upm-fld-full">
               <span className="upm-fld-lab">PROOF OF PAYMENT <span className="upm-req">*</span></span>
@@ -511,6 +521,15 @@ type GstItem = {
   gst?: number | string; cgstP?: number | string; sgstP?: number | string; igstP?: number | string;
   cgstA?: number | string; sgstA?: number | string; igstA?: number | string; cost?: number | string;
 };
+
+/* Normalise a product code so the trailing number is always 3 digits
+   (P-10 → P-010, P-3 → P-003, P-119 stays P-119) — same display format the
+   Products master list uses, so the code reads identically everywhere. */
+function fmtProductCode(raw?: string | null): string {
+  if (!raw) return '—';
+  const m = raw.match(/^(.*?)(\d+)\s*$/);
+  return m ? `${m[1] || 'P-'}${m[2].padStart(3, '0')}` : raw;
+}
 function GstBreakdownModal({ detailUrl, label, onClose }: { detailUrl: string; label: string; onClose: () => void }) {
   const [items, setItems] = useState<GstItem[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -561,7 +580,7 @@ function GstBreakdownModal({ detailUrl, label, onClose }: { detailUrl: string; l
                 ) : items!.map((it, i) => (
                   <tr key={it.id ?? i}>
                     <td>{i + 1}</td>
-                    <td><span className="pop-ro" style={{ minWidth: 0 }}>{it.code || '—'}</span></td>
+                    <td><span className="pop-ro" style={{ minWidth: 0 }}>{fmtProductCode(it.code)}</span></td>
                     <td style={{ textAlign: 'left' }} title={it.name || ''}><span className="gst-name">{it.name || '—'}</span></td>
                     <td>{it.qty ?? '—'}</td>
                     <td>{inr(Number(it.rate || 0))}</td>
@@ -597,10 +616,17 @@ function GstBreakdownModal({ detailUrl, label, onClose }: { detailUrl: string; l
 
 /* ── small presentational helpers ── */
 function SupCell({ label, value, strong }: { label: string; value?: string | null; strong?: boolean }) {
+  // Long unbroken values (e.g. supplier name) blow the 5-col grid apart —
+  // truncate past 25 chars; the full value stays available in the shared
+  // portal Tooltip (never clipped by the modal's overflow).
+  const full = value || '—';
+  const shown = full.length > 25 ? `${full.slice(0, 25)}…` : full;
   return (
     <div className="pop-sup-cell">
       <div className="pop-sup-lab">{label}</div>
-      <div className={`pop-sup-val ${strong ? 'is-strong' : ''}`}>{value || '—'}</div>
+      <Tooltip label={full} disabled={full === shown} position="bottom" zIndex={2999999}>
+        <div className={`pop-sup-val ${strong ? 'is-strong' : ''}`}>{shown}</div>
+      </Tooltip>
     </div>
   );
 }
@@ -760,8 +786,9 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
    the "Payment Summary" heading (just past the 34px icon + 10px gap + 22px pad
    = 66px), right edge ends at the close (✕) button (22px pad + 30px btn = 52px). */
 .pop-sup{margin:0 52px 14px 66px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);border-radius:14px;padding:9px 20px;display:grid;grid-template-columns:repeat(5,1fr);gap:1px 18px;color:#e0f2fe;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);}
+.pop-sup-cell{min-width:0;}
 .pop-sup-lab{font-size:9.5px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.72);}
-.pop-sup-val{font-size:13px;font-weight:700;color:#fff;margin-top:2px;}
+.pop-sup-val{font-size:13px;font-weight:700;color:#fff;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .pop-sup-val.is-strong{font-size:14px;}
 .pop-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
 .pop-kpi{background:#fff;border:1px solid #eef2f7;border-radius:14px;padding:7px 14px;display:flex;gap:10px;align-items:center;border-left:4px solid #94a3b8;box-shadow:0 4px 13px rgba(15,23,42,.06);}
