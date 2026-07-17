@@ -368,13 +368,13 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
               <HeadPill icon={<IcoUser />} label="SUPPLIER" value={sel?.name || '—'} />
             </div>
             <div className="spi-dt-head-r">
-              <button type="button" className="spi-dt-btn-close" onClick={onClose}><IcoX /> Close</button>
+              <Tooltip label="Close debit note" themed><button type="button" className="spi-dt-btn-close" onClick={onClose}><IcoX /> Close</button></Tooltip>
             </div>
           </div>
 
           {/* ── Step tabs ── */}
           <div className="spi-dt-steps">
-            <Tooltip label="Go to Step 1"><div className={`spi-dt-step spi-dt-step--nav ${step === 1 ? 'is-active' : 'is-done'}`} role="button" tabIndex={0} onClick={() => setStep(1)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStep(1); } }}>
+            <Tooltip label="Go to Step 1" themed><div className={`spi-dt-step spi-dt-step--nav ${step === 1 ? 'is-active' : 'is-done'}`} role="button" tabIndex={0} onClick={() => setStep(1)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStep(1); } }}>
               <div className="spi-dt-step-top"><span className="spi-dt-step-lbl">STEP 01</span>
                 {step === 1
                   ? <span className="spi-dt-step-badge">ACTIVE</span>
@@ -385,7 +385,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
               <div className="spi-dt-step-desc">Core details that identify this debit note</div>
               <span className="spi-dt-step-ghost">01</span>
             </div></Tooltip>
-            <Tooltip label="Go to Step 2"><div className={`spi-dt-step spi-dt-step--nav ${step === 2 ? 'is-active' : ''}`} role="button" tabIndex={0} onClick={() => setStep(2)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setStep(2); } }}>
+            <Tooltip label="Go to Step 2" themed><div className={`spi-dt-step spi-dt-step--nav ${step === 2 ? 'is-active' : ''}`} role="button" tabIndex={0} onClick={() => { if (step === 1) goNext(); }} onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && step === 1) { e.preventDefault(); goNext(); } }}>
               <div className="spi-dt-step-top"><span className="spi-dt-step-lbl">STEP 02</span>
                 {step === 2 && <span className="spi-dt-step-badge">ACTIVE</span>}
               </div>
@@ -426,7 +426,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
                 <Field label="DEBIT NOTE TYPE" req error={errors.type}>
                   <div className="dn-typewrap">
                     <DnSelect value={dnTypeName} options={types.map(t => t.name)} placeholder="— Select Type —" invalid={!!errors.type} onChange={v => { setDnTypeId(types.find(t => t.name === v)?.id ?? null); clearErr('type'); }} />
-                    <Tooltip label="Manage debit note types"><button type="button" className="dn-typeadd" onClick={() => setTypeModalOpen(true)}><IcoPlus size={15} /></button></Tooltip>
+                    <Tooltip label="Manage debit note types" themed><button type="button" className="dn-typeadd" onClick={() => setTypeModalOpen(true)}><IcoPlus size={15} /></button></Tooltip>
                   </div>
                 </Field>
                 <Field label="EXPECTED DEBIT DATE" req error={errors.expDate}><MasterDatePicker value={expDate} onChange={v => { setExpDate(v); clearErr('expDate'); }} minDate={todayISO} placeholder="Select date" popupClassName="dncr-cal" invalid={!!errors.expDate} /></Field>
@@ -687,7 +687,7 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
                               <td className="spi-dt-amt spi-dt-mc-c">{inr(p.igstA)}</td>
                             </>)}
                         <td className="spi-dt-amt spi-dt-mc-c">{inr(p.cost)}</td>
-                        <td className="spi-dt-mc-c"><Tooltip label="Remove product"><button type="button" className="spi-dt-rowdel" onClick={() => removeProduct(i)}><IcoX size={13} /></button></Tooltip></td>
+                        <td className="spi-dt-mc-c"><Tooltip label="Remove product" themed><button type="button" className="spi-dt-rowdel" onClick={() => removeProduct(i)}><IcoX size={13} /></button></Tooltip></td>
                       </tr>
                     ))}
                   </tbody>
@@ -762,8 +762,8 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
               <div className="spi-dt-dots"><span className="on" /><span /></div>
             </div>
             <div className="spi-dt-foot-r">
-              <button type="button" className="spi-dt-btn-ghost" onClick={onClose}><IcoChevronL /> Cancel</button>
-              <button type="button" className="spi-dt-btn-next" onClick={goNext} disabled={hydrating}>Save &amp; Next <IcoChevronR /></button>
+              <Tooltip label="Cancel and close" themed><button type="button" className="spi-dt-btn-ghost" onClick={onClose}><IcoChevronL /> Cancel</button></Tooltip>
+              <Tooltip label="Save & continue to Step 2" themed><button type="button" className="spi-dt-btn-next" onClick={goNext} disabled={hydrating}>Save &amp; Next <IcoChevronR /></button></Tooltip>
             </div>
           </div>
         ) : (
@@ -776,10 +776,10 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
               <div className="spi-dt-dots"><span className="done" /><span className="on" /></div>
             </div>
             <div className="spi-dt-foot-r">
-              <button type="button" className="spi-dt-btn-ghost" onClick={() => setStep(1)}><IcoChevronL /> Back</button>
+              <Tooltip label="Back to Step 1" themed><button type="button" className="spi-dt-btn-ghost" onClick={() => setStep(1)}><IcoChevronL /> Back</button></Tooltip>
               {readOnly
-                ? <button type="button" className="spi-dt-btn-ghost" onClick={onClose}>Close</button>
-                : <button type="button" className="spi-dt-btn-map" onClick={save} disabled={saving || hydrating}>{saving ? <><IcoSpinner /> Saving…</> : <>{editId ? 'Update Debit Note' : 'Generate Debit Note'} <IcoChevronR /></>}</button>}
+                ? <Tooltip label="Close debit note" themed><button type="button" className="spi-dt-btn-ghost" onClick={onClose}>Close</button></Tooltip>
+                : <Tooltip label={editId ? 'Update this debit note' : 'Generate the debit note'} themed><button type="button" className="spi-dt-btn-map" onClick={save} disabled={saving || hydrating}>{saving ? <><IcoSpinner /> Saving…</> : <>{editId ? 'Update Debit Note' : 'Generate Debit Note'} <IcoChevronR /></>}</button></Tooltip>}
             </div>
           </div>
         )}
@@ -878,14 +878,14 @@ function ChargeBlock({ variant, label, rows, setRows }: { variant: 'add' | 'ded'
     <div className="dncr-charge-block">
       <div className="dncr-charge-hd">
         <span className={`dncr-charge-lbl dncr-${variant}`}>— {label}</span>
-        <button type="button" className={`dncr-chgbtn dncr-chgbtn-${variant}`} onClick={() => setRows(rs => [...rs, { amount: '', note: '' }])}><IcoPlus size={12} /> Add</button>
+        <Tooltip label={`Add ${label.toLowerCase()} row`} themed><button type="button" className={`dncr-chgbtn dncr-chgbtn-${variant}`} onClick={() => setRows(rs => [...rs, { amount: '', note: '' }])}><IcoPlus size={12} /> Add</button></Tooltip>
       </div>
       <div className="dncr-charge-rows">
         {rows.map((row, i) => (
           <div className="dncr-charge-row" key={i}>
             <div className="dncr-amtwrap"><span className="dncr-cur">₹</span><input className="dncr-amtinp" type="number" placeholder="0.00" value={row.amount} onChange={e => patch(i, 'amount', e.target.value)} /></div>
             <input className="dncr-note" placeholder="Note against this charge…" value={row.note} onChange={e => patch(i, 'note', e.target.value)} />
-            <Tooltip label="Remove"><button type="button" className="dncr-rowx" onClick={() => setRows(rs => rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs)}><IcoX size={13} /></button></Tooltip>
+            <Tooltip label="Remove" themed><button type="button" className="dncr-rowx" onClick={() => setRows(rs => rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs)}><IcoX size={13} /></button></Tooltip>
           </div>
         ))}
       </div>
