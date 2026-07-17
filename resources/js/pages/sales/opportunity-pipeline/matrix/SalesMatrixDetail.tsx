@@ -669,8 +669,15 @@ export default function SalesMatrixDetail() {
     const out: PickerOption[] = [];
     for (const r of Object.values(customerRows)) {
       if (!r.id) continue;
-      if (lc && wantDomestic !== isIndiaCountry((r as { country?: string | null }).country)) continue;
-      out.push({ value: r.id, label: `${r.id} — ${r.company}` });
+      const domestic = isIndiaCountry((r as { country?: string | null }).country);
+      if (lc && wantDomestic !== domestic) continue;
+      // Right-aligned pill shows the customer TYPE (Domestic / International) so
+      // an Indian customer is distinguished from an export one at a glance.
+      out.push({
+        value: r.id,
+        label: `${r.id} — ${r.company}`,
+        badge: { text: domestic ? 'Domestic' : 'International', tone: domestic ? 'green' : 'violet' },
+      });
     }
     return out;
   }, [customerRows, serverHeader.lockedCurrency]);

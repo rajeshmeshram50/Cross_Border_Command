@@ -171,6 +171,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
    * consignee), classified by each agreement's `party` field. */
   const [agrPartyTab, setAgrPartyTab] = useState<'all' | 'buyer' | 'consignee' | 'both'>('all');
   const [previewingId, setPreviewingId] = useState<number | null>(null);
+  /* Applicable-party "+N" popover — click the badge to see the full list of
+   * parties (mirrors the segment "+N" popovers on the customer/consignee
+   * lists). Pinned to fixed x/y captured on click. */
+  const [partyPop, setPartyPop] = useState<{ names: string[]; x: number; y: number } | null>(null);
 
   /* Bulk selection. Multi-row checkbox state — the "Send Selected"
    * footer button fires a single Zoho request containing every
@@ -1303,9 +1307,13 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                   <>
                                     <span className="lasm-party-pill lasm-party-agr">{parties[0]}</span>
                                     {parties.length > 1 && (
-                                      <span className="lasm-party-pill lasm-party-agr" title={parties.slice(1).join(', ')}>
+                                      <button
+                                        type="button"
+                                        className="lasm-party-pill lasm-party-agr lasm-party-more"
+                                        onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setPartyPop(prev => prev ? null : { names: parties, x: b.left, y: b.bottom + 6 }); }}
+                                      >
                                         +{parties.length - 1}
-                                      </span>
+                                      </button>
                                     )}
                                   </>
                                 );
@@ -1563,6 +1571,26 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
         onClose={() => setTdSendIds(null)}
         onSent={() => { void onTdSent(); }}
       />
+
+      {/* Applicable-party "+N" popover — titled list of every party the row
+          applies to, same interaction as the segment "+N" popovers. */}
+      {partyPop && createPortal(
+        <>
+          <div onClick={() => setPartyPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 12000 }} />
+          <div
+            className="lasm-party-pop"
+            style={{ position: 'fixed', left: Math.min(partyPop.x, window.innerWidth - 230), top: partyPop.y, zIndex: 12001 }}
+          >
+            <div className="lasm-party-pop-title">Applicable Party ({partyPop.names.length})</div>
+            {partyPop.names.map((n, i) => (
+              <div key={i} className="lasm-party-pop-row">
+                <span className="lasm-party-pill lasm-party-agr">{n}</span>
+              </div>
+            ))}
+          </div>
+        </>,
+        document.body,
+      )}
     </div>,
     document.body,
   );
@@ -1696,6 +1724,15 @@ const LASM_CSS = `
 .lasm-subtab.is-on .lasm-subtab-count { background: rgba(255,255,255,.28); color: #fff; }
 .lasm-party-cell { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .lasm-party-agr { background: #ede9fe; color: #5b21b6; }
+/* Clickable "+N" party badge — opens the applicable-party popover. */
+.lasm-party-more { border: none; cursor: pointer; font-family: inherit; transition: filter .12s; }
+.lasm-party-more:hover { filter: brightness(.94); }
+/* Applicable-party "+N" popover (titled list of pills). */
+.lasm-party-pop { width: 210px; max-height: 300px; overflow-y: auto; background: #fff; border: 1px solid #e9e5f5; border-radius: 12px; box-shadow: 0 14px 34px rgba(76,29,149,.18), 0 4px 12px rgba(0,0,0,.08); padding: 10px; }
+.lasm-party-pop-title { font-size: 10.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #6d28d9; margin-bottom: 8px; }
+.lasm-party-pop-row { padding: 3px 0; }
+[data-bs-theme="dark"] .lasm-party-pop { background: #1e1b2e; border-color: rgba(148,163,184,.22); box-shadow: 0 14px 34px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .lasm-party-pop-title { color: #c4b5fd; }
 
 /* ── Segment-wise Trade Documents panel (moved out of the per-party vault) ── */
 /* Rounded card + violet gradient header — same recipe as the Agreements

@@ -1596,6 +1596,16 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   });
 
   const submitCustomer = async () => {
+    // Final-submit gate: a domestic customer (GST applies) must have at least
+    // one GST Scrutiny entry before the form can be submitted. Local entries
+    // added in the popup count, so it works for both new and edit. International
+    // customers have no GST, so the gate doesn't apply. Snap back to Stage 1's
+    // Identification tab and open the popup so the user can add one.
+    if (isDomesticCountry(form.country) && gstRows.length === 0) {
+      toast.warning('GST Scrutiny required', 'Add at least one GST Scrutiny entry before submitting this customer.');
+      setStage(1); setTab('identification'); setGstPopupOpen(true);
+      return;
+    }
     // Synchronous re-entry lock — saving state is async so two
     // rapid clicks could both slip past the check. The ref blocks
     // any second call on the same tick.

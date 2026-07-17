@@ -667,9 +667,16 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                   if (segs.length === 0) return null;
                   const shown = segs.slice(0, 5);
                   const extra = segs.length - shown.length;
+                  /* Truncate each individual segment name (long free-text
+                   * segments blow out the header) with a tooltip carrying the
+                   * full value — mirrors the Supplier Evidence Vault header. */
                   return (
                     <span>
-                      · {shown.join(', ')}
+                      · {shown.map((s, i) => (
+                        <Tooltip key={`${s}-${i}`} label={s}>
+                          <span>{i > 0 ? ', ' : ''}{s.length > 20 ? s.slice(0, 20) + '…' : s}</span>
+                        </Tooltip>
+                      ))}
                       {extra > 0 && (
                         <button
                           type="button"
@@ -968,7 +975,9 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
             <div className="cev-seg-pop-title">Segments ({segPop.names.length})</div>
             {segPop.names.map((name, i) => (
               <div key={i} className={`cev-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                <span className="cev-seg-pop-pill">{name}</span>
+                <Tooltip label={name}>
+                  <span className="cev-seg-pop-pill">{name.length > 20 ? name.slice(0, 20) + '…' : name}</span>
+                </Tooltip>
               </div>
             ))}
           </div>

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { truncSegment } from '../../../../utils/segmentLabel';
 import AddConsigneeModal, { type ConsigneeRow } from '../consignee/AddConsigneeModal';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { useTheme } from '../../../../contexts/ThemeContext';
@@ -299,7 +300,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                             const extra = segList.length - 1;
                             return (
                               <span className="d-inline-flex align-items-center" style={{ gap: 4 }}>
-                                <span className="ccm-seg">{segList[0]}</span>
+                                <span className="ccm-seg" title={segList[0]}>{truncSegment(segList[0])}</span>
                                 {extra > 0 && (
                                   <button
                                     type="button"
@@ -460,17 +461,17 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
            ~3 rows show, the rest scroll (mirrors the customer table popover). */
         const ROWS_MAX_H = 108;                          // ≈ 3 rows (~34px each)
         const estH = Math.min(24 + ROWS_MAX_H + 16, 40 + segOpen.names.length * 34);
-        const left = Math.max(8, Math.min(segOpen.x, window.innerWidth - 230));
+        const left = Math.max(8, Math.min(segOpen.x, window.innerWidth - 340));
         const top  = Math.max(8, Math.min(segOpen.y, window.innerHeight - estH - 8));
         return createPortal(
           <>
             <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
-            <div className="ccm-seg-pop" style={{ position: 'fixed', left, top, zIndex: 1091, width: 210, borderRadius: 12, padding: 8 }}>
+            <div className="ccm-seg-pop" style={{ position: 'fixed', left, top, zIndex: 1091, width: 320, borderRadius: 12, padding: 8 }}>
               <div className="ccm-seg-pop-title">Segments ({segOpen.names.length})</div>
               <div style={{ maxHeight: ROWS_MAX_H, overflowY: 'auto' }}>
                 {segOpen.names.map((name, i) => (
                   <div key={i} className={`ccm-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                    <span className="ccm-seg">{name}</span>
+                    <span className="ccm-seg" title={name}>{truncSegment(name)}</span>
                   </div>
                 ))}
               </div>

@@ -386,16 +386,13 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
         if (clash.length > 0) {
           const from = String(clash[0].currency).toUpperCase();
           const ok = await confirm({
-            title: `Switch this opportunity to ${newCur}?`,
+            title: `Switch to ${newCur}?`,
             tone: 'warning',
-            confirmLabel: `Yes, re-price all in ${newCur}`,
+            confirmLabel: 'Yes',
             cancelLabel: 'Cancel',
             message: (
               <>
-                Also switches <strong>{clash.length} other product{clash.length > 1 ? 's' : ''}</strong> from{' '}
-                <strong>{from}</strong> to <strong>{newCur}</strong>.
-                <br />
-                Amounts are not converted — only the currency label changes.
+                Changing the currency applies <strong>{newCur}</strong> to all products — only the label changes, amounts aren't converted.
                 {sharedPriceWarning}
               </>
             ),
