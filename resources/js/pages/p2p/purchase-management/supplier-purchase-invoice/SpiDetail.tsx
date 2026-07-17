@@ -187,7 +187,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         setPhysInsp(!!d?.physical_inspection);
         // Seed each SPI row from the PO line — SPI qty/rate default to the PO's.
         setRows((d.items ?? []).map(it => ({
-          productId: it.product_id, code: formatProductCode(it.code ?? ''),
+          productId: it.product_id, code: String(it.code ?? ''),
           piName: it.pi_name ?? '', piQty: it.pi_qty,
           poName: it.po_name ?? '', poQty: it.po_qty, invoiced: it.invoiced_qty ?? 0, ratePo: it.rate_po, gst: it.gst,
           // Default the invoice qty to what's still uninvoiced on the PO.
@@ -229,7 +229,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         return {
           id: p.id != null ? Number(p.id) : null,
           name: String(p.name ?? p.product_name ?? p.title ?? ''),
-          code: formatProductCode(String(p.product_code ?? p.code ?? p.sku ?? '')),
+          code: String(p.product_code ?? p.code ?? p.sku ?? ''),
           price: n(p.total_price ?? p.base_price ?? p.price ?? p.rate ?? 0),
           gst: base > 0 && gstAmt > 0 ? Math.round((gstAmt / base) * 100) : n(p.gst ?? p.gst_rate ?? 0),
           hsn,
@@ -415,7 +415,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
     const over = overInvoicedRow();
     if (!over) return false;
     const rem = Math.max(0, over.poQty - over.invoiced);
-    toast.error('Quantity exceeds PO', `${over.code || 'This product'}: only ${rem} left to invoice on this PO — you can't enter more than ${rem}.`);
+    toast.error('Quantity exceeds PO', `${over.code ? formatProductCode(over.code) : 'This product'}: only ${rem} left to invoice on this PO — you can't enter more than ${rem}.`);
     return true;
   };
   // A saveable row needs a product picked + a quantity + a rate.
@@ -974,7 +974,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                     return (
                     <tr key={i}>
                       <td className="spi-dt-mc-c">{i + 1}</td>
-                      <td><span className="spi-dt-mcode">{r.code || '—'}</span></td>
+                      <td><span className="spi-dt-mcode">{r.code ? formatProductCode(r.code) : '—'}</span></td>
                       {hasPi && <td className="spi-dt-mname">{r.piName || '—'}</td>}
                       <td className="spi-dt-mname">{r.poName || '—'}</td>
                       <td><input className="spi-dt-minp" value={r.spiName} onChange={e => setRow(i, { spiName: e.target.value })} /></td>
@@ -1062,7 +1062,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                     return (
                     <tr key={i}>
                       <td className="spi-dt-mc-c">{i + 1}</td>
-                      <td><span className="spi-dt-mcode">{r.code || '—'}</span></td>
+                      <td><span className="spi-dt-mcode">{r.code ? formatProductCode(r.code) : '—'}</span></td>
                       <td>{r.productId != null
                         ? <input className="spi-dt-minp spi-dt-minp-name" value={r.spiName} placeholder="Product name" onChange={e => setRow(i, { spiName: e.target.value })} />
                         : <EditSelect value={r.spiName} options={prodOpts.filter(o => o.id === r.productId || !rows.some((x, idx) => idx !== i && x.productId === o.id)).map(p => p.name)} placeholder="— Select Product —" onChange={v => pickProduct(i, v)} />}</td>
@@ -1144,7 +1144,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                     {missingRows.map((m, idx) => (
                       <tr key={idx}>
                         <td className="spi-dt-mc-c">{idx + 1}</td>
-                        <td><span className="spi-dt-mcode">{m.code || '—'}</span></td>
+                        <td><span className="spi-dt-mcode">{m.code ? formatProductCode(m.code) : '—'}</span></td>
                         <td className="spi-dt-mname">{m.name || '—'}</td>
                         <td>{m.poQty}</td>
                         <td>{m.spiQty}</td>
@@ -1276,7 +1276,7 @@ function eselLabel(o: string, m?: DdMeta) {
   if (!m) return <span>{o}</span>;
   return (
     <span className="spi-dt-esel-lbl">
-      {m.code && <span className="spi-dt-esel-code">{m.code}:</span>}
+      {m.code && <span className="spi-dt-esel-code">{formatProductCode(m.code)}:</span>}
       <span className="spi-dt-esel-name">{o}</span>
       {m.badge && <span className={`spi-dt-esel-badge spi-dt-esel-badge--${m.tone || 'own'}`}>{m.badge}</span>}
     </span>

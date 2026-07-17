@@ -4806,9 +4806,26 @@ export function SegmentRefUploadPopup(props: {
   const catLabel = title.replace(/ (DOCUMENT )?NAME$/i, '').replace(/\bDD\b/i, 'Due Diligence');
   // Async + awaited so PopupShell's Save spinner shows during the upload.
   const save = async () => {
-    if (!file) { toast.error('File required', 'Choose a document to upload.'); return; }
+    // Expiry is validated first so the message is the same whether or not a
+    // new file was picked — you can't save a "Yes expiry" without a date.
     if (hasExpiry && !expiryDate) { toast.error('Expiry date required', 'Pick the expiry date, or switch Expiry to No.'); return; }
-    await onSubmit(file, hasExpiry ? expiryDate : undefined);
+    let toSubmit = file;
+    if (!toSubmit) {
+      // Re-upload where the user only changed the expiry (didn't pick a new
+      // file): keep the CURRENT document — fetch it back and resubmit it with
+      // the updated expiry, instead of forcing a pointless re-pick.
+      if (!existing?.url) { toast.error('File required', 'Choose a document to upload.'); return; }
+      try {
+        const res = await fetch(existing.url);
+        if (!res.ok) throw new Error('fetch failed');
+        const blob = await res.blob();
+        toSubmit = new File([blob], existing.name || 'document', { type: blob.type || 'application/octet-stream' });
+      } catch {
+        toast.error('Could not keep the current file', 'Please pick the document again to re-upload.');
+        return;
+      }
+    }
+    await onSubmit(toSubmit, hasExpiry ? expiryDate : undefined);
   };
   return (
     <PopupShell title={`Upload ${catLabel} Document`} icon="ri-upload-cloud-2-line" subtitle={row.name} onClose={onClose} onSave={save}>

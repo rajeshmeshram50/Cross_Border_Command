@@ -761,8 +761,12 @@ useEffect(() => {
                     <div className="sc-avatar">{(c.name || '?').trim().charAt(0).toUpperCase()}</div>
                     <div className="min-w-0" style={{ flex: 1 }}>
                       <div className="sc-name">
-                        {c.name || '—'}
-                        <span className={`sc-role ${c.isPrimary ? 'is-primary' : 'is-other'}`}>{c.role}</span>
+                        <Tooltip label={c.name} disabled={!c.name || c.name.length <= 30} position="bottom" zIndex={2999999}>
+                          <span>{c.name ? (c.name.length > 30 ? `${c.name.slice(0, 30)}…` : c.name) : '—'}</span>
+                        </Tooltip>
+                        <Tooltip label={c.role} disabled={!c.role || c.role.length <= 18} position="bottom" zIndex={2999999}>
+                          <span className={`sc-role ${c.isPrimary ? 'is-primary' : 'is-other'}`}>{c.role && c.role.length > 18 ? `${c.role.slice(0, 18)}…` : c.role}</span>
+                        </Tooltip>
                       </div>
                       <div className="sc-meta">
                         {c.phone && <span><i className="ri-phone-line" />{c.phone}</span>}

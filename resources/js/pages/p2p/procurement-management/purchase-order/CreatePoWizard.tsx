@@ -250,9 +250,14 @@ function Dd({ label, value, options, onChange, req, err, optMeta, searchable, to
     <div className="pof-f">
       {label && <label>{label}{req && <span className="pof-reqstar"> *</span>}</label>}
       <button type="button" ref={ref} className={`pof-dd ${open ? 'is-open' : ''} ${err ? 'is-error' : ''}`} onClick={() => setOpen(o => !o)}>
-        {tooltip
-          ? <Tooltip label={value} disabled={!value || value.length <= 30} position="bottom" zIndex={2999999}><span className="pof-dd__val"><DdOptLabel o={value} meta={optMeta?.[value]} /></span></Tooltip>
-          : <span className="pof-dd__val" title={optMeta?.[value] ? `${optMeta[value].code ? optMeta[value].code + ': ' : ''}${optMeta[value].name ?? value}` : value}><DdOptLabel o={value} meta={optMeta?.[value]} /></span>}
+        {(() => {
+          // Full label reads "S-009: aaaa…" when the option carries code+name
+          // meta (supplier field) — else the raw value (product name field).
+          const tip = optMeta?.[value] ? `${optMeta[value].code ? optMeta[value].code + ': ' : ''}${optMeta[value].name ?? value}` : value;
+          return tooltip
+            ? <Tooltip label={tip} disabled={!tip || tip.length <= 30} position="bottom" zIndex={2999999}><span className="pof-dd__val"><DdOptLabel o={value} meta={optMeta?.[value]} /></span></Tooltip>
+            : <span className="pof-dd__val" title={tip}><DdOptLabel o={value} meta={optMeta?.[value]} /></span>;
+        })()}
         <Chev />
       </button>
       {err && <div className="pof-err-msg">{err}</div>}
@@ -310,7 +315,7 @@ const ReadField = ({ label, value, full, loading }: { label: string; value: stri
     <label>{label}</label>
     {loading
       ? <div className="pof-ro pof-ro--skel"><Skel w="72%" /></div>
-      : <div className="pof-ro" title={value || undefined}>{value || '—'}</div>}
+      : <Tooltip label={value} disabled={!value || value.length <= 30} position="bottom" zIndex={2999999}><div className="pof-ro">{value || '—'}</div></Tooltip>}
   </div>
 );
 const Frozen = ({ label, value, req }: { label: string; value: string; req?: boolean }) => (
@@ -1104,7 +1109,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         <div className="pof-sub__bd"><div className="pof-grid pof-grid--4">
                           {isEdit
                             ? <ReadField label="Select Supplier" value={supName !== SUPPLIER_PLACEHOLDER ? supName : (sup.name || '')} />
-                            : <Dd label="Select Supplier" req searchable err={errs.supplier} optMeta={supMeta} value={supSel} options={supplierOpts} onChange={pickSupplier} />}
+                            : <Dd label="Select Supplier" req searchable tooltip err={errs.supplier} optMeta={supMeta} value={supSel} options={supplierOpts} onChange={pickSupplier} />}
                           <ReadField label="Supplier Code" value={sup.code} loading={supLoading} />
                           <ReadField label="Company Name" value={sup.name} loading={supLoading} />
                           <ReadField label="Supplier Type" value={sup.type} loading={supLoading} />

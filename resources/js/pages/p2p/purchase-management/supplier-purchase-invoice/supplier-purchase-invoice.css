@@ -861,7 +861,7 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 .spi-dt-btn-map:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(16,185,129,.48); }
 .spi-dt-btn-map:disabled { opacity:.5; cursor:not-allowed; transform:none; box-shadow:none; filter:grayscale(.2); }
 /* TDS-deducted read-only lock banner. */
-.spi-dt-locknote { display:flex; align-items:center; gap:10px; margin:0 22px 14px; padding:11px 15px; border:1.5px solid #fcd9a8; border-radius:12px;
+.spi-dt-locknote { display:flex; align-items:center; gap:9px; margin:0 22px 8px; padding:7px 14px; border:1.5px solid #fcd9a8; border-radius:10px;
   background:linear-gradient(180deg,#fffaf0,#fff4e0); color:#92510a; font-size:12.5px; font-weight:600; line-height:1.35; box-shadow:0 2px 8px rgba(217,119,6,.1); }
 .spi-dt-locknote svg { flex-shrink:0; color:#d97706; }
 .spi-dt-locknote strong { font-weight:800; }

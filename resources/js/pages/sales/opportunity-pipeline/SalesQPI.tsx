@@ -5183,6 +5183,12 @@ const SCOPED_CSS = `
   overflow-y: visible;
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
+  /* Promote the WHOLE scroll area to one compositor layer so Chrome
+   * repositions the sticky ACTION column on the GPU during horizontal scroll
+   * — kills the jitter/shake. Done on the container (not per-cell) so every
+   * sticky cell stays in the SAME layer and can't desync ("alag alag shake"). */
+  will-change: transform;
+  transform: translateZ(0);
 }
 .qpi-table-host .table-responsive::-webkit-scrollbar { height: 8px; }
 .qpi-table-host .table-responsive::-webkit-scrollbar-track { background: transparent; }

@@ -410,7 +410,7 @@ function UpdatePaymentModal({
             <div className="upm-fld">
               <span className="upm-fld-lab">UTR / CHEQUE DATE <span className="upm-req">*</span></span>
               <MasterDatePicker value={utrDate} placeholder="Select date"
-                invalid={!!showErr('utrDate')}
+                invalid={!!showErr('utrDate')} popupClassName="pop-cal"
                 onChange={(v) => { setUtrDate(v); mark('utrDate'); }} />
               {showErr('utrDate') && <span className="upm-err">{errors.utrDate}</span>}
             </div>
@@ -727,6 +727,19 @@ function UpmSkeleton() {
 const CSS = `
 /* Keep the MasterDatePicker popup above the payment modal (it opens from within). */
 body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
+/* Re-theme the calendar TEAL to match the payment modal (shared component defaults to indigo/violet). */
+.upm-fld .master-datepicker-icon{color:#0891b2;}
+.upm-fld .master-datepicker-toggle.open{border-color:#0891b2;box-shadow:0 0 0 3px rgba(8,145,178,.15),0 4px 12px rgba(8,145,178,.12);}
+.master-datepicker-popup.pop-cal .master-datepicker-title-btn.is-clickable{background:rgba(8,145,178,.08);border-color:rgba(8,145,178,.2);color:#0891b2;}
+.master-datepicker-popup.pop-cal .master-datepicker-title-btn.is-clickable:hover{background:rgba(8,145,178,.16);border-color:rgba(8,145,178,.4);color:#0e7490;}
+.master-datepicker-popup.pop-cal .master-datepicker-nav:hover{background:rgba(8,145,178,.1);color:#0891b2;border-color:rgba(8,145,178,.3);}
+.master-datepicker-popup.pop-cal .master-datepicker-day:hover:not(:disabled):not(.is-selected),
+.master-datepicker-popup.pop-cal .master-datepicker-cell:hover:not(.is-selected){background:rgba(8,145,178,.1);color:#0891b2;}
+.master-datepicker-popup.pop-cal .master-datepicker-day.is-today,
+.master-datepicker-popup.pop-cal .master-datepicker-cell.is-today{background:rgba(8,145,178,.12);color:#0891b2;}
+.master-datepicker-popup.pop-cal .master-datepicker-day.is-selected,
+.master-datepicker-popup.pop-cal .master-datepicker-cell.is-selected{background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;box-shadow:0 3px 8px rgba(8,145,178,.3);}
+.master-datepicker-popup.pop-cal .master-datepicker-footer .today-btn{color:#0891b2;}
 .pop-backdrop{position:fixed;inset:0;z-index:2900000;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto;font-family:var(--font-sans,'Inter',sans-serif);}
 .pop-modal{width:100%;max-width:1120px;margin:auto;background:#f8fafc;border:1.5px solid rgba(255,255,255,.5);border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);display:flex;flex-direction:column;}
 .pop-hero{background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);}
