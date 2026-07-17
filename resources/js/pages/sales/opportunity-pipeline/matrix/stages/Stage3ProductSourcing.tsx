@@ -1178,7 +1178,11 @@ const STAGE3_CSS = `
 .s3-table-wrap::-webkit-scrollbar-track { background: transparent; }
 .s3-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 .s3-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-.s3-table { width: 100%; border-collapse: collapse; min-width: 880px; }
+/* table-layout:fixed + width:100% keeps every column inside the stage card
+   (no horizontal scroll) at any width — the flexible Product Name column
+   absorbs the slack and truncates (ellipsis + hover tooltip). Replaces the
+   old min-width:880px, which overflowed when the side panels were open. */
+.s3-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 /* Table header — light lavender gradient matching the Product Sourcing
    popup's table (gradient on the tr so it sweeps the whole row; cells stay
    transparent). The amber Sourcing-Required table keeps its own header via
