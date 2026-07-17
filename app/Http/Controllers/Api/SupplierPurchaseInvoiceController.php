@@ -760,7 +760,13 @@ class SupplierPurchaseInvoiceController extends Controller
             'customer' => $spi->customer_name,
             'supCode' => $spi->supplier_code,
             'supplier' => $spi->supplier_name,
-            'totalPo' => (float) $spi->total_po_amount,
+            // "Total PO Amount": a With-PO SPI shows the linked PO's amount; a
+            // Direct SPI has no PO, so its own grand total (net_payable = product
+            // cost + additional charges, pre-TDS) IS the total to show — otherwise
+            // the column reads ₹0.
+            'totalPo' => $spi->purchase_order_id
+                ? (float) $spi->total_po_amount
+                : (float) $spi->net_payable,
             'netPayable' => $netPayable,
             'totalPaid' => $totalPaid,
             'balance' => $balance,
