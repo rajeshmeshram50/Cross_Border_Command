@@ -207,17 +207,31 @@ const DdOptLabel = ({ o, meta }: { o: string; meta?: DdOptMeta }) => (
     </span>
   ) : <span>{o}</span>
 );
-function Dd({ label, value, options, onChange, req, err, optMeta }: { label?: string; value: string; options: string[]; onChange: (v: string) => void; req?: boolean; err?: string; optMeta?: Record<string, DdOptMeta> }) {
+function Dd({ label, value, options, onChange, req, err, optMeta, searchable, tooltip }: { label?: string; value: string; options: string[]; onChange: (v: string) => void; req?: boolean; err?: string; optMeta?: Record<string, DdOptMeta>; searchable?: boolean; tooltip?: boolean }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const ref = useRef<HTMLButtonElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const [pos, setPos] = useState({ left: 0, top: 0, width: 0 });
+  // Filter by the option's visible text: code + name (from meta) or the raw value.
+  const shown = useMemo(() => {
+    if (!searchable) return options;
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter(o => {
+      const m = optMeta?.[o];
+      const text = m ? `${m.code ?? ''} ${m.name ?? o}` : o;
+      return text.toLowerCase().includes(q);
+    });
+  }, [options, query, searchable, optMeta]);
   useLayoutEffect(() => {
     if (!open || !ref.current) return;
     const r = ref.current.getBoundingClientRect();
-    const h = Math.min(264, options.length * 38 + 12);
+    const h = Math.min(300, shown.length * 38 + (searchable ? 52 : 0) + 12);
     const up = r.bottom + 6 + h > window.innerHeight && r.top - 6 - h > 4;
     setPos({ left: r.left, width: r.width, top: up ? r.top - 6 - h : r.bottom + 6 });
-  }, [open, options.length]);
+  }, [open, shown.length, searchable]);
+  useEffect(() => { if (open && searchable) setTimeout(() => searchRef.current?.focus(), 0); else if (!open) setQuery(''); }, [open, searchable]);
   useEffect(() => {
     if (!open) return;
     const close = (e?: Event) => { const el = e && e.target instanceof Element ? e.target : null; if (el && el.closest('.pof-dd-pop')) return; setOpen(false); };
@@ -236,16 +250,27 @@ function Dd({ label, value, options, onChange, req, err, optMeta }: { label?: st
     <div className="pof-f">
       {label && <label>{label}{req && <span className="pof-reqstar"> *</span>}</label>}
       <button type="button" ref={ref} className={`pof-dd ${open ? 'is-open' : ''} ${err ? 'is-error' : ''}`} onClick={() => setOpen(o => !o)}>
-        <span className="pof-dd__val"><DdOptLabel o={value} meta={optMeta?.[value]} /></span><Chev />
+        {tooltip
+          ? <Tooltip label={value} disabled={!value || value.length <= 30} position="bottom" zIndex={2999999}><span className="pof-dd__val"><DdOptLabel o={value} meta={optMeta?.[value]} /></span></Tooltip>
+          : <span className="pof-dd__val" title={optMeta?.[value] ? `${optMeta[value].code ? optMeta[value].code + ': ' : ''}${optMeta[value].name ?? value}` : value}><DdOptLabel o={value} meta={optMeta?.[value]} /></span>}
+        <Chev />
       </button>
       {err && <div className="pof-err-msg">{err}</div>}
       {open && createPortal(
-        <div className="pof-dd-pop pof-dd-pop--portal" style={{ left: pos.left, top: pos.top, width: pos.width }}>
-          {options.map(o => (
-            <div key={o} className={`pof-dd-pop__opt ${o === value ? 'is-sel' : ''}`} onClick={() => { onChange(o); setOpen(false); }}>
-              <DdOptLabel o={o} meta={optMeta?.[o]} /><Check c="pof-dd-pop__ck" />
+        <div className="pof-dd-pop pof-dd-pop--portal" style={{ left: pos.left, top: pos.top, width: pos.width, maxHeight: 300, overflowY: 'auto' }}>
+          {searchable && (
+            <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: 8, background: 'inherit', borderBottom: '1px solid rgba(148,163,184,.18)' }} onMouseDown={e => e.stopPropagation()}>
+              <input ref={searchRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search supplier…"
+                style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(148,163,184,.3)', background: 'rgba(148,163,184,.08)', color: 'inherit', fontSize: 12.5, outline: 'none' }} />
             </div>
-          ))}
+          )}
+          {shown.length === 0
+            ? <div className="pof-dd-pop__opt" style={{ opacity: .6, cursor: 'default' }}>No match</div>
+            : shown.map(o => (
+              <div key={o} className={`pof-dd-pop__opt ${o === value ? 'is-sel' : ''}`} onClick={() => { onChange(o); setOpen(false); }}>
+                <DdOptLabel o={o} meta={optMeta?.[o]} /><Check c="pof-dd-pop__ck" />
+              </div>
+            ))}
         </div>,
         document.body
       )}
@@ -493,8 +518,21 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   // Real per-vendor legal status (from the Evidence Vault); null → fall back to
   // the demo SUP_LEGAL calc for the built-in demo suppliers.
   const [supLegal, setSupLegal] = useState<LegalView | null>(null);
-  // Real suppliers → option value = unique code; demo fallback → value = name.
-  const supplierOpts = suppliers.length ? suppliers.filter(s => s.code).map(s => s.code) : Object.keys(CPO_SUPPLIERS);
+  // Real suppliers → option value = unique code (names can duplicate); demo
+  // fallback → value = name. Sorted by the numeric part of the code DESCENDING
+  // so the newest supplier (highest code) shows first — S-019, S-018 … S-001.
+  const supplierOpts = suppliers.length
+    ? suppliers.filter(s => s.code).slice()
+        .sort((a, b) => (parseInt(b.code.replace(/\D/g, ''), 10) || 0) - (parseInt(a.code.replace(/\D/g, ''), 10) || 0))
+        .map(s => s.code)
+    : Object.keys(CPO_SUPPLIERS);
+  // Keyed by CODE (the option value); `name` drives the visible label so
+  // duplicate-named suppliers still read as "S-011: test", "S-019: test".
+  const supMeta = useMemo(() => {
+    const m: Record<string, DdOptMeta> = {};
+    suppliers.forEach(s => { if (s.code) m[s.code] = { code: s.code, name: s.name || s.code }; });
+    return m;
+  }, [suppliers]);
   // Pull a vendor's real 5-parameter compliance breakdown for the legal-status card.
   const loadSupplierLegal = (vendorId: number) => {
     setSupLegal(null);
@@ -732,13 +770,6 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   }, [warehouses]);
 
   // Select Supplier dropdown labels — "S-001: Reliance Industries" (code : name).
-  // Keyed by CODE (the option value); `name` drives the visible label so
-  // duplicate-named suppliers still read as "S-011: test", "S-019: test", etc.
-  const supMeta = useMemo(() => {
-    const m: Record<string, DdOptMeta> = {};
-    suppliers.forEach(s => { if (s.code) m[s.code] = { code: s.code, name: s.name || s.code }; });
-    return m;
-  }, [suppliers]);
 
   const withShip = poMode === 'with';
   // Stage-2 products table column count (for full-width colSpan cells) — depends
@@ -837,9 +868,20 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     setErrs(e);
     if (Object.keys(e).length) {
       toast.error('Required fields missing', 'Please complete the highlighted fields.');
+      scrollToFirstError();
       return false;
     }
     return true;
+  };
+
+  // After a validation fail, scroll the first highlighted field into view so
+  // the user lands on what needs fixing (mirrors SpiDetail). The 60ms delay
+  // lets React paint the is-error / .invalid classes before we query the DOM.
+  const scrollToFirstError = () => {
+    setTimeout(() => {
+      const el = document.querySelector('.pom .pof-dd.is-error, .pom .master-datepicker-wrap.invalid');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
   };
 
   const next = () => {
@@ -1062,7 +1104,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         <div className="pof-sub__bd"><div className="pof-grid pof-grid--4">
                           {isEdit
                             ? <ReadField label="Select Supplier" value={supName !== SUPPLIER_PLACEHOLDER ? supName : (sup.name || '')} />
-                            : <Dd label="Select Supplier" req err={errs.supplier} optMeta={supMeta} value={supSel} options={[SUPPLIER_PLACEHOLDER, ...supplierOpts]} onChange={pickSupplier} />}
+                            : <Dd label="Select Supplier" req searchable err={errs.supplier} optMeta={supMeta} value={supSel} options={supplierOpts} onChange={pickSupplier} />}
                           <ReadField label="Supplier Code" value={sup.code} loading={supLoading} />
                           <ReadField label="Company Name" value={sup.name} loading={supLoading} />
                           <ReadField label="Supplier Type" value={sup.type} loading={supLoading} />
@@ -1135,7 +1177,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                     <div className="cpd-ref">
                     {[{ l: 'Supplier Code', v: sup.code || 'S-001', mono: true }, { l: 'Supplier Name', v: sup.name || 'AgroSource Materials Pvt Ltd', mono: false }, { l: 'State Code', v: sup.stateCode || '27', mono: true }, { l: 'PI Number', v: 'PI/2025-26/001', mono: true }].map((f, i, arr) => (
                       <span key={f.l} style={{ display: 'contents' }}>
-                        <div className="cpd-ref__pill"><div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{refIcoFor(f.l)}</div><div className="cpd-ref__txt"><div className="cpd-ref__l">{f.l}</div><div className={`cpd-ref__v ${f.mono ? 'cpd-ref__v--mono' : ''}`}>{f.v}</div></div></div>
+                        <div className="cpd-ref__pill"><div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{refIcoFor(f.l)}</div><div className="cpd-ref__txt"><div className="cpd-ref__l">{f.l}</div><div className={`cpd-ref__v ${f.mono ? 'cpd-ref__v--mono' : ''}`}>{f.v.length > 30 ? <Tooltip label={f.v} position="bottom" zIndex={2999999}><span>{`${f.v.slice(0, 30)}…`}</span></Tooltip> : f.v}</div></div></div>
                         {i < arr.length - 1 && <div className="cpd-ref__dots"><span /><span /><span /></div>}
                       </span>
                     ))}
@@ -1180,7 +1222,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                             <tr key={r.id}>
                               <td className="cpd-c">{i + 1}</td>
                               <td className="cpd-c"><span className="cpd-code">{formatProductCode(r.code) || '—'}</span></td>
-                              <td className="cpd-prodcell"><Dd value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} /></td>
+                              <td className="cpd-prodcell"><Dd tooltip value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
                               <TaxBodyCells c={c} intra={intra} />

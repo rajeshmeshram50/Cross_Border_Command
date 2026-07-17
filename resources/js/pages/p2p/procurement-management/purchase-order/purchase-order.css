@@ -458,7 +458,7 @@
 .pom .pof-in::placeholder{color:#9fb0bf;}
 .pom textarea.pof-in{min-height:74px;padding:9px 12px;resize:vertical;}
 .pom .pof-frozen{height:40px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 8px 0 12px;border:1.5px solid #dfe9ef;border-radius:9px;background:linear-gradient(180deg,#f1f6f9,#e9f0f4);box-sizing:border-box;cursor:not-allowed;}
-.pom .pof-ro{min-height:40px;display:flex;align-items:center;padding:9px 12px;border:1.5px solid #e3ebf0;border-radius:9px;background:#f1f6f9;color:#3f566a;font-size:12.5px;font-weight:600;line-height:1.4;box-sizing:border-box;cursor:default;word-break:break-word;}
+.pom .pof-ro{min-height:40px;display:block;padding:9px 12px;border:1.5px solid #e3ebf0;border-radius:9px;background:#f1f6f9;color:#3f566a;font-size:12.5px;font-weight:600;line-height:20px;box-sizing:border-box;cursor:default;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .pom .pof-frozen__val{font-size:12.5px;font-weight:700;color:#3f566a;font-variant-numeric:tabular-nums;letter-spacing:.2px;}
 .pom .pof-frozen__tag{display:inline-flex;align-items:center;gap:4px;font-size:8.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#0e7490;background:#e0f7fb;border:1px solid #c2ecf3;border-radius:20px;padding:3px 7px;white-space:nowrap;flex-shrink:0;}
 .pom .pof-dd{height:40px;width:100%;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 9px 0 13px;border:1.5px solid #e6eef3;border-radius:9px;background:#ffffff;font-family:inherit;font-size:12.5px;font-weight:500;color:#0f172a;cursor:pointer;text-align:left;transition:border-color .15s,box-shadow .15s,background .15s;}
@@ -567,10 +567,18 @@
 .pom .cpd-in--miss{color:#dc2626;font-weight:800;border-color:#f4cccc;background:#fff6f6;text-align:center;}
 /* New PO product-entry table: name is col 2 (wide/left); reset cols 3 & 5 that
  * the base cpd-tbl rule left-aligns for the old PI/PO-name layout. */
-.pom .cpd-tbl--po thead th:nth-child(2),.pom .cpd-tbl--po tbody td:nth-child(2){text-align:left;min-width:230px;white-space:normal;}
-.pom .cpd-tbl--po thead th:nth-child(3),.pom .cpd-tbl--po tbody td:nth-child(3),.pom .cpd-tbl--po thead th:nth-child(5),.pom .cpd-tbl--po tbody td:nth-child(5){text-align:center;min-width:0;white-space:nowrap;}
-.pom .cpd-prodcell{min-width:230px;}
-.pom .cpd-prodcell .pof-f{gap:0;}
+.pom .cpd-tbl--po thead th:nth-child(2),.pom .cpd-tbl--po tbody td:nth-child(2){text-align:left;width:130px;min-width:130px;max-width:130px;white-space:nowrap;}
+/* Product Name (PO) column — left-aligned header + a fixed, wider box so it
+   never resizes with the selected name (long names truncate + hover tooltip). */
+.pom .cpd-tbl--po thead th:nth-child(3),.pom .cpd-tbl--po tbody td:nth-child(3){text-align:center;width:300px;min-width:300px;max-width:300px;white-space:nowrap;}
+.pom .cpd-tbl--po thead th:nth-child(5),.pom .cpd-tbl--po tbody td:nth-child(5){text-align:center;min-width:0;white-space:nowrap;}
+/* Fixed width so the Product Name column never resizes with the selected
+   name's length — a long name truncates inside the trigger (ellipsis) and the
+   full text shows on hover instead of stretching the box. */
+.pom .cpd-prodcell{width:300px;min-width:300px;max-width:300px;}
+/* Box is a fixed-width inline-block so the cell's center alignment centres it
+   under the centered header; text inside stays left (dropdown value). */
+.pom .cpd-prodcell .pof-f{gap:0;display:inline-block;width:280px;text-align:left;vertical-align:middle;}
 .pom .cpd-prodcell .pof-dd{height:34px;font-size:11.5px;}
 .pom .cpd-del{width:28px;height:28px;border-radius:8px;border:1px solid #f3c9c9;background:#fff5f5;color:#dc2626;font-size:14px;font-weight:800;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s;}
 .pom .cpd-del:hover{background:#fde8e8;border-color:#ef9a9a;}
