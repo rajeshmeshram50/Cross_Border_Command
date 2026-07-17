@@ -596,6 +596,25 @@
             </div>
         @endif
 
+        {{-- MASTER TERMS & CONDITIONS — auto-matched from the T&C Library by the
+             document category (Domestic / International Purchase Order), supplier
+             party (Material / FFD / Services) and each product's segment. --}}
+        @if(!empty($segmentTermsConditions))
+            <div style="margin-top: 18px;">
+                <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
+                    Terms And Conditions :
+                </div>
+                @foreach($segmentTermsConditions as $tnc)
+                    <div class="po-terms" style="margin-bottom: 8px;">
+                        @if(!empty($tnc['segment']))
+                            <div style="font-size: 8.5px; font-weight: 700; color: {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-bottom: 2px;">{{ $tnc['segment'] }}</div>
+                        @endif
+                        {!! $tnc['content'] !!}
+                    </div>
+                @endforeach
+            </div>
+        @endif
+
     </div>
 
     <script type="text/php">
