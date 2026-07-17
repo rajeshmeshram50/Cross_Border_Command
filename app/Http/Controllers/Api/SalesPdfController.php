@@ -162,7 +162,7 @@ class SalesPdfController extends Controller
         // Code-128 barcode of the quotation code, for the header.
         $vd['barcodeHtml'] = '';
         try {
-            $vd['barcodeHtml'] = (new \Milon\Barcode\DNS1D())->getBarcodeHTML($quoteCode, 'C128', 0.8, 24);
+            $vd['barcodeHtml'] = (new \Milon\Barcode\DNS1D())->getBarcodeHTML($quoteCode, 'C128', 1.6, 28);
         } catch (\Throwable $e) { /* renders without barcode */ }
 
         $vd['quotationProducts'] = collect([[
@@ -188,7 +188,7 @@ class SalesPdfController extends Controller
             ? \Carbon\Carbon::parse($entry->lead->created_at) : null;
 
         $pdf = Pdf::loadView('pdf.shared_price_quotation', $vd)
-            ->setPaper('A5', 'portrait')
+            ->setPaper('A4', 'portrait')
             ->setOption('isPhpEnabled', true);
         $filename = 'quotation_' . str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT) . '.pdf';
 
@@ -1978,6 +1978,12 @@ class SalesPdfController extends Controller
             'currency_name'         => $q->currency ?? '',
             'currency'              => (object) ['name' => $q->currency ?? ''],
             'consignee_id'          => $hasConsignee ? $q->consignee_id : null,
+            // Domestic fields — snapshotted on the document; surfaced in the
+            // PDF's Domestic detail block (dispatch/deliver, GST state + GSTIN).
+            'dispatch_from'         => $q->dispatch_from   ?? '',
+            'deliver_to'            => $q->deliver_to      ?? '',
+            'state_code'            => $q->state_code      ?? '',
+            'customer_gst_no'       => $q->customer_gst_no ?? '',
             'port_of_discharge'     => $q->port_of_discharge ?? '',
             'final_destination'     => $q->final_destination ?? '',
             'origin_country'        => $q->origin_country    ?? '',

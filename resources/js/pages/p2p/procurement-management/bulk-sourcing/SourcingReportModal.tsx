@@ -233,7 +233,7 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
                     <tr className="srpt-row" key={gi}>
                       <td style={{ textAlign: 'center' }}><span className="srpt-sno">{i + 1}</span></td>
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-code">{p.code}</span></td>}
-                      <td style={{ textAlign: 'left' }}><div className="srpt-pname">{p.name}</div></td>
+                      <td style={{ textAlign: 'left' }}><Tooltip label={p.name}><div className="srpt-pname">{p.name}</div></Tooltip></td>
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className={`srpt-seg ${(p.segment || 'General').replace(/ /g, '-')}`}>{p.segment}</span></td>}
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-hsncode">{p.hsn}</span></td>}
                       <td style={{ textAlign: 'center' }} className="srpt-price">{fmtPrice(p.price)}</td>
@@ -244,7 +244,7 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
                         : <span className="srpt-sup-count">0</span>}</td>
                       <td style={{ textAlign: 'center' }}>{canMap
                         ? <button className="srpt-map-btn" onClick={() => setMapIdx(gi)}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>Map Supplier Directory</button>
-                        : <Tooltip label="You created this sourcing — mapping is done by the assignee"><span className="srpt-viewonly"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>View only</span></Tooltip>}</td>
+                        : <Tooltip label="View mapped suppliers (you created this sourcing — mapping is done by the assignee)"><button type="button" className="srpt-viewonly" style={{ cursor: 'pointer' }} onClick={() => setViewIdx(gi)}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>View only</button></Tooltip>}</td>
                     </tr>
                   );
                 })}

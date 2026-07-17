@@ -11,19 +11,44 @@
     // Grand total spelled out (Indian numbering; falls back when ext-intl is absent).
     $__grand = (float) ($quotation->grand_total ?? 0);
     $__whole = (int) floor($__grand);
-    $__frac  = (int) round(($__grand - $__whole) * 100);
+    $__frac = (int) round(($__grand - $__whole) * 100);
     $__spell = function (int $n) use (&$__spell): string {
-        if ($n === 0) return 'Zero';
-        $ones = ['', 'One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
-        $tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
-        $two = fn (int $n) => $n < 20 ? $ones[$n] : trim($tens[intdiv($n,10)].' '.($n%10 ? $ones[$n%10] : ''));
-        $three = function (int $n) use ($ones,$two) { $h=intdiv($n,100); $r=$n%100; $o=''; if($h)$o.=$ones[$h].' Hundred'; if($r)$o.=($h?' ':'').$two($r); return $o; };
-        $cr=intdiv($n,10000000); $n%=10000000; $la=intdiv($n,100000); $n%=100000; $th=intdiv($n,1000); $n%=1000; $hu=$n;
-        $p=[]; if($cr)$p[]=$__spell($cr).' Crore'; if($la)$p[]=$two($la).' Lakh'; if($th)$p[]=$two($th).' Thousand'; if($hu)$p[]=$three($hu);
+        if ($n === 0)
+            return 'Zero';
+        $ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+        $tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+        $two = fn(int $n) => $n < 20 ? $ones[$n] : trim($tens[intdiv($n, 10)] . ' ' . ($n % 10 ? $ones[$n % 10] : ''));
+        $three = function (int $n) use ($ones, $two) {
+            $h = intdiv($n, 100);
+            $r = $n % 100;
+            $o = '';
+            if ($h)
+                $o .= $ones[$h] . ' Hundred';
+            if ($r)
+                $o .= ($h ? ' ' : '') . $two($r);
+            return $o;
+        };
+        $cr = intdiv($n, 10000000);
+        $n %= 10000000;
+        $la = intdiv($n, 100000);
+        $n %= 100000;
+        $th = intdiv($n, 1000);
+        $n %= 1000;
+        $hu = $n;
+        $p = [];
+        if ($cr)
+            $p[] = $__spell($cr) . ' Crore';
+        if ($la)
+            $p[] = $two($la) . ' Lakh';
+        if ($th)
+            $p[] = $two($th) . ' Thousand';
+        if ($hu)
+            $p[] = $three($hu);
         return implode(' ', $p);
     };
     try {
-        if (!class_exists(\NumberFormatter::class)) throw new \RuntimeException('no intl');
+        if (!class_exists(\NumberFormatter::class))
+            throw new \RuntimeException('no intl');
         $__fmt = new \NumberFormatter('en_IN', \NumberFormatter::SPELLOUT);
         $__ww = ucwords($__fmt->format($__whole));
         $__fw = $__frac > 0 ? ucwords($__fmt->format($__frac)) : '';
@@ -35,7 +60,10 @@
 
     // Small barcode for the footer band.
     $footerBar = '';
-    try { $footerBar = (new \Milon\Barcode\DNS1D())->getBarcodeHTML((string) ($quotation->pi_number ?? ''), 'C128', 0.7, 18); } catch (\Throwable $e) {}
+    try {
+        $footerBar = (new \Milon\Barcode\DNS1D())->getBarcodeHTML((string) ($quotation->pi_number ?? ''), 'C128', 0.7, 18);
+    } catch (\Throwable $e) {
+    }
 @endphp
 <!doctype html>
 <html lang="en">
@@ -174,6 +202,10 @@
             width: 100%;
             border-collapse: collapse;
             margin-top: 8px;
+            /* Fixed layout: columns keep the widths declared on the header cells
+               regardless of content, so a very large amount wraps inside its own
+               cell instead of stretching the column and breaking the row. */
+            table-layout: fixed;
         }
 
         table.prod thead th {
@@ -204,6 +236,9 @@
             padding: 10px 8px;
             text-align: right;
             vertical-align: top;
+            /* Break inside a very long value so it never overflows its fixed cell. */
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
 
         table.prod tbody td.l {
@@ -276,13 +311,19 @@
             right: 0;
             width: 100%;
             height: 52px;
-            border-top: 1px solid {{ $PRIMARY }};
+            border-top: 1px solid
+                {{ $PRIMARY }}
+            ;
             background: #fff;
             font-size: 8px;
             color: #4d4d4d;
         }
 
-        .pdf-footer .pf-bar { height: 18px; width: 90px; display: block; }
+        .pdf-footer .pf-bar {
+            height: 18px;
+            width: 90px;
+            display: block;
+        }
     </style>
 </head>
 
@@ -291,7 +332,7 @@
     <table style="width:100%; border-collapse:collapse;">
         <tr>
             <!-- LEFT: logo + issuer letterhead (narrow column so the address wraps) -->
-            <td style="width:45%; vertical-align:top;">
+            <td style="width:40%; vertical-align:top;">
                 <div style="height:78px;">
                     @if ($logo)
                         <img src="{{ $logo }}" alt="logo" style="max-width:190px; max-height:76px; display:block;">
@@ -316,12 +357,12 @@
             </td>
 
             <!-- MIDDLE: blank spacer -->
-            <td style="width:6%;"></td>
+            <td style="width:14%;"></td>
 
             <!-- RIGHT: title + Opp Id/Date (left) with barcode (right); customer below
                  sits inside the SAME 78px band as the left logo, so both letterheads
                  (issuer + customer) start on the same row. -->
-            <td style="width:45%; vertical-align:top; text-align:left;">
+            <td style="width:42%; vertical-align:top; text-align:left;">
                 <div style="height:78px;">
                     <table style="width:100%; border-collapse:collapse;">
                         {{-- Row 1: QUOTATION heading (spans both columns, left) --}}
@@ -335,9 +376,11 @@
                         {{-- Row 2: Opp Id/Opp Date (left) | barcode fills the right cell --}}
                         <tr>
                             <td
-                                style="vertical-align:middle; text-align:left; font-size:9px; line-height:14px; width:56%; white-space:nowrap;">
-                                <div style="margin-bottom:2px; white-space:nowrap;"><strong>Opp Id :</strong> {{ $opportunity_id ?? '—' }}</div>
-                                <div style="white-space:nowrap;"><strong>Opp Date :</strong> {{ $opportunity_date ? $opportunity_date->format('d/m/Y') : '—' }}</div>
+                                style="vertical-align:middle; text-align:left; font-size:9px; line-height:14px; width:38%; white-space:nowrap;">
+                                <div style="margin-bottom:2px; white-space:nowrap;"><strong>Opp Id :</strong>
+                                    {{ $opportunity_id ?? '—' }}</div>
+                                <div style="white-space:nowrap;"><strong>Opp Date :</strong>
+                                    {{ $opportunity_date ? $opportunity_date->format('d/m/Y') : '—' }}</div>
                             </td>
                             <td style="vertical-align:middle; text-align:left ;">
                                 @if (!empty($barcodeHtml))
@@ -367,7 +410,7 @@
         </tr>
     </table>
 
-    <div class="rule"></div>
+    <div class="rule" style="margin:34px 0 18px;"></div>
 
     <!-- ── PRODUCT TABLE ── -->
     <table class="prod">
@@ -375,13 +418,12 @@
             <tr>
                 <th class="c" style="width:5%;">Sr No</th>
                 <th class="c" style="width:11%;">Product Code</th>
-                <th class="l" style="width:34%;">Product Name</th>
+                <th class="l" style="width:28%;">Product Name</th>
                 <th class="c" style="width:6%;">Qty</th>
-                <th style="width:9%;">Rate</th>
-                <th class="c" style="width:7%;">Tax%</th>
-                <th style="width:9%;">Tax Amt</th>
-                <th style="width:9%;">Rate+Tax</th>
-                <th style="width:10%;">Amount</th>
+                <th style="width:12%;">Rate</th>
+                <th class="c" style="width:9%;">Tax%</th>
+                <th style="width:13%;">Tax Amt</th>
+                <th style="width:16%;">Amount</th>
             </tr>
         </thead>
         <tbody>
@@ -392,9 +434,10 @@
                     <td class="l"><span class="pname">{{ $row['product_name'] }}</span></td>
                     <td class="c">{{ rtrim(rtrim(number_format((float) $row['quantity'], 3, '.', ','), '0'), '.') }}</td>
                     <td>{{ number_format((float) $row['rate'], 2) }}</td>
-                    <td class="c">0.00%</td>
-                    <td>{{ number_format(0, 2) }}</td>
-                    <td>{{ number_format((float) ($row['rate_with_tax'] ?? $row['rate']), 2) }}</td>
+                    {{-- TEST placeholders: static Tax% + a 10B Tax Amt so the fixed
+                    column widths can be verified against very large numbers. --}}
+                    <td class="c">18.00%</td>
+                    <td>{{ number_format(10000000000, 2) }}</td>
                     <td>{{ number_format((float) $row['amount'], 2) }}</td>
                 </tr>
             @endforeach
@@ -412,23 +455,33 @@
                 <table style="width:100%; font-size:9px; line-height:14px; border-collapse:collapse;">
                     <tr>
                         <td style="padding:3px 0;"><strong style="color:#555;">Sub Total</strong></td>
-                        <td style="text-align:right; padding:3px 0;"><strong style="color:#555;">{{ number_format((float) $quotation->total, 2) }}</strong></td>
+                        <td style="text-align:right; padding:3px 0;"><strong
+                                style="color:#555;">{{ number_format((float) $quotation->total, 2) }}</strong></td>
                     </tr>
                     <tr>
                         <td style="padding:3px 0; color:#555;">IGST</td>
-                        <td style="text-align:right; padding:3px 0;">{{ number_format((float) $quotation->igst, 2) }}</td>
+                        <td style="text-align:right; padding:3px 0;">{{ number_format((float) $quotation->igst, 2) }}
+                        </td>
                     </tr>
                     <tr>
                         <td style="padding:3px 0; color:#555;">CGST</td>
-                        <td style="text-align:right; padding:3px 0;">{{ number_format((float) $quotation->cgst, 2) }}</td>
+                        <td style="text-align:right; padding:3px 0;">{{ number_format((float) $quotation->cgst, 2) }}
+                        </td>
                     </tr>
                     <tr>
                         <td style="padding:3px 0; color:#555;">SGST</td>
-                        <td style="text-align:right; padding:3px 0;">{{ number_format((float) $quotation->sgst, 2) }}</td>
+                        <td style="text-align:right; padding:3px 0;">{{ number_format((float) $quotation->sgst, 2) }}
+                        </td>
                     </tr>
                     <tr>
-                        <td style="padding:8px 0 0 0; font-size:12px; color:#333; border-top:1px solid #ddd; white-space:nowrap;"><strong>Grand Total:</strong></td>
-                        <td style="text-align:right; padding:8px 0 0 0; font-size:12px; color:#333; border-top:1px solid #ddd; white-space:nowrap;"><strong>{{ $curr }} {{ number_format((float) $quotation->grand_total, 2) }}</strong></td>
+                        <td
+                            style="padding:8px 0 0 0; font-size:12px; color:#333; border-top:1px solid #ddd; white-space:nowrap;">
+                            <strong>Grand Total:</strong>
+                        </td>
+                        <td
+                            style="text-align:right; padding:8px 0 0 0; font-size:12px; color:#333; border-top:1px solid #ddd; white-space:nowrap;">
+                            <strong>{{ $curr }} {{ number_format((float) $quotation->grand_total, 2) }}</strong>
+                        </td>
                     </tr>
                 </table>
             </td>
@@ -436,21 +489,24 @@
     </table>
 
     {{-- ── AMOUNT IN WORDS ── (primary-colour bar; a full-width table so its right
-         edge lines up exactly with the product table / totals, not overflowing). --}}
+    edge lines up exactly with the product table / totals, not overflowing). --}}
     <table style="width:100%; border-collapse:collapse; margin-top:14px;">
         <tr>
-            <td style="background-color:{{ $PRIMARY }}; color:{{ $ONW }}; padding:8px 14px; font-size:10px; font-weight:600; line-height:14px; text-align:left;">
-                <strong style="text-transform:capitalize; color:{{ $ONW }};">Amount In Words : {{ $curr }} {{ $amountInWords }}</strong>
+            <td
+                style="background-color:{{ $PRIMARY }}; color:{{ $ONW }}; padding:8px 14px; font-size:10px; font-weight:600; line-height:14px; text-align:left;">
+                <strong style="text-transform:capitalize; color:{{ $ONW }};">Amount In Words : {{ $curr }}
+                    {{ $amountInWords }}</strong>
             </td>
         </tr>
     </table>
 
-    {{-- ── FOOTER: barcode (left) + issuer name (center); "Page X of Y" below via script ── --}}
+    {{-- ── FOOTER: barcode (left) + issuer name (center), pinned to the page bottom ── --}}
     <div class="pdf-footer">
         <table style="width:100%; border-collapse:collapse;">
             <tr>
                 <td style="width:20%; text-align:left; padding:5px 0 0 8px; vertical-align:top;">{!! $footerBar !!}</td>
-                <td style="width:60%; text-align:center; padding-top:6px; vertical-align:top; color:{{ $PRIMARY }}; font-size:8px; font-weight:600;">
+                <td
+                    style="width:60%; text-align:center; padding-top:6px; vertical-align:top; color:{{ $PRIMARY }}; font-size:8px; font-weight:600;">
                     {{ $c->name ?? '' }}@if (!empty($c->gst_no)) &nbsp;|&nbsp; GST No : {{ $c->gst_no }}@endif
                 </td>
                 <td style="width:20%;">&nbsp;</td>
@@ -458,17 +514,6 @@
         </table>
     </div>
 
-    <script type="text/php">
-        if (isset($pdf)) {
-            $font  = $fontMetrics->get_font("DejaVu Sans", "normal");
-            $size  = 8;
-            $text  = "Page {PAGE_NUM} of {PAGE_COUNT}";
-            $width = $fontMetrics->get_text_width("Page 99 of 99", $font, $size);
-            $x     = ($pdf->get_width() - $width) / 2 + 2;
-            $y     = $pdf->get_height() - 34;
-            $pdf->page_text($x, $y, $text, $font, $size, [0.30, 0.30, 0.30]);
-        }
-    </script>
 </body>
 
 </html>

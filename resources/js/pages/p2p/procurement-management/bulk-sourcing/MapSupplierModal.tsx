@@ -49,7 +49,7 @@ function Header({ p, step }: { p: MapProduct; step?: string }) {
         </div>
       </div>
       <div className="smp-prod-strip">
-        <div className="smp-ppill"><div className="smp-ppill-lbl">Product Name</div><div className="smp-ppill-val">{p.name}</div></div>
+        <div className="smp-ppill"><div className="smp-ppill-lbl">Product Name</div><Tooltip label={p.name}><div className="smp-ppill-val" style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div></Tooltip></div>
         <div className="smp-ppill-sep" />
         <div className="smp-ppill"><div className="smp-ppill-lbl">Product Code</div><div className="smp-ppill-val cyan">{p.code || '—'}</div></div>
         <div className="smp-ppill-sep" /><div className="smp-ppill"><div className="smp-ppill-lbl">Segment</div><div className="smp-ppill-val">{p.segment || '—'}</div></div>
@@ -141,6 +141,9 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
   const [suppliers, setSuppliers] = useState<SupplierMaster[]>([]);
   const [saving, setSaving] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // Server-side validation errors mapped back onto the fields (e.g. a length
+  // the client didn't catch) so they render inline in red, not just as a toast.
+  const [srvErrs, setSrvErrs] = useState<Record<string, string>>({});
 
   useEffect(() => { api.get<{ data: SupplierMaster[] }>('/p2p/suppliers').then(r => setSuppliers(r.data?.data ?? [])).catch(() => {}); }, []);
   useEffect(() => {
@@ -185,6 +188,19 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
       .then(() => onMapped(name))
       .catch((err) => {
         const errors = err?.response?.data?.errors as Record<string, string[]> | undefined;
+        if (errors) {
+          // Map `new_supplier.<field>` server errors onto the inline field keys
+          // so the offending box turns red with the message underneath it.
+          const keyMap: Record<string, string> = {
+            'new_supplier.name': 'co', 'new_supplier.contact': 'contact', 'new_supplier.mobile': 'mobile',
+            'new_supplier.email': 'email', 'new_supplier.segment': 'seg', 'new_supplier.address': 'addr',
+            'new_supplier.country': 'country', 'new_supplier.state': 'state', 'new_supplier.state_code': 'stateCode',
+            'new_supplier.city': 'city',
+          };
+          const mapped: Record<string, string> = {};
+          Object.entries(errors).forEach(([k, v]) => { const f = keyMap[k]; if (f && v?.[0]) mapped[f] = v[0]; });
+          if (Object.keys(mapped).length) { setSrvErrs(mapped); setSubmitted(true); }
+        }
         const msg = err?.response?.data?.message || (errors && Object.values(errors)[0]?.[0]);
         toast.error('Map failed', msg || 'Please try again.');
       })
@@ -208,12 +224,13 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
     if (!city.trim()) e.city = 'City is required.';
     return e;
   };
-  const errs: Record<string, string> = submitted ? newSupplierErrors() : {};
+  const errs: Record<string, string> = { ...(submitted ? newSupplierErrors() : {}), ...srvErrs };
   const invStyle = (m?: string) => m ? { borderColor: '#ef4444', boxShadow: '0 0 0 3px rgba(239,68,68,.12)' } : undefined;
   const errMsg = (m?: string) => m ? <div style={{ color: '#ef4444', fontSize: 11, fontWeight: 600, marginTop: 4 }}>{m}</div> : null;
 
   const saveNew = () => {
     setSubmitted(true);
+    setSrvErrs({});
     const e = newSupplierErrors();
     if (Object.keys(e).length) { toast.warning('Missing details', 'Please fill all the required fields highlighted in red.'); return; }
     const countryName = masters.countries.find(c => c.id === countryId)?.name ?? '';
@@ -298,25 +315,25 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
           <div className="smp-body snf-body">
             <div className="snf-section">
               <div className="snf-sec-hdr"><div className="snf-sec-icon teal-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></svg></div><span>Supplier Information</span></div>
-              <div className="snf-row snf-row-1"><div className="snf-field"><label className="snf-lbl">Supplier Company Name <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.co)} value={co} onChange={e => setCo(e.target.value)} placeholder="e.g. TechParts India Pvt Ltd" />{errMsg(errs.co)}</div></div>
+              <div className="snf-row snf-row-1"><div className="snf-field"><label className="snf-lbl">Supplier Company Name <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.co)} maxLength={255} value={co} onChange={e => setCo(e.target.value)} placeholder="e.g. TechParts India Pvt Ltd" />{errMsg(errs.co)}</div></div>
               <div className="snf-row snf-row-3">
-                <div className="snf-field"><label className="snf-lbl">Contact Person <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.contact)} value={contact} onChange={e => setContact(e.target.value)} placeholder="Full name" />{errMsg(errs.contact)}</div>
-                <div className="snf-field"><label className="snf-lbl">Mobile Number <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.mobile)} value={mobile} onChange={e => setMobile(e.target.value)} placeholder="10-digit mobile" />{errMsg(errs.mobile)}</div>
+                <div className="snf-field"><label className="snf-lbl">Contact Person <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.contact)} maxLength={255} value={contact} onChange={e => setContact(e.target.value)} placeholder="Full name" />{errMsg(errs.contact)}</div>
+                <div className="snf-field"><label className="snf-lbl">Mobile Number <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.mobile)} maxLength={64} value={mobile} onChange={e => setMobile(e.target.value)} placeholder="10-digit mobile" />{errMsg(errs.mobile)}</div>
                 <div className="snf-field"><label className="snf-lbl">Segment <span className="snf-req">*</span></label><MasterMultiSelect values={seg} invalid={!!errs.seg} collapse collapseNoun="segments" loading={mastersLoading} showDone placeholder="Select segment(s)..." options={masters.segments.map(s => ({ value: s.name, label: s.name }))} onChange={setSeg} />{errMsg(errs.seg)}</div>
               </div>
               <div className="snf-row snf-row-2">
-                <div className="snf-field"><label className="snf-lbl">Email ID <span className="snf-req">*</span></label><input className="snf-inp" type="email" style={invStyle(errs.email)} value={email} onChange={e => setEmail(e.target.value)} placeholder="supplier@company.com" />{errMsg(errs.email)}</div>
+                <div className="snf-field"><label className="snf-lbl">Email ID <span className="snf-req">*</span></label><input className="snf-inp" type="email" style={invStyle(errs.email)} maxLength={255} value={email} onChange={e => setEmail(e.target.value)} placeholder="supplier@company.com" />{errMsg(errs.email)}</div>
                 <div className="snf-field"><label className="snf-lbl">Google Location Link</label><input className="snf-inp" value={gmaps} onChange={e => setGmaps(e.target.value)} placeholder="https://maps.google.com/..." /></div>
               </div>
             </div>
             <div className="snf-section">
               <div className="snf-sec-hdr"><div className="snf-sec-icon blue-icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg></div><span>Address</span></div>
-              <div className="snf-row snf-row-1"><div className="snf-field"><label className="snf-lbl">Street Address <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.addr)} value={addr} onChange={e => setAddr(e.target.value)} placeholder="e.g. 101, Business Park, MG Road" />{errMsg(errs.addr)}</div></div>
+              <div className="snf-row snf-row-1"><div className="snf-field"><label className="snf-lbl">Street Address <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.addr)} maxLength={255} value={addr} onChange={e => setAddr(e.target.value)} placeholder="e.g. 101, Business Park, MG Road" />{errMsg(errs.addr)}</div></div>
               <div className="snf-row snf-row-4">
                 <div className="snf-field"><label className="snf-lbl">Country <span className="snf-req">*</span></label><MasterSelect value={countryId === '' ? '' : String(countryId)} invalid={!!errs.country} placeholder="Select country..." options={masters.countries.map(c => ({ value: String(c.id), label: c.name }))} onChange={v => { setCountryId(v ? Number(v) : ''); pickState(''); }} />{errMsg(errs.country)}</div>
                 <div className="snf-field"><label className="snf-lbl">State <span className="snf-req">*</span></label><MasterSelect value={stateId === '' ? '' : String(stateId)} invalid={!!errs.state} placeholder={countryId === '' ? 'Select country first' : 'Select state...'} disabled={countryId === ''} options={statesForCountry.map(s => ({ value: String(s.id), label: s.name }))} onChange={v => pickState(v ? Number(v) : '')} />{errMsg(errs.state)}</div>
                 <div className="snf-field"><label className="snf-lbl">State Code <span style={{ fontSize: 10, color: '#94a3b8' }}>(auto)</span></label><input className="snf-inp snf-inp-ro" value={stateCode} readOnly placeholder="—" style={{ textTransform: 'uppercase' }} /></div>
-                <div className="snf-field"><label className="snf-lbl">City <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.city)} value={city} onChange={e => setCity(e.target.value)} placeholder="City name" />{errMsg(errs.city)}</div>
+                <div className="snf-field"><label className="snf-lbl">City <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.city)} maxLength={128} value={city} onChange={e => setCity(e.target.value)} placeholder="City name" />{errMsg(errs.city)}</div>
               </div>
             </div>
             <div className="snf-section snf-last">
@@ -343,7 +360,7 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
             </div>
             <div className="snf-foot">
               <button className="smp-btn-back" onClick={() => setStep('choose')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>Back</button>
-              <button className="smp-btn-save smp-btn-map" onClick={saveNew} disabled={saving}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v14a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>{saving ? 'Saving…' : 'Save Supplier'}</button>
+              <button className="smp-btn-save smp-btn-map" onClick={saveNew} disabled={saving}>{saving ? <svg className="ast-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v14a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>}{saving ? 'Saving…' : 'Save Supplier'}</button>
             </div>
           </div>
         )}

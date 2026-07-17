@@ -75,7 +75,11 @@ function ClarityCell({ clarity, onEdit }: { clarity?: Clarity; onEdit: () => voi
 }
 
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-const fmt = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+// Long display format e.g. "16-July-2026" (used for the read-only Start Date).
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const fmtLong = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${parseInt(d, 10)}-${MONTHS[parseInt(m, 10) - 1] ?? m}-${y}`; };
+// Keep only digits and a single decimal point — Target Price is numeric-only.
+const numOnly = (v: string) => { const c = v.replace(/[^0-9.]/g, ''); const p = c.split('.'); return p.length > 2 ? `${p[0]}.${p.slice(1).join('')}` : c; };
 // Clarity PDFs store a /storage/... path; show just the filename to the user.
 const baseName = (p: string) => (p || '').split('/').pop() || p;
 // A target price is invalid when blank, non-numeric, or ≤ 0.
@@ -86,7 +90,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   const toast = useToast();
   const isEdit = !!editRow;
   const { pulse, guardOverlay } = useModalGuard();
-  const [autoCode, setAutoCode] = useState('Auto');
+  const [autoCode, setAutoCode] = useState('');
   const srcId = editRow?.id ?? autoCode;
   const start = useMemo(() => editRow?.start ?? today(), [editRow]);
 
@@ -104,6 +108,17 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   const [mName, setMName] = useState('');
   const [mPrice, setMPrice] = useState('');
   const [team, setTeam] = useState<string | null>(editRow?.assignee ?? null);
+  // False once the current assignee goes Inactive/Exited — set from the edit
+  // pre-fill. When false the whole target becomes view-only (no reassign).
+  const [assigneeActive, setAssigneeActive] = useState(true);
+  // The target's existing assignee id (edit only) — sent straight back on Update
+  // since the assignee is fixed and may not be in the filtered team list.
+  const [assigneeId, setAssigneeId] = useState<string | null>(null);
+  // Assignee is always locked while editing (never reassigned).
+  const assigneeLocked = isEdit;
+  // Editing a target whose assignee went Inactive/Exited → read-only: the form
+  // can be viewed but not changed, and a toast explains why.
+  const viewOnly = isEdit && !assigneeActive;
   const [teamOpen, setTeamOpen] = useState(false);
   const [teamSearch, setTeamSearch] = useState('');
   const [teamPick, setTeamPick] = useState<string | null>(null);
@@ -120,6 +135,16 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   const [dueTried, setDueTried] = useState(false);
   const [priceTried, setPriceTried] = useState(false);
 
+  // Freeze the background page while the wizard is open (same lock the other
+  // Bulk Sourcing modals use). Without it the underlying list stays scrollable
+  // and jumps back to the top during the assignment flow; locking body overflow
+  // pins the scroll position and restores it on close.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   // Reference data + edit pre-fill from the backend (see API.md).
   const [products, setProducts] = useState<Product[]>([]);
   const [teamMembers, setTeamMembers] = useState<Member[]>([]);
@@ -131,8 +156,15 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   useEffect(() => {
     if (!editRow) return;
     setListLoading(true);
-    api.get<{ data: { masterRows?: MasterRow[]; manualRows?: ManualRow[] } }>(`/p2p/sourcing-targets/${editRow.id}`)
-      .then(r => { setMasterRows(r.data?.data?.masterRows ?? []); setManualRows(r.data?.data?.manualRows ?? []); })
+    api.get<{ data: { masterRows?: MasterRow[]; manualRows?: ManualRow[]; assigneeActive?: boolean; assigneeId?: string | null } }>(`/p2p/sourcing-targets/${editRow.id}`)
+      .then(r => {
+        setMasterRows(r.data?.data?.masterRows ?? []);
+        setManualRows(r.data?.data?.manualRows ?? []);
+        setAssigneeId(r.data?.data?.assigneeId ?? null);
+        const active = r.data?.data?.assigneeActive !== false;
+        setAssigneeActive(active);
+        if (!active) toast.info('View only', 'This sourcing target’s assignee is inactive or exited, so it can’t be edited — you can only view it.');
+      })
       .catch(() => {})
       .finally(() => setListLoading(false));
   }, [editRow]);
@@ -210,6 +242,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     }, 500);
   };
   const goAssign = () => {
+    if (viewOnly) { toast.info('View only', 'This sourcing target’s assignee is inactive or exited — it can’t be edited.'); return; }
     setPriceTried(true);
     const n = masterRows.length + manualRows.length;
     if (!n) { toast.warning('Add products', 'Add at least one product to the list.'); return; }
@@ -222,11 +255,13 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
       toast.warning('Invalid target price', 'Every target price must be a positive number.');
       return;
     }
-    const assigneeId = teamMembers.find(m => m.name === team)?.id ?? null;
-    if (!assigneeId) { toast.warning('Assign required', 'Assign this sourcing target to a team member before saving.'); return; }
+    // On edit the assignee is fixed — reuse its id from the pre-fill (it may not
+    // be in the filtered team list). New targets resolve the pick by name.
+    const resolvedAssigneeId = (isEdit ? assigneeId : null) ?? teamMembers.find(m => m.name === team)?.id ?? null;
+    if (!resolvedAssigneeId) { toast.warning('Assign required', 'Assign this sourcing target to a team member before saving.'); return; }
     const body = {
       due_date: due, source,
-      assignee_id: assigneeId,
+      assignee_id: resolvedAssigneeId,
       products: [
         ...masterRows.map(r => ({ id: r.id ?? null, from: 'master', code: r.code, target_price: r.price, clarity: r.clarity ?? null })),
         ...manualRows.map(r => ({ id: r.id ?? null, from: 'manual', name: r.name, target_price: r.price, clarity: r.clarity ?? null })),
@@ -250,7 +285,16 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
 
   return createPortal(
     <div className="ast-ov" onMouseDown={guardOverlay}>
-      <div className={`ast-modal${pulse ? ' bsm-pulse' : ''}`} role="dialog" aria-modal="true">
+      <div className={`ast-modal${pulse ? ' bsm-pulse' : ''}`} role="dialog" aria-modal="true" style={{ position: 'relative' }}>
+        {/* Save lock — blankets the whole form while the target is being
+            saved/updated so no field or button can be touched mid-save (and
+            no double-submit). Clears when the request settles. */}
+        {saving && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.68)', backdropFilter: 'blur(2px)', WebkitBackdropFilter: 'blur(2px)', cursor: 'progress', borderRadius: 'inherit' }}>
+            <svg className="ast-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0e7490', letterSpacing: 0.2 }}>{isEdit ? 'Saving changes…' : 'Assigning…'}</span>
+          </div>
+        )}
         {/* Header */}
         <div className="ast-head">
           <div className="ast-head-ico" style={isEdit ? { background: 'linear-gradient(135deg,#0891b2,#0e7490)' } : undefined}>
@@ -259,7 +303,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
               : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>}
           </div>
           <div style={{ flex: 1 }}><div className="ast-title">{isEdit ? `Edit Sourcing Target — ${srcId}` : 'Assign Sourcing Target'}</div><div className="ast-sub">{isEdit ? 'Update sourcing details and product list.' : 'Create a sourcing target across products.'}</div></div>
-          <Tooltip label={isEdit ? 'Assignee is locked once the target is created' : undefined}><button className={`ast-head-btn ${team ? 'is-set' : ''}`} style={isEdit ? { cursor: 'not-allowed' } : undefined} onClick={() => { if (isEdit) { toast.info('Assignee locked', 'The assignee is fixed once a sourcing target is created — it can’t be changed while editing.'); return; } openTeam(); }}>
+          <Tooltip label={viewOnly ? 'Assignee is inactive/exited — view only' : (assigneeLocked ? 'Assignee is locked once the target is created' : undefined)}><button className={`ast-head-btn ${team ? 'is-set' : ''}`} style={assigneeLocked ? { cursor: 'not-allowed' } : undefined} onClick={() => { if (viewOnly) { toast.info('View only', 'This sourcing target’s assignee is inactive or exited — it can’t be edited.'); return; } if (assigneeLocked) { toast.info('Assignee locked', 'The assignee is fixed once a sourcing target is created — it can’t be changed while editing.'); return; } openTeam(); }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
             <span>{team || 'Assign to Team Member'}</span>
           </button></Tooltip>
@@ -285,7 +329,9 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
         </div>
 
         {/* Body */}
-        <div className="ast-body">
+        {/* View-only: the assignee is Inactive/Exited, so the whole form is
+            shown but non-interactive (pointer-events off, slightly dimmed). */}
+        <div className="ast-body" style={viewOnly ? { pointerEvents: 'none', opacity: 0.6 } : undefined}>
           {stage === 1 ? (
             <div className="ast-srccard">
               <div className="ast-srccard-head">
@@ -297,12 +343,12 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                 <div className="ast-srcgrid">
                   <div className="ast-field">
                     <label>Sourcing ID <span className="ast-lock"><LockIco /> Auto</span></label>
-                    <div className="ast-inputwrap is-frozen"><span className="ast-input-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3" /><path d="M9 20h6" /><path d="M12 4v16" /></svg></span><input type="text" value={srcId} readOnly tabIndex={-1} className="ast-readonly has-ico" /><span className="ast-freeze-ico"><LockIco /></span></div>
+                    <div className="ast-inputwrap is-frozen"><span className="ast-input-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V4h16v3" /><path d="M9 20h6" /><path d="M12 4v16" /></svg></span><input type="text" value={srcId || 'Generating…'} readOnly tabIndex={-1} className="ast-readonly has-ico" /><span className="ast-freeze-ico"><LockIco /></span></div>
                   </div>
                   <div className="ast-srcgrid-sep" />
                   <div className="ast-field">
                     <label>Start Date <span className="ast-lock"><LockIco /> Today</span></label>
-                    <div className="ast-inputwrap is-frozen"><span className="ast-input-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></span><input type="text" value={fmt(start)} readOnly tabIndex={-1} className="ast-readonly has-ico" /><span className="ast-freeze-ico"><LockIco /></span></div>
+                    <div className="ast-inputwrap is-frozen"><span className="ast-input-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></span><input type="text" value={fmtLong(start)} readOnly tabIndex={-1} className="ast-readonly has-ico" /><span className="ast-freeze-ico"><LockIco /></span></div>
                   </div>
                   <div className="ast-srcgrid-sep" />
                   <div className="ast-field">
@@ -327,8 +373,8 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                   <div className="ast-field" style={{ marginBottom: 11, gap: 2 }}>
                     <label>I want to source from <span className="ast-req">*</span></label>
                     <div className="ast-radios">
-                      <label className={`ast-radio ${source === 'master' ? 'is-sel' : ''}`} onClick={() => setSource('master')}><span className="ast-radio-dot" /><span className="ast-radio-txt"><b>From Product Master</b><small>Pick existing products</small></span></label>
-                      <label className={`ast-radio ${source === 'manual' ? 'is-sel' : ''}`} onClick={() => setSource('manual')}><span className="ast-radio-dot" /><span className="ast-radio-txt"><b>Manual Product Entry</b><small>Type a new product</small></span></label>
+                      <label className={`ast-radio ${source === 'master' ? 'is-sel' : ''}`} onClick={() => { setSource('master'); setListTab('master'); }}><span className="ast-radio-dot" /><span className="ast-radio-txt"><b>From Product Master</b><small>Pick existing products</small></span></label>
+                      <label className={`ast-radio ${source === 'manual' ? 'is-sel' : ''}`} onClick={() => { setSource('manual'); setListTab('manual'); }}><span className="ast-radio-dot" /><span className="ast-radio-txt"><b>Manual Product Entry</b><small>Type a new product</small></span></label>
                     </div>
                   </div>
 
@@ -364,7 +410,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                   ) : (
                     <div className="ast-grid ast-grid-3">
                       <div className="ast-field"><label>Product Name <span className="ast-req">*</span></label><input type="text" value={mName} placeholder="e.g. Office Printer A4" onChange={e => setMName(e.target.value)} /></div>
-                      <div className="ast-field"><label>Target Price (₹) <span className="ast-req">*</span></label><input type="text" value={mPrice} placeholder="Required" onChange={e => setMPrice(e.target.value)} /></div>
+                      <div className="ast-field"><label>Target Price (₹) <span className="ast-req">*</span></label><input type="text" inputMode="decimal" value={mPrice} placeholder="e.g. 10000" onChange={e => setMPrice(numOnly(e.target.value))} /></div>
                       <div className="ast-field"><label>&nbsp;</label><button type="button" className="ast-btn ast-btn-primary" style={{ height: 42, justifyContent: 'center' }} onClick={addManual} disabled={mAdding}>{mAdding ? <><svg className="ast-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> Adding…</> : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg> Add to List</>}</button></div>
                     </div>
                   )}
@@ -394,10 +440,10 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                           <div className="asrc-row asrc-row--m" key={r.code}>
                             <span className="asrc-sr" data-label="Sr">{i + 1}</span>
                             <span className="asrc-code" data-label="Product Code">{r.code}</span>
-                            <span className="asrc-name" data-label="Product Name">{r.name}</span>
+                            <span data-label="Product Name"><Tooltip label={r.name}><span className="asrc-name">{r.name}</span></Tooltip></span>
                             <span data-label="Segment"><span className={`srpt-seg ${(r.segment || 'General').replace(/ /g, '-')}`}>{r.segment}</span></span>
                             <span className="asrc-hsn" data-label="HSN Code"><span className="srpt-hsn">{r.hsn}</span></span>
-                            <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="Required" onChange={e => setMasterRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: e.target.value } : x))} /></span>
+                            <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="e.g. 10000" inputMode="decimal" onChange={e => setMasterRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: numOnly(e.target.value) } : x))} /></span>
                             <span data-label="Clarity"><ClarityCell clarity={r.clarity} onEdit={() => openClarity('master', i)} /></span>
                             <span data-label=""><Tooltip label={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'}><button type="button" className="ast-pl-del" style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => r.mapped ? toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`) : setMasterRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></Tooltip></span>
                           </div>
@@ -412,7 +458,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                           <div className="asrc-row asrc-row--n" key={i}>
                             <span className="asrc-sr" data-label="Sr">{i + 1}</span>
                             <span data-label="Product Name"><input type="text" className="ast-pl-price" style={{ fontWeight: 600 }} value={r.name} onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x))} /></span>
-                            <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="Required" onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: e.target.value } : x))} /></span>
+                            <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="e.g. 10000" inputMode="decimal" onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: numOnly(e.target.value) } : x))} /></span>
                             <span data-label="Clarity"><ClarityCell clarity={r.clarity} onEdit={() => openClarity('manual', i)} /></span>
                             <span data-label=""><Tooltip label={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'}><button type="button" className="ast-pl-del" style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => r.mapped ? toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`) : setManualRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></Tooltip></span>
                           </div>
@@ -436,7 +482,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
           ) : (
             <>
               <button className="ast-btn ast-btn-ghost" onClick={() => setStage(1)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg> Previous</button>
-              <button className="ast-btn ast-btn-primary" onClick={goAssign} disabled={saving}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg> {saving ? 'Saving…' : (isEdit ? 'Update Target' : 'Assign Target')}</button>
+              <button className="ast-btn ast-btn-primary" onClick={goAssign} disabled={saving || viewOnly} style={viewOnly ? { cursor: 'not-allowed', opacity: 0.55 } : undefined}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg> {saving ? 'Saving…' : (viewOnly ? 'View Only' : (isEdit ? 'Update Target' : 'Assign Target'))}</button>
             </>
           )}
         </div>

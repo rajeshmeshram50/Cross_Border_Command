@@ -283,6 +283,12 @@
 .asrc-name {
   font-weight: 600;
   color: #0f172a;
+  /* Long names truncate with an ellipsis (full name on hover via Tooltip). */
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 [data-bs-theme="dark"] .ast-foot,
 [data-bs-theme="dark"] .astp-foot {
@@ -2304,7 +2310,9 @@
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600;
   color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; cursor: default;
+  font-family: inherit;
 }
+.srpt-viewonly:hover { background: #e7edf4; color: #475569; }
 .ast-pl-del {
   display: flex;
   align-items: center;
@@ -3037,6 +3045,18 @@
   font-weight: 500;
   color: #0f172a;
   font-size: 11.5px;
+  /* Long product names truncate with an ellipsis instead of stretching the
+     column; the full name is available on hover via the Tooltip wrapper. */
+  display: block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Manual-entry list (Product List modal) has far fewer columns, so its Product
+   Name column is much wider — let the name use that space before truncating. */
+.srpt-pname-wide {
+  max-width: min(680px, 58vw);
 }
 .srpt-price {
   font-weight: 700;

@@ -142,18 +142,37 @@
         }
 
         .prod_table tr {
-            page-break-inside: avoid;
+            /* Allow a very tall row (long description) to split across pages
+               instead of being pushed off the page whole — otherwise a single
+               big-description product leaves page 1 blank and starts on a later
+               page. Short rows fit anyway so they never split. */
+            page-break-inside: auto;
         }
 
         .prod_table td.description-cell {
             word-wrap: break-word;
+            overflow-wrap: break-word;
             white-space: normal;
-            vertical-align: middle;
+            /* Top-align so a long description begins at the first line of the
+               row (page 1, row 1) rather than being centred in a tall cell. */
+            vertical-align: top;
+        }
+
+        /* A long description is emitted as several rows (dompdf can page-break
+           BETWEEN rows but not inside one tall cell). These rules make the
+           slices read as one continuous block: the flowing slice drops its
+           bottom padding, and continuation rows drop their top padding. */
+        .prod_table td.description-flow {
+            padding-bottom: 0;
+        }
+
+        .prod_table tr.desc-cont td {
+            padding-top: 0;
         }
 
         .prod_table td {
             padding: 10px 6px;
-            vertical-align: middle;
+            vertical-align: top;
             line-height: 13px;
         }
 
@@ -658,6 +677,31 @@
                                                         {{ $quotation->origin_country }}</div>
                                                     <div style="margin-bottom:0;"><strong>INCO Term :</strong>
                                                         {{ $quotation->inco_term_name }}</div>
+                                                </div>
+                                            @endif
+
+                                            @if($quotation->document_type == "Domestic")
+                                                {{-- Domestic detail block — mirrors the International block's
+                                                layout/rhythm but with the domestic fields (dispatch/deliver,
+                                                GST state code + GSTIN) in place of ports / INCO / destination. --}}
+                                                <div style="margin-top:12px; font-size:9px; line-height:14px;">
+                                                    <div style="margin-bottom:6px;"><strong>Document Type :</strong>
+                                                        {{ $quotation->document_type }}</div>
+                                                    <div style="margin-bottom:6px;"><strong>Opportunity ID :</strong>
+                                                        {{ $opportunity_id }}</div>
+                                                    <div style="margin-bottom:6px;"><strong>Opportunity Date :</strong>
+                                                        {{ $opportunity_date ? $opportunity_date->format('d/m/Y') : '' }}
+                                                    </div>
+                                                    <div style="margin-bottom:6px;"><strong>Currency :</strong>
+                                                        {{ $quotation->currency->name ?? '' }}</div>
+                                                    <div style="margin-bottom:6px;"><strong>Dispatch From :</strong>
+                                                        {{ $quotation->dispatch_from ?? '' }}</div>
+                                                    <div style="margin-bottom:6px;"><strong>Deliver To :</strong>
+                                                        {{ $quotation->deliver_to ?? '' }}</div>
+                                                    <div style="margin-bottom:6px;"><strong>GST State Code :</strong>
+                                                        {{ $quotation->state_code ?? '' }}</div>
+                                                    <div style="margin-bottom:0;"><strong>Customer GST No :</strong>
+                                                        {{ $quotation->customer_gst_no ?? '' }}</div>
                                                 </div>
                                             @endif
                                         </td>
