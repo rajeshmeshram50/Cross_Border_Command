@@ -537,7 +537,11 @@ class ClmAgreementController extends Controller
                 })
                 ->where('agr_status', 'Active')
                 ->orderBy('id')
-                ->get();
+                ->get()
+                // Exclude supplier/other-only agreements — the Sales Matrix only
+                // sends to the customer / consignee side.
+                ->filter(fn (ClmAgreementLibrary $a) => $this->partyForBuyerConsignee($a->party)[0])
+                ->values();
 
             $agreementsOut = $agreements->map(function (ClmAgreementLibrary $a) use ($latestPerAgreement) {
                 $req = $latestPerAgreement[$a->id] ?? null;
@@ -662,6 +666,37 @@ class ClmAgreementController extends Controller
     }
 
     /**
+     * Resolve a library row's `party` CSV against the Sales Matrix context,
+     * which only ever deals with the buyer (customer) / consignee side.
+     *
+     * A row is applicable here when its party names Buyer or Consignee. Rows
+     * that name only Supplier/other parties (e.g. "Supplier-Material / Goods")
+     * are NOT applicable and must be excluded — previously they slipped through
+     * because "names neither" fell back to "both". A blank party stays
+     * universal (applicable to both), preserving the old permissive behaviour
+     * for unclassified rows.
+     *
+     * @return array{0:bool,1:bool,2:bool}  [applicable, forBuyer, forConsignee]
+     */
+    private function partyForBuyerConsignee(?string $party): array
+    {
+        $tokens = array_filter(array_map(
+            fn ($t) => strtolower(trim($t)),
+            explode(',', (string) $party)
+        ));
+        $forBuyer     = in_array('buyer', $tokens, true);
+        $forConsignee = in_array('consignee', $tokens, true);
+
+        // Unclassified (blank party) → applies to both, so it's never hidden.
+        if (empty($tokens)) {
+            return [true, true, true];
+        }
+        // Named parties but neither Buyer nor Consignee → supplier/other-only,
+        // not applicable in the customer/consignee sales-matrix context.
+        return [$forBuyer || $forConsignee, $forBuyer, $forConsignee];
+    }
+
+    /**
      * Trade documents required for a single segment, ONE row per document.
      * Each row carries the document's applicable party (parsed from the trade
      * doc master's `party` CSV → for_buyer / for_consignee) so the Sales Matrix
@@ -715,15 +750,10 @@ class ClmAgreementController extends Controller
             $docCode = $m->code;
 
             // Applicable party comes from the master's `party` CSV (e.g.
-            // "Buyer,Consignee,Supplier-Material"). A doc that names neither
-            // Buyer nor Consignee falls back to "both" so it's never hidden.
-            $tokens = array_filter(array_map(
-                fn ($t) => strtolower(trim($t)),
-                explode(',', (string) ($m->party ?? ''))
-            ));
-            $forBuyer     = in_array('buyer', $tokens, true);
-            $forConsignee = in_array('consignee', $tokens, true);
-            if (!$forBuyer && !$forConsignee) { $forBuyer = true; $forConsignee = true; }
+            // "Buyer,Consignee,Supplier-Material"). Supplier/other-only docs are
+            // not applicable in the customer/consignee context and are skipped.
+            [$applicable, $forBuyer, $forConsignee] = $this->partyForBuyerConsignee($m->party);
+            if (!$applicable) { continue; }
 
             // Verified if EITHER mapped party has uploaded this code.
             $uploaded = null;

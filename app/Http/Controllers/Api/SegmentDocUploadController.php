@@ -1042,8 +1042,14 @@ class SegmentDocUploadController extends Controller
 
     /**
      * Parse a doc's applicable-party CSV ("Buyer,Consignee") into buyer/
-     * consignee flags. A doc naming neither falls back to BOTH so it's
-     * never hidden — same rule as segmentTradeDocs().
+     * consignee flags for the customer/consignee Case-to-Case section.
+     *
+     * A blank party stays universal (applies to both, so it's never hidden).
+     * But a doc that NAMES parties yet none is Buyer/Consignee (e.g.
+     * "Supplier-Material / Goods") is supplier/other-only — not applicable
+     * here — so BOTH flags return false and the caller drops the row (the
+     * callers only emit a row when forBuyer or forConsignee is true). Mirrors
+     * ClmAgreementController::partyForBuyerConsignee().
      *
      * @return array{0:bool,1:bool} [forBuyer, forConsignee]
      */
@@ -1053,9 +1059,10 @@ class SegmentDocUploadController extends Controller
             fn ($t) => strtolower(trim($t)),
             explode(',', (string) $party)
         ));
+        // Unclassified (blank party) → applies to both.
+        if (empty($tokens)) return [true, true];
         $forBuyer     = in_array('buyer', $tokens, true);
         $forConsignee = in_array('consignee', $tokens, true);
-        if (!$forBuyer && !$forConsignee) { $forBuyer = true; $forConsignee = true; }
         return [$forBuyer, $forConsignee];
     }
 
