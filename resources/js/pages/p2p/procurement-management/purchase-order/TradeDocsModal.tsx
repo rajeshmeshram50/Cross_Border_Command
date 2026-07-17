@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Tooltip from '../../../../components/ui/Tooltip';
 import TradeDocsTable from './TradeDocsTable';
 import SupplierEvidenceVaultModal from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 
@@ -33,7 +34,11 @@ export default function TradeDocsModal({ po, poId, supName, supCode, supplierId,
                 <div className="cpaysum-hd__t">Trade Documents &amp; Agreements</div>
                 <div className="cpaysum-hd__docs">
                   <span className="cpaysum-hd__chip">{po}</span>
-                  {supName && <><span className="dot" /><span className="cpaysum-hd__chip cpaysum-hd__chip--kv"><span className="k">Supplier</span>{supName}</span></>}
+                  {supName && <><span className="dot" /><span className="cpaysum-hd__chip cpaysum-hd__chip--kv"><span className="k">Supplier</span>
+                    <Tooltip label={supName} disabled={supName.length <= 30} position="bottom" zIndex={2999999}>
+                      <span>{supName.length > 30 ? `${supName.slice(0, 30)}…` : supName}</span>
+                    </Tooltip>
+                  </span></>}
                 </div>
               </div>
               <div className="cpaysum-hd__sub"><span>Generate, e-sign &amp; track post-PO trade documents via Zoho Sign</span></div>

@@ -194,12 +194,15 @@ const docHd = (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" strok
  * `optMeta` (optional) enriches an option with a leading code and an
  * Own/Third-Party badge — used by the Delivery Location (warehouse) field to
  * render "WH-001: Pune Main  [Own]". */
-type DdOptMeta = { code?: string; badge?: string; badgeTone?: 'own' | 'third' };
+// `name` overrides the raw option value for display — used by the supplier
+// field, whose option VALUE is the unique code (names can duplicate) but which
+// still shows the human name via meta.
+type DdOptMeta = { code?: string; name?: string; badge?: string; badgeTone?: 'own' | 'third' };
 const DdOptLabel = ({ o, meta }: { o: string; meta?: DdOptMeta }) => (
   meta ? (
     <span className="pof-dd__optlbl">
       {meta.code && <span className="pof-dd__optcode">{meta.code}:</span>}
-      <span className="pof-dd__optname">{o}</span>
+      <span className="pof-dd__optname">{meta.name ?? o}</span>
       {meta.badge && <span className={`pof-dd__optbadge pof-dd__optbadge--${meta.badgeTone || 'own'}`}>{meta.badge}</span>}
     </span>
   ) : <span>{o}</span>
@@ -480,11 +483,18 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
 
   // Stage 1 — supplier (selecting fetches full detail to auto-fill the form)
   const [supName, setSupName] = useState(SUPPLIER_PLACEHOLDER);
+  // The dropdown is keyed by the UNIQUE supplier code (not name) because
+  // supplier names can duplicate ("test", "SBI" …); keying by name collapsed
+  // duplicates to a single row (React key collision) and always resolved to
+  // the first match. `supSel` holds the selected code (or placeholder); the
+  // demo fallback path stores the demo name here instead.
+  const [supSel, setSupSel] = useState(SUPPLIER_PLACEHOLDER);
   const [sup, setSup] = useState<SupplierRec>(emptySup());
   // Real per-vendor legal status (from the Evidence Vault); null → fall back to
   // the demo SUP_LEGAL calc for the built-in demo suppliers.
   const [supLegal, setSupLegal] = useState<LegalView | null>(null);
-  const supplierNames = suppliers.length ? suppliers.map(s => s.name) : Object.keys(CPO_SUPPLIERS);
+  // Real suppliers → option value = unique code; demo fallback → value = name.
+  const supplierOpts = suppliers.length ? suppliers.filter(s => s.code).map(s => s.code) : Object.keys(CPO_SUPPLIERS);
   // Pull a vendor's real 5-parameter compliance breakdown for the legal-status card.
   const loadSupplierLegal = (vendorId: number) => {
     setSupLegal(null);
@@ -492,11 +502,14 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
       const v = r.data?.data; if (v) setSupLegal(buildLegalFromVault(v));
     }).catch(() => setSupLegal(null));
   };
-  const pickSupplier = (name: string) => {
-    setSupName(name);
-    if (name !== SUPPLIER_PLACEHOLDER) clearErr('supplier');
-    const s = suppliers.find(x => x.name === name);
+  // `val` is the supplier CODE for real suppliers, or the demo name for the
+  // built-in fallback. Resolve by code first (unique), then demo name.
+  const pickSupplier = (val: string) => {
+    setSupSel(val);
+    if (val !== SUPPLIER_PLACEHOLDER) clearErr('supplier');
+    const s = suppliers.find(x => x.code === val);
     if (s) {
+      setSupName(s.name);
       setVendorId(s.id);
       setSupLoading(true);
       loadSupplierLegal(s.id);
@@ -508,8 +521,8 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
           if (isScrutinyOld(d.scrutiny)) toast.warning('GST scrutiny date is old', `It is more than ${SCRUTINY_STALE_MONTHS} months old — do the scrutiny for this supplier.`);
         }
       }).catch(() => toast.error('Failed to load supplier')).finally(() => setSupLoading(false));
-    } else if (CPO_SUPPLIERS[name]) { setSup({ ...CPO_SUPPLIERS[name] }); setVendorId(null); setSupLegal(null); }
-    else { setSup(emptySup()); setVendorId(null); setSupLegal(null); }
+    } else if (CPO_SUPPLIERS[val]) { setSupName(val); setSup({ ...CPO_SUPPLIERS[val] }); setVendorId(null); setSupLegal(null); }
+    else { setSupName(SUPPLIER_PLACEHOLDER); setSup(emptySup()); setVendorId(null); setSupLegal(null); }
   };
 
   // Stage 2 — products
@@ -523,8 +536,16 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   const removeLine = (id: number) => setRows(rs => rs.filter(r => r.id !== id));
   const pickProduct = (id: number, name: string) => {
     const opt = prodOpts.find(o => o.name === name);
-    if (opt) setLine(id, { productId: opt.id, code: opt.code, name: opt.name, rate: String(opt.price), gst: opt.gst });
-    else setLine(id, { productId: null, code: '', name: '', rate: '', gst: 0 });
+    if (opt) {
+      // A product may appear on a PO only once — block re-selecting one that
+      // is already on another row (the dropdown also hides used products, this
+      // is the defensive backstop).
+      if (rows.some(r => r.id !== id && r.productId === opt.id)) {
+        toast.warning('Already added', `“${opt.name}” is already on this PO. Each product can be added only once.`);
+        return;
+      }
+      setLine(id, { productId: opt.id, code: opt.code, name: opt.name, rate: String(opt.price), gst: opt.gst });
+    } else setLine(id, { productId: null, code: '', name: '', rate: '', gst: 0 });
   };
   // Re-add a previously-removed PI product into a blank Add-Product row (With-Shipment).
   const reAddPi = (id: number, label: string) => {
@@ -605,7 +626,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
       if (d.vendor_id) {
         loadSupplierLegal(d.vendor_id);
         api.get(`/p2p/purchase-orders/suppliers/${d.vendor_id}`).then(sr => {
-          const s = sr.data?.data; if (s) { setSup(mapDetailToSup(s)); setSupName(s.name); }
+          const s = sr.data?.data; if (s) { setSup(mapDetailToSup(s)); setSupName(s.name); if (s.code) setSupSel(s.code); }
         }).catch(() => {});
       }
     }).catch(() => toast.error('Failed to load purchase order'))
@@ -711,9 +732,11 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   }, [warehouses]);
 
   // Select Supplier dropdown labels — "S-001: Reliance Industries" (code : name).
+  // Keyed by CODE (the option value); `name` drives the visible label so
+  // duplicate-named suppliers still read as "S-011: test", "S-019: test", etc.
   const supMeta = useMemo(() => {
     const m: Record<string, DdOptMeta> = {};
-    suppliers.forEach(s => { if (s.name) m[s.name] = { code: s.code || undefined }; });
+    suppliers.forEach(s => { if (s.code) m[s.code] = { code: s.code, name: s.name || s.code }; });
     return m;
   }, [suppliers]);
 
@@ -804,7 +827,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   // Stage 1 mandatory fields — all must be filled before leaving stage 1.
   const validateStage1 = (): boolean => {
     const e: Record<string, string> = {};
-    if (supName === SUPPLIER_PLACEHOLDER) e.supplier = 'Please select a supplier.';
+    if (supSel === SUPPLIER_PLACEHOLDER) e.supplier = 'Please select a supplier.';
     if (!po.poType) e.poType = 'PO Type is required.';
     if (!po.docType) e.docType = 'Document Type is required.';
     if (!po.transport) e.transport = 'Mode of Transport is required.';
@@ -1039,7 +1062,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         <div className="pof-sub__bd"><div className="pof-grid pof-grid--4">
                           {isEdit
                             ? <ReadField label="Select Supplier" value={supName !== SUPPLIER_PLACEHOLDER ? supName : (sup.name || '')} />
-                            : <Dd label="Select Supplier" req err={errs.supplier} optMeta={supMeta} value={supName} options={[SUPPLIER_PLACEHOLDER, ...supplierNames]} onChange={pickSupplier} />}
+                            : <Dd label="Select Supplier" req err={errs.supplier} optMeta={supMeta} value={supSel} options={[SUPPLIER_PLACEHOLDER, ...supplierOpts]} onChange={pickSupplier} />}
                           <ReadField label="Supplier Code" value={sup.code} loading={supLoading} />
                           <ReadField label="Company Name" value={sup.name} loading={supLoading} />
                           <ReadField label="Supplier Type" value={sup.type} loading={supLoading} />
@@ -1157,7 +1180,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                             <tr key={r.id}>
                               <td className="cpd-c">{i + 1}</td>
                               <td className="cpd-c"><span className="cpd-code">{formatProductCode(r.code) || '—'}</span></td>
-                              <td className="cpd-prodcell"><Dd value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} /></td>
+                              <td className="cpd-prodcell"><Dd value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
