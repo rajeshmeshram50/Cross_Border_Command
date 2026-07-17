@@ -669,11 +669,11 @@ export const LFM_CSS = `
 
 /* Fills the fixed-height modal and scrolls internally — the popup size never
    changes, however many entries a facet has (e.g. Customer). */
-.lfm-options { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 4px; scrollbar-width: thin; scrollbar-color: #a5f3fc transparent; }
+.lfm-options { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; display: flex; flex-direction: column; gap: 4px; scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
 .lfm-options::-webkit-scrollbar { width: 8px; }
 .lfm-options::-webkit-scrollbar-track { background: transparent; }
-.lfm-options::-webkit-scrollbar-thumb { background: #a5f3fc; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
-.lfm-options::-webkit-scrollbar-thumb:hover { background: var(--lfm-c-200); background-clip: content-box; }
+.lfm-options::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+.lfm-options::-webkit-scrollbar-thumb:hover { background: #9ca3af; background-clip: content-box; }
 .lfm-empty { text-align: center; color: #94a3b8; font-style: italic; padding: 30px 12px; font-size: 12.5px; }
 
 /* Each radio option is a bordered card. Clicking anywhere on the card

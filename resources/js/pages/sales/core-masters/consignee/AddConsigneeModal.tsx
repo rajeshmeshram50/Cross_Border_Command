@@ -12,6 +12,7 @@ const Tooltip = (props: ComponentProps<typeof BaseTooltip>) => <BaseTooltip them
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
+import { truncSegment } from '../../../../utils/segmentLabel';
 import SalesCustomerSendForSignatureModal from '../customer/SalesCustomerSendForSignatureModal';
 import {
   readCustomerMasterBundle,
@@ -3341,7 +3342,7 @@ const Stage1 = ({
                       <span style={{ color: '#94a3b8', fontSize: 13 }}>Inherited from customer</span>
                     ) : (
                       <>
-                        <span className="acm-seg-firstchip">{labels[0]}</span>
+                        <span className="acm-seg-firstchip" title={labels[0]}>{truncSegment(labels[0])}</span>
                         {labels.length > 1 && (
                           <span role="button" onClick={() => setSegPopOpen(o => !o)} className="acm-seg-morebtn">
                             {segPopOpen ? 'Hide' : `View all ${labels.length} segments`}
@@ -3353,7 +3354,7 @@ const Stage1 = ({
                       <div className="acm-seg-pop">
                         <div className="acm-seg-pop-title">SEGMENTS ({labels.length})</div>
                         {labels.map((l: string, i: number) => (
-                          <div key={i} className="acm-seg-pop-row"><span className="acm-seg-dot" />{l}</div>
+                          <div key={i} className="acm-seg-pop-row" title={l}><span className="acm-seg-dot" />{truncSegment(l)}</div>
                         ))}
                       </div>
                     )}
