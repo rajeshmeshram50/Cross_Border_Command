@@ -226,6 +226,9 @@ export default function SalesMatrixDetail() {
    * so the inline Stage 3 (and the Product Sourcing popup) re-fetch their
    * product list + count badges live — no page refresh needed. */
   const [productsTick, setProductsTick]                 = useState(0);
+  // Bumped when a quoted price is shared (from either the inline Stage 4 or the
+  // Share Prices popup) so the OTHER Stage 4 instance re-fetches immediately.
+  const [priceTick, setPriceTick]                       = useState(0);
   const [productSourcingOpen, setProductSourcingOpen]   = useState(false);
   const [priceSharedOpen, setPriceSharedOpen]           = useState(false);
   const [changeOwnerOpen, setChangeOwnerOpen] = useState(false);
@@ -1288,6 +1291,11 @@ export default function SalesMatrixDetail() {
                status, mark sourced, create procurement) so the OTHER Stage 3
                instance — the popup — re-syncs. Other stages ignore it. */
             onProductsChanged={() => setProductsTick(t => t + 1)}
+            /* Stage 4 watches this to re-fetch shared prices when the toolbar
+               Share Prices popup shares one; and emits onPricesChanged after
+               its own share so the popup re-syncs. Other stages ignore both. */
+            priceRefreshTick={priceTick}
+            onPricesChanged={() => setPriceTick(t => t + 1)}
             /* Stage 5 keeps its in-stage create/edit lock; Stage 6 stays fully
                editable so the user can work there after the PI is signed. */
             locked={isSigned && stage <= 5}
@@ -1527,6 +1535,8 @@ export default function SalesMatrixDetail() {
           onPrev={() => {}}
           onNext={() => {}}
           reloadLead={reloadLead}
+          priceRefreshTick={priceTick}
+          onPricesChanged={() => setPriceTick(t => t + 1)}
           embedded
         />
       </StageEmbedModal>

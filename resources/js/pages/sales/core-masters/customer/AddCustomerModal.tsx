@@ -1473,9 +1473,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         if (!f.country) return 'Select a country';
         return null;
       case 'state':
-        // Required only where the master actually has states to offer —
-        // see countryHasStates().
-        if (countryHasStates(masters, f.country) && !f.state) return 'Select a state';
+        // State is ALWAYS required once a country is chosen — the user picks it
+        // from the master (if the dropdown is empty for that country, the state
+        // must be added in the State master first). QA #128 / product decision:
+        // no longer auto-optional when the country has no seeded states.
+        if (f.country && !f.state) return 'Select a state';
         return null;
       case 'city':
         if (!f.city.trim()) return 'City is required';
@@ -2755,10 +2757,6 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
    * → international → they're hidden. Driven by the Primary Address & Contact
    * Person card's Country, which lives in this same component. */
   const domestic = isDomesticCountry(form.country);
-  /* Whether the chosen country has any states at all — drives State's
-     required-ness, placeholder and disabled state together, so they can't
-     drift apart. */
-  const hasStates = countryHasStates(masters, form.country);
   // States filter against the selected country: look up the country
   // name → its id from the countries master, then filter states by it.
   const selectedCountry = masters.countries.find(c => c.name === form.country);
@@ -2968,7 +2966,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 has no states for (163 of 249) shows no red star and can't be
                 marked invalid — a required-looking field with an empty dropdown
                 is a dead end the user cannot clear. */}
-            <Field label="State" required={hasStates} error={errors.state} fieldKey="state">
+            <Field label="State" required error={errors.state} fieldKey="state">
               <MasterSelect
                 value={form.state}
                 options={(() => {
@@ -2976,8 +2974,8 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                   if (form.state && !base.some(o => o.value === form.state)) return [{ value: form.state, label: form.state }, ...base];
                   return base;
                 })()}
-                placeholder={!form.country ? 'Select country first' : hasStates ? 'Select state' : 'No states for this country'}
-                disabled={!form.country || !hasStates}
+                placeholder={!form.country ? 'Select country first' : 'Select state'}
+                disabled={!form.country}
                 invalid={!!errors.state}
                 onChange={v => {
                   set('state', v);
