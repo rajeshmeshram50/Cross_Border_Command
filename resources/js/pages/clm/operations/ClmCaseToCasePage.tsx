@@ -46,6 +46,10 @@ const STAGE_CARDS = [
   { n: '04', title: 'Final Contract Repository',            desc: 'Store the finalized signed agreement with complete contract history and records.', icon: <><polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" /></> },
 ];
 
+// Display dates as DD-Mon-YYYY (e.g. 17-Jul-2026). The API returns "17 Jul
+// 2026"; swap the spaces for hyphens (QA #41). "—" / empty pass through.
+const dashDate = (s: string): string => (s && s !== '—' ? s.replace(/\s+/g, '-') : s);
+
 export default function ClmCaseToCasePage() {
   const toast = useToast();
   const t = useOpsTheme('violet');
@@ -63,6 +67,9 @@ export default function ClmCaseToCasePage() {
   const [tab, setTab]   = useState<CtcTab>('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PER_PAGE);   // dynamic rows-per-page (worklist pager)
+  // Once the user picks a "Rows per page" value, stop the viewport auto-fit
+  // from overriding it so the manual choice sticks.
+  const [manualSize, setManualSize] = useState(false);
   const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
   const [search, setSearch] = useState('');
   const [infoOpen, setInfoOpen] = useState(false);   // "What We Are Doing Here" starts collapsed
@@ -85,6 +92,10 @@ export default function ClmCaseToCasePage() {
   const [rows, setRows] = useState<CtcContract[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);   // row currently downloading
+  // Version-history / Agreement-Timeline fetch in flight — freezes the other
+  // row actions + toolbar until it resolves (QA #40). Tracks which row/kind so
+  // the clicked button shows its own spinner while the rest go disabled.
+  const [lifecycleBusy, setLifecycleBusy] = useState<{ id: string; kind: 'version' | 'timeline' } | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);   // hovered table row (state-driven so the highlight survives re-renders)
   // Stretch the contracts card to fill the viewport so its footer (pagination)
   // sits at the bottom of the card even with few rows — same dynamic behaviour
@@ -120,6 +131,8 @@ export default function ClmCaseToCasePage() {
   const [tlFor, setTlFor] = useState<CtcDetail | null>(null);
   const openLifecycle = async (c: CtcContract, kind: 'version' | 'timeline') => {
     if (!c.dbId) { toast.error('Not available', 'This agreement has no saved record yet.'); return; }
+    if (lifecycleBusy) return;   // a history/timeline load is already in flight
+    setLifecycleBusy({ id: c.id, kind });
     try {
       const res = await api.get(`/clm/ctc-contracts/${c.dbId}`);
       const r = (res.data?.data ?? res.data ?? {}) as Record<string, unknown>;
@@ -130,6 +143,7 @@ export default function ClmCaseToCasePage() {
       };
       if (kind === 'version') setVerFor(detail); else setTlFor(detail);
     } catch { toast.error('Could not load', 'Failed to fetch the agreement history.'); }
+    finally { setLifecycleBusy(null); }
   };
 
   // Download the contract — the fully-signed PDF from Zoho when available,
@@ -190,14 +204,27 @@ export default function ClmCaseToCasePage() {
       const el = cardRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const fh = Math.max(0, window.innerHeight - top - 24);
+      const fh = Math.max(240, window.innerHeight - top - 24);
       setFillH(prev => (prev === fh ? prev : fh));
+
+      // Dynamic rows-per-page — fit as many rows as the card height allows so
+      // a tall screen shows more and a short one fewer (mirrors the Customer /
+      // master tables). A manual "Rows per page" pick disables the auto-fit.
+      if (manualSize) return;
+      const toolbarH = (el.firstElementChild as HTMLElement | null)?.offsetHeight || 0;
+      const theadH   = (el.querySelector('table thead') as HTMLElement | null)?.offsetHeight || 0;
+      const footerH  = (el.querySelector('.tc-wl-pag') as HTMLElement | null)?.offsetHeight || 0;
+      const rowH     = (el.querySelector('table tbody tr') as HTMLElement | null)?.offsetHeight || 44;
+      const avail    = fh - toolbarH - theadH - footerH - 20;
+      const rowsFit  = Math.max(1, Math.floor(avail / rowH));
+      setPageSize(prev => (prev === rowsFit ? prev : Math.max(PER_PAGE, rowsFit)));
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    const tm = window.setTimeout(recompute, 120);
     window.addEventListener('resize', recompute);
-    return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
-  }, [list.length, loading]);
+    return () => { window.removeEventListener('resize', recompute); window.clearTimeout(tm); cancelAnimationFrame(raf); };
+  }, [list.length, loading, manualSize]);
 
   if (formOpen) {
     return <ClmCtcForm editing={editing} onClose={() => { setFormOpen(false); setEditing(null); load(); }} onSaved={() => { setFormOpen(false); setEditing(null); load(); }} />;
@@ -209,7 +236,7 @@ export default function ClmCaseToCasePage() {
 
       {/* CARD 1 — HEADER STRIP */}
       <div style={{ background: t.dark ? '#1c1438' : 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 22%,#DDD6FE 50%,#C4B5FD 78%,#A78BFA 100%)', borderRadius: 14, border: `1px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.2)'}`, boxShadow: '0 2px 12px rgba(109,40,217,.1)', overflow: 'hidden' }}>
-        <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: 64 }}>
+        <div className="ctc-header-strip" style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: 64 }}>
           <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: 'linear-gradient(180deg,#A78BFA,#7C3AED,#5B21B6)' }} />
           <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: t.dark ? 'linear-gradient(180deg,rgba(255,255,255,.04),transparent)' : 'linear-gradient(180deg,rgba(255,255,255,.55),transparent)', pointerEvents: 'none' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, zIndex: 1, paddingLeft: 10 }}>
@@ -224,7 +251,7 @@ export default function ClmCaseToCasePage() {
               <div style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', opacity: .9, marginTop: 3 }}>Manage one-time operational agreements and contract approval workflows.</div>
             </div>
           </div>
-          <button onClick={() => { setEditing(null); setFormOpen(true); }} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', border: 'none', borderRadius: 10, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', zIndex: 1, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 4px 14px rgba(91,33,182,.44),inset 0 1px 0 rgba(255,255,255,.18)' }}>
+          <button onClick={() => { setEditing(null); setFormOpen(true); }} disabled={lifecycleBusy !== null} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', gap: 7, padding: '9px 18px', border: 'none', borderRadius: 10, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: lifecycleBusy !== null ? 'not-allowed' : 'pointer', opacity: lifecycleBusy !== null ? .6 : 1, zIndex: 1, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 4px 14px rgba(91,33,182,.44),inset 0 1px 0 rgba(255,255,255,.18)' }}>
             <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', borderRadius: '10px 10px 0 0', pointerEvents: 'none' }} />
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Create CTC Agreement
@@ -253,7 +280,7 @@ export default function ClmCaseToCasePage() {
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', background: t.dark ? '#161226' : 'linear-gradient(180deg,#FAF8FF 0%,#F8FAFC 100%)', overflow: 'hidden', maxHeight: infoOpen ? 320 : 0, opacity: infoOpen ? 1 : 0, transition: 'max-height .3s cubic-bezier(.22,1,.36,1),opacity .22s' }}>
+          <div className="ctc-stagegrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', background: t.dark ? '#161226' : 'linear-gradient(180deg,#FAF8FF 0%,#F8FAFC 100%)', overflow: 'hidden', maxHeight: infoOpen ? 640 : 0, opacity: infoOpen ? 1 : 0, transition: 'max-height .3s cubic-bezier(.22,1,.36,1),opacity .22s' }}>
             {STAGE_CARDS.map((c, i) => (
               <div key={c.n} style={{ position: 'relative', padding: '10px 11px 11px', background: t.dark ? 'rgba(255,255,255,.03)' : '#fff', margin: '7px 5px', marginLeft: i === 0 ? 14 : 5, borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.22)' : '#EDE9FE'}`, transition: 'all .18s', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 1px 4px rgba(15,23,42,.04)' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#C4B5FD'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(124,58,237,.13)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
@@ -273,8 +300,12 @@ export default function ClmCaseToCasePage() {
 
       {/* CARD 3 — CONTRACTS LIST */}
       <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, padding: 0, overflow: 'hidden', border: `1px solid ${t.dark ? 'rgba(109,40,217,.3)' : 'rgba(109,40,217,.15)'}`, boxShadow: '0 2px 14px rgba(109,40,217,.08)', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', background: t.tabCapsule, borderRadius: 30, padding: 4 }}>
+        <div className="ctc-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, flexWrap: 'wrap' }}>
+          {/* Tab rail — mirrors the Customer page's .smc-pill-group: a
+              translucent rail with a violet hairline and gap-separated pills.
+              On small screens it wraps to full width so the tabs never overflow
+              (QA #42). */}
+          <div className="ctc-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: t.dark ? 'rgba(124,58,237,.10)' : 'rgba(255,255,255,.55)', border: `1px solid ${t.dark ? 'rgba(167,139,250,.20)' : 'rgba(139,92,246,.22)'}`, borderRadius: 11, padding: 4 }}>
             {([
               ['all', 'All Contracts', null, true],
               ['signed', 'Signed Contracts', '#10B981', false],
@@ -283,23 +314,28 @@ export default function ClmCaseToCasePage() {
             ] as [CtcTab, string, string | null, boolean][]).map(([key, label, dot, hasIcon]) => {
               const active = tab === key;
               return (
-                <button key={key} onClick={() => { setTab(key); setPage(1); }}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 20px', borderRadius: 25, border: 'none', fontFamily: 'inherit', fontSize: 12.5, fontWeight: active ? 800 : 700, cursor: 'pointer', letterSpacing: '-.1px', transition: 'all .18s', position: 'relative', overflow: 'hidden',
-                    background: active ? 'linear-gradient(135deg,#6D28D9,#7C3AED)' : 'transparent', color: active ? '#fff' : t.tabInactive, boxShadow: active ? '0 3px 10px rgba(109,40,217,.38)' : 'none' }}>
-                  {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', borderRadius: '25px 25px 0 0', pointerEvents: 'none' }} />}
+                <button key={key} disabled={lifecycleBusy !== null} onClick={() => { setTab(key); setPage(1); }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 34, borderRadius: 8, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 700, cursor: lifecycleBusy !== null ? 'not-allowed' : 'pointer', opacity: lifecycleBusy !== null && !active ? .6 : 1, letterSpacing: 0, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
+                    ...(active
+                      ? { border: 0, background: 'linear-gradient(135deg, #a78bfa 0%, #8b5cf6 35%, #7c3aed 68%, #5b21b6 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(91,33,182,.3) inset', textShadow: '0 1px 2px rgba(76,29,149,.4)' }
+                      : { background: t.dark ? 'linear-gradient(135deg, rgba(124,58,237,.16), rgba(124,58,237,.10))' : 'linear-gradient(135deg, #f5f1fe, #ede9fe)', border: `1px solid ${t.dark ? 'rgba(167,139,250,.25)' : 'rgba(139,92,246,.2)'}`, color: t.dark ? '#c4b5fd' : '#6d28d9' }) }}>
+                  {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', borderRadius: '8px 8px 0 0', pointerEvents: 'none' }} />}
                   {hasIcon
-                    ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : t.tabInactive} strokeWidth="2.5" strokeLinecap="round" style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : (t.dark ? '#c4b5fd' : '#6d28d9')} strokeWidth="2.5" strokeLinecap="round" style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                     : <span style={{ width: 8, height: 8, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : (dot || '#10B981'), flexShrink: 0 }} />}
                   <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
-                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: active ? 'rgba(255,255,255,.28)' : (t.dark ? 'rgba(124,58,237,.25)' : 'rgba(109,40,217,.13)'), fontSize: 10, fontWeight: 900, color: active ? '#fff' : t.tabInactive }}>{counts[key]}</span>
+                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 18, padding: '0 7px', borderRadius: 999, fontSize: 10, fontWeight: 800, lineHeight: 1,
+                    ...(active
+                      ? { color: '#fff', background: 'rgba(255,255,255,.24)', border: '1px solid rgba(255,255,255,.4)' }
+                      : (t.dark ? { color: '#c4b5fd', background: 'rgba(124,58,237,.18)', border: '1px solid rgba(167,139,250,.30)' } : { color: '#7c3aed', background: '#fff', border: '1px solid #ddd0f7' })) }}>{counts[key]}</span>
                 </button>
               );
             })}
           </div>
-          <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 30, background: t.searchBg, border: `1.5px solid ${t.searchBorder}` }}>
+          <div className="ctc-hspacer" style={{ flex: 1 }} />
+          <div className="ctc-searchbox" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 16px', borderRadius: 30, background: t.searchBg, border: `1.5px solid ${t.searchBorder}` }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, ID, company, type…"
+            <input value={search} disabled={lifecycleBusy !== null} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, ID, company, type…"
               style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 500, color: t.searchText, background: 'transparent', width: 230 }} />
           </div>
         </div>
@@ -344,30 +380,40 @@ export default function ClmCaseToCasePage() {
                         onMouseLeave={() => setHoverId(h => (h === c.id ? null : h))}>
                         <td style={{ ...TD, width: 52 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#6D28D9,#5B21B6)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 5px rgba(109,40,217,.3)' }}><span style={{ fontSize: 9, fontWeight: 900, color: '#fff' }}>{String(n).padStart(2, '0')}</span></div></td>
                         <td style={{ ...TD, width: 124 }}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 10, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#4C1D95', background: t.dark ? 'rgba(124,58,237,.2)' : 'linear-gradient(135deg,rgba(109,40,217,.1),rgba(124,58,237,.06))', padding: '3px 7px', borderRadius: 6, border: '1px solid rgba(124,58,237,.28)', whiteSpace: 'nowrap', letterSpacing: '.02em' }}>{c.id}</span></td>
-                        <td style={{ ...TD, width: 110 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.date}</span></td>
+                        <td style={{ ...TD, width: 110 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.date)}</span></td>
                         <td style={TDL}><Tooltip label={c.title}><div style={{ fontSize: 11.5, fontWeight: 700, color: t.textStrong, letterSpacing: '-.2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
                         <td style={{ ...TDL, width: 155 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 24, height: 24, borderRadius: 7, background: `linear-gradient(135deg,${orgGrad(c.org)})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(109,40,217,.2)' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff', letterSpacing: '-.3px' }}>{inits(c.org)}</span></div><Tooltip label={c.org}><span style={{ fontSize: 12, fontWeight: 600, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 105 }}>{c.org}</span></Tooltip></div></td>
                         <td style={{ ...TDL, width: 185 }}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 24, height: 24, borderRadius: 7, background: 'linear-gradient(135deg,#6D28D9,#8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 5px rgba(109,40,217,.18)' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff', letterSpacing: '-.3px' }}>{inits(c.cp[0])}</span></div><Tooltip label={c.cp.join(', ')}><span style={{ fontSize: 11, fontWeight: 600, color: t.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 100 }}>{c.cp[0]}</span></Tooltip>{extra > 0 && <button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }} title="View all counterparties" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#6D28D9,#7C3AED)', color: '#fff', fontSize: 8.5, fontWeight: 800, flexShrink: 0, boxShadow: '0 2px 4px rgba(109,40,217,.28)', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button>}</div></td>
                         <td style={{ ...TDL, width: 136 }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div style={{ width: 22, height: 22, borderRadius: '50%', background: 'linear-gradient(135deg,#C4B5FD,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #DDD6FE' }}><span style={{ fontSize: 8, fontWeight: 900, color: '#4C1D95' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 10.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                         <td style={{ ...TD, width: 122 }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 20, background: apb.bg, border: `1px solid ${apb.border}`, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: ap.dot, flexShrink: 0, boxShadow: `0 0 5px ${ap.dot}60` }} /><span style={{ fontSize: 9.5, fontWeight: 700, color: apb.text }}>{ap.label}</span></span></td>
-                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: c.effDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{c.effDate}</span></td>
-                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: c.endDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{c.endDate}</span></td>
-                        <td style={{ ...TD, width: 122 }}>{cpS === '—' ? <span style={{ fontSize: 11.5, fontWeight: 600, color: '#C4B5FD' }}>—</span> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5, fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>{cpS}</span>}</td>
+                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: c.effDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.effDate)}</span></td>
+                        <td style={{ ...TD, width: 100 }}><span style={{ fontSize: 10.5, fontWeight: 600, color: c.endDate === '—' ? '#C4B5FD' : t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
+                        <td style={{ ...TD, width: 122 }}>{cpS === '—' ? <span style={{ fontSize: 11.5, fontWeight: 600, color: '#C4B5FD' }}>—</span> : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10.5, fontWeight: 700, color: '#059669', whiteSpace: 'nowrap' }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>{dashDate(cpS)}</span>}</td>
                         <td style={{ ...TD, width: 150 }}>
+                          {(() => {
+                            // Freeze the whole row's actions while a version /
+                            // timeline load is in flight (QA #40); the clicked
+                            // history/timeline button keeps its own spinner.
+                            const verBusy = lifecycleBusy?.id === c.id && lifecycleBusy?.kind === 'version';
+                            const tlBusy  = lifecycleBusy?.id === c.id && lifecycleBusy?.kind === 'timeline';
+                            const frozen  = lifecycleBusy !== null;
+                            return (
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
-                            <ActBtn t={t} tone="green" title="Download signed copy / latest PDF" busy={downloadingId === c.id} onClick={() => downloadContract(c)}>
+                            <ActBtn t={t} tone="green" title="Download signed copy / latest PDF" busy={downloadingId === c.id} busyLabel="Downloading…" disabled={frozen} onClick={() => downloadContract(c)}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                             </ActBtn>
                             {/* Once signed, the agreement is locked → show a view (eye) icon
                                 instead of edit; opening it lands on the view-only stage. */}
                             {c.status === 'signed' ? (
-                              <ActBtn t={t} tone="violet" title="View CTC" onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></ActBtn>
+                              <ActBtn t={t} tone="violet" title="View CTC" disabled={frozen} onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></ActBtn>
                             ) : (
-                              <ActBtn t={t} tone="violet" title="Edit CTC" onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></ActBtn>
+                              <ActBtn t={t} tone="violet" title="Edit CTC" disabled={frozen} onClick={() => { setEditing(c); setFormOpen(true); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4z" /></svg></ActBtn>
                             )}
-                            <ActBtn t={t} tone="blue" title="Version History" onClick={() => openLifecycle(c, 'version')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></ActBtn>
-                            <ActBtn t={t} tone="amber" title="Agreement Timeline" onClick={() => openLifecycle(c, 'timeline')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></ActBtn>
+                            <ActBtn t={t} tone="blue" title="Version History" busy={verBusy} busyLabel="Loading…" disabled={frozen && !verBusy} onClick={() => openLifecycle(c, 'version')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></ActBtn>
+                            <ActBtn t={t} tone="amber" title="Agreement Timeline" busy={tlBusy} busyLabel="Loading…" disabled={frozen && !tlBusy} onClick={() => openLifecycle(c, 'timeline')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></ActBtn>
                           </div>
+                            );
+                          })()}
                         </td>
                       </tr>
                     );
@@ -383,16 +429,16 @@ export default function ClmCaseToCasePage() {
                 <div className="tc-wl-right">
                   <span className="tc-wl-rows">
                     Rows per page:
-                    <select value={pageSize} onChange={e => { setPageSize(parseInt(e.target.value, 10)); setPage(1); }}>
+                    <select value={pageSize} onChange={e => { setManualSize(true); setPageSize(parseInt(e.target.value, 10)); setPage(1); }}>
                       {[...new Set([pageSize, ...PAGE_SIZE_OPTIONS])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
                     </select>
                   </span>
                   <span className="tc-wl-range">{safe} / {totalPages}</span>
                   <div className="tc-wl-nav">
-                    <button type="button" className="tc-wl-btn" disabled={safe <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
+                    <button type="button" className="tc-wl-btn" disabled={safe <= 1 || lifecycleBusy !== null} onClick={() => setPage(p => Math.max(1, p - 1))} aria-label="Previous page">
                       <i className="ri-arrow-left-s-line"></i>
                     </button>
-                    <button type="button" className="tc-wl-btn" disabled={safe >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} aria-label="Next page">
+                    <button type="button" className="tc-wl-btn" disabled={safe >= totalPages || lifecycleBusy !== null} onClick={() => setPage(p => Math.min(totalPages, p + 1))} aria-label="Next page">
                       <i className="ri-arrow-right-s-line"></i>
                     </button>
                   </div>
@@ -432,13 +478,16 @@ const ACT_TONES = {
   amber:  { light: { bg: '#FEF3C7', border: '#FCD34D', color: '#B45309' }, dark: { bg: 'rgba(245,158,11,.16)',  border: 'rgba(245,158,11,.42)', color: '#fcd34d' } },
 } as const;
 
-function ActBtn({ t, tone, title, onClick, children, busy }: { t: OpsTokens; tone: keyof typeof ACT_TONES; title: string; onClick: () => void; children: React.ReactNode; busy?: boolean }) {
+function ActBtn({ t, tone, title, onClick, children, busy, busyLabel, disabled }: { t: OpsTokens; tone: keyof typeof ACT_TONES; title: string; onClick: () => void; children: React.ReactNode; busy?: boolean; busyLabel?: string; disabled?: boolean }) {
   const s = t.dark ? ACT_TONES[tone].dark : ACT_TONES[tone].light;
+  // `busy`     → this button's own async op (spinner, wait cursor).
+  // `disabled` → frozen because ANOTHER action is loading (dimmed, no spinner).
+  const off = busy || disabled;
   return (
-    <Tooltip label={busy ? 'Downloading…' : title}>
-      <button onClick={onClick} aria-label={title} disabled={busy} style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${s.border}`, background: s.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : 'pointer', color: s.color, opacity: busy ? 1 : .85, flexShrink: 0, transition: 'all .15s' }}
-        onMouseEnter={e => { if (busy) return; e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.15)'; }}
-        onMouseLeave={e => { if (busy) return; e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
+    <Tooltip label={busy ? (busyLabel ?? 'Loading…') : (disabled ? 'Please wait…' : title)}>
+      <button onClick={onClick} aria-label={title} disabled={off} style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${s.border}`, background: s.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : disabled ? 'not-allowed' : 'pointer', color: s.color, opacity: busy ? 1 : disabled ? .4 : .85, flexShrink: 0, transition: 'all .15s' }}
+        onMouseEnter={e => { if (off) return; e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.15)'; }}
+        onMouseLeave={e => { if (off) return; e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
         {busy
           ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'ctcSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
           : children}
@@ -450,4 +499,20 @@ function ActBtn({ t, tone, title, onClick, children, busy }: { t: OpsTokens; ton
 const CTC_CSS = `
 @keyframes ctcFade { from { opacity:0 } to { opacity:1 } }
 @keyframes ctcSpin { to { transform: rotate(360deg) } }
+
+/* ── Responsive layout (QA #42) ──
+   On narrow screens: the header title + Create button stack; the stage cards
+   go 2-per-row; the tab rail goes full width with 2 tabs per row; and the
+   search takes the next row at full width. The wide table already scrolls
+   horizontally on its own. */
+@media (max-width: 860px) {
+  .ctc-header-strip { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 16px; }
+  .ctc-header-strip > button { width: 100%; justify-content: center; }
+  .ctc-stagegrid { grid-template-columns: repeat(2, 1fr) !important; }
+  .ctc-tabrail { flex-wrap: wrap; width: 100%; justify-content: flex-start; }
+  .ctc-tabrail > button { flex: 1 1 calc(50% - 4px); justify-content: center; }
+  .ctc-hspacer { display: none; }
+  .ctc-searchbox { width: 100%; }
+  .ctc-searchbox input { width: 100% !important; }
+}
 `;

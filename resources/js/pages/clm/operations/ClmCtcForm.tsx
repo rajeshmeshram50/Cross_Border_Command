@@ -896,7 +896,11 @@ function Stage1(p: {
                     <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Agreement Basics</div><div style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500 }}>Title &amp; type of this contract</div></div>
                   </div>
                   <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 9, alignItems: 'end' }}>
-                    <Field t={t} label="Agreement Title *" error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : undefined}><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value)} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={ipt} /></Field>
+                    {/* 255-char limit enforced + surfaced WHILE typing (QA #43) —
+                        maxLength hard-stops entry and the inline message shows the
+                        moment the cap is hit, instead of only failing at Submit for
+                        Approval (backend title max:255). */}
+                    <Field t={t} label="Agreement Title *" error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : (p.agTitle.length >= 255 ? 'Agreement title cannot exceed 255 characters.' : undefined)}><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, 255))} maxLength={255} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={ipt} /></Field>
                     <Field t={t} label="Agreement Type *" error={errors.type && !p.agType ? 'Agreement type is required' : undefined}>
                       <MasterSelect value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} />
                     </Field>
