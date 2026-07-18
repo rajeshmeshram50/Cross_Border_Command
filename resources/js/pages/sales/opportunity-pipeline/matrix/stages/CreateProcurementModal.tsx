@@ -348,9 +348,17 @@ export default function CreateProcurementModal({
   if (!open) return null;
 
   return createPortal((
-    <div className="cps-backdrop" onClick={onClose}>
+    <div className="cps-backdrop" onClick={() => { if (!submitting) onClose(); }}>
       <style>{SCOPED_CSS}</style>
-      <div className="cps-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="cps-modal" style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+        {/* Save lock — while the procurement is saving, blanket the whole modal
+            so no field or button stays editable (QA #120). */}
+        {submitting && (
+          <div className="cps-save-lock" role="status" aria-live="polite">
+            <span className="cps-save-spin" />
+            <span className="cps-save-lock-txt">Saving…</span>
+          </div>
+        )}
         {/* Title row */}
         <div className="cps-title-row">
           <div className="cps-title-left">
@@ -743,6 +751,24 @@ const SCOPED_CSS = `
   box-shadow: 0 18px 56px rgba(15,23,42,.30);
   overflow: hidden; display: flex; flex-direction: column;
 }
+
+/* ─── Save lock overlay (QA #120) — blankets the modal while saving so every
+   field + button is un-interactable, with a spinner. ─── */
+.cps-save-lock {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: rgba(240,253,255,.72); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  cursor: progress; border-radius: inherit;
+}
+.cps-save-lock-txt { font-size: 13px; font-weight: 800; color: #0e7490; letter-spacing: .02em; }
+.cps-save-spin {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid rgba(8,145,178,.25); border-top-color: #0891b2;
+  animation: cps-save-spin .7s linear infinite;
+}
+@keyframes cps-save-spin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .cps-save-lock { background: rgba(10,20,28,.74); }
+[data-bs-theme="dark"] .cps-save-lock-txt { color: #67e8f9; }
 
 /* ─── Title row ─── */
 .cps-title-row {
