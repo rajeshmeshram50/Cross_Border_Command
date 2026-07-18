@@ -2170,12 +2170,27 @@ const normStateCode = (code: string): string => {
   const t = (code || '').trim();
   return /^\d+$/.test(t) ? String(Number(t)) : '';
 };
-/* An unknown/unresolvable state code counts as intra-state — same default as
- * the PO wizard, so a half-filled form doesn't flip to IGST. */
+/* Our own registered state. Mirrors App\Support\Gst::DEFAULT_HOME_STATE_CODE so
+ * the frontend never assumes a *different* home state than the backend while
+ * /sales/gst-home-state is still in flight. */
+const DEFAULT_HOME_STATE_CODE = '27';
+
+/* Intra-state (CGST + SGST) only when the customer's GST state code equals our
+ * own; anything else is inter-state (IGST).
+ *
+ * The home side falls back to the default rather than to "unknown". It used to
+ * be allowed to arrive empty, and an empty home short-circuited the whole
+ * comparison to intra — so while the home-state fetch was in flight (or had
+ * failed) a Gujarat customer (24) rendered "Intra-state — CGST + SGST" against
+ * a Maharashtra (27) branch, with CGST/SGST columns instead of IGST. The state
+ * code shown in the summary and the tax split disagreed on screen.
+ *
+ * An unresolvable PARTY code still counts as intra — that's a half-filled form,
+ * not a wrong answer, and it matches the PO wizard. */
 const isIntraState = (stateCodeLabel: string, homeStateCode: string): boolean => {
   const party = normStateCode(stateCodeOf(stateCodeLabel));
-  const home  = normStateCode(homeStateCode);
-  if (!party || !home) return true;
+  const home  = normStateCode(homeStateCode) || DEFAULT_HOME_STATE_CODE;
+  if (!party) return true;
   return party === home;
 };
 
@@ -2497,7 +2512,7 @@ function shapeQpiMasters(
     productsRaw: productRawList,
     // Falls back to Maharashtra when the endpoint fails or the branch has no
     // GSTIN on file — same default as the server's Gst::homeStateCode.
-    homeStateCode: String(home?.data?.data?.state_code ?? '') || '27',
+    homeStateCode: String(home?.data?.data?.state_code ?? '') || DEFAULT_HOME_STATE_CODE,
     opportunities:    opportunityOpts,
     opportunitiesRaw,
     customersRaw,
@@ -2530,7 +2545,9 @@ export function useQpiMasters(open: boolean): LoadedMasters {
       currencies: [], incoterms: [], ports: [], countries: [],
       customers: [], consignees: [], banks: [], opportunities: [],
       products: [],
-      homeStateCode: '',
+      // Never '' — an unknown home state used to read as intra-state, which
+      // taxed an out-of-state customer as CGST + SGST until the fetch landed.
+      homeStateCode: DEFAULT_HOME_STATE_CODE,
       opportunitiesRaw: [], customersRaw: [], consigneesRaw: [],
       banksRaw: [], productsRaw: [],
       loading: false,
