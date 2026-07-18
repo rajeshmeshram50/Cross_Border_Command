@@ -88,7 +88,10 @@ const mkDraft = (sp?: SelectedProduct): Draft => ({
   lead_product_id: sp?.id          ?? null,
   product_id:      sp?.product_id  ?? null,
   qty:             sp?.default_qty != null ? String(sp.default_qty) : '',
-  target_price:    sp?.default_target_price != null ? String(sp.default_target_price) : '',
+  // Target Price starts BLANK — it's the procurement (buy-side) target the user
+  // enters here, NOT the shared/sell price. Pre-filling it from the lead's
+  // shared price was misleading (QA #119). Still mandatory (validated on save).
+  target_price:    '',
   attachments:     [],
 });
 
@@ -307,8 +310,19 @@ export default function CreateProcurementModal({
     } catch (e: any) {
       const data = e?.response?.data;
       const fieldErrs = data?.errors as Record<string, string[]> | undefined;
-      const msg = fieldErrs ? Object.values(fieldErrs).flat().join(' ') : (data?.message ?? 'Could not create procurement');
-      toast.error('Create failed', msg);
+      // Attachment errors come back as raw field paths ("products.0.attachment.0
+      // has an unexpected file signature… must not be greater than 5120
+      // kilobytes"). Surface a clean, actionable message instead of leaking the
+      // internal field path / size wording.
+      const entries = fieldErrs ? Object.entries(fieldErrs) : [];
+      const isAttachErr = entries.some(([k, v]) =>
+        k.includes('attachment') || (v ?? []).some(m => /file signature|kilobytes|mimes|must be a file|must be an image|jpg|jpeg|png|pdf|greater than 5120/i.test(m)));
+      if (isAttachErr) {
+        toast.error('File not supported', 'Please attach only JPG, PNG or PDF files (up to 5 MB).');
+      } else {
+        const msg = fieldErrs ? Object.values(fieldErrs).flat().join(' ') : (data?.message ?? 'Could not create procurement');
+        toast.error('Create failed', msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -520,7 +534,22 @@ export default function CreateProcurementModal({
                         <td>
                           <RowAttach
                             files={d.attachments}
-                            onAdd={(files) => setDraft(d.key, { attachments: [...d.attachments, ...files] })}
+                            onAdd={(files) => {
+                              // Only JPG / PNG / PDF, max 5 MB (matches the backend
+                              // mimes + 5120 KB rule). Reject the rest up front with
+                              // a clear message instead of failing on Save.
+                              const ok: File[] = [];
+                              let badType = false, tooBig = false;
+                              for (const f of files) {
+                                const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
+                                if (!['jpg', 'jpeg', 'png', 'pdf'].includes(ext)) { badType = true; continue; }
+                                if (f.size > 5 * 1024 * 1024) { tooBig = true; continue; }
+                                ok.push(f);
+                              }
+                              if (badType) toast.error('File not supported', 'Please attach only JPG, PNG or PDF files.');
+                              else if (tooBig) toast.error('File too large', 'Each attachment must be 5 MB or smaller.');
+                              if (ok.length) setDraft(d.key, { attachments: [...d.attachments, ...ok] });
+                            }}
                             onRemove={(i) => setDraft(d.key, { attachments: d.attachments.filter((_, idx) => idx !== i) })}
                           />
                         </td>
@@ -660,7 +689,7 @@ function RowAttach({ files, onAdd, onRemove }: { files: File[]; onAdd: (f: File[
       </button>
       <input
         type="file" multiple hidden ref={ref}
-        accept=".jpg,.jpeg,.png,.webp,.pdf"
+        accept=".jpg,.jpeg,.png,.pdf"
         onChange={e => {
           if (e.target.files) onAdd(Array.from(e.target.files));
           e.target.value = '';

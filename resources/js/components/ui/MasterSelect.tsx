@@ -11,14 +11,23 @@ import './MasterSelect.css';
    pill opens a mini popup listing the hidden tags. */
 type OptBadgeSpec = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: string[] };
 
-const badgeToneStyle = (tone?: OptBadgeSpec['tone']): CSSProperties =>
-  tone === 'red'
-    ? { background: '#fee2e2', color: '#dc2626' }
-    : tone === 'gray'
-      ? { background: '#f1f5f9', color: '#475569' }
-      : tone === 'violet'
-        ? { background: '#ede9fe', color: '#6d28d9' }
-        : { background: '#dcfce7', color: '#16a34a' };
+// Follow the active app theme: light pastel pills in light mode, translucent
+// tints + lighter text in dark mode (QA #123 — the option badges were fixed
+// light colours and read wrong on the dark surface). Read from the <html>
+// attribute the ThemeContext maintains; a theme toggle re-renders the tree so
+// this recomputes.
+const isDarkTheme = (): boolean =>
+  typeof document !== 'undefined' &&
+  (document.documentElement.getAttribute('data-bs-theme') === 'dark' ||
+    document.documentElement.getAttribute('data-theme') === 'dark');
+
+const badgeToneStyle = (tone?: OptBadgeSpec['tone']): CSSProperties => {
+  const dark = isDarkTheme();
+  if (tone === 'red')    return dark ? { background: 'rgba(239,68,68,.18)',  color: '#fca5a5' } : { background: '#fee2e2', color: '#dc2626' };
+  if (tone === 'gray')   return dark ? { background: 'rgba(148,163,184,.20)', color: '#cbd5e1' } : { background: '#f1f5f9', color: '#475569' };
+  if (tone === 'violet') return dark ? { background: 'rgba(124,58,237,.24)',  color: '#c4b5fd' } : { background: '#ede9fe', color: '#6d28d9' };
+  return dark ? { background: 'rgba(34,197,94,.18)', color: '#86efac' } : { background: '#dcfce7', color: '#16a34a' };
+};
 
 /* A pill rendered beside an option label. When the spec carries `items`
    (and it isn't forced static), the pill becomes clickable and pops a mini

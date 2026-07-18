@@ -5,6 +5,7 @@ import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import type { StageAcknowledgement } from '../SalesMatrixDetail';
+import Tooltip from '../../../../../components/ui/Tooltip';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Stage 2: Lead Acknowledgement
@@ -351,7 +352,13 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
                           {BUCKET_META[bucket].label}
                         </span>
                       </td>
-                      <td className="smd-st2-row-reason">{row.reason_snapshot}</td>
+                      <td className="smd-st2-row-reason-td">
+                        {/* Clamp a long reason to 2 lines with an ellipsis so it
+                            doesn't stretch the row; full text shows on hover. */}
+                        <Tooltip label={row.reason_snapshot ?? ''} themed maxWidth={420}>
+                          <div className="smd-st2-row-reason">{row.reason_snapshot}</div>
+                        </Tooltip>
+                      </td>
                     </tr>
                   );
                 })}
