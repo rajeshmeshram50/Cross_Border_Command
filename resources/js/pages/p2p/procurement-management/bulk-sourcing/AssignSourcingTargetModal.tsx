@@ -1,11 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import { type ReportRow } from './SourcingReportModal';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import { useModalGuard } from './useModalGuard';
-import Tooltip from '../../../../components/ui/Tooltip';
+import BaseTooltip from '../../../../components/ui/Tooltip';
+/* Themed by default so tooltips follow the active light/dark app theme
+ * instead of the always-dark pill (QA #18) — same wrapper as the DCP /
+ * consignee pages. */
+const Tooltip = (props: ComponentProps<typeof BaseTooltip>) => <BaseTooltip themed {...props} />;
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import './bulk-sourcing.css';
 
@@ -281,7 +285,12 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
       .finally(() => setSaving(false));
   };
 
-  const pickList = products.filter(p => { const q = pickQuery.toLowerCase(); return !q || (p.code + ' ' + p.name).toLowerCase().includes(q); });
+  const pickList = products
+    .filter(p => { const q = pickQuery.toLowerCase(); return !q || (p.code + ' ' + p.name).toLowerCase().includes(q); })
+    // Descending by product code (P-003, P-002, P-001…). numeric:true so
+    // P-010 sorts above P-002. .filter() already returned a fresh array, so
+    // this sort doesn't mutate the source `products`.
+    .sort((a, b) => b.code.localeCompare(a.code, undefined, { numeric: true }));
 
   return createPortal(
     <div className="ast-ov" onMouseDown={guardOverlay}>
@@ -399,7 +408,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                               return (
                                 <button type="button" key={p.code} className={`asrc-pick-opt ${picked ? 'is-sel' : ''} ${added ? 'is-added' : ''}`} onMouseDown={e => e.preventDefault()} onClick={() => { if (!added) togglePick(p.code); }}>
                                   <span className="asrc-pick-check">{(picked || added) && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}</span>
-                                  <span className="asrc-pick-txt"><b>{p.code}</b> — {p.name}{added && <i> (added)</i>}</span>
+                                  <span className="asrc-pick-txt"><b>{p.code}</b>: {p.name}{added && <i> (added)</i>}</span>
                                 </button>
                               );
                             })}

@@ -279,16 +279,22 @@
 .asrc-ltab.is-active .asrc-ltab-c {
   background: #fff;
 }
-.asrc-pick-txt b,
+/* Product-list name cell — truncates with an ellipsis (full name on hover
+   via Tooltip). */
 .asrc-name {
   font-weight: 600;
   color: #0f172a;
-  /* Long names truncate with an ellipsis (full name on hover via Tooltip). */
   display: block;
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Dropdown option code — inline (NOT block) so the code and name sit on one
+   row, e.g. "P-026: DFGH". */
+.asrc-pick-txt b {
+  font-weight: 600;
+  color: #0f172a;
 }
 [data-bs-theme="dark"] .ast-foot,
 [data-bs-theme="dark"] .astp-foot {
@@ -2096,10 +2102,16 @@
   background: rgba(34,211,238,.25);
 }
 .asrc-pick-txt {
+  flex: 1;
+  min-width: 0;
   font-size: 12.5px;
   color: #334155;
   font-weight: 500;
   line-height: 1.4;
+  /* Code + name on a single row; a long name truncates with an ellipsis. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .asrc-pick-txt i {
   font-style: normal;
