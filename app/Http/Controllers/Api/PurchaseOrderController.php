@@ -1068,6 +1068,29 @@ class PurchaseOrderController extends Controller
         }
 
         $eps = 0.0001;
+
+        // NEW PO on this shipment: if every PI product is already fully ordered
+        // by existing (non-deleted) POs, there is no quantity left to allocate —
+        // block raising another PO for this shipment (QA request). Only for new
+        // POs ($excludePoId === null); an edit legitimately re-touches the qty it
+        // already consumed.
+        if ($excludePoId === null) {
+            $hasRemaining = false;
+            foreach ($piById as $pid => $piQty) {
+                if ($piQty - ($ordById[$pid] ?? 0) > $eps) { $hasRemaining = true; break; }
+            }
+            if (!$hasRemaining) {
+                foreach ($piByCode as $code => $piQty) {
+                    if ($piQty - ($ordByCode[$code] ?? 0) > $eps) { $hasRemaining = true; break; }
+                }
+            }
+            if (!$hasRemaining) {
+                throw ValidationException::withMessages([
+                    'shipment_order_id' => ['This shipment already has purchase order(s) covering the full PI quantity — no quantity remains to raise a new PO for this shipment.'],
+                ]);
+            }
+        }
+
         $errors = [];
         foreach ($reqById as $pid => $req) {
             if (!array_key_exists($pid, $piById)) continue; // not a PI product → not PI-capped
