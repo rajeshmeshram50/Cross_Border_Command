@@ -18,6 +18,28 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
 /** To-approve rows from GET /clm/ctc-contracts/to-approve (AtaContract + db id). */
 type AtaRow = AtaContract & { dbId: number };
 
+// Display dates as DD-Mon-YYYY (e.g. 17-Jul-2026). The API returns "17 Jul
+// 2026"; swap the spaces for hyphens (QA #9). "—" / empty pass through.
+const dashDate = (s: string): string => (s && s !== '—' ? s.replace(/\s+/g, '-') : s);
+
+// The CTC DATE can carry a submission time ("18 Jul 2026 12:32"). Split it into
+// a hyphenated date and a 12-hour AM/PM time so the date shows on top (no
+// trailing hyphen) and the time on its own line below.
+const dateTimeParts = (s: string): { date: string; time: string } => {
+  if (!s || s === '—') return { date: s || '—', time: '' };
+  const p = s.trim().split(/\s+/);
+  const date = p.slice(0, 3).join('-');
+  let time = '';
+  if (p[3] && /^\d{1,2}:\d{2}/.test(p[3])) {
+    const [hh, mm] = p[3].split(':');
+    let h = parseInt(hh, 10);
+    const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    time = `${h}:${mm} ${ap}`;
+  }
+  return { date, time };
+};
+
 /* ─────────────────────────────────────────────────────────────────────────
  * CLM Operations · Without Shipment ID → Agreements To Approve.
  *
@@ -369,13 +391,13 @@ function StandardTable({ rows, tab, page, setPage, onReview, t }: { rows: AtaCon
                   onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                   <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
                   <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
-                  <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
+                  <td style={TD_C}>{(() => { const dt = dateTimeParts(c.date); return (<span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dt.date}</span>{dt.time && <span style={{ fontSize: 9, fontWeight: 600, color: t.dark ? '#67e8f9' : '#0891b2', whiteSpace: 'nowrap' }}>{dt.time}</span>}</span>); })()}</td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                   <td style={TD_L}><ApproverList c={c} t={t} /></td>
                   <td style={TD_C}><span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', borderRadius: 20, background: sb.bg, border: `1.5px solid ${sb.border}`, whiteSpace: 'nowrap' }}><span style={{ width: 5, height: 5, borderRadius: '50%', background: s.dot, flexShrink: 0 }} /><span style={{ fontSize: 10.5, fontWeight: 700, color: sb.text }}>{s.label}</span></span></td>
                   {isRej && <td style={{ ...TD_L, maxWidth: 180 }}><Tooltip label={c.rejReason ?? ''}><div style={{ fontSize: 10.5, color: '#DC2626', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 175 }}>{c.rejReason}</div></Tooltip></td>}
-                  <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.expDate}</span></td>
+                  <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.expDate)}</span></td>
                   <td style={TD_C}>
                     {actionable ? (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
@@ -434,7 +456,7 @@ function ClarificationTable({ rows, page, setPage, onReview, onChat, t }: { rows
                   onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                   <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
                   <td style={TD_C}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 11, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0e7490', background: 'rgba(6,182,212,.1)', padding: '4px 9px', borderRadius: 7, border: '1px solid rgba(6,182,212,.28)' }}>{c.id}</span></td>
-                  <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub }}>{c.date}</span></td>
+                  <td style={TD_C}>{(() => { const dt = dateTimeParts(c.date); return (<span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dt.date}</span>{dt.time && <span style={{ fontSize: 9, fontWeight: 600, color: t.dark ? '#67e8f9' : '#0891b2', whiteSpace: 'nowrap' }}>{dt.time}</span>}</span>); })()}</td>
                   <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
                   <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 24, height: 24, borderRadius: '50%', background: 'linear-gradient(135deg,#22d3ee,#06b6d4)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8, fontWeight: 900, color: '#fff' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                   <td style={TD_L}><ApproverList c={c} t={t} /></td>
@@ -442,7 +464,7 @@ function ClarificationTable({ rows, page, setPage, onReview, onChat, t }: { rows
                     <Tooltip label={latest?.query ?? ''}><div style={{ fontSize: 11, color: t.textSub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>{latest?.query ?? '—'}</div></Tooltip>
                     {hasResp && <div style={{ fontSize: 9.5, color: '#059669', fontWeight: 600, marginTop: 2 }}>✓ Response provided</div>}
                   </td>
-                  <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.expDate}</span></td>
+                  <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.expDate)}</span></td>
                   <td style={TD_C}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, flexWrap: 'nowrap' }}>
                       {/* Open the shared clarification thread — available to EVERY
@@ -629,12 +651,30 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
   // Load the PDF document once.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    // Prefer the signature-style preview (page shell + org signature applied).
+    // If that render fails for this contract, fall back to the latest drafted
+    // version rendered to PDF — the same reliable path the Case-to-Case list
+    // "Download" uses — so the reviewer always gets a PDF instead of the
+    // "Could not load the agreement PDF." error (QA #7).
+    const fetchBlob = async (): Promise<Blob> => {
       try {
         const res = await api.post('/clm/signature-requests/ctc-preview', { contract_id: contract.dbId }, { responseType: 'blob' });
+        return res.data as Blob;
+      } catch {
+        const meta = await api.get(`/clm/ctc-contracts/${contract.dbId}`);
+        const r = (meta.data?.data ?? meta.data ?? {}) as Record<string, unknown>;
+        const versions = (Array.isArray(r.versions) ? r.versions : []) as { v?: number }[];
+        const latestV = versions.length ? Math.max(...versions.map(v => Number(v.v) || 0)) : 1;
+        const res2 = await api.get(`/clm/ctc-contracts/${contract.dbId}/versions/${latestV}/download`, { responseType: 'blob' });
+        return res2.data as Blob;
+      }
+    };
+    (async () => {
+      try {
+        const blob = await fetchBlob();
         if (cancelled) return;
-        blobRef.current = res.data as Blob;
-        const buf = await (res.data as Blob).arrayBuffer();
+        blobRef.current = blob;
+        const buf = await blob.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
         if (cancelled) return;
         docRef.current = pdf as unknown as { numPages: number; getPage: (n: number) => Promise<any> };
