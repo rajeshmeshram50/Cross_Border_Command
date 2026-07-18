@@ -634,6 +634,13 @@ class ProformaInvoiceController extends Controller
     {
         $docType = $request->input('doc_type', ProformaInvoice::DOC_INTERNATIONAL);
 
+        /* Domestic is settled in rupees by definition — currency is DERIVED,
+         * not taken from the caller. Same rule as QuotationController; see the
+         * note there. */
+        if ($docType === ProformaInvoice::DOC_DOMESTIC) {
+            $request->merge(['currency' => 'INR']);
+        }
+
         $rules = [
             'pi_type'            => ['nullable', Rule::in(ProformaInvoice::TYPES)],
             'bt_id'              => 'nullable|string|max:24',

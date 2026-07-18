@@ -434,6 +434,17 @@ class QuotationController extends Controller
         // identity + party + currency + items block.
         $docType = $request->input('doc_type', Quotation::DOC_INTERNATIONAL);
 
+        /* A Domestic document is settled in rupees by definition, so the
+         * currency is DERIVED here rather than taken from the caller — the same
+         * reasoning as gst_applicable on the customer. The wizard doesn't even
+         * render a Currency field for Domestic (it lives in the international
+         * shipping block), so it posted null and the list rendered a bare "—".
+         * Overwriting rather than validating is what makes it hold for every
+         * caller, including a direct API call. */
+        if ($docType === Quotation::DOC_DOMESTIC) {
+            $request->merge(['currency' => 'INR']);
+        }
+
         $rules = [
             'doc_type'          => ['required', Rule::in(Quotation::DOC_TYPES)],
             'opp_id'            => 'nullable|integer|exists:leads,id',
