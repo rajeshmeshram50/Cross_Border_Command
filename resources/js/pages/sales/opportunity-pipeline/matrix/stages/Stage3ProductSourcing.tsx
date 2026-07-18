@@ -588,7 +588,32 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                 <table className="s3-table s3-table-amber">
                   <thead>
                     <tr>
-                      <th style={{ width: 36 }}></th>
+                      {/* Select-all — toggles every selectable (no-procurement)
+                          row at once (QA #115); indeterminate when only some are
+                          ticked. */}
+                      <th style={{ width: 36, textAlign: 'center' }}>
+                        {(() => {
+                          const selectable = requiredRows.filter(r => r.procurement_id == null).map(r => r.id);
+                          if (!canGroup || locked || selectable.length === 0) return null;
+                          const all  = selectable.every(id => selectedIds.has(id));
+                          const some = selectable.some(id => selectedIds.has(id));
+                          return (
+                            <input
+                              type="checkbox"
+                              className="s3-cb"
+                              ref={el => { if (el) el.indeterminate = some && !all; }}
+                              checked={all}
+                              title={all ? 'Deselect all' : 'Select all'}
+                              onChange={() => setSelectedIds(prev => {
+                                const next = new Set(prev);
+                                if (selectable.every(id => next.has(id))) selectable.forEach(id => next.delete(id));
+                                else selectable.forEach(id => next.add(id));
+                                return next;
+                              })}
+                            />
+                          );
+                        })()}
+                      </th>
                       <th style={{ width: 50 }}>SR</th>
                       <th style={{ width: 110 }}>CODE</th>
                       <th>PRODUCT NAME</th>
@@ -1178,11 +1203,13 @@ const STAGE3_CSS = `
 .s3-table-wrap::-webkit-scrollbar-track { background: transparent; }
 .s3-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 .s3-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-/* table-layout:fixed + width:100% keeps every column inside the stage card
-   (no horizontal scroll) at any width — the flexible Product Name column
-   absorbs the slack and truncates (ellipsis + hover tooltip). Replaces the
-   old min-width:880px, which overflowed when the side panels were open. */
-.s3-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+/* table-layout:fixed + width:100% lets the flexible Product Name column absorb
+   slack and truncate on a wide stage. A min-width stops the fixed columns from
+   squeezing Product Name to 0 when both side panels are open — the wrap scrolls
+   horizontally instead, so Product Name keeps its own column and its name /
+   segment badge no longer overlap Status (QA #114/#123). The amber
+   Sourcing-Required table (3 extra columns) raises this to 1200 below. */
+.s3-table { width: 100%; min-width: 1040px; border-collapse: collapse; table-layout: fixed; }
 /* Table header — light lavender gradient matching the Product Sourcing
    popup's table (gradient on the tr so it sweeps the whole row; cells stay
    transparent). The amber Sourcing-Required table keeps its own header via

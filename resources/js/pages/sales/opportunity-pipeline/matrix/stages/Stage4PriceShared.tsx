@@ -885,11 +885,13 @@ const STAGE4_CSS = `
 .s4-table-wrap::-webkit-scrollbar-track { background: transparent; }
 .s4-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 .s4-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-/* table-layout:fixed + width:100% keeps every column inside the stage card
-   (no horizontal scroll) at any width — the flexible Product Name column
-   absorbs the slack and truncates (ellipsis + hover tooltip). Replaces the
-   old min-width:880px, which overflowed when the side panels were open. */
-.s4-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+/* table-layout:fixed + width:100% lets the flexible Product Name column absorb
+   slack and truncate (ellipsis + hover tooltip) on a wide stage. A min-width
+   guarantees the fixed columns can't squeeze Product Name to 0 when BOTH side
+   panels (CLM Details + Decision Engine) are open — instead the wrap scrolls
+   horizontally so every column, Product Name included, stays visible and in
+   its own column (QA #114). */
+.s4-table { width: 100%; min-width: 1080px; border-collapse: collapse; table-layout: fixed; }
 .s4-table thead th { position: sticky; top: 0; z-index: 2; }
 .s4-thead-navy th {
   padding: 12px 14px; text-align: left;
@@ -965,10 +967,15 @@ const STAGE4_CSS = `
 /* Date & Time → rounded chip with a clock icon (Figma), single line. */
 .s4-dt {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 4px 10px; border-radius: 999px;
+  padding: 4px 10px; border-radius: 12px;
   background: #f5f3ff; border: 1px solid #e9e3ff;
   color: #6d28d9; font-weight: 700; font-size: 11px;
-  white-space: nowrap;
+  /* Wrap the date/time INSIDE its column instead of overflowing into the
+     Quantity column when the stage is narrow (both side panels open) — the
+     chip was white-space:nowrap and spilled past a squeezed fixed column
+     (QA #113). max-width keeps it inside the cell. */
+  white-space: normal; flex-wrap: wrap; justify-content: center;
+  max-width: 100%; row-gap: 1px;
 }
 .s4-dt svg { flex-shrink: 0; opacity: .85; }
 .s4-dt-sep { color: #c4b5fd; margin: 0 2px; font-weight: 600; }
