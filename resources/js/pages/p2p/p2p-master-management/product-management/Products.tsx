@@ -158,7 +158,10 @@ function apiToCard(row: Record<string, unknown>): Product {
     gstRate: Number(gstObj?.percentage ?? 0),
     condition: condObj?.title ?? '',
     vendors: vendorNames,
-    vendorCount: vendorMaps.length,
+    // Sales users have vendor rows masked out (they must not see who the
+    // supplier is), but the backend still surfaces the bare count so the card
+    // can show "N Suppliers". Prefer it; fall back to the row count otherwise.
+    vendorCount: row.vendor_count != null ? Number(row.vendor_count) : vendorMaps.length,
     ownerId: creator?.id ?? null,
     ownerName: creator?.name ?? '',
     ownerBranchId: creator?.branch_id ?? ownerBranch?.id ?? null,

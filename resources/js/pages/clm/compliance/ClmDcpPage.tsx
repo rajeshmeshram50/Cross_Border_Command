@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
@@ -9,7 +9,11 @@ import { useScrollLock } from '../../../hooks/useScrollLock';
 import { bustAllMasterBundles } from '../../../utils/bustMasterBundles';
 import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
-import Tooltip from '../../../components/ui/Tooltip';
+import BaseTooltip from '../../../components/ui/Tooltip';
+/* Themed by default so tooltips follow the active light/dark app theme
+ * instead of the always-dark pill (QA #18) — mirrors the consignee page's
+ * wrapper so tooltips look the same everywhere. */
+const Tooltip = (props: ComponentProps<typeof BaseTooltip>) => <BaseTooltip themed {...props} />;
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../master/masterFormKit';
 import AuthorityBadges from './AuthorityBadges';

@@ -177,8 +177,14 @@ class ProductController extends Controller
         }
         if ($hide['vendor']) {
             // Empty (not removed) so callers iterating vendor_maps still get a
-            // valid array; the Sales side simply sees zero suppliers.
+            // valid array; the Sales side simply sees zero supplier *rows*.
+            // BUT keep the bare count — the product card shows "N Suppliers"
+            // (and its Active/Zero-supplier tabs key off it). Sales is allowed
+            // to know HOW MANY suppliers a product has, just not who they are
+            // or the purchase price, so surface the count separately before the
+            // identifying rows are dropped.
             if (\array_key_exists('vendor_maps', $payload)) {
+                $payload['vendor_count'] = \count($payload['vendor_maps']);
                 $payload['vendor_maps'] = [];
             }
         }

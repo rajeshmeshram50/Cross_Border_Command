@@ -1526,9 +1526,22 @@ export default function SalesTodo() {
                       )}
                       <input
                         type="file" id="tdF_attachment" style={{ display: 'none' }}
-                        accept=".png,.jpg,.jpeg,.pdf,.doc,.docx,.xls,.xlsx,.csv"
+                        accept=".png,.jpg,.jpeg,.webp,.pdf"
                         onChange={e => {
                           const f = e.target.files?.[0];
+                          // Reminder attachments are images + PDF only — reject
+                          // Word/Excel/CSV (QA #23) with an inline message. The
+                          // `accept` above is only a hint (drag-drop / "All
+                          // files" bypasses it), so validate the type here too.
+                          // Mirrors the backend ATTACH_MIMES rule.
+                          if (f) {
+                            const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
+                            if (!['jpg', 'jpeg', 'png', 'webp', 'pdf'].includes(ext)) {
+                              setFormErrors(['Unsupported file type. Only images (JPG, PNG, WEBP) and PDF are allowed.']);
+                              e.target.value = '';
+                              return;
+                            }
+                          }
                           // Reject too-large files client-side BEFORE the user
                           // hits Save — saves an upload of useless bytes and
                           // shows the message inline next to the field. Cap

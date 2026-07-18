@@ -1197,6 +1197,12 @@ const STAGE3_CSS = `
   border-bottom: 1.5px solid #6d28d9;
   white-space: nowrap;
 }
+/* The Sourcing-Required table carries 3 extra columns (checkbox, Procurement
+   ID, Vendor Count) over the other two tabs. table-layout:fixed + width:100%
+   was squeezing the flexible PRODUCT NAME column to ~0, so its header ran over
+   QTY. A min-width keeps every column at its intended size; the wrap's
+   overflow-x scrolls if the popup is ever narrower than this. */
+.s3-table-amber { min-width: 1200px; }
 .s3-table-amber thead th {
   background: linear-gradient(180deg, #7c3aed, #6d28d9);
   color: #fff;
@@ -1293,7 +1299,8 @@ const STAGE3_CSS = `
 
 /* Sourcing Required tab specifics */
 .s3-cb {
-  width: 17px; height: 17px; cursor: pointer; accent-color: #d97706;
+  /* Match the table head (violet), not the old amber. */
+  width: 17px; height: 17px; cursor: pointer; accent-color: #6d28d9;
   margin: 0;
 }
 .s3-dash { color: #cbd5e1; font-weight: 700; font-size: 13px; }
