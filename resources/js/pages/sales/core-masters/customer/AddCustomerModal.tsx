@@ -1395,6 +1395,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
   const gotoStage = (s: Stage) => {
     if (s > maxStage) return;
+    /* Same GST gate as goNext(). Needed separately because in EDIT mode
+     * maxStage already starts at 2, so clicking the stepper card jumps to
+     * Stage 2 without ever going through goNext. */
+    if (s === 2 && !gstScrutinyComplete) { promptForGstScrutiny(); return; }
     setStage(s);
     if (s === 1) setTab('identification');
   };
@@ -1643,17 +1647,23 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     })),
   });
 
+  /* A domestic customer (GST applies) must have at least one GST Scrutiny
+   * entry. Local entries added in the popup count, so this works for both new
+   * and edit. International customers have no GST, so they always pass. */
+  const gstScrutinyComplete = !isDomesticCountry(form.country) || gstRows.length > 0;
+
+  // Snap back to where the entry is added and open the popup, so the warning
+  // lands the user ON the fix rather than just telling them about it.
+  const promptForGstScrutiny = () => {
+    toast.warning('GST Scrutiny required', 'Add at least one GST Scrutiny entry before moving to KYC / Due Diligence.');
+    setStage(1); setTab('identification'); setGstPopupOpen(true);
+  };
+
   const submitCustomer = async () => {
-    // Final-submit gate: a domestic customer (GST applies) must have at least
-    // one GST Scrutiny entry before the form can be submitted. Local entries
-    // added in the popup count, so it works for both new and edit. International
-    // customers have no GST, so the gate doesn't apply. Snap back to Stage 1's
-    // Identification tab and open the popup so the user can add one.
-    if (isDomesticCountry(form.country) && gstRows.length === 0) {
-      toast.warning('GST Scrutiny required', 'Add at least one GST Scrutiny entry before submitting this customer.');
-      setStage(1); setTab('identification'); setGstPopupOpen(true);
-      return;
-    }
+    /* Final-submit gate. The Stage 1 → 2 gate in goNext() is the primary one;
+     * this stays as a backstop for edit-mode sessions that open straight on a
+     * later stage and never pass through that boundary. */
+    if (!gstScrutinyComplete) { promptForGstScrutiny(); return; }
     // Synchronous re-entry lock — saving state is async so two
     // rapid clicks could both slip past the check. The ref blocks
     // any second call on the same tick.
@@ -1822,6 +1832,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         setTab('address-contact');
         return;
       }
+      /* GST Scrutiny gate — enforced HERE, at the Stage 1 → 2 boundary,
+       * rather than at final submit. GST is part of the customer's legal
+       * identity, so Stage 1 isn't complete without it; catching it at the
+       * end meant the user filled all of KYC first and only then got sent
+       * back. Domestic only — international customers have no GST. */
+      if (!gstScrutinyComplete) { promptForGstScrutiny(); return; }
       // Leaving Stage 1 entirely → persist so Stage 2 KYC has a target.
       const id = await persistStage1();
       if (!id) return;

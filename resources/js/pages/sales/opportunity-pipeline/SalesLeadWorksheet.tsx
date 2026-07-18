@@ -267,25 +267,57 @@ export default function SalesLeadWorksheet() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  // ── Auto-fit rows ── show exactly as many rows as fill the scroll area so
-  // big screens don't leave a gap; picking a Rows-per-page value overrides it.
+  /* ── Auto-fit rows ── show exactly as many rows as fill the scroll area so
+   * big screens don't leave a gap; picking a Rows-per-page value overrides it.
+   *
+   * Measures VIEWPORT geometry (the wrap's distance from the top of the window)
+   * rather than the wrap's own clientHeight, and deliberately uses NO
+   * ResizeObserver. Both points matter — the previous version did the opposite
+   * and the last row flickered on and off forever on wide screens:
+   *
+   *   rows = N → content overflows → vertical scrollbar appears → the wrap's
+   *   content width drops below the table's 1500px min-width → horizontal
+   *   scrollbar appears → clientHeight loses those 9px → fit = N−1 → the row
+   *   unmounts → v-scrollbar goes → h-scrollbar goes → clientHeight +9px →
+   *   fit = N → the row remounts → ...
+   *
+   * and the ResizeObserver watched the very element whose size the row count
+   * changes, so it re-fired on every flip. A `prev === fit` guard can't stop it:
+   * the two measurements are genuinely different numbers. It also refetched the
+   * list each time, since `rpp` is in the fetch effect's deps.
+   *
+   * `top` vs window.innerHeight is independent of how many rows render, so the
+   * feedback edge simply doesn't exist. Same approach as CLM Segment Master and
+   * the Suppliers page, which both carry the same note. */
   const wrapRef    = useRef<HTMLDivElement>(null);
   const autoFitRef = useRef(true);
   useEffect(() => {
-    const el = wrapRef.current;
-    if (!el) return;
     const recompute = () => {
       if (!autoFitRef.current) return;
-      const avail = el.clientHeight;
+      const el = wrapRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 40, ROW = 44, FOOTER = 56;  // header + row + pager (px)
+      const avail = window.innerHeight - top - THEAD - FOOTER;
       if (avail <= 0) return;
-      const THEAD = 40, ROW = 44;   // worksheet header + row heights (px)
-      const fit = Math.max(5, Math.floor((avail - THEAD) / ROW));
+      const fit = Math.max(5, Math.floor(avail / ROW));
       setRpp(prev => (prev === fit ? prev : fit));
     };
-    const ro = new ResizeObserver(recompute);
-    ro.observe(el);
     recompute();
-    return () => ro.disconnect();
+    /* One extra pass after paint: on the production build the CSS lands in the
+     * same frame as the first render, so the very first measurement can read a
+     * pre-layout `top`. In dev the stylesheet is already applied, which is why
+     * this page only ever misbehaved on the built app. */
+    const raf = requestAnimationFrame(recompute);
+    // Debounced so a drag-resize doesn't recompute on every intermediate pixel.
+    let t: ReturnType<typeof setTimeout>;
+    const onResize = () => { clearTimeout(t); t = setTimeout(recompute, 140); };
+    window.addEventListener('resize', onResize);
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
+      window.removeEventListener('resize', onResize);
+    };
   }, []);
 
   // CTQ confirmation modal
