@@ -717,6 +717,12 @@ export default function SalesMatrixDetail() {
      * did this inline). */
     customer:           (serverHeader.customerRow?.company_name as string | undefined)?.trim()
                           || seedHeader.customer,
+    /* Country from the SERVER too — the mapped customer's own address country
+     * (customerCountry). The seed only carried the lead default ('IN'), so the
+     * Opportunity Summary (and the Create Procurement modal) showed India for a
+     * customer that is actually abroad, e.g. Antarctica (QA #118). Fall back to
+     * the seed when no customer is mapped yet. */
+    country:            customerCountry || seedHeader.country,
     leadId:             resolvedLeadId,
     leadStageId:        serverHeader.leadStageId,
     qualified:          serverHeader.qualified,

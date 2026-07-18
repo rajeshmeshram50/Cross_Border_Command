@@ -200,7 +200,10 @@ const VMM_CSS = `
 }
 .vmm-close:hover { background: rgba(255,255,255,.32); }
 
-.vmm-body { flex: 1; overflow-y: auto; padding: 14px 16px; background: #ffffff; display: flex; flex-direction: column; gap: 12px; }
+/* Cap the list to roughly two vendor cards, then scroll — so a product with
+   many vendors doesn't grow the modal past the viewport / clip the last card
+   (QA #121). Clamped to the viewport on short screens. */
+.vmm-body { flex: 1; overflow-y: auto; max-height: min(440px, calc(100vh - 140px)); padding: 14px 16px; background: #ffffff; display: flex; flex-direction: column; gap: 12px; }
 .vmm-loading, .vmm-empty { padding: 34px 0; text-align: center; color: #94a3b8; font-style: italic; font-size: 13px; }
 .vmm-spinner { display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px; border: 2px solid #ddd6fe; border-top-color: #7c3aed; border-radius: 50%; animation: vmm-spin .7s linear infinite; }
 @keyframes vmm-spin { to { transform: rotate(360deg); } }

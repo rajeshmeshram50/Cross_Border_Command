@@ -353,10 +353,12 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
                         </span>
                       </td>
                       <td className="smd-st2-row-reason-td">
-                        {/* Clamp a long reason to 2 lines with an ellipsis so it
-                            doesn't stretch the row; full text shows on hover. */}
-                        <Tooltip label={row.reason_snapshot ?? ''} themed maxWidth={420}>
-                          <div className="smd-st2-row-reason">{row.reason_snapshot}</div>
+                        {/* Show only the first 20 characters + "…"; the full
+                            reason is on hover via the Tooltip (QA #112). */}
+                        <Tooltip label={row.reason_snapshot ?? ''} themed maxWidth={480}>
+                          <div className="smd-st2-row-reason">
+                            {(() => { const rs = row.reason_snapshot ?? ''; return rs.length > 30 ? `${rs.slice(0, 30)}…` : (rs || '—'); })()}
+                          </div>
                         </Tooltip>
                       </td>
                     </tr>
@@ -706,12 +708,9 @@ const STAGE2_CSS = `
 
 .smd-st2-row-reason {
   font-size: 11px; font-weight: 500; color: #1e293b;
-  white-space: normal !important;
-  /* Break even a long UNBROKEN string (e.g. "AAAA…") so the reason wraps
-     inside its column instead of stretching the row and overlapping the
-     table boundaries. */
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  /* Reason is hard-capped to 20 chars + "…" in JS (full text on hover via the
+     Tooltip, QA #112); keep it on one line so it never stretches the row. */
+  white-space: nowrap;
 }
 /* Empty state — identical to .s3-empty. */
 .smd-st2-empty {
