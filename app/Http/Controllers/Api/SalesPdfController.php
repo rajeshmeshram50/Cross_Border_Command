@@ -1975,7 +1975,12 @@ class SalesPdfController extends Controller
             $s = trim((string) $label);
             return preg_match('/^(\d{1,2})(?!\d)/', $s, $m) ? (string) (int) $m[1] : '';
         };
-        $homeStateCode  = $normState($companyDetails->gst_state_code ?? '') ?: '27';
+        // Our own GST home state — prefer the branch gst_state_code, else derive
+        // from the branch GSTIN's first two digits, else Maharashtra (27). Mirrors
+        // App\Support\Gst::homeStateCode so the PDF split matches the on-screen one.
+        $homeStateCode  = $normState($companyDetails->gst_state_code ?? '')
+            ?: $normState($companyDetails->gst_no ?? '')
+            ?: '27';
         $partyStateCode = $normState($q->state_code ?? '');
         // Export → IGST. Domestic: an UNRESOLVED party state → intra (CGST+SGST,
         // matches the SPA's "half-filled form counts as intra"); a resolved party
