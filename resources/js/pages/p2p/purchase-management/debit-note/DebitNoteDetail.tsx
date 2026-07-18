@@ -260,7 +260,11 @@ export default function DebitNoteDetail({ onClose, onSaved, editId, readOnly = f
     setProducts(ps => ps.map((r, idx) => {
       if (idx !== i) return r;
       if (key === 'code' || key === 'name' || key === 'hsn') return { ...r, [key]: v };
-      let nv = num(v);
+      /* Floor at 0. Every numeric field here is a quantity or a rate, and a
+       * negative one flips the sign of the whole row's cost. The input's
+       * `min={0}` only limits the spinner arrows — typing or pasting "-5"
+       * bypasses it — so the clamp has to live here. */
+      let nv = Math.max(0, num(v));
       // Debit Qty can never exceed the quantity billed on the SPI — clamp it and
       // warn the user (returning more than was invoiced is not valid).
       if (key === 'debitQty' && nv > r.qtySpi) {
@@ -870,6 +874,22 @@ function ROGroup({ label, children }: { label: string; children: ReactNode }) {
   return <div className="spi-dt-rogroup"><div className="spi-dt-rogroup-hd">{label}</div><div className="spi-dt-robox"><div className="spi-dt-rogrid">{children}</div></div></div>;
 }
 
+/* Money inputs on this page are always POSITIVE — the sign is carried by which
+ * column the row sits in (Additions add, Deductions subtract), so a negative
+ * amount inverts that meaning silently: a "-10" deduction quietly ADDS 10 to
+ * the grand total. `type="number"` alone doesn't prevent it — `min={0}` only
+ * constrains the spinner arrows, while typing or pasting "-10" goes straight
+ * through — so the value is sanitised here instead.
+ *
+ * Keeps digits and a single decimal point; drops the minus sign, a second dot,
+ * and the exponent forms ("1e5", "+3") that type="number" would otherwise
+ * accept. Trailing "." survives so a half-typed "12." isn't fought mid-entry. */
+const nonNegAmount = (raw: string): string => {
+  const cleaned = (raw ?? '').replace(/[^0-9.]/g, '');
+  const [whole, ...rest] = cleaned.split('.');
+  return rest.length ? `${whole}.${rest.join('')}` : whole;
+};
+
 /* Additions / Deductions charge block — header (label + "+ Add") stays fixed; the rows live in a
  * scroll container that caps at ~3 rows so the section never grows unbounded (senior-dev layout). */
 function ChargeBlock({ variant, label, rows, setRows }: { variant: 'add' | 'ded'; label: string; rows: ChargeRow[]; setRows: Dispatch<SetStateAction<ChargeRow[]>> }) {
@@ -883,7 +903,7 @@ function ChargeBlock({ variant, label, rows, setRows }: { variant: 'add' | 'ded'
       <div className="dncr-charge-rows">
         {rows.map((row, i) => (
           <div className="dncr-charge-row" key={i}>
-            <div className="dncr-amtwrap"><span className="dncr-cur">₹</span><input className="dncr-amtinp" type="number" placeholder="0.00" value={row.amount} onChange={e => patch(i, 'amount', e.target.value)} /></div>
+            <div className="dncr-amtwrap"><span className="dncr-cur">₹</span><input className="dncr-amtinp" type="number" min={0} step="0.01" placeholder="0.00" value={row.amount} onChange={e => patch(i, 'amount', nonNegAmount(e.target.value))} /></div>
             <input className="dncr-note" placeholder="Note against this charge…" value={row.note} onChange={e => patch(i, 'note', e.target.value)} />
             <Tooltip label="Remove" themed><button type="button" className="dncr-rowx" onClick={() => setRows(rs => rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs)}><IcoX size={13} /></button></Tooltip>
           </div>
