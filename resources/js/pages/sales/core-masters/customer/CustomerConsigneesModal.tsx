@@ -123,7 +123,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
   // Domestic (India) customer maps ONLY domestic consignees; an international
   // customer maps ONLY international ones — a domestic party can't be linked to
   // an international one (mirrors the India→India / intl→intl mapping rule).
-  const custDomestic = (customer.country ?? '').trim() === 'India';
+  const custDomestic = (customer?.country ?? '').trim() === 'India';
   // Existing consignees NOT already mapped to this customer, not "same as
   // customer" mirrors, and matching the customer's domestic/international side.
   const mappableConsignees = useMemo(
