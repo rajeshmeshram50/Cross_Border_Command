@@ -980,7 +980,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                       <td><input className="spi-dt-minp" value={r.spiName} onChange={e => setRow(i, { spiName: e.target.value })} /></td>
                       {hasPi && <td className="spi-dt-mc-c">{r.piQty ?? '—'}</td>}
                       <td className="spi-dt-mc-c">{r.poQty}</td>
-                      <td><input type="number" min={0} step="any" className="spi-dt-minp spi-dt-minp-sm" value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value })} /></td>
+                      <td><input type="number" min={0} step="any" className="spi-dt-minp spi-dt-minp-sm" value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value.replace(/[^0-9.]/g, '') })} /></td>
                       <td className="spi-dt-mc-c">{Number.isFinite(missing) ? missing : 0}</td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value })} /></td>
                       <td className="spi-dt-amt spi-dt-mc-c">{inr(r.ratePo)}</td>
@@ -1066,7 +1066,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                       <td>{r.productId != null
                         ? <input className="spi-dt-minp spi-dt-minp-name" value={r.spiName} placeholder="Product name" onChange={e => setRow(i, { spiName: e.target.value })} />
                         : <EditSelect value={r.spiName} options={prodOpts.filter(o => o.id === r.productId || !rows.some((x, idx) => idx !== i && x.productId === o.id)).map(p => p.name)} placeholder="— Select Product —" onChange={v => pickProduct(i, v)} />}</td>
-                      <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value })} /></td>
+                      <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value.replace(/[^0-9.]/g, '') })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiRate} onChange={e => setRow(i, { spiRate: e.target.value })} /></td>
                       {intra
