@@ -19,6 +19,7 @@ use App\Models\Masters\States;
 use App\Support\Gst;
 use App\Support\MasterBundleCache;
 use App\Support\MasterVisibility;
+use App\Support\PostalCode;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -863,11 +864,13 @@ class CustomerController extends Controller
             // GST state code auto-derived from the state (domestic addresses only).
             'primary_address.state_code'     => 'nullable|string|max:32',
             'primary_address.city'           => 'nullable|string|max:64',
-            // PIN must be exactly 6 digits (Indian postal code format).
-            // One rule for every country: 3–10 letters/digits, no special
-            // characters (India's 6-digit PIN still passes). Previously
-            // 6-digit-only, which blocked international postal codes.
-            'primary_address.pin'            => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{3,10}$/'],
+            /* Country decides the rule — India → exactly 6 digits, elsewhere →
+             * letters/digits/spaces/hyphens up to 12. Same rule the shipment
+             * module uses; see App\Support\PostalCode. */
+            'primary_address.pin'            => [
+                'nullable', 'string',
+                PostalCode::rule(fn () => $request->input('primary_address.country')),
+            ],
             'primary_address.cp_name'        => 'required|string|max:255',
             'primary_address.cp_designation' => 'nullable|string|max:128',
             /* Primary phone must be unique within the SAME BRANCH (not the whole
@@ -920,7 +923,8 @@ class CustomerController extends Controller
             'locations.*.country'        => 'nullable|string|max:64',
             'locations.*.state'          => 'nullable|string|max:64',
             'locations.*.city'           => 'nullable|string|max:64',
-            'locations.*.pin'            => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{3,10}$/'],
+            // Country lives on the same row, so the rule reads it per index.
+            'locations.*.pin'            => ['nullable', 'string', PostalCode::locationRule($request->all())],
             'locations.*.cp_name'        => 'required_with:locations|string|max:255',
             'locations.*.cp_designation' => 'nullable|string|max:128',
             'locations.*.cp_contact'     => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],

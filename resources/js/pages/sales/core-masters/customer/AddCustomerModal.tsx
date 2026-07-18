@@ -274,6 +274,56 @@ function isDomesticCountry(country?: string): boolean {
   return (country ?? '').trim() === DOMESTIC_COUNTRY;
 }
 
+/* PIN / ZIP rules, copied verbatim from the shipment module
+ * (CreateShipmentOrderModal + ShipmentOrderController) so the same address
+ * means the same thing in both places: India → exactly 6 digits; every other
+ * country → letters/digits plus spaces and hyphens (UK "SL7 1TB", Canada
+ * "K1A 0B1"), capped at 12. Replaces the previous single 3–10 alphanumeric
+ * rule, which accepted a 5-digit Indian PIN and rejected spaced foreign codes.
+ *
+ * Label, maxLength and sanitiser all branch on country too — keep the four
+ * helpers together so a future rule change can't update one and miss another. */
+const PIN_DOMESTIC_RE = /^[0-9]{6}$/;
+const ZIP_INTL_RE = /^[A-Za-z0-9\s\-]+$/;
+
+const pinLabel = (country?: string) => (isDomesticCountry(country) ? 'PIN Code' : 'Zip Code');
+const pinMaxLen = (country?: string) => (isDomesticCountry(country) ? 6 : 12);
+const pinPlaceholder = (country?: string) =>
+  isDomesticCountry(country) ? 'Enter 6-digit PIN code' : 'Enter zip code';
+
+/* Both branches strip at the keystroke so a character that can never be valid
+ * simply doesn't appear — the user never types "745223@@@@" and then reads an
+ * error about it. Domestic keeps digits only; international also keeps spaces
+ * and hyphens, which are legitimate in foreign codes ("SL7 1TB", "K1A 0B1").
+ * (The shipment module passes international input through untouched; this is
+ * the one place we deliberately tighten its rule.) */
+const pinSanitize = (v: string, country?: string) =>
+  isDomesticCountry(country)
+    ? v.replace(/\D/g, '').slice(0, 6)
+    : v.replace(/[^A-Za-z0-9\s\-]/g, '').slice(0, 12);
+
+function pinError(v: string, country?: string): string | undefined {
+  const s = (v ?? '').trim();
+  const domestic = isDomesticCountry(country);
+  if (!s) return domestic ? 'PIN Code is required' : 'Zip Code is required';
+  if (domestic) {
+    return PIN_DOMESTIC_RE.test(s) ? undefined : 'PIN Code must be exactly 6 digits';
+  }
+  if (s.length > 12) return 'Zip Code must be 12 characters or fewer';
+  return ZIP_INTL_RE.test(s)
+    ? undefined
+    : 'Zip Code can contain only letters, digits, spaces and hyphens';
+}
+
+/* Payload normaliser: anything that fails the country's rule is sent as null
+ * rather than as a bad string. The backend column is nullable, so a legacy or
+ * partial value lands empty and the user fixes it on the next edit instead of
+ * the save 422-ing on a field they never touched. */
+const cleanPinFor = (v: any, country?: string): string | null => {
+  const s = String(v ?? '').trim();
+  return s && !pinError(s, country) ? s : null;
+};
+
 /* Only 86 of the 249 countries in the master have states; the other 163
  * (Afghanistan, Croatia, Haiti …) have none at all.
  *
@@ -1430,12 +1480,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           return 'City can contain only letters, spaces, dots, hyphens and apostrophes';
         return null;
       case 'pin':
-        if (!f.pin.trim()) return 'PIN / Postal code is required';
-        // One rule for every country: letters + digits only, 3–10 chars, no
-        // special characters. India's 6-digit PIN passes; international codes
-        // (SL71TB, 902101234) are entered without spaces/hyphens.
-        if (!/^[A-Za-z0-9]{3,10}$/.test(f.pin.trim())) return 'PIN / Postal code must be 3–10 letters or digits (no special characters)';
-        return null;
+        // Country decides the rule — see pinError() near the top of the file.
+        return pinError(f.pin, f.country) ?? null;
       case 'cpName':
         if (!f.cpName.trim()) return 'Contact person name is required';
         if (f.cpName.trim().length > 60) return 'Name must be 60 characters or fewer';
@@ -1547,15 +1593,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
   /* Build the POST/PUT payload from the form + locations. Mirrors the
    * shape declared in CustomerController::validatePayload(). */
-  /* Normalize the pin code to the backend rule: 3–10 letters/digits, no
-   * special characters (same for every country). Legacy / partial values that
-   * can't match arrive as null — the `nullable` rule lets them through and the
-   * user fixes it on the next edit. Previously this nulled ANY non-6-digit
-   * value, which silently dropped international postal codes. */
-  const cleanPin = (v: any): string | null => {
-    const s = String(v ?? '').trim();
-    return /^[A-Za-z0-9]{3,10}$/.test(s) ? s : null;
-  };
   const buildPayload = () => ({
     company_name:   form.coName,
     legal_name:     form.coLegal,
@@ -1584,7 +1621,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       state:          form.state,
       state_code:     form.stateCode || null,
       city:           form.city,
-      pin:            cleanPin(form.pin),
+      pin:            cleanPinFor(form.pin, form.country),
       cp_name:        form.cpName,
       cp_designation: form.cpDesig,
       cp_contact:     form.cpTel,
@@ -1597,7 +1634,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       country:        l.country,
       state:          l.state,
       city:           l.city,
-      pin:            cleanPin(l.pin),
+      pin:            cleanPinFor(l.pin, l.country),
       cp_name:        l.cpName,
       cp_designation: l.cpDesignation,
       cp_contact:     l.cpContact,
@@ -2905,6 +2942,10 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 // behind, or Save would block on an invisible field.
                 if (!isDomesticCountry(v)) clearErr('coGstNumber');
                 validateField('country', nextForm); validateField('state', nextForm);
+                /* PIN and ZIP are different rules, so the code already typed has
+                   to be re-judged against the NEW country — otherwise a valid
+                   "SL7 1TB" stays green after switching to India. */
+                validateField('pin', nextForm);
               }} />
             </Field>
             {/* `required` tracks the data, not the field: a country the master
@@ -2956,7 +2997,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
           </div>
           <div className="acm-row acm-row-3">
             <Field label="City" required error={errors.city} fieldKey="city"><input className={errors.city ? 'acm-input-error' : ''} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City name" /></Field>
-            <Field label="Pin / Zip / Postal Code" required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 10))} maxLength={10} placeholder="3–10 letters or digits" /></Field>
+            <Field label={pinLabel(form.country)} required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', pinSanitize(e.target.value, form.country))} inputMode={isDomesticCountry(form.country) ? 'numeric' : 'text'} maxLength={pinMaxLen(form.country)} placeholder={pinPlaceholder(form.country)} /></Field>
             {/* Third slot: GST Number for a domestic customer, otherwise Contact
                 Person Name shifted up from the row below. Either way the row is
                 full — GST simply isn't a field an international customer has.
@@ -4569,10 +4610,8 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
           return 'City can contain only letters, spaces, dots, hyphens and apostrophes';
         return null;
       case 'pin':
-        if (!dd.pin.trim()) return 'PIN is required';
-        // Same single rule as the primary address — see the note there.
-        if (!/^[A-Za-z0-9]{3,10}$/.test(dd.pin.trim())) return 'PIN / Postal code must be 3–10 letters or digits (no special characters)';
-        return null;
+        // Same country-driven rule as the primary address — see pinError().
+        return pinError(dd.pin, dd.country) ?? null;
       case 'cpName':
         if (!dd.cpName.trim()) return 'Contact name required';
         return null;
@@ -4712,7 +4751,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
               />
             </Field>
             <Field label="City" required error={errs.city}><input className={errs.city ? 'acm-input-error' : ''} value={d.city} onChange={e => set('city', e.target.value)} placeholder="Enter City" /></Field>
-            <Field label="Pin / Zip / Postal Code" required error={errs.pin}><input className={errs.pin ? 'acm-input-error' : ''} value={d.pin} onChange={e => set('pin', e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 10))} maxLength={10} placeholder="3–10 letters or digits" /></Field>
+            <Field label={pinLabel(d.country)} required error={errs.pin}><input className={errs.pin ? 'acm-input-error' : ''} value={d.pin} onChange={e => set('pin', pinSanitize(e.target.value, d.country))} inputMode={isDomesticCountry(d.country) ? 'numeric' : 'text'} maxLength={pinMaxLen(d.country)} placeholder={pinPlaceholder(d.country)} /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Contact Person Name" required error={errs.cpName}><input className={errs.cpName ? 'acm-input-error' : ''} value={d.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
@@ -4790,7 +4829,7 @@ function HistoryStage1({ form, locations, customerId, segments = [] }: { form: a
         <ReadInline label="State"                     value={form.state} />
 
         <ReadInline label="City"                      value={form.city} />
-        <ReadInline label="PIN / Zip / Postal Code"         value={form.pin} />
+        <ReadInline label={pinLabel(form.country)}         value={form.pin} />
         <ReadInline label="Contact Person Name"       value={form.cpName} />
         <ReadInline label="Designation"               value={form.cpDesig} />
 

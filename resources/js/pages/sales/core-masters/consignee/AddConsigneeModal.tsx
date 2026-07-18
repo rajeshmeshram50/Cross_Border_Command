@@ -174,6 +174,55 @@ type EvSubTab  = 'dd' | 'kyc' | 'tl';
 /* Master value — must match the seeded address_types row exactly so
  * the dropdown selects it instead of inserting a synthetic fallback. */
 const DEFAULT_ADDRESS_TYPE = 'Registered Office';
+
+/* PIN / ZIP rules, copied verbatim from the shipment module
+ * (CreateShipmentOrderModal + ShipmentOrderController) and kept identical to
+ * AddCustomerModal's copy: India → exactly 6 digits; every other country →
+ * letters/digits plus spaces and hyphens (UK "SL7 1TB"), capped at 12.
+ * Replaces the previous single 3–10 alphanumeric rule, which accepted a
+ * 5-digit Indian PIN and rejected spaced foreign codes.
+ *
+ * Label, maxLength and sanitiser branch on country too — keep the helpers
+ * together so a rule change can't update one and miss another. */
+const isDomesticCountry = (country?: string) => (country ?? '').trim() === 'India';
+const PIN_DOMESTIC_RE = /^[0-9]{6}$/;
+const ZIP_INTL_RE = /^[A-Za-z0-9\s\-]+$/;
+
+const pinLabel = (country?: string) => (isDomesticCountry(country) ? 'PIN Code' : 'Zip Code');
+const pinMaxLen = (country?: string) => (isDomesticCountry(country) ? 6 : 12);
+const pinPlaceholder = (country?: string) =>
+  isDomesticCountry(country) ? 'Enter 6-digit PIN code' : 'Enter zip code';
+
+/* Both branches strip at the keystroke so a character that can never be valid
+ * simply doesn't appear — the user never types "745223@@@@" and then reads an
+ * error about it. Domestic keeps digits only; international also keeps spaces
+ * and hyphens, legitimate in foreign codes ("SL7 1TB", "K1A 0B1"). */
+const pinSanitize = (v: string, country?: string) =>
+  isDomesticCountry(country)
+    ? v.replace(/\D/g, '').slice(0, 6)
+    : v.replace(/[^A-Za-z0-9\s\-]/g, '').slice(0, 12);
+
+function pinError(v: string, country?: string): string | undefined {
+  const s = (v ?? '').trim();
+  const domestic = isDomesticCountry(country);
+  if (!s) return domestic ? 'PIN Code is required' : 'Zip Code is required';
+  if (domestic) {
+    return PIN_DOMESTIC_RE.test(s) ? undefined : 'PIN Code must be exactly 6 digits';
+  }
+  if (s.length > 12) return 'Zip Code must be 12 characters or fewer';
+  return ZIP_INTL_RE.test(s)
+    ? undefined
+    : 'Zip Code can contain only letters, digits, spaces and hyphens';
+}
+
+/* Payload normaliser: anything failing the country's rule is sent as null
+ * rather than as a bad string, so a legacy value lands empty and the user
+ * fixes it on the next edit instead of the save 422-ing on an untouched field. */
+const cleanPinFor = (v: any, country?: string): string | null => {
+  const s = String(v ?? '').trim();
+  return s && !pinError(s, country) ? s : null;
+};
+
 const newLocId = () => `loc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 const newKycId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -1601,11 +1650,8 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           return 'City can contain only letters, spaces, dots, hyphens and apostrophes';
         return null;
       case 'pin':
-        if (!f.pin.trim()) return 'PIN is required';
-        // One rule for every country: letters + digits only, 3–10 chars, no
-        // special characters (India's 6-digit PIN still passes).
-        if (!/^[A-Za-z0-9]{3,10}$/.test(f.pin.trim())) return 'PIN / Postal code must be 3–10 letters or digits (no special characters)';
-        return null;
+        // Country decides the rule — see pinError() near the top of the file.
+        return pinError(f.pin, f.country) ?? null;
       case 'contactName':
         if (!f.contactName.trim()) return 'Contact name is required';
         if (f.contactName.trim().length > 60) return 'Name must be 60 characters or fewer';
@@ -1966,15 +2012,6 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * shape declared in ConsigneeController::validatePayload(). The
    * additional `locations` table is included; Stage 2 KYC docs + Owner
    * KYC rows stay in-memory until the KYC backend lands. */
-  /* Normalize the pin code to the backend rule: 3–10 letters/digits, no
-   * special characters (same for every country). Values that can't match
-   * arrive as null — the `nullable` rule lets them through and the user
-   * corrects the row on the next edit. Previously this nulled ANY non-6-digit
-   * value, which silently dropped international postal codes. */
-  const cleanPin = (v: any): string | null => {
-    const s = String(v ?? '').trim();
-    return /^[A-Za-z0-9]{3,10}$/.test(s) ? s : null;
-  };
   const buildPayload = () => {
     const primaryId = customer?.db_id ?? (Number(customer?.id?.replace(/[^0-9]/g, '')) || null);
     // Full many-to-many mapping = primary + any additionally-checked customers.
@@ -2005,7 +2042,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       country:        form1.country,
       state:          form1.state,
       city:           form1.city,
-      pin:            cleanPin(form1.pin),
+      pin:            cleanPinFor(form1.pin, form1.country),
       cp_name:        form1.contactName,
       cp_designation: form1.designation,
       cp_contact:     form1.contactNo,
@@ -2018,7 +2055,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       country:        l.country,
       state:          l.state,
       city:           l.city,
-      pin:            cleanPin(l.pin),
+      pin:            cleanPinFor(l.pin, l.country),
       cp_name:        l.cpName,
       cp_designation: l.cpDesignation,
       cp_contact:     l.cpContact,
@@ -3421,7 +3458,10 @@ const Stage1 = ({
                   placeholder="Select Country"
                   invalid={!!errors.country}
                   disabled={lock}
-                  onChange={v => { const nf = { ...form, country: v, state: '' }; setForm(nf); validateField('country', nf); validateField('state', nf); }}
+                  /* PIN and ZIP are different rules, so the code already typed
+                     has to be re-judged against the NEW country — otherwise a
+                     valid "SL7 1TB" stays green after switching to India. */
+                  onChange={v => { const nf = { ...form, country: v, state: '' }; setForm(nf); validateField('country', nf); validateField('state', nf); validateField('pin', nf); }}
                 />
               </Field>
               <Field label="State" required error={errors.state} fieldKey="state">
@@ -3437,13 +3477,14 @@ const Stage1 = ({
               <Field label="City" required error={errors.city} fieldKey="city">
                 <input className={`acm-input ${errors.city ? 'acm-input-error' : ''}`} placeholder="Enter city" value={form.city} onChange={e => set('city', e.target.value)} disabled={lock} />
               </Field>
-              <Field label="Pin / Zip / Postal Code" required error={errors.pin} fieldKey="pin">
+              <Field label={pinLabel(form.country)} required error={errors.pin} fieldKey="pin">
                 <input
                   className={`acm-input ${errors.pin ? 'acm-input-error' : ''}`}
-                  placeholder="3–10 letters or digits"
-                  maxLength={10}
+                  placeholder={pinPlaceholder(form.country)}
+                  inputMode={isDomesticCountry(form.country) ? 'numeric' : 'text'}
+                  maxLength={pinMaxLen(form.country)}
                   value={form.pin}
-                  onChange={e => set('pin', e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 10))}
+                  onChange={e => set('pin', pinSanitize(e.target.value, form.country))}
                   disabled={lock}
                 />
               </Field>
@@ -5671,10 +5712,8 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
           return 'City can contain only letters, spaces, dots, hyphens and apostrophes';
         return null;
       case 'pin':
-        if (!dd.pin.trim()) return 'PIN is required';
-        // Same single rule as the primary address — see the note there.
-        if (!/^[A-Za-z0-9]{3,10}$/.test(dd.pin.trim())) return 'PIN / Postal code must be 3–10 letters or digits (no special characters)';
-        return null;
+        // Same country-driven rule as the primary address — see pinError().
+        return pinError(dd.pin, dd.country) ?? null;
       case 'cpName':
         if (!dd.cpName.trim()) return 'Contact name required';
         if (dd.cpName.trim().length > 60) return 'Name must be 60 characters or fewer';
@@ -5879,13 +5918,14 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
               {errs.city && <span className="acm-err-text">{errs.city}</span>}
             </div>
             <div className="acm-field">
-              <label className="acm-field-label">PIN / ZIP / POSTAL CODE <span className="acm-req">*</span></label>
+              <label className="acm-field-label">{pinLabel(d.country).toUpperCase()} <span className="acm-req">*</span></label>
               <input
                 className={`acm-input ${errs.pin ? 'acm-input-error' : ''}`}
-                placeholder="3–10 letters or digits"
-                maxLength={10}
+                placeholder={pinPlaceholder(d.country)}
+                inputMode={isDomesticCountry(d.country) ? 'numeric' : 'text'}
+                maxLength={pinMaxLen(d.country)}
                 value={d.pin}
-                onChange={e => set('pin', e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 10))}
+                onChange={e => set('pin', pinSanitize(e.target.value, d.country))}
               />
               {errs.pin && <span className="acm-err-text">{errs.pin}</span>}
             </div>
