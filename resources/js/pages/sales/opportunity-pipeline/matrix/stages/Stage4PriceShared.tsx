@@ -65,6 +65,22 @@ const isIncompleteStatus = (s: string | null): boolean => {
   return lc === 'draft' || lc === 'inactive' || lc === 'pending';
 };
 
+/* Currency code → symbol (matches Stage 3 / the Product Directory & Price
+ * modals). Falls back to the raw code so an unmapped currency still reads
+ * sensibly. Used for the Target/Quoted price columns (symbol) while the new
+ * Currency column carries the plain code. */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', INR: '₹', EUR: '€', GBP: '£', JPY: '¥', CNY: '¥', AUD: 'A$', SGD: 'S$', CAD: 'C$', AED: 'AED ',
+};
+const currencySymbol = (code: string | null | undefined): string => {
+  if (!code) return '';
+  const c = String(code).split(/\s*[-–—]\s*/)[0].trim().toUpperCase();
+  return CURRENCY_SYMBOLS[c] ?? `${c} `;
+};
+/* Just the normalized code (e.g. "USD") for the Currency column chip. */
+const currencyCode = (code: string | null | undefined): string =>
+  code ? String(code).split(/\s*[-–—]\s*/)[0].trim().toUpperCase() : '—';
+
 function formatDateTime(s: string | null | undefined): { date: string; time: string } {
   if (!s) return { date: '—', time: '—' };
   const d = new Date(s);
@@ -308,6 +324,12 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
   const sharedCount = sharedRows.length;
   const toShareCount = products.length;
 
+  /* While a quoted-price Submit is in flight, freeze the WHOLE tab — every
+   * amount input and every button — so the price can't be edited mid-request
+   * and the user clearly sees the action is in progress. Only one submit runs
+   * at a time (submittingId is a single id), so this one flag covers it. */
+  const isSubmittingAny = submittingId !== null;
+
   /* ──────────────────────────── render ──────────────────────────── */
   return (
     <>
@@ -369,6 +391,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                     <th style={{ width: 150 }}>Date &amp; Time</th>
                     <th style={{ width: 80 }}>Quantity</th>
                     <th style={{ width: 130 }}>Target Price</th>
+                    <th style={{ width: 90 }}>Currency</th>
                     <th style={{ width: 130 }}>Quoted Price</th>
                     <th style={{ width: 100 }}>PDF</th>
                   </tr>
@@ -382,12 +405,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                       <td><span className="smd-skel" style={{ maxWidth: 110 }} /></td>
                       <td><span className="smd-skel smd-skel-num" /></td>
                       <td><span className="smd-skel smd-skel-num" /></td>
+                      <td><span className="smd-skel smd-skel-chip" /></td>
                       <td><span className="smd-skel smd-skel-num" /></td>
                       <td><span className="smd-skel smd-skel-btn" /></td>
                     </tr>
                   ))}
                   {!historyLoading && historyRows.length === 0 && (
-                    <tr><td colSpan={8} className="s4-empty">No price history for this product yet.</td></tr>
+                    <tr><td colSpan={9} className="s4-empty">No price history for this product yet.</td></tr>
                   )}
                   {!historyLoading && historyRows.map((h, idx) => {
                     const { date, time } = formatDateTime(h.shared_at);
@@ -403,12 +427,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                         <td>{historyHeader?.quantity != null ? Number(historyHeader.quantity).toLocaleString() : '—'}</td>
                         <td className="s4-price">
                           {historyHeader?.target_price != null
-                            ? `${historyHeader.currency} ${Number(historyHeader.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            ? `${currencySymbol(historyHeader.currency)}${Number(historyHeader.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                             : '—'}
                         </td>
+                        <td><span className="s4-curr-chip">{currencyCode(historyHeader?.currency)}</span></td>
                         <td className="s4-quoted">
                           {h.quoted_price != null
-                            ? `${historyHeader?.currency ?? ''} ${Number(h.quoted_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            ? `${currencySymbol(historyHeader?.currency)}${Number(h.quoted_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                             : '—'}
                         </td>
                         <td>
@@ -448,6 +473,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                   type="button"
                   className={`s4-tab s4-tab-toshare ${tab === 'to_share' ? 'active' : ''}`}
                   onClick={() => setTab('to_share')}
+                  disabled={isSubmittingAny}
                 >
                   <span className="s4-tab-ico">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
@@ -462,6 +488,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                   type="button"
                   className={`s4-tab s4-tab-toshare ${tab === 'shared' ? 'active' : ''}`}
                   onClick={() => setTab('shared')}
+                  disabled={isSubmittingAny}
                 >
                   <span className="s4-tab-ico">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
@@ -489,6 +516,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                         <th style={{ width: 100 }}>Status</th>
                         <th style={{ width: 80 }}>Quantity</th>
                         <th style={{ width: 140 }}>Target Price</th>
+                        <th style={{ width: 90 }}>Currency</th>
                         <th style={{ width: 170 }}>Quoted Price</th>
                         {/* Wide enough for the Submit button (min-width 108) + the
                             eye/history icon button + its corner badge + cell
@@ -505,12 +533,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                           <td><span className="smd-skel smd-skel-pill" /></td>
                           <td><span className="smd-skel smd-skel-num" /></td>
                           <td><span className="smd-skel smd-skel-num" /></td>
+                          <td><span className="smd-skel smd-skel-chip" /></td>
                           <td><span className="smd-skel smd-skel-input" /></td>
                           <td><span className="smd-skel smd-skel-btn" /></td>
                         </tr>
                       ))}
                       {!loading && products.length === 0 && (
-                        <tr><td colSpan={8} className="s4-empty">No products mapped to this lead yet.</td></tr>
+                        <tr><td colSpan={9} className="s4-empty">No products mapped to this lead yet.</td></tr>
                       )}
                       {!loading && products.map((r, idx) => {
                         const blocked = isIncompleteStatus(r.product_status);
@@ -532,25 +561,23 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
                             <td className="s4-price">
                               {r.target_price != null
-                                ? `${r.currency} ${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                ? `${currencySymbol(r.currency)}${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                 : '—'}
                             </td>
+                            {/* Dedicated Currency column (QA #110) — carries the
+                                plain code so the price columns can show just the
+                                symbol. */}
+                            <td><span className="s4-curr-chip">{currencyCode(r.currency)}</span></td>
                             <td>
-                              {/* Currency lives in a separate chip beside the
-                               *  input — the previous absolute-positioned
-                               *  prefix overlapped the typed value (e.g.
-                               *  "USD 0" with no clear separation). Now the
-                               *  user sees "[USD] [12345.00]" with the chip
-                               *  visually decoupled from the editable field. */}
+                              {/* Currency now has its own column to the left, so
+                                  the input stands alone — no inline chip to avoid
+                                  showing the currency twice in adjacent cells. */}
                               <div className="s4-quote-group">
-                                <span className={`s4-quote-curr ${blocked ? 's4-quote-curr-disabled' : ''}`}>
-                                  {r.currency || 'USD'}
-                                </span>
                                 <input
                                   type="number" min="0" step="any"
-                                  className={`s4-quote-num ${(blocked || locked) ? 's4-quote-disabled' : ''}`}
+                                  className={`s4-quote-num ${(blocked || locked || isSubmittingAny) ? 's4-quote-disabled' : ''}`}
                                   value={quotedDraft[r.id] ?? ''}
-                                  disabled={blocked || locked}
+                                  disabled={blocked || locked || isSubmittingAny}
                                   onChange={(e) => setQuotedDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
                                   onClick={() => {
                                     if (locked) { toast.warning('PI is signed', 'This opportunity is read-only — you can view but not share prices.'); return; }
@@ -565,7 +592,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                                 <button
                                   type="button"
                                   className={`s4-submit-btn ${(blocked || locked) ? 's4-submit-disabled' : ''}`}
-                                  disabled={isSubmitting || locked}
+                                  disabled={isSubmittingAny || locked}
                                   title={locked ? 'PI is signed — read-only' : undefined}
                                   onClick={() => { if (locked) { toast.warning('PI is signed', 'This opportunity is read-only — prices cannot be shared.'); return; } void onSubmitQuoted(r); }}
                                 >
@@ -579,7 +606,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                                   /* Count shows as the corner badge; tooltip is the plain action. */
                                   title={blocked ? 'Complete product status first' : 'View price history'}
                                   onClick={() => void openHistory(r)}
-                                  disabled={blocked}
+                                  disabled={blocked || isSubmittingAny}
                                 >
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
@@ -613,6 +640,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                         <th style={{ width: 150 }}>Date &amp; Time</th>
                         <th style={{ width: 80 }}>Quantity</th>
                         <th style={{ width: 140 }}>Target Price</th>
+                        <th style={{ width: 90 }}>Currency</th>
                         <th style={{ width: 140 }}>Quoted Price</th>
                         <th style={{ width: 104 }}>Action</th>
                       </tr>
@@ -626,12 +654,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                           <td><span className="smd-skel" style={{ maxWidth: 110 }} /></td>
                           <td><span className="smd-skel smd-skel-num" /></td>
                           <td><span className="smd-skel smd-skel-num" /></td>
+                          <td><span className="smd-skel smd-skel-chip" /></td>
                           <td><span className="smd-skel smd-skel-num" /></td>
                           <td><span className="smd-skel smd-skel-btn" /></td>
                         </tr>
                       ))}
                       {!loading && filteredShared.length === 0 && (
-                        <tr><td colSpan={8} className="s4-empty">
+                        <tr><td colSpan={9} className="s4-empty">
                           {sharedRows.length === 0 ? 'No prices shared yet.' : 'No rows match this search.'}
                         </td></tr>
                       )}
@@ -652,12 +681,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
                             <td className="s4-price">
                               {r.target_price != null
-                                ? `${r.currency} ${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                ? `${currencySymbol(r.currency)}${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                 : '—'}
                             </td>
+                            <td><span className="s4-curr-chip">{currencyCode(r.currency)}</span></td>
                             <td className="s4-quoted">
                               {r.quoted_price != null
-                                ? `${r.currency} ${Number(r.quoted_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                ? `${currencySymbol(r.currency)}${Number(r.quoted_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                 : '—'}
                             </td>
                             <td>
@@ -698,11 +728,11 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
           ⚠ <strong>Note :</strong> Map a customer and share at least one quoted price before advancing to Stage 5. The consignee can be set in the Create Quotation form.
         </div>
         <div className="smd-stg-btn-row">
-          <button className="smd-stg-btn" onClick={onPrev} type="button">← Previous</button>
+          <button className="smd-stg-btn" onClick={onPrev} type="button" disabled={advancing || isSubmittingAny}>← Previous</button>
           <button
             className="smd-stg-btn smd-stg-btn-primary"
             onClick={() => void onSaveAndNext()}
-            disabled={advancing}
+            disabled={advancing || isSubmittingAny}
             type="button"
           >
             {advancing ? 'Advancing…' : 'Save & Next →'}
@@ -752,6 +782,9 @@ const STAGE4_CSS = `
   transition: all .2s cubic-bezier(.34, 1.2, .64, 1);
 }
 .s4-tab:hover:not(.active) { background: rgba(124,58,237,.08); }
+/* Frozen while a price submit is in flight — blocks the click, keeps the look. */
+.s4-tab:disabled { cursor: not-allowed; }
+.s4-tab:disabled:hover:not(.active) { background: transparent; }
 .s4-tab.active {
   background: linear-gradient(135deg, #7c3aed, #4c1d95);
   color: #fff;
@@ -893,6 +926,16 @@ const STAGE4_CSS = `
 }
 .s4-code-navy    { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
 .s4-code-emerald { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+
+/* Currency column chip — carries the plain code (USD/GBP/…) beside the price
+   columns, which now show only the symbol. */
+.s4-curr-chip {
+  display: inline-block;
+  font-family: 'Inter', monospace; font-size: 11px; font-weight: 800;
+  padding: 3px 9px; border-radius: 7px;
+  background: #f5f3ff; color: #5b21b6; border: 1.5px solid #ddd6fe;
+  letter-spacing: .03em;
+}
 
 /* Clamp long product names to 2 lines — an unclamped 100+ char name stacked
    to 5 lines and stretched every row of the Price Shared table. Full name
@@ -1091,6 +1134,7 @@ const STAGE4_CSS = `
 [data-bs-theme="dark"] .s4-empty { color: rgba(196,181,253,.55); }
 [data-bs-theme="dark"] .s4-sr-navy    { background: rgba(167,139,250,.22); color: #ddd6fe; }
 [data-bs-theme="dark"] .s4-sr-emerald { background: rgba(110,231,183,.22); color: #6ee7b7; }
+[data-bs-theme="dark"] .s4-curr-chip { background: rgba(167,139,250,.18); color: #ddd6fe; border-color: rgba(167,139,250,.40); }
 [data-bs-theme="dark"] .s4-code-navy    { background: rgba(167,139,250,.18); color: #ddd6fe; border-color: rgba(167,139,250,.40); }
 [data-bs-theme="dark"] .s4-code-emerald { background: rgba(110,231,183,.18); color: #6ee7b7; border-color: rgba(110,231,183,.40); }
 [data-bs-theme="dark"] .s4-prod-name { color: #ede9fe; }
