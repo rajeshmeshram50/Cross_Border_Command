@@ -1954,15 +1954,36 @@ class SalesPdfController extends Controller
         $grandTotal    = (float) $q->grand_total;
         $packagingCost = 0.0;
 
-        // Tax split — the line-level tax_pct already rolls into `amount`,
-        // so the breakup at the foot of the PDF reflects total tax collected
-        // and is split CGST/SGST for Domestic, IGST for International, mirroring
-        // the IDIMS template's expectations. Pure presentation — no recompute.
+        // Tax split — the line-level tax_pct already rolls into `amount`, so the
+        // breakup at the foot of the PDF reflects total tax collected. Pure
+        // presentation — no recompute; the total tax is identical either way.
+        //
+        // Place of supply (was previously pinned to doc_type alone, so EVERY
+        // Domestic doc showed CGST+SGST regardless of the customer's state):
+        //   • International (export) → single IGST.
+        //   • Domestic INTER-state  → single IGST  (party's GST state ≠ ours).
+        //   • Domestic INTRA-state / unknown state → CGST + SGST.
+        // Mirrors the PO PDF's isInterState rule and Gst place-of-supply.
         $totalTax = round(collect($quotationProducts)->sum('tax_amt'), 2);
         $isInternational = ($q->doc_type ?? 'International') === 'International';
-        $igst = $isInternational ? $totalTax : 0;
-        $cgst = $isInternational ? 0        : round($totalTax / 2, 2);
-        $sgst = $isInternational ? 0        : round($totalTax - $cgst, 2);
+        // Normalise a state-code value to its bare numeric GST code, matching the
+        // SPA's stateCodeOf + normStateCode (SalesQPI.tsx): new docs store a bare
+        // "27"; older rows stored the dropdown label "27 – Maharashtra"; and
+        // leading zeros don't count ("07" === "7"). A non-numeric / bare-name
+        // value is "unresolved" → "".
+        $normState = static function ($label): string {
+            $s = trim((string) $label);
+            return preg_match('/^(\d{1,2})(?!\d)/', $s, $m) ? (string) (int) $m[1] : '';
+        };
+        $homeStateCode  = $normState($companyDetails->gst_state_code ?? '') ?: '27';
+        $partyStateCode = $normState($q->state_code ?? '');
+        // Export → IGST. Domestic: an UNRESOLVED party state → intra (CGST+SGST,
+        // matches the SPA's "half-filled form counts as intra"); a resolved party
+        // state that differs from our home state → inter-state (single IGST).
+        $useIgst = $isInternational || ($partyStateCode !== '' && $partyStateCode !== $homeStateCode);
+        $igst = $useIgst ? $totalTax : 0;
+        $cgst = $useIgst ? 0 : round($totalTax / 2, 2);
+        $sgst = $useIgst ? 0 : round($totalTax - $cgst, 2);
 
         $port = null;
         if ($q->port_of_loading) {
