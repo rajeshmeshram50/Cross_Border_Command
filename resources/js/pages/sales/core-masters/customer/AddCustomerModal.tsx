@@ -295,7 +295,7 @@ function countryHasStates(masters: MasterLists, country?: string): boolean {
  * it pinpoints the first segment that's wrong in plain language so the
  * user understands the structure (2 digits → 5 letters → 4 digits → …).
  * Returns undefined when valid. Input is already uppercase-alphanumeric. */
-function gstNumberError(v: string): string | undefined {
+function gstNumberError(v: string, stateCode?: string): string | undefined {
   if (!v.trim()) return 'GST Number is required';
   if (v.length !== 15) return `GST Number must be 15 characters (you've entered ${v.length}). Format: 2 digits, 5 letters, 4 digits, 1 letter, 1 digit/letter, Z, 1 digit/letter — e.g. 27AADCI6120M1ZH`;
   if (!/^[0-9]{2}/.test(v)) return 'First 2 characters must be digits (state code) — e.g. 27';
@@ -305,6 +305,12 @@ function gstNumberError(v: string): string | undefined {
   if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]/.test(v)) return 'Character 13 (entity code) must be a digit or letter';
   if (v[13] !== 'Z') return 'Character 14 must be the letter Z';
   if (!GSTIN_RE.test(v)) return 'Character 15 (checksum) must be a digit or letter';
+  /* The GSTIN's first 2 digits ARE the state code, so they must match the
+   * selected State. Only checked once a state is picked (state code known). */
+  const sc = (stateCode ?? '').trim();
+  if (sc && v.slice(0, 2) !== sc) {
+    return `GST state code (${v.slice(0, 2)}) does not match the selected state's code (${sc}). Pick the matching state or correct the GST Number.`;
+  }
   return undefined;
 }
 
@@ -1389,7 +1395,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         // holding an error would block Save with nothing on screen to fix.
         if (!isDomesticCountry(f.country)) return null;
         // Domestic → GST always applies, so the number is always required.
-        return gstNumberError((f.coGstNumber ?? '').trim()) ?? null;
+        // State code is passed so the GSTIN prefix must match the chosen state.
+        return gstNumberError((f.coGstNumber ?? '').trim(), f.stateCode) ?? null;
       case 'coWeb':
         if (!f.coWeb || !f.coWeb.trim()) return null;
         if (f.coWeb.trim().length > 200) return 'Website must be 200 characters or fewer';
@@ -1424,7 +1431,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         return null;
       case 'pin':
         if (!f.pin.trim()) return 'PIN / Postal code is required';
-        if (!/^\d{6}$/.test(f.pin.trim())) return 'PIN must be exactly 6 digits';
+        // One rule for every country: letters + digits only, 3–10 chars, no
+        // special characters. India's 6-digit PIN passes; international codes
+        // (SL71TB, 902101234) are entered without spaces/hyphens.
+        if (!/^[A-Za-z0-9]{3,10}$/.test(f.pin.trim())) return 'PIN / Postal code must be 3–10 letters or digits (no special characters)';
         return null;
       case 'cpName':
         if (!f.cpName.trim()) return 'Contact person name is required';
@@ -1537,13 +1547,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
   /* Build the POST/PUT payload from the form + locations. Mirrors the
    * shape declared in CustomerController::validatePayload(). */
-  /* Normalize the pin code so the backend's strict `regex:/^\d{6}$/`
-   * rule doesn't trip on legacy / partial values. Anything that isn't
-   * exactly 6 digits arrives as null — the `nullable` rule then lets
-   * it through, and the user fixes it on the next edit. */
+  /* Normalize the pin code to the backend rule: 3–10 letters/digits, no
+   * special characters (same for every country). Legacy / partial values that
+   * can't match arrive as null — the `nullable` rule lets them through and the
+   * user fixes it on the next edit. Previously this nulled ANY non-6-digit
+   * value, which silently dropped international postal codes. */
   const cleanPin = (v: any): string | null => {
     const s = String(v ?? '').trim();
-    return /^\d{6}$/.test(s) ? s : null;
+    return /^[A-Za-z0-9]{3,10}$/.test(s) ? s : null;
   };
   const buildPayload = () => ({
     company_name:   form.coName,
@@ -2144,6 +2155,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             disallowedTypes={usedAddressTypes}
             existingEmails={existingEmails}
             existingPhones={existingPhones}
+            primaryCountry={form.country}
             onClose={() => setLocModal({ open:false, editing:null })}
             onSave={(rec) => {
               if (editingId) setLocations(prev => prev.map(l => l.id === editingId ? { ...rec, id: l.id } : l));
@@ -2736,7 +2748,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
       // validateField publishes the inline red error for a malformed number
       // (and clears it once valid) via the shared errors map.
       validateField('coGstNumber', { ...form, coGstNumber: gstRaw });
-      if (gstNumberError(gstRaw)) { setGstStatus('invalid'); return; }
+      if (gstNumberError(gstRaw, form.stateCode)) { setGstStatus('invalid'); return; }
       // Well-formed — now ask the server whether this branch already has it.
       api.get('/customers/gst-available', {
         params: { gst_number: gstRaw, ignore_id: currentCustomerId ?? undefined },
@@ -2918,7 +2930,12 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                      id-based). Blank when the master has no code for the state:
                      only 10 of India's 36 are defined today, and non-India states
                      have none at all. */
-                  set('stateCode', masters.stateCodes.find(sc => sc.stateName === v)?.code ?? '');
+                  const newCode = masters.stateCodes.find(sc => sc.stateName === v)?.code ?? '';
+                  set('stateCode', newCode);
+                  /* The GSTIN prefix must match this state, so re-check the GST
+                     field against the NEW code (else a stale error/valid state
+                     lingers after switching state). */
+                  validateField('coGstNumber', { ...form, state: v, stateCode: newCode });
                 }}
               />
             </Field>
@@ -2939,7 +2956,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
           </div>
           <div className="acm-row acm-row-3">
             <Field label="City" required error={errors.city} fieldKey="city"><input className={errors.city ? 'acm-input-error' : ''} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City name" /></Field>
-            <Field label="Pin / Postal Code" required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" maxLength={6} placeholder="6-digit PIN" /></Field>
+            <Field label="Pin / Zip / Postal Code" required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 10))} maxLength={10} placeholder="3–10 letters or digits" /></Field>
             {/* Third slot: GST Number for a domestic customer, otherwise Contact
                 Person Name shifted up from the row below. Either way the row is
                 full — GST simply isn't a field an international customer has.
@@ -4489,14 +4506,20 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
  * registered office — a customer can only have one). The currently
  * editing row's own type is still shown so existing data isn't hidden
  * from the user mid-edit. */
-function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = [], existingPhones = [], onClose, onSave }:
+function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = [], existingPhones = [], primaryCountry, onClose, onSave }:
   { editing: LocationRow | null; masters: MasterLists; disallowedTypes?: string[];
     /** Emails already used by other addresses (primary + other locations)
      *  on this customer — used to block duplicates within the same form
      *  before the user can save and run into a backend conflict. */
     existingEmails?: string[];
     existingPhones?: string[];
+    /** The customer's PRIMARY address country. A domestic (India) customer's
+     *  extra addresses are India-only (country locked); an international
+     *  customer's extras are international-only (India removed from the list). */
+    primaryCountry?: string;
     onClose: () => void; onSave: (rec: Omit<LocationRow, 'id'>) => void }) {
+  const primaryDomestic = isDomesticCountry(primaryCountry);
+  const primarySet = !!(primaryCountry ?? '').trim();
   const toast = useToast();
   // For new locations, skip the default "Registered Office" prefill if
   // that type is disallowed — otherwise the user lands on a value
@@ -4505,7 +4528,8 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
     ? editing.type
     : (disallowedTypes?.includes(DEFAULT_ADDRESS_TYPE) ? '' : DEFAULT_ADDRESS_TYPE);
   const [d, setD] = useState<Omit<LocationRow, 'id'>>(() => editing ? { ...editing } : {
-    type: initialType, line: '', country: '', state: '', city: '', pin: '',
+    // Domestic customer → extra addresses are India too, so pre-fill + lock it.
+    type: initialType, line: '', country: primaryDomestic ? 'India' : '', state: '', city: '', pin: '',
     cpName: '', cpDesignation: '', cpContact: '', cpEmail: '', cpWhatsapp: 'yes' as 'yes' | 'no' | '',
   });
   // Strip disallowed types, but keep whatever the row currently has
@@ -4546,7 +4570,8 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'pin':
         if (!dd.pin.trim()) return 'PIN is required';
-        if (!/^\d{6}$/.test(dd.pin.trim())) return 'PIN must be exactly 6 digits';
+        // Same single rule as the primary address — see the note there.
+        if (!/^[A-Za-z0-9]{3,10}$/.test(dd.pin.trim())) return 'PIN / Postal code must be 3–10 letters or digits (no special characters)';
         return null;
       case 'cpName':
         if (!dd.cpName.trim()) return 'Contact name required';
@@ -4646,16 +4671,30 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
               {/* Single setD for country+state — the old `set('country'); set('state','')`
                   pair each rebuilt from a stale `d`, so the 2nd call reverted the
                   country and the State stayed locked (QA: country/state not working). */}
-              <MasterSelect value={d.country} options={optsWith(masters.countries, d.country)} placeholder="Select country" invalid={!!errs.country} onChange={v => {
-                const nd = { ...d, country: v, state: '' } as typeof d;
-                setD(nd);
-                setErrs(prev => {
-                  const next = { ...prev };
-                  const c = locFieldRule('country', nd); if (c) next.country = c; else delete next.country;
-                  const s = locFieldRule('state', nd);   if (s) next.state = s; else delete next.state;
-                  return next;
-                });
-              }} />
+              <MasterSelect
+                value={d.country}
+                /* Domestic customer → India only (locked). International customer
+                   → every country EXCEPT India. No primary yet → all countries. */
+                options={
+                  primaryDomestic
+                    ? masters.countries.filter(c => c.name === 'India').map(c => ({ value: c.name, label: c.name }))
+                    : primarySet
+                      ? optsWith(masters.countries.filter(c => c.name !== 'India'), d.country)
+                      : optsWith(masters.countries, d.country)
+                }
+                disabled={primaryDomestic}
+                placeholder={primaryDomestic ? 'India' : 'Select country'}
+                invalid={!!errs.country}
+                onChange={v => {
+                  const nd = { ...d, country: v, state: '' } as typeof d;
+                  setD(nd);
+                  setErrs(prev => {
+                    const next = { ...prev };
+                    const c = locFieldRule('country', nd); if (c) next.country = c; else delete next.country;
+                    const s = locFieldRule('state', nd);   if (s) next.state = s; else delete next.state;
+                    return next;
+                  });
+                }} />
             </Field>
             {/* Mirrors the primary address — see countryHasStates(). */}
             <Field label="State" required={locHasStates} error={errs.state}>
@@ -4673,7 +4712,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
               />
             </Field>
             <Field label="City" required error={errs.city}><input className={errs.city ? 'acm-input-error' : ''} value={d.city} onChange={e => set('city', e.target.value)} placeholder="Enter City" /></Field>
-            <Field label="Pin / Postal Code" required error={errs.pin}><input className={errs.pin ? 'acm-input-error' : ''} value={d.pin} onChange={e => set('pin', e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" maxLength={6} placeholder="6-digit PIN" /></Field>
+            <Field label="Pin / Zip / Postal Code" required error={errs.pin}><input className={errs.pin ? 'acm-input-error' : ''} value={d.pin} onChange={e => set('pin', e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 10))} maxLength={10} placeholder="3–10 letters or digits" /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Contact Person Name" required error={errs.cpName}><input className={errs.cpName ? 'acm-input-error' : ''} value={d.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
@@ -4751,7 +4790,7 @@ function HistoryStage1({ form, locations, customerId, segments = [] }: { form: a
         <ReadInline label="State"                     value={form.state} />
 
         <ReadInline label="City"                      value={form.city} />
-        <ReadInline label="PIN / Postal Code"         value={form.pin} />
+        <ReadInline label="PIN / Zip / Postal Code"         value={form.pin} />
         <ReadInline label="Contact Person Name"       value={form.cpName} />
         <ReadInline label="Designation"               value={form.cpDesig} />
 

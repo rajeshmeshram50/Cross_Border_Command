@@ -1602,7 +1602,9 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         return null;
       case 'pin':
         if (!f.pin.trim()) return 'PIN is required';
-        if (!/^\d{6}$/.test(f.pin.trim())) return 'PIN must be exactly 6 digits';
+        // One rule for every country: letters + digits only, 3–10 chars, no
+        // special characters (India's 6-digit PIN still passes).
+        if (!/^[A-Za-z0-9]{3,10}$/.test(f.pin.trim())) return 'PIN / Postal code must be 3–10 letters or digits (no special characters)';
         return null;
       case 'contactName':
         if (!f.contactName.trim()) return 'Contact name is required';
@@ -1964,14 +1966,14 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * shape declared in ConsigneeController::validatePayload(). The
    * additional `locations` table is included; Stage 2 KYC docs + Owner
    * KYC rows stay in-memory until the KYC backend lands. */
-  /* Normalize the pin code before sending so the backend's strict
-   * `regex:/^\d{6}$/` rule doesn't trip on legacy / partial values.
-   * Anything that isn't exactly 6 digits arrives as null — the
-   * `nullable` rule then lets it through, and the user can correct
-   * the row on the next edit. */
+  /* Normalize the pin code to the backend rule: 3–10 letters/digits, no
+   * special characters (same for every country). Values that can't match
+   * arrive as null — the `nullable` rule lets them through and the user
+   * corrects the row on the next edit. Previously this nulled ANY non-6-digit
+   * value, which silently dropped international postal codes. */
   const cleanPin = (v: any): string | null => {
     const s = String(v ?? '').trim();
-    return /^\d{6}$/.test(s) ? s : null;
+    return /^[A-Za-z0-9]{3,10}$/.test(s) ? s : null;
   };
   const buildPayload = () => {
     const primaryId = customer?.db_id ?? (Number(customer?.id?.replace(/[^0-9]/g, '')) || null);
@@ -2425,7 +2427,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                       <ReadInlineG label="State"                value={activeLinkedCust?.state} />
 
                       <ReadInlineG label="City"                 value={activeLinkedCust?.city} />
-                      <ReadInlineG label="PIN / Postal Code"    value={activeLinkedCust?.pin} />
+                      <ReadInlineG label="PIN / Zip / Postal Code"    value={activeLinkedCust?.pin} />
                       <ReadInlineG label="Contact Person Name"  value={activeLinkedCust?.contactPerson} />
                       <ReadInlineG label="Designation"          value={activeLinkedCust?.designation} />
 
@@ -2812,6 +2814,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           disallowedTypes={usedAddressTypes}
           existingEmails={existingEmails}
           existingPhones={existingPhones}
+          primaryCountry={form.country}
           onClose={() => setLocModal({ open: false, editing: null })}
           onSave={(rec) => {
             if (editingId) {
@@ -3434,14 +3437,13 @@ const Stage1 = ({
               <Field label="City" required error={errors.city} fieldKey="city">
                 <input className={`acm-input ${errors.city ? 'acm-input-error' : ''}`} placeholder="Enter city" value={form.city} onChange={e => set('city', e.target.value)} disabled={lock} />
               </Field>
-              <Field label="Pin / Postal Code" required error={errors.pin} fieldKey="pin">
+              <Field label="Pin / Zip / Postal Code" required error={errors.pin} fieldKey="pin">
                 <input
                   className={`acm-input ${errors.pin ? 'acm-input-error' : ''}`}
-                  placeholder="Enter PIN code"
-                  inputMode="numeric"
-                  maxLength={6}
+                  placeholder="3–10 letters or digits"
+                  maxLength={10}
                   value={form.pin}
-                  onChange={e => set('pin', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  onChange={e => set('pin', e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 10))}
                   disabled={lock}
                 />
               </Field>
@@ -4651,7 +4653,7 @@ function ConsigneeHistoryStage1({ form, locations, consigneeCode, segments = [] 
         <ReadInlineG label="State"               value={form.state} />
 
         <ReadInlineG label="City"                value={form.city} />
-        <ReadInlineG label="PIN / Postal Code"   value={form.pin} />
+        <ReadInlineG label="PIN / Zip / Postal Code"   value={form.pin} />
         <ReadInlineG label="Contact Person"      value={form.contactName} />
         <ReadInlineG label="Designation"         value={form.designation} />
 
@@ -5606,7 +5608,7 @@ type LocSubModalMasters = {
   designations: { value: string; label: string }[];
 };
 
-function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = [], existingPhones = [], onClose, onSave }: {
+function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = [], existingPhones = [], primaryCountry, onClose, onSave }: {
   editing: LocationRow | null;
   masters: LocSubModalMasters;
   /** Address types already claimed elsewhere (e.g. Registered Office on
@@ -5620,17 +5622,23 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
    *  conflict. Lower-cased emails, trimmed phones. */
   existingEmails?: string[];
   existingPhones?: string[];
+  /** The consignee's PRIMARY country. Domestic (India) → extra addresses are
+   *  India-only (locked); international → extras exclude India. */
+  primaryCountry?: string;
   onClose: () => void;
   onSave: (rec: Omit<LocationRow, 'id'>) => void;
 }) {
   const toast = useToast();
+  const primaryDomestic = (primaryCountry ?? '').trim() === 'India';
+  const primarySet = !!(primaryCountry ?? '').trim();
   // Skip the default "Registered Office" prefill when that type is
   // disallowed — otherwise the user lands on a value they can't save.
   const initialType = editing
     ? editing.type
     : (disallowedTypes?.includes(DEFAULT_ADDRESS_TYPE) ? '' : DEFAULT_ADDRESS_TYPE);
   const [d, setD] = useState<Omit<LocationRow, 'id'>>(() => editing ? { ...editing } : {
-    type: initialType, line: '', country: '', state: '', city: '', pin: '',
+    // Domestic consignee → extra addresses are India too, so pre-fill + lock it.
+    type: initialType, line: '', country: primaryDomestic ? 'India' : '', state: '', city: '', pin: '',
     cpName: '', cpDesignation: '', cpContact: '', cpEmail: '', cpWhatsapp: 'yes' as 'yes' | 'no' | '',
   });
   const [errs, setErrs] = useState<Record<string, string>>({});
@@ -5664,7 +5672,8 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'pin':
         if (!dd.pin.trim()) return 'PIN is required';
-        if (!/^\d{6}$/.test(dd.pin.trim())) return 'PIN must be exactly 6 digits';
+        // Same single rule as the primary address — see the note there.
+        if (!/^[A-Za-z0-9]{3,10}$/.test(dd.pin.trim())) return 'PIN / Postal code must be 3–10 letters or digits (no special characters)';
         return null;
       case 'cpName':
         if (!dd.cpName.trim()) return 'Contact name required';
@@ -5820,8 +5829,17 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
               <label className="acm-field-label">COUNTRY <span className="acm-req">*</span></label>
               <MasterSelect
                 value={d.country}
-                options={optsWith(countries, d.country)}
-                placeholder="Select country"
+                /* Domestic consignee → India only (locked). International → every
+                   country EXCEPT India. No primary yet → all countries. */
+                options={
+                  primaryDomestic
+                    ? countries.filter(c => c.value === 'India')
+                    : primarySet
+                      ? optsWith(countries.filter(c => c.value !== 'India'), d.country)
+                      : optsWith(countries, d.country)
+                }
+                disabled={primaryDomestic}
+                placeholder={primaryDomestic ? 'India' : 'Select country'}
                 invalid={!!errs.country}
                 onChange={v => {
                   const nd = { ...d, country: v, state: '' } as typeof d;
@@ -5861,14 +5879,13 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
               {errs.city && <span className="acm-err-text">{errs.city}</span>}
             </div>
             <div className="acm-field">
-              <label className="acm-field-label">PIN / POSTAL CODE <span className="acm-req">*</span></label>
+              <label className="acm-field-label">PIN / ZIP / POSTAL CODE <span className="acm-req">*</span></label>
               <input
                 className={`acm-input ${errs.pin ? 'acm-input-error' : ''}`}
-                placeholder="6-digit PIN"
-                inputMode="numeric"
-                maxLength={6}
+                placeholder="3–10 letters or digits"
+                maxLength={10}
                 value={d.pin}
-                onChange={e => set('pin', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={e => set('pin', e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 10))}
               />
               {errs.pin && <span className="acm-err-text">{errs.pin}</span>}
             </div>

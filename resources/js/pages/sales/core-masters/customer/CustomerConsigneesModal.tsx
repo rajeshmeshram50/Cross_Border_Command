@@ -120,11 +120,19 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
     else { setQ(''); setRows([]); setChooseOpen(false); setMapOpen(false); }
   }, [open, fetchRows]);
 
-  // Existing consignees NOT already mapped to this customer AND not
-  // "same as customer" mirrors (a mirror belongs to one customer only).
+  // Domestic (India) customer maps ONLY domestic consignees; an international
+  // customer maps ONLY international ones — a domestic party can't be linked to
+  // an international one (mirrors the India→India / intl→intl mapping rule).
+  const custDomestic = (customer.country ?? '').trim() === 'India';
+  // Existing consignees NOT already mapped to this customer, not "same as
+  // customer" mirrors, and matching the customer's domestic/international side.
   const mappableConsignees = useMemo(
-    () => allConsignees.filter(c => !c.same_as_customer && !rows.some(r => r.db_id === c.db_id)),
-    [allConsignees, rows],
+    () => allConsignees.filter(c =>
+      !c.same_as_customer
+      && !rows.some(r => r.db_id === c.db_id)
+      && (((c.country ?? '').trim() === 'India') === custDomestic)
+    ),
+    [allConsignees, rows, custDomestic],
   );
 
   const openMapFlow = async () => {
@@ -300,14 +308,15 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                             const extra = segList.length - 1;
                             return (
                               <span className="d-inline-flex align-items-center" style={{ gap: 4 }}>
-                                <span className="ccm-seg" title={segList[0]}>{truncSegment(segList[0])}</span>
+                                <Tooltip label={segList[0]} disabled={segList[0].length <= 14}><span className="ccm-seg">{truncSegment(segList[0])}</span></Tooltip>
                                 {extra > 0 && (
-                                  <button
-                                    type="button"
-                                    className="ccm-seg-more"
-                                    title="View all segments"
-                                    onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === c.id ? null : { id: c.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
-                                  >+{extra}</button>
+                                  <Tooltip label={`View ${extra} more`}>
+                                    <button
+                                      type="button"
+                                      className="ccm-seg-more"
+                                      onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === c.id ? null : { id: c.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                                    >+{extra}</button>
+                                  </Tooltip>
                                 )}
                               </span>
                             );

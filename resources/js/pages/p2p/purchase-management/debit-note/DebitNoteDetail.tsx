@@ -915,7 +915,16 @@ function DnSelect({ value, options, onChange, placeholder, invalid }: { value: s
       if (btnRef.current && !btnRef.current.contains(t) && !t.closest?.('.spi-dt-esel-pop')) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    const close = () => setOpen(false);
+    // A scroll INSIDE the dropdown's own option list must not close it — else
+    // the list snaps shut the moment you wheel-scroll it (no smooth scrolling).
+    // Only scrolls in an ancestor (page / panel) should dismiss the menu. This
+    // is the same guard SpiDetail's DnSelect already had; the Debit Note copy
+    // was cloned before it and missed it.
+    const close = (e?: Event) => {
+      const el = e && e.target instanceof Element ? e.target : null;
+      if (el && el.closest('.spi-dt-esel-pop')) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', close);

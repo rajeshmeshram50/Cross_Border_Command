@@ -834,6 +834,23 @@ class CustomerController extends Controller
                         $fail('This GST Number is already used by another customer in this branch.');
                     }
                 },
+                /* The GSTIN's first 2 digits ARE the state code, so they must
+                 * match the primary address's state. Resolved from the state
+                 * NAME via the master table (not the request's state_code) so a
+                 * direct API call can't slip a mismatched pair through by
+                 * sending a state_code that doesn't belong to its state. Skipped
+                 * when the master has no code for that state — only 10 of
+                 * India's 36 are defined today, and blocking the rest would
+                 * make them unsaveable. */
+                function ($attribute, $value, $fail) use ($request) {
+                    if ($request->input('gst_applicable') !== 'Yes') return;
+                    $v = strtoupper(trim((string) $value));
+                    if ($v === '') return;
+                    $stateCode = Gst::stateCodeFor($request->input('primary_address.state'));
+                    if ($stateCode && substr($v, 0, 2) !== $stateCode) {
+                        $fail("GST state code (" . substr($v, 0, 2) . ") does not match the selected state's code ({$stateCode}).");
+                    }
+                },
             ],
             'website'        => 'nullable|string|max:500',
             'status'         => 'nullable|in:Active,Inactive',
@@ -847,7 +864,10 @@ class CustomerController extends Controller
             'primary_address.state_code'     => 'nullable|string|max:32',
             'primary_address.city'           => 'nullable|string|max:64',
             // PIN must be exactly 6 digits (Indian postal code format).
-            'primary_address.pin'            => ['nullable', 'string', 'regex:/^\d{6}$/'],
+            // One rule for every country: 3–10 letters/digits, no special
+            // characters (India's 6-digit PIN still passes). Previously
+            // 6-digit-only, which blocked international postal codes.
+            'primary_address.pin'            => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{3,10}$/'],
             'primary_address.cp_name'        => 'required|string|max:255',
             'primary_address.cp_designation' => 'nullable|string|max:128',
             /* Primary phone must be unique within the SAME BRANCH (not the whole
@@ -900,7 +920,7 @@ class CustomerController extends Controller
             'locations.*.country'        => 'nullable|string|max:64',
             'locations.*.state'          => 'nullable|string|max:64',
             'locations.*.city'           => 'nullable|string|max:64',
-            'locations.*.pin'            => ['nullable', 'string', 'regex:/^\d{6}$/'],
+            'locations.*.pin'            => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{3,10}$/'],
             'locations.*.cp_name'        => 'required_with:locations|string|max:255',
             'locations.*.cp_designation' => 'nullable|string|max:128',
             'locations.*.cp_contact'     => ['nullable', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/'],

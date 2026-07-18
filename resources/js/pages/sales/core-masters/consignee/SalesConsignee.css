@@ -586,14 +586,9 @@
  * horizontal scroll, the cells give up font size and padding as the viewport
  * narrows. Combined with the fixed percentage widths above, the table keeps
  * fitting its container instead of overflowing it. */
-@media (max-width: 1500px) {
-  .smcg-table-wrap .table thead th { padding: 8px 6px !important; font-size: 9px !important; }
-  .smcg-table-wrap .table tbody td { padding: 6px 6px !important; font-size: 11px; }
-}
-@media (max-width: 1280px) {
-  .smcg-table-wrap .table thead th { padding: 7px 5px !important; font-size: 8.5px !important; letter-spacing: .04em !important; }
-  .smcg-table-wrap .table tbody td { padding: 5px 5px !important; font-size: 10.5px; }
-}
+/* No font/padding crush on smaller screens — the table now keeps its natural
+   column widths (min-width) and the wrapper scrolls horizontally instead, so
+   text/badges/icons stay readable and uncut. */
 /* Column widths — proportional, not content-driven. See the long note on the
  * Customer list for why `auto` layout can't be tuned into a responsive table.
  * These percentages ARE the widths and always total 100, so there is no leftover
@@ -607,9 +602,10 @@
 .smcg-table-wrap .table {
   table-layout: fixed;
   width: 100%;
-  /* Below this the shares get too narrow to read, so the wrapper scrolls rather
-     than crushing every column. */
-  min-width: 1160px;
+  /* Below this the shares get too narrow — badges ("Domestic"/"Critical") and
+     the 3-icon Actions column start clipping. So the wrapper scrolls
+     HORIZONTALLY instead of crushing/cutting content (scroll > cut). */
+  min-width: 1440px;
 }
 .smcg-table-wrap .table thead th:nth-child(1),  .smcg-table-wrap .table tbody td:nth-child(1)  { width: 4%; }
 .smcg-table-wrap .table thead th:nth-child(2),  .smcg-table-wrap .table tbody td:nth-child(2)  { width: 7%; }
@@ -620,10 +616,10 @@
 .smcg-table-wrap .table thead th:nth-child(7),  .smcg-table-wrap .table tbody td:nth-child(7)  { width: 7%; }
 .smcg-table-wrap .table thead th:nth-child(8),  .smcg-table-wrap .table tbody td:nth-child(8)  { width: 8%; }
 .smcg-table-wrap .table thead th:nth-child(9),  .smcg-table-wrap .table tbody td:nth-child(9)  { width: 9%; }
-.smcg-table-wrap .table thead th:nth-child(10), .smcg-table-wrap .table tbody td:nth-child(10) { width: 11%; }
+.smcg-table-wrap .table thead th:nth-child(10), .smcg-table-wrap .table tbody td:nth-child(10) { width: 10%; }
 .smcg-table-wrap .table thead th:nth-child(11), .smcg-table-wrap .table tbody td:nth-child(11) { width: 8%; }
-.smcg-table-wrap .table thead th:nth-child(12), .smcg-table-wrap .table tbody td:nth-child(12) { width: 5%; }
-.smcg-table-wrap .table thead th:nth-child(13), .smcg-table-wrap .table tbody td:nth-child(13) { width: 7%; }
+.smcg-table-wrap .table thead th:nth-child(12), .smcg-table-wrap .table tbody td:nth-child(12) { width: 4%; }
+.smcg-table-wrap .table thead th:nth-child(13), .smcg-table-wrap .table tbody td:nth-child(13) { width: 9%; }
 
 /* Fixed layout can't grow a column to fit its content, so anything too long is
    cut here rather than pushing the table wider. */
@@ -1312,3 +1308,32 @@
   --tcwl-btn-bg-dark: rgba(16, 185, 129, .18);
   --tcwl-glow: rgba(16, 185, 129, .30);
 }
+
+/* ── Active-filter chips bar (above the table) — applied filters shown outside
+   the modal with per-chip remove (×) + Clear all. Emerald palette. ── */
+.smcg-filterbar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 10px 4px 2px;
+}
+.smcg-filterbar-lbl { font-size: 12.5px; font-weight: 700; color: #475569; margin-right: 2px; }
+.smcg-filterchip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: #047857;
+  background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 20px;
+  padding: 4px 6px 4px 12px; white-space: nowrap;
+}
+.smcg-filterchip button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%; border: none;
+  background: rgba(4,120,87,.10); color: #047857; font-size: 14px; line-height: 1;
+  cursor: pointer; transition: background .15s, color .15s;
+}
+.smcg-filterchip button:hover { background: #10b981; color: #fff; }
+.smcg-filterbar-clear {
+  border: none; background: none; color: #dc2626; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; padding: 4px 6px; border-radius: 6px;
+}
+.smcg-filterbar-clear:hover { background: rgba(220,38,38,.08); text-decoration: underline; }
+[data-bs-theme="dark"] .smcg-filterbar-lbl { color: #94a3b8; }
+[data-bs-theme="dark"] .smcg-filterchip { color: #6ee7b7; background: rgba(16,185,129,.12); border-color: rgba(16,185,129,.3); }
+[data-bs-theme="dark"] .smcg-filterchip button { background: rgba(110,231,183,.15); color: #6ee7b7; }

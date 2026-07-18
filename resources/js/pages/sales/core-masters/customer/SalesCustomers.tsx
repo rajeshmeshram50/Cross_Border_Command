@@ -236,6 +236,15 @@ export default function SalesCustomers() {
   }, [facetFiltered, tab]);
   const activeFilterCount = countPartyFilterValues(filters);
 
+  // Active filters as removable chips (shown above the table with a Clear all,
+  // like the My Workplace / Lead Worksheet filter bar). Customer has no
+  // "Same as Customer" facet, so it's not chipped here.
+  const filterChips: { label: string; onRemove: () => void }[] = [];
+  if (filters.region) filterChips.push({ label: `Customer Type: ${filters.region === 'domestic' ? 'Domestic' : 'International'}`, onRemove: () => setFilters(f => ({ ...f, region: undefined })) });
+  (filters.segments ?? []).forEach(s => filterChips.push({ label: `Segment: ${s}`, onRemove: () => setFilters(f => ({ ...f, segments: (f.segments ?? []).filter(x => x !== s) })) }));
+  (filters.countries ?? []).forEach(c => filterChips.push({ label: `Country: ${c}`, onRemove: () => setFilters(f => ({ ...f, countries: (f.countries ?? []).filter(x => x !== c) })) }));
+  if (filters.whatsapp) filterChips.push({ label: `Whatsapp: ${filters.whatsapp}`, onRemove: () => setFilters(f => ({ ...f, whatsapp: undefined })) });
+
   useEffect(() => {
     if (readCustomerMasterBundle()) return;
     const warm = () => {
@@ -356,12 +365,13 @@ export default function SalesCustomers() {
               ? <Tooltip label={segList[0]}><span className="smc-seg">{segList[0]}</span></Tooltip>
               : <span className="smc-seg">{segList[0]}</span>}
             {extra > 0 && (
-              <button
-                type="button"
-                className="smc-seg-more"
-                title="View all segments"
-                onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === rowId ? null : { id: rowId, names: segList, x: b.left, y: b.bottom + 4 }); }}
-              >+{extra}</button>
+              <Tooltip label={`View ${extra} more`}>
+                <button
+                  type="button"
+                  className="smc-seg-more"
+                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === rowId ? null : { id: rowId, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                >+{extra}</button>
+              </Tooltip>
             )}
           </span>
         );
@@ -564,6 +574,21 @@ export default function SalesCustomers() {
             />
           </div>
         </div>
+
+        {/* Active filter chips + Clear all — applied filters shown outside the
+            modal, each removable, mirroring the My Workplace filter bar. */}
+        {filterChips.length > 0 && (
+          <div className="smc-filterbar">
+            <span className="smc-filterbar-lbl">Filters:</span>
+            {filterChips.map((chip, i) => (
+              <span key={i} className="smc-filterchip">
+                {chip.label}
+                <button type="button" onClick={chip.onRemove} aria-label={`Remove ${chip.label}`}>×</button>
+              </span>
+            ))}
+            <button type="button" className="smc-filterbar-clear" onClick={() => setFilters({})}>Clear all</button>
+          </div>
+        )}
 
         <div className="smc-table-wrap">
           {(loading && customers.length === 0) || tabSwitching ? (
