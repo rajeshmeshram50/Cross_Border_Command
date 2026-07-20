@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../../../../api';
 import { formatProductCode } from '../../../../../utils/formatProductCode';
 import Tooltip from '../../../../../components/ui/Tooltip';
@@ -91,7 +91,7 @@ function formatDateTime(s: string | null | undefined): { date: string; time: str
   };
 }
 
-export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, embedded, locked = false }: StageProps) {
+export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, embedded, locked = false, priceRefreshTick, onPricesChanged }: StageProps) {
   const toast = useToast();
   const leadId = header.leadId ?? null;
 
@@ -158,6 +158,15 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
     void fetchAll();
   }, [leadId, fetchAll]);
 
+  /* Re-fetch when the parent bumps priceRefreshTick — i.e. the OTHER Stage 4
+   * instance (inline view vs. Share Prices popup) shared a price. Skip the
+   * initial render; the mount effect above already loaded the data. */
+  const firstPriceTick = useRef(true);
+  useEffect(() => {
+    if (firstPriceTick.current) { firstPriceTick.current = false; return; }
+    if (leadId) void fetchAll();
+  }, [priceRefreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ── Submit a quoted price ───────────────────────────────────────── */
   /* Frontend validation mirrors IDIMS exactly: required + numeric. Backend
    * `min:0` handles negative-number rejection so the surface still refuses
@@ -184,6 +193,9 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
       toast.success('Quoted price recorded', `${row.product_name ?? 'Product'} · ${row.currency} ${num.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
       setQuotedDraft(prev => ({ ...prev, [row.id]: '' }));
       await reloadShared();
+      // Tell the parent a price was shared so the OTHER Stage 4 instance (the
+      // inline pipeline view vs. the Share Prices popup) refreshes immediately.
+      onPricesChanged?.();
     } catch (e: any) {
       toast.error('Submit failed', e?.response?.data?.message ?? 'Could not record the quoted price');
     } finally {

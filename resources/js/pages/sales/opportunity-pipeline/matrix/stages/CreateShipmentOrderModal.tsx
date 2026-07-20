@@ -304,9 +304,17 @@ export default function CreateShipmentOrderModal({
   if (!open) return null;
 
   return createPortal((
-    <div className="cso-backdrop" onClick={onClose}>
+    <div className="cso-backdrop" onClick={() => { if (!submitting) onClose(); }}>
       <style>{SCOPED_CSS}</style>
-      <div className="cso-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="cso-modal" style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+        {/* Save lock — while saving, blanket the whole modal so no field,
+            dropdown, attachment control or button stays interactive (QA #131). */}
+        {submitting && (
+          <div className="cso-save-lock" role="status" aria-live="polite">
+            <span className="cso-save-spin" />
+            <span className="cso-save-lock-txt">Saving…</span>
+          </div>
+        )}
         {/* Header — amber gradient */}
         <div className="cso-head">
           <div className="cso-head-left">
@@ -494,9 +502,21 @@ export default function CreateShipmentOrderModal({
                   Attach File
                 </button>
                 <input type="file" multiple hidden ref={fileRef}
-                  accept=".jpg,.jpeg,.png,.webp,.pdf,.doc,.docx"
+                  accept=".jpg,.jpeg,.png,.webp,.pdf"
                   onChange={(e) => {
-                    if (e.target.files) setAttachments(prev => [...prev, ...Array.from(e.target.files!)]);
+                    // Only images + PDF (matches the backend magic_mime rule).
+                    // Reject Word / ZIP / other formats up front with a clear
+                    // message instead of failing on save (QA #130).
+                    const picked = e.target.files ? Array.from(e.target.files) : [];
+                    const allowed = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
+                    const ok: File[] = [];
+                    let bad = false;
+                    for (const f of picked) {
+                      const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
+                      if (allowed.includes(ext)) ok.push(f); else bad = true;
+                    }
+                    if (bad) toast.error('File not supported', 'Please attach only JPG, PNG, WEBP or PDF files.');
+                    if (ok.length) setAttachments(prev => [...prev, ...ok]);
                     e.target.value = '';
                   }} />
                 {attachments.length > 0 && (
@@ -608,6 +628,24 @@ const SCOPED_CSS = `
   box-shadow: 0 18px 48px rgba(15,23,42,.30);
   overflow: hidden; display: flex; flex-direction: column;
 }
+
+/* Save lock overlay (QA #131) — blankets the modal while saving so every
+   field, dropdown, attachment control and button is un-interactable. */
+.cso-save-lock {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: rgba(255,250,240,.72); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  cursor: progress; border-radius: inherit;
+}
+.cso-save-lock-txt { font-size: 13px; font-weight: 800; color: #b45309; letter-spacing: .02em; }
+.cso-save-spin {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid rgba(245,158,11,.28); border-top-color: #d97706;
+  animation: cso-save-spin .7s linear infinite;
+}
+@keyframes cso-save-spin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .cso-save-lock { background: rgba(28,22,10,.74); }
+[data-bs-theme="dark"] .cso-save-lock-txt { color: #fcd34d; }
 
 /* Header — amber */
 .cso-head {

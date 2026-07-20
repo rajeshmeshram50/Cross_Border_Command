@@ -1479,7 +1479,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         if (!f.country) return 'Select a country';
         return null;
       case 'state':
-        // Required only where the master actually has states to offer —
         // Required for EVERY country — see the note above countryHasStates().
         if (!f.state) {
           return countryHasStates(masters, f.country)
@@ -2765,10 +2764,6 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
    * → international → they're hidden. Driven by the Primary Address & Contact
    * Person card's Country, which lives in this same component. */
   const domestic = isDomesticCountry(form.country);
-  /* Whether the chosen country has any states at all — drives State's
-     required-ness, placeholder and disabled state together, so they can't
-     drift apart. */
-  const hasStates = countryHasStates(masters, form.country);
   // States filter against the selected country: look up the country
   // name → its id from the countries master, then filter states by it.
   const selectedCountry = masters.countries.find(c => c.name === form.country);
@@ -2974,10 +2969,10 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 validateField('pin', nextForm);
               }} />
             </Field>
-            {/* `required` tracks the data, not the field: a country the master
-                has no states for (163 of 249) shows no red star and can't be
-                marked invalid — a required-looking field with an empty dropdown
-                is a dead end the user cannot clear. */}
+            {/* Required for every country. Where the master has no states for
+                the chosen country (163 of 249) the control stays disabled — there
+                is nothing to open — and the placeholder points at where to add
+                them, so it isn't a silent dead end. */}
             <Field label="State" required error={errors.state} fieldKey="state">
               <MasterSelect
                 value={form.state}
