@@ -11,6 +11,7 @@ use App\Models\Customer;
 use App\Support\Gst;
 use App\Support\MasterVisibility;
 use App\Support\PostalCode;
+use App\Support\SegmentGuard;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -204,7 +205,13 @@ class ConsigneeController extends Controller
                 'consignee_code'   => $code,
                 'company_name'     => $data['company_name'],
                 'legal_name'       => $data['legal_name']     ?? null,
-                'segment'          => $data['segment']        ?? null,
+                /* DERIVED from the mapped customers, never taken from the
+                 * request — a consignee inherits its customers' segments and has
+                 * no field of its own to set them. Create used to trust
+                 * $data['segment'], so a consignee whose browser-side inherit
+                 * didn't fire saved with an empty segment against a field the
+                 * user couldn't edit. See SegmentGuard::forCustomers(). */
+                'segment'          => SegmentGuard::forCustomers($data['customer_ids']) ?: null,
                 'classification'   => $data['classification'] ?? null,
                 'risk_level'       => $data['risk_level']     ?? null,
                 'website'          => $data['website']        ?? null,
@@ -257,31 +264,47 @@ class ConsigneeController extends Controller
             : (bool) $consignee->same_as_customer;
         $this->assertSingleMirrorPerCustomer((int) $data['customer_id'], $intendsMirror, $consignee->id);
 
-        // Segment-document protection — a segment with uploaded documents
-        // cannot be removed from the consignee (it would orphan the evidence).
-        $blockedSegments = \App\Support\SegmentGuard::blockedRemovals(
+        /* Segment is DERIVED from the mapped customers here too, so re-mapping
+         * a consignee onto different customers moves its segments with it and
+         * the two can never drift. The request's own `segment` is ignored. */
+        $derivedSegment = SegmentGuard::forCustomers($data['customer_ids']);
+
+        /* Segment-document protection — a segment with uploaded documents can't
+         * just disappear, or the evidence is orphaned.
+         *
+         * Under derivation this fires when a CUSTOMER drops a segment the
+         * consignee has already uploaded documents for. Blocking the edit would
+         * be wrong: the user is editing the consignee, and the removal came from
+         * a change made elsewhere — there'd be nothing on this screen to fix. So
+         * those names are RETAINED on top of the derived set instead, keeping
+         * the uploads reachable until someone deletes them deliberately. */
+        $retained = SegmentGuard::blockedRemovals(
             \App\Models\Consignee::class,
             (int) $consignee->id,
             (int) $consignee->client_id,
             $consignee->segment,
-            $data['segment'] ?? null,
+            $derivedSegment ?: null,
         );
-        if (!empty($blockedSegments)) {
-            return response()->json([
-                'message' => 'Cannot remove the segment(s): ' . implode(', ', $blockedSegments)
-                    . ' — documents have already been uploaded for them. Remove those documents first.',
-                'errors'  => ['segment' => ['Segment(s) with uploaded documents cannot be removed: ' . implode(', ', $blockedSegments) . '.']],
-            ], 422);
+        if (!empty($retained)) {
+            $names = SegmentGuard::names($derivedSegment);
+            $seen  = array_map('mb_strtolower', $names);
+            foreach ($retained as $name) {
+                if (!in_array(mb_strtolower($name), $seen, true)) {
+                    $names[] = $name;
+                    $seen[]  = mb_strtolower($name);
+                }
+            }
+            $derivedSegment = implode(', ', $names);
         }
 
-        $row = DB::transaction(function () use ($consignee, $data) {
+        $row = DB::transaction(function () use ($consignee, $data, $derivedSegment) {
             $primary = $data['primary_address'];
 
             $consignee->update([
                 'customer_id'      => (int) $data['customer_id'],
                 'company_name'     => $data['company_name'],
                 'legal_name'       => $data['legal_name']     ?? null,
-                'segment'          => $data['segment']        ?? null,
+                'segment'          => $derivedSegment ?: null,
                 'classification'   => $data['classification'] ?? null,
                 'risk_level'       => $data['risk_level']     ?? null,
                 'website'          => $data['website']        ?? null,
@@ -495,23 +518,17 @@ class ConsigneeController extends Controller
             // Idempotent attach — keeps existing mappings, adds this one.
             $consignee->customers()->syncWithoutDetaching([$customer->id]);
 
-            // Merge the customer's segment(s) into the consignee's segment list
-            // so a customer working in a different segment surfaces on the
-            // consignee. Segments are comma-joined strings on both sides.
-            $split = fn ($s) => array_values(array_filter(array_map('trim', explode(',', (string) $s))));
-            $existing = $split($consignee->segment);
-            $incoming = $split($customer->segment ?? '');
-            $lower = array_map('mb_strtolower', $existing);
-            $added = false;
-            foreach ($incoming as $seg) {
-                if (!in_array(mb_strtolower($seg), $lower, true)) {
-                    $existing[] = $seg;
-                    $lower[] = mb_strtolower($seg);
-                    $added = true;
-                }
-            }
-            if ($added) {
-                $consignee->update(['segment' => implode(', ', $existing)]);
+            /* Re-derive from ALL mapped customers (the attach above is already
+             * committed, so the pivot is current). This used to hand-merge just
+             * the incoming customer's segments into whatever the consignee
+             * already had — a third copy of the same union logic, and additive
+             * only, so an unmap never shrank the list. One helper now owns the
+             * rule for create, update and map alike. */
+            $derived = SegmentGuard::forCustomers(
+                $consignee->customers()->pluck('customers.id')->all()
+            );
+            if ($derived !== (string) $consignee->segment) {
+                $consignee->update(['segment' => $derived ?: null]);
             }
         });
 

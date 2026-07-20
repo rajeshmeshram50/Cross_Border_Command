@@ -151,17 +151,28 @@ export default function SalesCustomers() {
       el.style.height = `${h}px`;
       el.style.maxHeight = `${h}px`;
 
+      if (manualSize) return;   // user chose a Rows-per-page value — don't override it
       const toolbarH = (el.querySelector('.smc-toolbar') as HTMLElement | null)?.offsetHeight || 0;
+      /* The filter-chips bar only exists when filters are active. It sits above
+       * the table and used to be left OUT of the subtraction, so turning a
+       * filter on pushed the last row under the pager (over-count by one). */
+      const filterbarH = (el.querySelector('.smc-filterbar') as HTMLElement | null)?.offsetHeight || 0;
       const theadH   = (el.querySelector('.smc-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
       /* Footer is the worklist pager `.tc-wl-pag` (TableContainerReactTable);
        * the old `.smc-table-wrap > .row` selector matched the non-worklist
        * pager, which this table doesn't render — so footerH came back 0 and the
        * auto-fit over-counted rows by one (QA #31). Measure the real pager. */
       const footerH  = (el.querySelector('.tc-wl-pag, .smc-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
-      const rowH     = (el.querySelector('.smc-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 40;
-      const avail = h - toolbarH - theadH - footerH - 26;
-      const rowsFit = Math.floor(avail / rowH);
-      if (!manualSize) setPageSize(Math.max(ROWS_PER_PAGE, rowsFit));
+      const rowH     = (el.querySelector('.smc-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 44;
+      const avail = h - toolbarH - filterbarH - theadH - footerH - 8;
+      /* The page size is EXACTLY how many rows fit — not `max(10, fit)`. Flooring
+       * at 10 was the "always 10" bug: on a screen that fits 8 it still asked for
+       * 10 (so 2 rows sat under the pager and it never looked full), and it
+       * masked the real fit on taller screens too. Now it shrinks and grows with
+       * the viewport like the Lead Worksheet. Floor of 5 just avoids a silly
+       * 1–2-row page on a very short window. */
+      const rowsFit = Math.max(5, Math.floor(avail / rowH));
+      setPageSize(rowsFit);
     };
     fit();
     const t = window.setTimeout(fit, 120);
