@@ -85,34 +85,16 @@ class SegmentGuard
             $name = trim($name);
             if ($name === '') continue;
 
-            // Resolve the segment id by name (tenant row first, else global).
-            $segId = ClmSegment::query()
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
-                ->where(fn ($q) => $q->where('client_id', $clientId)->orWhereNull('client_id'))
-                ->value('id');
-            if (!$segId) continue;
-
-            // The segment's required (category, doc_code) document set.
-            $sel = ClmSegmentRule::query()
-                ->where('client_id', $clientId)
-                ->where('segment_id', $segId)
-                ->value('doc_selections');
-            $sel = is_array($sel) ? $sel : (json_decode((string) $sel, true) ?: []);
-
-            $pairs = [];
-            foreach ($sel as $cat => $codes) {
-                foreach (array_keys((array) $codes) as $code) {
-                    $pairs[] = [$cat, (string) $code];
-                }
-            }
-            if (empty($pairs)) continue;
+            $keys = self::docKeys($clientId, $name);
+            if (empty($keys)) continue;
 
             $hasUpload = SegmentDocUpload::query()
                 ->where('uploadable_type', $uploadableType)
                 ->where('uploadable_id', $uploadableId)
                 ->where('client_id', $clientId)
-                ->where(function ($q) use ($pairs) {
-                    foreach ($pairs as [$cat, $code]) {
+                ->where(function ($q) use ($keys) {
+                    foreach ($keys as $key) {
+                        [$cat, $code] = explode('|', $key, 2);
                         $q->orWhere(fn ($w) => $w->where('category', $cat)->where('doc_code', $code));
                     }
                 })
@@ -122,6 +104,42 @@ class SegmentGuard
         }
 
         return $blocked;
+    }
+
+    /**
+     * The (category, doc_code) documents a segment requires, as "cat|code" keys.
+     *
+     * Uploads are stored per (entity, category, doc_code) — NOT per segment — so
+     * one file satisfies every segment that asks for that doc_code, and any
+     * segment listing that code counts as "has uploads".
+     *
+     * @return string[]
+     */
+    private static function docKeys(int $clientId, string $segmentName): array
+    {
+        $name = trim($segmentName);
+        if ($name === '') return [];
+
+        // Resolve the segment id by name (tenant row first, else global).
+        $segId = ClmSegment::query()
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->where(fn ($q) => $q->where('client_id', $clientId)->orWhereNull('client_id'))
+            ->value('id');
+        if (!$segId) return [];
+
+        $sel = ClmSegmentRule::query()
+            ->where('client_id', $clientId)
+            ->where('segment_id', $segId)
+            ->value('doc_selections');
+        $sel = is_array($sel) ? $sel : (json_decode((string) $sel, true) ?: []);
+
+        $keys = [];
+        foreach ($sel as $cat => $codes) {
+            foreach (array_keys((array) $codes) as $code) {
+                $keys[] = $cat . '|' . (string) $code;
+            }
+        }
+        return array_values(array_unique($keys));
     }
 
     /**
@@ -139,6 +157,13 @@ class SegmentGuard
         $removed = array_values(array_filter($old, fn ($s) => !in_array(mb_strtolower($s), $new, true)));
         if (empty($removed)) return [];
 
+        /* A shared document counts for EVERY segment listing it, whether or not
+         * another selected segment also requires it. Four segments sharing one
+         * mandatory DD doc are therefore all locked by a single upload — the
+         * document must be deleted before any of them can be dropped. (An
+         * "orphan-only" variant that allowed removing all but the last was
+         * tried and rejected: blocking 3-of-4 removals silently reads as
+         * arbitrary.) */
         return self::segmentsWithUploads($uploadableType, $uploadableId, $clientId, $removed);
     }
 }

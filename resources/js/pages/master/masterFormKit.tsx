@@ -52,6 +52,8 @@ export function MasterMultiSelect({
   onChange,
   maxChips = 3,
   lockedValues,
+  disabledValues,
+  disabledHint,
 }: {
   name?: string;
   value: string[];
@@ -65,8 +67,18 @@ export function MasterMultiSelect({
      don't block adding others. Used e.g. for Supplier Segments that already
      have documents uploaded against them. */
   lockedValues?: string[];
+  /* Options that stay VISIBLE in the list but can't be picked — greyed out and
+     click-inert. Used for segments with no Document Control Panel rule: the
+     user should see the segment exists while learning it isn't usable yet.
+     An already-selected value is never disabled (legacy data must stay
+     removable), so this only ever blocks NEW selections. */
+  disabledValues?: string[];
+  /* Short reason appended to a disabled option's tooltip, e.g. "no document
+     rule defined yet". */
+  disabledHint?: string;
 }) {
   const lockedSet = new Set(lockedValues ?? []);
+  const disabledSet = new Set(disabledValues ?? []);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   /* Clicking "+N more" flips this — the chip strip then shows every selected
@@ -120,6 +132,8 @@ export function MasterMultiSelect({
   const toggleVal = (v: string) => {
     // Locked values can be added but never unchecked.
     if (selectedSet.has(v) && lockedSet.has(v)) return;
+    // Unusable option — selectable only in the sense that it's visible.
+    if (!selectedSet.has(v) && disabledSet.has(v)) return;
     const next = selectedSet.has(v) ? value.filter(x => x !== v) : [...value, v];
     onChange?.(next);
   };
@@ -278,17 +292,23 @@ export function MasterMultiSelect({
             ) : filtered.map(opt => {
               const checked = selectedSet.has(opt.value);
               const locked = checked && lockedSet.has(opt.value);
+              const unusable = !checked && disabledSet.has(opt.value);
               return (
                 <DropdownItem
                   key={opt.value}
                   toggle={false}
                   active={checked}
-                  disabled={locked}
+                  disabled={locked || unusable}
                   onClick={() => toggleVal(opt.value)}
                   className="master-select-item d-flex align-items-center"
                   /* Full label in the tooltip — the visible text truncates with an
                      ellipsis, so long names are only readable on hover. */
-                  title={locked ? `${opt.label} — documents uploaded, can't be removed` : opt.label}
+                  title={locked
+                    ? `${opt.label} — documents uploaded, can't be removed`
+                    : unusable
+                      ? `${opt.label}${disabledHint ? ` — ${disabledHint}` : ''}`
+                      : opt.label}
+                  style={unusable ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
                 >
                   <span
                     style={{
@@ -322,6 +342,18 @@ export function MasterMultiSelect({
                     {opt.label}
                   </span>
                   {locked && <i className="ri-lock-2-line" style={{ fontSize: 12, opacity: 0.6, marginLeft: 6, flexShrink: 0 }} />}
+                  {unusable && (
+                    <span
+                      style={{
+                        fontSize: 9.5, fontWeight: 700, letterSpacing: '.02em',
+                        padding: '1px 6px', borderRadius: 10, marginLeft: 6, flexShrink: 0,
+                        background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      No rule
+                    </span>
+                  )}
                 </DropdownItem>
               );
             })}

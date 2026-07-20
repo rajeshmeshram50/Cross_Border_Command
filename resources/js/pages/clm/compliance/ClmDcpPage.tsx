@@ -221,10 +221,7 @@ export default function ClmDcpPage() {
     return Array.from(set);
   };
 
-  // Only segments that actually HAVE a rule are listed. Creating a segment in
-  // the Segment Master no longer makes it appear here — it becomes a DCP row
-  // only once the user maps a rule to it via "Add Segment Rule" (which offers
-  // every not-yet-ruled segment in its dropdown).
+  
   const allRows = useMemo<SegRule[]>(() => rows, [rows]);
 
   // Tab counts derived from the segment-master tier (matches the badges).
