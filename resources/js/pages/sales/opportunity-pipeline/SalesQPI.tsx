@@ -2459,11 +2459,11 @@ function shapeQpiMasters(
   /* INCO Term — the trade desk works with four terms only, so the master's
    * eleven official Incoterms are filtered down to them here (one place, so
    * the Quotation/PI form and the Create Shipment form agree). CFR is the
-   * official code for what the desk writes as CNF, so that row is surfaced
-   * under the CNF name while keeping its real master id. Options carry `id`
+   * official code for what the desk writes as C&F, so that row is surfaced
+   * under the C&F name while keeping its real master id. Options carry `id`
    * because shipments store the incoterm by id, not by label. */
-  const INCO_CODE_MAP: Record<string, string> = { EXW: 'EXW', FOB: 'FOB', CIF: 'CIF', CNF: 'CNF', CFR: 'CNF' };
-  const INCO_ORDER = ['FOB', 'EXW', 'CIF', 'CNF'];
+  const INCO_CODE_MAP: Record<string, string> = { EXW: 'EXW', FOB: 'FOB', CIF: 'CIF', CFR: 'C&F', CNF: 'C&F', 'C&F': 'C&F' };
+  const INCO_ORDER = ['FOB', 'EXW', 'CIF', 'C&F'];
   const incoSeen = new Set<string>();
   const incoOpts: MasterOpt[] = arr(inco)
     .map((r: any) => {
