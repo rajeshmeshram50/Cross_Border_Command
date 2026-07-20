@@ -106,7 +106,14 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   const leadId = header.leadId ?? null;
 
   const [docType, setDocType]   = useState<DocType>('quotation');
-  const [loading, setLoading]   = useState(false);
+  /* Starts TRUE: the quotation/PI lists aren't known until the first fetch
+   * lands, and `livePisCount`/`locked` are derived from them. If this began
+   * false, the very first paint (and the whole loading window) treated the
+   * opportunity as having ZERO PIs — so Create PI / Create Quotation looked
+   * enabled on a deal that already has a PI (or is already won), and only a
+   * refresh corrected it. True here means "checking…" until the data arrives,
+   * which also shows the table shimmer on first paint. */
+  const [loading, setLoading]   = useState(true);
   const [quotations, setQuotations] = useState<QuotationRow[]>([]);
   const [pis, setPis]           = useState<PIRow[]>([]);
   const [actingId, setActingId] = useState<number | null>(null);
@@ -611,9 +618,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             <button
               type="button"
               className="s5-create-btn s5-create-q"
-              style={(locked || livePisCount > 0) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-              title={locked ? 'Locked — the Proforma Invoice has been signed' : (livePisCount > 0 ? 'A Proforma Invoice already exists for this opportunity' : undefined)}
+              style={(loading || locked || livePisCount > 0) ? { opacity: 0.5, cursor: loading ? 'wait' : 'not-allowed' } : undefined}
+              title={loading ? 'Checking the latest quotation / PI status…' : locked ? 'Locked — the Proforma Invoice has been signed' : (livePisCount > 0 ? 'A Proforma Invoice already exists for this opportunity' : undefined)}
               onClick={() => {
+                // Block until the first fetch resolves — acting on the empty
+                // initial state let a duplicate slip through on a slow API.
+                if (loading) { toast.info('Please wait', 'Still loading this opportunity’s latest status…'); return; }
                 if (locked) { toast.warning('Deal locked', 'The Proforma Invoice is signed — this opportunity is read-only.'); return; }
                 if (livePisCount > 0) { toast.warning('PI already created', 'A Proforma Invoice already exists for this opportunity — you cannot create a new quotation against it.'); return; }
                 onCreate('quotation');
@@ -628,8 +638,15 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             <button
               type="button"
               className="s5-create-btn s5-create-p"
-              style={(locked || livePisCount > 0 || mandatoryIncomplete) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              style={(loading || locked || livePisCount > 0 || mandatoryIncomplete) ? { opacity: 0.5, cursor: loading ? 'wait' : 'not-allowed' } : undefined}
+              title={loading ? 'Checking the latest quotation / PI status…' : undefined}
               onClick={() => {
+                // Block until the first fetch resolves — otherwise a second PI
+                // could be created on a won deal while the list was still loading.
+                if (loading) {
+                  toast.info('Please wait', 'Still loading this opportunity’s latest status…');
+                  return;
+                }
                 if (locked) {
                   toast.warning('Deal locked', 'The Proforma Invoice is signed — this opportunity is read-only.');
                   return;
@@ -790,7 +807,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                                       {/* Spinner while the sent document is being fetched/opened
                                           so the click isn't silent on slow networks (QA #66). */}
                                       {actingId === r.id
-                                        ? <span className="s5-sig-spin" role="status" aria-label="Opening document…" />
+                                        ? <span className="s5-icn-spin" role="status" aria-label="Opening document…" />
                                         : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
                                     </button>
                                   </Tooltip>
@@ -847,7 +864,9 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                           <Tooltip label={cooldownLeft(docType, r.id) > 0 ? `Please wait ${cooldownLeft(docType, r.id)}s (max 3 per minute)` : 'Send via Email'}>
                             <button type="button"
                               className={`s5-icn s5-icn-mail${cooldownLeft(docType, r.id) > 0 ? ' s5-icn-cooling' : ''}`}
-                              onClick={() => void onEmail(docType, r.id, r.code)} disabled={isEmailing(docType, r.id)}>
+                              // Also blocked while any row action (e.g. opening a
+                              // PDF) is in flight, so no second action fires mid-view.
+                              onClick={() => void onEmail(docType, r.id, r.code)} disabled={anyActing || isEmailing(docType, r.id)}>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
                             </button>
                           </Tooltip>
@@ -1581,10 +1600,19 @@ const STAGE5_CSS = `
 }
 .s5-convert2:hover:not(:disabled) { background: linear-gradient(135deg, #6d28d9, #4c1d95); box-shadow: 0 4px 12px rgba(124,58,237,.45); transform: translateY(-1px); }
 .s5-convert2:disabled { opacity: .55; cursor: not-allowed; }
-/* Tiny white spinner for the "Checking…" signing-status loader pill. */
+/* Tiny white spinner for the "Checking…" signing-status loader pill (that pill
+   has a purple background, so white reads fine there). */
 .s5-sig-spin {
   display: inline-block; width: 11px; height: 11px;
   border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
+  border-radius: 50%; animation: s5-sig-spin-rot .6s linear infinite;
+}
+/* Spinner for the ICON buttons (view / etc.). Inherits the button's own colour
+   via currentColor — the white .s5-sig-spin was invisible here in light mode,
+   where the icon button has a white background (QA: "view loader missing"). */
+.s5-icn-spin {
+  display: inline-block; width: 13px; height: 13px; box-sizing: border-box;
+  border: 2px solid currentColor; border-top-color: transparent;
   border-radius: 50%; animation: s5-sig-spin-rot .6s linear infinite;
 }
 @keyframes s5-sig-spin-rot { to { transform: rotate(360deg); } }

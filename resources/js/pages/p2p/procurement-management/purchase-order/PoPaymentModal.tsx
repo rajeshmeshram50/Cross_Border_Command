@@ -2,19 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
+import Tooltip from '../../../../components/ui/Tooltip';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { formatDmy } from '../../../../utils/formatDmy';
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Payment Summary Against PO  (+ nested "Update PO/SPI Payment" add-payment popup)
- *
- * Records payments made to a supplier against a Purchase Order. Payments ALWAYS
- * subtract from the PO's balance (never a separate SPI amount) — this same modal
- * opens from both the PO screen and the SPI screen (passing the SPI's linked PO
- * id + spiId for entry-point trace). Data loads per PO id from
- * GET /p2p/purchase-orders/{po}/payment-summary.
- * ──────────────────────────────────────────────────────────────────────── */
 
 type Summary = {
   po: { id: number; code: string; pi_number: string | null; status: string };
@@ -23,8 +14,6 @@ type Summary = {
     city?: string; contact?: string; phone?: string; gstNo?: string; gstStatus?: string;
   };
   amounts: {
-    /* base EXCLUDES both GST and additional charges — TDS is levied on the
-     * goods value only; the charges are added back after the deduction. */
     base: number; gstPct: number; gstAmount: number; additionalCharges?: number; totalPo: number;
     tdsPct: number; tdsAmount: number; tdsCut: boolean; netPayable: number;
     amountPaid: number; balance: number; paidCount: number; progressPct: number;
@@ -40,14 +29,11 @@ type Summary = {
 const inr = (n: number | null | undefined) =>
   '₹' + Number(n ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** Local (not UTC) yyyy-mm-dd for the date input default. */
 const todayLocal = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-/** Outside-click "heartbeat": instead of closing, pulse the modal to signal it
- *  stays open. Returns [isPulsing, triggerOnBackdropClick, onAnimationEndReset]. */
 function usePulse(): [boolean, () => void, () => void] {
   const [pulse, setPulse] = useState(false);
   const bump = () => { setPulse(false); requestAnimationFrame(() => setPulse(true)); };
@@ -63,18 +49,11 @@ export default function PoPaymentModal({
   spiId?: number | null;
   onClose: () => void;
   onChanged?: () => void;
-  /** Fired once TDS has been successfully cut (one-time, irreversible).
-   *  The stored tds_amount was computed from the PO's amounts as they are RIGHT
-   *  NOW, so those amounts must not change afterwards — the opener (the PO
-   *  wizard) uses this to lock itself read-only immediately, instead of only
-   *  locking on the next reload. */
   onTdsCut?: () => void;
 }) {
   const toast = useToast();
   useScrollLock(open);
 
-  // When open, mark the body so this modal (and its date-picker) can sit above
-  // any host overlay it's launched from (e.g. the full-screen PO wizard).
   useEffect(() => {
     if (!open) return;
     document.body.classList.add('pop-modal-open');
@@ -89,10 +68,7 @@ export default function PoPaymentModal({
   const [gstOpen, setGstOpen] = useState(false);   // GST amount breakdown sub-modal
   const [pulse, bumpPulse, endPulse] = usePulse(); // outside-click heartbeat
 
-  // "SPI" when opened from an SPI, else "PO" — drives the add-modal title/button.
   const label = spiId ? 'SPI' : 'PO';
-  // Direct-SPI mode: no linked PO → pay against the SPI itself (SPI endpoints).
-  // With-PO SPI (both ids) still pays through the PO (poId present).
   const spiMode = !poId && !!spiId;
   const entityId = poId ?? spiId;
   const apiBase = spiMode ? `/p2p/supplier-purchase-invoices/${spiId}` : `/p2p/purchase-orders/${poId}`;
@@ -110,21 +86,12 @@ export default function PoPaymentModal({
     if (!open || !entityId) return;
     setAddOpen(false);
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, poId, spiId]);
 
-  // Live TDS preview (before deduction only). Once TDS is cut, the table shows
-  // the STORED tds_amount / net payable so it matches the progress bar and the
-  // actual recorded payments — never a re-computed figure that can drift.
   const preview = useMemo(() => {
     if (!data || data.amounts.tdsCut) return null;
     const pct = Math.max(0, Math.min(100, Number(tdsInput) || 0));
-    // Base already excludes GST *and* additional charges — TDS is levied on the
-    // goods value only (mirrors PoPaymentController::saveTds).
     const tdsAmount = Math.round(data.amounts.base * pct) / 100;
-    /* Net payable = (base − TDS) + GST + additional charges. The charges sit
-     * outside the base, so they must be added back here or the preview would
-     * under-state what the supplier is actually paid. */
     const addl = data.amounts.additionalCharges ?? 0;
     const payable = data.amounts.base + data.amounts.gstAmount + addl;
     return { tdsAmount, netPayable: Math.round((payable - tdsAmount) * 100) / 100 };
@@ -134,13 +101,10 @@ export default function PoPaymentModal({
 
   const a = data?.amounts;
   const sup = data?.supplier;
-  // TDS is cut ONCE per PO: once cut, the % input + button lock (no re-cut).
   const tdsLocked = !!a?.tdsCut;
-  // "Update Payment" is only allowed after the one-time TDS deduction is cut.
   const tryAddPayment = () => {
     if (!entityId) return;
     if (!a?.tdsCut) { toast.warning('Deduct the TDS first', 'Save the TDS deduction in Payment Details before recording a payment.'); return; }
-    // Fully paid → nothing left to record.
     if ((a?.balance ?? 0) <= 0.005) { toast.success('Amount paid completely', `This ${label} is fully paid — there is no outstanding balance to record.`); return; }
     setAddOpen(true);
   };
@@ -153,7 +117,6 @@ export default function PoPaymentModal({
         `${apiBase}/payment-summary/tds`, { tds_percentage: Number(tdsInput) || 0 });
       setData(r.data); setTdsInput(String(r.data.amounts.tdsPct ?? 0));
       toast.success('TDS deducted', `TDS can be deducted only once for this ${label}.`);
-      // Tell the opener the amounts are now frozen — see onTdsCut.
       onTdsCut?.();
     } catch (e: any) {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save TDS %.');
@@ -221,9 +184,11 @@ export default function PoPaymentModal({
 
           {/* ── Payment Details (TDS) ── */}
           <Section tag="Payment" title="Payment Details" sub={`Figures derived from ${label} line items · enter TDS % to compute net payable`}
-            right={<button type="button" className="pop-gstbtn" disabled={!entityId} onClick={(e) => { e.stopPropagation(); setGstOpen(true); }} title="View the per-product CGST / SGST breakdown">
-              <IcoPct /><span>GST Breakdown</span>
-            </button>}>
+            right={<Tooltip label="View the per-product CGST / SGST breakdown" themed zIndex={2999999}>
+              <button type="button" className="pop-gstbtn" disabled={!entityId} onClick={(e) => { e.stopPropagation(); setGstOpen(true); }}>
+                <IcoPct /><span>GST Breakdown</span>
+              </button>
+            </Tooltip>}>
             <div className="pop-tbl-wrap">
               <table className="pop-tbl pop-tbl-c">
                 <thead><tr>
@@ -244,7 +209,7 @@ export default function PoPaymentModal({
                        }} disabled={tdsLocked} /></td>
                   <td><span className="pop-ro">{inr(preview?.tdsAmount ?? a?.tdsAmount)}</span></td>
                   <td><span className="pop-ro">{inr(preview?.netPayable ?? a?.netPayable)}</span></td>
-                  <td><button className={`pop-btn-save ${a?.tdsCut ? 'is-cut' : ''}`} disabled={savingTds || tdsLocked} onClick={saveTds} title={a?.tdsCut ? `TDS already deducted for this ${label}` : 'Deduct the TDS'}>{savingTds ? '…' : (a?.tdsCut ? '✓ Deducted' : 'Deduct')}</button></td>
+                  <td><Tooltip label={a?.tdsCut ? `TDS already deducted for this ${label}` : 'Deduct the TDS'} themed zIndex={2999999}><button className={`pop-btn-save ${a?.tdsCut ? 'is-cut' : ''}`} disabled={savingTds || tdsLocked} onClick={saveTds}>{savingTds ? '…' : (a?.tdsCut ? '✓ Deducted' : 'Deduct')}</button></Tooltip></td>
                 </tr></tbody>
               </table>
             </div>
@@ -362,7 +327,6 @@ function UpdatePaymentModal({
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
-  // Inline, per-field validation — all fields are required.
   const amtNum = Number(amount);
   const errors: Record<string, string> = {};
   if (!amount.trim() || !amtNum || amtNum <= 0) errors.amount = 'Enter an amount greater than zero.';
@@ -370,6 +334,7 @@ function UpdatePaymentModal({
   if (!utrDate) errors.utrDate = 'Select the UTR / cheque date.';
   if (!bank.trim()) errors.bank = 'Enter the bank name.';
   if (!utr.trim()) errors.utr = 'Enter the UTR / cheque number.';
+  else if (!/^[A-Za-z0-9]{6,22}$/.test(utr.trim())) errors.utr = 'Only letters and digits, 6–22 characters (no spaces or symbols).';
   if (!file) errors.file = 'Upload the proof of payment.';
   const showErr = (k: string) => ((touched[k] || submitAttempted) ? errors[k] : undefined);
   const mark = (k: string) => setTouched((t) => ({ ...t, [k]: true }));
@@ -405,7 +370,11 @@ function UpdatePaymentModal({
             <span className="upm-head-ico"><IcoCard w={18} /></span>
             <div>
               <div className="upm-title">Update {label} Payment</div>
-              <div className="upm-sub"><span className="upm-chip">{poCode}</span><span className="upm-dot">•</span>{supplierName}</div>
+              <div className="upm-sub"><span className="upm-chip">{poCode}</span><span className="upm-dot">•</span>
+                <Tooltip label={supplierName} disabled={supplierName.length <= 30} position="bottom" zIndex={2999999}>
+                  <span>{supplierName.length > 30 ? `${supplierName.slice(0, 30)}…` : supplierName}</span>
+                </Tooltip>
+              </div>
             </div>
           </div>
           <button className="upm-x" onClick={onClose} aria-label="Close">✕</button>
@@ -441,7 +410,7 @@ function UpdatePaymentModal({
             <div className="upm-fld">
               <span className="upm-fld-lab">UTR / CHEQUE DATE <span className="upm-req">*</span></span>
               <MasterDatePicker value={utrDate} placeholder="Select date"
-                invalid={!!showErr('utrDate')}
+                invalid={!!showErr('utrDate')} popupClassName="pop-cal"
                 onChange={(v) => { setUtrDate(v); mark('utrDate'); }} />
               {showErr('utrDate') && <span className="upm-err">{errors.utrDate}</span>}
             </div>
@@ -454,8 +423,10 @@ function UpdatePaymentModal({
             <label className="upm-fld">
               <span className="upm-fld-lab">UTR / CHEQUE NUMBER <span className="upm-req">*</span></span>
               <input className={`upm-in ${showErr('utr') ? 'is-error' : ''}`} value={utr}
-                onChange={(e) => setUtr(e.target.value)} onBlur={() => mark('utr')} placeholder="Enter UTR / cheque number" />
-              {showErr('utr') && <span className="upm-err">{errors.utr}</span>}
+                onChange={(e) => setUtr(e.target.value)} onBlur={() => mark('utr')} placeholder="e.g. 123456 or HDFCR52026123456789012" />
+              {showErr('utr')
+                ? <span className="upm-err">{errors.utr}</span>
+                : <span className="upm-help">Letters &amp; digits only · Cheque: 6 · IMPS/UPI: 12 · NEFT: 16 · RTGS: 22 chars</span>}
             </label>
             <div className="upm-fld upm-fld-full">
               <span className="upm-fld-lab">PROOF OF PAYMENT <span className="upm-req">*</span></span>
@@ -464,15 +435,21 @@ function UpdatePaymentModal({
                   <span className="upm-filerow-ico"><IcoClip /></span>
                   <span className="upm-filerow-name" title={file.name}>{file.name}</span>
                   <span className="upm-filerow-acts">
-                    <button type="button" className="upm-fbtn" title="View" onClick={() => { if (fileUrl) window.open(fileUrl, '_blank', 'noopener'); }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg> View
-                    </button>
-                    <a className="upm-fbtn" title="Download" href={fileUrl ?? '#'} download={file.name}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg> Download
-                    </a>
-                    <button type="button" className="upm-fbtn upm-fbtn--re" title="Reupload" onClick={() => fileRef.current?.click()}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg> Reupload
-                    </button>
+                    <Tooltip label="View" themed zIndex={2999999}>
+                      <button type="button" className="upm-fbtn" onClick={() => { if (fileUrl) window.open(fileUrl, '_blank', 'noopener'); }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg> View
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Download" themed zIndex={2999999}>
+                      <a className="upm-fbtn" href={fileUrl ?? '#'} download={file.name}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg> Download
+                      </a>
+                    </Tooltip>
+                    <Tooltip label="Reupload" themed zIndex={2999999}>
+                      <button type="button" className="upm-fbtn upm-fbtn--re" onClick={() => fileRef.current?.click()}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg> Reupload
+                      </button>
+                    </Tooltip>
                   </span>
                 </div>
               ) : (
@@ -502,15 +479,18 @@ function UpdatePaymentModal({
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
- * GST Amount Breakdown — the per-product CGST / SGST split behind "GST Amount".
- * Pulls the PO's line items (same source the wizard's product table uses).
- * ──────────────────────────────────────────────────────────────────────── */
+
 type GstItem = {
   id?: number; code?: string; name?: string; qty?: number | string; rate?: number | string;
   gst?: number | string; cgstP?: number | string; sgstP?: number | string; igstP?: number | string;
   cgstA?: number | string; sgstA?: number | string; igstA?: number | string; cost?: number | string;
 };
+
+function fmtProductCode(raw?: string | null): string {
+  if (!raw) return '—';
+  const m = raw.match(/^(.*?)(\d+)\s*$/);
+  return m ? `${m[1] || 'P-'}${m[2].padStart(3, '0')}` : raw;
+}
 function GstBreakdownModal({ detailUrl, label, onClose }: { detailUrl: string; label: string; onClose: () => void }) {
   const [items, setItems] = useState<GstItem[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -524,14 +504,12 @@ function GstBreakdownModal({ detailUrl, label, onClose }: { detailUrl: string; l
     return () => { alive = false; };
   }, [detailUrl]);
 
-  // SPI items expose a combined `gst` %; split it in half for the CGST/SGST columns.
   const half = (g: number | string | undefined) => (g == null || g === '' ? undefined : Number(g) / 2);
   const pct = (v: number | string | undefined) => (v == null || v === '' ? '—' : `${Number(v)}%`);
   const totCgst = (items ?? []).reduce((s, it) => s + Number(it.cgstA || 0), 0);
   const totSgst = (items ?? []).reduce((s, it) => s + Number(it.sgstA || 0), 0);
   const totIgst = (items ?? []).reduce((s, it) => s + Number(it.igstA || 0), 0);
   const totCost = (items ?? []).reduce((s, it) => s + Number(it.cost || 0), 0);
-  // Inter-state → IGST columns; intra-state → CGST/SGST columns.
   const inter = totIgst > 0.005;
   const colCount = inter ? 8 : 10;
 
@@ -561,7 +539,7 @@ function GstBreakdownModal({ detailUrl, label, onClose }: { detailUrl: string; l
                 ) : items!.map((it, i) => (
                   <tr key={it.id ?? i}>
                     <td>{i + 1}</td>
-                    <td><span className="pop-ro" style={{ minWidth: 0 }}>{it.code || '—'}</span></td>
+                    <td><span className="pop-ro" style={{ minWidth: 0 }}>{fmtProductCode(it.code)}</span></td>
                     <td style={{ textAlign: 'left' }} title={it.name || ''}><span className="gst-name">{it.name || '—'}</span></td>
                     <td>{it.qty ?? '—'}</td>
                     <td>{inr(Number(it.rate || 0))}</td>
@@ -597,10 +575,14 @@ function GstBreakdownModal({ detailUrl, label, onClose }: { detailUrl: string; l
 
 /* ── small presentational helpers ── */
 function SupCell({ label, value, strong }: { label: string; value?: string | null; strong?: boolean }) {
+  const full = value || '—';
+  const shown = full.length > 25 ? `${full.slice(0, 25)}…` : full;
   return (
     <div className="pop-sup-cell">
       <div className="pop-sup-lab">{label}</div>
-      <div className={`pop-sup-val ${strong ? 'is-strong' : ''}`}>{value || '—'}</div>
+      <Tooltip label={full} disabled={full === shown} position="bottom" zIndex={2999999}>
+        <div className={`pop-sup-val ${strong ? 'is-strong' : ''}`}>{shown}</div>
+      </Tooltip>
     </div>
   );
 }
@@ -745,6 +727,19 @@ function UpmSkeleton() {
 const CSS = `
 /* Keep the MasterDatePicker popup above the payment modal (it opens from within). */
 body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
+/* Re-theme the calendar TEAL to match the payment modal (shared component defaults to indigo/violet). */
+.upm-fld .master-datepicker-icon{color:#0891b2;}
+.upm-fld .master-datepicker-toggle.open{border-color:#0891b2;box-shadow:0 0 0 3px rgba(8,145,178,.15),0 4px 12px rgba(8,145,178,.12);}
+.master-datepicker-popup.pop-cal .master-datepicker-title-btn.is-clickable{background:rgba(8,145,178,.08);border-color:rgba(8,145,178,.2);color:#0891b2;}
+.master-datepicker-popup.pop-cal .master-datepicker-title-btn.is-clickable:hover{background:rgba(8,145,178,.16);border-color:rgba(8,145,178,.4);color:#0e7490;}
+.master-datepicker-popup.pop-cal .master-datepicker-nav:hover{background:rgba(8,145,178,.1);color:#0891b2;border-color:rgba(8,145,178,.3);}
+.master-datepicker-popup.pop-cal .master-datepicker-day:hover:not(:disabled):not(.is-selected),
+.master-datepicker-popup.pop-cal .master-datepicker-cell:hover:not(.is-selected){background:rgba(8,145,178,.1);color:#0891b2;}
+.master-datepicker-popup.pop-cal .master-datepicker-day.is-today,
+.master-datepicker-popup.pop-cal .master-datepicker-cell.is-today{background:rgba(8,145,178,.12);color:#0891b2;}
+.master-datepicker-popup.pop-cal .master-datepicker-day.is-selected,
+.master-datepicker-popup.pop-cal .master-datepicker-cell.is-selected{background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;box-shadow:0 3px 8px rgba(8,145,178,.3);}
+.master-datepicker-popup.pop-cal .master-datepicker-footer .today-btn{color:#0891b2;}
 .pop-backdrop{position:fixed;inset:0;z-index:2900000;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto;font-family:var(--font-sans,'Inter',sans-serif);}
 .pop-modal{width:100%;max-width:1120px;margin:auto;background:#f8fafc;border:1.5px solid rgba(255,255,255,.5);border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);display:flex;flex-direction:column;}
 .pop-hero{background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);}
@@ -760,8 +755,9 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
    the "Payment Summary" heading (just past the 34px icon + 10px gap + 22px pad
    = 66px), right edge ends at the close (✕) button (22px pad + 30px btn = 52px). */
 .pop-sup{margin:0 52px 14px 66px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);border-radius:14px;padding:9px 20px;display:grid;grid-template-columns:repeat(5,1fr);gap:1px 18px;color:#e0f2fe;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);}
+.pop-sup-cell{min-width:0;}
 .pop-sup-lab{font-size:9.5px;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.72);}
-.pop-sup-val{font-size:13px;font-weight:700;color:#fff;margin-top:2px;}
+.pop-sup-val{font-size:13px;font-weight:700;color:#fff;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .pop-sup-val.is-strong{font-size:14px;}
 .pop-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
 .pop-kpi{background:#fff;border:1px solid #eef2f7;border-radius:14px;padding:7px 14px;display:flex;gap:10px;align-items:center;border-left:4px solid #94a3b8;box-shadow:0 4px 13px rgba(15,23,42,.06);}

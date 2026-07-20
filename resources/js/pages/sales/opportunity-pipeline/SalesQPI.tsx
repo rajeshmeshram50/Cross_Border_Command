@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import api from '../../../api';
 import { formatDmy } from '../../../utils/formatDmy';
+import { formatProductCode } from '../../../utils/formatProductCode';
 import { SigningTrackerModal } from './SigningTrackerModal';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
@@ -45,8 +46,6 @@ export type Quotation = {
   consignee: string;
   docType: 'International' | 'Domestic';
   currency: string;    // $, ₹, €
-  // Quotation grand total — shown as the "Quotation Value" in the
-  // Convert-to-PI confirmation popup.
   grandTotal?: number | null;
   salesManager: string;
   // Drives the "Convert to PI" button state. When the quotation has
@@ -121,22 +120,6 @@ const ROWS_PER_PAGE = 10;
 // auto-fit snaps to the nearest of these so the selected value is always a
 // listed option.
 const QPI_ROWS_OPTIONS = [10, 25, 50, 100];
-
-/**
- * Render the "Created By" cell as a colored pill with a small sub-label.
- *
- * Display rules (so the column says something meaningful from the
- * viewer's perspective, not just "who clicked Save"):
- *
- *   1. If the LOGGED-IN user is the creator → pill = "You"
- *      (showing your own name on your own dashboard is noise).
- *   2. Else → pill = creator's actual name + sub-label with their
- *      branch / role.
- *
- * Pill tone is keyed off `user_type` (super-admin / client / branch)
- * so the visual language matches the Master Details "Created By"
- * column.
- */
 function renderCreatorCell(
   name: string | undefined,
   creatorId: number | null | undefined,
@@ -273,6 +256,21 @@ function piPayloadFromQuotation(q: Quotation) {
 function currencyCode(v: string | null | undefined): string {
   if (!v) return '';
   return String(v).split(/\s*[-–—]\s*/)[0].trim();
+}
+
+/* A Domestic document is always in rupees — the wizard has no Currency field
+ * for it (Currency lives in the international shipping block), so those rows
+ * were saved with currency = null and the column rendered a bare "—".
+ *
+ * New rows now get 'INR' derived server-side in Quotation/ProformaInvoice
+ * ::validatePayload. This fallback is for rows saved BEFORE that, so the list
+ * reads correctly without a data migration. Only Domestic falls back; an
+ * International row with no currency is genuinely missing one and keeps
+ * showing "—" rather than being told it's rupees. */
+function displayCurrency(v: string | null | undefined, docType: string | null | undefined): string {
+  const code = currencyCode(v);
+  if (code) return code;
+  return String(docType ?? '').trim() === 'Domestic' ? 'INR' : '';
 }
 
 function piPayloadFromPI(p: PI) {
@@ -1379,7 +1377,10 @@ export default function SalesQPI() {
     },
     {
       header: 'Currency', accessorKey: 'currency',
-      cell: (info: any) => info.getValue() ? <span className="qpi-currency">{currencyCode(info.getValue())}</span> : <span className="qpi-em">—</span>,
+      cell: (info: any) => {
+        const code = displayCurrency(info.getValue(), info.row.original?.docType);
+        return code ? <span className="qpi-currency">{code}</span> : <span className="qpi-em">—</span>;
+      },
     },
     {
       header: 'Sales Manager', accessorKey: 'salesManager',
@@ -1586,7 +1587,10 @@ export default function SalesQPI() {
         : <span className="qpi-em">—</span> },
     { header: 'Document Type', accessorKey: 'docType' },
     { header: 'Currency', accessorKey: 'currency',
-      cell: (info: any) => info.getValue() ? <span className="qpi-currency">{currencyCode(info.getValue())}</span> : <span className="qpi-em">—</span> },
+      cell: (info: any) => {
+        const code = displayCurrency(info.getValue(), info.row.original?.docType);
+        return code ? <span className="qpi-currency">{code}</span> : <span className="qpi-em">—</span>;
+      } },
     { header: 'Sales Manager', accessorKey: 'salesManager',
       cell: (info: any) => <span className="qpi-sm">{info.getValue() || '—'}</span> },
     {
@@ -2204,12 +2208,27 @@ const normStateCode = (code: string): string => {
   const t = (code || '').trim();
   return /^\d+$/.test(t) ? String(Number(t)) : '';
 };
-/* An unknown/unresolvable state code counts as intra-state — same default as
- * the PO wizard, so a half-filled form doesn't flip to IGST. */
+/* Our own registered state. Mirrors App\Support\Gst::DEFAULT_HOME_STATE_CODE so
+ * the frontend never assumes a *different* home state than the backend while
+ * /sales/gst-home-state is still in flight. */
+const DEFAULT_HOME_STATE_CODE = '27';
+
+/* Intra-state (CGST + SGST) only when the customer's GST state code equals our
+ * own; anything else is inter-state (IGST).
+ *
+ * The home side falls back to the default rather than to "unknown". It used to
+ * be allowed to arrive empty, and an empty home short-circuited the whole
+ * comparison to intra — so while the home-state fetch was in flight (or had
+ * failed) a Gujarat customer (24) rendered "Intra-state — CGST + SGST" against
+ * a Maharashtra (27) branch, with CGST/SGST columns instead of IGST. The state
+ * code shown in the summary and the tax split disagreed on screen.
+ *
+ * An unresolvable PARTY code still counts as intra — that's a half-filled form,
+ * not a wrong answer, and it matches the PO wizard. */
 const isIntraState = (stateCodeLabel: string, homeStateCode: string): boolean => {
   const party = normStateCode(stateCodeOf(stateCodeLabel));
-  const home  = normStateCode(homeStateCode);
-  if (!party || !home) return true;
+  const home  = normStateCode(homeStateCode) || DEFAULT_HOME_STATE_CODE;
+  if (!party) return true;
   return party === home;
 };
 
@@ -2232,7 +2251,59 @@ function splitTax(p: ProductRow, intra: boolean): TaxSplit {
  * Masters hook — pulled once when either Create modal opens so every
  * dropdown gets real, fresh data instead of free-text inputs.
  * ════════════════════════════════════════════════════════════════════════ */
-type MasterOpt = { value: string; label: string };
+type MasterOpt = {
+  value: string;
+  label: string;
+  /* Master row id, carried on options whose selection is stored by id rather
+     than by label (INCO Term — see shapeQpiMasters). */
+  id?: number;
+  /* Optional pill shown to the right of the label in MasterSelect. Used on the
+     Customer / Consignee lists to mark each party Domestic vs International, so
+     the user can see at a glance which ones suit the chosen Document Type
+     instead of having to remember each party's country. */
+  badge?: { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string };
+  /* Renders the option greyed and unselectable, with `disabledReason` shown on
+     hover. Used for off-segment products — see visibleProductOptions. */
+  disabled?: boolean;
+  disabledReason?: string;
+};
+
+/* India → Domestic, anything else → International. Same rule as the customer
+ * form's isDomesticCountry; a blank country stays unlabelled rather than being
+ * guessed, so an incomplete party doesn't claim to be either. */
+/* `customers.segment` is a comma-joined list of segment NAMES ("Tobacco, Rice").
+ * Split + trim it into the array the product picker compares against — the
+ * trim matters, because the stored string has a space after each comma and an
+ * untrimmed " Rice" would never match a product's "Rice".
+ *
+ * Same derivation as SalesMatrixDetail's `customerSegments`, which feeds the
+ * Product Directory picker, so both screens agree on what the customer's
+ * segments are. Mirrors App\Support\SegmentGuard::names() on the server. */
+/* "P-10 – test" → "P-010 – test", for DISPLAY ONLY.
+ *
+ * The raw label is the option's `value`, is stored in `draft.name`, and is what
+ * gets POSTed as `product_name` — so it must stay exactly as the master has it.
+ * Formatting the stored string instead would write "P-010" into the DB while
+ * products.product_code still says "P-10", and the two would drift apart. This
+ * is the same display-only rule the SPI wizard follows for the same reason. */
+function displayProductLabel(rawLabel: string): string {
+  const [code, ...rest] = rawLabel.split(' – ');
+  return rest.length ? `${formatProductCode(code)} – ${rest.join(' – ')}` : rawLabel;
+}
+
+function splitSegmentNames(raw: string | null | undefined): string[] {
+  return typeof raw === 'string'
+    ? raw.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+}
+
+function partyScopeBadge(country: string | null | undefined): MasterOpt['badge'] {
+  const c = (country ?? '').trim();
+  if (!c) return undefined;
+  return c === 'India'
+    ? { text: 'Domestic', tone: 'green', title: 'India — use with a Domestic document' }
+    : { text: 'International', tone: 'violet', title: `${c} — use with an International document` };
+}
 // Raw rows kept alongside the dropdown options so the form can cascade
 // (pick opportunity → fill customer + consignee + date + currency; pick
 // customer → filter opportunities and consignees).
@@ -2265,12 +2336,19 @@ type CustomerRow = {
    * customer form gained the field. */
   stateCode: string;          // customer_addresses.state_code, e.g. "27"
   gstNumber: string;          // customers.gst_number, shown read-only on Domestic
+  /* `customers.segment` verbatim — a COMMA-JOINED list of segment NAMES
+     ("Tobacco, Rice"), not ids. Used to restrict the Step 2 product list to the
+     customer's own segments. See App\Support\SegmentGuard for the canonical
+     split; the customer side is names while the product side is an id, so the
+     two are matched by NAME (house style — see EnforcesSegmentBuyerConsignee). */
+  segment:   string | null;
 };
 type ConsigneeRow = {
   dbId:          number;          // consignees.id (numeric PK)
   code:          string;          // "CN-012"
   company:       string;
-  customerDbId:  number | null;   // FK → customers.id
+  customerDbId:  number | null;   // FK → customers.id (legacy primary customer)
+  customerDbIds: number[];        // all mapped customers (consignee_customer pivot)
   country:       string;
 };
 type BankRow = {
@@ -2284,11 +2362,18 @@ type ProductMasterRow = {
   hsn:     string | null;   // resolved HSN code
   rate:    number;          // base_price (default sell rate)
   taxPct:  number;          // gst percentage
+  /* Resolved segment NAME from the eager-loaded `segment` relation
+     (products.segment_id → clm_segments.name). A product has at most ONE
+     segment. Null when the product has none, or when segment_id points at a
+     deleted row — products.segment_id carries no FK constraint, so that state
+     is reachable and must not be treated as a mismatch. */
+  segment: string | null;
 };
 type LoadedMasters = {
   currencies:       MasterOpt[];
   incoterms:        MasterOpt[];
-  ports:            MasterOpt[];
+  ports:            MasterOpt[];   // Port of Loading master
+  portsDischarge:   MasterOpt[];   // Port of Discharge master (separate rows)
   countries:        MasterOpt[];
   customers:        MasterOpt[];
   consignees:       MasterOpt[];
@@ -2359,7 +2444,14 @@ function loadQpiMasters(branch: string): Promise<LoadedMasters> {
   qpiMastersInFlight = Promise.all([
     api.get('/master/currencies').catch(() => ({ data: [] })),
     api.get('/master/incoterms').catch(() => ({ data: [] })),
+    /* Loading and Discharge are SEPARATE masters (master_port_of_loading /
+     * master_port_of_discharge) with different rows — discharge additionally
+     * carries country + city. Only port_of_loading used to be fetched, and its
+     * list was fed to BOTH dropdowns, so Port of Discharge silently offered the
+     * loading ports and every discharge port the user had created was
+     * unreachable. */
     api.get('/master/port_of_loading').catch(() => ({ data: [] })),
+    api.get('/master/port_of_discharge').catch(() => ({ data: [] })),
     api.get('/master/countries').catch(() => ({ data: [] })),
     api.get('/customers', { params: { tab: 'all' } }).catch(() => ({ data: { data: [] } })),
     api.get('/consignees').catch(() => ({ data: { data: [] } })),
@@ -2370,8 +2462,8 @@ function loadQpiMasters(branch: string): Promise<LoadedMasters> {
      * customer, so both are gone — /master/states alone was ~1800 rows. */
     api.get('/products', { params: { per_page: 200, status: 'active' } }).catch(() => ({ data: { data: [] } })),
     api.get('/sales/gst-home-state').catch(() => ({ data: {} })),
-  ]).then(([cur, inco, port, ctry, cust, cons, bank, lead, prod, home]): LoadedMasters => {
-    const next = shapeQpiMasters(cur, inco, port, ctry, cust, cons, bank, lead, prod, home);
+  ]).then(([cur, inco, port, portDis, ctry, cust, cons, bank, lead, prod, home]): LoadedMasters => {
+    const next = shapeQpiMasters(cur, inco, port, portDis, ctry, cust, cons, bank, lead, prod, home);
     qpiMastersCache    = { data: next, branchId: branch, loadedAt: Date.now() };
     qpiMastersInFlight = null;
     return next;
@@ -2386,7 +2478,7 @@ function loadQpiMasters(branch: string): Promise<LoadedMasters> {
  * produce the exact same `LoadedMasters` object, avoiding any drift
  * between two slightly different shaping implementations. */
 function shapeQpiMasters(
-  cur: any, inco: any, port: any, ctry: any,
+  cur: any, inco: any, port: any, portDis: any, ctry: any,
   cust: any, cons: any, bank: any, lead: any,
   prod: any, home?: any,
 ): LoadedMasters {
@@ -2398,6 +2490,28 @@ function shapeQpiMasters(
       const label = code && name ? `${code} – ${name}` : (name || code || '');
       return { value: label, label };
     }).filter(o => o.label);
+  /* INCO Term — the trade desk works with four terms only, so the master's
+   * eleven official Incoterms are filtered down to them here (one place, so
+   * the Quotation/PI form and the Create Shipment form agree). CFR is the
+   * official code for what the desk writes as C&F, so that row is surfaced
+   * under the C&F name while keeping its real master id. Options carry `id`
+   * because shipments store the incoterm by id, not by label. */
+  const INCO_CODE_MAP: Record<string, string> = { EXW: 'EXW', FOB: 'FOB', CIF: 'CIF', CFR: 'C&F', CNF: 'C&F', 'C&F': 'C&F' };
+  const INCO_ORDER = ['FOB', 'EXW', 'CIF', 'C&F'];
+  const incoSeen = new Set<string>();
+  const incoOpts: MasterOpt[] = arr(inco)
+    .map((r: any) => {
+      const code = INCO_CODE_MAP[String(r.code ?? '').trim().toUpperCase()];
+      if (!code || incoSeen.has(code)) return null;
+      incoSeen.add(code);
+      const name = String(r.full_name ?? r.name ?? '').trim();
+      const label = name ? `${code} – ${name}` : code;
+      return { id: Number(r.id), value: label, label };
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) =>
+      INCO_ORDER.indexOf(String(a.label).split(/\s|–/)[0]) - INCO_ORDER.indexOf(String(b.label).split(/\s|–/)[0]));
+
   const customerRows = arr(cust);
   const consigneeRows = arr(cons);
   const bankRows = arr(bank);
@@ -2413,7 +2527,10 @@ function shapeQpiMasters(
     const name = r.name ?? '';
     if (!name) return;
     const label = `${code} – ${name}`;
-    productOptList.push({ value: label, label });
+    /* value = the RAW label (what gets stored / POSTed / matched back against
+       the master); label = the padded code shown on screen. Keeping them apart
+       is what stops the display format from leaking into the saved data. */
+    productOptList.push({ value: label, label: displayProductLabel(label) });
     const gstPct = Number(
       r.gstPercentage?.percentage
       ?? r.gst_percentage?.percentage
@@ -2425,6 +2542,9 @@ function shapeQpiMasters(
       hsn:    r.hsn?.code ?? r.hsn_code ?? null,
       rate:   Number(r.base_price ?? 0),
       taxPct: isFinite(gstPct) ? Number(gstPct.toFixed(2)) : 0,
+      /* ProductController eager-loads `segment`, so the NAME is already
+         resolved here — no second lookup against the segment master. */
+      segment: (r.segment?.name ?? '').trim() || null,
     });
   });
 
@@ -2450,14 +2570,17 @@ function shapeQpiMasters(
     const co   = r.company ?? r.company_name ?? r.name ?? '';
     const label = `${code} – ${co}`;
     if (!co) return;
-    customerOpts.push({ value: label, label });
+    const country = r.country ?? r.country_iso ?? '';
+    customerOpts.push({ value: label, label, badge: partyScopeBadge(country) });
     customersRaw.push({
       dbId, code, company: co,
-      country: r.country ?? r.country_iso ?? '',
+      country,
       currency: r.currency ?? r.default_currency ?? null,
       // CustomerController::shapeCustomer camelCases both of these.
       stateCode: String(r.stateCode ?? r.state_code ?? ''),
       gstNumber: String(r.gstNumber ?? r.gst_number ?? ''),
+      // shapeCustomer passes `segment` through verbatim (comma-joined names).
+      segment:   (r.segment ?? '').trim() || null,
     });
   });
   const consigneeOpts: MasterOpt[] = [];
@@ -2469,10 +2592,21 @@ function shapeQpiMasters(
     const co   = r.company ?? r.company_name ?? r.name ?? '';
     if (!co) return;
     const label = `${code} – ${co}`;
-    consigneeOpts.push({ value: label, label });
+    // Same Domestic/International pill as the Customer list — the two fields
+    // sit side by side and have to agree on scope.
+    consigneeOpts.push({ value: label, label, badge: partyScopeBadge(r.country) });
+    // A consignee can be mapped to MANY customers (consignee_customer pivot).
+    // Prefer the full customer_ids array; fall back to the single legacy
+    // customer_id so older rows still resolve.
+    const mappedIds: number[] = Array.isArray(r.customer_ids)
+      ? r.customer_ids.map((v: any) => Number(v)).filter((n: number) => Number.isFinite(n) && n > 0)
+      : [];
+    const primaryId = r.customer_id != null ? Number(r.customer_id) : null;
+    if (primaryId && !mappedIds.includes(primaryId)) mappedIds.push(primaryId);
     consigneesRaw.push({
       dbId, code, company: co,
-      customerDbId: r.customer_id != null ? Number(r.customer_id) : null,
+      customerDbId: primaryId,
+      customerDbIds: mappedIds,
       country: r.country ?? '',
     });
   });
@@ -2510,8 +2644,9 @@ function shapeQpiMasters(
   });
   return {
     currencies: optByCode(arr(cur)),
-    incoterms:  optByCode(arr(inco)),
-    ports:      optByCode(arr(port)),
+    incoterms:  incoOpts,
+    ports:         optByCode(arr(port)),
+    portsDischarge: optByCode(arr(portDis)),
     countries:  arr(ctry).map((r: any) => ({ value: r.name ?? '', label: r.name ?? '' })).filter((o: MasterOpt) => o.label),
     customers:  customerOpts,
     consignees: consigneeOpts,
@@ -2521,7 +2656,7 @@ function shapeQpiMasters(
     productsRaw: productRawList,
     // Falls back to Maharashtra when the endpoint fails or the branch has no
     // GSTIN on file — same default as the server's Gst::homeStateCode.
-    homeStateCode: String(home?.data?.data?.state_code ?? '') || '27',
+    homeStateCode: String(home?.data?.data?.state_code ?? '') || DEFAULT_HOME_STATE_CODE,
     opportunities:    opportunityOpts,
     opportunitiesRaw,
     customersRaw,
@@ -2551,10 +2686,12 @@ export function useQpiMasters(open: boolean): LoadedMasters {
       && Date.now() - qpiMastersCache.loadedAt < QPI_MASTERS_CACHE_TTL_MS
     ) return qpiMastersCache.data;
     return {
-      currencies: [], incoterms: [], ports: [], countries: [],
+      currencies: [], incoterms: [], ports: [], portsDischarge: [], countries: [],
       customers: [], consignees: [], banks: [], opportunities: [],
       products: [],
-      homeStateCode: '',
+      // Never '' — an unknown home state used to read as intra-state, which
+      // taxed an out-of-state customer as CGST + SGST until the fetch landed.
+      homeStateCode: DEFAULT_HOME_STATE_CODE,
       opportunitiesRaw: [], customersRaw: [], consigneesRaw: [],
       banksRaw: [], productsRaw: [],
       loading: false,
@@ -2802,7 +2939,10 @@ export function CreateQuotationModal(props: {
         customer_id:       form.customerId,
         consignee_id:      form.consigneeId,
         bank_account_id:   form.bankAccountId,
-        currency:          form.currency || null,
+        // Domestic has no Currency field on screen — it's rupees by definition.
+        // The server derives the same value; sending it keeps the request
+        // honest rather than posting null and relying on the fix-up.
+        currency:          isDomestic ? 'INR' : (form.currency || null),
         exchange_rate:     form.exchangeRate ? Number(form.exchangeRate) : null,
         inco_term:         form.incoTerm        || null,
         port_of_loading:   form.portOfLoading   || null,
@@ -2948,6 +3088,11 @@ export function CreateQuotationModal(props: {
                * quotation — the lead's FINAL consignee is fixed by the
                * first quotation and must not drift on later create/edit. */
               lockConsignee={isEdit || !!initialOpp?.consigneeId}
+              /* Same edit lock as the PI wizard: flipping International/
+               * Domestic on a saved quotation would break its tax/costing
+               * structure. (On create, the type follows the customer's
+               * country and locks automatically inside BasicForm.) */
+              lockDocType={isEdit}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
                 if (!prev.has(k)) return prev;
@@ -2975,6 +3120,9 @@ export function CreateQuotationModal(props: {
               productsRaw={masters.productsRaw}
               loadingProducts={masters.loading}
               homeStateCode={masters.homeStateCode}
+              customerSegments={splitSegmentNames(
+                masters.customersRaw.find(c => c.dbId === form.customerId)?.segment
+              )}
             />
           )}
         </div>
@@ -3201,7 +3349,8 @@ export function CreatePIModal(props: {
         customer_id:         form.customerId,
         consignee_id:        form.consigneeId,
         bank_account_id:     form.bankAccountId,
-        currency:            form.currency || null,
+        // Domestic is rupees by definition — see the quotation payload's note.
+        currency:            isDomestic ? 'INR' : (form.currency || null),
         exchange_rate:       form.exchangeRate ? Number(form.exchangeRate) : null,
         inco_term:           form.incoTerm        || null,
         port_of_loading:     form.portOfLoading   || null,
@@ -3368,6 +3517,9 @@ export function CreatePIModal(props: {
               productsRaw={masters.productsRaw}
               loadingProducts={masters.loading}
               homeStateCode={masters.homeStateCode}
+              customerSegments={splitSegmentNames(
+                masters.customersRaw.find(c => c.dbId === form.customerId)?.segment
+              )}
             />
           )}
         </div>
@@ -3678,22 +3830,50 @@ function BasicForm(props: {
     return masters.customersRaw.find(c => c.code === code) ?? null;
   }, [form.customer, masters.customersRaw]);
 
+
+  /* ── Document Type follows the CUSTOMER's country ─────────────────
+   * An Indian customer's documents are Domestic; a foreign customer's are
+   * International — the GST/tax structure follows the customer, so the
+   * user must not be able to pick the other type. When the customer's
+   * country is known the field auto-selects and renders read-only; with
+   * no customer picked (or a legacy customer saved without a country) the
+   * dropdown stays editable. Edit mode (lockDocType) never rewrites the
+   * saved type — the stored document keeps whatever it was created as. */
+  const isIndiaCountry = (c?: string | null): boolean => {
+    const v = (c ?? '').trim().toLowerCase();
+    return v === 'india' || v === 'in' || v === 'ind';
+  };
+  // customerId (set by every cascade + the matrix pre-seed) is the primary
+  // key; the label-parsed row is the fallback for older paths.
+  const custCountry = (
+    (form.customerId != null ? masters.customersRaw.find(c => c.dbId === form.customerId) : null)
+      ?? selectedCustomerRow
+  )?.country?.trim() ?? '';
+  const forcedDocType: 'International' | 'Domestic' | null =
+    custCountry === '' ? null : (isIndiaCountry(custCountry) ? 'Domestic' : 'International');
+  useEffect(() => {
+    if (lockDocType || !forcedDocType) return;
+    setForm(f => (f.docType === forcedDocType ? f : { ...f, docType: forcedDocType }));
+  }, [forcedDocType, lockDocType, setForm]);
+
   // (Opportunity filtering now happens server-side inside OpportunitySelect
   // via the leads `customer_id` param + paginated fetch — the old client-side
   // `filteredOpportunities` memo over the static 50-row list was removed.)
 
-  // Consignees filtered by selected customer — uses consignee.customer_id
-  // (numeric FK) matching the customer's numeric dbId. STRICT: only the
-  // consignees mapped to this customer are shown (whether the customer was
-  // picked directly or auto-filled from an opportunity). When the customer
-  // has none mapped, the list is empty and the field shows the
-  // "No consignees for this customer" placeholder — we no longer fall back
-  // to the full list, which used to leak every consignee.
+  // Consignees filtered by selected customer — matches the customer's numeric
+  // dbId against the consignee's full set of mapped customers (customerDbIds,
+  // from the consignee_customer pivot), NOT just the legacy primary customer.
+  // A consignee mapped to several customers must show for every one of them.
+  // STRICT: only the consignees mapped to this customer are shown (whether the
+  // customer was picked directly or auto-filled from an opportunity). When the
+  // customer has none mapped, the list is empty and the field shows the
+  // "No consignees for this customer" placeholder — we no longer fall back to
+  // the full list, which used to leak every consignee.
   const filteredConsignees = useMemo(() => {
     if (!selectedCustomerRow) return masters.consignees;
     const matchValues = new Set(
       masters.consigneesRaw
-        .filter(c => c.customerDbId === selectedCustomerRow.dbId)
+        .filter(c => c.customerDbIds.includes(selectedCustomerRow.dbId))
         .map(c => `${c.code} – ${c.company}`)
     );
     return masters.consignees.filter(opt => matchValues.has(opt.value));
@@ -3758,7 +3938,7 @@ function BasicForm(props: {
         nextConsigneeId = conRow.dbId;
       }
     } else if (custRow) {
-      const mine = masters.consigneesRaw.filter(c => c.customerDbId === custRow.dbId);
+      const mine = masters.consigneesRaw.filter(c => c.customerDbIds.includes(custRow.dbId));
       if (mine.length === 1) {
         nextConsignee   = `${mine[0].code} – ${mine[0].company}`;
         nextConsigneeId = mine[0].dbId;
@@ -3828,9 +4008,9 @@ function BasicForm(props: {
       );
       if (oppRow && !oppMatches) { nextOpportunity = ''; nextOppId = null; }
 
-      // Filter consignees by numeric FK — auto-pick if exactly one,
+      // Filter consignees by mapped customers — auto-pick if exactly one,
       // clear if the current selection no longer belongs to this customer.
-      const mine = masters.consigneesRaw.filter(c => c.customerDbId === cust.dbId);
+      const mine = masters.consigneesRaw.filter(c => c.customerDbIds.includes(cust.dbId));
       const stillValid = mine.find(c => `${c.code} – ${c.company}` === form.consignee);
       if (mine.length === 1) {
         nextConsignee   = `${mine[0].code} – ${mine[0].company}`;
@@ -3911,9 +4091,11 @@ function BasicForm(props: {
 
       <div className="qpi-form-grid">
         <Field label="Document Type" required>
-          {lockDocType ? (
+          {lockDocType || forcedDocType ? (
             <input className="qpi-input qpi-input-readonly" value={form.docType} readOnly
-              title="Document Type can't be changed when editing — create a new document to switch International / Domestic." />
+              title={lockDocType
+                ? "Document Type can't be changed when editing — create a new document to switch International / Domestic."
+                : `Fixed by the customer's country (${custCountry}) — a ${forcedDocType === 'Domestic' ? 'domestic (Indian)' : 'foreign'} customer only gets ${forcedDocType} documents.`} />
           ) : (
           <MasterSelect
             value={form.docType}
@@ -4112,11 +4294,11 @@ function BasicForm(props: {
             </Field>
             <Field label="Port of Discharge" required error={hasError('portOfDischarge')}>
               <MasterSelect
-                key={`pod-${masters.ports.length}`}
+                key={`pod-${masters.portsDischarge.length}`}
                 value={form.portOfDischarge}
                 loading={masters.loading}
                 placeholder="— Select Port —"
-                options={withCurrent(masters.ports, form.portOfDischarge)}
+                options={withCurrent(masters.portsDischarge, form.portOfDischarge)}
                 onChange={(v) => set('portOfDischarge', v)}
               />
             </Field>
@@ -4196,9 +4378,16 @@ function ProductsStep(props: {
   // Our own GST state code — compared against form.stateCode to pick the
   // Domestic tax split. See isIntraState.
   homeStateCode: string;
+  /* Segment NAMES of the selected customer, already split. A product may only
+     be quoted to a customer that shares its segment, so off-segment products
+     are greyed out below. Empty (no customer picked, or the customer carries no
+     segment) means NO restriction — matching the server, which skips the check
+     entirely in that case rather than blocking everything. */
+  customerSegments: string[];
 }) {
   const { form, products, removeProduct, draft, setDraft, addProduct, terms, setTerms, shipping, setShipping, subTotal, grandTotal, theme,
-          productOptions, productsRaw, loadingProducts, homeStateCode } = props;
+          productOptions, productsRaw, loadingProducts, homeStateCode, customerSegments } = props;
+  const toast = useToast();
 
   // Per-opportunity product filter. When the user picks an Opportunity
   // on Step 1, the Product Directory mapping (lead_products) tells us
@@ -4294,6 +4483,9 @@ function ProductsStep(props: {
   //      can't add the same line twice. To change qty/rate on an
   //      existing line, the user must remove it first — then the
   //      product reappears in the dropdown.
+  // Stable identity for the segment list — see the memo's dependency note.
+  const customerSegmentKey = customerSegments.join('|').toLowerCase();
+
   const visibleProductOptions = useMemo(() => {
     // Narrowed set for the selected opportunity isn't ready — show nothing
     // (field reads "Loading products…") rather than flashing the full master.
@@ -4315,6 +4507,38 @@ function ProductsStep(props: {
       opts = opts.filter(o => allowedLabels.has(o.value));
     }
 
+    /* Segment gate + segment badge.
+     *
+     * Every product shows its SEGMENT as a violet pill (so the user can see
+     * which segment each belongs to — same as the Product Directory picker).
+     * A product whose segment isn't among the customer's is kept in the list
+     * but DISABLED (greyed) with a short reason on hover / toast on click,
+     * rather than hidden — the user asked to still see off-segment items and be
+     * told why they can't be added.
+     *
+     * Three deliberate no-disable cases, all matching the server guard in
+     * EnforcesSegmentBuyerConsignee so the UI never blocks something the API
+     * would accept:
+     *   · customer has no segment  → segmentSet empty  → nothing disabled
+     *   · product has no segment   → nothing to compare → enabled (no badge)
+     *   · option has no master row → free-text edge case → left alone
+     * Comparison is lowercased both sides; segment names are free text so their
+     * case can drift. The badge text is capped so a long segment name can't
+     * blow out the row. */
+    const segmentSet = new Set(customerSegments.map(s => s.toLowerCase()));
+    opts = opts.map(o => {
+      const code = (o.value || '').split(' – ')[0]?.trim() ?? '';
+      const seg = productsRaw.find(pr => pr.code === code)?.segment;
+      if (!seg) return o;   // free-text / no-segment products stay as-is
+      // Short cap so the badge stays compact and the product code+name keeps the
+      // row — full segment name is on the badge's hover title.
+      const badge = { text: seg.length > 14 ? `${seg.slice(0, 14)}…` : seg, tone: 'violet' as const, title: seg };
+      const offSegment = segmentSet.size > 0 && !segmentSet.has(seg.toLowerCase());
+      return offSegment
+        ? { ...o, badge, disabled: true, disabledReason: 'Customer and product segment must match.' }
+        : { ...o, badge };
+    });
+
     // Build a set of already-added productIds (skip free-text rows that
     // have no productId, otherwise we'd over-filter).
     const addedIds = new Set(
@@ -4331,7 +4555,12 @@ function ProductsStep(props: {
     }
 
     return opts;
-  }, [leadProductsPending, allowedProductIds, productOptions, productsRaw, products]);
+    /* `customerSegments` is rebuilt by the parent on every render, so its
+       identity always changes and can't be a dependency — the memo would
+       recompute on every render and defeat itself. The joined string is stable
+       for the same segments, so depend on that instead. */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadProductsPending, allowedProductIds, productOptions, productsRaw, products, customerSegmentKey]);
 
   /* No selectable products left to add (every mapped product is already in the
    * list, or none are mapped) → the whole "add product" draft row is hidden. */
@@ -4379,8 +4608,9 @@ function ProductsStep(props: {
   /* On product selection, auto-fill hsn + (qty/rate/tax) from masters.
    * Priority for rate: latest QUOTED price (Stage 4) > lead-product
    *   target_price > product master base_price.
-   * Priority for qty:  lead-product quantity (Product Directory) > draft qty.
-   * Qty and rate keep anything the user already typed; tax does NOT — see below. */
+   * Priority for qty:  lead-product quantity (Product Directory) > empty.
+   * Typed qty/rate survive only a re-pick of the SAME product — switching
+   * products refills every field from the new one. See the notes inside. */
   const onProductPick = (label: string) => {
     const code = (label || '').split(' – ')[0]?.trim() ?? '';
     const p = productsRaw.find(pr => pr.code === code);
@@ -4390,13 +4620,30 @@ function ProductsStep(props: {
     }
     const leadPrice = leadPriceMap.get(p.dbId);
     const latestQuoted = latestQuotedMap.get(p.dbId);
+    // Re-picking the same product keeps the user's typed qty/rate; picking a
+    // different one refills them from the new product. See the note below.
+    const samePick = draft.productId === p.dbId;
     setDraft({
       ...draft,
       name:      `${p.code} – ${p.name}`,
       productId: p.dbId,
       hsn:       p.hsn,
-      qty:    draft.qty    > 0 ? draft.qty    : (leadPrice?.qty  ?? draft.qty),
-      rate:   draft.rate   > 0 ? draft.rate   : (latestQuoted ?? leadPrice?.rate ?? p.rate),
+      /* Preserve what the user typed ONLY when they re-picked the SAME product
+       * (e.g. reopening the dropdown and confirming). Switching to a DIFFERENT
+       * product refills from that product's own master.
+       *
+       * These two used to keep any non-zero draft value unconditionally, which
+       * carried the previous product's numbers onto the new line: type a rate
+       * for P-10, then switch to P-06, and P-06 kept P-10's rate — a silently
+       * wrong price on a document that goes to the customer. Exactly the failure
+       * the taxPct note below already guards against; rate and qty simply hadn't
+       * been brought in line with it.
+       *
+       * On a change, qty falls back to the Product Directory quantity when the
+       * opportunity defines one, otherwise 0 so the field reads empty and has to
+       * be entered deliberately for the new product. */
+      qty:    samePick && draft.qty  > 0 ? draft.qty  : (leadPrice?.qty ?? 0),
+      rate:   samePick && draft.rate > 0 ? draft.rate : (latestQuoted ?? leadPrice?.rate ?? p.rate),
       /* Tax always comes from the picked product's master GST — International
        * is tax-free (0), Domestic has no Tax % input to type into any more.
        * This must NOT preserve a non-zero draft.taxPct: with no input to clear,
@@ -4511,7 +4758,9 @@ function ProductsStep(props: {
               const t = splitTax(p, intra);
               return (
                 <tr key={p.id}>
-                  <td>{p.name}</td>
+                  {/* Formatted on the way OUT only — p.name keeps the raw
+                      master label, which is what gets saved. */}
+                  <td>{displayProductLabel(p.name)}</td>
                   <td>{p.qty}</td>
                   <td>{p.rate.toFixed(2)}</td>
                   {isIntl ? (
@@ -4556,9 +4805,11 @@ function ProductsStep(props: {
                           : '— Select Product —')
                   }
                   options={draft.name && !visibleProductOptions.find(o => o.value === draft.name)
-                    ? [...visibleProductOptions, { value: draft.name, label: draft.name }]
+                    ? [...visibleProductOptions, { value: draft.name, label: displayProductLabel(draft.name) }]
                     : visibleProductOptions}
                   onChange={onProductPick}
+                  // Clicking a greyed (off-segment) product explains why, short.
+                  onDisabledClick={() => toast.warning('Segment mismatch', 'Customer and product segment must match to add.')}
                 />
               </td>
               <td><input className="qpi-input qpi-input-num" type="number" min="0" value={draft.qty || ''} onChange={(e) => setDraft({ ...draft, qty: Number(e.target.value) })} /></td>
@@ -4605,12 +4856,17 @@ function ProductsStep(props: {
       <div className="qpi-totals-row">
         <div className="qpi-terms">
           <div className={`qpi-form-heading qpi-form-heading-${theme}`}>TERMS &amp; CONDITIONS</div>
-          <textarea
-            className="qpi-textarea"
-            placeholder="Enter terms and conditions..."
-            value={terms}
-            onChange={(e) => setTerms(e.target.value)}
-          />
+          <div style={{ position: 'relative', display: 'flex' }}>
+            <textarea
+              className="qpi-textarea"
+              placeholder="Enter terms and conditions..."
+              value={terms}
+              onChange={(e) => setTerms(e.target.value)}
+            />
+            <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 11, color: 'var(--vz-secondary-color)', pointerEvents: 'none' }}>
+              {terms.length} characters
+            </div>
+          </div>
         </div>
 
         <div className={`qpi-summary qpi-summary-${theme}`}>
@@ -5179,6 +5435,12 @@ const SCOPED_CSS = `
   overflow-y: visible;
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
+  /* Promote the WHOLE scroll area to one compositor layer so Chrome
+   * repositions the sticky ACTION column on the GPU during horizontal scroll
+   * — kills the jitter/shake. Done on the container (not per-cell) so every
+   * sticky cell stays in the SAME layer and can't desync ("alag alag shake"). */
+  will-change: transform;
+  transform: translateZ(0);
 }
 .qpi-table-host .table-responsive::-webkit-scrollbar { height: 8px; }
 .qpi-table-host .table-responsive::-webkit-scrollbar-track { background: transparent; }
@@ -5302,8 +5564,23 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .qpi-table-host .table tbody tr:nth-child(even) td:last-child {
   background: #1d1830 !important;
 }
+/* Hover on the PINNED cell must be OPAQUE.
+ *
+ * This was rgba(134,92,226,.12) — a translucent tint. On every other cell that
+ * reads fine, because the row behind it is opaque. But the pinned cell sits
+ * ABOVE the horizontally-scrolling cells, so any alpha lets them slide visibly
+ * underneath it: the ACTION column looked see-through and rows appeared to run
+ * "inside" it while scrolling.
+ *
+ * color-mix flattens the same tint against the row's own base colour, so the
+ * hover looks identical but nothing shows through. Two rules because the zebra
+ * gives odd and even rows different bases — one flat colour would make the
+ * pinned cell drift out of step with its own row on hover. */
 [data-bs-theme="dark"] .qpi-table-host .table tbody tr:hover td:last-child {
-  background: rgba(134,92,226,.12) !important;
+  background: color-mix(in srgb, #865ce2 12%, var(--vz-card-bg, #1a1d21)) !important;
+}
+[data-bs-theme="dark"] .qpi-table-host .table tbody tr:nth-child(even):hover td:last-child {
+  background: color-mix(in srgb, #865ce2 12%, #1d1830) !important;
 }
 
 /* TableContainer's built-in pagination strip — styled as a proper card
@@ -5829,7 +6106,9 @@ const SCOPED_CSS = `
 }
 .qpi-modal-backdrop *, .qpi-modal-backdrop *::before, .qpi-modal-backdrop *::after { box-sizing: border-box; }
 .qpi-modal {
-  width: 100%; max-width: 1140px;
+  /* 1140 → 1280: the Step-2 product grid (rate/tax/amount columns) was
+     cramped and forced an inner horizontal scroll on 1366px+ screens. */
+  width: 100%; max-width: 1380px;
   background: #fff; border-radius: 12px;
   box-shadow: 0 20px 50px rgba(15, 23, 42, .40), 0 8px 24px rgba(124,58,237,.14);
   display: flex; flex-direction: column;
@@ -6133,10 +6412,11 @@ const SCOPED_CSS = `
   background: #d1d5db; border-radius: 999px;
 }
 .qpi-products-wrap::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
-.qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; min-width: 800px; table-layout: fixed; }
-/* Domestic intra-state adds 3 columns (CGST %, SGST %, CGST Amt, SGST Amt in
-   place of one Tax Amount) — 11 columns need more than the 800px baseline. */
-.qpi-products-table--wide { min-width: 1020px; }
+/* No min-width on desktop: the fixed layout + percentage colgroup squeeze
+   the columns into the (now 1280px) modal, so the wrap never grows a
+   horizontal scrollbar. Narrow viewports reinstate the min-widths below
+   (≤900px media block) and scroll instead of crushing the inputs. */
+.qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
 /* Header matches the modal's popup chrome — teal gradient for the
    Quotation modal, purple for PI — using the same gradient as the modal
    header. The gradient lives on the ROW (with transparent cells) so it
@@ -6184,10 +6464,11 @@ const SCOPED_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
 }
 .qpi-prod-add {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 14px; border-radius: 8px; border: none;
-  color: #fff; font-family: inherit; font-size: 12px; font-weight: 800; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 10px; border-radius: 7px; border: none;
+  color: #fff; font-family: inherit; font-size: 11px; font-weight: 800; cursor: pointer;
   box-shadow: 0 3px 10px rgba(124,58,237,.35);
+  white-space: nowrap;
 }
 .qpi-prod-add-teal   { background: linear-gradient(135deg, #0891b2, #0e7490); box-shadow: 0 3px 10px rgba(14,116,144,.35); }
 .qpi-prod-add-purple { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
@@ -6724,6 +7005,10 @@ const SCOPED_CSS = `
   .qpi-tab { flex: 1; justify-content: center; }
   .qpi-wdh-step { min-height: 0; }
   .qpi-wdh-body { padding: 6px 12px 10px; gap: 10px; }
+  /* Below tablet width the percentage columns would crush the numeric
+     inputs — reinstate the natural min-widths and let the wrap scroll. */
+  .qpi-products-table { min-width: 800px; }
+  .qpi-products-table--wide { min-width: 1020px; }
 }
 
 @media (max-width: 680px) {

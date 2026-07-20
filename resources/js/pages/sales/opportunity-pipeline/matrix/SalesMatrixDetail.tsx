@@ -226,6 +226,9 @@ export default function SalesMatrixDetail() {
    * so the inline Stage 3 (and the Product Sourcing popup) re-fetch their
    * product list + count badges live — no page refresh needed. */
   const [productsTick, setProductsTick]                 = useState(0);
+  // Bumped when a quoted price is shared (from either the inline Stage 4 or the
+  // Share Prices popup) so the OTHER Stage 4 instance re-fetches immediately.
+  const [priceTick, setPriceTick]                       = useState(0);
   const [productSourcingOpen, setProductSourcingOpen]   = useState(false);
   const [priceSharedOpen, setPriceSharedOpen]           = useState(false);
   const [changeOwnerOpen, setChangeOwnerOpen] = useState(false);
@@ -669,8 +672,15 @@ export default function SalesMatrixDetail() {
     const out: PickerOption[] = [];
     for (const r of Object.values(customerRows)) {
       if (!r.id) continue;
-      if (lc && wantDomestic !== isIndiaCountry((r as { country?: string | null }).country)) continue;
-      out.push({ value: r.id, label: `${r.id} — ${r.company}` });
+      const domestic = isIndiaCountry((r as { country?: string | null }).country);
+      if (lc && wantDomestic !== domestic) continue;
+      // Right-aligned pill shows the customer TYPE (Domestic / International) so
+      // an Indian customer is distinguished from an export one at a glance.
+      out.push({
+        value: r.id,
+        label: `${r.id} — ${r.company}`,
+        badge: { text: domestic ? 'Domestic' : 'International', tone: domestic ? 'green' : 'violet' },
+      });
     }
     return out;
   }, [customerRows, serverHeader.lockedCurrency]);
@@ -710,6 +720,12 @@ export default function SalesMatrixDetail() {
      * did this inline). */
     customer:           (serverHeader.customerRow?.company_name as string | undefined)?.trim()
                           || seedHeader.customer,
+    /* Country from the SERVER too — the mapped customer's own address country
+     * (customerCountry). The seed only carried the lead default ('IN'), so the
+     * Opportunity Summary (and the Create Procurement modal) showed India for a
+     * customer that is actually abroad, e.g. Antarctica (QA #118). Fall back to
+     * the seed when no customer is mapped yet. */
+    country:            customerCountry || seedHeader.country,
     leadId:             resolvedLeadId,
     leadStageId:        serverHeader.leadStageId,
     qualified:          serverHeader.qualified,
@@ -1275,6 +1291,11 @@ export default function SalesMatrixDetail() {
                status, mark sourced, create procurement) so the OTHER Stage 3
                instance — the popup — re-syncs. Other stages ignore it. */
             onProductsChanged={() => setProductsTick(t => t + 1)}
+            /* Stage 4 watches this to re-fetch shared prices when the toolbar
+               Share Prices popup shares one; and emits onPricesChanged after
+               its own share so the popup re-syncs. Other stages ignore both. */
+            priceRefreshTick={priceTick}
+            onPricesChanged={() => setPriceTick(t => t + 1)}
             /* Stage 5 keeps its in-stage create/edit lock; Stage 6 stays fully
                editable so the user can work there after the PI is signed. */
             locked={isSigned && stage <= 5}
@@ -1514,6 +1535,8 @@ export default function SalesMatrixDetail() {
           onPrev={() => {}}
           onNext={() => {}}
           reloadLead={reloadLead}
+          priceRefreshTick={priceTick}
+          onPricesChanged={() => setPriceTick(t => t + 1)}
           embedded
         />
       </StageEmbedModal>

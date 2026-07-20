@@ -861,7 +861,7 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 .spi-dt-btn-map:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 7px 20px rgba(16,185,129,.48); }
 .spi-dt-btn-map:disabled { opacity:.5; cursor:not-allowed; transform:none; box-shadow:none; filter:grayscale(.2); }
 /* TDS-deducted read-only lock banner. */
-.spi-dt-locknote { display:flex; align-items:center; gap:10px; margin:0 22px 14px; padding:11px 15px; border:1.5px solid #fcd9a8; border-radius:12px;
+.spi-dt-locknote { display:flex; align-items:center; gap:9px; margin:0 22px 8px; padding:7px 14px; border:1.5px solid #fcd9a8; border-radius:10px;
   background:linear-gradient(180deg,#fffaf0,#fff4e0); color:#92510a; font-size:12.5px; font-weight:600; line-height:1.35; box-shadow:0 2px 8px rgba(217,119,6,.1); }
 .spi-dt-locknote svg { flex-shrink:0; color:#d97706; }
 .spi-dt-locknote strong { font-weight:800; }
@@ -1091,3 +1091,31 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 [data-bs-theme="dark"] .spi-dt-amt { color:#cbd5e1; }
 [data-bs-theme="dark"] .spi-dt-mname { color:#dbe6ec; }
 [data-bs-theme="dark"] .spi-dt-toggle-sw { background: rgba(148,163,184,.32); }
+
+/* Calendar (MasterDatePicker) re-themed TEAL to match the SPI wizard — the
+ * shared component defaults to indigo/violet. The popup is portalled to <body>,
+ * so target the .spi-cal marker on the popup (passed via popupClassName). */
+.master-datepicker-popup.spi-cal .master-datepicker-title-btn.is-clickable { background:rgba(8,145,178,.08); border-color:rgba(8,145,178,.2); color:#0891b2; }
+.master-datepicker-popup.spi-cal .master-datepicker-title-btn.is-clickable:hover { background:rgba(8,145,178,.16); border-color:rgba(8,145,178,.4); color:#0e7490; }
+.master-datepicker-popup.spi-cal .master-datepicker-nav:hover { background:rgba(8,145,178,.1); color:#0891b2; border-color:rgba(8,145,178,.3); }
+.master-datepicker-popup.spi-cal .master-datepicker-day:hover:not(:disabled):not(.is-selected),
+.master-datepicker-popup.spi-cal .master-datepicker-cell:hover:not(.is-selected) { background:rgba(8,145,178,.1); color:#0891b2; }
+.master-datepicker-popup.spi-cal .master-datepicker-day.is-today,
+.master-datepicker-popup.spi-cal .master-datepicker-cell.is-today { background:rgba(8,145,178,.12); color:#0891b2; }
+.master-datepicker-popup.spi-cal .master-datepicker-day.is-selected,
+.master-datepicker-popup.spi-cal .master-datepicker-cell.is-selected { background:linear-gradient(135deg,#0891b2,#06b6d4); color:#fff; box-shadow:0 3px 8px rgba(8,145,178,.3); }
+.master-datepicker-popup.spi-cal .master-datepicker-footer .today-btn { color:#0891b2; }
+/* The toggle (calendar icon + open-border) is inline in the page, not in the
+ * portalled popup — re-theme it teal within the SPI scope. */
+.spi-dt .master-datepicker-icon { color:#0891b2; }
+.spi-dt .master-datepicker-toggle.open { border-color:#0891b2; box-shadow:0 0 0 3px rgba(8,145,178,.15), 0 4px 12px rgba(8,145,178,.12); }
+
+/* View-only mode sets pointer-events:none on the body to disable editing — but
+ * that also kills hover, so the truncated supplier-name (and other) tooltips
+ * never fire. Re-enable pointer-events on the read-only, tooltip-bearing
+ * elements (header pill values, readonly inputs, read-only selects) so hover
+ * still reveals the full value. Editable controls (buttons, the editable
+ * product dropdown) stay blocked. */
+.spi-dt-body .spi-dt-pill-val,
+.spi-dt-body input[readonly].spi-dt-inp,
+.spi-dt-body .spi-dt-select:not(.spi-dt-select-edit) { pointer-events: auto; }

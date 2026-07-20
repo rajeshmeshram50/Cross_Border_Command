@@ -41,10 +41,11 @@ interface TooltipProps {
   /** Optional max width in px. Default no cap. */
   maxWidth?: number;
   /**
-   * Follow the active app theme instead of the always-dark pill: a
-   * white/light pill with dark text in light mode, dark pill with light
-   * text in dark mode. Opt-in so existing (always-dark) usages are
-   * unaffected; the dark mode appearance is identical to the default.
+   * Follow the active app theme (DEFAULT): a white/light pill with dark text
+   * in light mode, a dark pill with light text in dark mode. The dark-mode
+   * appearance is identical to the old always-dark pill, so only light mode
+   * changes (dark pill → white pill). Pass `themed={false}` for the legacy
+   * always-dark pill on a specific tooltip.
    */
   themed?: boolean;
   /** Stacking layer. Default 260000 — above every overlay in this
@@ -64,7 +65,7 @@ export default function Tooltip({
   disabled = false,
   offset = 8,
   maxWidth,
-  themed = false,
+  themed = true,
   zIndex = 260000,
 }: TooltipProps) {
   const [open, setOpen] = useState(false);

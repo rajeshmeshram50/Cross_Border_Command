@@ -4,6 +4,7 @@ import { useToast } from '../../../../../contexts/ToastContext';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import CreateShipmentOrderModal, { type ShipmentInitialContext } from './CreateShipmentOrderModal';
 import RupeeRain from './RupeeRain';
+import { resolveFileUrl } from '../../../../../utils/resolveFileUrl';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Stage 6: Victory Stage
@@ -91,6 +92,10 @@ type Shipment = {
   place_of_delivery?:   string | null;
   remarks:              string | null;
   attachments:          string[] | null;
+  /* Absolute URLs built server-side (file_url). Prefer these over resolving the
+     bare `attachments` path on the client — a client-built URL resolves against
+     the SPA origin and gets bounced to the dashboard by the router (QA #55). */
+  attachments_url?:     string[] | null;
   created_at:           string;
   proforma_invoice?:    { id: number; code: string | null; created_at: string } | null;
   creator?:             { id: number; name: string } | null;
@@ -491,7 +496,9 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
                     <Cell label="FREIGHT COST"       value={fmtCcy(shipment.freight_cost)} emerald />
                     <Cell label="MODE OF TRANSPORT"  value={shipment.shipping_mode ?? '—'} emerald />
                     <Cell label="INCO TERM"          value={shipment.inco_term ?? '—'} emerald />
-                    <Cell label="PORT OF LOADING"    value={shipment.port_of_loading ?? '—'} />
+                    {/* Port of Loading on its own full-width row, then
+                        Unloading / Final Destination / Origin Country below. */}
+                    <Cell label="PORT OF LOADING"    value={shipment.port_of_loading ?? '—'} wide />
                     <Cell label="PORT OF UNLOADING"  value={shipment.port_of_unloading ?? '—'} />
                     <Cell label="FINAL DESTINATION"  value={shipment.final_destination ?? '—'} amber />
                     <Cell label="ORIGIN COUNTRY"     value={shipment.origin_country ?? '—'} />
@@ -501,6 +508,34 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
                   <div className="s6-shp-cell s6-shp-cell-wide">
                     <div className="s6-shp-label">REMARKS</div>
                     <div className="s6-shp-val">{shipment.remarks}</div>
+                  </div>
+                )}
+                {shipment.attachments && shipment.attachments.length > 0 && (
+                  <div className="s6-shp-cell s6-shp-cell-wide">
+                    <div className="s6-shp-label">ATTACHMENTS</div>
+                    <div className="s6-shp-attach">
+                      {shipment.attachments.map((a, i) => {
+                        // Prefer the server-built absolute URL (index-matched);
+                        // fall back to client resolution only for legacy rows.
+                        const href = shipment.attachments_url?.[i] ?? resolveFileUrl(a);
+                        return (
+                        <a key={i} href={href} target="_blank" rel="noreferrer"
+                          // Open via window.open with a cache-bust, exactly like the
+                          // customer/consignee document viewers — a re-uploaded file
+                          // then never shows a stale cached copy. The href stays for
+                          // middle-click / right-click.
+                          onClick={(e) => {
+                            if (!href) return;
+                            e.preventDefault();
+                            window.open(`${href}${href.includes('?') ? '&' : '?'}t=${Date.now()}`, '_blank', 'noopener,noreferrer');
+                          }}
+                          className="s6-shp-attach-chip" title={a.split('/').pop() ?? 'Attachment'}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                          <span className="s6-shp-attach-name">{a.split('/').pop() ?? 'Attachment'}</span>
+                        </a>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -621,13 +656,13 @@ function KpiTile({ tone, label, value, icon, loading }: {
   );
 }
 
-function Cell({ label, value, amber, blue, emerald }: {
+function Cell({ label, value, amber, blue, emerald, wide }: {
   label: string; value: string;
-  amber?: boolean; blue?: boolean; emerald?: boolean;
+  amber?: boolean; blue?: boolean; emerald?: boolean; wide?: boolean;
 }) {
   const tone = amber ? 's6-shp-amber' : blue ? 's6-shp-blue' : emerald ? 's6-shp-emerald' : '';
   return (
-    <div className="s6-shp-cell">
+    <div className={`s6-shp-cell ${wide ? 's6-shp-cell-wide' : ''}`}>
       <div className="s6-shp-label">{label}</div>
       <div className={`s6-shp-val ${tone}`}>{value}</div>
     </div>
@@ -822,6 +857,20 @@ const STAGE6_CSS = `
 .s6-shp-grid-4 { grid-template-columns: repeat(4, 1fr); }
 .s6-shp-cell { display: flex; flex-direction: column; gap: 3px; }
 .s6-shp-cell-wide { grid-column: 1 / -1; }
+/* Attachment chips (shipment form uploads). */
+.s6-shp-attach { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.s6-shp-attach-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 260px;
+  padding: 5px 11px; border-radius: 8px;
+  background: #f5f3ff; border: 1.5px solid #ddd6fe; color: #6d28d9;
+  font-size: 11.5px; font-weight: 700; text-decoration: none;
+  transition: background .12s, border-color .12s;
+}
+.s6-shp-attach-chip:hover { background: #ede9fe; border-color: #c4b5fd; }
+.s6-shp-attach-chip svg { flex-shrink: 0; }
+.s6-shp-attach-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-bs-theme="dark"] .s6-shp-attach-chip { background: rgba(124,58,237,.14); border-color: rgba(167,139,250,.35); color: #c4b5fd; }
+[data-bs-theme="dark"] .s6-shp-attach-chip:hover { background: rgba(124,58,237,.22); }
 .s6-shp-label { font-size: 9.5px; font-weight: 800; letter-spacing: .1em; color: #94a3b8; }
 .s6-shp-val   { font-size: 12.5px; font-weight: 700; color: #1e293b; }
 .s6-shp-val.s6-shp-amber   { color: #b45309; }

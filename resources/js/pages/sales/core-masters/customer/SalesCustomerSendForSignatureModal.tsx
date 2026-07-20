@@ -1389,7 +1389,7 @@ export default function SalesCustomerSendForSignatureModal({
                   <div className="ssf-inline">
                     <label>
                       <span>Expiry (days)</span>
-                      <input type="number" min={1} max={180} value={expiryDays} onChange={e => setExpiryDays(Math.max(1, Math.min(180, Number(e.target.value) || 1)))} />
+                      <input type="number" min={1} max={90} value={expiryDays} onChange={e => { const raw = Number(e.target.value) || 1; if (raw > 90) toast.warning('Maximum 90 days', 'Expiry can’t be more than 90 days — it’s been capped at 90.'); setExpiryDays(Math.max(1, Math.min(90, raw))); }} />
                     </label>
                   </div>
                   <label className="ssf-notes-label">
@@ -2575,7 +2575,7 @@ export const SSF_CSS = `
   background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
 }
 .ssf-recipient-h { font-size: 9.5px; font-weight: 800; color: #64748b; letter-spacing: .14em; text-transform: uppercase; }
-.ssf-recipient-name { font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 4px; }
+.ssf-recipient-name { font-size: 13px; font-weight: 700; color: #0f172a; margin-top: 4px; overflow-wrap: anywhere; word-break: break-word; }
 .ssf-recipient-email { font-size: 11.5px; color: #64748b; margin-top: 2px; word-break: break-all; }
 
 .ssf-coord-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12.5px; color: #334155; }

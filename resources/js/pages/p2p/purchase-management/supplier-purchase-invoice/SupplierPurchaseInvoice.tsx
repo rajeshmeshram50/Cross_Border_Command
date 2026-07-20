@@ -6,6 +6,8 @@ import SpiDetail from './SpiDetail';
 import PoPaymentModal from '../../procurement-management/purchase-order/PoPaymentModal';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { useScrollLock } from '../../../../hooks/useScrollLock';
+import { formatDmy } from '../../../../utils/formatDmy';
 import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 
@@ -53,6 +55,9 @@ export default function SupplierPurchaseInvoice() {
   const [mapCtx, setMapCtx] = useState<MapConfirmPayload | null>(null);
   const [editId, setEditId] = useState<number | null>(null); // set when editing an existing SPI
   const [menu, setMenu] = useState<{ row: SpiRow; x: number; y: number } | null>(null);
+  // Freeze background scroll while the More Actions menu is open — it's
+  // positioned off the trigger's rect, so a background scroll would detach it.
+  useScrollLock(!!menu);
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoFitRef = useRef(true); // false once the user picks a rows-per-page manually
@@ -338,20 +343,20 @@ export default function SupplierPurchaseInvoice() {
                 <tr key={r.id}>
                   <td className="spi-c-sr"><span className="spi-sr">{start + i + 1}</span></td>
                   <td>
-                    <span className="spi-idstack"><span className="spi-pill spi-pill-spi">{r.spiNo}</span><span className="spi-date-sub">{r.spiDate}</span></span>
+                    <span className="spi-idstack"><span className="spi-pill spi-pill-spi">{r.spiNo}</span><span className="spi-date-sub">{r.spiDate ? formatDmy(r.spiDate) : ''}</span></span>
                   </td>
-                  {withPo && <td><span className="spi-idstack"><span className="spi-pill spi-pill-po">{r.poNo}</span><span className="spi-date-sub">{r.poDate}</span></span></td>}
+                  {withPo && <td><span className="spi-idstack"><span className="spi-pill spi-pill-po">{r.poNo}</span><span className="spi-date-sub">{r.poDate ? formatDmy(r.poDate) : ''}</span></span></td>}
                   {withPo && <td>{r.poType}</td>}
                   {showShipCols && <td><span className="spi-pill spi-pill-shp">{r.shipId}</span></td>}
                   {showShipCols && <td><span className="spi-pill spi-pill-pi">{r.piNo}</span></td>}
                   <td><span className="spi-pill spi-pill-proc">{r.procId}</span></td>
                   {showShipCols && <td>{r.customer}</td>}
-                  <td title={r.supplier}>{r.supplier && r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier}</td>
+                  <td><Tooltip label={r.supplier} disabled={!r.supplier || r.supplier.length <= 25} position="bottom" zIndex={2999999}><span>{r.supplier && r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier}</span></Tooltip></td>
                   <td className="spi-c-r spi-amt">{inr(r.totalPo)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.netPayable)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.totalPaid)}</td>
                   <td className="spi-c-r spi-amt">{inr(r.balance)}</td>
-                  <td>{r.attach ? <button type="button" className="spi-attach" onClick={() => void viewRow(r)} title={`View ${r.attach.split('/').pop()}`}><IcoClip /><span className="spi-attach-name">{r.attach.split('/').pop()}</span></button> : <span className="spi-date-sub">—</span>}</td>
+                  <td>{r.attach ? <Tooltip label={`View ${r.attach.split('/').pop()}`} position="bottom" zIndex={2999999}><button type="button" className="spi-attach" onClick={() => void viewRow(r)}><IcoClip /><span className="spi-attach-name">{r.attach.split('/').pop()}</span></button></Tooltip> : <span className="spi-date-sub">—</span>}</td>
                   <td className="spi-c-c">
                     <span className={`spi-zb ${r.zoho === 'sync' ? 'spi-zb-sync' : 'spi-zb-not'}`}><span className="spi-zb-dot" />{r.zoho === 'sync' ? 'Sync' : 'Not Sync'}</span>
                   </td>
@@ -405,7 +410,7 @@ export default function SupplierPurchaseInvoice() {
             </div>
             <div className="spi-menu-info">
               <span className="spi-pill spi-pill-spi">{menu.row.spiNo}</span>
-              <div className="spi-menu-sup">Supplier: {menu.row.supplier}</div>
+              <div className="spi-menu-sup">Supplier: <Tooltip label={menu.row.supplier} disabled={!menu.row.supplier || menu.row.supplier.length <= 25} position="bottom" zIndex={2999999}><span>{menu.row.supplier}</span></Tooltip></div>
             </div>
             <div className="spi-menu-items">
               <button type="button" className="spi-menu-item is-teal" onClick={() => syncRow(menu.row)}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>

@@ -162,7 +162,7 @@ class SalesPdfController extends Controller
         // Code-128 barcode of the quotation code, for the header.
         $vd['barcodeHtml'] = '';
         try {
-            $vd['barcodeHtml'] = (new \Milon\Barcode\DNS1D())->getBarcodeHTML($quoteCode, 'C128', 0.8, 24);
+            $vd['barcodeHtml'] = (new \Milon\Barcode\DNS1D())->getBarcodeHTML($quoteCode, 'C128', 1.6, 28);
         } catch (\Throwable $e) { /* renders without barcode */ }
 
         $vd['quotationProducts'] = collect([[
@@ -188,7 +188,7 @@ class SalesPdfController extends Controller
             ? \Carbon\Carbon::parse($entry->lead->created_at) : null;
 
         $pdf = Pdf::loadView('pdf.shared_price_quotation', $vd)
-            ->setPaper('A5', 'portrait')
+            ->setPaper('A4', 'portrait')
             ->setOption('isPhpEnabled', true);
         $filename = 'quotation_' . str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT) . '.pdf';
 
@@ -1240,6 +1240,10 @@ class SalesPdfController extends Controller
             'products' => $poProducts,
             'interState' => $isInterState,
             'totals' => $totals,
+            // Master T&Cs auto-matched by the document category (Domestic /
+            // International Purchase Order) + supplier party (Material / FFD /
+            // Services) + each line product's segment & tier. Rendered on the PDF.
+            'segmentTermsConditions' => $this->fetchPoTncs($po),
         ];
     }
 
@@ -1950,15 +1954,41 @@ class SalesPdfController extends Controller
         $grandTotal    = (float) $q->grand_total;
         $packagingCost = 0.0;
 
-        // Tax split — the line-level tax_pct already rolls into `amount`,
-        // so the breakup at the foot of the PDF reflects total tax collected
-        // and is split CGST/SGST for Domestic, IGST for International, mirroring
-        // the IDIMS template's expectations. Pure presentation — no recompute.
+        // Tax split — the line-level tax_pct already rolls into `amount`, so the
+        // breakup at the foot of the PDF reflects total tax collected. Pure
+        // presentation — no recompute; the total tax is identical either way.
+        //
+        // Place of supply (was previously pinned to doc_type alone, so EVERY
+        // Domestic doc showed CGST+SGST regardless of the customer's state):
+        //   • International (export) → single IGST.
+        //   • Domestic INTER-state  → single IGST  (party's GST state ≠ ours).
+        //   • Domestic INTRA-state / unknown state → CGST + SGST.
+        // Mirrors the PO PDF's isInterState rule and Gst place-of-supply.
         $totalTax = round(collect($quotationProducts)->sum('tax_amt'), 2);
         $isInternational = ($q->doc_type ?? 'International') === 'International';
-        $igst = $isInternational ? $totalTax : 0;
-        $cgst = $isInternational ? 0        : round($totalTax / 2, 2);
-        $sgst = $isInternational ? 0        : round($totalTax - $cgst, 2);
+        // Normalise a state-code value to its bare numeric GST code, matching the
+        // SPA's stateCodeOf + normStateCode (SalesQPI.tsx): new docs store a bare
+        // "27"; older rows stored the dropdown label "27 – Maharashtra"; and
+        // leading zeros don't count ("07" === "7"). A non-numeric / bare-name
+        // value is "unresolved" → "".
+        $normState = static function ($label): string {
+            $s = trim((string) $label);
+            return preg_match('/^(\d{1,2})(?!\d)/', $s, $m) ? (string) (int) $m[1] : '';
+        };
+        // Our own GST home state — prefer the branch gst_state_code, else derive
+        // from the branch GSTIN's first two digits, else Maharashtra (27). Mirrors
+        // App\Support\Gst::homeStateCode so the PDF split matches the on-screen one.
+        $homeStateCode  = $normState($companyDetails->gst_state_code ?? '')
+            ?: $normState($companyDetails->gst_no ?? '')
+            ?: '27';
+        $partyStateCode = $normState($q->state_code ?? '');
+        // Export → IGST. Domestic: an UNRESOLVED party state → intra (CGST+SGST,
+        // matches the SPA's "half-filled form counts as intra"); a resolved party
+        // state that differs from our home state → inter-state (single IGST).
+        $useIgst = $isInternational || ($partyStateCode !== '' && $partyStateCode !== $homeStateCode);
+        $igst = $useIgst ? $totalTax : 0;
+        $cgst = $useIgst ? 0 : round($totalTax / 2, 2);
+        $sgst = $useIgst ? 0 : round($totalTax - $cgst, 2);
 
         $port = null;
         if ($q->port_of_loading) {
@@ -1978,6 +2008,12 @@ class SalesPdfController extends Controller
             'currency_name'         => $q->currency ?? '',
             'currency'              => (object) ['name' => $q->currency ?? ''],
             'consignee_id'          => $hasConsignee ? $q->consignee_id : null,
+            // Domestic fields — snapshotted on the document; surfaced in the
+            // PDF's Domestic detail block (dispatch/deliver, GST state + GSTIN).
+            'dispatch_from'         => $q->dispatch_from   ?? '',
+            'deliver_to'            => $q->deliver_to      ?? '',
+            'state_code'            => $q->state_code      ?? '',
+            'customer_gst_no'       => $q->customer_gst_no ?? '',
             'port_of_discharge'     => $q->port_of_discharge ?? '',
             'final_destination'     => $q->final_destination ?? '',
             'origin_country'        => $q->origin_country    ?? '',
@@ -2145,6 +2181,99 @@ class SalesPdfController extends Controller
                     'code'     => $row->code,
                     'category' => $row->category,
                     'segment'  => $seg->name,   // the product segment that pulled it in
+                    'content'  => $row->content,
+                ];
+            }
+        }
+
+        return array_values($matched);
+    }
+
+    /**
+     * Auto-fetch the Terms & Conditions that apply to a PURCHASE ORDER from the
+     * T&C Library (clm_tnc_library), for rendering on the PO PDF.
+     *
+     * Matching keys:
+     *   1. Document CATEGORY — must contain the PO's type word ('domestic' |
+     *      'international', derived from purchase_orders.document_type, tolerant
+     *      of "Domestics") AND the words "purchase order". So "Domestic Purchase
+     *      Order" / "International Purchase Order" match.
+     *   2. Applies-to PARTY — must apply to the PO's supplier type. po_type
+     *      "Material / Goods" → the T&C's party must mention "material" (FFD /
+     *      Services map to their own keyword); an "All" / blank party matches any.
+     *   3. SEGMENT + regulatory tier — each PO line's product resolves to a
+     *      clm_segments row; a T&C applies when its `regulatory` equals that
+     *      segment's tier AND its segment list contains the segment name.
+     *
+     * Returns a de-duplicated list of ['code','category','segment','content'],
+     * in PO line-item order (mirrors fetchSegmentTncs for the PI/quotation).
+     */
+    private function fetchPoTncs($po): array
+    {
+        $clientId = $po->client_id ?? null;
+        if (!$clientId) return [];
+
+        // Domestic vs International from the PO doc type ("Domestics" → domestic).
+        $docTypeLc = mb_strtolower(trim((string) ($po->document_type ?? 'Domestic')));
+        $docType   = str_contains($docTypeLc, 'international') ? 'international' : 'domestic';
+        $docKind   = 'purchase order';
+
+        // Supplier party the T&C must apply to, from po_type (Material / FFD /
+        // Services). "Material / Goods" → 'material'.
+        $poTypeLc  = mb_strtolower((string) ($po->po_type ?? ''));
+        $partyKey  = (str_contains($poTypeLc, 'ffd') || str_contains($poTypeLc, 'transport')) ? 'ffd'
+                   : (str_contains($poTypeLc, 'service') ? 'service' : 'material');
+
+        // PO items in sequence → their products → segments (name + tier).
+        $items = collect($po->items ?? [])
+            ->sortBy(fn($it) => [(int) ($it->line_no ?? 0), (int) ($it->id ?? 0)])
+            ->values();
+        $productIds = $items->pluck('product_id')->filter()->unique()->values();
+        if ($productIds->isEmpty()) return [];
+
+        $prodToSeg = \App\Models\Product::whereIn('id', $productIds)->pluck('segment_id', 'id');
+        $segById = \App\Models\ClmSegment::where('client_id', $clientId)
+            ->whereIn('id', $prodToSeg->filter()->unique()->values())
+            ->get(['id', 'name', 'regulatory_status'])
+            ->keyBy('id');
+        if ($segById->isEmpty()) return [];
+
+        // Candidates: category matches doc type + "purchase order", AND the T&C
+        // applies to this supplier type (party contains the keyword, or is All/blank).
+        $candidates = \App\Models\ClmTncLibrary::where('client_id', $clientId)
+            ->where(fn ($w) => $w->whereNull('status')->orWhere('status', 'active'))
+            ->orderBy('id')
+            ->get()
+            ->filter(function ($row) use ($docType, $docKind, $partyKey) {
+                $cat = mb_strtolower((string) $row->category);
+                if (!str_contains($cat, $docType) || !str_contains($cat, $docKind)) return false;
+                $party = mb_strtolower(trim((string) $row->party));
+                return $party === '' || str_contains($party, 'all') || str_contains($party, $partyKey);
+            });
+
+        // Segment + tier match, product sequence, dedup by id.
+        $matched = [];
+        foreach ($items as $it) {
+            $segId = $it->product_id ? ($prodToSeg[$it->product_id] ?? null) : null;
+            if (!$segId) continue;
+            $seg = $segById->get($segId);
+            if (!$seg) continue;
+
+            $segNameLc = mb_strtolower((string) $seg->name);
+            $segReg    = (string) $seg->regulatory_status;
+
+            foreach ($candidates as $row) {
+                if (isset($matched[$row->id])) continue;
+                if ((string) $row->regulatory !== $segReg) continue;
+                $tncSegs = array_filter(array_map(
+                    fn($s) => mb_strtolower(trim($s)),
+                    explode(',', (string) $row->segment)
+                ));
+                if (!in_array($segNameLc, $tncSegs, true)) continue;
+                $matched[$row->id] = [
+                    'code'     => $row->code,
+                    'category' => $row->category,
+                    'segment'  => $seg->name,
                     'content'  => $row->content,
                 ];
             }

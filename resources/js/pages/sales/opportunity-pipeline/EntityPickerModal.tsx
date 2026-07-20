@@ -17,7 +17,7 @@ import { MasterSelect } from '../../../components/ui/MasterSelect';
  * entity that ships a {value,label} list.
  * ──────────────────────────────────────────────────────────────────────── */
 
-export type PickerOption = { value: string; label: string };
+export type PickerOption = { value: string; label: string; badge?: { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string } };
 
 export default function EntityPickerModal(props: {
   open: boolean;

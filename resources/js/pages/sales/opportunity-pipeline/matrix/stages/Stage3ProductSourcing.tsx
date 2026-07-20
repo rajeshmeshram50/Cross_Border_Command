@@ -108,6 +108,30 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
     void fetchRows(false);
   }, [refreshTick, fetchRows]);
 
+  /* A product's Active/Inactive status can flip OUTSIDE this screen — e.g.
+   * mapping a supplier in P2P → Product Management activates the product
+   * (vendors step complete). The productsTick re-sync only covers in-matrix
+   * popups, so ALSO revalidate silently whenever the user returns to this
+   * tab/window; the STATUS column + readiness checklist then update without
+   * a manual page refresh (QA #94). Throttled so focus + visibilitychange
+   * firing together (alt-tab back) costs one request, not two. */
+  const lastFocusFetchRef = useRef(0);
+  useEffect(() => {
+    const revalidate = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastFocusFetchRef.current < 1500) return;
+      lastFocusFetchRef.current = now;
+      void fetchRows(false);
+    };
+    window.addEventListener('focus', revalidate);
+    document.addEventListener('visibilitychange', revalidate);
+    return () => {
+      window.removeEventListener('focus', revalidate);
+      document.removeEventListener('visibilitychange', revalidate);
+    };
+  }, [fetchRows]);
+
   /* ── Bucketed views ─────────────────────────────────────────────── */
   const detailsRows     = useMemo(() => rows.filter(r => r.sourcing_status === null),         [rows]);
   const requiredRows    = useMemo(() => rows.filter(r => r.sourcing_status === 'required'),    [rows]);
@@ -474,11 +498,11 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         <td><span className="s3-code s3-code-violet">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                         <td>
                           <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s3-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                          {r.product_category && <span className="s3-cat-badge s3-cat-badge-violet">{r.product_category.toUpperCase()}</span>}
+                          {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s3-cat-badge s3-cat-badge-violet">{r.product_category.toUpperCase()}</span></Tooltip>}
                         </td>
                         <td>
-                          <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : statusLc === 'draft' ? 's3-pill-draft' : 's3-pill-inactive'}`}>
-                            ● {statusLc ? statusLc.charAt(0).toUpperCase() + statusLc.slice(1) : '—'}
+                          <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
+                            ● {statusLc === 'active' ? 'Active' : statusLc ? 'Inactive' : '—'}
                           </span>
                         </td>
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
@@ -564,7 +588,32 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                 <table className="s3-table s3-table-amber">
                   <thead>
                     <tr>
-                      <th style={{ width: 36 }}></th>
+                      {/* Select-all — toggles every selectable (no-procurement)
+                          row at once (QA #115); indeterminate when only some are
+                          ticked. */}
+                      <th style={{ width: 36, textAlign: 'center' }}>
+                        {(() => {
+                          const selectable = requiredRows.filter(r => r.procurement_id == null).map(r => r.id);
+                          if (!canGroup || locked || selectable.length === 0) return null;
+                          const all  = selectable.every(id => selectedIds.has(id));
+                          const some = selectable.some(id => selectedIds.has(id));
+                          return (
+                            <input
+                              type="checkbox"
+                              className="s3-cb"
+                              ref={el => { if (el) el.indeterminate = some && !all; }}
+                              checked={all}
+                              title={all ? 'Deselect all' : 'Select all'}
+                              onChange={() => setSelectedIds(prev => {
+                                const next = new Set(prev);
+                                if (selectable.every(id => next.has(id))) selectable.forEach(id => next.delete(id));
+                                else selectable.forEach(id => next.add(id));
+                                return next;
+                              })}
+                            />
+                          );
+                        })()}
+                      </th>
                       <th style={{ width: 50 }}>SR</th>
                       <th style={{ width: 110 }}>CODE</th>
                       <th>PRODUCT NAME</th>
@@ -618,11 +667,11 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           <td><span className="s3-code s3-code-amber">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                           <td>
                             <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s3-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                            {r.product_category && <span className="s3-cat-badge s3-cat-badge-amber">{r.product_category.toUpperCase()}</span>}
+                            {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s3-cat-badge s3-cat-badge-amber">{r.product_category.toUpperCase()}</span></Tooltip>}
                           </td>
                           <td>
-                            <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : statusLc === 'draft' ? 's3-pill-draft' : 's3-pill-inactive'}`}>
-                              ● {statusLc ? statusLc.charAt(0).toUpperCase() + statusLc.slice(1) : '—'}
+                            <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
+                              ● {statusLc === 'active' ? 'Active' : statusLc ? 'Inactive' : '—'}
                             </span>
                           </td>
                           <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
@@ -781,11 +830,11 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         <td><span className="s3-code s3-code-mint">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                         <td>
                           <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s3-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                          {r.product_category && <span className="s3-cat-badge s3-cat-badge-mint">{r.product_category.toUpperCase()}</span>}
+                          {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s3-cat-badge s3-cat-badge-mint">{r.product_category.toUpperCase()}</span></Tooltip>}
                         </td>
                         <td>
-                          <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : statusLc === 'draft' ? 's3-pill-draft' : 's3-pill-inactive'}`}>
-                            ● {statusLc ? statusLc.charAt(0).toUpperCase() + statusLc.slice(1) : '—'}
+                          <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
+                            ● {statusLc === 'active' ? 'Active' : statusLc ? 'Inactive' : '—'}
                           </span>
                         </td>
                         <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
@@ -1154,7 +1203,13 @@ const STAGE3_CSS = `
 .s3-table-wrap::-webkit-scrollbar-track { background: transparent; }
 .s3-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 .s3-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-.s3-table { width: 100%; border-collapse: collapse; min-width: 880px; }
+/* table-layout:fixed + width:100% lets the flexible Product Name column absorb
+   slack and truncate on a wide stage. A min-width stops the fixed columns from
+   squeezing Product Name to 0 when both side panels are open — the wrap scrolls
+   horizontally instead, so Product Name keeps its own column and its name /
+   segment badge no longer overlap Status (QA #114/#123). The amber
+   Sourcing-Required table (3 extra columns) raises this to 1200 below. */
+.s3-table { width: 100%; min-width: 1040px; border-collapse: collapse; table-layout: fixed; }
 /* Table header — light lavender gradient matching the Product Sourcing
    popup's table (gradient on the tr so it sweeps the whole row; cells stay
    transparent). The amber Sourcing-Required table keeps its own header via
@@ -1169,6 +1224,12 @@ const STAGE3_CSS = `
   border-bottom: 1.5px solid #6d28d9;
   white-space: nowrap;
 }
+/* The Sourcing-Required table carries 3 extra columns (checkbox, Procurement
+   ID, Vendor Count) over the other two tabs. table-layout:fixed + width:100%
+   was squeezing the flexible PRODUCT NAME column to ~0, so its header ran over
+   QTY. A min-width keeps every column at its intended size; the wrap's
+   overflow-x scrolls if the popup is ever narrower than this. */
+.s3-table-amber { min-width: 1200px; }
 .s3-table-amber thead th {
   background: linear-gradient(180deg, #7c3aed, #6d28d9);
   color: #fff;
@@ -1224,6 +1285,13 @@ const STAGE3_CSS = `
   display: inline-block; margin-top: 3px;
   padding: 2px 8px; border-radius: 6px;
   font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  /* A long segment name ("Travel & Luggage…") used to run the full width of the
+     row and shove the other columns off-screen. Cap it and ellipsize; the full
+     value is on the hover tooltip. max-width:100% keeps it inside the product
+     cell; vertical-align keeps the clipped chip aligned with the name above. */
+  max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: bottom;
 }
 .s3-cat-badge-violet { background: #ede9fe; color: #6d28d9; }
 .s3-cat-badge-amber  { background: #ede9fe; color: #6d28d9; }
@@ -1265,7 +1333,8 @@ const STAGE3_CSS = `
 
 /* Sourcing Required tab specifics */
 .s3-cb {
-  width: 17px; height: 17px; cursor: pointer; accent-color: #d97706;
+  /* Match the table head (violet), not the old amber. */
+  width: 17px; height: 17px; cursor: pointer; accent-color: #6d28d9;
   margin: 0;
 }
 .s3-dash { color: #cbd5e1; font-weight: 700; font-size: 13px; }

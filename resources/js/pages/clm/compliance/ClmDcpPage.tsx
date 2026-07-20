@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
@@ -9,7 +9,11 @@ import { useScrollLock } from '../../../hooks/useScrollLock';
 import { bustAllMasterBundles } from '../../../utils/bustMasterBundles';
 import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
-import Tooltip from '../../../components/ui/Tooltip';
+import BaseTooltip from '../../../components/ui/Tooltip';
+/* Themed by default so tooltips follow the active light/dark app theme
+ * instead of the always-dark pill (QA #18) — mirrors the consignee page's
+ * wrapper so tooltips look the same everywhere. */
+const Tooltip = (props: ComponentProps<typeof BaseTooltip>) => <BaseTooltip themed {...props} />;
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../master/masterFormKit';
 import AuthorityBadges from './AuthorityBadges';
@@ -217,15 +221,21 @@ export default function ClmDcpPage() {
     return Array.from(set);
   };
 
+  // Only segments that actually HAVE a rule are listed. Creating a segment in
+  // the Segment Master no longer makes it appear here — it becomes a DCP row
+  // only once the user maps a rule to it via "Add Segment Rule" (which offers
+  // every not-yet-ruled segment in its dropdown).
+  const allRows = useMemo<SegRule[]>(() => rows, [rows]);
+
   // Tab counts derived from the segment-master tier (matches the badges).
   const tierCounts = useMemo<Counts>(() => ({
-    all:    rows.length,
-    highly: rows.filter(r => regOf(r) === 'highly').length,
-    less:   rows.filter(r => regOf(r) === 'less').length,
-  }), [rows, boot]); // eslint-disable-line react-hooks/exhaustive-deps
+    all:    allRows.length,
+    highly: allRows.filter(r => regOf(r) === 'highly').length,
+    less:   allRows.filter(r => regOf(r) === 'less').length,
+  }), [allRows, boot]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
-    let base = tab === 'all' ? rows : rows.filter(r => regOf(r) === tab);
+    let base = tab === 'all' ? allRows : allRows.filter(r => regOf(r) === tab);
     if (bcFilter !== 'all') base = base.filter(r => bcFilter === 'allowed' ? bcOf(r) === 'allowed' : bcOf(r) !== 'allowed');
     if (!search.trim()) return base;
     const s = search.toLowerCase();
@@ -237,7 +247,7 @@ export default function ClmDcpPage() {
         || segName.toLowerCase().includes(s)
         || regLabel.includes(s);
     });
-  }, [rows, tab, search, boot, bcFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [allRows, tab, search, boot, bcFilter]); // eslint-disable-line react-hooks/exhaustive-deps
   const [rpp, setRpp]     = useState(PER_PAGE);
   const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
@@ -399,7 +409,7 @@ export default function ClmDcpPage() {
                     const isHigh = (seg?.regulatory_status ?? r.regulatory_status) === 'highly';
                     const segCount = (cat: keyof DocSelections) => Object.values(r.doc_selections?.[cat] ?? {}).filter(Boolean).length;
                     return (
-                      <tr key={r.id}>
+                      <tr key={r.id || `seg-${r.segment_code}`}>
                         <td className="clm-td-num">{start + i + 1}</td>
                         <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.segment_code}</span></td>
                         <td className="clm-td-name">{seg?.name ?? r.segment_code}</td>

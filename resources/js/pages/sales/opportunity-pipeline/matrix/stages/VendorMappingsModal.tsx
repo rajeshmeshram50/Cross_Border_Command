@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
+import Tooltip from '../../../../../components/ui/Tooltip';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Vendor Mappings — opens from the Sales Matrix Stage 3 "Vendor Count"
@@ -122,7 +123,7 @@ export default function VendorMappingsModal({ open, productId, productCode, prod
                 <div className="vmm-card-top">
                   <span className="vmm-rank">{idx + 1}</span>
                   <div className="vmm-vendor">
-                    <div className="vmm-vendor-name">{m.vendor_name}</div>
+                    <Tooltip label={m.vendor_name} themed maxWidth={360}><div className="vmm-vendor-name">{m.vendor_name}</div></Tooltip>
                     {m.vendor_code && <div className="vmm-vendor-code">{m.vendor_code}</div>}
                   </div>
                   {isL1 && (
@@ -200,7 +201,10 @@ const VMM_CSS = `
 }
 .vmm-close:hover { background: rgba(255,255,255,.32); }
 
-.vmm-body { flex: 1; overflow-y: auto; padding: 14px 16px; background: #ffffff; display: flex; flex-direction: column; gap: 12px; }
+/* Cap the list to roughly two vendor cards, then scroll — so a product with
+   many vendors doesn't grow the modal past the viewport / clip the last card
+   (QA #121). Clamped to the viewport on short screens. */
+.vmm-body { flex: 1; overflow-y: auto; max-height: min(440px, calc(100vh - 140px)); padding: 14px 16px; background: #ffffff; display: flex; flex-direction: column; gap: 12px; }
 .vmm-loading, .vmm-empty { padding: 34px 0; text-align: center; color: #94a3b8; font-style: italic; font-size: 13px; }
 .vmm-spinner { display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px; border: 2px solid #ddd6fe; border-top-color: #7c3aed; border-radius: 50%; animation: vmm-spin .7s linear infinite; }
 @keyframes vmm-spin { to { transform: rotate(360deg); } }
@@ -208,6 +212,12 @@ const VMM_CSS = `
 .vmm-card {
   background: #fff; border: 1.5px solid #ddd6fe; border-radius: 13px;
   padding: 0; overflow: hidden; box-shadow: 0 2px 10px rgba(124,58,237,.06);
+  /* The body is a flex column, so without this the cards SHRINK to fit its
+     max-height instead of overflowing it: 4 vendors squashed to ~110px each
+     (contact values + prices clipped by overflow:hidden) and the list never
+     scrolled. flex-shrink:0 keeps every card its natural height, so ~2 show in
+     full and the rest scroll — which is what "2 dikhe, phir scroll" needs. */
+  flex-shrink: 0;
 }
 .vmm-card.is-l1 { border-color: #c4b5fd; background: #faf8ff; box-shadow: 0 2px 12px rgba(124,58,237,.12); }
 
@@ -219,7 +229,11 @@ const VMM_CSS = `
   font-size: 13px; font-weight: 800;
 }
 .vmm-vendor { flex: 1; min-width: 0; }
-.vmm-vendor-name { font-size: 14px; font-weight: 800; color: #1e293b; }
+/* A long vendor name (especially one long unbroken token) used to stretch the
+   card and push the L1 badge off — clip it to one line with an ellipsis; the
+   full name is on the hover tooltip. min-width:0 on the parent is what lets this
+   actually shrink inside the flex row. */
+.vmm-vendor-name { font-size: 14px; font-weight: 800; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vmm-vendor-code { display: inline-block; font-size: 9px; font-weight: 700; color: #6366f1; font-family: ui-monospace, monospace; margin-top: 2px; background: #eef2ff; padding: 0 6px; border-radius: 4px; }
 .vmm-l1 {
   display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;

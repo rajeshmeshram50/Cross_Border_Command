@@ -95,7 +95,8 @@ class PoPaymentController extends Controller
         $data = $request->validate([
             'amount'            => 'required|numeric|min:0.01',
             'bank_name'         => 'nullable|string|max:128',
-            'utr_cheque_number' => 'nullable|string|max:64',
+            // Letters+digits, 6–22 chars — cheque (6 digits) through RTGS UTR (22).
+            'utr_cheque_number' => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{6,22}$/'],
             'utr_cheque_date'   => 'nullable|date',
             'status'            => 'nullable|in:Cleared,Pending',
             'attachment'        => 'nullable|file|mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,webp|max:10240',
@@ -268,7 +269,8 @@ class PoPaymentController extends Controller
             return ['name' => $po->supplier_name, 'code' => $po->supplier_code];
         }
         $a = $v->primaryAddress;
-        $g = $v->gstScrutiny->first();
+        // Newest scrutiny = current GST status (order-safe; see PurchaseOrderController).
+        $g = $v->gstScrutiny->sortByDesc('id')->first();
         $state = $a && $a->state_id ? DB::table('master_states')->where('id', $a->state_id)->value('name') : null;
 
         return [

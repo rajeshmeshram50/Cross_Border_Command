@@ -5,7 +5,7 @@ import api from '../../../../api';
 import MapSupplierModal from './MapSupplierModal';
 import MappedSuppliersModal from './MappedSuppliersModal';
 import { useModalGuard } from './useModalGuard';
-import { resolveFileUrl, downloadFile } from '../../../../utils/resolveFileUrl';
+import { resolveFileUrl, downloadClarityFile } from '../../../../utils/resolveFileUrl';
 import Tooltip from '../../../../components/ui/Tooltip';
 import './bulk-sourcing.css';
 
@@ -43,8 +43,12 @@ const REF_ICO = {
 /* Product Clarity cell — text is clickable (opens a themed popup with the full
    note); link/pdf are clickable. A PDF downloads on click; a link opens in a
    new tab. */
+// Clarity PDFs store a /storage/... path; show just the filename to the user.
+const baseName = (p: string) => (p || '').split('/').pop() || p;
+
 function ClarityCell({ clarity }: { clarity?: Clarity }) {
   const [open, setOpen] = useState(false);
+  const [pop, setPop] = useState<{ x: number; y: number } | null>(null);
   if (!clarity || !clarity.type || !clarity.val) return <span className="srpt-attach-dash">—</span>;
 
   if (clarity.type === 'text') {
@@ -70,16 +74,45 @@ function ClarityCell({ clarity }: { clarity?: Clarity }) {
     );
   }
 
-  const url = resolveFileUrl(clarity.val);
   if (clarity.type === 'pdf') {
+    // PDFs are newline-joined — show the first as a download chip and, when
+    // there are more, a "+N" pill that opens a view-only popover listing each.
+    const pdfs = clarity.val.split('\n').filter(Boolean);
     return (
-      <Tooltip label="Download clarity PDF"><button type="button" className="srpt-clarity-link"
-        onClick={() => downloadFile(url, url.split('/').pop() || 'clarity.pdf')}>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-        PDF
-      </button></Tooltip>
+      <div className="srpt-clarity-pdfs">
+        <Tooltip label={pdfs.length > 1 ? `Download ${baseName(pdfs[0])}` : 'Download clarity PDF'}>
+          <button type="button" className="srpt-clarity-link"
+            onClick={() => downloadClarityFile(pdfs[0])}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+            PDF
+          </button>
+        </Tooltip>
+        {pdfs.length > 1 && (
+          <button type="button" className="ast-clarity-more" onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setPop(p => p ? null : { x: b.left, y: b.bottom + 4 }); }}>+{pdfs.length - 1}</button>
+        )}
+        {pop && createPortal(
+          <>
+            <div onClick={() => setPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 13000 }} />
+            <div style={{ position: 'fixed', left: Math.max(8, Math.min(pop.x, window.innerWidth - 288)), top: Math.min(pop.y, window.innerHeight - 240), zIndex: 13001, width: 280, background: '#fff', border: '1px solid #cffafe', borderRadius: 12, boxShadow: '0 14px 34px rgba(13,148,136,.18), 0 4px 12px rgba(0,0,0,.08)', padding: 8 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.5px', color: '#0e7490', padding: '2px 6px 6px' }}>PDF Specifications ({pdfs.length})</div>
+              <div style={{ maxHeight: 168, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {pdfs.map((path, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f7fcfd', border: '1px solid #e0f2f7', borderRadius: 9, padding: '5px 8px' }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    <Tooltip label={baseName(path)}><span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{baseName(path)}</span></Tooltip>
+                    <Tooltip label="Download"><button type="button" className="ast-clarity-pop-act dl" onClick={() => downloadClarityFile(path)}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg></button></Tooltip>
+                    <Tooltip label="View"><a className="ast-clarity-pop-act view" href={resolveFileUrl(path)} target="_blank" rel="noopener noreferrer"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg></a></Tooltip>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>,
+          document.body,
+        )}
+      </div>
     );
   }
+  const url = resolveFileUrl(clarity.val);
   // link
   return (
     <Tooltip label={clarity.val}><a className="srpt-clarity-link" href={url} target="_blank" rel="noreferrer">
@@ -233,7 +266,7 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
                     <tr className="srpt-row" key={gi}>
                       <td style={{ textAlign: 'center' }}><span className="srpt-sno">{i + 1}</span></td>
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-code">{p.code}</span></td>}
-                      <td style={{ textAlign: 'left' }}><div className="srpt-pname">{p.name}</div></td>
+                      <td style={{ textAlign: 'left' }}><Tooltip label={p.name}><div className="srpt-pname">{p.name}</div></Tooltip></td>
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className={`srpt-seg ${(p.segment || 'General').replace(/ /g, '-')}`}>{p.segment}</span></td>}
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-hsncode">{p.hsn}</span></td>}
                       <td style={{ textAlign: 'center' }} className="srpt-price">{fmtPrice(p.price)}</td>
@@ -244,7 +277,7 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
                         : <span className="srpt-sup-count">0</span>}</td>
                       <td style={{ textAlign: 'center' }}>{canMap
                         ? <button className="srpt-map-btn" onClick={() => setMapIdx(gi)}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>Map Supplier Directory</button>
-                        : <Tooltip label="You created this sourcing — mapping is done by the assignee"><span className="srpt-viewonly"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>View only</span></Tooltip>}</td>
+                        : <Tooltip label="View mapped suppliers (you created this sourcing — mapping is done by the assignee)"><button type="button" className="srpt-viewonly" style={{ cursor: 'pointer' }} onClick={() => setViewIdx(gi)}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" /></svg>View only</button></Tooltip>}</td>
                     </tr>
                   );
                 })}

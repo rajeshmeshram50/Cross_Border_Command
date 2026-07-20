@@ -17,8 +17,9 @@ use Illuminate\Support\Facades\Storage;
  *
  * A Direct SPI (Supplier Purchase Invoice with no linked PO) is payable against
  * its OWN net-payable amount. This mirrors PoPaymentController but is scoped to
- * the SPI: TDS is cut once on the base (net_payable − GST), and payments live in
- * spi_payments. (With-PO SPIs pay through the PO instead — that flow is unchanged.)
+ * the SPI: TDS is cut once on the base (net_payable − GST − additional charges,
+ * i.e. the goods value only), and payments live in spi_payments. (With-PO SPIs
+ * pay through the PO instead — that flow is unchanged.)
  */
 class SpiPaymentController extends Controller
 {
@@ -50,10 +51,14 @@ class SpiPaymentController extends Controller
             ], 422);
         }
 
-        // TDS is computed on the BASE amount = net_payable − GST (taxable value,
-        // excluding GST). net_payable is GST-inclusive (item cost includes GST).
-        $gst = (float) $inv->total_cgst + (float) $inv->total_sgst + (float) $inv->total_igst;
-        $base = (float) $inv->net_payable - $gst;
+        // TDS is computed on the BASE = goods value only. net_payable is
+        // (goods + GST) + additional charges, so BOTH GST and the charges come
+        // out of the base — TDS is never levied on shipping/packaging/other.
+        // Must match buildSummary()'s base exactly or the popup preview and the
+        // stored figure would disagree (mirrors PoPaymentController::saveTds).
+        $gst  = (float) $inv->total_cgst + (float) $inv->total_sgst + (float) $inv->total_igst;
+        $addl = (float) $inv->additional_charges;
+        $base = (float) $inv->net_payable - $gst - $addl;
         $tdsPct = round((float) $data['tds_percentage'], 2);
         $inv->tds_percentage = $tdsPct;
         $inv->tds_amount = round($base * $tdsPct / 100, 2);
@@ -83,7 +88,8 @@ class SpiPaymentController extends Controller
         $data = $request->validate([
             'amount'            => 'required|numeric|min:0.01',
             'bank_name'         => 'nullable|string|max:128',
-            'utr_cheque_number' => 'nullable|string|max:64',
+            // Letters+digits, 6–22 chars — cheque (6 digits) through RTGS UTR (22).
+            'utr_cheque_number' => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{6,22}$/'],
             'utr_cheque_date'   => 'nullable|date',
             'status'            => 'nullable|in:Cleared,Pending',
             'attachment'        => 'nullable|file|mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,webp|max:10240',
@@ -182,9 +188,14 @@ class SpiPaymentController extends Controller
     /** Assemble the full payment-summary payload for the popup. */
     private function buildSummary(SupplierPurchaseInvoice $inv): array
     {
-        $totalSpi  = (float) $inv->net_payable;   // SPI grand total (GST-inclusive)
+        $totalSpi  = (float) $inv->net_payable;   // SPI grand total (GST + charges incl.)
         $gstAmount = round((float) $inv->total_cgst + (float) $inv->total_sgst + (float) $inv->total_igst, 2);
-        $base      = round($totalSpi - $gstAmount, 2);   // Base = SPI total − GST
+        // Base = goods value only. net_payable = (goods + GST) + additional charges,
+        // so BOTH GST and the charges come out of the base — TDS is levied on the
+        // goods value alone (mirrors PoPaymentController::buildSummary). Subtracting
+        // GST alone would leave shipping/packaging/other inside the base and tax them.
+        $addl      = round((float) $inv->additional_charges, 2);
+        $base      = round($totalSpi - $gstAmount - $addl, 2);
         $gstPct    = $base > 0 ? round($gstAmount / $base * 100, 2) : 0.0;
         $tdsPct    = (float) $inv->tds_percentage;
         $tdsAmount = (float) $inv->tds_amount;
@@ -207,6 +218,9 @@ class SpiPaymentController extends Controller
                 'base'        => round($base, 2),
                 'gstPct'      => $gstPct,
                 'gstAmount'   => $gstAmount,
+                // Charges sit OUTSIDE the base; the popup adds them back into net
+                // payable (base + GST + additionalCharges − TDS), same as the PO.
+                'additionalCharges' => $addl,
                 'totalPo'     => round($totalSpi, 2),
                 'tdsPct'      => $tdsPct,
                 'tdsAmount'   => round($tdsAmount, 2),
@@ -243,7 +257,8 @@ class SpiPaymentController extends Controller
             return ['name' => $inv->supplier_name, 'code' => $inv->supplier_code];
         }
         $a = $v->primaryAddress;
-        $g = $v->gstScrutiny->first();
+        // Newest scrutiny = current GST status (order-safe; see PurchaseOrderController).
+        $g = $v->gstScrutiny->sortByDesc('id')->first();
         $state = $a && $a->state_id ? DB::table('master_states')->where('id', $a->state_id)->value('name') : null;
 
         return [

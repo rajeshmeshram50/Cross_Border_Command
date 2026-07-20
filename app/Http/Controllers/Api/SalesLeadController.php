@@ -18,6 +18,7 @@ use App\Models\Product;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\User;
 use App\Services\IndiaMartLeadSyncService;
+use App\Support\PostalCode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -442,7 +443,15 @@ class SalesLeadController extends Controller
             'sender_state'        => 'nullable|string|max:128',
             'sender_country_iso'  => 'nullable|string|max:8',
             'sender_country_name' => 'nullable|string|max:128',
-            'sender_pincode'      => 'nullable|string|max:32',
+            /* Country decides the rule — India → exactly 6 digits, elsewhere →
+             * letters/digits/spaces/hyphens up to 12. Same App\Support\PostalCode
+             * helper the customer, consignee and shipment forms use. The country
+             * arrives as a NAME here (the ISO is resolved further down), so the
+             * resolver reads sender_country_name. */
+            'sender_pincode'      => [
+                'nullable', 'string', 'max:32',
+                PostalCode::rule(fn () => $request->input('sender_country_name')),
+            ],
             'customer_id'         => 'nullable|integer|exists:customers,id',
             'consignee_id'        => 'nullable|integer|exists:consignees,id',
             // B9: cap query_message at 10k chars — Postgres TEXT happily
@@ -647,7 +656,11 @@ class SalesLeadController extends Controller
             'sender_address'     => 'nullable|string|max:1000',
             'sender_city'        => 'nullable|string|max:128',
             'sender_state'       => 'nullable|string|max:128',
-            'sender_pincode'     => 'nullable|string|max:32',
+            // Same country-aware rule as store() — see the note there.
+            'sender_pincode'     => [
+                'nullable', 'string', 'max:32',
+                PostalCode::rule(fn () => $request->input('sender_country_name')),
+            ],
             'sender_country_iso' => 'nullable|string|max:8',
             'qualified'          => 'nullable|boolean',
             'disqualified'       => 'nullable|boolean',

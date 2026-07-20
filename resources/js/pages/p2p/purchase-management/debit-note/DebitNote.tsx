@@ -299,9 +299,11 @@ export default function DebitNote() {
             <div className="spi-head-sub">Issue and track supplier debit notes for returns, rejected goods, and price or quantity adjustments — from creation to tax reversal and accounting sync.</div>
           </div>
         </div>
-        <button type="button" className="spi-head-btn" onClick={openCreate}>
-          <IcoPlus size={15} /> Create Debit Note
-        </button>
+        <Tooltip label="Create a new debit note" themed>
+          <button type="button" className="spi-head-btn" onClick={openCreate}>
+            <IcoPlus size={15} /> Create Debit Note
+          </button>
+        </Tooltip>
       </div>
 
       {/* ── What We Are Doing Here ── */}
@@ -401,7 +403,7 @@ export default function DebitNote() {
                   <td>{r.proc ? <span className="spi-pill spi-pill-proc">{r.proc}</span> : '—'}</td>
                   <td>{r.spi ? <span className="spi-idstack"><span className="spi-pill spi-pill-pi">{r.spi}</span><span className="spi-date-sub">{fmtDate(r.spiDate)}</span></span> : '—'}</td>
                   <td>{r.po ? <span className="spi-idstack"><span className="spi-pill spi-pill-po">{r.po}</span><span className="spi-date-sub">{fmtDate(r.poDate)}</span></span> : '—'}</td>
-                  <td>{r.supplier ? <Tooltip label={r.supplier}><span>{r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier}</span></Tooltip> : '—'}</td>
+                  <td>{r.supplier ? <Tooltip label={r.supplier} themed><span>{r.supplier.length > 25 ? r.supplier.slice(0, 25) + '…' : r.supplier}</span></Tooltip> : '—'}</td>
                   <td><span className="spi-date-sub">{r.exp ? fmtDate(r.exp) : '—'}</span></td>
                   <td className="spi-c-r spi-amt">{inr(r.total)}</td>
                   <td className="spi-c-c"><span className={`dn-st ${statusClass(r.status)}`}>{r.status}</span></td>
@@ -411,12 +413,12 @@ export default function DebitNote() {
                   <td className="spi-c-c">
                     <span className="spi-acts">
                       {r.zoho === 'sync'
-                        ? <Tooltip label="Already synced to Zohobook"><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
-                        : <Tooltip label="Sync this debit note to Zohobook"><button type="button" className="spi-zohobtn" onClick={() => setSyncConfirm(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
-                      <Tooltip label={r.locked ? 'View debit note (locked — payment recorded)' : 'Edit debit note'}><button type="button" className="spi-iconbtn" onClick={() => openEdit(r)}>{r.locked ? <IcoEye /> : <IcoEdit />}</button></Tooltip>
-                      <Tooltip label={r.id && emailing[r.id] ? 'Sending…' : 'Email debit note to supplier'}><button type="button" className="spi-iconbtn" disabled={!!(r.id && emailing[r.id])} onClick={() => emailDn(r)}>{r.id && emailing[r.id] ? <IcoSpinner /> : <IcoMail />}</button></Tooltip>
-                      <Tooltip label="Payment recovery"><button type="button" className="spi-iconbtn" onClick={() => setPayRow(r)}><IcoRupee /></button></Tooltip>
-                      <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => { const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ row: r, x: b.right, top: b.top, bottom: b.bottom }); }}><IcoMore /></button></Tooltip>
+                        ? <Tooltip label="Already synced to Zohobook" themed><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
+                        : <Tooltip label="Sync this debit note to Zohobook" themed><button type="button" className="spi-zohobtn" onClick={() => setSyncConfirm(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
+                      <Tooltip label={r.locked ? 'View debit note (locked — payment recorded)' : 'Edit debit note'} themed><button type="button" className="spi-iconbtn" onClick={() => openEdit(r)}>{r.locked ? <IcoEye /> : <IcoEdit />}</button></Tooltip>
+                      <Tooltip label={r.id && emailing[r.id] ? 'Sending…' : 'Email debit note to supplier'} themed><button type="button" className="spi-iconbtn" disabled={!!(r.id && emailing[r.id])} onClick={() => emailDn(r)}>{r.id && emailing[r.id] ? <IcoSpinner /> : <IcoMail />}</button></Tooltip>
+                      <Tooltip label="Payment recovery" themed><button type="button" className="spi-iconbtn" onClick={() => setPayRow(r)}><IcoRupee /></button></Tooltip>
+                      <Tooltip label="More actions" themed><button type="button" className="spi-iconbtn" onClick={e => { const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ row: r, x: b.right, top: b.top, bottom: b.bottom }); }}><IcoMore /></button></Tooltip>
                     </span>
                   </td>
                 </tr>
@@ -440,7 +442,7 @@ export default function DebitNote() {
                 <span className="pomore-hd__chip"><IcoDocSm /><b>{menu.row.no}</b></span>
                 <span className="pomore-hd__sup">Supplier: <b>{menu.row.supplier ?? '—'}</b></span>
               </span>
-              <button type="button" className="pomore-x" onClick={() => setMenu(null)} aria-label="Close">✕</button>
+              <Tooltip label="Close" themed><button type="button" className="pomore-x" onClick={() => setMenu(null)} aria-label="Close">✕</button></Tooltip>
             </div>
             <button type="button" className="pomore-item pomore-item--sync" onClick={() => { const r = menu.row; setMenu(null); setSyncConfirm(r); }}><span className="pomore-item__ico pomore-item__ico--sync"><IcoSync size={15} /></span> Sync with Zohobook</button>
             <div className="pomore-divider" />
@@ -478,7 +480,7 @@ export default function DebitNote() {
                 <div className="dn-pay-title">Payment Recovery</div>
                 <div className="dn-pay-sub">Record recovered amount &amp; attach proof of payment</div>
               </div>
-              <Tooltip label="View payment history">
+              <Tooltip label="View payment history" themed>
                 <button type="button" className="dn-pay-hist-btn" onClick={() => setPayHistoryOpen(true)}>
                   <IcoHistory size={14} /> History{payList.length ? ` (${payList.length})` : ''}
                 </button>
@@ -525,7 +527,7 @@ export default function DebitNote() {
                 <div className="dn-pay-title">Payment History</div>
                 <div className="dn-pay-sub"><span className="po">{payRow.no}</span> · {payRow.supplier ?? '—'}</div>
               </div>
-              <button type="button" className="dn-hist-x" onClick={() => setPayHistoryOpen(false)} aria-label="Close">✕</button>
+              <Tooltip label="Close" themed><button type="button" className="dn-hist-x" onClick={() => setPayHistoryOpen(false)} aria-label="Close">✕</button></Tooltip>
             </div>
             <div className="dn-hist-body">
               {payList.length === 0 ? (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../../../../api';
 import { formatProductCode } from '../../../../../utils/formatProductCode';
 import Tooltip from '../../../../../components/ui/Tooltip';
@@ -65,6 +65,22 @@ const isIncompleteStatus = (s: string | null): boolean => {
   return lc === 'draft' || lc === 'inactive' || lc === 'pending';
 };
 
+/* Currency code → symbol (matches Stage 3 / the Product Directory & Price
+ * modals). Falls back to the raw code so an unmapped currency still reads
+ * sensibly. Used for the Target/Quoted price columns (symbol) while the new
+ * Currency column carries the plain code. */
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: '$', INR: '₹', EUR: '€', GBP: '£', JPY: '¥', CNY: '¥', AUD: 'A$', SGD: 'S$', CAD: 'C$', AED: 'AED ',
+};
+const currencySymbol = (code: string | null | undefined): string => {
+  if (!code) return '';
+  const c = String(code).split(/\s*[-–—]\s*/)[0].trim().toUpperCase();
+  return CURRENCY_SYMBOLS[c] ?? `${c} `;
+};
+/* Just the normalized code (e.g. "USD") for the Currency column chip. */
+const currencyCode = (code: string | null | undefined): string =>
+  code ? String(code).split(/\s*[-–—]\s*/)[0].trim().toUpperCase() : '—';
+
 function formatDateTime(s: string | null | undefined): { date: string; time: string } {
   if (!s) return { date: '—', time: '—' };
   const d = new Date(s);
@@ -75,7 +91,7 @@ function formatDateTime(s: string | null | undefined): { date: string; time: str
   };
 }
 
-export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, embedded, locked = false }: StageProps) {
+export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, embedded, locked = false, priceRefreshTick, onPricesChanged }: StageProps) {
   const toast = useToast();
   const leadId = header.leadId ?? null;
 
@@ -142,6 +158,15 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
     void fetchAll();
   }, [leadId, fetchAll]);
 
+  /* Re-fetch when the parent bumps priceRefreshTick — i.e. the OTHER Stage 4
+   * instance (inline view vs. Share Prices popup) shared a price. Skip the
+   * initial render; the mount effect above already loaded the data. */
+  const firstPriceTick = useRef(true);
+  useEffect(() => {
+    if (firstPriceTick.current) { firstPriceTick.current = false; return; }
+    if (leadId) void fetchAll();
+  }, [priceRefreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ── Submit a quoted price ───────────────────────────────────────── */
   /* Frontend validation mirrors IDIMS exactly: required + numeric. Backend
    * `min:0` handles negative-number rejection so the surface still refuses
@@ -168,6 +193,9 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
       toast.success('Quoted price recorded', `${row.product_name ?? 'Product'} · ${row.currency} ${num.toLocaleString(undefined, { minimumFractionDigits: 2 })}`);
       setQuotedDraft(prev => ({ ...prev, [row.id]: '' }));
       await reloadShared();
+      // Tell the parent a price was shared so the OTHER Stage 4 instance (the
+      // inline pipeline view vs. the Share Prices popup) refreshes immediately.
+      onPricesChanged?.();
     } catch (e: any) {
       toast.error('Submit failed', e?.response?.data?.message ?? 'Could not record the quoted price');
     } finally {
@@ -308,6 +336,12 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
   const sharedCount = sharedRows.length;
   const toShareCount = products.length;
 
+  /* While a quoted-price Submit is in flight, freeze the WHOLE tab — every
+   * amount input and every button — so the price can't be edited mid-request
+   * and the user clearly sees the action is in progress. Only one submit runs
+   * at a time (submittingId is a single id), so this one flag covers it. */
+  const isSubmittingAny = submittingId !== null;
+
   /* ──────────────────────────── render ──────────────────────────── */
   return (
     <>
@@ -342,7 +376,12 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
               <div className="s4-card-head-titlewrap">
                 <div className="s4-card-title s4-history-titlerow">
                   <span className="s4-history-code">{formatProductCode(historyHeader?.product_code) || '—'}</span>
-                  <span>{historyHeader?.product_name ?? '—'}</span>
+                  {/* Single-line ellipsis — a 100+ char name otherwise wraps the
+                      header and pushes the Back button off the card (QA #98).
+                      Full name stays on the tooltip. */}
+                  <Tooltip label={historyHeader?.product_name ?? ''} themed maxWidth={420}>
+                    <span className="s4-history-name">{historyHeader?.product_name ?? '—'}</span>
+                  </Tooltip>
                 </div>
               </div>
               {/* Right: back button. */}
@@ -364,6 +403,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                     <th style={{ width: 150 }}>Date &amp; Time</th>
                     <th style={{ width: 80 }}>Quantity</th>
                     <th style={{ width: 130 }}>Target Price</th>
+                    <th style={{ width: 90 }}>Currency</th>
                     <th style={{ width: 130 }}>Quoted Price</th>
                     <th style={{ width: 100 }}>PDF</th>
                   </tr>
@@ -377,12 +417,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                       <td><span className="smd-skel" style={{ maxWidth: 110 }} /></td>
                       <td><span className="smd-skel smd-skel-num" /></td>
                       <td><span className="smd-skel smd-skel-num" /></td>
+                      <td><span className="smd-skel smd-skel-chip" /></td>
                       <td><span className="smd-skel smd-skel-num" /></td>
                       <td><span className="smd-skel smd-skel-btn" /></td>
                     </tr>
                   ))}
                   {!historyLoading && historyRows.length === 0 && (
-                    <tr><td colSpan={8} className="s4-empty">No price history for this product yet.</td></tr>
+                    <tr><td colSpan={9} className="s4-empty">No price history for this product yet.</td></tr>
                   )}
                   {!historyLoading && historyRows.map((h, idx) => {
                     const { date, time } = formatDateTime(h.shared_at);
@@ -398,12 +439,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                         <td>{historyHeader?.quantity != null ? Number(historyHeader.quantity).toLocaleString() : '—'}</td>
                         <td className="s4-price">
                           {historyHeader?.target_price != null
-                            ? `${historyHeader.currency} ${Number(historyHeader.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            ? `${currencySymbol(historyHeader.currency)}${Number(historyHeader.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                             : '—'}
                         </td>
+                        <td><span className="s4-curr-chip">{currencyCode(historyHeader?.currency)}</span></td>
                         <td className="s4-quoted">
                           {h.quoted_price != null
-                            ? `${historyHeader?.currency ?? ''} ${Number(h.quoted_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            ? `${currencySymbol(historyHeader?.currency)}${Number(h.quoted_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                             : '—'}
                         </td>
                         <td>
@@ -443,6 +485,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                   type="button"
                   className={`s4-tab s4-tab-toshare ${tab === 'to_share' ? 'active' : ''}`}
                   onClick={() => setTab('to_share')}
+                  disabled={isSubmittingAny}
                 >
                   <span className="s4-tab-ico">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
@@ -457,6 +500,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                   type="button"
                   className={`s4-tab s4-tab-toshare ${tab === 'shared' ? 'active' : ''}`}
                   onClick={() => setTab('shared')}
+                  disabled={isSubmittingAny}
                 >
                   <span className="s4-tab-ico">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
@@ -480,12 +524,16 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                       <tr>
                         <th style={{ width: 50 }}>Sr No</th>
                         <th style={{ width: 110 }}>Product Code</th>
-                        <th style={{ minWidth: 280 }}>Product Name</th>
+                        <th>Product Name</th>
                         <th style={{ width: 100 }}>Status</th>
                         <th style={{ width: 80 }}>Quantity</th>
                         <th style={{ width: 140 }}>Target Price</th>
+                        <th style={{ width: 90 }}>Currency</th>
                         <th style={{ width: 170 }}>Quoted Price</th>
-                        <th style={{ width: 140 }}>Action</th>
+                        {/* Wide enough for the Submit button (min-width 108) + the
+                            eye/history icon button + its corner badge + cell
+                            padding, so the eye no longer clips at the edge. */}
+                        <th style={{ width: 190 }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -497,12 +545,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                           <td><span className="smd-skel smd-skel-pill" /></td>
                           <td><span className="smd-skel smd-skel-num" /></td>
                           <td><span className="smd-skel smd-skel-num" /></td>
+                          <td><span className="smd-skel smd-skel-chip" /></td>
                           <td><span className="smd-skel smd-skel-input" /></td>
                           <td><span className="smd-skel smd-skel-btn" /></td>
                         </tr>
                       ))}
                       {!loading && products.length === 0 && (
-                        <tr><td colSpan={8} className="s4-empty">No products mapped to this lead yet.</td></tr>
+                        <tr><td colSpan={9} className="s4-empty">No products mapped to this lead yet.</td></tr>
                       )}
                       {!loading && products.map((r, idx) => {
                         const blocked = isIncompleteStatus(r.product_status);
@@ -514,7 +563,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                             <td>
                               <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s4-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                              {r.product_category && <span className="s4-cat-badge">{r.product_category.toUpperCase()}</span>}
+                              {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s4-cat-badge">{r.product_category.toUpperCase()}</span></Tooltip>}
                             </td>
                             <td>
                               <span className={`s4-pill ${statusLc === 'active' ? 's4-pill-active' : statusLc === 'draft' ? 's4-pill-draft' : 's4-pill-inactive'}`}>
@@ -524,25 +573,23 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
                             <td className="s4-price">
                               {r.target_price != null
-                                ? `${r.currency} ${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                ? `${currencySymbol(r.currency)}${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                 : '—'}
                             </td>
+                            {/* Dedicated Currency column (QA #110) — carries the
+                                plain code so the price columns can show just the
+                                symbol. */}
+                            <td><span className="s4-curr-chip">{currencyCode(r.currency)}</span></td>
                             <td>
-                              {/* Currency lives in a separate chip beside the
-                               *  input — the previous absolute-positioned
-                               *  prefix overlapped the typed value (e.g.
-                               *  "USD 0" with no clear separation). Now the
-                               *  user sees "[USD] [12345.00]" with the chip
-                               *  visually decoupled from the editable field. */}
+                              {/* Currency now has its own column to the left, so
+                                  the input stands alone — no inline chip to avoid
+                                  showing the currency twice in adjacent cells. */}
                               <div className="s4-quote-group">
-                                <span className={`s4-quote-curr ${blocked ? 's4-quote-curr-disabled' : ''}`}>
-                                  {r.currency || 'USD'}
-                                </span>
                                 <input
                                   type="number" min="0" step="any"
-                                  className={`s4-quote-num ${(blocked || locked) ? 's4-quote-disabled' : ''}`}
+                                  className={`s4-quote-num ${(blocked || locked || isSubmittingAny) ? 's4-quote-disabled' : ''}`}
                                   value={quotedDraft[r.id] ?? ''}
-                                  disabled={blocked || locked}
+                                  disabled={blocked || locked || isSubmittingAny}
                                   onChange={(e) => setQuotedDraft(prev => ({ ...prev, [r.id]: e.target.value }))}
                                   onClick={() => {
                                     if (locked) { toast.warning('PI is signed', 'This opportunity is read-only — you can view but not share prices.'); return; }
@@ -557,7 +604,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                                 <button
                                   type="button"
                                   className={`s4-submit-btn ${(blocked || locked) ? 's4-submit-disabled' : ''}`}
-                                  disabled={isSubmitting || locked}
+                                  disabled={isSubmittingAny || locked}
                                   title={locked ? 'PI is signed — read-only' : undefined}
                                   onClick={() => { if (locked) { toast.warning('PI is signed', 'This opportunity is read-only — prices cannot be shared.'); return; } void onSubmitQuoted(r); }}
                                 >
@@ -571,7 +618,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                                   /* Count shows as the corner badge; tooltip is the plain action. */
                                   title={blocked ? 'Complete product status first' : 'View price history'}
                                   onClick={() => void openHistory(r)}
-                                  disabled={blocked}
+                                  disabled={blocked || isSubmittingAny}
                                 >
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
                                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
@@ -601,12 +648,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                       <tr>
                         <th style={{ width: 50 }}>Sr No</th>
                         <th style={{ width: 110 }}>Product Code</th>
-                        <th style={{ minWidth: 280 }}>Product Name</th>
+                        <th>Product Name</th>
                         <th style={{ width: 150 }}>Date &amp; Time</th>
                         <th style={{ width: 80 }}>Quantity</th>
                         <th style={{ width: 140 }}>Target Price</th>
+                        <th style={{ width: 90 }}>Currency</th>
                         <th style={{ width: 140 }}>Quoted Price</th>
-                        <th style={{ width: 90 }}>Action</th>
+                        <th style={{ width: 104 }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -618,12 +666,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                           <td><span className="smd-skel" style={{ maxWidth: 110 }} /></td>
                           <td><span className="smd-skel smd-skel-num" /></td>
                           <td><span className="smd-skel smd-skel-num" /></td>
+                          <td><span className="smd-skel smd-skel-chip" /></td>
                           <td><span className="smd-skel smd-skel-num" /></td>
                           <td><span className="smd-skel smd-skel-btn" /></td>
                         </tr>
                       ))}
                       {!loading && filteredShared.length === 0 && (
-                        <tr><td colSpan={8} className="s4-empty">
+                        <tr><td colSpan={9} className="s4-empty">
                           {sharedRows.length === 0 ? 'No prices shared yet.' : 'No rows match this search.'}
                         </td></tr>
                       )}
@@ -635,7 +684,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id ?? 0).padStart(3,'0')}`}</span></td>
                             <td>
                               <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s4-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                              {r.product_category && <span className="s4-cat-badge">{r.product_category.toUpperCase()}</span>}
+                              {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s4-cat-badge">{r.product_category.toUpperCase()}</span></Tooltip>}
                             </td>
                             <td><span className="s4-dt">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
@@ -644,12 +693,13 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td>{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
                             <td className="s4-price">
                               {r.target_price != null
-                                ? `${r.currency} ${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                ? `${currencySymbol(r.currency)}${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                 : '—'}
                             </td>
+                            <td><span className="s4-curr-chip">{currencyCode(r.currency)}</span></td>
                             <td className="s4-quoted">
                               {r.quoted_price != null
-                                ? `${r.currency} ${Number(r.quoted_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                ? `${currencySymbol(r.currency)}${Number(r.quoted_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                 : '—'}
                             </td>
                             <td>
@@ -690,11 +740,11 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
           ⚠ <strong>Note :</strong> Map a customer and share at least one quoted price before advancing to Stage 5. The consignee can be set in the Create Quotation form.
         </div>
         <div className="smd-stg-btn-row">
-          <button className="smd-stg-btn" onClick={onPrev} type="button">← Previous</button>
+          <button className="smd-stg-btn" onClick={onPrev} type="button" disabled={advancing || isSubmittingAny}>← Previous</button>
           <button
             className="smd-stg-btn smd-stg-btn-primary"
             onClick={() => void onSaveAndNext()}
-            disabled={advancing}
+            disabled={advancing || isSubmittingAny}
             type="button"
           >
             {advancing ? 'Advancing…' : 'Save & Next →'}
@@ -744,6 +794,9 @@ const STAGE4_CSS = `
   transition: all .2s cubic-bezier(.34, 1.2, .64, 1);
 }
 .s4-tab:hover:not(.active) { background: rgba(124,58,237,.08); }
+/* Frozen while a price submit is in flight — blocks the click, keeps the look. */
+.s4-tab:disabled { cursor: not-allowed; }
+.s4-tab:disabled:hover:not(.active) { background: transparent; }
 .s4-tab.active {
   background: linear-gradient(135deg, #7c3aed, #4c1d95);
   color: #fff;
@@ -844,7 +897,13 @@ const STAGE4_CSS = `
 .s4-table-wrap::-webkit-scrollbar-track { background: transparent; }
 .s4-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
 .s4-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-.s4-table { width: 100%; border-collapse: collapse; min-width: 880px; }
+/* table-layout:fixed + width:100% lets the flexible Product Name column absorb
+   slack and truncate (ellipsis + hover tooltip) on a wide stage. A min-width
+   guarantees the fixed columns can't squeeze Product Name to 0 when BOTH side
+   panels (CLM Details + Decision Engine) are open — instead the wrap scrolls
+   horizontally so every column, Product Name included, stays visible and in
+   its own column (QA #114). */
+.s4-table { width: 100%; min-width: 1080px; border-collapse: collapse; table-layout: fixed; }
 .s4-table thead th { position: sticky; top: 0; z-index: 2; }
 .s4-thead-navy th {
   padding: 12px 14px; text-align: left;
@@ -882,6 +941,16 @@ const STAGE4_CSS = `
 .s4-code-navy    { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
 .s4-code-emerald { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
 
+/* Currency column chip — carries the plain code (USD/GBP/…) beside the price
+   columns, which now show only the symbol. */
+.s4-curr-chip {
+  display: inline-block;
+  font-family: 'Inter', monospace; font-size: 11px; font-weight: 800;
+  padding: 3px 9px; border-radius: 7px;
+  background: #f5f3ff; color: #5b21b6; border: 1.5px solid #ddd6fe;
+  letter-spacing: .03em;
+}
+
 /* Clamp long product names to 2 lines — an unclamped 100+ char name stacked
    to 5 lines and stretched every row of the Price Shared table. Full name
    stays on the title tooltip. */
@@ -891,7 +960,11 @@ const STAGE4_CSS = `
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere;
 }
-.s4-cat-badge { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; background: #ede9fe; color: #6d28d9; }
+/* A long segment ("Travel & Luggage…") used to run the full row width and shove
+   the price columns off-screen. Cap + ellipsize; full value is on the hover
+   tooltip. max-width:100% keeps it inside the product cell (table-layout:fixed);
+   vertical-align keeps the clipped chip aligned with the name above it. */
+.s4-cat-badge { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; background: #ede9fe; color: #6d28d9; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 
 .s4-pill {
   display: inline-flex; align-items: center; gap: 4px;
@@ -910,10 +983,15 @@ const STAGE4_CSS = `
 /* Date & Time → rounded chip with a clock icon (Figma), single line. */
 .s4-dt {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 4px 10px; border-radius: 999px;
+  padding: 4px 10px; border-radius: 12px;
   background: #f5f3ff; border: 1px solid #e9e3ff;
   color: #6d28d9; font-weight: 700; font-size: 11px;
-  white-space: nowrap;
+  /* Wrap the date/time INSIDE its column instead of overflowing into the
+     Quantity column when the stage is narrow (both side panels open) — the
+     chip was white-space:nowrap and spilled past a squeezed fixed column
+     (QA #113). max-width keeps it inside the cell. */
+  white-space: normal; flex-wrap: wrap; justify-content: center;
+  max-width: 100%; row-gap: 1px;
 }
 .s4-dt svg { flex-shrink: 0; opacity: .85; }
 .s4-dt-sep { color: #c4b5fd; margin: 0 2px; font-weight: 600; }
@@ -980,7 +1058,12 @@ const STAGE4_CSS = `
 }
 
 /* History header: product code + name on one row (no "Price History" title). */
-.s4-history-titlerow { display: flex; align-items: center; gap: 8px; }
+.s4-history-titlerow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* Truncate the header product name to one line with an ellipsis (QA #98). */
+.s4-history-name {
+  max-width: 360px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 /* Eye (view history) button with a corner count badge = # of times submitted. */
 .s4-eye-btn { position: relative; overflow: visible; }
 .s4-eye-count {
@@ -1074,6 +1157,7 @@ const STAGE4_CSS = `
 [data-bs-theme="dark"] .s4-empty { color: rgba(196,181,253,.55); }
 [data-bs-theme="dark"] .s4-sr-navy    { background: rgba(167,139,250,.22); color: #ddd6fe; }
 [data-bs-theme="dark"] .s4-sr-emerald { background: rgba(110,231,183,.22); color: #6ee7b7; }
+[data-bs-theme="dark"] .s4-curr-chip { background: rgba(167,139,250,.18); color: #ddd6fe; border-color: rgba(167,139,250,.40); }
 [data-bs-theme="dark"] .s4-code-navy    { background: rgba(167,139,250,.18); color: #ddd6fe; border-color: rgba(167,139,250,.40); }
 [data-bs-theme="dark"] .s4-code-emerald { background: rgba(110,231,183,.18); color: #6ee7b7; border-color: rgba(110,231,183,.40); }
 [data-bs-theme="dark"] .s4-prod-name { color: #ede9fe; }

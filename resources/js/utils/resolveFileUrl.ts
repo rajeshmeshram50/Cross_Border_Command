@@ -80,6 +80,33 @@ export const downloadFile = async (url: string, fileName?: string) => {
 };
 
 /**
+ * Download a single P2P clarity PDF through the authenticated query endpoint
+ * (GET /p2p/clarity/download?path=…). The path travels as a query parameter,
+ * so a multi-PDF value can never smear several storage paths into one URL.
+ * @param path - one /storage/p2p/clarity/… path (never a newline-joined list)
+ */
+export const downloadClarityFile = async (path: string) => {
+    if (!path) return false;
+    const { default: api } = await import('../api');
+    const name = path.split('/').pop() || 'clarity.pdf';
+    try {
+        const res = await api.get('/p2p/clarity/download', { params: { path }, responseType: 'blob' });
+        const blobUrl = window.URL.createObjectURL(res.data as Blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+        return true;
+    } catch (error) {
+        console.error('Clarity download failed:', error);
+        return false;
+    }
+};
+
+/**
  * Open a file URL in a new tab
  * @param url - The file URL to open
  */

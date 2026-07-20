@@ -88,7 +88,10 @@ const mkDraft = (sp?: SelectedProduct): Draft => ({
   lead_product_id: sp?.id          ?? null,
   product_id:      sp?.product_id  ?? null,
   qty:             sp?.default_qty != null ? String(sp.default_qty) : '',
-  target_price:    sp?.default_target_price != null ? String(sp.default_target_price) : '',
+  // Target Price starts BLANK — it's the procurement (buy-side) target the user
+  // enters here, NOT the shared/sell price. Pre-filling it from the lead's
+  // shared price was misleading (QA #119). Still mandatory (validated on save).
+  target_price:    '',
   attachments:     [],
 });
 
@@ -307,8 +310,19 @@ export default function CreateProcurementModal({
     } catch (e: any) {
       const data = e?.response?.data;
       const fieldErrs = data?.errors as Record<string, string[]> | undefined;
-      const msg = fieldErrs ? Object.values(fieldErrs).flat().join(' ') : (data?.message ?? 'Could not create procurement');
-      toast.error('Create failed', msg);
+      // Attachment errors come back as raw field paths ("products.0.attachment.0
+      // has an unexpected file signature… must not be greater than 5120
+      // kilobytes"). Surface a clean, actionable message instead of leaking the
+      // internal field path / size wording.
+      const entries = fieldErrs ? Object.entries(fieldErrs) : [];
+      const isAttachErr = entries.some(([k, v]) =>
+        k.includes('attachment') || (v ?? []).some(m => /file signature|kilobytes|mimes|must be a file|must be an image|jpg|jpeg|png|pdf|greater than 5120/i.test(m)));
+      if (isAttachErr) {
+        toast.error('File not supported', 'Please attach only JPG, PNG or PDF files (up to 5 MB).');
+      } else {
+        const msg = fieldErrs ? Object.values(fieldErrs).flat().join(' ') : (data?.message ?? 'Could not create procurement');
+        toast.error('Create failed', msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -334,9 +348,17 @@ export default function CreateProcurementModal({
   if (!open) return null;
 
   return createPortal((
-    <div className="cps-backdrop" onClick={onClose}>
+    <div className="cps-backdrop" onClick={() => { if (!submitting) onClose(); }}>
       <style>{SCOPED_CSS}</style>
-      <div className="cps-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="cps-modal" style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+        {/* Save lock — while the procurement is saving, blanket the whole modal
+            so no field or button stays editable (QA #120). */}
+        {submitting && (
+          <div className="cps-save-lock" role="status" aria-live="polite">
+            <span className="cps-save-spin" />
+            <span className="cps-save-lock-txt">Saving…</span>
+          </div>
+        )}
         {/* Title row */}
         <div className="cps-title-row">
           <div className="cps-title-left">
@@ -454,7 +476,7 @@ export default function CreateProcurementModal({
                     <th style={{ width: 300 }}>PRODUCT NAME</th>
                     <th style={{ width: 130 }}>QUANTITY</th>
                     <th style={{ width: 150 }}>TARGET PRICE</th>
-                    <th style={{ width: 120 }}>ATTACHMENT</th>
+                    <th style={{ width: 160 }}>ATTACHMENT</th>
                     <th style={{ width: 90 }}>ACTION</th>
                   </tr>
                 </thead>
@@ -520,7 +542,22 @@ export default function CreateProcurementModal({
                         <td>
                           <RowAttach
                             files={d.attachments}
-                            onAdd={(files) => setDraft(d.key, { attachments: [...d.attachments, ...files] })}
+                            onAdd={(files) => {
+                              // Only JPG / PNG / PDF, max 5 MB (matches the backend
+                              // mimes + 5120 KB rule). Reject the rest up front with
+                              // a clear message instead of failing on Save.
+                              const ok: File[] = [];
+                              let badType = false, tooBig = false;
+                              for (const f of files) {
+                                const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
+                                if (!['jpg', 'jpeg', 'png', 'pdf'].includes(ext)) { badType = true; continue; }
+                                if (f.size > 5 * 1024 * 1024) { tooBig = true; continue; }
+                                ok.push(f);
+                              }
+                              if (badType) toast.error('File not supported', 'Please attach only JPG, PNG or PDF files.');
+                              else if (tooBig) toast.error('File too large', 'Each attachment must be 5 MB or smaller.');
+                              if (ok.length) setDraft(d.key, { attachments: [...d.attachments, ...ok] });
+                            }}
                             onRemove={(i) => setDraft(d.key, { attachments: d.attachments.filter((_, idx) => idx !== i) })}
                           />
                         </td>
@@ -590,8 +627,66 @@ function StatusPill({ text }: { text: string }) {
   return <span className={`cps-stp ${cls}`}>● {text}</span>;
 }
 
+/* Single attachment chip — reused for the inline first chip and every row in
+ * the overflow popover. `block` makes it fill the popover width. */
+function AttachChip({ file, onRemove, block }: { file: File; onRemove: () => void; block?: boolean }) {
+  return (
+    <span className={`cps-attach-chip ${block ? 'cps-attach-chip-block' : ''}`} title={file.name}>
+      <span className="cps-attach-name">{file.name}</span>
+      <button type="button" className="cps-chip-dl" onClick={() => downloadFile(file)} title="Download">
+        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+      </button>
+      <button type="button" className="cps-chip-x" onClick={onRemove} title="Remove">×</button>
+    </span>
+  );
+}
+
 function RowAttach({ files, onAdd, onRemove }: { files: File[]; onAdd: (f: File[]) => void; onRemove: (i: number) => void }) {
   const ref = useRef<HTMLInputElement | null>(null);
+  const moreRef = useRef<HTMLButtonElement | null>(null);
+  const popRef  = useRef<HTMLDivElement | null>(null);
+  /* Overflow popover position (fixed, portalled to body so the scrolling
+   * modal body can't clip it). null = closed. */
+  const [popPos, setPopPos] = useState<{ top: number; left: number } | null>(null);
+
+  const overflow = files.slice(1);   // everything after the first chip
+
+  const openPop = () => {
+    const r = moreRef.current?.getBoundingClientRect();
+    if (!r) return;
+    // Below the badge, clamped so a wide popover can't run off the right edge.
+    setPopPos({ top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 296) });
+  };
+  const closePop = () => setPopPos(null);
+
+  /* Close on outside click / scroll / resize / Escape — a fixed popover would
+   * otherwise float in the wrong spot once the modal body scrolls. */
+  useEffect(() => {
+    if (!popPos) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (moreRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      closePop();
+    };
+    const onMove = () => closePop();
+    const onEsc  = (e: KeyboardEvent) => { if (e.key === 'Escape') closePop(); };
+    document.addEventListener('mousedown', onDoc);
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [popPos]);
+
+  /* Auto-close once the overflow is gone (user removed files down to ≤ 1). */
+  useEffect(() => { if (files.length <= 1) closePop(); }, [files.length]);
+
   return (
     <div className="cps-attach-cell">
       <button type="button" className="cps-attach-btn" onClick={() => ref.current?.click()}>
@@ -602,7 +697,7 @@ function RowAttach({ files, onAdd, onRemove }: { files: File[]; onAdd: (f: File[
       </button>
       <input
         type="file" multiple hidden ref={ref}
-        accept=".jpg,.jpeg,.png,.webp,.pdf"
+        accept=".jpg,.jpeg,.png,.pdf"
         onChange={e => {
           if (e.target.files) onAdd(Array.from(e.target.files));
           e.target.value = '';
@@ -610,18 +705,32 @@ function RowAttach({ files, onAdd, onRemove }: { files: File[]; onAdd: (f: File[
       />
       {files.length > 0 && (
         <div className="cps-attach-chips">
-          {files.map((f, i) => (
-            <span key={i} className="cps-attach-chip" title={f.name}>
-              <span className="cps-attach-name">{f.name}</span>
-              <button type="button" className="cps-chip-dl" onClick={() => downloadFile(f)} title="Download">
-                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                </svg>
-              </button>
-              <button type="button" className="cps-chip-x" onClick={() => onRemove(i)} title="Remove">×</button>
-            </span>
-          ))}
+          {/* Only the first file shows inline; the rest collapse into "+N". */}
+          <AttachChip file={files[0]} onRemove={() => onRemove(0)} />
+          {overflow.length > 0 && (
+            <button
+              type="button" ref={moreRef}
+              className={`cps-attach-more ${popPos ? 'cps-attach-more-on' : ''}`}
+              onClick={() => (popPos ? closePop() : openPop())}
+              title={`${overflow.length} more attachment${overflow.length === 1 ? '' : 's'}`}
+            >
+              +{overflow.length}
+            </button>
+          )}
         </div>
+      )}
+
+      {/* Overflow popover — lists every attachment past the first. */}
+      {popPos && overflow.length > 0 && createPortal(
+        <div ref={popRef} className="cps-attach-pop" style={{ top: popPos.top, left: popPos.left }}>
+          <div className="cps-attach-pop-head">{overflow.length} more attachment{overflow.length === 1 ? '' : 's'}</div>
+          {overflow.map((f, i) => (
+            // realIdx = i + 1 — the overflow list starts at the second file, so
+            // remove/download map back to the correct index in `files`.
+            <AttachChip key={i + 1} file={f} onRemove={() => onRemove(i + 1)} block />
+          ))}
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -642,6 +751,24 @@ const SCOPED_CSS = `
   box-shadow: 0 18px 56px rgba(15,23,42,.30);
   overflow: hidden; display: flex; flex-direction: column;
 }
+
+/* ─── Save lock overlay (QA #120) — blankets the modal while saving so every
+   field + button is un-interactable, with a spinner. ─── */
+.cps-save-lock {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: rgba(240,253,255,.72); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  cursor: progress; border-radius: inherit;
+}
+.cps-save-lock-txt { font-size: 13px; font-weight: 800; color: #0e7490; letter-spacing: .02em; }
+.cps-save-spin {
+  width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid rgba(8,145,178,.25); border-top-color: #0891b2;
+  animation: cps-save-spin .7s linear infinite;
+}
+@keyframes cps-save-spin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .cps-save-lock { background: rgba(10,20,28,.74); }
+[data-bs-theme="dark"] .cps-save-lock-txt { color: #67e8f9; }
 
 /* ─── Title row ─── */
 .cps-title-row {
@@ -879,15 +1006,18 @@ const SCOPED_CSS = `
   cursor: pointer; transition: all .12s;
 }
 .cps-attach-btn:hover { background: #cffafe; border-color: #67e8f9; }
-.cps-attach-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Single line: the first chip + the "+N" badge sit side by side. The chip
+   shrinks (ellipsis) so the badge always stays inline beside it, never wraps
+   to a second row. */
+.cps-attach-chips { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; }
 .cps-attach-chip {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 2px 5px 2px 8px; border-radius: 999px;
   background: #cffafe; color: #0e7490; border: 1px solid #a5f3fc;
   font-size: 10px; font-weight: 600;
-  max-width: 140px;
+  max-width: 112px; min-width: 0; flex: 0 1 auto;
 }
-.cps-attach-name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cps-attach-name { max-width: 62px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cps-chip-dl, .cps-chip-x {
   background: transparent; border: none; cursor: pointer;
   color: #0e7490; padding: 1px 2px; line-height: 1;
@@ -896,6 +1026,44 @@ const SCOPED_CSS = `
 .cps-chip-dl:hover { background: rgba(8,145,178,.18); }
 .cps-chip-x { font-weight: 700; font-size: 12px; }
 .cps-chip-x:hover { background: rgba(239,68,68,.18); color: #dc2626; }
+
+/* "+N" overflow badge — collapses the extra attachments into one pill. */
+.cps-attach-more {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 20px; padding: 0 9px; border-radius: 999px;
+  background: linear-gradient(135deg, #0891b2, #0e7490); color: #fff;
+  border: 1px solid #0e7490;
+  font-family: inherit; font-size: 10px; font-weight: 800;
+  cursor: pointer; transition: filter .12s;
+  flex: 0 0 auto; white-space: nowrap;   /* never shrinks; stays beside the chip */
+}
+.cps-attach-more:hover, .cps-attach-more-on { filter: brightness(1.08); }
+
+/* Overflow popover — fixed + portalled to body so the scrolling modal
+   never clips it. Position is set inline from the badge's rect. */
+.cps-attach-pop {
+  position: fixed; z-index: 1100;
+  width: 280px; max-height: 240px; overflow-y: auto;
+  background: #fff; border: 1.5px solid #a5f3fc; border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15,23,42,.22);
+  padding: 8px; display: flex; flex-direction: column; gap: 5px;
+  scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent;
+}
+.cps-attach-pop::-webkit-scrollbar { width: 8px; }
+.cps-attach-pop::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.cps-attach-pop-head {
+  font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: #0e7490; padding: 2px 4px 5px;
+  border-bottom: 1px solid #cffafe; margin-bottom: 2px;
+}
+/* Block chip fills the popover row: the name takes all the slack so the
+   download + remove buttons sit together at the right corner. */
+.cps-attach-chip-block { max-width: none; width: 100%; }
+.cps-attach-chip-block .cps-attach-name { max-width: none; flex: 1 1 auto; min-width: 0; }
+
+[data-bs-theme="dark"] .cps-attach-more { background: linear-gradient(135deg, #0891b2, #0e7490); border-color: rgba(8,145,178,.6); }
+[data-bs-theme="dark"] .cps-attach-pop { background: #0f1c25; border-color: rgba(8,145,178,.40); box-shadow: 0 12px 32px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .cps-attach-pop-head { color: #67e8f9; border-bottom-color: rgba(8,145,178,.30); }
 
 /* Row add / del */
 .cps-row-add {

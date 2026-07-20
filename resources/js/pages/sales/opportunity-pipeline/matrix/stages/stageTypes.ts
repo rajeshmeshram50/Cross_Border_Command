@@ -47,6 +47,15 @@ export type StageProps = {
    * pipeline view vs. the Product Sourcing popup — they hold separate state)
    * re-syncs without a page refresh. */
   onProductsChanged?: () => void;
+  /* Bumped by the parent whenever a shared price changes outside this stage
+   * (the toolbar "Share Prices" popup shares a quoted price). Stage 4 watches
+   * it to re-fetch its shared-price list so the inline view + tabs stay live
+   * without a full page refresh. */
+  priceRefreshTick?: number;
+  /* Emitted by Stage 4 after IT shares a quoted price. The parent wires this to
+   * bump `priceRefreshTick`, so the OTHER Stage 4 instance (inline pipeline view
+   * vs. the Share Prices popup — separate state) re-syncs immediately. */
+  onPricesChanged?: () => void;
 };
 
 /* Shared stage shell styles — each stage imports SHARED_STAGE_CSS once. */

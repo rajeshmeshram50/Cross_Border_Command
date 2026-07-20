@@ -685,6 +685,9 @@ export default function ClmBuyerProfilePage() {
   // Buyer / Consignee list search boxes (name · id · segment · country).
   const [buyerSearch, setBuyerSearch] = useState('');
   const [consSearch, setConsSearch] = useState('');
+  // Transaction-wise CLM search box (shipment · opportunity · customer ·
+  // consignee · PI · reg. status). Shared by all four transaction tables.
+  const [txnSearch, setTxnSearch] = useState('');
   const [wsEqPage, setWsEqPage] = useState(1);
   const [wsNeqPage, setWsNeqPage] = useState(1);
   const [wosEqPage, setWosEqPage] = useState(1);
@@ -825,6 +828,19 @@ export default function ClmBuyerProfilePage() {
   const wosEqData   = txnInScope(bp.wos_eq);
   const wosNeqData  = txnInScope(bp.wos_neq);
 
+  /* Case-insensitive search across every text column the transaction tables
+   * render: Shipment ID, Opportunity ID, Customer, Consignee, PI Number and
+   * Reg. Status. Drives the visible table + its pager; the analytics cards
+   * above stay on the unfiltered scope so the totals don't jump while typing. */
+  const txnQ = txnSearch.trim().toLowerCase();
+  const txnMatch = (r: { shp?: string; opp?: string; customer?: string; consignee?: string; pi?: string; reg?: Reg; country?: string }): boolean =>
+    !txnQ || [r.shp, r.opp, r.customer, r.consignee, r.pi, r.reg, r.country]
+      .some((v) => (v || '').toLowerCase().includes(txnQ));
+  const wsEqRows   = wsEqData.filter(txnMatch);
+  const wsNeqRows  = wsNeqData.filter(txnMatch);
+  const wosEqRows  = wosEqData.filter(txnMatch);
+  const wosNeqRows = wosNeqData.filter(txnMatch);
+
   // ── derived buyer analytics (syncBpaCards) ──
   const pad = (n: number) => (n < 10 ? '0' + n : '' + n);
   const buyerTotal = scopedBuyers.length;
@@ -887,14 +903,14 @@ export default function ClmBuyerProfilePage() {
   const consPageSafe = Math.min(consPage, Math.max(1, Math.ceil(consListTotal / consPerPage)));
   const buyerSlice = buyerFiltered.slice((buyerPageSafe - 1) * bpPerPage, (buyerPageSafe - 1) * bpPerPage + bpPerPage);
   const consSlice = consFiltered.slice((consPageSafe - 1) * consPerPage, (consPageSafe - 1) * consPerPage + consPerPage);
-  const wsEqPageSafe = Math.min(wsEqPage, Math.max(1, Math.ceil(wsEqData.length / txnPerPage)));
-  const wsNeqPageSafe = Math.min(wsNeqPage, Math.max(1, Math.ceil(wsNeqData.length / txnPerPage)));
-  const wosEqPageSafe = Math.min(wosEqPage, Math.max(1, Math.ceil(wosEqData.length / txnPerPage)));
-  const wosNeqPageSafe = Math.min(wosNeqPage, Math.max(1, Math.ceil(wosNeqData.length / txnPerPage)));
-  const wsEqSlice = wsEqData.slice((wsEqPageSafe - 1) * txnPerPage, (wsEqPageSafe - 1) * txnPerPage + txnPerPage);
-  const wsNeqSlice = wsNeqData.slice((wsNeqPageSafe - 1) * txnPerPage, (wsNeqPageSafe - 1) * txnPerPage + txnPerPage);
-  const wosEqSlice = wosEqData.slice((wosEqPageSafe - 1) * txnPerPage, (wosEqPageSafe - 1) * txnPerPage + txnPerPage);
-  const wosNeqSlice = wosNeqData.slice((wosNeqPageSafe - 1) * txnPerPage, (wosNeqPageSafe - 1) * txnPerPage + txnPerPage);
+  const wsEqPageSafe = Math.min(wsEqPage, Math.max(1, Math.ceil(wsEqRows.length / txnPerPage)));
+  const wsNeqPageSafe = Math.min(wsNeqPage, Math.max(1, Math.ceil(wsNeqRows.length / txnPerPage)));
+  const wosEqPageSafe = Math.min(wosEqPage, Math.max(1, Math.ceil(wosEqRows.length / txnPerPage)));
+  const wosNeqPageSafe = Math.min(wosNeqPage, Math.max(1, Math.ceil(wosNeqRows.length / txnPerPage)));
+  const wsEqSlice = wsEqRows.slice((wsEqPageSafe - 1) * txnPerPage, (wsEqPageSafe - 1) * txnPerPage + txnPerPage);
+  const wsNeqSlice = wsNeqRows.slice((wsNeqPageSafe - 1) * txnPerPage, (wsNeqPageSafe - 1) * txnPerPage + txnPerPage);
+  const wosEqSlice = wosEqRows.slice((wosEqPageSafe - 1) * txnPerPage, (wosEqPageSafe - 1) * txnPerPage + txnPerPage);
+  const wosNeqSlice = wosNeqRows.slice((wosNeqPageSafe - 1) * txnPerPage, (wosNeqPageSafe - 1) * txnPerPage + txnPerPage);
 
   const rowBg = (i: number) => (i % 2 === 0 ? '#fff' : 'rgba(240,253,255,.45)');
 
@@ -1059,7 +1075,7 @@ export default function ClmBuyerProfilePage() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '36px', padding: '0 14px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)', transition: 'border-color .15s,box-shadow .15s', flex: 1, maxWidth: '680px' }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round" style={{ flexShrink: 0, opacity: .7 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                <input type="text" placeholder="Search by Shipment ID, Customer, Segment or Status..." style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
+                <input type="text" placeholder="Search by Shipment ID, Opportunity ID, Customer, Consignee, PI or Status..." value={txnSearch} onChange={(e) => { setTxnSearch(e.target.value); setWsEqPage(1); setWsNeqPage(1); setWosEqPage(1); setWosNeqPage(1); }} style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
               </div>
             </div>
 
@@ -1100,7 +1116,7 @@ export default function ClmBuyerProfilePage() {
                       </tbody>
                     </table>
                     <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
-                      <WorklistPager page={wsEqPageSafe} total={wsEqData.length} pageSize={txnPerPage} onPage={setWsEqPage} onPageSize={(n) => { setTxnManualSize(n); setWsEqPage(1); }} className="bp-wl" />
+                      <WorklistPager page={wsEqPageSafe} total={wsEqRows.length} pageSize={txnPerPage} onPage={setWsEqPage} onPageSize={(n) => { setTxnManualSize(n); setWsEqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
                 )}
@@ -1141,7 +1157,7 @@ export default function ClmBuyerProfilePage() {
                       </tbody>
                     </table>
                     <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
-                      <WorklistPager page={wsNeqPageSafe} total={wsNeqData.length} pageSize={txnPerPage} onPage={setWsNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWsNeqPage(1); }} className="bp-wl" />
+                      <WorklistPager page={wsNeqPageSafe} total={wsNeqRows.length} pageSize={txnPerPage} onPage={setWsNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWsNeqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
                 )}
@@ -1188,7 +1204,7 @@ export default function ClmBuyerProfilePage() {
                       </tbody>
                     </table>
                     <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
-                      <WorklistPager page={wosEqPageSafe} total={wosEqData.length} pageSize={txnPerPage} onPage={setWosEqPage} onPageSize={(n) => { setTxnManualSize(n); setWosEqPage(1); }} className="bp-wl" />
+                      <WorklistPager page={wosEqPageSafe} total={wosEqRows.length} pageSize={txnPerPage} onPage={setWosEqPage} onPageSize={(n) => { setTxnManualSize(n); setWosEqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
                 )}
@@ -1232,7 +1248,7 @@ export default function ClmBuyerProfilePage() {
                       </tbody>
                     </table>
                     <div style={{ padding: '10px 16px', background: '#f8feff', borderTop: '1px solid rgba(6,182,212,.08)', marginTop: 'auto', flexShrink: 0 }}>
-                      <WorklistPager page={wosNeqPageSafe} total={wosNeqData.length} pageSize={txnPerPage} onPage={setWosNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWosNeqPage(1); }} className="bp-wl" />
+                      <WorklistPager page={wosNeqPageSafe} total={wosNeqRows.length} pageSize={txnPerPage} onPage={setWosNeqPage} onPageSize={(n) => { setTxnManualSize(n); setWosNeqPage(1); }} className="bp-wl" />
                     </div>
                   </div>
                 )}

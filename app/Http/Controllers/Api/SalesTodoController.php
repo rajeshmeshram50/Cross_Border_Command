@@ -18,7 +18,11 @@ class SalesTodoController extends Controller
     /** Per-attachment cap. Aligns with the existing 20MB cap used by
      *  Announcement attachments and HR doc uploads. */
     private const ATTACH_MAX_KB = 20 * 1024;
-    private const ATTACH_MIMES  = 'png,jpg,jpeg,pdf,doc,docx,xls,xlsx,csv';
+    /** Reminder attachments are restricted to images + PDF. Word/Excel/CSV are
+     *  NOT supported — an uploaded .doc/.docx must be rejected with a 422 (QA
+     *  #23). Keep this in lock-step with the frontend `accept` on the reminder
+     *  file inputs (RemindersForLeadModal + SalesTodo). */
+    private const ATTACH_MIMES  = 'png,jpg,jpeg,webp,pdf';
 
     /* ─────────────────────────────────────────────────────────────────
      *  REMINDERS — list / create / update / delete / status

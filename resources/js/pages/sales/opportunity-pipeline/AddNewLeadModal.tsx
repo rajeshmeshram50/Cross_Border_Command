@@ -70,6 +70,46 @@ const STATE_BY_COUNTRY: Record<string, string[]> = {
 /* Strip any non-digit character from a phone-style input. */
 const digitsOnly = (raw: string): string => (raw ?? '').replace(/\D/g, '').slice(0, 15);
 
+/* PIN / ZIP rules, identical to AddCustomerModal / AddConsigneeModal / the
+ * shipment module: India → exactly 6 digits; every other country →
+ * letters/digits plus spaces and hyphens ("SL7 1TB", "K1A 0B1"), max 12.
+ *
+ * This field used to be digits-only with maxLength 6 for EVERY country, so a
+ * foreign lead simply could not enter its own postal code — and nothing
+ * validated it, front or back.
+ *
+ * Label, maxLength, placeholder and sanitiser all branch on country too —
+ * keep them together so a rule change can't update one and miss another. */
+const isDomesticCountry = (country?: string) => (country ?? '').trim() === 'India';
+const PIN_DOMESTIC_RE = /^[0-9]{6}$/;
+const ZIP_INTL_RE = /^[A-Za-z0-9\s\-]+$/;
+
+const pinLabel = (country?: string) => (isDomesticCountry(country) ? 'PIN Code' : 'Zip Code');
+const pinMaxLen = (country?: string) => (isDomesticCountry(country) ? 6 : 12);
+const pinPlaceholder = (country?: string) =>
+  isDomesticCountry(country) ? '6-digit PIN' : 'Enter zip code';
+
+/* Strips at the keystroke so an impossible character never appears — the user
+ * doesn't type "745223@@@" and then read an error about it. */
+const pinSanitize = (v: string, country?: string) =>
+  isDomesticCountry(country)
+    ? (v ?? '').replace(/\D/g, '').slice(0, 6)
+    : (v ?? '').replace(/[^A-Za-z0-9\s\-]/g, '').slice(0, 12);
+
+/* Blank passes — the field is optional on a lead (unlike on a customer),
+ * where only a partly-typed value is worth rejecting. */
+function pinError(v: string, country?: string): string | undefined {
+  const s = (v ?? '').trim();
+  if (!s) return undefined;
+  if (isDomesticCountry(country)) {
+    return PIN_DOMESTIC_RE.test(s) ? undefined : 'PIN Code must be exactly 6 digits';
+  }
+  if (s.length > 12) return 'Zip Code must be 12 characters or fewer';
+  return ZIP_INTL_RE.test(s)
+    ? undefined
+    : 'Zip Code can contain only letters, digits, spaces and hyphens';
+}
+
 export default function AddNewLeadModal(props: {
   open: boolean;
   onClose: () => void;
@@ -234,6 +274,10 @@ export default function AddNewLeadModal(props: {
     if (!values.customerCity.trim())  next.customerCity  = 'City is required';
     if (!values.country.trim())       next.country       = 'Country is required';
     if (!values.state.trim())         next.state         = 'State is required';
+    // Optional field, so only a non-empty value that breaks its country's
+    // rule is rejected — see pinError().
+    const pinMsg = pinError(values.pincode, values.country);
+    if (pinMsg)                       next.pincode       = pinMsg;
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -427,16 +471,6 @@ export default function AddNewLeadModal(props: {
                 disabled={lockCustomer}
               />
             </Field>
-            <Field label="Pincode">
-              <TextInput
-                value={values.pincode}
-                onChange={(v) => set('pincode', digitsOnly(v))}
-                placeholder="6-digit PIN"
-                inputMode="numeric"
-                maxLength={6}
-                disabled={lockCustomer}
-              />
-            </Field>
             {/* invalid prop tints the MasterSelect trigger's border red
                 — same affordance the City TextInput already had so all
                 four required Location-Details fields look consistent
@@ -450,7 +484,16 @@ export default function AddNewLeadModal(props: {
                     // Picking a new country resets State because the
                     // previous state probably belongs to the old country.
                     setValues(prev => ({ ...prev, country: v, state: '' }));
-                    setErrors(prev => { const n = { ...prev }; delete n.country; delete n.state; return n; });
+                    setErrors(prev => {
+                      const n = { ...prev }; delete n.country; delete n.state;
+                      /* PIN and ZIP are different rules, so the code already
+                         typed has to be re-judged against the NEW country —
+                         otherwise a valid "SL7 1TB" survives a switch to India
+                         (and a 6-digit PIN keeps a stale error after leaving). */
+                      const pinMsg = pinError(values.pincode, v);
+                      if (pinMsg) n.pincode = pinMsg; else delete n.pincode;
+                      return n;
+                    });
                   }}
                   placeholder="Select country"
                   options={countryOpts.map(c => ({ value: c, label: c }))}
@@ -471,6 +514,19 @@ export default function AddNewLeadModal(props: {
                   invalid={!!errors.state}
                 />
               </div>
+            </Field>
+            {/* Last in the row, after Country/State: its label and rule are
+                derived from the country, so it reads as a consequence of the
+                fields before it rather than something to fill in blind. */}
+            <Field label={pinLabel(values.country)} error={errors.pincode}>
+              <TextInput
+                value={values.pincode}
+                onChange={(v) => set('pincode', pinSanitize(v, values.country))}
+                placeholder={pinPlaceholder(values.country)}
+                inputMode={isDomesticCountry(values.country) ? 'numeric' : 'text'}
+                maxLength={pinMaxLen(values.country)}
+                disabled={lockCustomer}
+              />
             </Field>
           </div>
         </div>

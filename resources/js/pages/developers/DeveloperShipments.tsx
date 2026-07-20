@@ -3,35 +3,14 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import api from '../../api';
 import WorklistPager from '../../components/ui/WorklistPager';
+import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../contexts/ToastContext';
 import './shipment-360.css';
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Shipment 360 (route /developers/shipment — the slug stays 'developers' so
- * existing permission grants survive the rename from the old "Dev Tools").
- *
- * Faithful port of the IDIMS "Shipment 360" prototype: teal header strip, the
- * collapsible 6-step "What We Are Doing Here" box, and an International /
- * Domestic tabbed worklist over the wide shipment-journey table.
- *
- * DATA — the backend is deliberately untouched (GET /sales/shipment-orders
- * returns the same 15 fields it always has). The prototype's table is much
- * wider than that payload, so every column the API does not carry renders as
- * an em-dash placeholder rather than inventing data. Columns backed by real
- * fields: Shipment ID, Opportunity ID, PI Number, Customer, Consignee, Owner,
- * Shipping Liability, Cold Chain, INCO Term, Port of Loading / Discharge.
- *
- * The API only ever issues SHP- codes (ShipmentOrderController::nextShipmentCode)
- * and the shipment_orders table has no domestic flag, so every row is an
- * international shipment and the Domestic tab renders its empty state until a
- * domestic shipment model exists.
- * ──────────────────────────────────────────────────────────────────────────── */
 
 type ShipmentRow = {
   id: number;
   shipment_code: string | null;
   created_at: string | null;
-  owner_name: string | null;
   opp_code: string | null;
   opp_date: string | null;
   customer_name: string | null;
@@ -40,24 +19,25 @@ type ShipmentRow = {
   pi_date: string | null;
   shipping_liability: string | null;
   cold_chain: boolean;
+  hazardous: boolean | null;
+  is_domestic?: boolean;
+  doc_type?: string | null;
   inco_term: string | null;
   port_of_loading: string | null;
   port_of_unloading: string | null;
+  place_of_dispatch?: string | null;
+  place_of_delivery?: string | null;
 };
 
 type S360Tab = 'intl' | 'dom';
-
-/* Starting rows-per-page; the auto-fit effect overrides it on first paint to
-   whatever fills the viewport, unless the user picks a size by hand. */
 const PAGE_SIZE = 10;
 
-/* "15 Mar 2026" — the prototype's date format. */
 const S360_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function fmtDate(s: string | null): string {
   if (!s) return '—';
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return '—';
-  return `${String(d.getDate()).padStart(2, '0')} ${S360_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  return `${String(d.getDate()).padStart(2, '0')}-${S360_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 }
 
 /* ── Inline icons ─────────────────────────────────────────────────────────── */
@@ -159,14 +139,30 @@ function IdCell({ id, date, primary }: { id?: string | null; date?: string | nul
   );
 }
 
+/* INCO terms are stored/served as "FOB – Free On Board"; the column is narrow
+ * and the code alone is what the desk reads, so keep just the code. The full
+ * text still goes to the tooltip and the Excel export. */
+function incoCode(v?: string | null): string {
+  return String(v ?? '').split(/[–—-]/)[0].trim().split(/\s+/)[0] || '';
+}
+
 /* A column the API doesn't carry yet — rendered as an em-dash, never faked. */
 function EmptyCell() {
   return <td><span className="rvtbl-dash">—</span></td>;
 }
 
+/* Truncated-text cell (2-line clamp, 100px cap) — the full value shows on the
+ * shared themed Tooltip (same pill as the Lead Acknowledgement master's list),
+ * replacing the old browser-native title bubble. */
 function TxtCell({ v }: { v: string | null }) {
   const val = v ?? '—';
-  return <td className="rvtbl-txt" title={val}><span className="rvtbl-clip">{val}</span></td>;
+  return (
+    <td className="rvtbl-txt">
+      <Tooltip label={val} themed maxWidth={360} disabled={!v}>
+        <span className="rvtbl-clip">{val}</span>
+      </Tooltip>
+    </td>
+  );
 }
 
 function YnCell({ yes, warn }: { yes: boolean; warn?: boolean }) {
@@ -236,16 +232,21 @@ export default function DeveloperShipments() {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [toast]);
+  const isDom = (r: ShipmentRow) => r.is_domestic ?? !!r.shipment_code?.toUpperCase().startsWith('DSHP');
+  const intlRows = useMemo(() => rows.filter(r => !isDom(r)), [rows]);
+  const domRows  = useMemo(() => rows.filter(r =>  isDom(r)), [rows]);
 
   const filtered = useMemo(() => {
+    const base = tab === 'dom' ? domRows : intlRows;
     const lo = q.trim().toLowerCase();
-    if (!lo) return rows;
-    return rows.filter(r =>
-      [r.shipment_code, r.owner_name, r.opp_code, r.customer_name, r.consignee_name, r.pi_no,
-        r.inco_term, r.port_of_loading, r.port_of_unloading, r.shipping_liability]
+    if (!lo) return base;
+    return base.filter(r =>
+      [r.shipment_code, r.opp_code, r.customer_name, r.consignee_name, r.pi_no,
+        r.inco_term, r.port_of_loading, r.port_of_unloading, r.shipping_liability,
+        r.place_of_dispatch, r.place_of_delivery]
         .some(v => (v ?? '').toLowerCase().includes(lo)),
     );
-  }, [rows, q]);
+  }, [intlRows, domRows, tab, q]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / rpp));
   const safePage = Math.min(page, totalPages);
@@ -253,8 +254,6 @@ export default function DeveloperShipments() {
   const startIdx = filtered.length === 0 ? 0 : (safePage - 1) * rpp + 1;
 
   const switchTab = (t: S360Tab) => { setTab(t); setQ(''); setPage(1); };
-
-  /* Export the International list — only the columns the API actually carries. */
   const exportShipments = () => {
     if (!filtered.length) { toast.error('Nothing to export', 'No shipments match the current search.'); return; }
     setExporting(true);
@@ -263,18 +262,26 @@ export default function DeveloperShipments() {
         'Sr No': i + 1,
         'Shipment ID': r.shipment_code ?? '',
         'Shipment Date': fmtDate(r.created_at),
+        'Type': tab === 'dom' ? 'Domestic' : 'International',
         'Opportunity ID': r.opp_code ?? '',
         'Opportunity Date': fmtDate(r.opp_date),
         'PI Number': r.pi_no ?? '',
         'PI Date': fmtDate(r.pi_date),
         'Customer': r.customer_name ?? '',
         'Consignee': r.consignee_name ?? '',
-        'Owner': r.owner_name ?? '',
         'Shipping Liability': r.shipping_liability ?? '',
         'Cold Chain': r.cold_chain ? 'Yes' : 'No',
-        'INCO Term': r.inco_term ?? '',
-        'Port of Loading': r.port_of_loading ?? '',
-        'Port of Discharge': r.port_of_unloading ?? '',
+        'Hazardous': r.hazardous == null ? '' : (r.hazardous ? 'Yes' : 'No'),
+        ...(tab === 'dom'
+          ? {
+              'Dispatch From': r.place_of_dispatch ?? '',
+              'Deliver To':    r.place_of_delivery ?? '',
+            }
+          : {
+              'INCO Term': r.inco_term ?? '',
+              'Port of Loading': r.port_of_loading ?? '',
+              'Port of Discharge': r.port_of_unloading ?? '',
+            }),
       }));
       const ws = XLSX.utils.json_to_sheet(data);
       const wb = XLSX.utils.book_new();
@@ -289,8 +296,7 @@ export default function DeveloperShipments() {
     }
   };
 
-  // Full column counts, Sr No + Action inclusive — used for the empty/loading colSpan.
-  const INTL_COLS = 28;
+  const INTL_COLS = 27;
   const DOM_COLS = 23;
 
   return (
@@ -356,10 +362,10 @@ export default function DeveloperShipments() {
         <div className="s360-toolbar">
           <div className="s360-tabs">
             <button type="button" className={`s360-tab${tab === 'intl' ? ' is-active' : ''}`} onClick={() => switchTab('intl')}>
-              {Ico.globe}International Shipments <span className="s360-tab__cnt">{rows.length}</span>
+              {Ico.globe}International Shipments <span className="s360-tab__cnt">{intlRows.length}</span>
             </button>
             <button type="button" className={`s360-tab${tab === 'dom' ? ' is-active' : ''}`} onClick={() => switchTab('dom')}>
-              {Ico.home}Domestic Shipments <span className="s360-tab__cnt">0</span>
+              {Ico.home}Domestic Shipments <span className="s360-tab__cnt">{domRows.length}</span>
             </button>
           </div>
           <div className="s360-search">
@@ -398,7 +404,6 @@ export default function DeveloperShipments() {
                     <th>FFD PO<br />Number</th>
                     <th>Customer</th>
                     <th>Consignee</th>
-                    <th>Owner</th>
                     <th>Supplier</th>
                     <th>FFD /<br />Transporter</th>
                     <th>Shipping<br />Liability</th>
@@ -435,22 +440,36 @@ export default function DeveloperShipments() {
                       <EmptyCell /> {/* FFD PO Number */}
                       <TxtCell v={r.customer_name} />
                       <TxtCell v={r.consignee_name} />
-                      <TxtCell v={r.owner_name} />
                       <EmptyCell /> {/* Supplier */}
                       <EmptyCell /> {/* FFD / Transporter */}
                       {r.shipping_liability
                         ? <td><span className="s360-tag">{r.shipping_liability}</span></td>
                         : <EmptyCell />}
                       <YnCell yes={r.cold_chain} />
-                      <EmptyCell /> {/* Hazardous */}
-                      {r.inco_term
-                        ? <td><span className="s360-tag is-inco">{r.inco_term}</span></td>
+                      {r.hazardous === null || r.hazardous === undefined
+                        ? <EmptyCell /> /* PI has no products to judge by */
+                        : <YnCell yes={r.hazardous} warn />}
+                      {incoCode(r.inco_term)
+                        ? (
+                          <td>
+                            <Tooltip label={r.inco_term ?? ''} themed maxWidth={320}>
+                              <span className="s360-tag is-inco">{incoCode(r.inco_term)}</span>
+                            </Tooltip>
+                          </td>
+                        )
                         : <EmptyCell />}
                       <td className="s360-port">{r.port_of_loading ?? '—'}</td>
                       <td className="s360-port">{r.port_of_unloading ?? '—'}</td>
                       <td className="rvtbl-actcell">
                         <div className="rvtbl-act">
-                          <button type="button" className="rvtbl-actbtn" title="More actions">{Ico.dots}</button>
+                          <Tooltip label="More actions" themed>
+                            <button
+                              type="button"
+                              className="rvtbl-actbtn"
+                              aria-label="More actions"
+                              onClick={() => toast.info('Development in progress', 'This action is not available yet.')}
+                            >{Ico.dots}</button>
+                          </Tooltip>
                         </div>
                       </td>
                     </tr>
@@ -471,12 +490,9 @@ export default function DeveloperShipments() {
           </div>
         )}
 
-        {/* ── Domestic — no domestic shipment model exists behind
-            /sales/shipment-orders yet, so this is an honest empty state rather
-            than a mis-labelled copy of the international list. ── */}
         {tab === 'dom' && (
           <div className="s360-panel">
-            <div className="rvtbl-wrap">
+            <div className="rvtbl-wrap" ref={scrollRef}>
               <table className="rvtbl">
                 <thead>
                   <tr>
@@ -506,14 +522,65 @@ export default function DeveloperShipments() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td colSpan={DOM_COLS} className="rvtbl-empty">
-                      No domestic shipments. Every shipment order raised so far is an international (SHP) shipment.
-                    </td>
-                  </tr>
+                  {loading && <tr><td colSpan={DOM_COLS} className="rvtbl-empty">Loading shipment orders…</td></tr>}
+                  {!loading && pageRows.length === 0 && (
+                    <tr>
+                      <td colSpan={DOM_COLS} className="rvtbl-empty">
+                        No domestic shipments. Domestic (DSHP) shipments are raised from a Domestic Proforma Invoice.
+                      </td>
+                    </tr>
+                  )}
+                  {!loading && pageRows.map((r, i) => (
+                    <tr className="rvtbl-row" key={r.id}>
+                      <td className="rvtbl-sr">{startIdx + i}</td>
+                      <IdCell id={r.shipment_code} date={r.created_at} primary />
+                      <IdCell id={r.opp_code} date={r.opp_date} />
+                      <EmptyCell /> {/* Procurement ID */}
+                      <EmptyCell /> {/* GRN ID */}
+                      <EmptyCell /> {/* QA ID */}
+                      <EmptyCell /> {/* Domestic Receipt No. */}
+                      <EmptyCell /> {/* Domestic GST Invoice */}
+                      <EmptyCell /> {/* Outward ID */}
+                      <EmptyCell /> {/* PSD ID */}
+                      <EmptyCell /> {/* e-BRC ID */}
+                      <IdCell id={r.pi_no} date={r.pi_date} />
+                      <EmptyCell /> {/* PO Number */}
+                      <EmptyCell /> {/* SPI Number */}
+                      <EmptyCell /> {/* FFD PO Number */}
+                      <TxtCell v={r.customer_name} />
+                      <TxtCell v={r.consignee_name} />
+                      <EmptyCell /> {/* Supplier */}
+                      <EmptyCell /> {/* FFD / Transporter */}
+                      <YnCell yes={r.cold_chain} />
+                      <td className="s360-port">{r.place_of_dispatch ?? '—'}</td>
+                      <td className="s360-port">{r.place_of_delivery ?? '—'}</td>
+                      <td className="rvtbl-actcell">
+                        <div className="rvtbl-act">
+                          <Tooltip label="More actions" themed>
+                            <button
+                              type="button"
+                              className="rvtbl-actbtn"
+                              aria-label="More actions"
+                              onClick={() => toast.info('Development in progress', 'This action is not available yet.')}
+                            >{Ico.dots}</button>
+                          </Tooltip>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
+            {!loading && (
+              <WorklistPager
+                total={filtered.length}
+                page={safePage}
+                pageSize={rpp}
+                onPage={setPage}
+                onPageSize={n => { autoFitRef.current = false; setRpp(n); setPage(1); }}
+                pageSizeOptions={[5, 10, 15, 25, 50]}
+              />
+            )}
           </div>
         )}
       </div>

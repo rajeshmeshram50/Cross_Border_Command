@@ -143,6 +143,18 @@ const piItemToLine = (it: Record<string, unknown>, id: number): PoLine => {
 // PO's own lines when editing. So a PO can only ever use the remaining/missing
 // quantity, never over-allocate, and Missing Qty can never go negative. The
 // Without-Shipment flow has no PI (piQty === '') so it is left uncapped.
+/* Quantities, rates and charges accept digits and a single decimal point —
+ * nothing else. `type="number"` is deliberately NOT used: min={0} only marks a
+ * value invalid, and worse, when the text is un-parseable ("1-111111") the
+ * browser keeps it in the DOM while reporting value='' to React, so no
+ * onChange sanitiser can clean it up. A text input filtered here is the only
+ * way the field can't hold a sign, a '+', an 'e' or two dots. */
+const numOnly = (v: string): string => {
+  const s = v.replace(/[^\d.]/g, '');
+  const dot = s.indexOf('.');
+  return dot === -1 ? s : s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '');
+};
+
 const capQty = (v: string, piQty: string): string => {
   if (piQty === '' || v === '') return v;
   const cap = num(piQty);
@@ -194,27 +206,44 @@ const docHd = (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" strok
  * `optMeta` (optional) enriches an option with a leading code and an
  * Own/Third-Party badge — used by the Delivery Location (warehouse) field to
  * render "WH-001: Pune Main  [Own]". */
-type DdOptMeta = { code?: string; badge?: string; badgeTone?: 'own' | 'third' };
+// `name` overrides the raw option value for display — used by the supplier
+// field, whose option VALUE is the unique code (names can duplicate) but which
+// still shows the human name via meta.
+type DdOptMeta = { code?: string; name?: string; badge?: string; badgeTone?: 'own' | 'third' };
 const DdOptLabel = ({ o, meta }: { o: string; meta?: DdOptMeta }) => (
   meta ? (
     <span className="pof-dd__optlbl">
       {meta.code && <span className="pof-dd__optcode">{meta.code}:</span>}
-      <span className="pof-dd__optname">{o}</span>
+      <span className="pof-dd__optname">{meta.name ?? o}</span>
       {meta.badge && <span className={`pof-dd__optbadge pof-dd__optbadge--${meta.badgeTone || 'own'}`}>{meta.badge}</span>}
     </span>
   ) : <span>{o}</span>
 );
-function Dd({ label, value, options, onChange, req, err, optMeta }: { label?: string; value: string; options: string[]; onChange: (v: string) => void; req?: boolean; err?: string; optMeta?: Record<string, DdOptMeta> }) {
+function Dd({ label, value, options, onChange, req, err, optMeta, searchable, tooltip }: { label?: string; value: string; options: string[]; onChange: (v: string) => void; req?: boolean; err?: string; optMeta?: Record<string, DdOptMeta>; searchable?: boolean; tooltip?: boolean }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const ref = useRef<HTMLButtonElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const [pos, setPos] = useState({ left: 0, top: 0, width: 0 });
+  // Filter by the option's visible text: code + name (from meta) or the raw value.
+  const shown = useMemo(() => {
+    if (!searchable) return options;
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter(o => {
+      const m = optMeta?.[o];
+      const text = m ? `${m.code ?? ''} ${m.name ?? o}` : o;
+      return text.toLowerCase().includes(q);
+    });
+  }, [options, query, searchable, optMeta]);
   useLayoutEffect(() => {
     if (!open || !ref.current) return;
     const r = ref.current.getBoundingClientRect();
-    const h = Math.min(264, options.length * 38 + 12);
+    const h = Math.min(300, shown.length * 38 + (searchable ? 52 : 0) + 12);
     const up = r.bottom + 6 + h > window.innerHeight && r.top - 6 - h > 4;
     setPos({ left: r.left, width: r.width, top: up ? r.top - 6 - h : r.bottom + 6 });
-  }, [open, options.length]);
+  }, [open, shown.length, searchable]);
+  useEffect(() => { if (open && searchable) setTimeout(() => searchRef.current?.focus(), 0); else if (!open) setQuery(''); }, [open, searchable]);
   useEffect(() => {
     if (!open) return;
     const close = (e?: Event) => { const el = e && e.target instanceof Element ? e.target : null; if (el && el.closest('.pof-dd-pop')) return; setOpen(false); };
@@ -233,16 +262,32 @@ function Dd({ label, value, options, onChange, req, err, optMeta }: { label?: st
     <div className="pof-f">
       {label && <label>{label}{req && <span className="pof-reqstar"> *</span>}</label>}
       <button type="button" ref={ref} className={`pof-dd ${open ? 'is-open' : ''} ${err ? 'is-error' : ''}`} onClick={() => setOpen(o => !o)}>
-        <span className="pof-dd__val"><DdOptLabel o={value} meta={optMeta?.[value]} /></span><Chev />
+        {(() => {
+          // Full label reads "S-009: aaaa…" when the option carries code+name
+          // meta (supplier field) — else the raw value (product name field).
+          const tip = optMeta?.[value] ? `${optMeta[value].code ? optMeta[value].code + ': ' : ''}${optMeta[value].name ?? value}` : value;
+          return tooltip
+            ? <Tooltip label={tip} disabled={!tip || tip.length <= 30} position="bottom" zIndex={2999999}><span className="pof-dd__val"><DdOptLabel o={value} meta={optMeta?.[value]} /></span></Tooltip>
+            : <span className="pof-dd__val" title={tip}><DdOptLabel o={value} meta={optMeta?.[value]} /></span>;
+        })()}
+        <Chev />
       </button>
       {err && <div className="pof-err-msg">{err}</div>}
       {open && createPortal(
-        <div className="pof-dd-pop pof-dd-pop--portal" style={{ left: pos.left, top: pos.top, width: pos.width }}>
-          {options.map(o => (
-            <div key={o} className={`pof-dd-pop__opt ${o === value ? 'is-sel' : ''}`} onClick={() => { onChange(o); setOpen(false); }}>
-              <DdOptLabel o={o} meta={optMeta?.[o]} /><Check c="pof-dd-pop__ck" />
+        <div className="pof-dd-pop pof-dd-pop--portal" style={{ left: pos.left, top: pos.top, width: pos.width, maxHeight: 300, overflowY: 'auto' }}>
+          {searchable && (
+            <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: 8, background: 'inherit', borderBottom: '1px solid rgba(148,163,184,.18)' }} onMouseDown={e => e.stopPropagation()}>
+              <input ref={searchRef} value={query} onChange={e => setQuery(e.target.value)} placeholder="Search supplier…"
+                style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid rgba(148,163,184,.3)', background: 'rgba(148,163,184,.08)', color: 'inherit', fontSize: 12.5, outline: 'none' }} />
             </div>
-          ))}
+          )}
+          {shown.length === 0
+            ? <div className="pof-dd-pop__opt" style={{ opacity: .6, cursor: 'default' }}>No match</div>
+            : shown.map(o => (
+              <div key={o} className={`pof-dd-pop__opt ${o === value ? 'is-sel' : ''}`} onClick={() => { onChange(o); setOpen(false); }}>
+                <DdOptLabel o={o} meta={optMeta?.[o]} /><Check c="pof-dd-pop__ck" />
+              </div>
+            ))}
         </div>,
         document.body
       )}
@@ -282,7 +327,7 @@ const ReadField = ({ label, value, full, loading }: { label: string; value: stri
     <label>{label}</label>
     {loading
       ? <div className="pof-ro pof-ro--skel"><Skel w="72%" /></div>
-      : <div className="pof-ro" title={value || undefined}>{value || '—'}</div>}
+      : <Tooltip label={value} disabled={!value || value.length <= 30} position="bottom" zIndex={2999999}><div className="pof-ro">{value || '—'}</div></Tooltip>}
   </div>
 );
 const Frozen = ({ label, value, req }: { label: string; value: string; req?: boolean }) => (
@@ -318,7 +363,7 @@ function Box({ label, title, sub, ico, extra, children, defaultOpen = true }: { 
           <div className="bref-box__header-sub">{sub}</div>
         </div>
         {extra}
-        <div className="bref-box__header-right"><div className="bref-box__toggle"><Chev c="" /></div></div>
+        <div className="bref-box__header-right"><Tooltip label={open ? 'Collapse section' : 'Expand section'} themed zIndex={2999999}><div className="bref-box__toggle"><Chev c="" /></div></Tooltip></div>
       </div>
       <div className="bref-box__body bref-box__body--cpo"><div style={{ padding: 14 }}>{children}</div></div>
     </div>
@@ -369,7 +414,9 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   const [shipId, setShipId] = useState<string | null>(editRow?.ship || null);
   const [shipmentDbId, setShipmentDbId] = useState<number | null>(null);
   const [shipCustomer, setShipCustomer] = useState<string>(editRow?.cust || '');
-  const [shipErr, setShipErr] = useState(false);
+  /* Blocking message under the Shipment ID picker — either "pick one" or the
+     "this shipment's PI is already fully ordered" case (see confirmChoice). */
+  const [shipErr, setShipErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);   // choice-modal "Confirm & Continue" fetch
   const [supLoading, setSupLoading] = useState(false);    // supplier detail + legal fetch after select
@@ -480,11 +527,31 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
 
   // Stage 1 — supplier (selecting fetches full detail to auto-fill the form)
   const [supName, setSupName] = useState(SUPPLIER_PLACEHOLDER);
+  // The dropdown is keyed by the UNIQUE supplier code (not name) because
+  // supplier names can duplicate ("test", "SBI" …); keying by name collapsed
+  // duplicates to a single row (React key collision) and always resolved to
+  // the first match. `supSel` holds the selected code (or placeholder); the
+  // demo fallback path stores the demo name here instead.
+  const [supSel, setSupSel] = useState(SUPPLIER_PLACEHOLDER);
   const [sup, setSup] = useState<SupplierRec>(emptySup());
   // Real per-vendor legal status (from the Evidence Vault); null → fall back to
   // the demo SUP_LEGAL calc for the built-in demo suppliers.
   const [supLegal, setSupLegal] = useState<LegalView | null>(null);
-  const supplierNames = suppliers.length ? suppliers.map(s => s.name) : Object.keys(CPO_SUPPLIERS);
+  // Real suppliers → option value = unique code (names can duplicate); demo
+  // fallback → value = name. Sorted by the numeric part of the code DESCENDING
+  // so the newest supplier (highest code) shows first — S-019, S-018 … S-001.
+  const supplierOpts = suppliers.length
+    ? suppliers.filter(s => s.code).slice()
+        .sort((a, b) => (parseInt(b.code.replace(/\D/g, ''), 10) || 0) - (parseInt(a.code.replace(/\D/g, ''), 10) || 0))
+        .map(s => s.code)
+    : Object.keys(CPO_SUPPLIERS);
+  // Keyed by CODE (the option value); `name` drives the visible label so
+  // duplicate-named suppliers still read as "S-011: test", "S-019: test".
+  const supMeta = useMemo(() => {
+    const m: Record<string, DdOptMeta> = {};
+    suppliers.forEach(s => { if (s.code) m[s.code] = { code: s.code, name: s.name || s.code }; });
+    return m;
+  }, [suppliers]);
   // Pull a vendor's real 5-parameter compliance breakdown for the legal-status card.
   const loadSupplierLegal = (vendorId: number) => {
     setSupLegal(null);
@@ -492,11 +559,14 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
       const v = r.data?.data; if (v) setSupLegal(buildLegalFromVault(v));
     }).catch(() => setSupLegal(null));
   };
-  const pickSupplier = (name: string) => {
-    setSupName(name);
-    if (name !== SUPPLIER_PLACEHOLDER) clearErr('supplier');
-    const s = suppliers.find(x => x.name === name);
+  // `val` is the supplier CODE for real suppliers, or the demo name for the
+  // built-in fallback. Resolve by code first (unique), then demo name.
+  const pickSupplier = (val: string) => {
+    setSupSel(val);
+    if (val !== SUPPLIER_PLACEHOLDER) clearErr('supplier');
+    const s = suppliers.find(x => x.code === val);
     if (s) {
+      setSupName(s.name);
       setVendorId(s.id);
       setSupLoading(true);
       loadSupplierLegal(s.id);
@@ -508,8 +578,8 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
           if (isScrutinyOld(d.scrutiny)) toast.warning('GST scrutiny date is old', `It is more than ${SCRUTINY_STALE_MONTHS} months old — do the scrutiny for this supplier.`);
         }
       }).catch(() => toast.error('Failed to load supplier')).finally(() => setSupLoading(false));
-    } else if (CPO_SUPPLIERS[name]) { setSup({ ...CPO_SUPPLIERS[name] }); setVendorId(null); setSupLegal(null); }
-    else { setSup(emptySup()); setVendorId(null); setSupLegal(null); }
+    } else if (CPO_SUPPLIERS[val]) { setSupName(val); setSup({ ...CPO_SUPPLIERS[val] }); setVendorId(null); setSupLegal(null); }
+    else { setSupName(SUPPLIER_PLACEHOLDER); setSup(emptySup()); setVendorId(null); setSupLegal(null); }
   };
 
   // Stage 2 — products
@@ -523,8 +593,16 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   const removeLine = (id: number) => setRows(rs => rs.filter(r => r.id !== id));
   const pickProduct = (id: number, name: string) => {
     const opt = prodOpts.find(o => o.name === name);
-    if (opt) setLine(id, { productId: opt.id, code: opt.code, name: opt.name, rate: String(opt.price), gst: opt.gst });
-    else setLine(id, { productId: null, code: '', name: '', rate: '', gst: 0 });
+    if (opt) {
+      // A product may appear on a PO only once — block re-selecting one that
+      // is already on another row (the dropdown also hides used products, this
+      // is the defensive backstop).
+      if (rows.some(r => r.id !== id && r.productId === opt.id)) {
+        toast.warning('Already added', `“${opt.name}” is already on this PO. Each product can be added only once.`);
+        return;
+      }
+      setLine(id, { productId: opt.id, code: opt.code, name: opt.name, rate: String(opt.price), gst: opt.gst });
+    } else setLine(id, { productId: null, code: '', name: '', rate: '', gst: 0 });
   };
   // Re-add a previously-removed PI product into a blank Add-Product row (With-Shipment).
   const reAddPi = (id: number, label: string) => {
@@ -605,7 +683,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
       if (d.vendor_id) {
         loadSupplierLegal(d.vendor_id);
         api.get(`/p2p/purchase-orders/suppliers/${d.vendor_id}`).then(sr => {
-          const s = sr.data?.data; if (s) { setSup(mapDetailToSup(s)); setSupName(s.name); }
+          const s = sr.data?.data; if (s) { setSup(mapDetailToSup(s)); setSupName(s.name); if (s.code) setSupSel(s.code); }
         }).catch(() => {});
       }
     }).catch(() => toast.error('Failed to load purchase order'))
@@ -657,7 +735,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
 
   const confirmChoice = () => {
     if (!poMode || confirming) return;
-    if (poMode === 'with' && !shipmentDbId) { setShipErr(true); return; }
+    if (poMode === 'with' && !shipmentDbId) { setShipErr('Please select a Shipment ID to continue.'); return; }
     // Transition into the wizard once seeding is done (so the button spinner
     // stays visible while the PI products are being fetched).
     const proceed = () => { setConfirming(false); setChoiceOpen(false); setTimeout(() => setPhase('form'), 180); };
@@ -666,12 +744,23 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
       // Seed Stage 2 from the shipment's PI products.
       api.get(`/p2p/purchase-orders/shipments/${shipmentDbId}/pi-products`).then(r => {
         const items = (r.data?.data ?? []) as Array<Record<string, unknown>>;
+        const meta = r.data?.meta as { fully_ordered?: boolean; pi_item_count?: number } | undefined;
+        /* Every PI product on this shipment is already covered by earlier POs
+         * (e.g. 4 PI products split across 2 POs) — there is nothing left to
+         * order, so say so at the picker instead of dropping the user into a
+         * product table whose only option is an empty "— Select PI Product —". */
+        if (meta?.fully_ordered) {
+          setShipErr(`All ${meta.pi_item_count} PI product(s) on this shipment are already covered by existing purchase orders — there is no remaining quantity to order. Edit an existing PO, or pick another Shipment ID.`);
+          setConfirming(false);
+          return;
+        }
         setPiSet(items.map(mapPiRow));
         if (items.length) {
           setRows(items.map((it, i) => piItemToLine(it, i + 1)));
           lineId.current = items.length;
         } else { lineId.current = 1; setRows([blankLine(1)]); }
-      }).catch(() => { lineId.current = 1; setRows([blankLine(1)]); }).finally(proceed);
+        proceed();
+      }).catch(() => { lineId.current = 1; setRows([blankLine(1)]); proceed(); });
     } else { lineId.current = 1; setRows([blankLine(1)]); proceed(); }
   };
   const backToChoice = () => { setPhase('choice'); setChoiceOpen(true); };
@@ -711,11 +800,6 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   }, [warehouses]);
 
   // Select Supplier dropdown labels — "S-001: Reliance Industries" (code : name).
-  const supMeta = useMemo(() => {
-    const m: Record<string, DdOptMeta> = {};
-    suppliers.forEach(s => { if (s.name) m[s.name] = { code: s.code || undefined }; });
-    return m;
-  }, [suppliers]);
 
   const withShip = poMode === 'with';
   // Stage-2 products table column count (for full-width colSpan cells) — depends
@@ -804,7 +888,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   // Stage 1 mandatory fields — all must be filled before leaving stage 1.
   const validateStage1 = (): boolean => {
     const e: Record<string, string> = {};
-    if (supName === SUPPLIER_PLACEHOLDER) e.supplier = 'Please select a supplier.';
+    if (supSel === SUPPLIER_PLACEHOLDER) e.supplier = 'Please select a supplier.';
     if (!po.poType) e.poType = 'PO Type is required.';
     if (!po.docType) e.docType = 'Document Type is required.';
     if (!po.transport) e.transport = 'Mode of Transport is required.';
@@ -814,9 +898,20 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     setErrs(e);
     if (Object.keys(e).length) {
       toast.error('Required fields missing', 'Please complete the highlighted fields.');
+      scrollToFirstError();
       return false;
     }
     return true;
+  };
+
+  // After a validation fail, scroll the first highlighted field into view so
+  // the user lands on what needs fixing (mirrors SpiDetail). The 60ms delay
+  // lets React paint the is-error / .invalid classes before we query the DOM.
+  const scrollToFirstError = () => {
+    setTimeout(() => {
+      const el = document.querySelector('.pom .pof-dd.is-error, .pom .master-datepicker-wrap.invalid');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
   };
 
   const next = () => {
@@ -878,15 +973,15 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
             <div className="cpo-hd">
               <div className="cpo-hd__ico">{docHd}</div>
               <div className="cpo-hd__mid"><div className="cpo-hd__t">Create Purchase Order</div><div className="cpo-hd__s">Choose how to link this PO to your procurement workflow.</div></div>
-              <button type="button" className="cpo-hd__x" onClick={onClose} aria-label="Close"><XIco /></button>
+              <Tooltip label="Close" themed zIndex={2999999}><button type="button" className="cpo-hd__x" onClick={onClose} aria-label="Close"><XIco /></button></Tooltip>
             </div>
             <div className="cpo-bd">
               <div className="cpo-sec">Link to procurement workflow</div>
               {opt('with', 'With Shipment ID', 'Recommended', 'ok', '3-way match & complete audit trail.', (
                 <div className="cpo-reveal">
                   <label className="cpo-lbl"><svg className="cpo-lbl-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg> Select Shipment ID <span className="cpo-req">*</span></label>
-                  <ShipDd shipments={shipments} value={shipmentDbId} onPick={s => { setShipmentDbId(s.id); setShipId(s.code); setShipCustomer(s.customer || ''); setShipErr(false); }} />
-                  {shipErr && <div className="cpo-err"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> Please select a Shipment ID to continue.</div>}
+                  <ShipDd shipments={shipments} value={shipmentDbId} onPick={s => { setShipmentDbId(s.id); setShipId(s.code); setShipCustomer(s.customer || ''); setShipErr(null); }} />
+                  {shipErr && <div className="cpo-err"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> {shipErr}</div>}
                 </div>
               ))}
               {opt('without', 'Without Shipment ID', 'Standalone', 'warn', 'Create a PO not linked to any shipment.', (
@@ -1039,7 +1134,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         <div className="pof-sub__bd"><div className="pof-grid pof-grid--4">
                           {isEdit
                             ? <ReadField label="Select Supplier" value={supName !== SUPPLIER_PLACEHOLDER ? supName : (sup.name || '')} />
-                            : <Dd label="Select Supplier" req err={errs.supplier} optMeta={supMeta} value={supName} options={[SUPPLIER_PLACEHOLDER, ...supplierNames]} onChange={pickSupplier} />}
+                            : <Dd label="Select Supplier" req searchable tooltip err={errs.supplier} optMeta={supMeta} value={supSel} options={supplierOpts} onChange={pickSupplier} />}
                           <ReadField label="Supplier Code" value={sup.code} loading={supLoading} />
                           <ReadField label="Company Name" value={sup.name} loading={supLoading} />
                           <ReadField label="Supplier Type" value={sup.type} loading={supLoading} />
@@ -1110,9 +1205,9 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                 <Box label="Products" title="Product Details" sub={withShip ? 'PI vs PO product mapping with live tax & cost computation' : 'Add PO products with live tax & cost computation'} ico={boxIco}
                   extra={
                     <div className="cpd-ref">
-                    {[{ l: 'Supplier Code', v: sup.code || 'S-001', mono: true }, { l: 'Supplier Name', v: sup.name || 'AgroSource Materials Pvt Ltd', mono: false }, { l: 'State Code', v: sup.stateCode || '27', mono: true }, { l: 'PI Number', v: 'PI/2025-26/001', mono: true }].map((f, i, arr) => (
+                    {[{ l: 'Supplier Code', v: sup.code || 'S-001', mono: true }, { l: 'Supplier Name', v: sup.name || 'AgroSource Materials Pvt Ltd', mono: false }, { l: 'State Code', v: sup.stateCode || '27', mono: true }, { l: 'PI Number', v: (withShip ? selShip?.pi_number : null) || '—', mono: true }].map((f, i, arr) => (
                       <span key={f.l} style={{ display: 'contents' }}>
-                        <div className="cpd-ref__pill"><div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{refIcoFor(f.l)}</div><div className="cpd-ref__txt"><div className="cpd-ref__l">{f.l}</div><div className={`cpd-ref__v ${f.mono ? 'cpd-ref__v--mono' : ''}`}>{f.v}</div></div></div>
+                        <div className="cpd-ref__pill"><div className={`cpd-ref__ico ${i % 2 ? 'cpd-ref__ico--alt' : ''}`}>{refIcoFor(f.l)}</div><div className="cpd-ref__txt"><div className="cpd-ref__l">{f.l}</div><div className={`cpd-ref__v ${f.mono ? 'cpd-ref__v--mono' : ''}`}>{f.v.length > 30 ? <Tooltip label={f.v} position="bottom" zIndex={2999999}><span>{`${f.v.slice(0, 30)}…`}</span></Tooltip> : f.v}</div></div></div>
                         {i < arr.length - 1 && <div className="cpd-ref__dots"><span /><span /><span /></div>}
                       </span>
                     ))}
@@ -1143,26 +1238,26 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                               <td className="cpd-c"><span className="cpd-code">{formatProductCode(r.code) || '—'}</span></td>
                               <td className="cpd-name">{(r.productId == null && !r.code && !r.piName)
                                 ? <div className="cpd-prodcell"><Dd value={PI_REPICK_PLACEHOLDER} options={[PI_REPICK_PLACEHOLDER, ...removedPi.map(piLabel)]} onChange={label => { if (label !== PI_REPICK_PLACEHOLDER) reAddPi(r.id, label); }} /></div>
-                                : <Tooltip label={r.piName} disabled={!r.piName}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
+                                : <Tooltip label={r.piName} disabled={!r.piName} zIndex={2999999}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
                               <td className="cpd-c">{r.piQty || 0}</td>
                               <td><input className="cpd-in cpd-in--name" disabled={poView} value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} /></td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} max={r.piQty || undefined} value={r.qty} onChange={e => setLine(r.id, { qty: capQty(e.target.value, r.piQty) })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: capQty(numOnly(e.target.value), r.piQty) })} /></td>
                               <td className={`cpd-c cpd-miss ${c.miss > 0 ? 'is-short' : ''}`}>{c.miss}</td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
-                              <td className="cpd-c">{!poView && <button type="button" className="cpd-del" title="Remove product" onClick={() => removeLine(r.id)}>✕</button>}</td>
+                              <td className="cpd-c">{!poView && <Tooltip label="Remove product" themed zIndex={2999999}><button type="button" className="cpd-del" onClick={() => removeLine(r.id)}>✕</button></Tooltip>}</td>
                             </tr>
                           ) : (
                             <tr key={r.id}>
                               <td className="cpd-c">{i + 1}</td>
                               <td className="cpd-c"><span className="cpd-code">{formatProductCode(r.code) || '—'}</span></td>
-                              <td className="cpd-prodcell"><Dd value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} /></td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
+                              <td className="cpd-prodcell"><Dd tooltip value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: numOnly(e.target.value) })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
-                              <td className="cpd-c">{!poView && <button type="button" className="cpd-del" title="Remove product" onClick={() => removeLine(r.id)}>✕</button>}</td>
+                              <td className="cpd-c">{!poView && <Tooltip label="Remove product" themed zIndex={2999999}><button type="button" className="cpd-del" onClick={() => removeLine(r.id)}>✕</button></Tooltip>}</td>
                             </tr>
                           );
                         })}
@@ -1181,7 +1276,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                       <div className="cpd-sum__hd">Additional Charges</div>
                       <div className="cpd-chg-grid">
                         {([['Shipping Charges', 'ship'], ['Packaging Charges', 'pack'], ['Other Charges', 'other']] as const).map(([lbl, key]) => (
-                          <div className="cpd-chg-f" key={key}><label>{lbl}</label><div className="cpd-chg-inwrap"><span className="cpd-chg-cur">₹</span><input className="cpd-chg-in" disabled={poView} type="number" min={0} step="0.01" placeholder="0.00" value={charges[key]} onChange={e => setCharges(c => ({ ...c, [key]: e.target.value }))} /></div></div>
+                          <div className="cpd-chg-f" key={key}><label>{lbl}</label><div className="cpd-chg-inwrap"><span className="cpd-chg-cur">₹</span><input className="cpd-chg-in" disabled={poView} type="text" inputMode="decimal" placeholder="0.00" value={charges[key]} onChange={e => setCharges(c => ({ ...c, [key]: numOnly(e.target.value) }))} /></div></div>
                         ))}
                       </div>
                     </div>

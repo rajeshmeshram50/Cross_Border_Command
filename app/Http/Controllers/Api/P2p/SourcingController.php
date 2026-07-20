@@ -114,7 +114,10 @@ class SourcingController extends Controller
         $rows = Product::where('client_id', $user->client_id)
             ->when($branch, fn($q) => $q->where('branch_id', $branch))
             ->with(['segment:id,name', 'hsn:id,hsn_code'])
-            ->orderBy('name')
+            // Order by the product-code SERIES (numeric part) so the picker lists
+            // P-1, P-2 … P-10 in order rather than lexicographically or by name.
+            ->orderByRaw("NULLIF(regexp_replace(product_code, '[^0-9]', '', 'g'), '')::int ASC NULLS LAST")
+            ->orderBy('product_code')
             ->get()
             ->map(fn($p) => [
                 'code'    => $this->padCode($p->product_code),
@@ -132,7 +135,28 @@ class SourcingController extends Controller
         $user   = $request->user();
         $branch = ($user->branch_id ?: null) ?: ($request->integer('branch_id') ?: null);
 
+        // Only Sales & Purchase department staff can be assigned a sourcing
+        // target — procurement is their remit. Department lives on the EMPLOYEE
+        // record (employees.department_id → master_departments), NOT on the user,
+        // so resolve the eligible user ids through employees. master_departments
+        // is global (client_id null), matched by name so it holds across tenants.
+        $deptIds = \Illuminate\Support\Facades\DB::table('master_departments')
+            ->whereRaw('LOWER(name) LIKE ? OR LOWER(name) LIKE ?', ['%sales%', '%purchase%'])
+            ->pluck('id');
+
+        $eligibleUserIds = \App\Models\Employee::where('client_id', $user->client_id)
+            ->whereIn('department_id', $deptIds)
+            // Only ACTIVE employees are assignable — Inactive and Exited staff
+            // (the exit flow flips employees.status to those) must not appear.
+            ->whereRaw('LOWER(status) = ?', ['active'])
+            ->whereNotNull('user_id')
+            ->pluck('user_id');
+
         $rows = User::where('client_id', $user->client_id)
+            ->whereIn('id', $eligibleUserIds)
+            // Belt-and-braces: also drop any deactivated login (exit flips the
+            // linked user's status to 'inactive').
+            ->whereRaw('LOWER(status) = ?', ['active'])
             ->when($branch, fn($q) => $q->where('branch_id', $branch))
             ->where('user_type', '!=', 'super_admin')
             ->orderBy('name')
@@ -163,10 +187,25 @@ class SourcingController extends Controller
 
     public function upload(Request $request)
     {
+        // NOTE: validate the file's actual extension, not the content-sniffed
+        // MIME type. Laravel's `mimes:` rule sniffs the bytes with finfo, and on
+        // some XAMPP/Windows setups a perfectly valid PDF sniffs as
+        // application/octet-stream → false "must be a file of type pdf…" 422s.
+        // Files here are download-only + auth-gated, so trusting the extension
+        // (with a size cap) is safe and lets every real PDF through.
         $request->validate([
-            'file' => 'required|file|max:5120|mimes:pdf,jpg,jpeg,png,webp',
+            'file' => 'required|file|max:5120',
             'kind' => 'nullable|in:clarity,card',
         ]);
+
+        $allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+        $ext     = strtolower($request->file('file')->getClientOriginalExtension());
+        if (!in_array($ext, $allowed, true)) {
+            return response()->json([
+                'message' => 'The file must be a PDF, JPG, PNG, or WEBP.',
+                'errors'  => ['file' => ['The file must be a PDF, JPG, PNG, or WEBP.']],
+            ], 422);
+        }
 
         $dir  = 'p2p/' . ($request->input('kind') === 'card' ? 'supplier-cards' : 'clarity');
         $path = $request->file('file')->store($dir, 'public');
@@ -175,6 +214,29 @@ class SourcingController extends Controller
             'path' => '/storage/' . $path,
             'name' => $request->file('file')->getClientOriginalName(),
         ]);
+    }
+
+    /* Stream ONE clarity file for download. The path is passed as a query
+     * parameter (?path=…) — not as a URL segment — so a multi-PDF value can
+     * never smear several storage paths into one request URL. Auth-gated and
+     * locked to the p2p/clarity folder to block directory traversal. */
+    // GET /p2p/clarity/download?path=/storage/p2p/clarity/xxxx.pdf
+    public function downloadClarity(Request $request)
+    {
+        $data = $request->validate(['path' => 'required|string']);
+
+        // Normalise to a disk-relative path: strip a leading /storage/ and slashes.
+        $rel = ltrim(str_replace('\\', '/', $data['path']), '/');
+        $rel = preg_replace('#^storage/#', '', $rel);
+
+        if (str_contains($rel, '..') || !str_starts_with($rel, 'p2p/clarity/')) {
+            abort(404);
+        }
+
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (!$disk->exists($rel)) abort(404);
+
+        return $disk->download($rel, basename($rel));
     }
 
 
@@ -260,6 +322,16 @@ class SourcingController extends Controller
             ], 422);
         }
 
+        // A target whose assignee has gone Inactive/Exited is view-only — no
+        // edits are accepted (the frontend also disables the form + shows a
+        // toast). Reassignment is NOT offered; the assignee stays fixed.
+        if (!$this->assigneeIsActive($t->client_id, $t->assignee_id)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This sourcing target’s assignee is inactive or exited — it is view-only and can’t be edited.',
+            ], 403);
+        }
+
         DB::transaction(function () use ($t, $user, $data, $existing) {
             // Assignee is fixed once the target is created — edit never reassigns
             // it (the frontend also locks the "Assign to Team Member" control).
@@ -316,16 +388,24 @@ class SourcingController extends Controller
             ? ['type' => $p->clarity_type, 'val' => $p->clarity_value]
             : null;
 
-        $master = $t->products->where('source', 'master')->values()->map(fn($p) => [
-            'id'      => $p->id,
-            'mapped'  => $p->suppliers_count > 0,
-            'code'    => $this->padCode($p->code),
-            'name'    => $p->name,
-            'segment' => $p->segment,
-            'hsn'     => $p->hsn,
-            'price'   => $p->target_price ?? '',
-            'clarity' => $clarity($p),
-        ]);
+        // Master rows show the LIVE product name/segment/HSN whenever the row
+        // still links to a product — so the edit form never surfaces a stale
+        // "code as name" (P-004 instead of the real text). Snapshot is the
+        // fallback only for free-text/legacy rows with no product_id.
+        $resolve = $this->productDisplayResolver($t->products);
+        $master  = $t->products->where('source', 'master')->values()->map(function ($p) use ($clarity, $resolve) {
+            $d = $resolve($p);
+            return [
+                'id'      => $p->id,
+                'mapped'  => $p->suppliers_count > 0,
+                'code'    => $this->padCode($p->code),
+                'name'    => $d['name'],
+                'segment' => $d['segment'],
+                'hsn'     => $d['hsn'],
+                'price'   => $p->target_price ?? '',
+                'clarity' => $clarity($p),
+            ];
+        });
 
         $manual = $t->products->where('source', 'manual')->values()->map(fn($p) => [
             'id'      => $p->id,
@@ -341,6 +421,13 @@ class SourcingController extends Controller
             'start'      => optional($t->start_date)->format('Y-m-d') ?? '',
             'due'        => optional($t->due_date)->format('Y-m-d') ?? '',
             'assignee'   => $t->assignee_name ?: '',
+            // The assignee is fixed on edit; the frontend sends this id straight
+            // back on Update so it doesn't have to re-resolve the (now Sales/
+            // Purchase-only, active-only) team list by name.
+            'assigneeId' => $t->assignee_id ? (string) $t->assignee_id : null,
+            // False when the assignee has gone Inactive/Exited — the edit form
+            // then becomes view-only (no save).
+            'assigneeActive' => $this->assigneeIsActive($t->client_id, $t->assignee_id),
             'masterRows' => $master,
             'manualRows' => $manual,
         ]);
@@ -356,18 +443,22 @@ class SourcingController extends Controller
             ? ['type' => $p->clarity_type, 'val' => $p->clarity_value]
             : null;
 
-        $products = $t->products->map(fn($p) => [
-            'id'            => $p->id,
-            'type'          => $p->source,
-            'code'          => $this->padCode($p->code) ?? '',
-            'name'          => $p->name,
-            'segment'       => $p->segment ?? '',
-            'hsn'           => $p->hsn ?? '',
-            'price'         => $p->target_price ?? '',
-            'status'        => $p->status,
-            'supplierCount' => $p->suppliers_count,
-            'clarity'       => $clarity($p),
-        ])->values();
+        $resolve  = $this->productDisplayResolver($t->products);
+        $products = $t->products->map(function ($p) use ($clarity, $resolve) {
+            $d = $resolve($p);
+            return [
+                'id'            => $p->id,
+                'type'          => $p->source,
+                'code'          => $this->padCode($p->code) ?? '',
+                'name'          => $d['name'],
+                'segment'       => $d['segment'] ?? '',
+                'hsn'           => $d['hsn'] ?? '',
+                'price'         => $p->target_price ?? '',
+                'status'        => $p->status,
+                'supplierCount' => $p->suppliers_count,
+                'clarity'       => $clarity($p),
+            ];
+        })->values();
 
         return $this->ok([
             'id'        => $t->code,
@@ -392,6 +483,32 @@ class SourcingController extends Controller
         return $this->ok([
             'id'     => $p->id,
             'status' => $p->status,
+        ]);
+    }
+
+    /* Persist a single product's clarity WITHOUT re-saving the whole target —
+     * the Product List "Update" button writes it straight to the DB (PDF paths
+     * are newline-joined in clarity_value; empty type/value clears it). */
+    // PUT /p2p/sourcing-targets/{target}/products/{product}/clarity
+    public function updateProductClarity(Request $request, string $target, int $product)
+    {
+        $t = $this->target($request, $target);
+        $p = $t->products()->where('id', $product)->firstOrFail();
+
+        $data = $request->validate([
+            'clarity_type'  => 'nullable|string|in:text,link,pdf',
+            'clarity_value' => 'nullable|string',
+        ]);
+
+        $p->update([
+            'clarity_type'  => $data['clarity_type'] ?: null,
+            'clarity_value' => $data['clarity_value'] ?? null,
+        ]);
+
+        return $this->ok([
+            'id'            => $p->id,
+            'clarity_type'  => $p->clarity_type,
+            'clarity_value' => $p->clarity_value,
         ]);
     }
 
@@ -511,8 +628,11 @@ class SourcingController extends Controller
 
         // The creator of a sourcing target gets a view-only report — supplier
         // mapping is the assignee's job. You can't map vendors to a target you
-        // raised yourself.
-        if ((int) $t->created_by === (int) $user->id && $user->user_type !== 'super_admin') {
+        // raised yourself UNLESS you also assigned it to yourself (creator ==
+        // assignee), in which case you ARE the assignee and mapping is allowed.
+        if ((int) $t->created_by === (int) $user->id
+            && (int) $t->assignee_id !== (int) $user->id
+            && $user->user_type !== 'super_admin') {
             return response()->json([
                 'status'  => false,
                 'message' => 'You created this sourcing target — vendor mapping is done by the assignee, not the creator.',
@@ -521,15 +641,43 @@ class SourcingController extends Controller
 
         $p    = $t->products()->where('id', $product)->firstOrFail();
 
+        // Length caps mirror the p2p_suppliers column limits so an over-long
+        // value is caught here as a friendly 422 instead of leaking a raw
+        // PostgreSQL "value too long" error from the insert. Street Address is
+        // capped at 255 even though the column is TEXT (product decision).
         $request->validate([
-            'supplier_id'        => 'nullable',
-            'new_supplier'       => 'nullable|array',
-            'new_supplier.name'  => 'required_with:new_supplier|string|max:255',
-            'new_supplier.email' => 'nullable|email',
-            'new_supplier.card'  => 'nullable|string|max:512',
+            'supplier_id'             => 'nullable',
+            'new_supplier'            => 'nullable|array',
+            'new_supplier.name'       => 'required_with:new_supplier|string|max:255',
+            'new_supplier.segment'    => 'nullable|string|max:512',
+            'new_supplier.contact'    => 'nullable|string|max:255',
+            'new_supplier.mobile'     => 'nullable|string|max:64',
+            'new_supplier.email'      => 'nullable|email|max:255',
+            'new_supplier.gmaps'      => 'nullable|string|max:512',
+            'new_supplier.address'    => 'nullable|string|max:255',
+            'new_supplier.country'    => 'nullable|string|max:128',
+            'new_supplier.state'      => 'nullable|string|max:128',
+            'new_supplier.state_code' => 'nullable|string|max:16',
+            'new_supplier.city'       => 'nullable|string|max:128',
+            'new_supplier.card'       => 'nullable|string|max:512',
         ], [
             'new_supplier.name.required_with' => 'Enter the supplier company name.',
             'new_supplier.email.email'        => 'Enter a valid supplier email address.',
+        ], [
+            // Friendly field names so a message reads "The Contact Person must not
+            // be greater than 255 characters" rather than "The new supplier.name
+            // field …" (Laravel's raw dotted-path default).
+            'new_supplier.name'       => 'Supplier Company Name',
+            'new_supplier.segment'    => 'Segment',
+            'new_supplier.contact'    => 'Contact Person',
+            'new_supplier.mobile'     => 'Contact Number',
+            'new_supplier.email'      => 'Email',
+            'new_supplier.gmaps'      => 'Google Maps Link',
+            'new_supplier.address'    => 'Street Address',
+            'new_supplier.country'    => 'Country',
+            'new_supplier.state'      => 'State',
+            'new_supplier.state_code' => 'State Code',
+            'new_supplier.city'       => 'City',
         ]);
 
         if ($request->filled('supplier_id')) {
@@ -657,6 +805,54 @@ class SourcingController extends Controller
         return ['id' => $u?->id, 'name' => $u?->name];
     }
 
+    /**
+     * Live display resolver for a set of sourcing products. Master rows follow
+     * the linked product master (name / segment / HSN) so a raw code never shows
+     * in place of the name; manual & legacy rows fall back to their snapshot.
+     * Returns fn($sourcingProduct) => ['name','segment','hsn'].
+     */
+    private function productDisplayResolver($products): \Closure
+    {
+        $ids = collect($products)
+            ->filter(fn($p) => $p->source === 'master')
+            ->pluck('product_id')->filter()->unique()->values();
+        $map = $ids->isNotEmpty()
+            ? Product::whereIn('id', $ids)->with(['segment:id,name', 'hsn:id,hsn_code'])->get()->keyBy('id')
+            : collect();
+        return function ($p) use ($map) {
+            $live = ($p->source === 'master' && $p->product_id) ? $map->get($p->product_id) : null;
+            return [
+                'name'    => $live->name ?? $p->name,
+                'segment' => $live->segment->name ?? $p->segment,
+                'hsn'     => $live->hsn->hsn_code ?? $p->hsn,
+            ];
+        };
+    }
+
+    /**
+     * Whether the target's current assignee is still an ACTIVE, assignable
+     * member — i.e. their login is active AND their employee record is 'Active'
+     * (not Inactive / Exited). Drives the edit form's reassignment unlock: once
+     * the assignee goes Inactive/Exited the creator may hand the target off to
+     * another active member.
+     */
+    private function assigneeIsActive($clientId, $assigneeUserId): bool
+    {
+        if (!$assigneeUserId) return false;
+        // A deactivated login is never active (the exit flow also flips this).
+        $userActive = User::where('id', $assigneeUserId)
+            ->whereRaw('LOWER(status) = ?', ['active'])->exists();
+        if (!$userActive) return false;
+        // The unlock trigger is specifically an EMPLOYEE going Inactive/Exited.
+        // If the assignee has an employee record it must be 'Active'; if they
+        // have no employee record they never "exit", so keep them valid (locked)
+        // rather than forcing reassignment on legacy/non-employee assignees.
+        $emp = \App\Models\Employee::where('client_id', $clientId)
+            ->where('user_id', $assigneeUserId)->first();
+        if (!$emp) return true;
+        return strtolower((string) $emp->status) === 'active';
+    }
+
     private function syncProducts(SourcingTarget $target, $clientId, array $products): void
     {
         foreach ($products as $p) {
@@ -671,10 +867,23 @@ class SourcingController extends Controller
             ];
 
             if ($from === 'master') {
+                $code = $p['code'] ?? '';
                 $prod = Product::where('client_id', $clientId)
                     ->with(['segment:id,name', 'hsn:id,hsn_code'])
-                    ->where('product_code', $p['code'] ?? '')
+                    ->where('product_code', $code)
                     ->first();
+
+                // The frontend sends the DISPLAY code, padded by padCode()
+                // ("P-41" → "P-041"). When product_code is stored unpadded the
+                // exact match above misses — which left the row showing the code
+                // as its name and no segment/HSN. Fall back to matching on the
+                // padded form so the real product (name, segment, HSN, id) resolves.
+                if (!$prod && $code !== '') {
+                    $prod = Product::where('client_id', $clientId)
+                        ->with(['segment:id,name', 'hsn:id,hsn_code'])
+                        ->get()
+                        ->first(fn($x) => $this->padCode($x->product_code) === $code);
+                }
 
                 $row += [
                     'product_id' => $prod->id ?? null,

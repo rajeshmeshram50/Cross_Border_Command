@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties } from 'react';
 import './SalesConsignee.css';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -16,6 +16,7 @@ import { ShimmerTable } from '../../../../components/ui/Shimmer';
 import api from '../../../../api';
 import TableContainer from '../../../../velzon/Components/Common/TableContainerReactTable';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
+import { truncSegment } from '../../../../utils/segmentLabel';
 import PartyFilterModal, {
   applyPartyFilters,
   countPartyFilterValues,
@@ -46,13 +47,35 @@ const titleCase = (s: string): string => {
 };
 
 const TruncatedCell = ({ value, className, max = 60, caseSensitive = false, maxWidth = '100%' }: { value?: string | null; className?: string; max?: number; caseSensitive?: boolean; maxWidth?: number | string }) => {
+  const ref = useRef<HTMLSpanElement>(null);
+  // True when the cell is visually CLIPPED by its column width (not just by the
+  // char-count limit) — e.g. a 29-char email cut by a narrow column. Measured
+  // from the DOM so the tooltip appears whenever the text is actually cut off.
+  const [clipped, setClipped] = useState(false);
   const raw = (value ?? '').trim();
+  const v = raw ? (caseSensitive ? raw : titleCase(raw)) : '';
+  useEffect(() => {
+    const measure = () => { const el = ref.current; if (el) setClipped(el.scrollWidth > el.clientWidth + 1); };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [v]);
   if (!raw) return <span className="text-muted">—</span>;
-  const v = caseSensitive ? raw : titleCase(raw);
-  const needsTooltip = v.length > max;
-  const display = needsTooltip ? v.slice(0, max) + '…' : v;
-  const inner = <span className={className} style={{ maxWidth, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
-  return needsTooltip ? <Tooltip label={v}>{inner}</Tooltip> : inner;
+  const jsTrunc = v.length > max;
+  const display = jsTrunc ? v.slice(0, max) + '…' : v;
+  const inner = <span ref={ref} className={className} style={{ maxWidth, display: 'inline-block', overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>{display}</span>;
+  // Tooltip when EITHER the char-limit truncates OR the column clips it visually.
+  return (jsTrunc || clipped) ? <Tooltip label={v}>{inner}</Tooltip> : inner;
+};
+
+/* Char-based truncation + styled tooltip for the Mapped Customers modal cells
+   (its table auto-sizes, so a fixed char cap is clearer than DOM overflow). */
+const truncTip = (value?: string | null, max = 15) => {
+  const v = (value ?? '').trim();
+  if (!v) return '—';
+  return v.length > max
+    ? <Tooltip label={v}><span>{`${v.slice(0, max)}…`}</span></Tooltip>
+    : v;
 };
 
 export default function SalesConsignee() {
@@ -122,6 +145,16 @@ export default function SalesConsignee() {
   const [vaultTarget, setVaultTarget] = useState<ConsigneeVaultTarget | null>(null);
   // Consignee whose "Mapped Customers" list popup is open.
   const [mappedTarget, setMappedTarget] = useState<ConsigneeRow | null>(null);
+  // Search + pagination for the Mapped Customers table (matches the Consignees modal).
+  const MAPPED_PER_PAGE = 5;
+  const [mappedPage, setMappedPage] = useState(1);
+  const [mappedSearch, setMappedSearch] = useState('');
+  useEffect(() => { setMappedPage(1); }, [mappedTarget, mappedSearch]);
+  useEffect(() => { if (!mappedTarget) setMappedSearch(''); }, [mappedTarget]);
+  const mappedSearchLc = mappedSearch.trim().toLowerCase();
+  const mappedFiltered = (mappedTarget?.customers ?? []).filter(c =>
+    !mappedSearchLc || `${c.code ?? ''} ${c.name ?? ''} ${c.contact ?? ''} ${c.phone ?? ''} ${c.country ?? ''} ${c.type ?? ''} ${c.segment ?? ''}`.toLowerCase().includes(mappedSearchLc)
+  );
   // "+N" segment overflow popover inside the Mapped Customers modal.
   const [mappedSeg, setMappedSeg] = useState<{ names: string[]; x: number; y: number } | null>(null);
   // "Map Customer" flow inside the Mapped Customers modal.
@@ -184,13 +217,23 @@ export default function SalesConsignee() {
       el.style.height = `${h}px`;
       el.style.maxHeight = `${h}px`;
 
+      if (manualSize) return;   // user chose a Rows-per-page value — don't override it
       const toolbarH = (el.querySelector('.smcg-toolbar') as HTMLElement | null)?.offsetHeight || 0;
+      // Filter-chips bar only exists when filters are active; leaving it out of
+      // the subtraction pushed the last row under the pager (mirrors customer).
+      const filterbarH = (el.querySelector('.smcg-filterbar') as HTMLElement | null)?.offsetHeight || 0;
       const theadH   = (el.querySelector('.smcg-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
-      const footerH  = (el.querySelector('.smcg-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
-      const rowH     = (el.querySelector('.smcg-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 40;
-      const avail = h - toolbarH - theadH - footerH - 26;
-      const rowsFit = Math.floor(avail / rowH);
-      if (!manualSize) setPageSize(Math.max(ROWS_PER_PAGE, rowsFit));
+      // Worklist pager is `.tc-wl-pag`, not `.row` — measure the real footer so
+      // the row auto-fit isn't off by one (QA #31, mirrors the customer table).
+      const footerH  = (el.querySelector('.tc-wl-pag, .smcg-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
+      const rowH     = (el.querySelector('.smcg-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 44;
+      const avail = h - toolbarH - filterbarH - theadH - footerH - 8;
+      /* Exactly how many rows fit — not `max(10, fit)`. The old floor pinned it
+         at 10 regardless of viewport (the "always 10" bug); it now tracks the
+         screen like the Lead Worksheet. Floor of 5 avoids a 1–2-row page on a
+         very short window. Mirrors SalesCustomers. */
+      const rowsFit = Math.max(5, Math.floor(avail / rowH));
+      setPageSize(rowsFit);
     };
     fit();
     const t = window.setTimeout(fit, 120);
@@ -296,6 +339,15 @@ export default function SalesConsignee() {
   }, [q, rows, filters]);
   const activeFilterCount = countPartyFilterValues(filters);
 
+  // Flatten the active filters into removable chips (shown above the table with
+  // a "Clear all", like the My Workplace / Lead Worksheet filter bar).
+  const filterChips: { label: string; onRemove: () => void }[] = [];
+  if (filters.region) filterChips.push({ label: `Consignee Type: ${filters.region === 'domestic' ? 'Domestic' : 'International'}`, onRemove: () => setFilters(f => ({ ...f, region: undefined })) });
+  (filters.segments ?? []).forEach(s => filterChips.push({ label: `Segment: ${s}`, onRemove: () => setFilters(f => ({ ...f, segments: (f.segments ?? []).filter(x => x !== s) })) }));
+  (filters.countries ?? []).forEach(c => filterChips.push({ label: `Country: ${c}`, onRemove: () => setFilters(f => ({ ...f, countries: (f.countries ?? []).filter(x => x !== c) })) }));
+  if (filters.whatsapp) filterChips.push({ label: `Whatsapp: ${filters.whatsapp}`, onRemove: () => setFilters(f => ({ ...f, whatsapp: undefined })) });
+  if (filters.sameAsCustomer) filterChips.push({ label: `Same as Customer: ${filters.sameAsCustomer}`, onRemove: () => setFilters(f => ({ ...f, sameAsCustomer: undefined })) });
+
   const onSearch = (v: string) => { setQ(v); };
   const soon = (label: string) => toast.info(label, 'Coming in next phase');
 
@@ -361,19 +413,20 @@ export default function SalesConsignee() {
           <span className="d-inline-flex align-items-center" style={{ gap: 4, justifyContent: 'flex-start' }}>
             <span className="smcg-cust-chip">{chips[0]}</span>
             {chips.length > 1 && (
-              <span
-                role="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                  setSegOpen(prev => prev?.id === custPopId ? null : { id: custPopId, names: chips, x: b.left, y: b.bottom + 4, title: 'Customer IDs' });
-                }}
-                className="smcg-cust-chip"
-                style={{ cursor: 'pointer', background: '#ede9fe', color: '#5b21b6', fontWeight: 700 }}
-                title="View all mapped customer IDs"
-              >
-                +{chips.length - 1}
-              </span>
+              <Tooltip label={`View ${chips.length - 1} more`}>
+                <span
+                  role="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    setSegOpen(prev => prev?.id === custPopId ? null : { id: custPopId, names: chips, x: b.left, y: b.bottom + 4, title: 'Customer IDs' });
+                  }}
+                  className="smcg-cust-chip"
+                  style={{ cursor: 'pointer', background: '#ede9fe', color: '#5b21b6', fontWeight: 700 }}
+                >
+                  +{chips.length - 1}
+                </span>
+              </Tooltip>
             )}
           </span>
         );
@@ -394,15 +447,18 @@ export default function SalesConsignee() {
         const extra = segList.length - 1;
         const rowId = (info.row.original as ConsigneeRow).id;
         return (
-          <span className="d-inline-flex align-items-center" style={{ gap: 4 }}>
-            <span className="smcg-seg">{segList[0]}</span>
+          <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
+            {segList[0].length > 30
+              ? <Tooltip label={segList[0]}><span className="smcg-seg">{truncSegment(segList[0])}</span></Tooltip>
+              : <span className="smcg-seg">{segList[0]}</span>}
             {extra > 0 && (
-              <button
-                type="button"
-                className="smcg-seg-more"
-                title="View all segments"
-                onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === rowId ? null : { id: rowId, names: segList, x: b.left, y: b.bottom + 4 }); }}
-              >+{extra}</button>
+              <Tooltip label={`View ${extra} more`}>
+                <button
+                  type="button"
+                  className="smcg-seg-more"
+                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === rowId ? null : { id: rowId, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                >+{extra}</button>
+              </Tooltip>
             )}
           </span>
         );
@@ -455,7 +511,7 @@ export default function SalesConsignee() {
     /* Email absorbs the table's leftover width (see SalesConsignee.css); its
        caps are raised so that width shows address rather than blank space. */
     { header: 'Email',          accessorKey: 'email',   cell: (i: any) => <TruncatedCell value={i.getValue()} className="smcg-email" caseSensitive /> },
-    { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'center' }, cell: (i: any) => <span className="smcg-mono">{i.getValue() || '—'}</span> },
+    { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'start' }, cell: (i: any) => <span className="smcg-mono">{i.getValue() || '—'}</span> },
     {
       header: 'Country',
       accessorKey: 'country',
@@ -647,6 +703,21 @@ export default function SalesConsignee() {
           )}
         </div>
 
+        {/* Active filter chips + Clear all — mirrors the My Workplace filter bar
+            so applied filters are visible and removable outside the modal. */}
+        {filterChips.length > 0 && (
+          <div className="smcg-filterbar">
+            <span className="smcg-filterbar-lbl">Filters:</span>
+            {filterChips.map((chip, i) => (
+              <span key={i} className="smcg-filterchip">
+                {chip.label}
+                <button type="button" onClick={chip.onRemove} aria-label={`Remove ${chip.label}`}>×</button>
+              </span>
+            ))}
+            <button type="button" className="smcg-filterbar-clear" onClick={() => setFilters({})}>Clear all</button>
+          </div>
+        )}
+
         <div className="smcg-table-wrap">
           {loading && rows.length === 0 ? (
             <ShimmerTable rows={pageSize} cols={13} />
@@ -751,7 +822,9 @@ export default function SalesConsignee() {
                   <div key={i} className={`smcg-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
                     {/* Customer-ID chips keep the violet customer palette;
                         segment chips stay green. */}
-                    <span className={segOpen.title === 'Customer IDs' ? 'smcg-cust-chip' : 'smcg-seg'}>{name}</span>
+                    {segOpen.title === 'Customer IDs'
+                      ? <span className="smcg-cust-chip">{name}</span>
+                      : <span className="smcg-seg" title={name}>{truncSegment(name)}</span>}
                   </div>
                 ))}
               </div>
@@ -812,8 +885,12 @@ export default function SalesConsignee() {
               // list exposes the numeric id as `db_id` (its `id` is the display
               // code). Match + send the numeric db_id, not the code.
               const mappedIds = new Set((mappedTarget.customers ?? []).map(c => c.id));
+              // Domestic consignee maps ONLY domestic customers, international
+              // maps ONLY international — same India→India / intl→intl rule.
+              const consDomestic = (mappedTarget.country ?? '').trim() === 'India';
               const options = allCustomers
-                .filter(c => typeof c.db_id === 'number' && !mappedIds.has(c.db_id))
+                .filter(c => typeof c.db_id === 'number' && !mappedIds.has(c.db_id)
+                  && (((c.country ?? '').trim() === 'India') === consDomestic))
                 .map(c => ({ value: String(c.db_id), label: `${c.id} — ${c.company ?? ''}` }));
               return (
                 <div onMouseDown={() => !custMapping && setCustMapOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 1099, background: 'rgba(46,16,101,.55)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -837,6 +914,20 @@ export default function SalesConsignee() {
                 </div>
               );
             })()}
+            {/* Search toolbar — filter the mapped customers (matches the
+                Consignees modal search). */}
+            <div style={{ padding: '14px 18px 0' }}>
+              <div style={{ position: 'relative', maxWidth: 420 }}>
+                <i className="ri-search-line" style={{ position: 'absolute', left: 13, top: '50%', transform: 'translateY(-50%)', color: mc.textMuted, fontSize: 15 }} />
+                <input
+                  type="search"
+                  value={mappedSearch}
+                  onChange={e => setMappedSearch(e.target.value)}
+                  placeholder="Search customers…"
+                  style={{ width: '100%', padding: '9px 14px 9px 36px', borderRadius: 10, border: `1px solid ${mc.border}`, background: mc.card, color: mc.textStrong, fontSize: 13, outline: 'none' }}
+                />
+              </div>
+            </div>
             {/* Table — ~5 rows visible, the rest scroll (header ~44px + 5×~46px). */}
             <div style={{ padding: '12px 18px 18px', maxHeight: 320, overflowX: 'auto', overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, borderRadius: 10, overflow: 'hidden', minWidth: 780 }}>
@@ -848,10 +939,15 @@ export default function SalesConsignee() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(mappedTarget.customers ?? []).length === 0 ? (
-                    <tr><td colSpan={8} style={{ textAlign: 'center', color: mc.textMuted, padding: '26px 0', fontSize: 13 }}>Not mapped to any customer yet.</td></tr>
-                  ) : (
-                    (mappedTarget.customers ?? []).map((cu, i) => {
+                  {(() => {
+                    const all = mappedFiltered;
+                    if (all.length === 0) return (
+                      <tr><td colSpan={8} style={{ textAlign: 'center', color: mc.textMuted, padding: '26px 0', fontSize: 13 }}>{mappedSearchLc ? 'No customers match your search.' : 'Not mapped to any customer yet.'}</td></tr>
+                    );
+                    const totalPages = Math.max(1, Math.ceil(all.length / MAPPED_PER_PAGE));
+                    const start = (Math.min(mappedPage, totalPages) - 1) * MAPPED_PER_PAGE;
+                    return all.slice(start, start + MAPPED_PER_PAGE).map((cu, li) => {
+                      const i = start + li;
                       const segList = String(cu.segment ?? '').split(',').map(s => s.trim()).filter(Boolean);
                       return (
                         <tr key={cu.id} style={{ background: i % 2 ? mc.rowAlt : mc.rowBase }}>
@@ -859,35 +955,78 @@ export default function SalesConsignee() {
                           <td style={{ padding: '10px 14px', borderBottom: `1px solid ${mc.border}` }}>
                             <span style={{ fontSize: 12, fontWeight: 700, color: mc.chipFg, background: mc.chipBg, borderRadius: 8, padding: '2px 9px', whiteSpace: 'nowrap' }}>{cu.code || `C-${cu.id}`}</span>
                           </td>
-                          <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: mc.textStrong, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{cu.name || '—'}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 13, fontWeight: 600, color: mc.textStrong, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{truncTip(cu.name, 20)}</td>
                           <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}` }}>
                             {segList.length === 0 ? '—' : (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                <span style={{ background: mc.chipBg, color: mc.chipFg, borderRadius: 6, padding: '1px 8px', fontSize: 11.5, fontWeight: 600 }}>{segList[0]}</span>
+                                <Tooltip label={segList[0]} disabled={segList[0].length <= 14}><span style={{ background: mc.chipBg, color: mc.chipFg, borderRadius: 6, padding: '1px 8px', fontSize: 11.5, fontWeight: 600 }}>{truncSegment(segList[0])}</span></Tooltip>
                                 {segList.length > 1 && (
-                                  <span
-                                    role="button"
-                                    onClick={(e) => { e.stopPropagation(); setMappedSeg({ names: segList, x: e.clientX, y: e.clientY }); }}
-                                    style={{ cursor: 'pointer', fontSize: 11, color: mc.chipFg, fontWeight: 700, background: mc.chipBg, borderRadius: 6, padding: '1px 6px' }}
-                                    title="Show all segments"
-                                  >
-                                    +{segList.length - 1}
-                                  </span>
+                                  <Tooltip label={`View ${segList.length - 1} more`}>
+                                    <span
+                                      role="button"
+                                      onClick={(e) => { e.stopPropagation(); setMappedSeg({ names: segList, x: e.clientX, y: e.clientY }); }}
+                                      style={{ cursor: 'pointer', fontSize: 11, color: mc.chipFg, fontWeight: 700, background: mc.chipBg, borderRadius: 6, padding: '1px 6px' }}
+                                    >
+                                      +{segList.length - 1}
+                                    </span>
+                                  </Tooltip>
                                 )}
                               </span>
                             )}
                           </td>
                           <td style={{ padding: '10px 14px', fontSize: 12.5, color: '#475569', borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{cu.type || '—'}</td>
                           <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{cu.country || '—'}</td>
-                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{cu.contact || '—'}</td>
-                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{cu.phone || '—'}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{truncTip(cu.contact, 15)}</td>
+                          <td style={{ padding: '10px 14px', fontSize: 12.5, color: mc.textMuted, borderBottom: `1px solid ${mc.border}`, whiteSpace: 'nowrap' }}>{truncTip(cu.phone, 15)}</td>
                         </tr>
                       );
-                    })
-                  )}
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
+
+            {/* Footer — "Showing X–Y of Z" + pager + Close, matching the
+                Consignees modal footer. */}
+            {(() => {
+              const total = mappedFiltered.length;
+              const totalPages = Math.max(1, Math.ceil(total / MAPPED_PER_PAGE));
+              const page = Math.min(mappedPage, totalPages);
+              const from = total === 0 ? 0 : (page - 1) * MAPPED_PER_PAGE + 1;
+              const to = Math.min(page * MAPPED_PER_PAGE, total);
+              // Arrow chips + numbered page chips (active = filled), matching the
+              // Consignees modal's .ccm-pag pager.
+              const arrowChip = (disabled: boolean): CSSProperties => ({
+                width: 30, height: 30, borderRadius: 8, border: `1px solid ${mc.border}`, background: mc.card,
+                color: disabled ? mc.textMuted : '#6d28d9', fontSize: 15, lineHeight: 1,
+                cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              });
+              const numChip = (active: boolean): CSSProperties => ({
+                minWidth: 30, height: 30, padding: '0 8px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, lineHeight: 1,
+                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                border: active ? 'none' : `1px solid ${mc.border}`,
+                background: active ? 'linear-gradient(135deg,#6d28d9,#7c3aed)' : mc.card,
+                color: active ? '#fff' : mc.textStrong,
+              });
+              return (
+                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '13px 20px', borderTop: `1px solid ${mc.border}`, background: mc.rowAlt }}>
+                  <span style={{ fontSize: 12.5, color: mc.textMuted, fontWeight: 600 }}>
+                    Showing <strong style={{ color: mc.textStrong }}>{from}–{to}</strong> of <strong style={{ color: mc.textStrong }}>{total}</strong> {total === 1 ? 'customer' : 'customers'} linked to <strong style={{ color: mc.textStrong }}>{mappedTarget.id}</strong>
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setMappedPage(p => Math.max(1, p - 1))} style={arrowChip(page <= 1)}>‹</button>
+                      {Array.from({ length: totalPages }, (_, n) => n + 1).map(n => (
+                        <button key={n} type="button" onClick={() => setMappedPage(n)} style={numChip(n === page)}>{n}</button>
+                      ))}
+                      <button type="button" aria-label="Next page" disabled={page >= totalPages} onClick={() => setMappedPage(p => Math.min(totalPages, p + 1))} style={arrowChip(page >= totalPages)}>›</button>
+                    </div>
+                    <button type="button" onClick={() => setMappedTarget(null)} style={{ border: 'none', background: 'linear-gradient(135deg,#6d28d9,#7c3aed)', color: '#fff', borderRadius: 9, padding: '8px 20px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>Close</button>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>,
         document.body,
@@ -897,10 +1036,10 @@ export default function SalesConsignee() {
       {mappedSeg && createPortal(
         <>
           <div onClick={() => setMappedSeg(null)} style={{ position: 'fixed', inset: 0, zIndex: 1097 }} />
-          <div style={{ position: 'fixed', left: Math.min(mappedSeg.x, window.innerWidth - 220), top: mappedSeg.y + 10, zIndex: 1098, width: 200, maxHeight: 260, overflowY: 'auto', background: mc.popBg, borderRadius: 10, boxShadow: '0 14px 34px rgba(0,0,0,.35)', padding: 8, border: `1px solid ${mc.border}` }}>
+          <div style={{ position: 'fixed', left: Math.max(8, Math.min(mappedSeg.x, window.innerWidth - 220)), top: Math.max(8, Math.min(mappedSeg.y + 10, window.innerHeight - 268)), zIndex: 1098, width: 200, maxHeight: 260, overflowY: 'auto', background: mc.popBg, borderRadius: 10, boxShadow: '0 14px 34px rgba(0,0,0,.35)', padding: 8, border: `1px solid ${mc.border}` }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: mc.chipFg, marginBottom: 6, textTransform: 'uppercase', letterSpacing: .3 }}>Segments ({mappedSeg.names.length})</div>
             {mappedSeg.names.map((n, i) => (
-              <div key={i} style={{ fontSize: 12.5, color: mc.textStrong, padding: '5px 7px', borderRadius: 6, background: i % 2 ? mc.rowAlt : 'transparent' }}>{n}</div>
+              <div key={i} title={n} style={{ fontSize: 12.5, color: mc.textStrong, padding: '5px 7px', borderRadius: 6, background: i % 2 ? mc.rowAlt : 'transparent' }}>{truncSegment(n)}</div>
             ))}
           </div>
         </>,

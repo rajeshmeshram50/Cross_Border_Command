@@ -354,6 +354,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/p2p/new-suppliers/{supplier}/sourcings', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'supplierSourcings'])->whereNumber('supplier');
     Route::get   ('/p2p/form-masters',  [\App\Http\Controllers\Api\P2p\SourcingController::class, 'formMasters']);
     Route::post  ('/p2p/upload',        [\App\Http\Controllers\Api\P2p\SourcingController::class, 'upload']);
+    Route::get   ('/p2p/clarity/download', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'downloadClarity']);
     Route::get   ('/p2p/sourcing-targets',          [\App\Http\Controllers\Api\P2p\SourcingController::class, 'index']);
     Route::get   ('/p2p/sourcing-targets/next-code',[\App\Http\Controllers\Api\P2p\SourcingController::class, 'nextCode']);
     Route::post  ('/p2p/sourcing-targets',          [\App\Http\Controllers\Api\P2p\SourcingController::class, 'store']);
@@ -361,6 +362,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/p2p/sourcing-targets/{target}', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'update']);
     Route::get   ('/p2p/sourcing-targets/{target}/report', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'report']);
     Route::patch ('/p2p/sourcing-targets/{target}/products/{product}/status',    [\App\Http\Controllers\Api\P2p\SourcingController::class, 'setProductStatus'])->whereNumber('product');
+    Route::put   ('/p2p/sourcing-targets/{target}/products/{product}/clarity',   [\App\Http\Controllers\Api\P2p\SourcingController::class, 'updateProductClarity'])->whereNumber('product');
     Route::get   ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mappedSuppliers'])->whereNumber('product');
     Route::post  ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mapSupplier'])->whereNumber('product');
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');

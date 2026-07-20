@@ -66,7 +66,7 @@ export default function MappedSuppliersModal({ product, recordId, recordSource, 
           <div className="sv-refs">
             <div className="sv-ref"><div className="sv-ref-lbl">Sourcing ID</div><div className="sv-ref-val cyan">{recordId}</div></div>
             <div className="sv-ref"><div className="sv-ref-lbl">Product Code</div><div className="sv-ref-val cyan">{product.code || '—'}</div></div>
-            <div className="sv-ref"><div className="sv-ref-lbl">Product Name</div><div className="sv-ref-val">{product.name}</div></div>
+            <div className="sv-ref"><div className="sv-ref-lbl">Product Name</div><Tooltip label={product.name}><div className="sv-ref-val" style={{ maxWidth: 240 }}>{product.name}</div></Tooltip></div>
             {product.segment && <div className="sv-ref"><div className="sv-ref-lbl">Segment</div><div className="sv-ref-val">{product.segment}</div></div>}
             {product.price && <div className="sv-ref"><div className="sv-ref-lbl">Target Price</div><div className="sv-ref-val amber">{fmtPrice(product.price)}</div></div>}
             <div className="sv-ref"><div className="sv-ref-lbl">Suppliers Mapped</div><div className="sv-ref-val green">{count} Supplier{count !== 1 ? 's' : ''}</div></div>

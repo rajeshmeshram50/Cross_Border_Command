@@ -61,9 +61,16 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
   /* Inline field errors shown beneath the required fields. The toast was
    * the only feedback before, which the user could miss while looking at
    * the form — now Subject / Set Date show a red message under the box. */
-  const [errors, setErrors]   = useState<{ subject?: string; setDate?: string }>({});
+  const [errors, setErrors]   = useState<{ subject?: string; setDate?: string; attachment?: string }>({});
 
   const todayStr = new Date().toISOString().slice(0, 10);
+
+  /* Reminder attachments are images + PDF only — Word/Excel/CSV are rejected
+   * (QA #23). Kept in lock-step with the backend `mimes` rule and the input's
+   * `accept`. `accept` is only a hint (drag-drop / "All files" bypasses it),
+   * so this is validated on selection too. */
+  const ATTACH_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
+  const ATTACH_MSG  = 'Unsupported file type. Only images (JPG, PNG, WEBP) and PDF are allowed.';
 
   /* Reset every time the modal opens so an old draft never leaks into a
    * fresh lead. */
@@ -84,10 +91,20 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
   const onPickFile = () => fileRef.current?.click();
   const onFileChange = (ev: React.ChangeEvent<HTMLInputElement>) => {
     const f = ev.target.files?.[0];
-    if (f) setPicked(f);
+    if (!f) return;
+    const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
+    if (!ATTACH_EXTS.includes(ext)) {
+      setErrors(p => ({ ...p, attachment: ATTACH_MSG }));
+      setPicked(null);
+      if (fileRef.current) fileRef.current.value = '';
+      return;
+    }
+    setErrors(p => ({ ...p, attachment: undefined }));
+    setPicked(f);
   };
   const clearPicked = () => {
     setPicked(null);
+    setErrors(p => ({ ...p, attachment: undefined }));
     if (fileRef.current) fileRef.current.value = '';
   };
 
@@ -282,6 +299,7 @@ export default function RemindersForLeadModal({ open, oppId, oppDate, onClose }:
                   Choose file...
                 </button>
               )}
+              {errors.attachment && <div className="rfl-err">{errors.attachment}</div>}
             </div>
             <div className="rfl-fld">
               <label className="rfl-lbl">REMARK</label>

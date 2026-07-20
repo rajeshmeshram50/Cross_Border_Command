@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useScrollLock } from '../../../../../hooks/useScrollLock';
 import { formatDmy } from '../../../../../utils/formatDmy';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
@@ -73,6 +74,12 @@ export default function ProcurementDetailsModal({ open, procurementId, onClose }
       .catch(() => toast.error('Load failed', 'Could not fetch procurement details'))
       .finally(() => setLoading(false));
   }, [open, procurementId, toast]);
+
+  /* Freeze background scroll while the popup is open. Called before the early
+     return so the hook runs on every render (rules of hooks); it locks BOTH
+     <html> and <body> — locking body alone doesn't stop this layout's page
+     scroll, it happens on <html>. */
+  useScrollLock(open);
 
   if (!open) return null;
 

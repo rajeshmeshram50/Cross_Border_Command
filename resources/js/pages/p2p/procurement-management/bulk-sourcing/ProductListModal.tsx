@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
+import Tooltip from '../../../../components/ui/Tooltip';
 import { useModalGuard } from './useModalGuard';
 import './bulk-sourcing.css';
 
@@ -126,7 +127,7 @@ export default function ProductListModal({ row, onClose }: { row: PLRow; onClose
                   <tr className="srpt-row" key={i}>
                     <td style={{ textAlign: 'center' }}><span className="srpt-sno">{i + 1}</span></td>
                     {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-code">{p.code}</span></td>}
-                    <td style={{ textAlign: 'left' }}><div className="srpt-pname">{p.name}</div></td>
+                    <td style={{ textAlign: 'left' }}><Tooltip label={p.name}><div className={`srpt-pname ${tab === 'manual' ? 'srpt-pname-wide' : ''}`}>{p.name}</div></Tooltip></td>
                     {tab === 'master' && <td style={{ textAlign: 'center' }}><span className={`srpt-seg ${(p.segment || 'General').replace(/ /g, '-')}`}>{p.segment}</span></td>}
                     {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-hsn">{p.hsn}</span></td>}
                     <td style={{ textAlign: 'center' }} className="srpt-price">{fmtPrice(p.price)}</td>

@@ -345,7 +345,7 @@ class PurchaseOrderController extends Controller
             'signers'           => 'nullable|array|max:1',
             'signers.*.name'    => 'required_with:signers|string|max:255',
             'signers.*.email'   => 'required_with:signers|email|max:255',
-            'expiry_days'       => 'nullable|integer|min:1|max:180',
+            'expiry_days'       => 'nullable|integer|min:1|max:90',
             'is_sequential'     => 'nullable|boolean',
             'notes'             => 'nullable|string|max:1000',
             'document_settings' => 'nullable|array',
@@ -370,7 +370,7 @@ class PurchaseOrderController extends Controller
             file_put_contents($tmp, $pdfBytes);
             $tempPaths[] = $tmp;
 
-            $expiryDays  = (int) ($data['expiry_days'] ?? 30);
+            $expiryDays  = min(90, max(1, (int) ($data['expiry_days'] ?? 30)));  // Zoho caps expiration_days at 2 digits
             $requestName = 'Purchase Order ' . ($po->code ?: $po->id);
             $requestBody = ['requests' => [
                 'request_name'    => $requestName,
@@ -667,7 +667,11 @@ class PurchaseOrderController extends Controller
             ->findOrFail($id);
 
         $a = $v->primaryAddress;
-        $g = $v->gstScrutiny->first();
+        // Newest scrutiny is the current GST status. The relation carries a
+        // baked-in orderBy('id') ASC, so a `latest('id')` in the eager-load
+        // closure only appends a redundant secondary sort and ->first() would
+        // return the OLDEST row — sort the loaded collection to be order-safe.
+        $g = $v->gstScrutiny->sortByDesc('id')->first();
         $country = $a && $a->country_id ? DB::table('master_countries')->where('id', $a->country_id)->value('name') : null;
         $state = $a && $a->state_id ? DB::table('master_states')->where('id', $a->state_id)->value('name') : null;
 
@@ -802,7 +806,20 @@ class PurchaseOrderController extends Controller
         ->filter(fn ($r) => $r['qty'] > 0)
         ->values();
 
-        return response()->json(['status' => true, 'data' => $data]);
+        /* An empty list has two very different causes and the caller must be
+         * able to tell them apart: the PI genuinely has no products, or every
+         * PI product has already been consumed by earlier POs on this shipment.
+         * The second is the common one (2 POs covering 4 PI products) and needs
+         * to be reported instead of opening an empty product table. */
+        return response()->json([
+            'status' => true,
+            'data'   => $data,
+            'meta'   => [
+                'pi_item_count'  => $items->count(),
+                'available'      => $data->count(),
+                'fully_ordered'  => $items->count() > 0 && $data->isEmpty(),
+            ],
+        ]);
     }
 
     /* ══════════════════════════ TRADE DOCS + AGREEMENTS (Stage 4) ══════════════════════════ */
@@ -1072,6 +1089,29 @@ class PurchaseOrderController extends Controller
         }
 
         $eps = 0.0001;
+
+        // NEW PO on this shipment: if every PI product is already fully ordered
+        // by existing (non-deleted) POs, there is no quantity left to allocate —
+        // block raising another PO for this shipment (QA request). Only for new
+        // POs ($excludePoId === null); an edit legitimately re-touches the qty it
+        // already consumed.
+        if ($excludePoId === null) {
+            $hasRemaining = false;
+            foreach ($piById as $pid => $piQty) {
+                if ($piQty - ($ordById[$pid] ?? 0) > $eps) { $hasRemaining = true; break; }
+            }
+            if (!$hasRemaining) {
+                foreach ($piByCode as $code => $piQty) {
+                    if ($piQty - ($ordByCode[$code] ?? 0) > $eps) { $hasRemaining = true; break; }
+                }
+            }
+            if (!$hasRemaining) {
+                throw ValidationException::withMessages([
+                    'shipment_order_id' => ['This shipment already has purchase order(s) covering the full PI quantity — no quantity remains to raise a new PO for this shipment.'],
+                ]);
+            }
+        }
+
         $errors = [];
         foreach ($reqById as $pid => $req) {
             if (!array_key_exists($pid, $piById)) continue; // not a PI product → not PI-capped

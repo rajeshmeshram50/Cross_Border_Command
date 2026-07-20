@@ -151,13 +151,28 @@ export default function SalesCustomers() {
       el.style.height = `${h}px`;
       el.style.maxHeight = `${h}px`;
 
+      if (manualSize) return;   // user chose a Rows-per-page value — don't override it
       const toolbarH = (el.querySelector('.smc-toolbar') as HTMLElement | null)?.offsetHeight || 0;
+      /* The filter-chips bar only exists when filters are active. It sits above
+       * the table and used to be left OUT of the subtraction, so turning a
+       * filter on pushed the last row under the pager (over-count by one). */
+      const filterbarH = (el.querySelector('.smc-filterbar') as HTMLElement | null)?.offsetHeight || 0;
       const theadH   = (el.querySelector('.smc-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
-      const footerH  = (el.querySelector('.smc-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
-      const rowH     = (el.querySelector('.smc-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 40;
-      const avail = h - toolbarH - theadH - footerH - 26;
-      const rowsFit = Math.floor(avail / rowH);
-      if (!manualSize) setPageSize(Math.max(ROWS_PER_PAGE, rowsFit));
+      /* Footer is the worklist pager `.tc-wl-pag` (TableContainerReactTable);
+       * the old `.smc-table-wrap > .row` selector matched the non-worklist
+       * pager, which this table doesn't render — so footerH came back 0 and the
+       * auto-fit over-counted rows by one (QA #31). Measure the real pager. */
+      const footerH  = (el.querySelector('.tc-wl-pag, .smc-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
+      const rowH     = (el.querySelector('.smc-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 44;
+      const avail = h - toolbarH - filterbarH - theadH - footerH - 8;
+      /* The page size is EXACTLY how many rows fit — not `max(10, fit)`. Flooring
+       * at 10 was the "always 10" bug: on a screen that fits 8 it still asked for
+       * 10 (so 2 rows sat under the pager and it never looked full), and it
+       * masked the real fit on taller screens too. Now it shrinks and grows with
+       * the viewport like the Lead Worksheet. Floor of 5 just avoids a silly
+       * 1–2-row page on a very short window. */
+      const rowsFit = Math.max(5, Math.floor(avail / rowH));
+      setPageSize(rowsFit);
     };
     fit();
     const t = window.setTimeout(fit, 120);
@@ -231,6 +246,15 @@ export default function SalesCustomers() {
     return facetFiltered;
   }, [facetFiltered, tab]);
   const activeFilterCount = countPartyFilterValues(filters);
+
+  // Active filters as removable chips (shown above the table with a Clear all,
+  // like the My Workplace / Lead Worksheet filter bar). Customer has no
+  // "Same as Customer" facet, so it's not chipped here.
+  const filterChips: { label: string; onRemove: () => void }[] = [];
+  if (filters.region) filterChips.push({ label: `Customer Type: ${filters.region === 'domestic' ? 'Domestic' : 'International'}`, onRemove: () => setFilters(f => ({ ...f, region: undefined })) });
+  (filters.segments ?? []).forEach(s => filterChips.push({ label: `Segment: ${s}`, onRemove: () => setFilters(f => ({ ...f, segments: (f.segments ?? []).filter(x => x !== s) })) }));
+  (filters.countries ?? []).forEach(c => filterChips.push({ label: `Country: ${c}`, onRemove: () => setFilters(f => ({ ...f, countries: (f.countries ?? []).filter(x => x !== c) })) }));
+  if (filters.whatsapp) filterChips.push({ label: `Whatsapp: ${filters.whatsapp}`, onRemove: () => setFilters(f => ({ ...f, whatsapp: undefined })) });
 
   useEffect(() => {
     if (readCustomerMasterBundle()) return;
@@ -345,15 +369,20 @@ export default function SalesCustomers() {
         const extra = segList.length - 1;
         const rowId = (info.row.original as Customer).id;
         return (
-          <span className="d-inline-flex align-items-center" style={{ gap: 4 }}>
-            <span className="smc-seg">{segList[0]}</span>
+          <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
+            {/* Pill truncates via CSS (.smc-seg); a long name shows the full
+                value on hover (QA #39 / #43). */}
+            {segList[0].length > 18
+              ? <Tooltip label={segList[0]}><span className="smc-seg">{segList[0]}</span></Tooltip>
+              : <span className="smc-seg">{segList[0]}</span>}
             {extra > 0 && (
-              <button
-                type="button"
-                className="smc-seg-more"
-                title="View all segments"
-                onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === rowId ? null : { id: rowId, names: segList, x: b.left, y: b.bottom + 4 }); }}
-              >+{extra}</button>
+              <Tooltip label={`View ${extra} more`}>
+                <button
+                  type="button"
+                  className="smc-seg-more"
+                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === rowId ? null : { id: rowId, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                >+{extra}</button>
+              </Tooltip>
             )}
           </span>
         );
@@ -368,7 +397,7 @@ export default function SalesCustomers() {
         return <TruncatedCell value={name} className="smc-country" max={16} />;
       } },
     { header: 'Contact Person', accessorKey: 'contact', cell: (i: any) => <TruncatedCell value={i.getValue()} className="smc-contact" max={16} /> },
-    { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'center' }, cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
+    { header: 'Contact No',     accessorKey: 'phone',   meta: { align: 'start' }, cell: (i: any) => <span className="smc-mono">{i.getValue() || '—'}</span> },
     /* Email is the ONE column left free to absorb the table's leftover width
        (see SalesCustomers.css). Its caps are raised to match: at 18 chars /
        220px it truncated long before the column ran out, so the width it soaked
@@ -556,6 +585,21 @@ export default function SalesCustomers() {
             />
           </div>
         </div>
+
+        {/* Active filter chips + Clear all — applied filters shown outside the
+            modal, each removable, mirroring the My Workplace filter bar. */}
+        {filterChips.length > 0 && (
+          <div className="smc-filterbar">
+            <span className="smc-filterbar-lbl">Filters:</span>
+            {filterChips.map((chip, i) => (
+              <span key={i} className="smc-filterchip">
+                {chip.label}
+                <button type="button" onClick={chip.onRemove} aria-label={`Remove ${chip.label}`}>×</button>
+              </span>
+            ))}
+            <button type="button" className="smc-filterbar-clear" onClick={() => setFilters({})}>Clear all</button>
+          </div>
+        )}
 
         <div className="smc-table-wrap">
           {(loading && customers.length === 0) || tabSwitching ? (

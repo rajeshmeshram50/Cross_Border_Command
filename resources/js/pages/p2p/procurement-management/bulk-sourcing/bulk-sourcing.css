@@ -279,8 +279,20 @@
 .asrc-ltab.is-active .asrc-ltab-c {
   background: #fff;
 }
-.asrc-pick-txt b,
+/* Product-list name cell — truncates with an ellipsis (full name on hover
+   via Tooltip). */
 .asrc-name {
+  font-weight: 600;
+  color: #0f172a;
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Dropdown option code — inline (NOT block) so the code and name sit on one
+   row, e.g. "P-026: DFGH". */
+.asrc-pick-txt b {
   font-weight: 600;
   color: #0f172a;
 }
@@ -1939,13 +1951,15 @@
   background: rgba(8,145,178,.3);
 }
 .asrc-picker {
-  border: 1.5px solid #e6edf2;
-  border-radius: 13px;
-  background: linear-gradient(180deg,#f7fafc,#f4fbfd);
-  padding: 11px;
+  /* Plain layout container — NO border/background of its own. The visible box is
+     the single `.asrc-pick-search` field; wrapping it in a second bordered box
+     produced a weird nested "double strip" on focus. Chips sit above as pills. */
+  border: none;
+  background: none;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .asrc-pick-chips {
   display: flex;
@@ -2090,10 +2104,16 @@
   background: rgba(34,211,238,.25);
 }
 .asrc-pick-txt {
+  flex: 1;
+  min-width: 0;
   font-size: 12.5px;
   color: #334155;
   font-weight: 500;
   line-height: 1.4;
+  /* Code + name on a single row; a long name truncates with an ellipsis. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .asrc-pick-txt i {
   font-style: normal;
@@ -2285,8 +2305,38 @@
   display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 120px;
   padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;
   text-decoration: none; border: 1px solid transparent; line-height: 1.1; white-space: nowrap;
+  font-family: inherit; cursor: pointer;
 }
 .ast-clarity-chip-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* "+N" more-PDFs pill — opens the download/view/delete popover. */
+.ast-clarity-more {
+  flex-shrink: 0; cursor: pointer; font-size: 11px; font-weight: 700; line-height: 1.1;
+  padding: 3px 8px; border-radius: 999px;
+  color: #0e7490; background: #ecfeff; border: 1px solid #a5f3fc;
+}
+.ast-clarity-more:hover { background: #cffafe; border-color: #67e8f9; }
+[data-bs-theme="dark"] .ast-clarity-more { color: #67e8f9; background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.3); }
+/* Popover per-PDF action buttons (Download / View / Delete). */
+.ast-clarity-pop-act {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex-shrink: 0; border-radius: 7px; cursor: pointer;
+  border: 1px solid transparent; text-decoration: none; transition: all .13s;
+}
+.ast-clarity-pop-act.dl   { color: #0891b2; background: #ecfeff; border-color: #a5f3fc; }
+.ast-clarity-pop-act.dl:hover { background: #cffafe; }
+.ast-clarity-pop-act.view { color: #475569; background: #f1f5f9; border-color: #e2e8f0; }
+.ast-clarity-pop-act.view:hover { background: #e2e8f0; }
+.ast-clarity-pop-act.del  { color: #ef4444; background: #fef2f2; border-color: #fecaca; }
+.ast-clarity-pop-act.del:hover { background: #fee2e2; }
+.ast-clarity-pop-update {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; margin-top: 8px; padding: 7px 10px; border-radius: 8px; cursor: pointer;
+  border: none; font-size: 11.5px; font-weight: 800; letter-spacing: .2px;
+  color: #fff; background: linear-gradient(135deg, #0891b2, #0e7490);
+  box-shadow: 0 3px 10px rgba(8,145,178,.28); transition: filter .13s, transform .05s;
+}
+.ast-clarity-pop-update:hover { filter: brightness(1.06); }
+.ast-clarity-pop-update:active { transform: translateY(1px); }
 .ast-clarity-chip.is-pdf  { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
 .ast-clarity-chip.is-pdf:hover { background: #fee2e2; }
 .ast-clarity-chip.is-link { color: #0e7490; background: #ecfeff; border-color: #a5f3fc; }
@@ -2304,7 +2354,9 @@
   display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600;
   color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; cursor: default;
+  font-family: inherit;
 }
+.srpt-viewonly:hover { background: #e7edf4; color: #475569; }
 .ast-pl-del {
   display: flex;
   align-items: center;
@@ -2602,6 +2654,33 @@
   cursor: not-allowed;
   transform: none;
   box-shadow: 0 3px 9px -3px rgba(8,145,178,.4);
+}
+
+/* ── Team picker responsiveness ──────────────────────────────────────────
+   High browser zoom (and small screens) shrink the CSS viewport, which used
+   to leave the fixed-px picker dominating the screen with an oversized
+   search box. Scale the whole popup down as the viewport tightens so it
+   keeps the compact proportions of the 100% design. */
+@media (max-width: 900px) {
+  .astp-pop { max-width: min(360px, 90vw); border-radius: 13px; }
+  .astp-head { padding: 11px 12px; gap: 9px; }
+  .astp-head-ico { width: 27px; height: 27px; border-radius: 8px; }
+  .astp-head-ico svg { width: 14px; height: 14px; }
+  .astp-title { font-size: 12.5px; }
+  .astp-sub { font-size: 9.5px; }
+  .astp-close { width: 22px; height: 22px; border-radius: 6px; }
+  .astp-search { height: 34px; margin: 8px 10px 4px; padding: 0 10px; gap: 7px; border-radius: 8px; }
+  .astp-search input { font-size: 11.5px; }
+  .astp-search svg { width: 12px; height: 12px; }
+  .astp-body { padding: 7px; gap: 3px; }
+  .astp-row { gap: 9px; padding: 7px 9px; border-radius: 9px; }
+  .astp-av { width: 28px; height: 28px; font-size: 11.5px; }
+  .astp-name { font-size: 11.5px; }
+  .astp-role { font-size: 9.5px; }
+  .astp-radio { width: 15px; height: 15px; }
+  .astp-check svg { width: 15px; height: 15px; }
+  .astp-foot { padding: 9px 11px; gap: 8px; }
+  .astp-foot .ast-btn { padding: 7px 13px; font-size: 11px; }
 }
 
 /* clarity popup body */
@@ -3037,6 +3116,18 @@
   font-weight: 500;
   color: #0f172a;
   font-size: 11.5px;
+  /* Long product names truncate with an ellipsis instead of stretching the
+     column; the full name is available on hover via the Tooltip wrapper. */
+  display: block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Manual-entry list (Product List modal) has far fewer columns, so its Product
+   Name column is much wider — let the name use that space before truncating. */
+.srpt-pname-wide {
+  max-width: min(680px, 58vw);
 }
 .srpt-price {
   font-weight: 700;
@@ -3186,6 +3277,12 @@
 /* HSN code — was a hard-coded dark grey, unreadable in dark mode. */
 .srpt-hsncode { font-family: monospace; font-size: 11px; color: #475569; }
 [data-bs-theme="dark"] .srpt-hsncode { color: #94a3b8; }
+.srpt-clarity-pdfs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+}
 .srpt-clarity-link {
   display: inline-flex;
   align-items: center;
@@ -4742,6 +4839,22 @@
 .pl-stat-val.amber { color: #fcd34d; text-shadow: 0 0 14px rgba(252,211,77,.65); }
 
 /* Product Clarity — uploaded PDF row (delete to replace) */
+/* Stack multiple uploaded PDFs + the "add another" control. */
+.ast-pdf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+/* Scroll the uploaded-PDF list after ~3 rows so the popup never grows tall
+   regardless of how many PDFs are attached. Row ≈ 52px + 7px gap. */
+.ast-pdf-files-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 178px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
 .ast-pdf-file {
   display: flex;
   align-items: center;
@@ -4804,6 +4917,30 @@
 [data-bs-theme="dark"] .ast-pdf-del {
   background: rgba(239,68,68,.14);
   border-color: rgba(239,68,68,.3);
+}
+/* Download button — same size as delete, teal instead of red. */
+.ast-pdf-dl {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid #a5f3fc;
+  background: #ecfeff;
+  color: #0891b2;
+  cursor: pointer;
+  transition: all .14s;
+}
+.ast-pdf-dl:hover {
+  background: #cffafe;
+  border-color: #67e8f9;
+}
+[data-bs-theme="dark"] .ast-pdf-dl {
+  background: rgba(34,211,238,.14);
+  border-color: rgba(34,211,238,.3);
+  color: #67e8f9;
 }
 
 /* ============================================================================

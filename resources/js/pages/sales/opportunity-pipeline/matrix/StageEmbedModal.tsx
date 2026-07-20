@@ -58,7 +58,7 @@ const SEM_CSS = `
 @keyframes sem-fade { from { opacity: 0; } to { opacity: 1; } }
 .sem-panel {
   position: relative;
-  width: min(1080px, 96vw); max-height: 92vh;
+  width: min(1240px, 96vw); max-height: 92vh;
   background: #fff; border: 1.5px solid #c4b5fd; border-radius: 16px;
   overflow: hidden;
   display: flex; flex-direction: column;

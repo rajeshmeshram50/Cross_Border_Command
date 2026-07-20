@@ -73,33 +73,15 @@ export type QcRecord = {
   testingParameter: string;
   minAcceptance: string;
   attachmentName: string;  // single attachment filename
-  /** Resolved URL for the attachment (from API's `attachment_url`
-   *  accessor when available, else built via resolveFileUrl).
-   *  Empty when the row has no attachment yet. */
   attachmentUrl?: string;
-  /** Newly picked File object (set by the QC modal's file input)
-   *  — kept in memory until Save uploads it via multipart and the
-   *  server returns the stored attachment_path. */
   attachmentFile?: File | null;
-  /** Existing server-side path. Preserved on edit so the row keeps
-   *  its uploaded file when the user doesn't replace the attachment. */
   attachmentPath?: string;
 };
 
-/* ─── Static option lists ─── */
-// Segments / Haz Class / UOM / HSN / Conditions / Packaging / GST are loaded
-// from the master API at runtime — see the masters loader effect inside the
-// component. These three lists stay local because:
-//   • Haz Type is a binary flag, not a master
-//   • Bottom / Non Bottom is fixed
-//   • QC Names + Vendor List don't have masters yet (TODO)
 const HAZ_TYPES = ['Non-Haz', 'Haz'];
 const BOTTOM_OPTIONS = ['Bottom', 'Non Bottom'];
 const QC_NAMES = ['COA', 'MSDS', 'FSSAI', 'AGMARK', 'ISO 9001', 'ISO 22000', 'HACCP', 'HALAL', 'KOSHER', 'FSSC 22000'];
-/** Vendor option as it lives in the in-memory list backing the
- *  Step-2 dropdown. Loaded from /api/vendors when the wizard reaches
- *  the vendor step, includes both Active and Inactive vendors so the
- *  user can map any vendor the org has on file. */
+
 export type VendorOpt = {
   id: string;
   code: string;
@@ -116,18 +98,12 @@ export type VendorOpt = {
 };
 
 type Tab = 'core' | 'sales' | 'quality';
-
-// Zero-pad the trailing number in a code to 3 digits (e.g. P-4 -> P-004),
-// matching how supplier/product codes are shown across the module.
 const formatCode = (raw: string): string => {
   const m = raw.match(/^(.*?)(\d+)\s*$/);
   if (!m) return raw;
   return `${m[1] || 'S-'}${m[2].padStart(3, '0')}`;
 };
 
-// Supplier codes ALWAYS render with the canonical "S-" prefix (VendorController
-// generates them as S-###). Legacy rows with a different prefix (e.g. V-001) are
-// normalised on display to S-001 so the supplier code is consistent everywhere.
 const formatSupplierCode = (raw: string): string => {
   const m = String(raw ?? '').match(/(\d+)\s*$/);
   return m ? `S-${m[1].padStart(3, '0')}` : String(raw ?? '');
@@ -142,10 +118,6 @@ const today = () => {
 
 const formatDate = (iso: string) => {
   if (!iso) return '';
-  // Accept both bare ISO dates ("2026-05-21") and full timestamps
-  // ("2026-05-21T00:00:00.000000Z") — strip the time portion first so
-  // the day segment doesn't end up "21T00:00:00.000000Z" and produce
-  // the "21T00:00:00.000000Z/05/2026" display glitch.
   const datePart = iso.split('T')[0];
   const [y, m, d] = datePart.split('-');
   if (!y || !m || !d) return iso;
@@ -154,7 +126,6 @@ const formatDate = (iso: string) => {
 
 const parseDmyToIso = (dmy: string): string | null => {
   if (!dmy) return null;
-  // Accept either DD/MM/YYYY (display format) or YYYY-MM-DD (ISO from picker)
   if (/^\d{4}-\d{2}-\d{2}$/.test(dmy)) return dmy;
   const m = dmy.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
@@ -176,19 +147,7 @@ type MasterOpt = { value: string; label: string; extra?: Record<string, unknown>
 
 export default function AddProductModal(props: {
   productId?: number | null;
-  /* Optional pre-loaded product payload. When ProductView opens the
-   * Edit modal on top of itself, it already holds the /products/{id}
-   * response in memory — passing it here lets the modal skip its own
-   * refetch (production network panel showed /products/{id} firing
-   * twice — once for ProductView, once for the modal). The shape is
-   * the raw show() response (data fields + segment_uploads). When
-   * absent, the modal falls back to fetching itself. */
   initialProduct?: any | null;
-  /* Supplier-only mode (the product must already exist): the edit wizard is
-   * hidden and the Mapped Suppliers popup is the whole UI, so ProductView's
-   * "Mapped Suppliers" action drives this same list + Map Supplier form rather
-   * than keeping its own copy of both. Each map / edit / remove auto-saves to
-   * the server instead of waiting for a Save Product click. */
   supplierOnly?: boolean;
   onClose: () => void;
   onSaved: (productId: number, finalised: boolean) => void;
@@ -196,8 +155,6 @@ export default function AddProductModal(props: {
   const { productId: initialId, initialProduct, onClose, onSaved } = props;
   const supplierOnly = props.supplierOnly === true;
   const toast = useToast();
-  // Department gating: Sales can't map suppliers; Purchase has no Sales (Step 2)
-  // stage. Admins / branch users (no department) get the full flow.
   const { user } = useAuth();
   const dept = (user?.department || '').trim().toLowerCase();
   const isSalesDept    = dept === 'sales';
@@ -207,33 +164,15 @@ export default function AddProductModal(props: {
   const [step, setStep] = useState<1 | 2>(1);
   const [tab, setTab] = useState<Tab>('core');
   const [previousOpen, setPreviousOpen] = useState(true);
-
-  /* Add-mode tab-lock — user can only click into tabs they've already
-   * reached via Save & Next. Edit mode unlocks everything immediately
-   * because the full record already exists on the server.
-   *
-   *   On first render reachedTabs already includes every tab when
-   *   `initialId` is set, so Save & Next on Core saves and advances
-   *   instantly without waiting for the prefill fetch to finish.
-   *   Previously the load effect reset step/tab AFTER the await,
-   *   yanking the user back to Core when they'd already advanced. */
   const [reachedTabs, setReachedTabs] = useState<Set<Tab>>(() =>
     new Set<Tab>(initialId ? ['core', 'sales', 'quality'] : ['core'])
   );
   const markTabReached = (t: Tab) => setReachedTabs(prev => new Set(prev).add(t));
   const canSwitchToTab = (t: Tab) => reachedTabs.has(t);
   const [productId, setProductId] = useState<number | null>(initialId ?? null);
-  /* True while the edit-mode prefill is in flight. Disables Save &
-     Next so the user can't fire a save against half-loaded form state
-     and hit spurious validation errors. */
   const [loadingEdit, setLoadingEdit] = useState<boolean>(!!initialId);
   const [productCodeFromApi, setProductCodeFromApi] = useState<string>('');
   const [saving, setSaving] = useState(false);
-  /**
-   * Per-field validation errors keyed by field name. Each saver populates
-   * this on validation failure; the matching `Field` shows a red border +
-   * inline "ri-error-warning" message. Typing in a field clears its entry.
-   */
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const clearFieldError = (k: string) => {
     setFieldErrors(prev => {
@@ -243,12 +182,6 @@ export default function AddProductModal(props: {
       return next;
     });
   };
-
-  /* Product/Generic name input filter. Allows letters, digits, spaces, and
-   * the punctuation that legitimately appears in product names
-   * (e.g. "Vitamin B-12", "Pen & Pencil", "Acid 5%", "Item (Large)", "A/B Type").
-   * Disallowed characters are silently stripped, and the field surfaces an
-   * inline error so the user understands why their keystroke didn't land. */
   const PRODUCT_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
   const handleProductNameChange = (
     raw: string,
@@ -267,14 +200,7 @@ export default function AddProductModal(props: {
     }
   };
 
-  /* Printable Description sanitiser. Defends against the two payload classes
-   * a security review flagged:
-   *   • XSS — strip every `<` / `>` so no HTML tag can survive (kills
-   *     `<script>alert(1)</script>`, `<img onerror=…>`, etc.)
-   *   • SQL injection — block common attack signatures (`' OR 1=1 --`,
-   *     `; DROP …`, `UNION SELECT …`, `javascript:`, inline event handlers)
-   * No length cap — the Printable Description is intentionally unlimited
-   * (backend column is TEXT). Only the security scrubbing below is applied. */
+ 
   const HAS_ANGLE_BRACKET_RE = /[<>]/;
   const SQL_INJECTION_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i;
   const handleDescriptionChange = (raw: string) => {
@@ -295,12 +221,6 @@ export default function AddProductModal(props: {
       clearFieldError('description');
     }
   };
-
-  /* Confidential Info uses the same defence layer as the printable
-   * description — strip every `<` / `>` (kills any HTML/script tag) and
-   * scrub the SQL-injection signatures, then cap at 2000 chars. Stays
-   * silent in the UI (no inline error) because the field is optional
-   * and the audit wanted the payload neutralised, not flagged. */
   const CONFIDENTIAL_MAX = 2000;
   const handleConfidentialChange = (raw: string) => {
     let cleaned = raw.replace(/[<>]/g, '');
@@ -309,10 +229,7 @@ export default function AddProductModal(props: {
     setConfidential(cleaned);
   };
 
-  /* Inventory tracking fields (Batch / Serial / CAT / LOT) are numeric-only
-   * per the security review — strip anything non-digit on input so paste of
-   * "BATCH-2024-A1" auto-corrects to "20241". 20-char cap mirrors the column
-   * widths and stops paragraph-length pastes. */
+  
   const TRACKING_MAX = 20;
   const handleNumericTrackingChange = (
     raw: string,
@@ -322,13 +239,7 @@ export default function AddProductModal(props: {
     setter(digitsOnly);
   };
 
-  /* ─── Master Quick-Add state ───────────────────────────────────────
-   * The `+` button next to a master-backed field sets this to the
-   * master slug; the MasterQuickAddPopup component renders the right
-   * form for that slug and POSTs to /api/master/{slug}. On save the
-   * new row is appended to the right opt* list and selected on the
-   * field that triggered the popup.
-   * ──────────────────────────────────────────────────────────── */
+  
   type MasterSlug = 'segments' | 'haz_class' | 'uom' | 'hsn_codes' | 'conditions' | 'packaging_material' | 'gst_percentage';
   const [quickAdd, setQuickAdd] = useState<MasterSlug | null>(null);
 
@@ -340,10 +251,6 @@ export default function AddProductModal(props: {
   const [optConditions, setOptConditions] = useState<MasterOpt[]>([]);
   const [optPackaging, setOptPackaging] = useState<MasterOpt[]>([]);
   const [optGst, setOptGst] = useState<MasterOpt[]>([]);
-  /* True until the parallel master fetches (segments, haz_class, uom, hsn,
-   * conditions, packaging, gst, vendors) resolve. While true, the form body
-   * renders a shimmer skeleton so the user sees structure instead of empty
-   * dropdowns — important because the 8 calls can take 1-2s on cold load. */
   const [mastersLoading, setMastersLoading] = useState<boolean>(true);
 
   /* ─── Step 1: Core ─── */
@@ -359,33 +266,12 @@ export default function AddProductModal(props: {
   const [conditionId, setConditionId] = useState('');
   const [packagingMaterialId, setPackagingMaterialId] = useState('');
   const [confidential, setConfidential] = useState('');
-
-  /* ─── Image state ─────────────────────────────────────────────────
-   * `primaryImagePath`  — server-stored disk path (null when never saved
-   *                       or freshly cleared).
-   * `primaryImageFile`  — newly picked File pending upload. When set, it
-   *                       overrides the stored path on next save.
-   * Secondary images follow the same kept-paths + new-files split.
-   * Preview URLs are derived: `URL.createObjectURL(file)` for pending
-   * files, `resolveFileUrl(path)` for already-uploaded paths.
-   * ──────────────────────────────────────────────────────────────── */
   const [primaryImagePath, setPrimaryImagePath] = useState<string | null>(null);
   const [primaryImageFile, setPrimaryImageFile] = useState<File | null>(null);
   const [secondaryImagePaths, setSecondaryImagePaths] = useState<string[]>([]);
   const [secondaryImageFiles, setSecondaryImageFiles] = useState<File[]>([]);
-
-  /* Display URLs for already-uploaded images. The backend ships these
-     ready-to-render (Product::primary_image_url + secondary_images_url
-     accessors) so the frontend doesn't have to guess at storage layout
-     — `resolveFileUrl` was returning broken paths for some prod
-     configurations. Paths stay separate because the save round-trip
-     uses raw `primary_image` / `secondary_images[]` keys. */
   const [primaryImageUrl, setPrimaryImageUrl]     = useState<string | null>(null);
   const [secondaryImageUrls, setSecondaryImageUrls] = useState<string[]>([]);
-
-  /* Product-level attachment — a single supporting document / certificate,
-     shown in its own "PRODUCT ATTACHMENT" card. Sent with the Core save;
-     an already-stored path is kept on edit-load. */
   const [prodAttachmentFile, setProdAttachmentFile] = useState<File | null>(null);
   const [prodAttachmentPath, setProdAttachmentPath] = useState<string | null>(null);
   const [prodAttachmentUrl,  setProdAttachmentUrl]  = useState<string | null>(null);
@@ -400,10 +286,6 @@ export default function AddProductModal(props: {
   const attachmentPreview = prodAttachmentFile
     ? URL.createObjectURL(prodAttachmentFile)
     : (prodAttachmentUrl || (prodAttachmentPath ? resolveFileUrl(prodAttachmentPath) : ''));
-  /* Display name for the attachment chip — the picked file's name, else the
-     stored path's basename (stripping the `{rand}__` upload prefix, like QC).
-     The card can hold ANY file type (PDF / Word / image / etc.), so we show
-     this label with a generic file icon instead of an image thumbnail. */
   const attachmentName = (() => {
     if (prodAttachmentFile) return prodAttachmentFile.name;
     const src = prodAttachmentPath || prodAttachmentUrl || '';
@@ -419,22 +301,11 @@ export default function AddProductModal(props: {
   const [markBottom, setMarkBottom] = useState('');
 
   const basePriceNum = parseFloat(basePrice) || 0;
-  // Pull the percentage value out of the selected GST master row for the
-  // amount calculation. `extra.percentage` carries the numeric column from
-  // the master response shape; fall back to 0 when nothing is picked yet.
   const gstPctNum = useMemo(() => {
     const row = optGst.find(o => o.value === gstId);
     return parseFloat(String(row?.extra?.percentage ?? '0')) || 0;
   }, [optGst, gstId]);
-  /* Cap GST % display to 2 decimal places — backend ships values like
-     40.0000 / 5.000 which look noisy on the UI. Two decimals match
-     the convention used everywhere else (vendor pricing, ProductView
-     vendor table) and are enough resolution for any practical rate. */
   const gstPctStr = gstPctNum ? `${gstPctNum.toFixed(2)}%` : '';
-  /* A supplier can only be mapped once the product carries a GST % (set in the
-     Sales Config step). The vendor mapping inherits that rate to compute its
-     GST amount + total, so with no rate the mapping would be incomplete — the
-     Map Supplier flow is blocked until a GST % exists. */
   const canMapSupplier = gstPctNum > 0;
   const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
   const totalPrice = +(basePriceNum + gstAmt).toFixed(2);
@@ -445,7 +316,6 @@ export default function AddProductModal(props: {
   const [length,      setLength]      = useState<string>('');
   const [width,       setWidth]       = useState<string>('');
   const [height,      setHeight]      = useState<string>('');
-  /* Inventory tracking — optional fields under the Quality tab. */
   const [batchNo,  setBatchNo]  = useState<string>('');
   const [serialNo, setSerialNo] = useState<string>('');
   const [catNo,    setCatNo]    = useState<string>('');
@@ -457,30 +327,12 @@ export default function AddProductModal(props: {
     testingParameter: '', minAcceptance: '', attachmentName: '',
   });
 
-  /* Segment-rule QC reference rows + per-row file uploads.
-   * The Quality & Compliance section is now driven by the segment's
-   * configured rule (DCP → Segment Rules → QC selections) — manual
-   * QC entry has been removed. Each row starts with an Upload action;
-   * once a file is picked, the cell flips to View / Download /
-   * Re-upload. Key shape for uploads: `qc::${doc.code}`. */
   type SegDocRow = { id:number; code:string; name:string; authority?:string|null; expiry?:string|null; requirement:'M'|'O' };
   const [segmentQcDocs, setSegmentQcDocs] = useState<SegDocRow[]>([]);
   type SegRefUpload = { file: File | null; url: string; name: string };
   const [qcRefUploads, setQcRefUploads] = useState<Record<string, SegRefUpload>>({});
 
-  /* Stash for the segment_uploads array that now arrives bundled with
-   * the /products/{id} response. Hydrated into qcRefUploads by an
-   * effect declared AFTER the segment-rules useEffect, so the wipe
-   * inside segment-rules runs first and doesn't nuke our entries.
-   * See the wipe-split comment below for the race rationale. */
   const [bundledQcUploads, setBundledQcUploads] = useState<any[] | null>(null);
-
-  /* Persist a QC reference upload to /segment-uploads/product/{id} so
-   * the file actually lands in the segment_doc_uploads table (same
-   * pipeline customer/consignee/supplier forms use). Without this the
-   * file would only live in browser memory as a blob URL and disappear
-   * on close. Bails out silently before the product has been saved
-   * (no id to scope the upload to). */
   const persistQcRefUpload = async (refKey: string, file: File, docName: string) => {
     if (!productId) {
       toast.error('Save first', 'Save the product before attaching QC documents.');
@@ -514,42 +366,19 @@ export default function AddProductModal(props: {
       toast.error('Upload failed', err?.response?.data?.message ?? 'Could not save the QC document.');
     }
   };
-
-  /* qcRefUploads hydration moved INLINE into the main edit-mode hydration
-   * effect below (search for `root.segment_uploads`). ProductController::show()
-   * now bundles this data so we no longer need a separate
-   * /segment-uploads/product/{id}?category=qc round-trip on modal open.
-   * Same pattern shipped for Customer / Consignee / Vendor.
-   *
-   * Like the Vendor variant, the actual apply-to-state happens in a
-   * downstream useEffect declared AFTER the segment-rules useEffect so
-   * the wipe-on-segment-change can't nuke our entries. See the comment
-   * in that effect for the race rationale. */
-
-  /* ─── Step 2: Vendor ─── */
   const [vendors, setVendors] = useState<VendorEntry[]>([]);
   const [vendorDraftOpen, setVendorDraftOpen] = useState(false);
-  /* The supplier-mapping UI now opens as a compact popup (from the header
-     "Map Supplier" button) instead of a full wizard step. */
   const [supplierPopupOpen, setSupplierPopupOpen] = useState(false);
-  /* "Map GST (%)" popup (header GST button) — pick a rate from the master;
-     the "+" opens the "GST (%) Master" popup to add/remove rates. */
   const [gstMapOpen, setGstMapOpen] = useState(false);
   const [gstMapValue, setGstMapValue] = useState('');
   const [gstMasterOpen, setGstMasterOpen] = useState(false);
   const [newGstRate, setNewGstRate] = useState('');
   const [gstBusy, setGstBusy] = useState(false);
-  /* Vendors loaded from /api/vendors. Both Active and Inactive show
-     up — the user may map either, since a draft vendor still needs
-     its products linked before the vendor itself can flip to Active. */
   const [vendorOpts, setVendorOpts] = useState<VendorOpt[]>([]);
   const [vendorSelectedCode, setVendorSelectedCode] = useState('');
   const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
   const [vendorGstPct, setVendorGstPct] = useState<string>('');
   const [vendorRemarks, setVendorRemarks] = useState('');
-  /* When set, the Map Vendor draft is in EDIT mode for this row.id —
-   * saveVendorDraft updates that row instead of appending a new one,
-   * and the draft form's heading + button labels flip accordingly. */
   const [vendorEditingId, setVendorEditingId] = useState<string | null>(null);
 
   const vendorSelected = useMemo(
@@ -557,39 +386,18 @@ export default function AddProductModal(props: {
     [vendorOpts, vendorSelectedCode]
   );
   const vendorPp   = parseFloat(vendorPurchasePrice) || 0;
-  // Vendor GST% is locked to the product's own GST% (set in the
-  // Sales Config step). Mapping a vendor must not introduce a
-  // different tax rate than the product itself, so the picker is
-  // gone and the calc just reads gstPctNum directly. The legacy
-  // `vendorGstPct` state still exists for backward compat with
-  // edit-mode prefill but no longer feeds the math.
   const vendorGp   = gstPctNum;
   const vendorGsta = +(vendorPp * (vendorGp / 100)).toFixed(2);
   const vendorTota = +(vendorPp + vendorGsta).toFixed(2);
 
-  // Use the server-generated code once it exists; until then derive a
-  // throwaway placeholder so the summary strip has something to show.
   const productCode = productCodeFromApi || (name ? 'P-NEW' : '');
 
   // Look up a master row's display label from its id — used by the
   // previous-stages summary and the QC popup's product header.
   const labelOf = (opts: MasterOpt[], id: string, fallback = '—') =>
     opts.find(o => o.value === id)?.label || fallback;
-
-  /* Per-file image cap — keeps the multipart payload well under PHP's
-     post_max_size (typically 8 MB by default) so the server doesn't
-     reject the request with PostTooLargeException. Mirrors the
-     `max:2048` rule on ProductController::storeCore. */
   const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
-  /* Product primary & secondary images are PNG/JPG ONLY — PDFs and every
-     other format are rejected. Accept the common JPEG extension variants
-     too — Windows/Chrome routinely save JPEGs as `.jfif` (and occasionally
-     `.jpe`/`.pjpeg`), which are the same image/jpeg bytes the server already
-     accepts. Without these a user picking a valid JPEG was wrongly told
-     "unsupported file type". */
   const ALLOWED_IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.jfif', '.jpe', '.pjpeg'];
-  /* Allowed image MIME types — used as a fallback so a JPEG with an unusual
-     extension still passes on its content type. */
   const ALLOWED_IMAGE_MIMES = /^image\/(png|jpeg|pjpeg)$/i;
   /* Shared 2 MB size gate (matches `max:2048` on storeCore). */
   const validateFileSize = (file: File): boolean => {
@@ -598,12 +406,6 @@ export default function AddProductModal(props: {
     toast.error('File too large', `${file.name} is ${mb} MB — each file must be 2 MB or smaller.`);
     return false;
   };
-  /* Two-stage validation on picked product IMAGES (primary/secondary):
-       1. extension OR mime → only PNG or JPG/JPEG allowed (PDF rejected)
-       2. size → 2 MB cap
-     We accept the file when EITHER the extension matches OR the browser-
-     reported MIME type matches — a JPEG saved as `.jfif` fails the extension
-     test but carries image/jpeg (MIME covers that). */
   const validateImageFile = (file: File): boolean => {
     const lowerName = file.name.toLowerCase();
     const okExt  = ALLOWED_IMAGE_EXTS.some(ext => lowerName.endsWith(ext));
@@ -614,11 +416,6 @@ export default function AddProductModal(props: {
     }
     return validateFileSize(file);
   };
-  /* Product attachment — supported formats only: PDF, Word (doc/docx) and
-     images (PNG/JPG/GIF/WebP). Excel/PPT/CSV/TXT are rejected (bug: Excel was
-     silently accepted). Accept when EITHER the extension OR the browser MIME
-     matches, then apply the size gate — the `accept` attr alone is bypassable
-     via drag-drop / "All files". */
   const ALLOWED_ATTACH_EXTS = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.gif', '.webp'];
   const ALLOWED_ATTACH_MIMES = /^(application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|image\/(png|jpe?g|gif|webp))$/;
   const validateAttachmentFile = (file: File): boolean => {
@@ -643,17 +440,9 @@ export default function AddProductModal(props: {
 
   const onSecondaryUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []).filter(validateImageFile);
-    // Reset the input so the user can re-pick the same oversize file
-    // after shrinking it without the browser silently swallowing the change.
     e.target.value = '';
     if (files.length) setSecondaryImageFiles(prev => [...prev, ...files]);
   };
-
-  /**
-   * Remove secondary preview at flat index `i` where the array is
-   * `[...paths, ...files]`. We splice from whichever underlying array the
-   * index lands in.
-   */
   const removeSecondary = (i: number) => {
     if (i < secondaryImagePaths.length) {
       // Path-backed slot — drop the path AND its parallel display URL.
@@ -712,24 +501,8 @@ export default function AddProductModal(props: {
   };
   const removeQc = (id: number) =>
     setQcRecords(prev => prev.filter(q => q.id !== id));
-
-  /* QC delete confirmation — same DeleteConfirmModal used by Clients /
-     HR Employees / the Products list. Holds the row pending user
-     confirmation; backdrop click and Esc respect `qcDeleting` so the
-     user can't cancel mid-action. */
-  const [qcDeleteTarget, setQcDeleteTarget] = useState<QcRecord | null>(null);
-  /* Two-stage delete for mapped vendors — clicking the row's
-     delete icon stages the entry; DeleteConfirmModal hits the
-     actual remove on confirm. Mirrors the QC delete flow. */
-  const [vendorDeleteTarget, setVendorDeleteTarget] = useState<VendorEntry | null>(null);
-  // Drives the confirm dialog's spinner while the unmap write is in flight
-  // (supplier-only mode saves immediately, so the click has real latency).
-  const [vendorDeleting, setVendorDeleting] = useState(false);
-
-  /* Edit-mode for an existing QC row: opens the same QcAddPopup
-     pre-filled with the row's data. On save we update the existing
-     entry instead of appending a new one. */
-  const [qcEditingId, setQcEditingId] = useState<number | null>(null);
+ const [qcDeleteTarget, setQcDeleteTarget] = useState<QcRecord | null>(null);
+ const [qcEditingId, setQcEditingId] = useState<number | null>(null);
 
   const openQcViewer = (q: QcRecord) => {
     if (q.attachmentUrl) viewFile(q.attachmentUrl);
@@ -744,11 +517,7 @@ export default function AddProductModal(props: {
     setQcEditingId(q.id);
     setQcModalOpen(true);
   };
-
-  /* QC table action button — matches the outline-pill style used in the
-     Clients list (Clients.tsx#L131) so the visual language stays
-     consistent across the app. Inline so the modal stays a single file. */
-  const QcActionBtn = ({
+ const QcActionBtn = ({
     title, icon, color, onClick, disabled,
   }: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) => (
     <Tooltip label={title}>
@@ -782,12 +551,7 @@ export default function AddProductModal(props: {
       </button>
     </Tooltip>
   );
-
-  /* Vendor-mapping Remarks bounds. The field is optional, but once the user
-   * types into it the value must sit within [min, max] characters so a stray
-   * keypress isn't saved as a "remark" and an unbounded essay can't be pasted
-   * in. Max is also enforced as a hard `maxLength` on the textarea. */
-  const REMARKS_MIN = 3;
+ const REMARKS_MIN = 3;
   const REMARKS_MAX = 250;
   const vendorRemarksError = (val: string): string | undefined => {
     const t = val.trim();
@@ -1011,17 +775,6 @@ export default function AddProductModal(props: {
     } finally {
       setGstBusy(false);
     }
-  };
-
-  const removeVendor = async (id: string): Promise<boolean> => {
-    const target = vendors.find(v => v.id === id);
-    return commitVendorList(
-      vendors.filter(v => v.id !== id),
-      'Supplier removed',
-      persistsImmediately
-        ? `${target?.vendorName ?? 'The supplier'} has been unmapped from this product.`
-        : `${target?.vendorName ?? 'The supplier'} removed — save the product to apply it.`,
-    );
   };
 
   // Lock the page scroll so the modal feels like a true overlay rather
@@ -2502,9 +2255,8 @@ export default function AddProductModal(props: {
                               <button type="button" className="apm-sup-edit" title="Edit supplier" aria-label="Edit supplier" disabled={saving} onClick={() => openVendorEdit(v)}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                               </button>
-                              <button type="button" className="apm-sup-del" title="Remove supplier" aria-label="Remove supplier" disabled={saving} onClick={() => setVendorDeleteTarget(v)}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                              </button>
+                              {/* Delete removed by design (QA): a mapped supplier can be
+                                  edited but not unmapped from this table. */}
                             </div>
                           </td>
                         </tr>
@@ -2613,28 +2365,6 @@ export default function AddProductModal(props: {
         onConfirm={() => {
           if (qcDeleteTarget) removeQc(qcDeleteTarget.id);
           setQcDeleteTarget(null);
-        }}
-      />
-
-      <DeleteConfirmModal
-        open={vendorDeleteTarget !== null}
-        itemName={vendorDeleteTarget?.vendorName}
-        title="Remove Mapped Supplier"
-        subMessage={persistsImmediately
-          ? 'This unmaps the supplier from the product and saves immediately.'
-          : 'This unmaps the supplier from the product on this form. The product must be saved (Save Product) for the change to persist on the server.'}
-        loading={vendorDeleting}
-        confirmLabel="Remove"
-        confirmingLabel="Removing..."
-        onClose={() => { if (!vendorDeleting) setVendorDeleteTarget(null); }}
-        onConfirm={async () => {
-          if (!vendorDeleteTarget || vendorDeleting) return;
-          setVendorDeleting(true);
-          const ok = await removeVendor(vendorDeleteTarget.id);
-          setVendorDeleting(false);
-          // Stay open on failure — the error toast explains why, and the user
-          // can retry without hunting for the row again.
-          if (ok) setVendorDeleteTarget(null);
         }}
       />
 
@@ -3507,8 +3237,6 @@ function MasterQuickAddPopup(props: {
         return;
       }
       if (f.name === 'description') {
-        // HSN/SAC commodity descriptions — allow the punctuation real
-        // descriptions use (incl. em/en dash), block everything else.
         if (!/^[A-Za-z0-9\s\-—–.,()&/'%]+$/.test(raw)) {
           errs[f.name] = "Description may only contain letters, numbers, spaces, and . , - ( ) & / ' %";
         }
@@ -3550,10 +3278,6 @@ function MasterQuickAddPopup(props: {
   };
 
   return createPortal((
-    /* Backdrop click intentionally does NOT close the popup — the
-       user is mid-edit on a master record and an accidental outside
-       click would wipe their input. The only dismissal paths are the
-       header ✕ button and the footer Cancel. */
     <div className="apm-qa-backdrop">
       <div className="apm-qa-popup">
         <div className="apm-qa-head">
@@ -3609,7 +3333,3 @@ function QcProd(props: { label: string; value: string; accent?: boolean }) {
     </div>
   );
 }
-
-/* ──────────────────────────────────────────────────────────────────────────
- * Scoped CSS — light + dark mode
- * ────────────────────────────────────────────────────────────────────── */

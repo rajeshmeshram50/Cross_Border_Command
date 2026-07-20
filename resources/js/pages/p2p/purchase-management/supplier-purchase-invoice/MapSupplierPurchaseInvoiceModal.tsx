@@ -184,7 +184,7 @@ export default function MapSupplierPurchaseInvoiceModal({
                   value={supplierId}
                   placeholder={supPlaceholder}
                   disabled={supState === 'loading'}
-                  options={suppliers.map(s => ({ value: String(s.id), label: s.code ? `${s.code} — ${s.name}` : s.name }))}
+                  options={suppliers.slice().sort((a, b) => (parseInt(String(b.code).replace(/\D/g, ''), 10) || 0) - (parseInt(String(a.code).replace(/\D/g, ''), 10) || 0)).map(s => ({ value: String(s.id), label: s.code ? `${s.code} — ${s.name}` : s.name }))}
                   onChange={setSupplierId}
                 />
                 {supState === 'error' && (
@@ -243,7 +243,14 @@ function ModalSelect({ value, options, onChange, placeholder, disabled }: {
       if (btnRef.current && !btnRef.current.contains(t) && !t.closest?.('.spi-mdl-dd-pop')) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    const close = () => setOpen(false);
+    // A scroll INSIDE the dropdown's own option list must not close it — else
+    // the list snaps shut the moment you wheel-scroll it (no smooth scrolling).
+    // Only scrolls in an ancestor (the modal / page) should dismiss the menu.
+    const close = (e?: Event) => {
+      const el = e && e.target instanceof Element ? e.target : null;
+      if (el && el.closest('.spi-mdl-dd-pop')) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     window.addEventListener('resize', close);

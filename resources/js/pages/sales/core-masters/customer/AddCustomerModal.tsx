@@ -274,16 +274,72 @@ function isDomesticCountry(country?: string): boolean {
   return (country ?? '').trim() === DOMESTIC_COUNTRY;
 }
 
+/* PIN / ZIP rules, copied verbatim from the shipment module
+ * (CreateShipmentOrderModal + ShipmentOrderController) so the same address
+ * means the same thing in both places: India → exactly 6 digits; every other
+ * country → letters/digits plus spaces and hyphens (UK "SL7 1TB", Canada
+ * "K1A 0B1"), capped at 12. Replaces the previous single 3–10 alphanumeric
+ * rule, which accepted a 5-digit Indian PIN and rejected spaced foreign codes.
+ *
+ * Label, maxLength and sanitiser all branch on country too — keep the four
+ * helpers together so a future rule change can't update one and miss another. */
+const PIN_DOMESTIC_RE = /^[0-9]{6}$/;
+const ZIP_INTL_RE = /^[A-Za-z0-9\s\-]+$/;
+
+const pinLabel = (country?: string) => (isDomesticCountry(country) ? 'PIN Code' : 'Zip Code');
+const pinMaxLen = (country?: string) => (isDomesticCountry(country) ? 6 : 12);
+const pinPlaceholder = (country?: string) =>
+  isDomesticCountry(country) ? 'Enter 6-digit PIN code' : 'Enter zip code';
+
+/* Both branches strip at the keystroke so a character that can never be valid
+ * simply doesn't appear — the user never types "745223@@@@" and then reads an
+ * error about it. Domestic keeps digits only; international also keeps spaces
+ * and hyphens, which are legitimate in foreign codes ("SL7 1TB", "K1A 0B1").
+ * (The shipment module passes international input through untouched; this is
+ * the one place we deliberately tighten its rule.) */
+const pinSanitize = (v: string, country?: string) =>
+  isDomesticCountry(country)
+    ? v.replace(/\D/g, '').slice(0, 6)
+    : v.replace(/[^A-Za-z0-9\s\-]/g, '').slice(0, 12);
+
+function pinError(v: string, country?: string): string | undefined {
+  const s = (v ?? '').trim();
+  const domestic = isDomesticCountry(country);
+  if (!s) return domestic ? 'PIN Code is required' : 'Zip Code is required';
+  if (domestic) {
+    return PIN_DOMESTIC_RE.test(s) ? undefined : 'PIN Code must be exactly 6 digits';
+  }
+  if (s.length > 12) return 'Zip Code must be 12 characters or fewer';
+  return ZIP_INTL_RE.test(s)
+    ? undefined
+    : 'Zip Code can contain only letters, digits, spaces and hyphens';
+}
+
+/* Payload normaliser: anything that fails the country's rule is sent as null
+ * rather than as a bad string. The backend column is nullable, so a legacy or
+ * partial value lands empty and the user fixes it on the next edit instead of
+ * the save 422-ing on a field they never touched. */
+const cleanPinFor = (v: any, country?: string): string | null => {
+  const s = String(v ?? '').trim();
+  return s && !pinError(s, country) ? s : null;
+};
+
 /* Only 86 of the 249 countries in the master have states; the other 163
  * (Afghanistan, Croatia, Haiti …) have none at all.
  *
- * State was unconditionally required, so for those 163 the field sat empty,
- * red and unsatisfiable — there was no option to pick, which made the customer
- * impossible to save. The backend has always treated primary_address.state as
- * nullable, so the form was the only thing blocking; this realigns it.
+ * State is required for EVERY country — an address without one is incomplete
+ * wherever it is. It was briefly required only where the master happened to
+ * offer states, which made the same field mandatory for an Indian customer and
+ * ignorable for an Afghan one.
  *
- * Required-ness therefore follows the DATA: demand a state only where the
- * master actually offers one. */
+ * The consequence is deliberate: a country whose states aren't seeded yet
+ * CANNOT have a customer saved against it until someone adds them under
+ * Master → States. States are master data, not free text, so the control stays
+ * a dropdown and the placeholder says where to go instead of showing an empty
+ * list with no explanation.
+ *
+ * This helper no longer drives required-ness — only the placeholder and the
+ * disabled state, since there is genuinely nothing to open when it's empty. */
 function countryHasStates(masters: MasterLists, country?: string): boolean {
   const name = (country ?? '').trim();
   if (!name) return false;
@@ -295,7 +351,7 @@ function countryHasStates(masters: MasterLists, country?: string): boolean {
  * it pinpoints the first segment that's wrong in plain language so the
  * user understands the structure (2 digits → 5 letters → 4 digits → …).
  * Returns undefined when valid. Input is already uppercase-alphanumeric. */
-function gstNumberError(v: string): string | undefined {
+function gstNumberError(v: string, stateCode?: string): string | undefined {
   if (!v.trim()) return 'GST Number is required';
   if (v.length !== 15) return `GST Number must be 15 characters (you've entered ${v.length}). Format: 2 digits, 5 letters, 4 digits, 1 letter, 1 digit/letter, Z, 1 digit/letter — e.g. 27AADCI6120M1ZH`;
   if (!/^[0-9]{2}/.test(v)) return 'First 2 characters must be digits (state code) — e.g. 27';
@@ -305,6 +361,12 @@ function gstNumberError(v: string): string | undefined {
   if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]/.test(v)) return 'Character 13 (entity code) must be a digit or letter';
   if (v[13] !== 'Z') return 'Character 14 must be the letter Z';
   if (!GSTIN_RE.test(v)) return 'Character 15 (checksum) must be a digit or letter';
+  /* The GSTIN's first 2 digits ARE the state code, so they must match the
+   * selected State. Only checked once a state is picked (state code known). */
+  const sc = (stateCode ?? '').trim();
+  if (sc && v.slice(0, 2) !== sc) {
+    return `GST state code (${v.slice(0, 2)}) does not match the selected state's code (${sc}). Pick the matching state or correct the GST Number.`;
+  }
   return undefined;
 }
 
@@ -510,6 +572,21 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   const [gstPopupOpen, setGstPopupOpen] = useState(false);
   const gstRowsRef = useRef<GstRow[]>([]);
   useEffect(() => { gstRowsRef.current = gstRows; }, [gstRows]);
+
+  /* QA #41 — the customer's GSTIN is the single source of truth for its GST
+   * Scrutiny rows: on save the backend rewrites every row's gst_number to the
+   * customer's current GSTIN. Mirror that INSTANTLY in the UI so editing the
+   * GST Number in Stage 1 updates the numbers shown in the Scrutiny popup
+   * without a save + reopen. Gate on a complete 15-char GSTIN so half-typed
+   * values don't flicker the rows. */
+  useEffect(() => {
+    const gst = (form.coGstNumber ?? '').trim().toUpperCase();
+    if (gst.length !== 15) return;
+    setGstRows(prev => prev.some(r => r.gst_number !== gst)
+      ? prev.map(r => ({ ...r, gst_number: gst }))
+      : prev);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.coGstNumber]);
 
   const gstBody = (r: { gst_number: string; status: string; last_filing_date: string | null; prev_non_gst_2a_invoice: string | null; red_flags: string | null }) => ({
     gst_number:              r.gst_number,
@@ -847,6 +924,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   // DeleteConfirmModal — same component used by Branches / Clients /
   // Employees so the experience stays consistent across modules.
   const [delModal, setDelModal] = useState<{ open:boolean; id:string|null }>({ open:false, id:null });
+  // Brief spinner on the address/contact delete so the action has visible
+  // feedback (QA follow-up). The removal is client-side (persisted on Save), so
+  // there's no request to await — we show the loader for a short beat.
+  const [delLocBusy, setDelLocBusy] = useState(false);
 
   // Stage 2 — "Add Document / License" popup. Triggered from the
   // Company Due Diligence / Owner KYC / Trade Licence section headers.
@@ -1320,6 +1401,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
   const gotoStage = (s: Stage) => {
     if (s > maxStage) return;
+    /* Same GST gate as goNext(). Needed separately because in EDIT mode
+     * maxStage already starts at 2, so clicking the stepper card jumps to
+     * Stage 2 without ever going through goNext. */
+    if (s === 2 && !gstScrutinyComplete) { promptForGstScrutiny(); return; }
     setStage(s);
     if (s === 1) setTab('identification');
   };
@@ -1370,7 +1455,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         // holding an error would block Save with nothing on screen to fix.
         if (!isDomesticCountry(f.country)) return null;
         // Domestic → GST always applies, so the number is always required.
-        return gstNumberError((f.coGstNumber ?? '').trim()) ?? null;
+        // State code is passed so the GSTIN prefix must match the chosen state.
+        return gstNumberError((f.coGstNumber ?? '').trim(), f.stateCode) ?? null;
       case 'coWeb':
         if (!f.coWeb || !f.coWeb.trim()) return null;
         if (f.coWeb.trim().length > 200) return 'Website must be 200 characters or fewer';
@@ -1393,9 +1479,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         if (!f.country) return 'Select a country';
         return null;
       case 'state':
-        // Required only where the master actually has states to offer —
-        // see countryHasStates().
-        if (countryHasStates(masters, f.country) && !f.state) return 'Select a state';
+        // Required for EVERY country — see the note above countryHasStates().
+        if (!f.state) {
+          return countryHasStates(masters, f.country)
+            ? 'Select a state'
+            : 'No states exist for this country yet — add them under Master → States first';
+        }
         return null;
       case 'city':
         if (!f.city.trim()) return 'City is required';
@@ -1404,9 +1493,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           return 'City can contain only letters, spaces, dots, hyphens and apostrophes';
         return null;
       case 'pin':
-        if (!f.pin.trim()) return 'PIN / Postal code is required';
-        if (!/^\d{6}$/.test(f.pin.trim())) return 'PIN must be exactly 6 digits';
-        return null;
+        // Country decides the rule — see pinError() near the top of the file.
+        return pinError(f.pin, f.country) ?? null;
       case 'cpName':
         if (!f.cpName.trim()) return 'Contact person name is required';
         if (f.cpName.trim().length > 60) return 'Name must be 60 characters or fewer';
@@ -1518,14 +1606,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
   /* Build the POST/PUT payload from the form + locations. Mirrors the
    * shape declared in CustomerController::validatePayload(). */
-  /* Normalize the pin code so the backend's strict `regex:/^\d{6}$/`
-   * rule doesn't trip on legacy / partial values. Anything that isn't
-   * exactly 6 digits arrives as null — the `nullable` rule then lets
-   * it through, and the user fixes it on the next edit. */
-  const cleanPin = (v: any): string | null => {
-    const s = String(v ?? '').trim();
-    return /^\d{6}$/.test(s) ? s : null;
-  };
   const buildPayload = () => ({
     company_name:   form.coName,
     legal_name:     form.coLegal,
@@ -1554,7 +1634,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       state:          form.state,
       state_code:     form.stateCode || null,
       city:           form.city,
-      pin:            cleanPin(form.pin),
+      pin:            cleanPinFor(form.pin, form.country),
       cp_name:        form.cpName,
       cp_designation: form.cpDesig,
       cp_contact:     form.cpTel,
@@ -1567,7 +1647,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       country:        l.country,
       state:          l.state,
       city:           l.city,
-      pin:            cleanPin(l.pin),
+      pin:            cleanPinFor(l.pin, l.country),
       cp_name:        l.cpName,
       cp_designation: l.cpDesignation,
       cp_contact:     l.cpContact,
@@ -1576,7 +1656,23 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     })),
   });
 
+  /* A domestic customer (GST applies) must have at least one GST Scrutiny
+   * entry. Local entries added in the popup count, so this works for both new
+   * and edit. International customers have no GST, so they always pass. */
+  const gstScrutinyComplete = !isDomesticCountry(form.country) || gstRows.length > 0;
+
+  // Snap back to where the entry is added and open the popup, so the warning
+  // lands the user ON the fix rather than just telling them about it.
+  const promptForGstScrutiny = () => {
+    toast.warning('GST Scrutiny required', 'Add at least one GST Scrutiny entry before moving to KYC / Due Diligence.');
+    setStage(1); setTab('identification'); setGstPopupOpen(true);
+  };
+
   const submitCustomer = async () => {
+    /* Final-submit gate. The Stage 1 → 2 gate in goNext() is the primary one;
+     * this stays as a backstop for edit-mode sessions that open straight on a
+     * later stage and never pass through that boundary. */
+    if (!gstScrutinyComplete) { promptForGstScrutiny(); return; }
     // Synchronous re-entry lock — saving state is async so two
     // rapid clicks could both slip past the check. The ref blocks
     // any second call on the same tick.
@@ -1745,6 +1841,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         setTab('address-contact');
         return;
       }
+      /* GST Scrutiny gate — enforced HERE, at the Stage 1 → 2 boundary,
+       * rather than at final submit. GST is part of the customer's legal
+       * identity, so Stage 1 isn't complete without it; catching it at the
+       * end meant the user filled all of KYC first and only then got sent
+       * back. Domestic only — international customers have no GST. */
+      if (!gstScrutinyComplete) { promptForGstScrutiny(); return; }
       // Leaving Stage 1 entirely → persist so Stage 2 KYC has a target.
       const id = await persistStage1();
       if (!id) return;
@@ -1817,16 +1919,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               <div className="acm-subtitle">{isEdit ? 'Update customer details, KYC, and trade documents.' : 'Capture, verify, and onboard customers with complete compliance and product readiness.'}</div>
             </div>
           </div>
-          {hydrating && (
-            <div className="acm-loading-pill" aria-live="polite">
-              <span className="acm-loading-spinner" aria-hidden>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                  <path d="M12 2a10 10 0 0 1 10 10" />
-                </svg>
-              </span>
-              Loading customer details…
-            </div>
-          )}
+          {/* Header "Loading customer details…" pill removed — the body shimmer
+              already signals loading, so both together was redundant (QA #40). */}
           {/* GST Scrutiny button + close grouped on the right so they sit
               together (the header is justify-content: space-between, which
               would otherwise push them apart). Greyed/disabled until the
@@ -2123,6 +2217,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             disallowedTypes={usedAddressTypes}
             existingEmails={existingEmails}
             existingPhones={existingPhones}
+            primaryCountry={form.country}
             onClose={() => setLocModal({ open:false, editing:null })}
             onSave={(rec) => {
               if (editingId) setLocations(prev => prev.map(l => l.id === editingId ? { ...rec, id: l.id } : l));
@@ -2141,10 +2236,17 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         title="Delete Address & Contact"
         itemName={delModal.id ? (locations.find(l => l.id === delModal.id)?.type || 'this location') : undefined}
         subMessage="This will remove the address and its contact person from this customer. The action cannot be undone."
-        onClose={() => setDelModal({ open:false, id:null })}
+        loading={delLocBusy}
+        onClose={() => { if (!delLocBusy) setDelModal({ open:false, id:null }); }}
         onConfirm={() => {
-          if (delModal.id) setLocations(prev => prev.filter(l => l.id !== delModal.id));
-          setDelModal({ open:false, id:null });
+          if (delLocBusy) return;
+          setDelLocBusy(true);
+          const id = delModal.id;
+          setTimeout(() => {
+            if (id) setLocations(prev => prev.filter(l => l.id !== id));
+            setDelLocBusy(false);
+            setDelModal({ open:false, id:null });
+          }, 450);
         }}
       />
 
@@ -2662,16 +2764,15 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
    * → international → they're hidden. Driven by the Primary Address & Contact
    * Person card's Country, which lives in this same component. */
   const domestic = isDomesticCountry(form.country);
-  /* Whether the chosen country has any states at all — drives State's
-     required-ness, placeholder and disabled state together, so they can't
-     drift apart. */
-  const hasStates = countryHasStates(masters, form.country);
   // States filter against the selected country: look up the country
   // name → its id from the countries master, then filter states by it.
   const selectedCountry = masters.countries.find(c => c.name === form.country);
   const states = selectedCountry
     ? masters.states.filter(s => s.country_id === selectedCountry.id)
     : [];
+  /* Drives the State control's placeholder and disabled state — see
+     countryHasStates(). Mirrors `locHasStates` on the additional-address form. */
+  const hasStates = countryHasStates(masters, form.country);
   // Wraps `setF` so each keystroke runs the per-field validator — the
   // inline red error appears the moment the input is wrong, mirroring
   // the desired UX of the consignee modal.
@@ -2708,7 +2809,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
       // validateField publishes the inline red error for a malformed number
       // (and clears it once valid) via the shared errors map.
       validateField('coGstNumber', { ...form, coGstNumber: gstRaw });
-      if (gstNumberError(gstRaw)) { setGstStatus('invalid'); return; }
+      if (gstNumberError(gstRaw, form.stateCode)) { setGstStatus('invalid'); return; }
       // Well-formed — now ask the server whether this branch already has it.
       api.get('/customers/gst-available', {
         params: { gst_number: gstRaw, ignore_id: currentCustomerId ?? undefined },
@@ -2865,13 +2966,17 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 // behind, or Save would block on an invisible field.
                 if (!isDomesticCountry(v)) clearErr('coGstNumber');
                 validateField('country', nextForm); validateField('state', nextForm);
+                /* PIN and ZIP are different rules, so the code already typed has
+                   to be re-judged against the NEW country — otherwise a valid
+                   "SL7 1TB" stays green after switching to India. */
+                validateField('pin', nextForm);
               }} />
             </Field>
-            {/* `required` tracks the data, not the field: a country the master
-                has no states for (163 of 249) shows no red star and can't be
-                marked invalid — a required-looking field with an empty dropdown
-                is a dead end the user cannot clear. */}
-            <Field label="State" required={hasStates} error={errors.state} fieldKey="state">
+            {/* Required for every country. Where the master has no states for
+                the chosen country (163 of 249) the control stays disabled — there
+                is nothing to open — and the placeholder points at where to add
+                them, so it isn't a silent dead end. */}
+            <Field label="State" required error={errors.state} fieldKey="state">
               <MasterSelect
                 value={form.state}
                 options={(() => {
@@ -2879,7 +2984,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                   if (form.state && !base.some(o => o.value === form.state)) return [{ value: form.state, label: form.state }, ...base];
                   return base;
                 })()}
-                placeholder={!form.country ? 'Select country first' : hasStates ? 'Select state' : 'No states for this country'}
+                placeholder={!form.country ? 'Select country first' : hasStates ? 'Select state' : 'Add states in Master → States'}
                 disabled={!form.country || !hasStates}
                 invalid={!!errors.state}
                 onChange={v => {
@@ -2890,7 +2995,12 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                      id-based). Blank when the master has no code for the state:
                      only 10 of India's 36 are defined today, and non-India states
                      have none at all. */
-                  set('stateCode', masters.stateCodes.find(sc => sc.stateName === v)?.code ?? '');
+                  const newCode = masters.stateCodes.find(sc => sc.stateName === v)?.code ?? '';
+                  set('stateCode', newCode);
+                  /* The GSTIN prefix must match this state, so re-check the GST
+                     field against the NEW code (else a stale error/valid state
+                     lingers after switching state). */
+                  validateField('coGstNumber', { ...form, state: v, stateCode: newCode });
                 }}
               />
             </Field>
@@ -2911,7 +3021,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
           </div>
           <div className="acm-row acm-row-3">
             <Field label="City" required error={errors.city} fieldKey="city"><input className={errors.city ? 'acm-input-error' : ''} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City name" /></Field>
-            <Field label="Pin / Postal Code" required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" maxLength={6} placeholder="6-digit PIN" /></Field>
+            <Field label={pinLabel(form.country)} required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', pinSanitize(e.target.value, form.country))} inputMode={isDomesticCountry(form.country) ? 'numeric' : 'text'} maxLength={pinMaxLen(form.country)} placeholder={pinPlaceholder(form.country)} /></Field>
             {/* Third slot: GST Number for a domestic customer, otherwise Contact
                 Person Name shifted up from the row below. Either way the row is
                 full — GST simply isn't a field an international customer has.
@@ -4461,14 +4571,20 @@ function OwnerDDSubModal({ masters, customerId, editing, onClose, onSaved }:
  * registered office — a customer can only have one). The currently
  * editing row's own type is still shown so existing data isn't hidden
  * from the user mid-edit. */
-function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = [], existingPhones = [], onClose, onSave }:
+function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = [], existingPhones = [], primaryCountry, onClose, onSave }:
   { editing: LocationRow | null; masters: MasterLists; disallowedTypes?: string[];
     /** Emails already used by other addresses (primary + other locations)
      *  on this customer — used to block duplicates within the same form
      *  before the user can save and run into a backend conflict. */
     existingEmails?: string[];
     existingPhones?: string[];
+    /** The customer's PRIMARY address country. A domestic (India) customer's
+     *  extra addresses are India-only (country locked); an international
+     *  customer's extras are international-only (India removed from the list). */
+    primaryCountry?: string;
     onClose: () => void; onSave: (rec: Omit<LocationRow, 'id'>) => void }) {
+  const primaryDomestic = isDomesticCountry(primaryCountry);
+  const primarySet = !!(primaryCountry ?? '').trim();
   const toast = useToast();
   // For new locations, skip the default "Registered Office" prefill if
   // that type is disallowed — otherwise the user lands on a value
@@ -4477,7 +4593,8 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
     ? editing.type
     : (disallowedTypes?.includes(DEFAULT_ADDRESS_TYPE) ? '' : DEFAULT_ADDRESS_TYPE);
   const [d, setD] = useState<Omit<LocationRow, 'id'>>(() => editing ? { ...editing } : {
-    type: initialType, line: '', country: '', state: '', city: '', pin: '',
+    // Domestic customer → extra addresses are India too, so pre-fill + lock it.
+    type: initialType, line: '', country: primaryDomestic ? 'India' : '', state: '', city: '', pin: '',
     cpName: '', cpDesignation: '', cpContact: '', cpEmail: '', cpWhatsapp: 'yes' as 'yes' | 'no' | '',
   });
   // Strip disallowed types, but keep whatever the row currently has
@@ -4507,8 +4624,12 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         if (!dd.country) return 'Select country';
         return null;
       case 'state':
-        // Same rule as the primary address — see countryHasStates().
-        if (countryHasStates(masters, dd.country) && !dd.state) return 'Select state';
+        // Same rule as the primary address — required for every country.
+        if (!dd.state) {
+          return countryHasStates(masters, dd.country)
+            ? 'Select state'
+            : 'No states exist for this country yet — add them under Master → States first';
+        }
         return null;
       case 'city':
         if (!dd.city.trim()) return 'City is required';
@@ -4517,9 +4638,8 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
           return 'City can contain only letters, spaces, dots, hyphens and apostrophes';
         return null;
       case 'pin':
-        if (!dd.pin.trim()) return 'PIN is required';
-        if (!/^\d{6}$/.test(dd.pin.trim())) return 'PIN must be exactly 6 digits';
-        return null;
+        // Same country-driven rule as the primary address — see pinError().
+        return pinError(dd.pin, dd.country) ?? null;
       case 'cpName':
         if (!dd.cpName.trim()) return 'Contact name required';
         return null;
@@ -4618,19 +4738,33 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
               {/* Single setD for country+state — the old `set('country'); set('state','')`
                   pair each rebuilt from a stale `d`, so the 2nd call reverted the
                   country and the State stayed locked (QA: country/state not working). */}
-              <MasterSelect value={d.country} options={optsWith(masters.countries, d.country)} placeholder="Select country" invalid={!!errs.country} onChange={v => {
-                const nd = { ...d, country: v, state: '' } as typeof d;
-                setD(nd);
-                setErrs(prev => {
-                  const next = { ...prev };
-                  const c = locFieldRule('country', nd); if (c) next.country = c; else delete next.country;
-                  const s = locFieldRule('state', nd);   if (s) next.state = s; else delete next.state;
-                  return next;
-                });
-              }} />
+              <MasterSelect
+                value={d.country}
+                /* Domestic customer → India only (locked). International customer
+                   → every country EXCEPT India. No primary yet → all countries. */
+                options={
+                  primaryDomestic
+                    ? masters.countries.filter(c => c.name === 'India').map(c => ({ value: c.name, label: c.name }))
+                    : primarySet
+                      ? optsWith(masters.countries.filter(c => c.name !== 'India'), d.country)
+                      : optsWith(masters.countries, d.country)
+                }
+                disabled={primaryDomestic}
+                placeholder={primaryDomestic ? 'India' : 'Select country'}
+                invalid={!!errs.country}
+                onChange={v => {
+                  const nd = { ...d, country: v, state: '' } as typeof d;
+                  setD(nd);
+                  setErrs(prev => {
+                    const next = { ...prev };
+                    const c = locFieldRule('country', nd); if (c) next.country = c; else delete next.country;
+                    const s = locFieldRule('state', nd);   if (s) next.state = s; else delete next.state;
+                    return next;
+                  });
+                }} />
             </Field>
             {/* Mirrors the primary address — see countryHasStates(). */}
-            <Field label="State" required={locHasStates} error={errs.state}>
+            <Field label="State" required error={errs.state}>
               <MasterSelect
                 value={d.state}
                 options={(() => {
@@ -4638,14 +4772,14 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                   if (d.state && !base.some(o => o.value === d.state)) return [{ value: d.state, label: d.state }, ...base];
                   return base;
                 })()}
-                placeholder={!d.country ? 'Select country first' : locHasStates ? 'Select state' : 'No states for this country'}
+                placeholder={!d.country ? 'Select country first' : locHasStates ? 'Select state' : 'Add states in Master → States'}
                 disabled={!d.country || !locHasStates}
                 invalid={!!errs.state}
                 onChange={v => set('state', v)}
               />
             </Field>
             <Field label="City" required error={errs.city}><input className={errs.city ? 'acm-input-error' : ''} value={d.city} onChange={e => set('city', e.target.value)} placeholder="Enter City" /></Field>
-            <Field label="Pin / Postal Code" required error={errs.pin}><input className={errs.pin ? 'acm-input-error' : ''} value={d.pin} onChange={e => set('pin', e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" maxLength={6} placeholder="6-digit PIN" /></Field>
+            <Field label={pinLabel(d.country)} required error={errs.pin}><input className={errs.pin ? 'acm-input-error' : ''} value={d.pin} onChange={e => set('pin', pinSanitize(e.target.value, d.country))} inputMode={isDomesticCountry(d.country) ? 'numeric' : 'text'} maxLength={pinMaxLen(d.country)} placeholder={pinPlaceholder(d.country)} /></Field>
           </div>
           <div className="acm-row acm-row-4">
             <Field label="Contact Person Name" required error={errs.cpName}><input className={errs.cpName ? 'acm-input-error' : ''} value={d.cpName} onChange={e => set('cpName', e.target.value)} placeholder="Full name" /></Field>
@@ -4723,7 +4857,7 @@ function HistoryStage1({ form, locations, customerId, segments = [] }: { form: a
         <ReadInline label="State"                     value={form.state} />
 
         <ReadInline label="City"                      value={form.city} />
-        <ReadInline label="PIN / Postal Code"         value={form.pin} />
+        <ReadInline label={pinLabel(form.country)}         value={form.pin} />
         <ReadInline label="Contact Person Name"       value={form.cpName} />
         <ReadInline label="Designation"               value={form.cpDesig} />
 
@@ -4945,16 +5079,18 @@ const SCOPED_CSS = `
 .acm-title { font-size: 17px; font-weight: 800; color: #fff; letter-spacing: -.3px; line-height: 1.2; }
 .acm-subtitle { font-size: 12px; color: rgba(255,255,255,0.80); margin-top: 3px; }
 .acm-close {
-  width: 34px; height: 34px; border-radius: 50%;
-  border: 1.5px solid rgba(255,255,255,0.30);
+  /* Square (rounded) to match the project-standard close button, not a circle
+     (QA #32). */
+  width: 34px; height: 34px; border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.25);
   background: rgba(255,255,255,0.12);
   color: #fff;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all .25s;
+  transition: background .15s, transform .12s;
   position: relative; z-index: 1;
 }
-.acm-close:hover { background: rgba(255,255,255,0.28); transform: rotate(90deg); }
+.acm-close:hover { background: rgba(255,255,255,0.22); transform: rotate(90deg); }
 
 /* ── Hydration feedback ───────────────────────────────────────────
  * A small "Loading…" pill in the modal header + an indeterminate

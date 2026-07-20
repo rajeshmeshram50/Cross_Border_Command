@@ -92,14 +92,22 @@ export function MasterMultiSelect({
     update();
     // Resize (maximize/minimize/zoom) reflows the whole layout; the portalled
     // fixed-position menu would otherwise strand away from its trigger. Close
-    // it on resize so it never shows mispositioned — the user reopens it
-    // cleanly at the new size. Keep it attached on scroll of any ancestor.
+    // it on resize so it never shows mispositioned.
     const closeOnResize = () => setOpen(false);
+    /* Close the menu when the PAGE (or any ancestor) scrolls — the portalled
+     * fixed-position menu detaches from its trigger and floats mid-screen
+     * otherwise (QA #30). Scrolling INSIDE the menu's own option list must NOT
+     * close it, so ignore scroll events that originate within .master-select-menu. */
+    const onScroll = (e: Event) => {
+      const t = e.target as Node | null;
+      if (t && t instanceof HTMLElement && t.closest?.('.master-select-menu')) return;
+      setOpen(false);
+    };
     window.addEventListener('resize', closeOnResize);
-    window.addEventListener('scroll', update, true);
+    window.addEventListener('scroll', onScroll, true);
     return () => {
       window.removeEventListener('resize', closeOnResize);
-      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [open]);
 

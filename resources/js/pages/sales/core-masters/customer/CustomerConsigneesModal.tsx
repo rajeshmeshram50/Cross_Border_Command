@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
+import { truncSegment } from '../../../../utils/segmentLabel';
 import AddConsigneeModal, { type ConsigneeRow } from '../consignee/AddConsigneeModal';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { useTheme } from '../../../../contexts/ThemeContext';
@@ -119,11 +120,19 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
     else { setQ(''); setRows([]); setChooseOpen(false); setMapOpen(false); }
   }, [open, fetchRows]);
 
-  // Existing consignees NOT already mapped to this customer AND not
-  // "same as customer" mirrors (a mirror belongs to one customer only).
+  // Domestic (India) customer maps ONLY domestic consignees; an international
+  // customer maps ONLY international ones — a domestic party can't be linked to
+  // an international one (mirrors the India→India / intl→intl mapping rule).
+  const custDomestic = (customer?.country ?? '').trim() === 'India';
+  // Existing consignees NOT already mapped to this customer, not "same as
+  // customer" mirrors, and matching the customer's domestic/international side.
   const mappableConsignees = useMemo(
-    () => allConsignees.filter(c => !c.same_as_customer && !rows.some(r => r.db_id === c.db_id)),
-    [allConsignees, rows],
+    () => allConsignees.filter(c =>
+      !c.same_as_customer
+      && !rows.some(r => r.db_id === c.db_id)
+      && (((c.country ?? '').trim() === 'India') === custDomestic)
+    ),
+    [allConsignees, rows, custDomestic],
   );
 
   const openMapFlow = async () => {
@@ -299,14 +308,15 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                             const extra = segList.length - 1;
                             return (
                               <span className="d-inline-flex align-items-center" style={{ gap: 4 }}>
-                                <span className="ccm-seg">{segList[0]}</span>
+                                <Tooltip label={segList[0]} disabled={segList[0].length <= 14}><span className="ccm-seg">{truncSegment(segList[0])}</span></Tooltip>
                                 {extra > 0 && (
-                                  <button
-                                    type="button"
-                                    className="ccm-seg-more"
-                                    title="View all segments"
-                                    onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === c.id ? null : { id: c.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
-                                  >+{extra}</button>
+                                  <Tooltip label={`View ${extra} more`}>
+                                    <button
+                                      type="button"
+                                      className="ccm-seg-more"
+                                      onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegOpen(prev => prev?.id === c.id ? null : { id: c.id, names: segList, x: b.left, y: b.bottom + 4 }); }}
+                                    >+{extra}</button>
+                                  </Tooltip>
                                 )}
                               </span>
                             );
@@ -439,7 +449,23 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                 value={mapSelectId}
                 onChange={(v) => setMapSelectId(v)}
                 placeholder="Select a consignee to map…"
-                options={mappableConsignees.map(c => ({ value: String(c.db_id), label: `${c.id} — ${c.company}` }))}
+                /* Domestic / International pill on the right of each option —
+                   same convention as the Q/PI party dropdowns. The list is
+                   already filtered to the customer's own side (see
+                   mappableConsignees), so the badge confirms WHY only these
+                   consignees are offered. */
+                options={mappableConsignees.map(c => {
+                  const country = (c.country ?? '').trim();
+                  return {
+                    value: String(c.db_id),
+                    label: `${c.id} — ${c.company}`,
+                    badge: country
+                      ? (country === 'India'
+                        ? { text: 'Domestic', tone: 'green' as const, title: 'India — domestic consignee' }
+                        : { text: 'International', tone: 'violet' as const, title: `${country} — international consignee` })
+                      : undefined,
+                  };
+                })}
               />
               {mappableConsignees.length === 0 && (
                 <div style={{ fontSize: 12, color: pk.textMuted, marginTop: 8 }}>No other consignees available to map.</div>
@@ -454,20 +480,36 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
         document.body,
       )}
 
-      {segOpen && createPortal(
-        <>
-          <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
-          <div className="ccm-seg-pop" style={{ position: 'fixed', left: Math.min(segOpen.x, window.innerWidth - 230), top: segOpen.y, zIndex: 1091, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
-            <div className="ccm-seg-pop-title">Segments ({segOpen.names.length})</div>
-            {segOpen.names.map((name, i) => (
-              <div key={i} className={`ccm-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                <span className="ccm-seg">{name}</span>
+      {segOpen && (() => {
+        /* Clamp BOTH axes to the viewport so the popover can't bleed below the
+           fold (QA #37) — it previously clamped only `left`. Title stays pinned;
+           ~3 rows show, the rest scroll (mirrors the customer table popover). */
+        const ROWS_MAX_H = 108;                          // ≈ 3 rows (~34px each)
+        const estH = Math.min(24 + ROWS_MAX_H + 16, 40 + segOpen.names.length * 34);
+        const left = Math.max(8, Math.min(segOpen.x, window.innerWidth - 340));
+        const top  = Math.max(8, Math.min(segOpen.y, window.innerHeight - estH - 8));
+        return createPortal(
+          <>
+            <div onClick={() => setSegOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1090 }} />
+            <div className="ccm-seg-pop" style={{ position: 'fixed', left, top, zIndex: 1091, width: 320, borderRadius: 12, padding: 8 }}>
+              <div className="ccm-seg-pop-title">Segments ({segOpen.names.length})</div>
+              <div style={{ maxHeight: ROWS_MAX_H, overflowY: 'auto' }}>
+                {segOpen.names.map((name, i) => (
+                  <div key={i} className={`ccm-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
+                    {/* Same themed tooltip the row's first segment chip and the
+                        Actions column use — the native `title` here rendered as
+                        an unstyled OS bubble and lagged a second behind. */}
+                    <Tooltip label={name} disabled={name.length <= 14}>
+                      <span className="ccm-seg">{truncSegment(name)}</span>
+                    </Tooltip>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </>,
-        document.body,
-      )}
+            </div>
+          </>,
+          document.body,
+        );
+      })()}
 
     </>,
     document.body,

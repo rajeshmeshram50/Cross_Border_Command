@@ -45,6 +45,10 @@ const AP_CFG = {
   rejected: { label: 'Rejected', bg: '#FEF2F2', border: '#FECACA', color: '#DC2626', dot: '#EF4444' },
 } as const;
 
+// Display dates as DD-Mon-YYYY (e.g. 17-Jul-2026). The API returns "17 Jul
+// 2026"; swap the spaces for hyphens (QA #9). "—" / empty pass through.
+const dashDate = (s: string): string => (s && s !== '—' ? s.replace(/\s+/g, '-') : s);
+
 export default function ClmAgreementsSentPage() {
   const toast = useToast();
   const { user } = useAuth();
@@ -54,6 +58,16 @@ export default function ClmAgreementsSentPage() {
   const [page, setPage]   = useState(1);
   const [search, setSearch] = useState('');
   const [dlOpen, setDlOpen] = useState<string | null>(null);
+  // Row currently downloading a PDF/DOCX — drives the per-row loader (QA #7).
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  // Version-history / Agreement-Timeline fetch in flight — freezes the other
+  // row actions until it resolves (QA #8).
+  const [lifecycleBusy, setLifecycleBusy] = useState<{ id: string; kind: 'version' | 'timeline' } | null>(null);
+  // Dynamic rows-per-page — auto-fits the table to the viewport like the CTC
+  // ("My Workplace") page so a tall screen shows more rows and a short one
+  // fewer, instead of a fixed PER_PAGE.
+  const [pageSize, setPageSize] = useState(PER_PAGE);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const [respondId, setRespondId] = useState<string | null>(null);
   const [cpOpen, setCpOpen] = useState<{ id: string; names: string[]; x: number; y: number } | null>(null);   // counterparties popover
   // Auto-close the +N counterparty popover on page scroll/resize so it can't
@@ -144,6 +158,8 @@ export default function ClmAgreementsSentPage() {
   const [tlFor, setTlFor] = useState<CtcDetail | null>(null);
   const openLifecycle = async (c: SentRow, kind: 'version' | 'timeline') => {
     if (!c.dbId) { toast.error('Not available', 'This agreement has no saved record yet.'); return; }
+    if (lifecycleBusy) return;   // a history/timeline load is already in flight
+    setLifecycleBusy({ id: c.id, kind });
     try {
       const res = await api.get(`/clm/ctc-contracts/${c.dbId}`);
       const r = (res.data?.data ?? res.data ?? {}) as Record<string, unknown>;
@@ -154,12 +170,15 @@ export default function ClmAgreementsSentPage() {
       };
       if (kind === 'version') setVerFor(detail); else setTlFor(detail);
     } catch { toast.error('Could not load', 'Failed to fetch the agreement history.'); }
+    finally { setLifecycleBusy(null); }
   };
 
   // Download the agreement. PDF prefers the signed Zoho copy when available;
   // DOCX always renders the latest drafted version to an editable Word file.
   const downloadContract = async (c: SentRow, fmt: string) => {
     if (!c.dbId) { toast.error('Not available', 'This agreement has no saved record yet.'); return; }
+    if (downloadingId) return;   // a download is already in flight
+    setDownloadingId(c.id);
     const docx = fmt === 'DOCX';
     const grab = async (url: string, name: string) => {
       const f = await api.get(url, { responseType: 'blob' });
@@ -184,7 +203,31 @@ export default function ClmAgreementsSentPage() {
       await grab(`/clm/ctc-contracts/${c.dbId}/versions/${latestV}/download${docx ? '?format=docx' : ''}`, `${c.id}.${docx ? 'docx' : 'pdf'}`);
       toast.success('Download started', `${c.id} · ${fmt}`);
     } catch { toast.error('Download failed', `Could not download the ${fmt} file.`); }
+    finally { setDownloadingId(null); }
   };
+
+  // Auto-fit rows-per-page to the space below the card so the table fills the
+  // viewport (dynamic pagination, matching the CTC page). Recomputes on data
+  // load, tab switch, and resize.
+  useEffect(() => {
+    const recompute = () => {
+      const el = cardRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const avail = window.innerHeight - top;
+      const toolbarH = (el.querySelector('.aws-toolbar') as HTMLElement | null)?.offsetHeight || 0;
+      const theadH   = (el.querySelector('table thead') as HTMLElement | null)?.offsetHeight || 0;
+      const rowH     = (el.querySelector('table tbody tr') as HTMLElement | null)?.offsetHeight || 48;
+      const pagerH   = 54;   // Pager footer is a fixed-height bar
+      const rowsFit  = Math.floor((avail - toolbarH - theadH - pagerH - 24) / rowH);
+      setPageSize(prev => { const next = Math.max(PER_PAGE, rowsFit); return prev === next ? prev : next; });
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const tm = window.setTimeout(recompute, 120);
+    window.addEventListener('resize', recompute);
+    return () => { window.removeEventListener('resize', recompute); window.clearTimeout(tm); cancelAnimationFrame(raf); };
+  }, [loading, tab, sent.length]);
 
   return (
     <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 14, fontFamily: 'var(--font-sans)' }}>
@@ -227,9 +270,12 @@ export default function ClmAgreementsSentPage() {
       </div>
 
       {/* FILTER TABS + TABLE */}
-      <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#B2EBF2'}`, boxShadow: '0 1px 4px rgba(6,182,212,.07)', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap' }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', background: t.tabCapsule, borderRadius: 30, padding: 4, boxShadow: t.dark ? 'none' : 'inset 0 1px 4px rgba(6,182,212,.12),0 1px 3px rgba(6,182,212,.08)' }}>
+      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#B2EBF2'}`, boxShadow: '0 1px 4px rgba(6,182,212,.07)', overflow: 'hidden' }}>
+        <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap' }}>
+          {/* Tab rail — same pill design as the CTC page (translucent rail with a
+              hairline + separated pills), recoloured teal to match this page. On
+              small screens it wraps full width, 2 tabs per row (QA #10). */}
+          <div className="aws-tabrail" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: t.dark ? 'rgba(6,182,212,.10)' : 'rgba(255,255,255,.6)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.22)' : 'rgba(6,182,212,.28)'}`, borderRadius: 11, padding: 4 }}>
             {([
               ['all', 'All Contracts', null],
               ['approved', 'Approved Contracts', '#10B981'],
@@ -240,22 +286,26 @@ export default function ClmAgreementsSentPage() {
               const active = tab === key;
               return (
                 <button key={key} onClick={() => { setTab(key); setPage(1); }}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 18px', borderRadius: 25, border: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: active ? 800 : 700, cursor: 'pointer', letterSpacing: '-.1px', transition: 'all .18s', position: 'relative', overflow: 'hidden',
-                    background: active ? 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)' : 'transparent',
-                    color: active ? '#fff' : t.tabInactive,
-                    boxShadow: active ? '0 3px 12px rgba(6,182,212,.5),inset 0 1px 0 rgba(255,255,255,.22)' : 'none' }}>
-                  {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.22),transparent)', borderRadius: '25px 25px 0 0', pointerEvents: 'none' }} />}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '0 14px', height: 34, borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', letterSpacing: 0, whiteSpace: 'nowrap', transition: 'background .16s, color .16s, box-shadow .16s, border-color .16s', position: 'relative', overflow: 'hidden',
+                    ...(active
+                      ? { border: 0, background: 'linear-gradient(135deg, #22d3ee 0%, #06b6d4 35%, #0891b2 68%, #0e7490 100%)', color: '#fff', boxShadow: '0 5px 14px rgba(6,182,212,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(14,116,144,.3) inset', textShadow: '0 1px 2px rgba(12,74,110,.4)' }
+                      : { background: t.dark ? 'linear-gradient(135deg, rgba(6,182,212,.16), rgba(6,182,212,.10))' : 'linear-gradient(135deg, #ecfeff, #cffafe)', border: `1px solid ${t.dark ? 'rgba(6,182,212,.3)' : 'rgba(6,182,212,.25)'}`, color: t.dark ? '#67e8f9' : '#0e7490' }) }}>
+                  {active && <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.2),transparent)', borderRadius: '8px 8px 0 0', pointerEvents: 'none' }} />}
                   {key === 'all'
-                    ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : t.tabInactive} strokeWidth="2.4" strokeLinecap="round" style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
+                    ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={active ? '#fff' : (t.dark ? '#67e8f9' : '#0e7490')} strokeWidth="2.4" strokeLinecap="round" style={{ position: 'relative', zIndex: 1, flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                     : <span style={{ width: 7, height: 7, borderRadius: '50%', background: active ? 'rgba(255,255,255,.9)' : (dot || '#94A3B8'), flexShrink: 0, boxShadow: active ? 'none' : `0 0 0 2px ${dot}40` }} />}
                   <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
-                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 5px', borderRadius: 20, background: active ? 'rgba(255,255,255,.28)' : 'rgba(14,116,144,.2)', fontSize: 9, fontWeight: 900, color: active ? '#fff' : t.tabInactive }}>{counts[key]}</span>
+                  <span style={{ position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 18, height: 18, padding: '0 6px', borderRadius: 999, fontSize: 9, fontWeight: 800, lineHeight: 1,
+                    ...(active
+                      ? { color: '#fff', background: 'rgba(255,255,255,.24)', border: '1px solid rgba(255,255,255,.4)' }
+                      : (t.dark ? { color: '#67e8f9', background: 'rgba(6,182,212,.18)', border: '1px solid rgba(6,182,212,.35)' } : { color: '#0891b2', background: '#fff', border: '1px solid #a5f3fc' })) }}>{counts[key]}</span>
                 </button>
               );
             })}
           </div>
-          <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 15px', borderRadius: 22, background: t.searchBg, border: `1.5px solid ${t.searchBorder}` }}>
+          {/* Search sits directly after the tabs (no flex spacer) so it starts
+              where the tab rail ends. */}
+          <div className="aws-searchbox" style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 15px', borderRadius: 22, background: t.searchBg, border: `1.5px solid ${t.searchBorder}` }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#67e8f9' : '#0891b2'} strokeWidth="2.4" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search agreements…"
               style={{ border: 'none', outline: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 500, color: t.searchText, background: 'transparent', width: 190 }} />
@@ -267,8 +317,8 @@ export default function ClmAgreementsSentPage() {
           : tab === 'clarify'
           ? <ClarifyTable rows={clarifyList} onRespond={setRespondId} t={t} />
           : tab === 'rejected'
-            ? <RejectedTable rows={filtered} ata={sent} page={page} setPage={setPage} dlOpen={dlOpen} setDlOpen={setDlOpen} onDownload={downloadContract} toast={toast} t={t} />
-            : <StandardTable rows={filtered} page={page} setPage={setPage} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} cpOpen={cpOpen} setCpOpen={setCpOpen} onVersion={(c) => openLifecycle(c, 'version')} onTimeline={(c) => openLifecycle(c, 'timeline')} onDownload={downloadContract} onEdit={(c) => navigate(`/clm/case-to-case?edit=${c.dbId}`)} toast={toast} t={t} />}
+            ? <RejectedTable rows={filtered} ata={sent} page={page} setPage={setPage} pageSize={pageSize} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} onDownload={downloadContract} toast={toast} t={t} />
+            : <StandardTable rows={filtered} page={page} setPage={setPage} pageSize={pageSize} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} lifecycleBusy={lifecycleBusy} cpOpen={cpOpen} setCpOpen={setCpOpen} onVersion={(c) => openLifecycle(c, 'version')} onTimeline={(c) => openLifecycle(c, 'timeline')} onDownload={downloadContract} onEdit={(c) => navigate(`/clm/case-to-case?edit=${c.dbId}`)} toast={toast} t={t} />}
       </div>
 
       {respondContract && (
@@ -375,29 +425,36 @@ const ICO_VER  = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" str
 const ICO_TL   = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>;
 const ICO_VIEW = <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>;
 
-function ActionBtn({ title, color, bg, border, t, onClick, children }: { title: string; color: string; bg: string; border: string; t: OpsTokens; onClick: () => void; children: React.ReactNode }) {
+function ActionBtn({ title, color, bg, border, t, onClick, children, busy, disabled }: { title: string; color: string; bg: string; border: string; t: OpsTokens; onClick: () => void; children: React.ReactNode; busy?: boolean; disabled?: boolean }) {
   // In dark mode the light pastel pills read as bright stickers. Keep each
   // button's hue but as a translucent tint + brightened icon so they sit on
   // the dark surface. Light mode keeps the original pastel look.
   const fbg     = t.dark ? `color-mix(in srgb, ${color} 20%, transparent)` : bg;
   const fborder = t.dark ? `color-mix(in srgb, ${color} 45%, transparent)` : border;
   const fcolor  = t.dark ? `color-mix(in srgb, ${color} 55%, #ffffff)` : color;
+  // busy → this button's own async op (spinner); disabled → frozen by another
+  // action in flight (dimmed, no spinner). Both block clicks.
+  const off = busy || disabled;
   return (
-    <Tooltip label={title}>
-      <button onClick={onClick} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${fborder}`, background: fbg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: fcolor, opacity: .85, flexShrink: 0, transition: 'all .15s' }}
-        onMouseEnter={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.13)'; }}
-        onMouseLeave={e => { e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
-        {children}
+    <Tooltip label={busy ? 'Loading…' : (disabled ? 'Please wait…' : title)}>
+      <button onClick={onClick} disabled={off} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${fborder}`, background: fbg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : disabled ? 'not-allowed' : 'pointer', color: fcolor, opacity: busy ? 1 : disabled ? .4 : .85, flexShrink: 0, transition: 'all .15s' }}
+        onMouseEnter={e => { if (off) return; e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.13)'; }}
+        onMouseLeave={e => { if (off) return; e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
+        {busy
+          ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'awsSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+          : children}
       </button>
     </Tooltip>
   );
 }
 
-function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t }: { id: string; dlOpen: string | null; setDlOpen: (s: string | null) => void; onPick: (fmt: string) => void; t: OpsTokens }) {
+function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t, busy, disabled }: { id: string; dlOpen: string | null; setDlOpen: (s: string | null) => void; onPick: (fmt: string) => void; t: OpsTokens; busy?: boolean; disabled?: boolean }) {
   const open = dlOpen === id;
   const btnRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const off = busy || disabled;
   const toggle = () => {
+    if (off) return;   // a download is running / actions are frozen
     if (open) { setDlOpen(null); return; }
     const r = btnRef.current?.getBoundingClientRect();
     if (r) setPos({ left: Math.max(8, Math.min(r.right - 168, window.innerWidth - 176)), top: r.bottom + 6 });
@@ -405,7 +462,7 @@ function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t }: { id: string; dlOpen
   };
   return (
     <>
-      <Tooltip label="Download Contract"><button ref={btnRef} onClick={toggle} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${t.dark ? 'color-mix(in srgb, #06b6d4 45%, transparent)' : '#7DD3FC'}`, background: t.dark ? 'color-mix(in srgb, #06b6d4 20%, transparent)' : '#B2EBF2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: t.dark ? '#67e8f9' : '#0369A1', opacity: .85, flexShrink: 0 }}>{ICO_DL}</button></Tooltip>
+      <Tooltip label={busy ? 'Downloading…' : (disabled ? 'Please wait…' : 'Download Contract')}><button ref={btnRef} onClick={toggle} disabled={off} style={{ width: 28, height: 28, borderRadius: 7, border: `1.5px solid ${t.dark ? 'color-mix(in srgb, #06b6d4 45%, transparent)' : '#7DD3FC'}`, background: t.dark ? 'color-mix(in srgb, #06b6d4 20%, transparent)' : '#B2EBF2', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : disabled ? 'not-allowed' : 'pointer', color: t.dark ? '#67e8f9' : '#0369A1', opacity: busy ? 1 : disabled ? .4 : .85, flexShrink: 0 }}>{busy ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'awsSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> : ICO_DL}</button></Tooltip>
       {open && pos && createPortal(
         <>
           <div onClick={() => setDlOpen(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
@@ -426,11 +483,11 @@ function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t }: { id: string; dlOpen
 }
 
 /* ── Standard contracts table (all / approved / pending) ── */
-function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, cpOpen, setCpOpen, onVersion, onTimeline, onDownload, onEdit, toast, t }: { rows: SentRow[]; page: number; setPage: (n: number) => void; tab: AwsTab; dlOpen: string | null; setDlOpen: (s: string | null) => void; cpOpen: { id: string; names: string[]; x: number; y: number } | null; setCpOpen: (s: { id: string; names: string[]; x: number; y: number } | null) => void; onVersion: (c: SentRow) => void; onTimeline: (c: SentRow) => void; onDownload: (c: SentRow, fmt: string) => void; onEdit: (c: SentRow) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
-  const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+function StandardTable({ rows, page, setPage, pageSize, tab, dlOpen, setDlOpen, downloadingId, lifecycleBusy, cpOpen, setCpOpen, onVersion, onTimeline, onDownload, onEdit, toast, t }: { rows: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; tab: AwsTab; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; lifecycleBusy: { id: string; kind: 'version' | 'timeline' } | null; cpOpen: { id: string; names: string[]; x: number; y: number } | null; setCpOpen: (s: { id: string; names: string[]; x: number; y: number } | null) => void; onVersion: (c: SentRow) => void; onTimeline: (c: SentRow) => void; onDownload: (c: SentRow, fmt: string) => void; onEdit: (c: SentRow) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
-  const start = (safe - 1) * PER_PAGE;
-  const slice = rows.slice(start, start + PER_PAGE);
+  const start = (safe - 1) * pageSize;
+  const slice = rows.slice(start, start + pageSize);
   const empty = `No ${tab === 'all' ? 'contracts yet' : tab + ' contracts'}.`;
 
   return (
@@ -464,7 +521,7 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, cpOpen, se
                       onMouseLeave={e => { e.currentTarget.style.background = bg; e.currentTarget.style.boxShadow = 'none'; }}>
                       <td style={TD_C}><div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#0891b2,#0e7490)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(8,145,178,.35)' }}><span style={{ fontSize: 10, fontWeight: 900, color: '#fff' }}>{pad2(n)}</span></div></td>
                       <td style={TD_C}><span style={codePill(t.dark)}>{c.id}</span></td>
-                      <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.date}</span></td>
+                      <td style={TD_C}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.date)}</span></td>
                       <td style={TD_L}><Tooltip label={c.title}><div style={{ fontSize: 12.5, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0e7490', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>{c.title}</div></Tooltip></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><Avatar name={c.org} grad={ORG_GRAD[c.org] || '#4C1D95,#7C3AED'} /><Tooltip label={c.org}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.org}</span></Tooltip></div></td>
                       <td style={TD_L}>
@@ -476,15 +533,25 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, cpOpen, se
                       </td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 7 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A7F3D0,#7DD3FC)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #B2EBF2' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0891b2' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                       <td style={TD_C}><ApprovalBadge ap={ap} /></td>
-                      <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.effDate}</span></td>
-                      <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.endDate}</span></td>
+                      <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.effDate)}</span></td>
+                      <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
                       <td style={TD_C}>
+                        {(() => {
+                          // Freeze the row's actions while a version/timeline load
+                          // is in flight (QA #8); the download shows its own loader
+                          // (QA #7). The clicked history/timeline keeps its spinner.
+                          const verBusy = lifecycleBusy?.id === c.id && lifecycleBusy?.kind === 'version';
+                          const tlBusy  = lifecycleBusy?.id === c.id && lifecycleBusy?.kind === 'timeline';
+                          const frozen  = lifecycleBusy !== null;
+                          return (
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                          <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} onPick={(fmt) => onDownload(c, fmt)} t={t} />
-                          <ActionBtn title="Edit Agreement" color="#0891b2" bg="#B2EBF2" border="#7DD3FC" t={t} onClick={() => onEdit(c)}>{ICO_EDIT}</ActionBtn>
-                          <ActionBtn title="Version History" color="#7C3AED" bg="#EDE9FE" border="#C4B5FD" t={t} onClick={() => onVersion(c)}>{ICO_VER}</ActionBtn>
-                          <ActionBtn title="Agreement Timeline" color="#B45309" bg="#FEF3C7" border="#FCD34D" t={t} onClick={() => onTimeline(c)}>{ICO_TL}</ActionBtn>
+                          <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} busy={downloadingId === c.id} disabled={frozen} onPick={(fmt) => onDownload(c, fmt)} t={t} />
+                          <ActionBtn title="Edit Agreement" color="#0891b2" bg="#B2EBF2" border="#7DD3FC" t={t} disabled={frozen} onClick={() => onEdit(c)}>{ICO_EDIT}</ActionBtn>
+                          <ActionBtn title="Version History" color="#7C3AED" bg="#EDE9FE" border="#C4B5FD" t={t} busy={verBusy} disabled={frozen && !verBusy} onClick={() => onVersion(c)}>{ICO_VER}</ActionBtn>
+                          <ActionBtn title="Agreement Timeline" color="#B45309" bg="#FEF3C7" border="#FCD34D" t={t} busy={tlBusy} disabled={frozen && !tlBusy} onClick={() => onTimeline(c)}>{ICO_TL}</ActionBtn>
                         </div>
+                          );
+                        })()}
                       </td>
                     </tr>
                   );
@@ -492,7 +559,7 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, cpOpen, se
               </tbody>
             </table>
           </div>
-          <Pager total={rows.length} page={page} setPage={setPage} t={t} />
+          <Pager total={rows.length} page={page} setPage={setPage} perPage={pageSize} t={t} />
         </>
       )}
     </div>
@@ -500,12 +567,12 @@ function StandardTable({ rows, page, setPage, tab, dlOpen, setDlOpen, cpOpen, se
 }
 
 /* ── Rejected contracts table ── */
-function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, onDownload, toast, t }: { rows: SentRow[]; ata: SentRow[]; page: number; setPage: (n: number) => void; dlOpen: string | null; setDlOpen: (s: string | null) => void; onDownload: (c: SentRow, fmt: string) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function RejectedTable({ rows, ata, page, setPage, pageSize, dlOpen, setDlOpen, downloadingId, onDownload, toast, t }: { rows: SentRow[]; ata: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; onDownload: (c: SentRow, fmt: string) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
   const getRej = (id: string) => { const a = ata.find(x => x.id === id); return { by: a?.approver ?? '—', reason: a?.rejReason ?? '—' }; };
-  const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
-  const start = (safe - 1) * PER_PAGE;
-  const slice = rows.slice(start, start + PER_PAGE);
+  const start = (safe - 1) * pageSize;
+  const slice = rows.slice(start, start + pageSize);
 
   return (
     <div style={{ background: t.tableBg, overflow: 'hidden' }}>
@@ -540,9 +607,9 @@ function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, onDownload
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#A5F3FC,#67E8F9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: '1.5px solid #CFFAFE' }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#0e7490' }}>{inits(c.createdBy)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.text, whiteSpace: 'nowrap' }}>{c.createdBy}</span></div></td>
                       <td style={TD_L}><div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><div style={{ width: 26, height: 26, borderRadius: '50%', background: 'linear-gradient(135deg,#FCA5A5,#EF4444)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 8.5, fontWeight: 900, color: '#fff' }}>{inits(rej.by)}</span></div><span style={{ fontSize: 11, fontWeight: 600, color: t.dark ? '#fca5a5' : '#7F1D1D', whiteSpace: 'nowrap' }}>{rej.by}</span></div></td>
                       <td style={{ ...TD_L, maxWidth: 220 }}><div style={{ display: 'flex', alignItems: 'flex-start', gap: 5 }}><div style={{ width: 16, height: 16, borderRadius: '50%', background: '#FEE2E2', border: '1px solid #FECACA', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#DC2626" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg></div><Tooltip label={rej.reason}><div style={{ fontSize: 10.5, color: t.dark ? '#fca5a5' : '#7F1D1D', fontWeight: 500, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{rej.reason}</div></Tooltip></div></td>
-                      <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{c.endDate}</span></td>
+                      <td style={TD_C}><span style={{ fontSize: 11, fontWeight: 600, color: t.textSub, whiteSpace: 'nowrap' }}>{dashDate(c.endDate)}</span></td>
                       <td style={TD_C}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                        <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} onPick={(fmt) => onDownload(c, fmt)} t={t} />
+                        <DownloadMenu id={c.id} dlOpen={dlOpen} setDlOpen={setDlOpen} busy={downloadingId === c.id} onPick={(fmt) => onDownload(c, fmt)} t={t} />
                         <ActionBtn title="View" color="#DC2626" bg="#FEF2F2" border="#FEE2E2" t={t} onClick={() => toast.info('View Agreement', c.id)}>{ICO_VIEW}</ActionBtn>
                       </div></td>
                     </tr>
@@ -551,7 +618,7 @@ function RejectedTable({ rows, ata, page, setPage, dlOpen, setDlOpen, onDownload
               </tbody>
             </table>
           </div>
-          <Pager total={rows.length} page={page} setPage={setPage} t={t} />
+          <Pager total={rows.length} page={page} setPage={setPage} perPage={pageSize} t={t} />
         </>
       )}
     </div>
@@ -739,6 +806,18 @@ const codePill = (dark: boolean): React.CSSProperties => ({ fontFamily: "'Geist 
 
 const AWS_CSS = `
 @keyframes awsSlideUp { from { opacity:0; transform:translateY(24px) scale(.96); } to { opacity:1; transform:none; } }
+@keyframes awsSpin { to { transform: rotate(360deg); } }
+
+/* ── Responsive tabs (QA #10) ──
+   On narrow screens the tab rail goes full width with 2 tabs per row and the
+   search takes the next row at full width. Tables already scroll horizontally. */
+@media (max-width: 900px) {
+  .aws-tabrail { flex-wrap: wrap; width: 100%; justify-content: flex-start; }
+  .aws-tabrail > button { flex: 1 1 calc(50% - 4px); justify-content: center; }
+  .aws-hspacer { display: none; }
+  .aws-searchbox { width: 100%; }
+  .aws-searchbox input { width: 100% !important; }
+}
 .aws-card {
   position:relative; overflow:hidden; border-radius:12px; padding:12px 14px;
   background:#fff; border:1.5px solid var(--bd);

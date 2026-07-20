@@ -107,6 +107,21 @@ type DraftRow = {
 };
 const EMPTY_DRAFT: DraftRow = { product_id: null, currency: 'USD', quantity: '', target_price: '', notes: '' };
 
+/* Quantity and Target Price are positive numbers, so the raw input is kept to
+ * digits and a single decimal point. This strips the minus sign, letters and a
+ * second dot at the keystroke — the whole point of the QA fix: a hyphen used to
+ * survive (type="number" accepts "-5"), and validation then reported "Enter a
+ * value greater than 0" for what was really an invalid character. Now the
+ * character never lands, and the validator below has a second, clearer message
+ * for anything that slips through (e.g. a paste). */
+const sanitizeDecimal = (raw: string): string => {
+  const cleaned = (raw ?? '').replace(/[^0-9.]/g, '');
+  const [whole, ...rest] = cleaned.split('.');
+  return rest.length ? `${whole}.${rest.join('')}` : whole;
+};
+// A well-formed non-negative number: digits, with an optional single decimal.
+const DECIMAL_RE = /^\d*\.?\d+$/;
+
 type Props = {
   open:    boolean;
   leadId:  number | null;
@@ -361,10 +376,19 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
      * a one-at-a-time toast. */
     const errs: typeof errors = {};
     if (!draft.product_id) errs.product = 'Select a product first.';
-    const qty = Number(draft.quantity);
-    if (!String(draft.quantity).trim() || !Number.isFinite(qty) || qty <= 0) errs.quantity = 'Enter a quantity greater than 0.';
-    const tp = Number(draft.target_price);
-    if (!String(draft.target_price).trim() || !Number.isFinite(tp) || tp <= 0) errs.target_price = 'Enter a target price greater than 0.';
+    /* Three-way check so the message matches the actual problem — the QA bug
+       was that a non-numeric entry (a hyphen) reported "greater than 0", which
+       reads as "your number is too small" rather than "that isn't a number".
+       Order: required → well-formed → positive. */
+    const qtyRaw = String(draft.quantity).trim();
+    if (!qtyRaw) errs.quantity = 'Enter a quantity greater than 0.';
+    else if (!DECIMAL_RE.test(qtyRaw)) errs.quantity = 'Quantity should only include digits and decimal values.';
+    else if (Number(qtyRaw) <= 0) errs.quantity = 'Enter a quantity greater than 0.';
+
+    const tpRaw = String(draft.target_price).trim();
+    if (!tpRaw) errs.target_price = 'Enter a target price greater than 0.';
+    else if (!DECIMAL_RE.test(tpRaw)) errs.target_price = 'Target price should only include digits and decimal values.';
+    else if (Number(tpRaw) <= 0) errs.target_price = 'Enter a target price greater than 0.';
     if (!draft.currency) errs.currency = 'Select a currency.';
     setErrors(errs);
     if (Object.keys(errs).length) {
@@ -386,16 +410,13 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
         if (clash.length > 0) {
           const from = String(clash[0].currency).toUpperCase();
           const ok = await confirm({
-            title: `Switch this opportunity to ${newCur}?`,
+            title: `Switch to ${newCur}?`,
             tone: 'warning',
-            confirmLabel: `Yes, re-price all in ${newCur}`,
+            confirmLabel: 'Yes',
             cancelLabel: 'Cancel',
             message: (
               <>
-                Also switches <strong>{clash.length} other product{clash.length > 1 ? 's' : ''}</strong> from{' '}
-                <strong>{from}</strong> to <strong>{newCur}</strong>.
-                <br />
-                Amounts are not converted — only the currency label changes.
+                Changing the currency applies <strong>{newCur}</strong> to all products — only the label changes, amounts aren't converted.
                 {sharedPriceWarning}
               </>
             ),
@@ -642,26 +663,38 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                       </td>
                       <td><span className="pdm-curr-pill">{r.currency}</span></td>
                       <td className="pdm-act-cell">
-                        <button className="pdm-icon-btn pdm-icon-btn-edit" onClick={() => startEdit(r)} aria-label="Edit" title="Edit">
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                          </svg>
-                        </button>
-                        <button
-                          className="pdm-icon-btn pdm-icon-btn-del"
-                          onClick={() => setPendingDelete(r)}
-                          disabled={sourcingLocked}
-                          aria-label="Unmap"
-                          title={sourcingLocked
+                        {/* Themed Tooltip pills — same treatment as the Lead
+                            Acknowledgement master's action column (QA ask),
+                            replacing the browser-native title bubbles. */}
+                        <Tooltip label="Edit" themed>
+                          <button className="pdm-icon-btn pdm-icon-btn-edit" onClick={() => startEdit(r)} aria-label="Edit">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                        </Tooltip>
+                        <Tooltip
+                          label={sourcingLocked
                             ? "Can't unmap — Product Sourcing (Stage 3) is complete"
                             : 'Unmap'}
+                          themed
                         >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
-                          </svg>
-                        </button>
+                          {/* aria-disabled (not disabled) so the tooltip still
+                              shows on the locked button — a disabled element
+                              swallows the hover events the Tooltip needs. */}
+                          <button
+                            className={`pdm-icon-btn pdm-icon-btn-del ${sourcingLocked ? 'pdm-icon-btn-locked' : ''}`}
+                            onClick={() => { if (!sourcingLocked) setPendingDelete(r); }}
+                            aria-disabled={sourcingLocked}
+                            aria-label="Unmap"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6" />
+                            </svg>
+                          </button>
+                        </Tooltip>
                       </td>
                     </tr>
                   );
@@ -781,7 +814,10 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                     const offSegment = customerSegmentSet.size > 0 && !!seg && !customerSegmentSet.has(seg.toLowerCase());
                     return {
                       value: String(p.id),
-                      label: `${p.product_code} · ${p.name}`,
+                      // Padded code for display (P-25 → P-025), same as the table
+                      // below. Safe to format the label because the option's value
+                      // is the numeric id, so matching/saving is unaffected.
+                      label: `${formatProductCode(p.product_code)} · ${p.name}`,
                       badge: { text: active ? 'Active' : 'Inactive', tone: active ? 'green' as const : 'red' as const },
                       badges: seg ? [{ text: seg, tone: 'violet' as const }] : undefined,
                       disabled: offSegment,
@@ -810,12 +846,16 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                         <rect x="14" y="14" width="7" height="7" rx="1" />
                       </svg>
                     </span>
+                    {/* text + inputMode instead of type=number: a number input
+                        still accepts a leading "-", so the minus reached state
+                        and mis-triggered the "greater than 0" message. Text lets
+                        sanitizeDecimal strip it before it lands. */}
                     <input
-                      type="number" min="0" step="any"
+                      type="text" inputMode="decimal"
                       className="pdm-form-input"
                       placeholder="Enter quantity"
                       value={draft.quantity}
-                      onChange={e => { setDraft(p => ({ ...p, quantity: e.target.value })); setErrors(er => ({ ...er, quantity: undefined })); }}
+                      onChange={e => { setDraft(p => ({ ...p, quantity: sanitizeDecimal(e.target.value) })); setErrors(er => ({ ...er, quantity: undefined })); }}
                     />
                   </div>
                   {errors.quantity && <div className="pdm-form-err">{errors.quantity}</div>}
@@ -826,12 +866,14 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                       separately below, so a hardcoded "$" was both redundant
                       and misleading (it showed $ even for INR/EUR/etc.). */}
                   <div className={`pdm-form-input-wrap ${errors.target_price ? 'pdm-form-input-wrap-err' : ''}`}>
+                    {/* text + inputMode so the minus/letters can't reach state —
+                        see the Quantity note above. */}
                     <input
-                      type="number" min="0" step="any"
+                      type="text" inputMode="decimal"
                       className="pdm-form-input"
                       placeholder="Enter target price"
                       value={draft.target_price}
-                      onChange={e => { setDraft(p => ({ ...p, target_price: e.target.value })); setErrors(er => ({ ...er, target_price: undefined })); }}
+                      onChange={e => { setDraft(p => ({ ...p, target_price: sanitizeDecimal(e.target.value) })); setErrors(er => ({ ...er, target_price: undefined })); }}
                     />
                   </div>
                   {errors.target_price && <div className="pdm-form-err">{errors.target_price}</div>}
@@ -1159,9 +1201,15 @@ const SCOPED_CSS = `
   background: #fef2f2; color: #b91c1c; border-color: #fecaca;
 }
 .pdm-icon-btn-del:hover:not(:disabled) { background: #fee2e2; border-color: #fca5a5; }
-.pdm-icon-btn:disabled {
+.pdm-icon-btn:disabled,
+.pdm-icon-btn.pdm-icon-btn-locked,
+.pdm-icon-btn.pdm-icon-btn-locked:hover {
   opacity: .45; cursor: not-allowed;
   background: #f8fafc; color: #94a3b8; border-color: #e2e8f0;
+}
+[data-bs-theme="dark"] .pdm-icon-btn.pdm-icon-btn-locked,
+[data-bs-theme="dark"] .pdm-icon-btn.pdm-icon-btn-locked:hover {
+  background: rgba(148,163,184,.12); color: #64748b; border-color: rgba(148,163,184,.25);
 }
 
 /* ── Footer ── pinned below the body, status text + Close button */
