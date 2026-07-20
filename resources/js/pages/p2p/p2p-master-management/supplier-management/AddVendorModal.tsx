@@ -8,6 +8,7 @@ import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { ShimmerForm } from '../../../../components/ui/Shimmer';
 import { MasterMultiSelect } from '../../../master/masterFormKit';
+import { useRuledSegments } from '../../../../hooks/useRuledSegments';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { SegmentModal, nextSegmentCode, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
@@ -497,6 +498,14 @@ export default function AddVendorModal(props: {
    * legacy `segment_id` column is scalar, so on save we send the first
    * id as `segment_id` and the joined list as `segment_ids`. */
   const [segment,     setSegment]     = useState<string[]>([]);
+  /* Segments carrying a Document Control Panel rule. The rest stay listed but
+   * disabled — a rule-less segment maps to no KYC/DD/TL documents, so tagging
+   * a supplier with it leaves Step 2 empty. The modal only mounts while open,
+   * so the fetch is gated on `true`. */
+  const { ruledIds: ruledSegIds, loaded: segRulesLoaded } = useRuledSegments(true);
+  const unruledSegmentIds = segRulesLoaded
+    ? segmentOpts.map(o => o.value).filter(v => !ruledSegIds.has(v))
+    : [];
   const [complianceBehaviour, setComplianceBehaviour] = useState('');
   /* Classification & Flags — FK to the shared classification master
    * (master_customer_classifications). Holds the selected id; options come
@@ -1061,18 +1070,30 @@ export default function AddVendorModal(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, segment]);
 
-  /* Segments that already have ≥1 document uploaded against them — these
-   * can't be removed/deselected (it would orphan the uploads) but adding
-   * new segments stays allowed. A segment is locked only if one of its own
-   * required docs has an upload, so a saved-but-empty segment stays free. */
-  const lockedSegments = useMemo<string[]>(() => {
-    const out: string[] = [];
-    for (const s of (segment ?? [])) {
-      const keys = segmentDocKeys[String(s)] || [];
-      if (keys.some(k => segmentRefUploads[k])) out.push(String(s));
-    }
-    return out;
-  }, [segment, segmentDocKeys, segmentRefUploads]);
+  /* Whether the removal guard can answer yet — `segmentDocKeys` is filled by an
+   * async fetch, so on a first open the field is interactive before the map
+   * exists and every removal would look safe (the customer form had the same
+   * race: blocked correctly on a second open, silently passed on the first).
+   * Only matters for a saved supplier; a new one has no uploads to orphan.
+   * Non-numeric values never get a map entry, so they're excluded. */
+  const segGuardReady = !initialVendorId || (segment ?? [])
+    .filter(s => Number.isFinite(Number(s)) && Number(s) > 0)
+    .every(s => segmentDocKeys[String(s)] !== undefined);
+
+  /* Of the segments being removed, those that can't go because one of their
+   * documents already has an upload. Adding segments stays free.
+   *
+   * A document shared with a segment being KEPT still blocks: uploads are
+   * stored per doc code, so one file belongs to every segment requiring it and
+   * has to be deleted before any of them can be dropped. Mirrors SegmentGuard
+   * on the server, so the field never allows what the save would reject. */
+  const blockedSegmentRemovals = (next: string[]): string[] => {
+    const removed = (segment ?? []).filter(s => !next.includes(s));
+    if (!removed.length) return [];
+    return removed
+      .filter(s => (segmentDocKeys[String(s)] || []).some(k => !!segmentRefUploads[k]))
+      .map(String);
+  };
 
   /* Apply the bundled segment_uploads payload to segmentRefUploads.
    * Declared AFTER the segment-rules effect above so it fires LATER in
@@ -3095,12 +3116,17 @@ export default function AddVendorModal(props: {
                           value={segment}
                           options={segmentOpts}
                           placeholder="Select Segment"
+                          disabledValues={unruledSegmentIds}
+                          disabledHint="no document rule defined in the Document Control Panel yet"
                           onChange={vs => {
                             // Guard removal of a locked segment (one with uploaded docs) —
                             // block it, restore the segment, and explain why (mirrors the
                             // Customer master's guardSegmentRemove).
-                            const removed = segment.filter(s => !vs.includes(s));
-                            const blocked = removed.filter(s => lockedSegments.includes(String(s)));
+                            if (segment.some(s => !vs.includes(s)) && !segGuardReady) {
+                              toast.info('Checking documents', 'Still loading this supplier’s uploaded documents — try removing the segment again in a moment.');
+                              return;
+                            }
+                            const blocked = blockedSegmentRemovals(vs);
                             if (blocked.length) {
                               const names = blocked.map(s => segmentOpts.find(o => o.value === s)?.label ?? s);
                               toast.error('Cannot remove segment', `You can't remove ${names.join(', ')} — ${blocked.length > 1 ? 'they have' : 'it has'} uploaded documents. Delete those documents first to drop the segment.`);
@@ -3732,8 +3758,14 @@ export default function AddVendorModal(props: {
                 if (created?.id) {
                   const id = String(created.id);
                   setSegmentOpts(prev => [...prev, { value: id, label: String(created.name ?? form.name) }]);
-                  setSegment(prev => prev.includes(id) ? prev : [...prev, id]);
-                  clearFieldError('segment');
+                  /* Deliberately NOT auto-selected: a brand-new segment has no
+                   * Document Control Panel rule yet, and a segment without a
+                   * rule can't be assigned (it would carry no KYC/DD/TL docs).
+                   * It appears in the list, disabled, until a rule is mapped. */
+                  toast.info(
+                    'Segment created',
+                    `${created.name ?? form.name} can't be selected until a rule is defined for it in the Document Control Panel.`,
+                  );
                 }
                 bustVendorMasterBundle();
                 setSegAdd(null);

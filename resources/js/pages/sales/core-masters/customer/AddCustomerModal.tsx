@@ -8,6 +8,7 @@ import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useRuledSegments } from '../../../../hooks/useRuledSegments';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 import {
   readCustomerMasterBundle,
@@ -413,6 +414,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
    * cache hits). The modal body renders a shimmer skeleton while this
    * is true so the user sees structure instead of empty dropdowns. */
   const [mastersLoading, setMastersLoading] = useState<boolean>(true);
+  /* Segments carrying a Document Control Panel rule. Everything else stays
+   * visible in the dropdown but can't be picked — a rule-less segment brings
+   * no documents, so tagging a customer with it means nothing downstream. */
+  const { ruledCodes: ruledSegCodes, loaded: segRulesLoaded } = useRuledSegments(open);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -844,6 +849,26 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
    * the Company-DD / Owner-KYC / Trade-Licence grids don't flash empty while the
    * call is in flight (it fires after hydration, so showShimmer is already off). */
   const [segmentDocsLoading, setSegmentDocsLoading] = useState(false);
+
+  /* Can the remove-segment guard give a trustworthy answer yet?
+   *
+   * It needs `segCodeMap` populated for every selected segment. That map is
+   * built by an async fetch that itself waits on the masters bundle, so it is
+   * NOT ready the instant the field renders. Names that don't resolve to a
+   * master row never get an entry (the fetch skips them), so they're excluded
+   * here — otherwise readiness could never be reached.
+   *
+   * Only meaningful once the customer exists; a fresh form has no uploads. */
+  const segGuardReady = (() => {
+    if (!isEdit && !savedDbId) return true;
+    // Masters gate the name→id resolution the fetch depends on. Deliberately
+    // NOT gated on `segmentDocsLoading`: the map keeps its previous entries
+    // during a refetch, so removing two segments in a row shouldn't stall.
+    if (mastersLoading) return false;
+    return (form.coSeg ?? [])
+      .filter((n: string) => masters.segments.some(s => s.name === n))
+      .every((n: string) => segCodeMap[n] !== undefined);
+  })();
 
   /* Per-row file uploads against the segment-rule reference rows in
    * Stage 2 (Company DD / Owner KYC / Trade Licence). Key shape is
@@ -2040,9 +2065,23 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               additional fields populate. */}
           {stage === 1 && showShimmer && <Stage1FormShimmer />}
           {stage === 1 && !showShimmer && tab === 'identification' && (
-            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} guardSegmentRemove={(prev, vs) => {
+            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} unruledSegments={segRulesLoaded ? masters.segments.filter(s => !ruledSegCodes.has(s.code ?? '')).map(s => s.name) : []} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} guardSegmentRemove={(prev, vs) => {
               const removed = prev.filter(s => !vs.includes(s));
               if (!removed.length) return vs;
+              /* Refuse to decide before the evidence is in. `segCodeMap` is
+               * filled by an async fetch keyed off the masters bundle, so on a
+               * FIRST open (cold bundle cache) the field went interactive while
+               * the map was still empty — every removal then looked safe and
+               * sailed through to a 422 at save. Re-opening the modal hit the
+               * cached bundle, won the race, and blocked correctly, which is why
+               * this only ever reproduced "the first time".
+               *
+               * Only guards a persisted customer: before the first save there
+               * are no uploads to orphan, and the fetch may never run. */
+              if (!segGuardReady) {
+                toast.info('Checking documents', 'Still loading this customer’s uploaded documents — try removing the segment again in a moment.');
+                return prev;
+              }
               // Doc codes with an ACTUAL upload (file or URL). Hydration seeds an
               // empty entry per reference row, so check the value.
               const uploaded = new Set(
@@ -2050,8 +2089,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                   .filter(([, v]) => !!(v && (v.url || v.file)))
                   .map(([k]) => k.split('::')[1])
               );
-              // A segment can't be removed if ANY of its standard documents have
-              // already been uploaded. Segments with no uploaded docs drop freely.
+              /* A segment can't be removed if ANY of its documents has an
+               * upload — including one shared with a segment being kept. Four
+               * segments sharing a mandatory DD doc are all locked by that one
+               * file; delete it to free them. Mirrors SegmentGuard so the field
+               * never allows something the save would reject. */
               const locked = removed.filter(seg =>
                 (segCodeMap[seg] ?? []).some(c => uploaded.has(c))
               );
@@ -2749,7 +2791,7 @@ function Stage2Shimmer() {
 /* Stage 3 (Evidence Vault) shimmer removed along with the stage itself. */
 
 /* ───── Stage 1 — Identification + Primary Address & Contact ───── */
-function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onCountryBlockedByGst, currentCustomerId }:
+function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onCountryBlockedByGst, currentCustomerId, unruledSegments = [] }:
   { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[];
     /** True when GST Scrutiny entries exist. Only guards the Country field now —
      *  the GST Applicable toggle it used to lock no longer exists. */
@@ -2759,7 +2801,10 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
     onCountryBlockedByGst: () => void;
     /** DB id of the customer being edited — excluded from the GST duplicate
      *  check so editing a record doesn't collide with its own GST number. */
-    currentCustomerId?: number | null }) {
+    currentCustomerId?: number | null;
+    /** Segment names with no Document Control Panel rule — listed but not
+     *  selectable, since they'd bring no compliance documents with them. */
+    unruledSegments?: string[] }) {
   /* India (or not-yet-chosen) → domestic → GST fields render. Any other country
    * → international → they're hidden. Driven by the Primary Address & Contact
    * Person card's Country, which lives in this same component. */
@@ -2901,6 +2946,8 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                    * returns the possibly-adjusted selection. */
                   set('coSeg', guardSegmentRemove(form.coSeg ?? [], vs));
                 }}
+                disabledValues={unruledSegments}
+                disabledHint="no document rule defined in the Document Control Panel yet"
                 maxChips={2}
               />
             </Field>

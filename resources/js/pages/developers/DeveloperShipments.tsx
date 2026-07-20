@@ -425,23 +425,23 @@ export default function DeveloperShipments() {
                       <td className="rvtbl-sr">{startIdx + i}</td>
                       <IdCell id={r.shipment_code} date={r.created_at} primary />
                       <IdCell id={r.opp_code} date={r.opp_date} />
-                      <EmptyCell /> {/* Procurement ID */}
-                      <EmptyCell /> {/* GRN ID */}
-                      <EmptyCell /> {/* QA ID */}
-                      <EmptyCell /> {/* Remittance ID */}
-                      <EmptyCell /> {/* FIRC */}
-                      <EmptyCell /> {/* Export Invoice */}
-                      <EmptyCell /> {/* Outward ID */}
-                      <EmptyCell /> {/* PSD ID */}
-                      <EmptyCell /> {/* e-BRC ID */}
+                      <EmptyCell />{/* Procurement ID */}
+                      <EmptyCell />{/* GRN ID */}
+                      <EmptyCell />{/* QA ID */}
+                      <EmptyCell />{/* Remittance ID */}
+                      <EmptyCell />{/* FIRC */}
+                      <EmptyCell />{/* Export Invoice */}
+                      <EmptyCell />{/* Outward ID */}
+                      <EmptyCell />{/* PSD ID */}
+                      <EmptyCell />{/* e-BRC ID */}
                       <IdCell id={r.pi_no} date={r.pi_date} />
-                      <EmptyCell /> {/* PO Number */}
-                      <EmptyCell /> {/* SPI Number */}
-                      <EmptyCell /> {/* FFD PO Number */}
+                      <EmptyCell />{/* PO Number */}
+                      <EmptyCell />{/* SPI Number */}
+                      <EmptyCell />{/* FFD PO Number */}
                       <TxtCell v={r.customer_name} />
                       <TxtCell v={r.consignee_name} />
-                      <EmptyCell /> {/* Supplier */}
-                      <EmptyCell /> {/* FFD / Transporter */}
+                      <EmptyCell />{/* Supplier */}
+                      <EmptyCell />{/* FFD / Transporter */}
                       {r.shipping_liability
                         ? <td><span className="s360-tag">{r.shipping_liability}</span></td>
                         : <EmptyCell />}
@@ -535,22 +535,22 @@ export default function DeveloperShipments() {
                       <td className="rvtbl-sr">{startIdx + i}</td>
                       <IdCell id={r.shipment_code} date={r.created_at} primary />
                       <IdCell id={r.opp_code} date={r.opp_date} />
-                      <EmptyCell /> {/* Procurement ID */}
-                      <EmptyCell /> {/* GRN ID */}
-                      <EmptyCell /> {/* QA ID */}
-                      <EmptyCell /> {/* Domestic Receipt No. */}
-                      <EmptyCell /> {/* Domestic GST Invoice */}
-                      <EmptyCell /> {/* Outward ID */}
-                      <EmptyCell /> {/* PSD ID */}
-                      <EmptyCell /> {/* e-BRC ID */}
+                      <EmptyCell />{/* Procurement ID */}
+                      <EmptyCell />{/* GRN ID */}
+                      <EmptyCell />{/* QA ID */}
+                      <EmptyCell />{/* Domestic Receipt No. */}
+                      <EmptyCell />{/* Domestic GST Invoice */}
+                      <EmptyCell />{/* Outward ID */}
+                      <EmptyCell />{/* PSD ID */}
+                      <EmptyCell />{/* e-BRC ID */}
                       <IdCell id={r.pi_no} date={r.pi_date} />
-                      <EmptyCell /> {/* PO Number */}
-                      <EmptyCell /> {/* SPI Number */}
-                      <EmptyCell /> {/* FFD PO Number */}
+                      <EmptyCell />{/* PO Number */}
+                      <EmptyCell />{/* SPI Number */}
+                      <EmptyCell />{/* FFD PO Number */}
                       <TxtCell v={r.customer_name} />
                       <TxtCell v={r.consignee_name} />
-                      <EmptyCell /> {/* Supplier */}
-                      <EmptyCell /> {/* FFD / Transporter */}
+                      <EmptyCell />{/* Supplier */}
+                      <EmptyCell />{/* FFD / Transporter */}
                       <YnCell yes={r.cold_chain} />
                       <td className="s360-port">{r.place_of_dispatch ?? '—'}</td>
                       <td className="s360-port">{r.place_of_delivery ?? '—'}</td>
