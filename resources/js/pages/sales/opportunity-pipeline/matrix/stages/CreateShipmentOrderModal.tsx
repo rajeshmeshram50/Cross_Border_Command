@@ -221,7 +221,15 @@ export default function CreateShipmentOrderModal({
       } else {
         fd.append('zip_code',           zipCode.trim());
         fd.append('freight_cost',       freightCost);
-        if (incoTerm.trim())         fd.append('inco_term',         incoTerm.trim());
+        /* INCO Term is stored by master id — the label goes along as the
+         * historical snapshot so the row still reads correctly if the master
+         * row is later deleted. A value carried over from the PI that no
+         * longer matches a master option sends the label only. */
+        if (incoTerm.trim()) {
+          fd.append('inco_term', incoTerm.trim());
+          const incoId = masters.incoterms.find(o => o.value === incoTerm)?.id;
+          if (incoId) fd.append('inco_term_id', String(incoId));
+        }
         if (portOfLoading.trim())    fd.append('port_of_loading',   portOfLoading.trim());
         if (portOfUnloading.trim())  fd.append('port_of_unloading', portOfUnloading.trim());
         fd.append('final_destination', finalDestination.trim());

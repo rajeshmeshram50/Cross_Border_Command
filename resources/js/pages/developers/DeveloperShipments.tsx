@@ -33,7 +33,6 @@ type ShipmentRow = {
   id: number;
   shipment_code: string | null;
   created_at: string | null;
-  owner_name: string | null;
   opp_code: string | null;
   opp_date: string | null;
   customer_name: string | null;
@@ -172,6 +171,13 @@ function IdCell({ id, date, primary }: { id?: string | null; date?: string | nul
   );
 }
 
+/* INCO terms are stored/served as "FOB – Free On Board"; the column is narrow
+ * and the code alone is what the desk reads, so keep just the code. The full
+ * text still goes to the tooltip and the Excel export. */
+function incoCode(v?: string | null): string {
+  return String(v ?? '').split(/[–—-]/)[0].trim().split(/\s+/)[0] || '';
+}
+
 /* A column the API doesn't carry yet — rendered as an em-dash, never faked. */
 function EmptyCell() {
   return <td><span className="rvtbl-dash">—</span></td>;
@@ -272,7 +278,7 @@ export default function DeveloperShipments() {
     const lo = q.trim().toLowerCase();
     if (!lo) return base;
     return base.filter(r =>
-      [r.shipment_code, r.owner_name, r.opp_code, r.customer_name, r.consignee_name, r.pi_no,
+      [r.shipment_code, r.opp_code, r.customer_name, r.consignee_name, r.pi_no,
         r.inco_term, r.port_of_loading, r.port_of_unloading, r.shipping_liability,
         r.place_of_dispatch, r.place_of_delivery]
         .some(v => (v ?? '').toLowerCase().includes(lo)),
@@ -303,7 +309,6 @@ export default function DeveloperShipments() {
         'PI Date': fmtDate(r.pi_date),
         'Customer': r.customer_name ?? '',
         'Consignee': r.consignee_name ?? '',
-        'Owner': r.owner_name ?? '',
         'Shipping Liability': r.shipping_liability ?? '',
         'Cold Chain': r.cold_chain ? 'Yes' : 'No',
         'Hazardous': r.hazardous == null ? '' : (r.hazardous ? 'Yes' : 'No'),
@@ -485,8 +490,14 @@ export default function DeveloperShipments() {
                       {r.hazardous === null || r.hazardous === undefined
                         ? <EmptyCell /> /* PI has no products to judge by */
                         : <YnCell yes={r.hazardous} warn />}
-                      {r.inco_term
-                        ? <td><span className="s360-tag is-inco">{r.inco_term}</span></td>
+                      {incoCode(r.inco_term)
+                        ? (
+                          <td>
+                            <Tooltip label={r.inco_term ?? ''} themed maxWidth={320}>
+                              <span className="s360-tag is-inco">{incoCode(r.inco_term)}</span>
+                            </Tooltip>
+                          </td>
+                        )
                         : <EmptyCell />}
                       <td className="s360-port">{r.port_of_loading ?? '—'}</td>
                       <td className="s360-port">{r.port_of_unloading ?? '—'}</td>
