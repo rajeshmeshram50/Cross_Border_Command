@@ -601,11 +601,11 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                   <th style={{ width: 70 }}>SR NO</th>
                   <th style={{ width: 140 }}>PRODUCT CODE</th>
                   <th>PRODUCT NAME</th>
-                  <th style={{ width: 120 }}>STATUS</th>
+                  <th style={{ width: 120 }} className="pdm-ta-c">STATUS</th>
                   <th style={{ width: 110 }}>QUANTITY</th>
                   <th style={{ width: 150 }}>TARGET PRICE</th>
-                  <th style={{ width: 100 }}>CURRENCY</th>
-                  <th style={{ width: 110 }}>ACTIONS</th>
+                  <th style={{ width: 100 }} className="pdm-ta-c">CURRENCY</th>
+                  <th style={{ width: 110 }} className="pdm-ta-c">ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
@@ -652,7 +652,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                           )}
                         </div>
                       </td>
-                      <td>
+                      <td className="pdm-ta-c">
                         <StatusPill status={r.product_status} />
                       </td>
                       <td className="pdm-num">{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
@@ -661,7 +661,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                           ? `${currencySymbol(r.currency)} ${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           : '—'}
                       </td>
-                      <td><span className="pdm-curr-pill">{r.currency}</span></td>
+                      <td className="pdm-ta-c"><span className="pdm-curr-pill">{r.currency}</span></td>
                       <td className="pdm-act-cell">
                         {/* Themed Tooltip pills — same treatment as the Lead
                             Acknowledgement master's action column (QA ask),
@@ -1252,7 +1252,10 @@ const SCOPED_CSS = `
   text-align: center; padding: 24px 14px;
   color: #94a3b8; font-style: italic; font-size: 12px;
 }
-.pdm-act-cell { display: flex; gap: 6px; justify-content: flex-start; align-items: center; }
+.pdm-act-cell { display: flex; gap: 6px; justify-content: center; align-items: center; }
+/* Center STATUS + ACTIONS (header and cells). !important overrides the base
+   left-aligned th rule. */
+.pdm-ta-c { text-align: center !important; }
 .pdm-row-btn {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 5px 10px; border: 1.5px solid #cbd5e1;

@@ -71,8 +71,8 @@ class ShipmentOrderController extends Controller
             'place_of_dispatch'   => 'nullable|string|max:128',
             'place_of_delivery'   => 'nullable|string|max:128',
 
-            'attachments'         => 'nullable|array',
-            'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:5120',
+            'attachments'         => 'nullable|array|max:1',
+            'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:2048',
             'remarks'             => 'nullable|string|max:2000',
         ]);
 
@@ -485,8 +485,8 @@ class ShipmentOrderController extends Controller
             'shipping_cost'       => 'nullable|numeric|gt:0',
             'place_of_dispatch'   => 'nullable|string|max:128',
             'place_of_delivery'   => 'nullable|string|max:128',
-            'attachments'         => 'nullable|array',
-            'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:5120',
+            'attachments'         => 'nullable|array|max:1',
+            'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:2048',
             'remarks'             => 'nullable|string|max:2000',
         ]);
 

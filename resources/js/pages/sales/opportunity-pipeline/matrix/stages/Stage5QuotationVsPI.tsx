@@ -1121,11 +1121,23 @@ function MoreActionsMenu({ anchorEl, onClose, onPick, busy, kind }: {
   useEffect(() => {
     const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    /* Close on background scroll instead of chasing it. The rAF loop above kept
+       the menu glued to the button while the page/table scrolled, but that
+       re-positions through React state every frame, so it visibly trailed the
+       scroll (the "not smooth" jank). Dismissing on scroll — the standard
+       action-menu behaviour — removes the jank entirely. A scroll INSIDE the
+       menu is ignored, and onClose no-ops while an action is in flight. */
+    const onScroll = (e: Event) => {
+      if (ref.current && e.target instanceof Node && ref.current.contains(e.target)) return;
+      onClose();
+    };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, true);
     return () => {
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll, true);
     };
   }, [onClose]);
 

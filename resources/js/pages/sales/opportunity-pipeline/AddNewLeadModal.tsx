@@ -52,6 +52,7 @@ type CustomerOption = {
   dbId: number;      // primary key — used for the show() call
   company: string;   // trade / company name
   legalName: string; // registered legal name — shown as the "Customer Name"
+  country: string;   // primary-address country → drives the Domestic/Intl badge
 };
 
 const COUNTRY_OPTIONS = ['India', 'United States', 'United Kingdom', 'Australia', 'Italy', 'Pakistan', 'China', 'Saudi Arabia', 'Nigeria'];
@@ -170,6 +171,7 @@ export default function AddNewLeadModal(props: {
             dbId:      Number((c as Record<string, unknown>).db_id ?? (c as Record<string, unknown>).id_pk ?? 0),
             company:   String((c as Record<string, unknown>).company ?? (c as Record<string, unknown>).company_name ?? ''),
             legalName: String((c as Record<string, unknown>).legal_name ?? (c as Record<string, unknown>).legalName ?? (c as Record<string, unknown>).legal ?? ''),
+            country:   String((c as Record<string, unknown>).country ?? (c as Record<string, unknown>).country_iso ?? (c as Record<string, unknown>).country_name ?? ''),
           }))
           .filter(c => c.dbId > 0 && c.company);
         setCustomerOpts(opts);
@@ -392,7 +394,18 @@ export default function AddNewLeadModal(props: {
                     value={pickedCustomerId}
                     onChange={(v) => { void onPickExisting(v); }}
                     placeholder={customersLoading ? 'Loading customers…' : 'Select a customer'}
-                    options={customerOpts.map(c => ({ value: c.id, label: `${c.id} — ${c.company || c.legalName}` }))}
+                    /* Domestic (India) vs International pill on each option, so
+                       the customer's scope is obvious in the picker. Country may
+                       arrive as a name ("India") or ISO ("IN") — treat both as
+                       domestic; blank country shows no badge. */
+                    options={customerOpts.map(c => {
+                      const cy = c.country.trim().toLowerCase();
+                      const badge = !cy ? undefined
+                        : (cy === 'india' || cy === 'in')
+                          ? { text: 'Domestic', tone: 'green' as const, title: 'India — domestic' }
+                          : { text: 'International', tone: 'violet' as const, title: `${c.country} — international` };
+                      return { value: c.id, label: `${c.id} — ${c.company || c.legalName}`, badge };
+                    })}
                     disabled={customersLoading || customerFetching}
                   />
                 </div>
