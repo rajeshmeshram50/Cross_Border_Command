@@ -1090,8 +1090,15 @@ export default function AddVendorModal(props: {
   const blockedSegmentRemovals = (next: string[]): string[] => {
     const removed = (segment ?? []).filter(s => !next.includes(s));
     if (!removed.length) return [];
+    // Require an ACTUAL file/URL, not just a map entry — the ref tables can
+    // hold a placeholder row for a document that was never uploaded. Same
+    // check the customer form makes.
+    const hasFile = (k: string) => {
+      const u = segmentRefUploads[k];
+      return !!(u && (u.url || u.file));
+    };
     return removed
-      .filter(s => (segmentDocKeys[String(s)] || []).some(k => !!segmentRefUploads[k]))
+      .filter(s => (segmentDocKeys[String(s)] || []).some(hasFile))
       .map(String);
   };
 
