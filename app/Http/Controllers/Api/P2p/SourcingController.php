@@ -187,10 +187,25 @@ class SourcingController extends Controller
 
     public function upload(Request $request)
     {
+        // NOTE: validate the file's actual extension, not the content-sniffed
+        // MIME type. Laravel's `mimes:` rule sniffs the bytes with finfo, and on
+        // some XAMPP/Windows setups a perfectly valid PDF sniffs as
+        // application/octet-stream → false "must be a file of type pdf…" 422s.
+        // Files here are download-only + auth-gated, so trusting the extension
+        // (with a size cap) is safe and lets every real PDF through.
         $request->validate([
-            'file' => 'required|file|max:5120|mimes:pdf,jpg,jpeg,png,webp',
+            'file' => 'required|file|max:5120',
             'kind' => 'nullable|in:clarity,card',
         ]);
+
+        $allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+        $ext     = strtolower($request->file('file')->getClientOriginalExtension());
+        if (!in_array($ext, $allowed, true)) {
+            return response()->json([
+                'message' => 'The file must be a PDF, JPG, PNG, or WEBP.',
+                'errors'  => ['file' => ['The file must be a PDF, JPG, PNG, or WEBP.']],
+            ], 422);
+        }
 
         $dir  = 'p2p/' . ($request->input('kind') === 'card' ? 'supplier-cards' : 'clarity');
         $path = $request->file('file')->store($dir, 'public');
@@ -199,6 +214,29 @@ class SourcingController extends Controller
             'path' => '/storage/' . $path,
             'name' => $request->file('file')->getClientOriginalName(),
         ]);
+    }
+
+    /* Stream ONE clarity file for download. The path is passed as a query
+     * parameter (?path=…) — not as a URL segment — so a multi-PDF value can
+     * never smear several storage paths into one request URL. Auth-gated and
+     * locked to the p2p/clarity folder to block directory traversal. */
+    // GET /p2p/clarity/download?path=/storage/p2p/clarity/xxxx.pdf
+    public function downloadClarity(Request $request)
+    {
+        $data = $request->validate(['path' => 'required|string']);
+
+        // Normalise to a disk-relative path: strip a leading /storage/ and slashes.
+        $rel = ltrim(str_replace('\\', '/', $data['path']), '/');
+        $rel = preg_replace('#^storage/#', '', $rel);
+
+        if (str_contains($rel, '..') || !str_starts_with($rel, 'p2p/clarity/')) {
+            abort(404);
+        }
+
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (!$disk->exists($rel)) abort(404);
+
+        return $disk->download($rel, basename($rel));
     }
 
 
@@ -445,6 +483,32 @@ class SourcingController extends Controller
         return $this->ok([
             'id'     => $p->id,
             'status' => $p->status,
+        ]);
+    }
+
+    /* Persist a single product's clarity WITHOUT re-saving the whole target —
+     * the Product List "Update" button writes it straight to the DB (PDF paths
+     * are newline-joined in clarity_value; empty type/value clears it). */
+    // PUT /p2p/sourcing-targets/{target}/products/{product}/clarity
+    public function updateProductClarity(Request $request, string $target, int $product)
+    {
+        $t = $this->target($request, $target);
+        $p = $t->products()->where('id', $product)->firstOrFail();
+
+        $data = $request->validate([
+            'clarity_type'  => 'nullable|string|in:text,link,pdf',
+            'clarity_value' => 'nullable|string',
+        ]);
+
+        $p->update([
+            'clarity_type'  => $data['clarity_type'] ?: null,
+            'clarity_value' => $data['clarity_value'] ?? null,
+        ]);
+
+        return $this->ok([
+            'id'            => $p->id,
+            'clarity_type'  => $p->clarity_type,
+            'clarity_value' => $p->clarity_value,
         ]);
     }
 
