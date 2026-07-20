@@ -180,7 +180,7 @@ export default function SupplierPurchaseInvoice() {
       toast.warning('Utilise the full amount first', `Record payments against ${where} until its balance is cleared before syncing to Zohobook.`);
       return;
     }
-    try { await api.post(`/p2p/supplier-purchase-invoices/${r.id}/sync`); toast.success(`${r.spiNo} synced with Zohobook`); reload(); }
+    try { const resp = await api.post(`/p2p/supplier-purchase-invoices/${r.id}/sync`); toast.success(`${r.spiNo} synced with Zohobook`, resp?.data?.message); reload(); }
     catch (e: any) { toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this invoice.'); }
   };
 

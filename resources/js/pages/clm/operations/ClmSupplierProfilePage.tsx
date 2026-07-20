@@ -503,7 +503,10 @@ function usePage() {
 }
 
 function slicePage<T>(data: T[], page: number): T[] {
-  const start = (page - 1) * PER_PAGE;
+  // Clamp to the last page so a search that shrinks the list can't strand the
+  // table on an out-of-range page and render an empty body.
+  const safe = Math.min(page, Math.max(1, Math.ceil(data.length / PER_PAGE)));
+  const start = (safe - 1) * PER_PAGE;
   return data.slice(start, start + PER_PAGE);
 }
 
@@ -744,12 +747,13 @@ function SubTab({ active, label, badge, badgeActive, icon, onClick }: { active: 
 
 const SUB_BAR: CSSProperties = { display: 'flex', alignItems: 'center', padding: '8px 16px 0 16px', gap: 0, borderBottom: '1.5px solid rgba(6,182,212,.15)', background: 'linear-gradient(110deg,#f0fdff,#e8fbfd)' };
 
-/* Top-bar search box (visual only, faithful to prototype) */
-function SearchBox() {
+/* Top-bar search box — filters the table under it (party-wise and
+ * transaction-wise each own their query). */
+function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
   return (
     <div className="sp-search" style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '36px', padding: '0 14px', borderRadius: '9px', background: '#fff', border: '1.5px solid #A5F3FC', boxShadow: '0 1px 4px rgba(6,182,212,.08)', flex: 1, maxWidth: '680px' }}>
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.3" strokeLinecap="round" style={{ flexShrink: 0, opacity: 0.7 }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-      <input type="text" placeholder="Search by Supplier ID, Name, Segment or Status..." style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
+      <input type="text" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} style={{ border: 'none', outline: 'none', fontSize: '11.5px', fontFamily: 'inherit', color: '#0c4a6e', flex: 1, background: 'transparent', minWidth: 0 }} />
       <span style={{ fontSize: '9px', fontWeight: 600, color: '#94a3b8', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '5px', padding: '2px 6px', whiteSpace: 'nowrap', flexShrink: 0 }}>⌘ K</span>
     </div>
   );
@@ -771,6 +775,9 @@ export default function ClmSupplierProfilePage() {
   const [txnShip, setTxnShip] = useState<'with' | 'without'>('with');
   const [txnWsSub, setTxnWsSub] = useState<'mat' | 'logi'>('mat');
   const [txnWosSub, setTxnWosSub] = useState<'svc' | 'mat' | 'logi'>('svc');
+  // Top-bar search queries — one per panel (Party wise / Transaction wise).
+  const [partySearch, setPartySearch] = useState('');
+  const [txnSearch, setTxnSearch] = useState('');
 
   // Evidence Vault popup (same modal the Suppliers table uses).
   const [supVault, setSupVault] = useState<SupplierVaultTarget | null>(null);
@@ -811,6 +818,19 @@ export default function ClmSupplierProfilePage() {
   const spTxnWosSvcData  = sp.txn_wos_svc;
   const spTxnWosMatData  = sp.txn_wos_mat;
   const spTxnWosLogiData = sp.txn_wos_logi;
+
+  /* Top-bar search. Party-wise matches Supplier ID / Name / Segment / State;
+   * transaction-wise matches every text column those tables render (shipment,
+   * procurement, supplier, PO, invoice, reg. status). Each tab keeps its own
+   * query so switching tabs doesn't carry a stale filter across. */
+  const partyQ = partySearch.trim().toLowerCase();
+  const filterParty = (rows: PartyRow[]): PartyRow[] =>
+    !partyQ ? rows : rows.filter((r) => [r.id, r.name, r.seg, r.state]
+      .some((v) => (v || '').toLowerCase().includes(partyQ)));
+  const txnQ = txnSearch.trim().toLowerCase();
+  const filterTxn = <T extends { supId?: string; supplier?: string; shpId?: string; procId?: string; po?: string; inv?: string; reg?: string }>(rows: T[]): T[] =>
+    !txnQ ? rows : rows.filter((r) => [r.supId, r.supplier, r.shpId, r.procId, r.po, r.inv, r.reg]
+      .some((v) => (v || '').toLowerCase().includes(txnQ)));
 
   // Resolve a transaction row's supplier back to its live party record so the
   // transaction-wise tables can show the SAME real documents as party-wise.
@@ -969,7 +989,7 @@ export default function ClmSupplierProfilePage() {
                   Without Shipment ID
                 </button>
               </div>
-              <SearchBox />
+              <SearchBox value={partySearch} onChange={setPartySearch} placeholder="Search by Supplier ID, Name, Segment or State..." />
             </div>
 
             {/* With Shipment ID */}
@@ -979,8 +999,8 @@ export default function ClmSupplierProfilePage() {
                   <SubTab active={wsSub === 'mat'} onClick={() => setWsSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={wsSub === 'mat'} icon="mat" />
                   <SubTab active={wsSub === 'logi'} onClick={() => setWsSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={wsSub === 'logi'} icon="logi" />
                 </div>
-                {wsSub === 'mat' && <PartyTable data={spMatData} label="suppliers" onVault={openVault} onDocs={openDocs} />}
-                {wsSub === 'logi' && <PartyTable data={spLogiData} label="suppliers" onVault={openVault} onDocs={openDocs} />}
+                {wsSub === 'mat' && <PartyTable data={filterParty(spMatData)} label="suppliers" onVault={openVault} onDocs={openDocs} />}
+                {wsSub === 'logi' && <PartyTable data={filterParty(spLogiData)} label="suppliers" onVault={openVault} onDocs={openDocs} />}
               </div>
             )}
 
@@ -992,9 +1012,9 @@ export default function ClmSupplierProfilePage() {
                   <SubTab active={wosSub === 'mat'} onClick={() => setWosSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={wosSub === 'mat'} icon="mat" />
                   <SubTab active={wosSub === 'logi'} onClick={() => setWosSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={wosSub === 'logi'} icon="logi" />
                 </div>
-                {wosSub === 'svc' && <PartyTable data={spWosSvcData} label="suppliers" onVault={openVault} onDocs={openDocs} />}
-                {wosSub === 'mat' && <PartyTable data={spWosMatData} label="suppliers" onVault={openVault} onDocs={openDocs} />}
-                {wosSub === 'logi' && <PartyTable data={spWosLogiData} label="suppliers" onVault={openVault} onDocs={openDocs} />}
+                {wosSub === 'svc' && <PartyTable data={filterParty(spWosSvcData)} label="suppliers" onVault={openVault} onDocs={openDocs} />}
+                {wosSub === 'mat' && <PartyTable data={filterParty(spWosMatData)} label="suppliers" onVault={openVault} onDocs={openDocs} />}
+                {wosSub === 'logi' && <PartyTable data={filterParty(spWosLogiData)} label="suppliers" onVault={openVault} onDocs={openDocs} />}
               </div>
             )}
           </div>
@@ -1016,7 +1036,7 @@ export default function ClmSupplierProfilePage() {
                   Without Shipment ID
                 </button>
               </div>
-              <SearchBox />
+              <SearchBox value={txnSearch} onChange={setTxnSearch} placeholder="Search by Shipment ID, Procurement ID, Supplier, PO, Invoice or Status..." />
             </div>
 
             {/* With Shipment ID */}
@@ -1026,8 +1046,8 @@ export default function ClmSupplierProfilePage() {
                   <SubTab active={txnWsSub === 'mat'} onClick={() => setTxnWsSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={txnWsSub === 'mat'} icon="mat" />
                   <SubTab active={txnWsSub === 'logi'} onClick={() => setTxnWsSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={txnWsSub === 'logi'} icon="logi" />
                 </div>
-                {txnWsSub === 'mat' && <TxnWithTable data={spTxnMatData} onDocs={openTxnDocs} onVault={openTxnVault} />}
-                {txnWsSub === 'logi' && <TxnWithTable data={spTxnLogiData} onDocs={openTxnDocs} onVault={openTxnVault} />}
+                {txnWsSub === 'mat' && <TxnWithTable data={filterTxn(spTxnMatData)} onDocs={openTxnDocs} onVault={openTxnVault} />}
+                {txnWsSub === 'logi' && <TxnWithTable data={filterTxn(spTxnLogiData)} onDocs={openTxnDocs} onVault={openTxnVault} />}
               </div>
             )}
 
@@ -1039,9 +1059,9 @@ export default function ClmSupplierProfilePage() {
                   <SubTab active={txnWosSub === 'mat'} onClick={() => setTxnWosSub('mat')} label="Material Suppliers" badge="MAT" badgeActive={txnWosSub === 'mat'} icon="mat" />
                   <SubTab active={txnWosSub === 'logi'} onClick={() => setTxnWosSub('logi')} label="Logistics Suppliers (FFD)" badge="FFD" badgeActive={txnWosSub === 'logi'} icon="logi" />
                 </div>
-                {txnWosSub === 'svc' && <TxnWosSvcTable data={spTxnWosSvcData} onDocs={openTxnDocs} onVault={openTxnVault} />}
-                {txnWosSub === 'mat' && <TxnWosProcTable data={spTxnWosMatData} onDocs={openTxnDocs} onVault={openTxnVault} />}
-                {txnWosSub === 'logi' && <TxnWosProcTable data={spTxnWosLogiData} onDocs={openTxnDocs} onVault={openTxnVault} />}
+                {txnWosSub === 'svc' && <TxnWosSvcTable data={filterTxn(spTxnWosSvcData)} onDocs={openTxnDocs} onVault={openTxnVault} />}
+                {txnWosSub === 'mat' && <TxnWosProcTable data={filterTxn(spTxnWosMatData)} onDocs={openTxnDocs} onVault={openTxnVault} />}
+                {txnWosSub === 'logi' && <TxnWosProcTable data={filterTxn(spTxnWosLogiData)} onDocs={openTxnDocs} onVault={openTxnVault} />}
               </div>
             )}
           </div>

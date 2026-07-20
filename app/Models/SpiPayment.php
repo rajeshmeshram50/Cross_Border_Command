@@ -17,7 +17,7 @@ class SpiPayment extends Model
     protected $fillable = [
         'client_id', 'branch_id', 'supplier_purchase_invoice_id',
         'amount', 'bank_name', 'utr_cheque_number', 'utr_cheque_date',
-        'attachment_path', 'balance_after', 'status', 'created_by',
+        'attachment_path', 'balance_after', 'status', 'created_by', 'zoho_payment_id', 'zoho_applied_amount',
     ];
 
     protected $casts = [

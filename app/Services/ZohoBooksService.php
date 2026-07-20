@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Customer;
 use App\Models\Vendor;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -112,11 +113,16 @@ class ZohoBooksService
         return $this->handle($resp, 'GET ' . $endpoint);
     }
 
-    /** POST a JSON body against the Books API; org id in the query string. */
-    private function post(string $endpoint, array $body): array
+    /** POST a JSON body against the Books API; org id in the query string. Extra
+     *  query params (e.g. ignore_auto_number) are appended to the URL. */
+    private function post(string $endpoint, array $body, array $query = []): array
     {
+        $url = "{$this->baseUrl}/" . ltrim($endpoint, '/') . '?organization_id=' . $this->orgId;
+        foreach ($query as $k => $v) {
+            $url .= '&' . $k . '=' . rawurlencode((string) $v);
+        }
         $resp = Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $this->getAccessToken()])
-            ->post("{$this->baseUrl}/" . ltrim($endpoint, '/') . '?organization_id=' . $this->orgId, $body);
+            ->post($url, $body);
         return $this->handle($resp, 'POST ' . $endpoint);
     }
 
@@ -250,38 +256,59 @@ class ZohoBooksService
     }
 
     /**
-     * Resolve a product name to a purchasable Zoho Item id, creating it on
-     * first use. Zoho purchase orders reject ad-hoc lines ("cannot be created
-     * for a non-purchase item") — a PO line must point at a real item that is
-     * flagged purchasable, so we ensure one exists.
+     * Resolve a product to a purchasable Zoho Item id, creating it on first use.
+     * Zoho purchase orders reject ad-hoc lines ("cannot be created for a
+     * non-purchase item") — a PO line must point at a real purchasable item.
+     *
+     * Dedup (mirrors findOrCreateVendorId): when a local $productId is given, the
+     * resolved Zoho item id is cached back onto products.zoho_item_id and reused
+     * on every later sync WITHOUT re-searching — the guarantee against duplicate
+     * items in Zoho. Ad-hoc lines (no product id, e.g. a Direct SPI) fall back to
+     * name matching + a per-request memo.
      */
-    public function findOrCreateItemId(string $name, float $rate, ?string $taxId = null): string
+    public function findOrCreateItemId(string $name, float $rate, ?string $taxId = null, ?int $productId = null): string
     {
+        // Fast path: a product that already carries its Zoho item id never
+        // re-searches or re-creates.
+        if ($productId) {
+            $cached = \App\Models\Product::where('id', $productId)->value('zoho_item_id');
+            if (!empty($cached)) return (string) $cached;
+        }
+
         $name = trim($name) !== '' ? trim($name) : 'Item';
         $key = mb_strtolower($name);
-        if (isset($this->itemCache[$key])) return $this->itemCache[$key];
+        $resolved = $this->itemCache[$key] ?? null;
 
-        // Reuse an existing purchasable item with the same name before creating.
-        foreach (($this->get('items', ['name' => $name])['items'] ?? []) as $it) {
-            if (mb_strtolower(trim((string) ($it['name'] ?? ''))) === $key && ($it['can_be_purchased'] ?? true)) {
-                return $this->itemCache[$key] = (string) $it['item_id'];
+        if (!$resolved) {
+            // Reuse an existing purchasable item with the same name before creating.
+            foreach (($this->get('items', ['name' => $name])['items'] ?? []) as $it) {
+                if (mb_strtolower(trim((string) ($it['name'] ?? ''))) === $key && ($it['can_be_purchased'] ?? true)) {
+                    $resolved = (string) $it['item_id'];
+                    break;
+                }
             }
         }
 
-        $body = [
-            'name'          => $name,
-            'product_type'  => 'goods',
-            'item_type'     => 'sales_and_purchases', // purchasable → valid on a PO
-            'rate'          => $rate,
-            'purchase_rate' => $rate,
-        ];
-        if ($taxId) $body['tax_id'] = $taxId;
+        if (!$resolved) {
+            $body = [
+                'name'          => $name,
+                'product_type'  => 'goods',
+                'item_type'     => 'sales_and_purchases', // purchasable → valid on a PO
+                'rate'          => $rate,
+                'purchase_rate' => $rate,
+            ];
+            if ($taxId) $body['tax_id'] = $taxId;
 
-        $created = $this->post('items', $body);
-        $id = $created['item']['item_id'] ?? null;
-        if (!$id) throw new RuntimeException('Zoho Books did not return an item id for "' . $name . '".');
+            $created = $this->post('items', $body);
+            $id = $created['item']['item_id'] ?? null;
+            if (!$id) throw new RuntimeException('Zoho Books did not return an item id for "' . $name . '".');
+            $resolved = (string) $id;
+        }
 
-        return $this->itemCache[$key] = (string) $id;
+        $this->itemCache[$key] = $resolved;
+        // Remember it on the product so future syncs skip the search entirely.
+        if ($productId) \App\Models\Product::where('id', $productId)->update(['zoho_item_id' => $resolved]);
+        return $resolved;
     }
 
     /** Map an ISO currency code (e.g. USD) to the org's Zoho currency id. */
@@ -299,6 +326,14 @@ class ZohoBooksService
         });
 
         return $map[$code] ?? null;
+    }
+
+    /** Public: GST numeric state code ("08") → Zoho 2-letter place of supply
+     *  ("RJ"). Set on estimates/invoices so Zoho's intra/inter-state tax
+     *  determination matches ours (critical when the org has no GSTIN). */
+    public function placeOfSupply(?string $numeric): ?string
+    {
+        return self::placeOfContact($numeric);
     }
 
     /** GST numeric state code (e.g. "27") → Zoho 2-letter place-of-supply ("MH"). */
@@ -341,6 +376,255 @@ class ZohoBooksService
 
         if (!$resp->successful()) {
             throw new RuntimeException('Zoho Books PDF fetch failed: ' . $resp->body());
+        }
+        return $resp->body();
+    }
+
+    /* ─────────────────────── Bill + vendor payment ─────────────────────── */
+
+    /** POST a fully-built bill payload; returns the bill node. */
+    public function createBill(array $payload): array
+    {
+        $resp = $this->post('bills', $payload);
+        $bill = $resp['bill'] ?? null;
+        if (!$bill || empty($bill['bill_id'])) {
+            throw new RuntimeException('Zoho Books did not return a bill id.');
+        }
+        return $bill;
+    }
+
+    /**
+     * POST a vendor payment (records a payment against one or more bills).
+     * Returns the vendorpayment node (carries payment_id).
+     */
+    public function recordVendorPayment(array $payload): array
+    {
+        $resp = $this->post('vendorpayments', $payload);
+        $pay = $resp['vendorpayment'] ?? $resp['payment'] ?? null;
+        if (!$pay || empty($pay['payment_id'])) {
+            throw new RuntimeException('Zoho Books did not return a vendor-payment id.');
+        }
+        return $pay;
+    }
+
+    /**
+     * The org's Bank/Cash ledgers, cached per org as
+     * [['id' => …, 'name' => …, 'type' => 'bank'|'cash'], …] in chart order.
+     */
+    protected function bankCashAccounts(): array
+    {
+        return Cache::remember('zoho_books_bank_accounts:' . $this->orgId, now()->addHours(6), function () {
+            $out = [];
+            foreach (($this->get('chartofaccounts')['chartofaccounts'] ?? []) as $a) {
+                $type = (string) ($a['account_type'] ?? '');
+                if (($type === 'bank' || $type === 'cash') && ($a['is_active'] ?? true)) {
+                    $out[] = ['id' => (string) ($a['account_id'] ?? ''), 'name' => (string) ($a['account_name'] ?? ''), 'type' => $type];
+                }
+            }
+            return $out;
+        });
+    }
+
+    /**
+     * Resolve a "paid through" account id for a vendor payment (Zoho requires
+     * one on every payment). When a bank name is given, match it to the org's
+     * matching Bank ledger so bank-wise reconciliation in Zoho is correct;
+     * otherwise (or when unmatched) fall back to the first active Bank, then Cash.
+     * Returns null only when the org has no Bank/Cash ledger at all.
+     */
+    public function resolvePaidThroughAccountId(?string $bankName = null): ?string
+    {
+        $accounts = $this->bankCashAccounts();
+        if (empty($accounts)) return null;
+
+        $needle = trim(mb_strtolower((string) $bankName));
+        if ($needle !== '') {
+            // Match a bank ledger by name — exact first, then contains either way
+            // (so "HDFC" matches "HDFC Bank" and vice-versa).
+            foreach ($accounts as $a) {
+                if ($a['type'] === 'bank' && mb_strtolower($a['name']) === $needle) return $a['id'];
+            }
+            foreach ($accounts as $a) {
+                $n = mb_strtolower($a['name']);
+                if ($a['type'] === 'bank' && $n !== '' && (str_contains($n, $needle) || str_contains($needle, $n))) return $a['id'];
+            }
+        }
+
+        foreach ($accounts as $a) { if ($a['type'] === 'bank') return $a['id']; }
+        return $accounts[0]['id'];   // no bank → first cash
+    }
+
+    /** Raw PDF bytes of Zoho's own rendered Bill — cached alongside the app. */
+    public function getBillPdf(string $zohoId): string
+    {
+        $resp = Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $this->getAccessToken()])
+            ->get("{$this->baseUrl}/bills/" . rawurlencode($zohoId), [
+                'organization_id' => $this->orgId,
+                'accept'          => 'pdf',
+            ]);
+
+        if (!$resp->successful()) {
+            throw new RuntimeException('Zoho Books bill PDF fetch failed: ' . $resp->body());
+        }
+        return $resp->body();
+    }
+
+    /** Fetch a bill node (used to read its current open balance before applying
+     *  a vendor credit against it). */
+    public function getBill(string $billId): array
+    {
+        return $this->get('bills/' . rawurlencode($billId))['bill'] ?? [];
+    }
+
+    /* ─────────────────────── Vendor credit (debit note) ─────────────────────── */
+
+    /**
+     * POST a fully-built vendor-credit payload (Zoho's purchase debit note; it
+     * reduces the payable to the supplier). Returns the vendor-credit node.
+     */
+    public function createVendorCredit(array $payload): array
+    {
+        $resp = $this->post('vendorcredits', $payload);
+        // Zoho has used both node keys across versions — accept either. The id
+        // field itself is vendor_credit_id (underscore); keep a fallback too.
+        $vc = $resp['vendor_credit'] ?? $resp['vendorcredit'] ?? null;
+        $id = $vc['vendor_credit_id'] ?? $vc['vendorcredit_id'] ?? null;
+        if (!$vc || empty($id)) {
+            throw new RuntimeException('Zoho Books did not return a vendor-credit id.');
+        }
+        // Normalise so callers can always read vendor_credit_id.
+        $vc['vendor_credit_id'] = (string) $id;
+        return $vc;
+    }
+
+    /**
+     * Apply an existing vendor credit against one or more open bills, realising
+     * the payable reduction. `$bills` = [['bill_id' => ..., 'amount_applied' => ...]].
+     * Returns the decoded response.
+     */
+    public function applyVendorCreditToBills(string $vendorCreditId, array $bills): array
+    {
+        return $this->post('vendorcredits/' . rawurlencode($vendorCreditId) . '/bills', ['bills' => $bills]);
+    }
+
+    /** Fetch a vendor-credit node (used to read its remaining balance before a
+     *  retry-apply on re-sync). Accepts either response key. */
+    public function getVendorCredit(string $id): array
+    {
+        $r = $this->get('vendorcredits/' . rawurlencode($id));
+        return $r['vendor_credit'] ?? $r['vendorcredit'] ?? [];
+    }
+
+    /** Raw PDF bytes of Zoho's own rendered vendor credit. */
+    public function getVendorCreditPdf(string $zohoId): string
+    {
+        $resp = Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $this->getAccessToken()])
+            ->get("{$this->baseUrl}/vendorcredits/" . rawurlencode($zohoId), [
+                'organization_id' => $this->orgId,
+                'accept'          => 'pdf',
+            ]);
+
+        if (!$resp->successful()) {
+            throw new RuntimeException('Zoho Books vendor-credit PDF fetch failed: ' . $resp->body());
+        }
+        return $resp->body();
+    }
+
+    /* ─────────────── Sales side: customer, estimate, invoice ─────────────── */
+
+    /**
+     * Resolve a local Customer to its Zoho contact id (contact_type=customer),
+     * creating it on first sync and caching the id back onto the customer row —
+     * the guarantee against duplicate customer contacts in Zoho. Mirrors
+     * findOrCreateVendorId.
+     */
+    public function findOrCreateCustomerId(Customer $customer, ?string $gstin = null, ?string $stateCode = null): string
+    {
+        if (!empty($customer->zoho_contact_id)) return (string) $customer->zoho_contact_id;
+
+        $name = trim((string) ($customer->company_name ?: $customer->legal_name));
+        if ($name === '') {
+            throw new RuntimeException('Customer has no company/legal name to register in Zoho Books.');
+        }
+
+        // Reuse an existing Zoho customer of the same name before creating a dup.
+        $found = $this->get('contacts', ['contact_name' => $name, 'contact_type' => 'customer']);
+        $existing = $found['contacts'][0]['contact_id'] ?? null;
+        if ($existing) {
+            $customer->forceFill(['zoho_contact_id' => (string) $existing])->saveQuietly();
+            return (string) $existing;
+        }
+
+        $gstin = $gstin ? strtoupper(trim($gstin)) : null;
+        $body = [
+            'contact_name'  => $name,
+            'company_name'  => $customer->company_name ?: $name,
+            'contact_type'  => 'customer',
+            'gst_treatment' => $gstin ? 'business_gst' : 'business_none',
+        ];
+        if ($gstin) $body['gst_no'] = $gstin;
+        $poc = self::placeOfContact($gstin ? substr($gstin, 0, 2) : $stateCode);
+        if ($poc) $body['place_of_contact'] = $poc;
+        if ($customer->primary_email) {
+            $body['contact_persons'] = [[
+                'first_name'         => $name,
+                'email'              => $customer->primary_email,
+                'is_primary_contact' => true,
+            ]];
+        }
+
+        $created = $this->post('contacts', $body);
+        $id = $created['contact']['contact_id'] ?? null;
+        if (!$id) throw new RuntimeException('Zoho Books did not return a contact id for the customer.');
+
+        $customer->forceFill(['zoho_contact_id' => (string) $id])->saveQuietly();
+        return (string) $id;
+    }
+
+    /** POST a fully-built estimate payload; returns the estimate node. The org's
+     *  estimate auto-numbering assigns the number (our code is the
+     *  reference_number), so we don't send estimate_number. */
+    public function createEstimate(array $payload): array
+    {
+        $resp = $this->post('estimates', $payload);
+        $est = $resp['estimate'] ?? null;
+        $id  = $est['estimate_id'] ?? null;
+        if (!$est || empty($id)) throw new RuntimeException('Zoho Books did not return an estimate id.');
+        return $est;
+    }
+
+    /** POST a fully-built invoice payload; returns the invoice node. */
+    public function createInvoice(array $payload): array
+    {
+        $resp = $this->post('invoices', $payload);
+        $inv = $resp['invoice'] ?? null;
+        $id  = $inv['invoice_id'] ?? null;
+        if (!$inv || empty($id)) throw new RuntimeException('Zoho Books did not return an invoice id.');
+        return $inv;
+    }
+
+    /** Raw PDF bytes of Zoho's own rendered estimate. */
+    public function getEstimatePdf(string $zohoId): string
+    {
+        return $this->fetchPdf('estimates', $zohoId, 'estimate');
+    }
+
+    /** Raw PDF bytes of Zoho's own rendered invoice. */
+    public function getInvoicePdf(string $zohoId): string
+    {
+        return $this->fetchPdf('invoices', $zohoId, 'invoice');
+    }
+
+    /** Shared PDF fetch for a Books entity. */
+    private function fetchPdf(string $entity, string $zohoId, string $label): string
+    {
+        $resp = Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $this->getAccessToken()])
+            ->get("{$this->baseUrl}/{$entity}/" . rawurlencode($zohoId), [
+                'organization_id' => $this->orgId,
+                'accept'          => 'pdf',
+            ]);
+        if (!$resp->successful()) {
+            throw new RuntimeException("Zoho Books {$label} PDF fetch failed: " . $resp->body());
         }
         return $resp->body();
     }

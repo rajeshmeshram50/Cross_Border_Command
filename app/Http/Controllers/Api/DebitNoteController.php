@@ -10,9 +10,13 @@ use App\Models\DebitNoteType;
 use App\Models\PurchaseOrder;
 use App\Models\SupplierPurchaseInvoice;
 use App\Models\Vendor;
+use App\Services\ZohoBooksService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use RuntimeException;
 
 class DebitNoteController extends Controller
 {
@@ -113,6 +117,14 @@ class DebitNoteController extends Controller
                 'message' => 'This debit note has a recorded payment recovery and can no longer be edited — it is view-only now.',
             ], 422);
         }
+        // Same once it's pushed to Zoho Books as a vendor credit — the Zoho doc is
+        // the source of truth; block edits so the two can't diverge.
+        if (!empty($dn->zoho_vendorcredit_id)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This debit note is synced to Zoho Books (vendor credit ' . ($dn->zoho_vendorcredit_number ?: $dn->zoho_vendorcredit_id) . ') and can no longer be edited.',
+            ], 422);
+        }
 
         $data = $this->validatePayload($request);
 
@@ -138,6 +150,12 @@ class DebitNoteController extends Controller
         if (!$user) abort(401);
         $dn = DebitNote::findOrFail($id);
         $this->assertScope($dn, $user, 'write');
+        if (!empty($dn->zoho_vendorcredit_id)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This debit note is synced to Zoho Books and cannot be deleted here — remove the vendor credit in Zoho Books first.',
+            ], 422);
+        }
         $dn->delete();
         return response()->json(['status' => true]);
     }
@@ -148,10 +166,238 @@ class DebitNoteController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $dn = DebitNote::findOrFail($id);
+        $dn = DebitNote::with(['items', 'charges'])->findOrFail($id);
         $this->assertScope($dn, $user, 'write');
-        $dn->update(['zoho_status' => 'Sync', 'updated_by' => $user->id]);
-        return response()->json(['status' => true, 'data' => $this->shapeListRow($dn->fresh())]);
+
+        $books = app(ZohoBooksService::class);
+        if (!$books->isConfigured()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Zoho Books is not connected yet. Add the Zoho Books credentials to the server .env, then try again.',
+            ], 503);
+        }
+
+        // Serialize concurrent syncs of the SAME debit note — a double-submit must
+        // not create two vendor credits.
+        $lock = \Illuminate\Support\Facades\Cache::lock('zoho:sync:dn:' . $dn->id, 120);
+        if (!$lock->get()) {
+            return response()->json(['status' => false, 'message' => 'A Zoho sync for this debit note is already in progress — try again in a moment.'], 409);
+        }
+        try {
+
+        // Idempotent on the CREDIT — never push a second vendor credit. But
+        // re-sync RETRIES the apply-to-bill if it didn't land last time (the
+        // credit was created, but the apply failed or the linked bill was synced
+        // afterwards), so the payable reduction is realised without a duplicate.
+        if (!empty($dn->zoho_vendorcredit_id)) {
+            $msg = 'This debit note is already synced to Zoho Books (vendor credit ' . ($dn->zoho_vendorcredit_number ?: $dn->zoho_vendorcredit_id) . ').';
+            try {
+                $vc = $books->getVendorCredit((string) $dn->zoho_vendorcredit_id);
+                $extra = $this->applyCreditToLinkedBill($dn, $books, (string) $dn->zoho_vendorcredit_id, (float) ($vc['balance'] ?? 0));
+                if ($extra > 0.005) {
+                    $dn->update(['zoho_applied_amount' => round((float) $dn->zoho_applied_amount + $extra, 2), 'updated_by' => $user->id]);
+                    $msg = 'Applied ₹' . number_format($extra, 2) . ' of the vendor credit to the linked bill.';
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Zoho vendor-credit re-apply failed', ['dn' => $dn->id, 'err' => $e->getMessage()]);
+            }
+            return response()->json(['status' => true, 'message' => $msg, 'data' => $this->shapeListRow($dn->fresh())]);
+        }
+        if (!$dn->vendor_id) {
+            return response()->json(['status' => false, 'message' => 'Attach a supplier to this debit note before syncing to Zoho Books.'], 422);
+        }
+        if ($dn->items->isEmpty()) {
+            return response()->json(['status' => false, 'message' => 'Add at least one product line before syncing to Zoho Books.'], 422);
+        }
+
+        try {
+            $vendor    = Vendor::with('primaryAddress')->findOrFail($dn->vendor_id);
+            $gstin     = $dn->gst_number ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
+            $stateCode = $dn->state_code ?: optional($vendor->primaryAddress)->state_code;
+
+            // Intra- vs inter-state → GST(CGST+SGST) vs IGST, same rule as the bill.
+            $orgState   = $books->orgStateCode() ?: $this->homeStateCode($dn->branch_id);
+            $interState = $stateCode && (string) $stateCode !== (string) $orgState;
+
+            $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
+
+            // A vendor credit must be raised AGAINST a bill (this org's GST rule —
+            // Zoho rejects a standalone credit with "Select the associated bill
+            // number or bill type"). So the debit note's linked SPI must already
+            // be synced as a Zoho bill; its id is sent as bill_id at creation.
+            $linkedBillId = $dn->supplier_purchase_invoice_id
+                ? (string) (SupplierPurchaseInvoice::where('id', $dn->supplier_purchase_invoice_id)->value('zoho_bill_id') ?: '')
+                : '';
+            if ($linkedBillId === '') {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Sync the linked supplier invoice (SPI) to Zoho Books first — a vendor credit must be raised against its bill.',
+                    'errors'  => ['bill' => ['The linked SPI is not yet synced to Zoho Books.']],
+                ], 422);
+            }
+
+            $vc   = $books->createVendorCredit($this->buildZohoVendorCreditPayload($dn, $books, $zohoVendorId, (bool) $gstin, $interState, $linkedBillId));
+            $vcId = (string) ($vc['vendor_credit_id'] ?? $vc['vendorcredit_id']);
+
+            // Apply the credit against the linked SPI's Zoho bill (if that bill is
+            // synced and still has an open balance) — realises the payable
+            // reduction. Best-effort: an apply hiccup must not undo the credit.
+            $applied = 0.0;
+            try {
+                $applied = $this->applyCreditToLinkedBill($dn, $books, $vcId, (float) ($vc['balance'] ?? $vc['total'] ?? 0));
+            } catch (\Throwable $e) {
+                Log::warning('Zoho vendor-credit apply-to-bill failed', ['dn' => $dn->id, 'err' => $e->getMessage()]);
+            }
+
+            // Cache Zoho's own rendered vendor-credit PDF — best-effort.
+            $pdfPath = null;
+            try {
+                $rel = 'zoho/vendorcredit/' . $dn->client_id . '/VC-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($dn->code ?: $dn->id)) . '.pdf';
+                Storage::disk('public')->put($rel, $books->getVendorCreditPdf($vcId));
+                $pdfPath = '/storage/' . $rel;
+            } catch (\Throwable $e) {
+                Log::warning('Zoho vendor-credit PDF cache failed', ['dn' => $dn->id, 'err' => $e->getMessage()]);
+            }
+
+            $dn->update([
+                'zoho_status'              => 'Sync',
+                'zoho_vendorcredit_id'     => $vcId,
+                'zoho_vendorcredit_number' => $vc['vendor_credit_number'] ?? null,
+                'zoho_applied_amount'      => round($applied, 2),
+                'zoho_synced_at'           => now(),
+                'zoho_error'               => null,
+                'zoho_pdf_path'            => $pdfPath,
+                'updated_by'               => $user->id,
+            ]);
+
+            $note = $applied > 0.005
+                ? ' ₹' . number_format($applied, 2) . ' applied to the linked bill.'
+                : ' It sits as an open vendor credit (no synced bill with an open balance to apply against).';
+
+            return response()->json([
+                'status'  => true,
+                'message' => 'Synced to Zoho Books as vendor credit ' . ($vc['vendor_credit_number'] ?? $vcId) . '.' . $note,
+                'data'    => $this->shapeListRow($dn->fresh()),
+            ]);
+        } catch (RuntimeException $e) {
+            $dn->update(['zoho_status' => 'Not Sync', 'zoho_error' => $e->getMessage(), 'updated_by' => $user->id]);
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Build the Zoho Books vendor-credit payload from a local debit note + its
+     * items. Mirrors the SPI-bill builder: forward GST only for a GST-registered
+     * supplier, and the effective applied tax (cgst+sgst halves, or full igst) is
+     * sent so Zoho's recomputed total reconciles with ours. Line qty = debit_qty.
+     */
+    private function buildZohoVendorCreditPayload(DebitNote $dn, ZohoBooksService $books, string $zohoVendorId, bool $registered, bool $interState, ?string $billId = null): array
+    {
+        $lineItems = $dn->items->map(function ($it) use ($books, $registered, $interState) {
+            $name = (string) ($it->product_name ?: $it->product_code ?: 'Item');
+            $rate = (float) $it->rate;
+            $effRate = $interState ? (float) $it->igst_pct : ((float) $it->cgst_pct + (float) $it->sgst_pct);
+            $taxId = $registered ? $books->resolveTaxId($effRate, $interState) : null;
+            $line = [
+                'item_id'     => $books->findOrCreateItemId($name, $rate, $taxId, $it->product_id),
+                'name'        => $name,
+                'description' => (string) $it->product_code,
+                'rate'        => $rate,
+                'quantity'    => (float) $it->debit_qty,
+            ];
+            if (!empty($it->hsn_code)) $line['hsn_or_sac'] = (string) $it->hsn_code;
+            if ($taxId) $line['tax_id'] = $taxId;
+            return $line;
+        })->values()->all();
+
+        $payload = [
+            'vendor_id'        => $zohoVendorId,
+            // Required when the org has vendor-credit auto-numbering OFF (Zoho
+            // rejects with "Please enter the vendor credit number" otherwise).
+            // Our DN code is the credit's number; it's unique per client.
+            'vendor_credit_number' => (string) $dn->code,
+            'date'             => optional($dn->debit_note_date)->toDateString() ?: now()->toDateString(),
+            'reference_number' => (string) $dn->code,
+            'line_items'       => $lineItems,
+        ];
+
+        // Associate with the linked bill at creation — required by this org.
+        if (!empty($billId)) $payload['bill_id'] = $billId;
+
+        // Net of the additions/deductions charge rows → single adjustment line.
+        $adjustment = round((float) $dn->additions_total - (float) $dn->deductions_total, 2);
+        if ($adjustment != 0.0) {
+            $payload['adjustment']             = $adjustment;
+            $payload['adjustment_description'] = 'Additions less deductions';
+        }
+        if (trim((string) $dn->reason) !== '') {
+            $payload['notes'] = mb_substr((string) $dn->reason, 0, 500);
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Apply the new vendor credit against the linked SPI's Zoho bill, capped at
+     * the bill's CURRENT open balance (Zoho rejects applying more than a bill
+     * owes; a fully-paid bill has nothing open). Returns the amount applied — 0
+     * when the SPI isn't synced or the bill is already settled, in which case the
+     * credit stays open in Zoho for a later bill or refund.
+     */
+    private function applyCreditToLinkedBill(DebitNote $dn, ZohoBooksService $books, string $vendorCreditId, float $creditBalance): float
+    {
+        if (!$dn->supplier_purchase_invoice_id) return 0.0;
+        $spi = SupplierPurchaseInvoice::find($dn->supplier_purchase_invoice_id);
+        if (!$spi || empty($spi->zoho_bill_id)) return 0.0;
+
+        $bill = $books->getBill((string) $spi->zoho_bill_id);
+        $billBalance = round((float) ($bill['balance'] ?? 0), 2);
+        // Cap at the debit note's UN-recovered portion too: any amount already
+        // recovered as cash locally (DebitNotePayment) must NOT also reduce the
+        // bill, or the payable would be cut twice across the two systems. That
+        // recovered slice stays as an open vendor credit (refund it in Zoho).
+        $unrecovered = round((float) $dn->grand_total - (float) $dn->total_paid, 2);
+        $apply = round(min($creditBalance, $billBalance, max(0, $unrecovered)), 2);
+        if ($apply <= 0.005) return 0.0;
+
+        $books->applyVendorCreditToBills($vendorCreditId, [[
+            'bill_id'        => (string) $spi->zoho_bill_id,
+            'amount_applied' => $apply,
+        ]]);
+        return $apply;
+    }
+
+    /** Stream the cached Zoho Books vendor-credit PDF for a synced debit note. */
+    public function zohoPdf(Request $request, int $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $dn = DebitNote::findOrFail($id);
+        $this->assertScope($dn, $user);
+
+        if (!$dn->zoho_pdf_path) abort(404, 'No Zoho vendor-credit PDF cached for this debit note.');
+        $rel = ltrim(str_replace('/storage/', '', $dn->zoho_pdf_path), '/');
+        if (!Storage::disk('public')->exists($rel)) abort(404, 'Zoho vendor-credit PDF file missing.');
+
+        return response(Storage::disk('public')->get($rel), 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="ZOHO-VC-' . ($dn->code ?: $dn->id) . '.pdf"',
+        ]);
+    }
+
+    /**
+     * This tenant's own registered GST state code for the intra- vs inter-state
+     * decision (mirrors SupplierPurchaseInvoiceController::homeStateCode).
+     */
+    private function homeStateCode(?int $branchId): string
+    {
+        $branch = $branchId ? \App\Models\Branch::find($branchId) : null;
+        $code = optional($branch)->gst_state_code ?: substr((string) optional($branch)->gst_number, 0, 2);
+        return $code !== '' && $code !== null ? (string) $code : '27';
     }
 
     /* ══════════════════════════ NEXT CODE ══════════════════════════ */
@@ -524,6 +770,9 @@ class DebitNoteController extends Controller
             'locked' => (float) $dn->total_paid > 0,
             'status' => $dn->status,
             'zoho' => $dn->zoho_status === 'Sync' ? 'sync' : 'not',
+            'zohoVc' => $dn->zoho_vendorcredit_number,        // Zoho vendor-credit no. once synced
+            'zohoApplied' => (float) $dn->zoho_applied_amount,  // amount applied to the linked bill
+            'zohoPdf' => $dn->zoho_pdf_path ? true : false,
         ];
     }
 
@@ -564,7 +813,7 @@ class DebitNoteController extends Controller
                 'id' => $it->id,
                 'product_id' => $it->product_id,
                 'code' => $it->product_code,
-                'name' => $it->product_name,
+                'name' => $it->product_name, 
                 'hsn' => $it->hsn_code,
                 'qtyPo' => (float) $it->qty_po,
                 'qtySpi' => (float) $it->qty_spi,

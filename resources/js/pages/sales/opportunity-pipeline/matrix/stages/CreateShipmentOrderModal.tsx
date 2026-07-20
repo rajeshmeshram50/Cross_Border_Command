@@ -94,6 +94,101 @@ function downloadFile(file: File) {
   URL.revokeObjectURL(url);
 }
 
+/* A shipment carries ONE attachment, capped at 2 MB (matches the backend rule
+ * attachments.* max:2048). A single 2 MB file sits well under PHP's stock 8 MB
+ * post_max_size, so no server config is needed and "Post data is too long" can't
+ * happen through this form. */
+const MAX_ATTACH_FILE = 2 * 1024 * 1024;    // 2 MB
+
+const IcoDl = () => (
+  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+  </svg>
+);
+
+/* Attachment chips, collapsed: first file inline + a "+N" badge that opens a
+ * portalled popover for the rest. Same behaviour as the Procurement modal —
+ * auto-flips above the badge when there's no room below, caps its height to the
+ * space available, and a scroll INSIDE the list doesn't dismiss it. */
+function ShpAttachChips({ files, onRemove }: { files: File[]; onRemove: (i: number) => void }) {
+  const moreRef = useRef<HTMLButtonElement | null>(null);
+  const popRef  = useRef<HTMLDivElement | null>(null);
+  const [popPos, setPopPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const overflow = files.slice(1);
+
+  const openPop = () => {
+    const r = moreRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const GAP = 6, MARGIN = 12, CAP = 260;
+    const estH = Math.min(CAP, 30 + overflow.length * 30);
+    const spaceBelow = window.innerHeight - r.bottom - GAP - MARGIN;
+    const spaceAbove = r.top - GAP - MARGIN;
+    const flipUp = spaceBelow < estH && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(120, Math.min(CAP, flipUp ? spaceAbove : spaceBelow));
+    const top = flipUp ? Math.max(MARGIN, r.top - GAP - maxHeight) : r.bottom + GAP;
+    setPopPos({ top, left: Math.min(r.left, window.innerWidth - 296), maxHeight });
+  };
+  const closePop = () => setPopPos(null);
+
+  useEffect(() => {
+    if (!popPos) return;
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (moreRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      closePop();
+    };
+    // A scroll inside the popover's own list must NOT close it.
+    const onMove = (e: Event) => { if (e.target instanceof Node && popRef.current?.contains(e.target)) return; closePop(); };
+    const onEsc  = (e: KeyboardEvent) => { if (e.key === 'Escape') closePop(); };
+    document.addEventListener('mousedown', onDoc);
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [popPos]);
+
+  useEffect(() => { if (files.length <= 1) closePop(); }, [files.length]);
+
+  if (files.length === 0) return null;
+
+  const chip = (f: File, realIdx: number, block?: boolean) => (
+    <span className={`cso-att-chip${block ? ' cso-att-chip-block' : ''}`} title={f.name}>
+      <span className="cso-att-name">{f.name}</span>
+      <button type="button" onClick={() => downloadFile(f)} className="cso-att-dl" title="Download"><IcoDl /></button>
+      <button type="button" onClick={() => onRemove(realIdx)} className="cso-att-x" title="Remove">×</button>
+    </span>
+  );
+
+  return (
+    <div className="cso-att-chips">
+      {chip(files[0], 0)}
+      {overflow.length > 0 && (
+        <button
+          type="button" ref={moreRef}
+          className={`cso-att-more ${popPos ? 'cso-att-more-on' : ''}`}
+          onClick={() => (popPos ? closePop() : openPop())}
+          title={`${overflow.length} more attachment${overflow.length === 1 ? '' : 's'}`}
+        >
+          +{overflow.length}
+        </button>
+      )}
+      {popPos && overflow.length > 0 && createPortal(
+        <div ref={popRef} className="cso-att-pop" style={{ top: popPos.top, left: popPos.left, maxHeight: popPos.maxHeight }}>
+          <div className="cso-att-pop-head">{overflow.length} more attachment{overflow.length === 1 ? '' : 's'}</div>
+          {/* realIdx = i + 1 — the overflow list starts at the second file. */}
+          {overflow.map((f, i) => <div key={i + 1}>{chip(f, i + 1, true)}</div>)}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
 export default function CreateShipmentOrderModal({
   open, leadId, context, onClose, onCreated,
 }: Props) {
@@ -244,6 +339,17 @@ export default function CreateShipmentOrderModal({
       onClose();
     } catch (e: any) {
       const msg = e?.response?.data?.message;
+      /* Body-too-large: PHP rejects the POST before Laravel, so there's no JSON
+         `errors`. Detect the 413 / post_max_size overflow and explain it in size
+         terms instead of the generic "Save failed". The frontend guard above
+         normally prevents this; this is the backstop if the server's limit is
+         lower than ours (e.g. a mod_php host that ignores .user.ini). */
+      const status = e?.response?.status;
+      const raw = typeof e?.response?.data === 'string' ? e.response.data : '';
+      if (status === 413 || /post ?data|content length|exceeds the limit|entity too large/i.test(`${msg ?? ''} ${raw}`)) {
+        toast.error('Attachment too large', 'The attachment is over the server limit. Use a file under 2 MB.');
+        return;
+      }
       const fieldErrs = e?.response?.data?.errors as Record<string, string[]> | undefined;
       // Map Laravel's snake_case validation keys back to this form's fields so
       // the message renders INLINE under the offending input (red highlight +
@@ -509,39 +615,31 @@ export default function CreateShipmentOrderModal({
                   </svg>
                   Attach File
                 </button>
-                <input type="file" multiple hidden ref={fileRef}
+                {/* SINGLE file only (no `multiple`): a shipment carries one
+                    attachment. Picking a new file REPLACES the current one. */}
+                <input type="file" hidden ref={fileRef}
                   accept=".jpg,.jpeg,.png,.webp,.pdf"
                   onChange={(e) => {
-                    // Only images + PDF (matches the backend magic_mime rule).
-                    // Reject Word / ZIP / other formats up front with a clear
-                    // message instead of failing on save (QA #130).
-                    const picked = e.target.files ? Array.from(e.target.files) : [];
-                    const allowed = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
-                    const ok: File[] = [];
-                    let bad = false;
-                    for (const f of picked) {
-                      const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
-                      if (allowed.includes(ext)) ok.push(f); else bad = true;
-                    }
-                    if (bad) toast.error('File not supported', 'Please attach only JPG, PNG, WEBP or PDF files.');
-                    if (ok.length) setAttachments(prev => [...prev, ...ok]);
+                    const f = e.target.files?.[0];
                     e.target.value = '';
+                    if (!f) return;
+                    // Only images + PDF (matches the backend magic_mime rule).
+                    const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
+                    if (!['jpg', 'jpeg', 'png', 'webp', 'pdf'].includes(ext)) {
+                      toast.error('File not supported', 'Please attach only JPG, PNG, WEBP or PDF files.');
+                      return;
+                    }
+                    // Per-file cap = backend attachments.* max:2048 (2 MB).
+                    if (f.size > MAX_ATTACH_FILE) {
+                      toast.error('File too large', 'The attachment must be 2 MB or smaller.');
+                      return;
+                    }
+                    setAttachments([f]);   // replace — only one attachment per shipment
                   }} />
-                {attachments.length > 0 && (
-                  <div className="cso-att-chips">
-                    {attachments.map((f, i) => (
-                      <span key={i} className="cso-att-chip" title={f.name}>
-                        <span className="cso-att-name">{f.name}</span>
-                        <button type="button" onClick={() => downloadFile(f)} className="cso-att-dl" title="Download">
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                          </svg>
-                        </button>
-                        <button type="button" onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))} className="cso-att-x" title="Remove">×</button>
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <ShpAttachChips
+                  files={attachments}
+                  onRemove={(i) => setAttachments(prev => prev.filter((_, idx) => idx !== i))}
+                />
               </div>
             </Field>
           </div>
@@ -807,7 +905,9 @@ const SCOPED_CSS = `
   cursor: pointer; transition: all .12s;
 }
 .cso-att-btn:hover { background: #fef3c7; border-style: solid; }
-.cso-att-chips { display: inline-flex; gap: 5px; flex-wrap: wrap; }
+/* Single line now: first chip + the "+N" badge. The chip shrinks (ellipsis) so
+   the badge never wraps to a second row. */
+.cso-att-chips { display: inline-flex; gap: 5px; flex-wrap: nowrap; align-items: center; min-width: 0; }
 .cso-att-chip {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 3px 5px 3px 9px; border-radius: 999px;
@@ -824,6 +924,41 @@ const SCOPED_CSS = `
 .cso-att-dl:hover { background: rgba(217,119,6,.18); }
 .cso-att-x { font-weight: 800; font-size: 12px; }
 .cso-att-x:hover { background: rgba(239,68,68,.18); color: #dc2626; }
+
+/* "+N" overflow badge — folds the extra attachments into one pill so the row
+   stays a single line instead of a big wrapping grid. */
+.cso-att-more {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 22px; padding: 0 10px; border-radius: 999px; flex: 0 0 auto;
+  background: linear-gradient(135deg, #d97706, #b45309); color: #fff;
+  border: 1px solid #b45309; white-space: nowrap;
+  font-family: inherit; font-size: 10.5px; font-weight: 800;
+  cursor: pointer; transition: filter .12s;
+}
+.cso-att-more:hover, .cso-att-more-on { filter: brightness(1.08); }
+/* Overflow popover — fixed + portalled; position + max-height set inline from
+   the badge's rect (auto-flips above when there's no room below). */
+.cso-att-pop {
+  position: fixed; z-index: 1100;
+  width: 280px; overflow-y: auto; overscroll-behavior: contain;
+  background: #fffdf7; border: 1.5px solid #fde68a; border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(15,23,42,.22);
+  padding: 8px; display: flex; flex-direction: column; gap: 5px;
+  scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent;
+}
+.cso-att-pop::-webkit-scrollbar { width: 8px; }
+.cso-att-pop::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.cso-att-pop-head {
+  font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: #b45309; padding: 2px 4px 5px;
+  border-bottom: 1px solid #fef3c7; margin-bottom: 2px;
+}
+/* Block chip fills the popover row so download + remove sit at the right. */
+.cso-att-chip-block { display: flex; max-width: none; }
+.cso-att-chip-block .cso-att-name { flex: 1 1 auto; max-width: none; }
+[data-bs-theme="dark"] .cso-att-more { background: linear-gradient(135deg, #d97706, #b45309); border-color: rgba(217,119,6,.6); }
+[data-bs-theme="dark"] .cso-att-pop { background: #221803; border-color: rgba(217,119,6,.40); box-shadow: 0 12px 32px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .cso-att-pop-head { color: #fbbf24; border-bottom-color: rgba(217,119,6,.30); }
 
 /* Remarks (full-width) */
 .cso-remarks { margin-top: 16px; }

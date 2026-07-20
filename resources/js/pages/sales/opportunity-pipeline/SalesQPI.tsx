@@ -1107,6 +1107,26 @@ export default function SalesQPI() {
     }
   };
 
+  // Push a quotation (→ Zoho Estimate) or PI (→ Zoho Invoice) to Zoho Books.
+  // The backend surfaces the real message (already-synced, GST errors, etc.).
+  const [syncingKeys, setSyncingKeys] = useState<Set<string>>(new Set());
+  const syncRow = async (kind: 'quotation' | 'pi', id: number | undefined, code: string) => {
+    if (!id) { toast.error('Cannot sync', 'This record has no server id yet.'); return; }
+    const key = `${kind}:${id}`;
+    if (syncingKeys.has(key)) return;
+    setSyncingKeys(s => new Set(s).add(key));
+    try {
+      const url = kind === 'quotation' ? `/sales/quotations/${id}/sync` : `/sales/proforma-invoices/${id}/sync`;
+      const { data } = await api.post(url);
+      toast.success(kind === 'quotation' ? 'Quotation synced' : 'PI synced', data?.message ?? `${code} synced to Zoho Books.`);
+      if (kind === 'quotation') reloadQuotations(); else reloadPis();
+    } catch (e: any) {
+      toast.error('Zoho sync failed', e?.response?.data?.message ?? 'Could not sync to Zoho Books.');
+    } finally {
+      setSyncingKeys(s => { const n = new Set(s); n.delete(key); return n; });
+    }
+  };
+
   // Direct convert: POST /sales/proforma-invoices/from-quotation/{id}.
   // The backend enforces "one PI per opportunity" — we also pre-check
   // against the in-memory PI list so the user gets instant feedback
@@ -1488,6 +1508,13 @@ export default function SalesQPI() {
             />
               );
             })()}
+            <ActionBtn
+              title={(r as any).zoho_status === 'Sync' ? 'Already synced to Zoho Books — sync again' : 'Sync to Zoho Books (Estimate)'}
+              icon={<IconZohoSync />}
+              color={(r as any).zoho_status === 'Sync' ? '#0d9488' : '#0ea5e9'}
+              disabled={readOnly || syncingKeys.has(`quotation:${r.id}`)}
+              onClick={() => syncRow('quotation', r.id, r.qtNo)}
+            />
             <Tooltip label="More Options">
               <button
                 type="button"
@@ -1665,6 +1692,13 @@ export default function SalesQPI() {
             />
               );
             })()}
+            <ActionBtn
+              title={(r as any).zoho_status === 'Sync' ? 'Already synced to Zoho Books — sync again' : 'Sync to Zoho Books (Invoice)'}
+              icon={<IconZohoSync />}
+              color={(r as any).zoho_status === 'Sync' ? '#0d9488' : '#0ea5e9'}
+              disabled={readOnly || syncingKeys.has(`pi:${r.id}`)}
+              onClick={() => syncRow('pi', r.id, r.piNo)}
+            />
             <Tooltip label="More Options">
               <button
                 type="button"
@@ -2459,11 +2493,11 @@ function shapeQpiMasters(
   /* INCO Term — the trade desk works with four terms only, so the master's
    * eleven official Incoterms are filtered down to them here (one place, so
    * the Quotation/PI form and the Create Shipment form agree). CFR is the
-   * official code for what the desk writes as CNF, so that row is surfaced
-   * under the CNF name while keeping its real master id. Options carry `id`
+   * official code for what the desk writes as C&F, so that row is surfaced
+   * under the C&F name while keeping its real master id. Options carry `id`
    * because shipments store the incoterm by id, not by label. */
-  const INCO_CODE_MAP: Record<string, string> = { EXW: 'EXW', FOB: 'FOB', CIF: 'CIF', CNF: 'CNF', CFR: 'CNF' };
-  const INCO_ORDER = ['FOB', 'EXW', 'CIF', 'CNF'];
+  const INCO_CODE_MAP: Record<string, string> = { EXW: 'EXW', FOB: 'FOB', CIF: 'CIF', CFR: 'C&F', CNF: 'C&F', 'C&F': 'C&F' };
+  const INCO_ORDER = ['FOB', 'EXW', 'CIF', 'C&F'];
   const incoSeen = new Set<string>();
   const incoOpts: MasterOpt[] = arr(inco)
     .map((r: any) => {
@@ -4353,6 +4387,7 @@ function ProductsStep(props: {
 }) {
   const { form, products, removeProduct, draft, setDraft, addProduct, terms, setTerms, shipping, setShipping, subTotal, grandTotal, theme,
           productOptions, productsRaw, loadingProducts, homeStateCode, customerSegments } = props;
+  const toast = useToast();
 
   // Per-opportunity product filter. When the user picks an Opportunity
   // on Step 1, the Product Directory mapping (lead_products) tells us
@@ -4472,25 +4507,37 @@ function ProductsStep(props: {
       opts = opts.filter(o => allowedLabels.has(o.value));
     }
 
-    /* Segment gate — a product may only be quoted to a customer that shares its
-     * segment, so off-segment products are removed from the list entirely.
+    /* Segment gate + segment badge.
      *
-     * Three deliberate no-restriction cases, all matching the server guard in
-     * EnforcesSegmentBuyerConsignee so the UI can never hide something the API
-     * would have accepted:
-     *   · customer has no segment  → segmentSet empty  → everything allowed
-     *   · product has no segment   → nothing to compare → kept
-     *   · option has no master row → free-text edge case → kept
-     * Comparison is lowercased on both sides; segment names are free text in
-     * the master, so their case can drift. */
+     * Every product shows its SEGMENT as a violet pill (so the user can see
+     * which segment each belongs to — same as the Product Directory picker).
+     * A product whose segment isn't among the customer's is kept in the list
+     * but DISABLED (greyed) with a short reason on hover / toast on click,
+     * rather than hidden — the user asked to still see off-segment items and be
+     * told why they can't be added.
+     *
+     * Three deliberate no-disable cases, all matching the server guard in
+     * EnforcesSegmentBuyerConsignee so the UI never blocks something the API
+     * would accept:
+     *   · customer has no segment  → segmentSet empty  → nothing disabled
+     *   · product has no segment   → nothing to compare → enabled (no badge)
+     *   · option has no master row → free-text edge case → left alone
+     * Comparison is lowercased both sides; segment names are free text so their
+     * case can drift. The badge text is capped so a long segment name can't
+     * blow out the row. */
     const segmentSet = new Set(customerSegments.map(s => s.toLowerCase()));
-    if (segmentSet.size > 0) {
-      opts = opts.filter(o => {
-        const code = (o.value || '').split(' – ')[0]?.trim() ?? '';
-        const seg = productsRaw.find(pr => pr.code === code)?.segment;
-        return !seg || segmentSet.has(seg.toLowerCase());
-      });
-    }
+    opts = opts.map(o => {
+      const code = (o.value || '').split(' – ')[0]?.trim() ?? '';
+      const seg = productsRaw.find(pr => pr.code === code)?.segment;
+      if (!seg) return o;   // free-text / no-segment products stay as-is
+      // Short cap so the badge stays compact and the product code+name keeps the
+      // row — full segment name is on the badge's hover title.
+      const badge = { text: seg.length > 14 ? `${seg.slice(0, 14)}…` : seg, tone: 'violet' as const, title: seg };
+      const offSegment = segmentSet.size > 0 && !segmentSet.has(seg.toLowerCase());
+      return offSegment
+        ? { ...o, badge, disabled: true, disabledReason: 'Customer and product segment must match.' }
+        : { ...o, badge };
+    });
 
     // Build a set of already-added productIds (skip free-text rows that
     // have no productId, otherwise we'd over-filter).
@@ -4761,6 +4808,8 @@ function ProductsStep(props: {
                     ? [...visibleProductOptions, { value: draft.name, label: displayProductLabel(draft.name) }]
                     : visibleProductOptions}
                   onChange={onProductPick}
+                  // Clicking a greyed (off-segment) product explains why, short.
+                  onDisabledClick={() => toast.warning('Segment mismatch', 'Customer and product segment must match to add.')}
                 />
               </td>
               <td><input className="qpi-input qpi-input-num" type="number" min="0" value={draft.qty || ''} onChange={(e) => setDraft({ ...draft, qty: Number(e.target.value) })} /></td>
@@ -4964,6 +5013,12 @@ const IconEdit = () => (
 const IconKebab = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
     <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+  </svg>
+);
+const IconZohoSync = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-6.7-3M3 12a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3" />
+    <path d="M21 3v5h-5M3 21v-5h5" />
   </svg>
 );
 const IconTrash = () => (

@@ -8,6 +8,7 @@ use App\Models\ConsigneeDocument;
 use App\Models\ConsigneeOwner;
 use App\Models\Customer;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -49,8 +50,19 @@ class ConsigneeKycMirror
 
         if ($mirrors->isEmpty()) return;
 
+        // Isolate each mirror: a failure on one (e.g. a disk hiccup mid-copy)
+        // must not abort the rest or bubble up and fail the customer's KYC
+        // request — as this method's docblock promises.
         foreach ($mirrors as $consignee) {
-            $this->resyncOne($customer, $consignee, $actingUserId);
+            try {
+                $this->resyncOne($customer, $consignee, $actingUserId);
+            } catch (\Throwable $e) {
+                Log::warning('Consignee KYC mirror resync failed — continuing with the other mirrors', [
+                    'customer_id'  => $customer->id,
+                    'consignee_id' => $consignee->id,
+                    'error'        => $e->getMessage(),
+                ]);
+            }
         }
     }
 
@@ -121,18 +133,25 @@ class ConsigneeKycMirror
      */
     private function resyncOne(Customer $customer, Consignee $consignee, ?int $actingUserId): void
     {
-        DB::transaction(function () use ($customer, $consignee, $actingUserId) {
-            $disk = Storage::disk('public');
+        $disk = Storage::disk('public');
 
-            // ── Wipe existing KYC (replace semantics) ───────────────
-            foreach ($consignee->documents as $d) {
-                if ($d->attachment_path) $disk->delete($d->attachment_path);
+        // Collect the OLD physical files but do NOT delete them yet. The new
+        // copies use fresh random names, so they never collide with these. We
+        // only unlink the originals AFTER the transaction commits — otherwise a
+        // mid-copy failure would roll back the DB rows but leave the evidence
+        // files permanently deleted.
+        $oldFiles = [];
+        foreach ($consignee->documents as $d) {
+            if ($d->attachment_path) $oldFiles[] = $d->attachment_path;
+        }
+        foreach ($consignee->owners as $o) {
+            foreach (['id_proof_path', 'address_proof_path', 'photograph_path'] as $f) {
+                if ($o->{$f}) $oldFiles[] = $o->{$f};
             }
-            foreach ($consignee->owners as $o) {
-                foreach (['id_proof_path', 'address_proof_path', 'photograph_path'] as $f) {
-                    if ($o->{$f}) $disk->delete($o->{$f});
-                }
-            }
+        }
+
+        DB::transaction(function () use ($customer, $consignee, $actingUserId, $disk) {
+            // ── Wipe existing KYC rows (replace semantics; files unlinked post-commit) ──
             $consignee->documents()->delete();
             $consignee->owners()->delete();
 
@@ -187,5 +206,11 @@ class ConsigneeKycMirror
                 ]);
             }
         });
+
+        // Commit succeeded — now it's safe to unlink the superseded originals.
+        // (If the transaction had thrown, these files are still intact.)
+        foreach ($oldFiles as $old) {
+            try { $disk->delete($old); } catch (\Throwable $e) { /* best-effort cleanup */ }
+        }
     }
 }

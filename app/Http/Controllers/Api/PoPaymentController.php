@@ -8,6 +8,7 @@ use App\Models\PurchaseOrder;
 use App\Models\Vendor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -103,38 +104,60 @@ class PoPaymentController extends Controller
             'supplier_purchase_invoice_id' => 'nullable|integer',
         ]);
 
-        // Guard against over-payment beyond the PO's outstanding balance.
         $amount = round((float) $data['amount'], 2);
-        $paidBefore = (float) $order->payments()->sum('amount');
-        $netPayable = $this->netPayable($order);
-        $balanceBefore = round($netPayable - $paidBefore, 2);
-        if ($amount > $balanceBefore + 0.001) {
-            return response()->json([
-                'status'  => false,
-                'message' => 'Amount exceeds the outstanding PO balance of ' . number_format($balanceBefore, 2) . '.',
-                'errors'  => ['amount' => ['Amount cannot exceed the outstanding balance.']],
-            ], 422);
-        }
 
+        // Store the proof up-front so the per-PO lock (below) isn't held during
+        // file I/O.
         $path = null;
         if ($request->hasFile('attachment')) {
             $path = $request->file('attachment')->store('po-payments/attachments', 'public');
         }
 
-        $payment = PoPayment::create([
-            'client_id'         => $order->client_id,
-            'branch_id'         => $order->branch_id,
-            'purchase_order_id' => $order->id,
-            'supplier_purchase_invoice_id' => $data['supplier_purchase_invoice_id'] ?? null,
-            'amount'            => $amount,
-            'bank_name'         => $data['bank_name'] ?? null,
-            'utr_cheque_number' => $data['utr_cheque_number'] ?? null,
-            'utr_cheque_date'   => $data['utr_cheque_date'] ?? null,
-            'attachment_path'   => $path,
-            'balance_after'     => round($balanceBefore - $amount, 2),
-            'status'            => $data['status'] ?? 'Cleared',
-            'created_by'        => $user->id,
-        ]);
+        // Serialize concurrent payment writes for the same PO so two tabs can't
+        // both pass the balance check and over-pay (which would then satisfy the
+        // Zoho "fully paid" gate and post duplicate vendor payments).
+        $lock = Cache::lock('po:payment:' . $order->id, 10);
+        try {
+            $lock->block(5);
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
+            if ($path) Storage::disk('public')->delete($path);
+            return response()->json([
+                'status'  => false,
+                'message' => 'Another payment for this PO is being recorded — please retry in a moment.',
+            ], 409);
+        }
+
+        try {
+            // Guard against over-payment beyond the PO's outstanding balance.
+            $paidBefore = (float) $order->payments()->sum('amount');
+            $netPayable = $this->netPayable($order);
+            $balanceBefore = round($netPayable - $paidBefore, 2);
+            if ($amount > $balanceBefore + 0.001) {
+                if ($path) Storage::disk('public')->delete($path);
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Amount exceeds the outstanding PO balance of ' . number_format($balanceBefore, 2) . '.',
+                    'errors'  => ['amount' => ['Amount cannot exceed the outstanding balance.']],
+                ], 422);
+            }
+
+            $payment = PoPayment::create([
+                'client_id'         => $order->client_id,
+                'branch_id'         => $order->branch_id,
+                'purchase_order_id' => $order->id,
+                'supplier_purchase_invoice_id' => $data['supplier_purchase_invoice_id'] ?? null,
+                'amount'            => $amount,
+                'bank_name'         => $data['bank_name'] ?? null,
+                'utr_cheque_number' => $data['utr_cheque_number'] ?? null,
+                'utr_cheque_date'   => $data['utr_cheque_date'] ?? null,
+                'attachment_path'   => $path,
+                'balance_after'     => round($balanceBefore - $amount, 2),
+                'status'            => $data['status'] ?? 'Cleared',
+                'created_by'        => $user->id,
+            ]);
+        } finally {
+            $lock->release();
+        }
 
         return response()->json(['status' => true, 'data' => $this->buildSummary($order->fresh()), 'payment_id' => $payment->id], 201);
     }

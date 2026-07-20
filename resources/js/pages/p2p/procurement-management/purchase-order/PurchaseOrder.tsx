@@ -315,13 +315,9 @@ export default function PurchaseOrder() {
   const openZohoConfirm = (r: PoRow) => {
     if (r.zoho.toLowerCase() === 'sync') { toast.success(`${r.po} is already synced with Zohobook`); return; }
     if (!r.id) return;
-    // Gate: the PO must be BOTH e-signed AND fully utilised (all payments
-    // recorded so the balance is cleared) before it can be pushed to Zoho Books.
-    // The backend enforces the same rules; surface them up-front here.
-    if (!r.is_signed) {
-      toast.warning('Sign the PO first', 'This purchase order must be e-signed via Zoho Sign before it can be synced to Zoho Books.');
-      return;
-    }
+    // Gate: the PO must be fully utilised (all payments recorded so the balance
+    // is cleared) before it can be pushed to Zoho Books. The backend enforces the
+    // same rule; surface it up-front here. (E-signature is no longer required.)
     if (!r.fully_utilized) {
       toast.warning('Utilise the full PO amount first', 'Record payments until the outstanding balance is cleared before syncing to Zoho Books.');
       return;

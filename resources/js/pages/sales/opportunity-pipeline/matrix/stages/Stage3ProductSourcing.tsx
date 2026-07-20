@@ -653,13 +653,18 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                       return (
                         <tr key={r.id}>
                           <td>
-                            {!hasProc && canGroup && (
+                            {canGroup && (
+                              /* Always show the checkbox so the column reads
+                                 consistently; a product that already has a
+                                 procurement shows it DISABLED (and unchecked)
+                                 rather than blank — it can't be bundled again. */
                               <input
                                 type="checkbox"
                                 className="s3-cb"
-                                checked={selectedIds.has(r.id)}
-                                disabled={locked}
-                                onChange={() => toggleSelect(r.id)}
+                                checked={!hasProc && selectedIds.has(r.id)}
+                                disabled={locked || hasProc}
+                                onChange={() => { if (!hasProc) toggleSelect(r.id); }}
+                                title={hasProc ? 'Procurement already created for this product' : undefined}
                               />
                             )}
                           </td>
@@ -1337,6 +1342,9 @@ const STAGE3_CSS = `
   width: 17px; height: 17px; cursor: pointer; accent-color: #6d28d9;
   margin: 0;
 }
+/* Disabled = a product that already has a procurement: greyed + not-allowed so
+   it clearly reads as "shown but can't be picked again". */
+.s3-cb:disabled { cursor: not-allowed; opacity: .4; }
 .s3-dash { color: #cbd5e1; font-weight: 700; font-size: 13px; }
 .s3-proc-pill {
   display: inline-block; background: transparent; border: none; cursor: pointer;
@@ -1428,6 +1436,18 @@ const STAGE3_CSS = `
   box-shadow: 0 4px 10px rgba(124,58,237,.35);
 }
 .s3-convert-btn:disabled { opacity: .6; cursor: wait; }
+/* Dark mode: the light lavender gradient read as a bright white square in the
+   dark action column. Swap to a translucent violet tint that sits on the dark
+   surface; hover keeps the solid violet from the base rule. */
+[data-bs-theme="dark"] .s3-convert-btn {
+  background: rgba(124,58,237,.20);
+  border-color: rgba(167,139,250,.42);
+  color: #c4b5fd;
+}
+[data-bs-theme="dark"] .s3-convert-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  border-color: #a78bfa; color: #fff;
+}
 .s3-convert-spin {
   width: 13px; height: 13px; border-radius: 50%;
   border: 2px solid rgba(180,83,9,.30); border-top-color: #b45309;

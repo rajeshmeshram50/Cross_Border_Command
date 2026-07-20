@@ -19,8 +19,11 @@ class ForgotPasswordController extends Controller
     use PasswordHistory;
 
     private const OTP_EXPIRY_MINUTES = 10;
-    private const MAX_OTP_ATTEMPTS = 500;
-    private const RESEND_COOLDOWN_SECONDS = 1;
+    // SECURITY: a 6-digit OTP must not tolerate hundreds of guesses. 5 wrong
+    // tries invalidates the code; 60s between resends stops email-bombing / rapid
+    // fresh-code minting. Routes are additionally IP-throttled (throttle:20,1).
+    private const MAX_OTP_ATTEMPTS = 5;
+    private const RESEND_COOLDOWN_SECONDS = 60;
 
     /**
      * Step 1: Send OTP to email

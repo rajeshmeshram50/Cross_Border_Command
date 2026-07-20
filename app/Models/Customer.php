@@ -30,7 +30,7 @@ class Customer extends Model
         'customer_code',
         'company_name', 'legal_name', 'type', 'segment', 'classification', 'risk_level',
         'gst_applicable', 'gst_number',
-        'website', 'primary_email', 'status',
+        'website', 'primary_email', 'status', 'zoho_contact_id',
     ];
 
     public function client(): BelongsTo

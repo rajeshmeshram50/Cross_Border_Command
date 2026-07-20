@@ -71,8 +71,8 @@ class ShipmentOrderController extends Controller
             'place_of_dispatch'   => 'nullable|string|max:128',
             'place_of_delivery'   => 'nullable|string|max:128',
 
-            'attachments'         => 'nullable|array',
-            'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:5120',
+            'attachments'         => 'nullable|array|max:1',
+            'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:2048',
             'remarks'             => 'nullable|string|max:2000',
         ]);
 
@@ -312,8 +312,25 @@ class ShipmentOrderController extends Controller
 
         // Surface the live master value under the same key the UI already reads.
         $row->inco_term = $row->incoTermLabel();
+        $this->attachAttachmentUrls($row);
 
         return response()->json(['status' => true, 'data' => $row]);
+    }
+
+    /* Build ABSOLUTE URLs for the stored attachment paths, server-side.
+     *
+     * `attachments` holds bare disk paths ("shipment_orders/…pdf"). The view was
+     * resolving those on the CLIENT, which builds them against the SPA origin —
+     * the router catch-all then serves index.html and bounces the user to the
+     * dashboard instead of the file (the documented QA #55 failure the Task
+     * Manager attachment already fixed the same way). file_url() returns a
+     * storage-host-correct absolute URL, so the link opens the actual file. */
+    private function attachAttachmentUrls(ShipmentOrder $row): void
+    {
+        // Map (not filter) so attachments_url[i] stays aligned with attachments[i]
+        // — the view pairs them by index.
+        $paths = is_array($row->attachments) ? $row->attachments : [];
+        $row->setAttribute('attachments_url', array_map(fn ($p) => file_url($p), $paths));
     }
 
     public function getByLead(Request $request, int $leadId)
@@ -333,7 +350,10 @@ class ShipmentOrderController extends Controller
             ->where('lead_id', $leadId)
             ->first();
 
-        if ($row) $row->inco_term = $row->incoTermLabel();
+        if ($row) {
+            $row->inco_term = $row->incoTermLabel();
+            $this->attachAttachmentUrls($row);
+        }
 
         return response()->json(['status' => true, 'data' => $row]);
     }
@@ -465,8 +485,8 @@ class ShipmentOrderController extends Controller
             'shipping_cost'       => 'nullable|numeric|gt:0',
             'place_of_dispatch'   => 'nullable|string|max:128',
             'place_of_delivery'   => 'nullable|string|max:128',
-            'attachments'         => 'nullable|array',
-            'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:5120',
+            'attachments'         => 'nullable|array|max:1',
+            'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:2048',
             'remarks'             => 'nullable|string|max:2000',
         ]);
 

@@ -226,8 +226,8 @@ export default function DebitNote() {
   };
 
   const syncRow = async (r: DnRow) => {
-    try { await api.post(`/p2p/debit-notes/${r.id}/sync`); toast.success(`${r.no} synced with Zohobook`); reload(); }
-    catch { toast.error('Sync failed', 'Could not sync this debit note.'); }
+    try { const resp = await api.post(`/p2p/debit-notes/${r.id}/sync`); toast.success(`${r.no} synced with Zohobook`, resp?.data?.message); reload(); }
+    catch (e: any) { toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this debit note.'); }
   };
 
   const delRow = async (r: DnRow) => {

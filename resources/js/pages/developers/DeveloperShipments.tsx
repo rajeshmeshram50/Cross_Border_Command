@@ -7,28 +7,6 @@ import Tooltip from '../../components/ui/Tooltip';
 import { useToast } from '../../contexts/ToastContext';
 import './shipment-360.css';
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Shipment 360 (route /developers/shipment — the slug stays 'developers' so
- * existing permission grants survive the rename from the old "Dev Tools").
- *
- * Faithful port of the IDIMS "Shipment 360" prototype: teal header strip, the
- * collapsible 6-step "What We Are Doing Here" box, and an International /
- * Domestic tabbed worklist over the wide shipment-journey table.
- *
- * DATA — GET /sales/shipment-orders. The prototype's table is much wider than
- * that payload, so every column the API does not carry renders as an em-dash
- * placeholder rather than inventing data. Columns backed by real fields:
- * Shipment ID, Opportunity ID, PI Number, Customer, Consignee,
- * Shipping Liability, Cold Chain, Hazardous, INCO Term, Port of Loading /
- * Discharge (international) and Dispatch From / Deliver To (domestic).
- *
- * DOMESTIC vs INTERNATIONAL — the API stamps every row with is_domestic /
- * doc_type (derived from the PI's doc_type) and issues DSHP- codes for
- * domestic shipments vs SHP- for exports, each with its own per-branch
- * sequence (ShipmentOrderController::nextShipmentCode). The two tabs split
- * the same payload on that flag.
- * ──────────────────────────────────────────────────────────────────────────── */
-
 type ShipmentRow = {
   id: number;
   shipment_code: string | null;
@@ -41,35 +19,25 @@ type ShipmentRow = {
   pi_date: string | null;
   shipping_liability: string | null;
   cold_chain: boolean;
-  /* Derived server-side from the PI's products: true when ANY product is
-   * flagged Haz, false when all are Non-Haz, null when the PI has no
-   * products to judge by. */
   hazardous: boolean | null;
-  /* Flow flag — true for DSHP- (domestic) rows, false for SHP- (export). */
   is_domestic?: boolean;
   doc_type?: string | null;
-  // International-only
   inco_term: string | null;
   port_of_loading: string | null;
   port_of_unloading: string | null;
-  // Domestic-only
   place_of_dispatch?: string | null;
   place_of_delivery?: string | null;
 };
 
 type S360Tab = 'intl' | 'dom';
-
-/* Starting rows-per-page; the auto-fit effect overrides it on first paint to
-   whatever fills the viewport, unless the user picks a size by hand. */
 const PAGE_SIZE = 10;
 
-/* "15 Mar 2026" — the prototype's date format. */
 const S360_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function fmtDate(s: string | null): string {
   if (!s) return '—';
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return '—';
-  return `${String(d.getDate()).padStart(2, '0')} ${S360_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  return `${String(d.getDate()).padStart(2, '0')}-${S360_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 }
 
 /* ── Inline icons ─────────────────────────────────────────────────────────── */
@@ -264,11 +232,6 @@ export default function DeveloperShipments() {
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [toast]);
-
-  /* Split by flow — is_domestic is stamped by the API (from the PI's
-   * doc_type); the DSHP- code prefix is the fallback for any payload
-   * that predates the flag. Each tab lists ONLY its own flow, so a
-   * DSHP- id can never appear under International or vice versa. */
   const isDom = (r: ShipmentRow) => r.is_domestic ?? !!r.shipment_code?.toUpperCase().startsWith('DSHP');
   const intlRows = useMemo(() => rows.filter(r => !isDom(r)), [rows]);
   const domRows  = useMemo(() => rows.filter(r =>  isDom(r)), [rows]);
@@ -291,9 +254,6 @@ export default function DeveloperShipments() {
   const startIdx = filtered.length === 0 ? 0 : (safePage - 1) * rpp + 1;
 
   const switchTab = (t: S360Tab) => { setTab(t); setQ(''); setPage(1); };
-
-  /* Export the ACTIVE tab's list — only the columns the API actually carries.
-   * Domestic swaps the export-only block (INCO/ports) for Dispatch/Deliver. */
   const exportShipments = () => {
     if (!filtered.length) { toast.error('Nothing to export', 'No shipments match the current search.'); return; }
     setExporting(true);
@@ -336,7 +296,6 @@ export default function DeveloperShipments() {
     }
   };
 
-  // Full column counts, Sr No + Action inclusive — used for the empty/loading colSpan.
   const INTL_COLS = 27;
   const DOM_COLS = 23;
 
@@ -466,23 +425,23 @@ export default function DeveloperShipments() {
                       <td className="rvtbl-sr">{startIdx + i}</td>
                       <IdCell id={r.shipment_code} date={r.created_at} primary />
                       <IdCell id={r.opp_code} date={r.opp_date} />
-                      <EmptyCell /> {/* Procurement ID */}
-                      <EmptyCell /> {/* GRN ID */}
-                      <EmptyCell /> {/* QA ID */}
-                      <EmptyCell /> {/* Remittance ID */}
-                      <EmptyCell /> {/* FIRC */}
-                      <EmptyCell /> {/* Export Invoice */}
-                      <EmptyCell /> {/* Outward ID */}
-                      <EmptyCell /> {/* PSD ID */}
-                      <EmptyCell /> {/* e-BRC ID */}
+                      <EmptyCell />{/* Procurement ID */}
+                      <EmptyCell />{/* GRN ID */}
+                      <EmptyCell />{/* QA ID */}
+                      <EmptyCell />{/* Remittance ID */}
+                      <EmptyCell />{/* FIRC */}
+                      <EmptyCell />{/* Export Invoice */}
+                      <EmptyCell />{/* Outward ID */}
+                      <EmptyCell />{/* PSD ID */}
+                      <EmptyCell />{/* e-BRC ID */}
                       <IdCell id={r.pi_no} date={r.pi_date} />
-                      <EmptyCell /> {/* PO Number */}
-                      <EmptyCell /> {/* SPI Number */}
-                      <EmptyCell /> {/* FFD PO Number */}
+                      <EmptyCell />{/* PO Number */}
+                      <EmptyCell />{/* SPI Number */}
+                      <EmptyCell />{/* FFD PO Number */}
                       <TxtCell v={r.customer_name} />
                       <TxtCell v={r.consignee_name} />
-                      <EmptyCell /> {/* Supplier */}
-                      <EmptyCell /> {/* FFD / Transporter */}
+                      <EmptyCell />{/* Supplier */}
+                      <EmptyCell />{/* FFD / Transporter */}
                       {r.shipping_liability
                         ? <td><span className="s360-tag">{r.shipping_liability}</span></td>
                         : <EmptyCell />}
@@ -531,9 +490,6 @@ export default function DeveloperShipments() {
           </div>
         )}
 
-        {/* ── Domestic — DSHP- rows (is_domestic, from the PI's doc_type).
-            Same journey table, with the domestic logistics columns
-            (Dispatch From / Deliver To) in place of INCO/ports. ── */}
         {tab === 'dom' && (
           <div className="s360-panel">
             <div className="rvtbl-wrap" ref={scrollRef}>
@@ -579,22 +535,22 @@ export default function DeveloperShipments() {
                       <td className="rvtbl-sr">{startIdx + i}</td>
                       <IdCell id={r.shipment_code} date={r.created_at} primary />
                       <IdCell id={r.opp_code} date={r.opp_date} />
-                      <EmptyCell /> {/* Procurement ID */}
-                      <EmptyCell /> {/* GRN ID */}
-                      <EmptyCell /> {/* QA ID */}
-                      <EmptyCell /> {/* Domestic Receipt No. */}
-                      <EmptyCell /> {/* Domestic GST Invoice */}
-                      <EmptyCell /> {/* Outward ID */}
-                      <EmptyCell /> {/* PSD ID */}
-                      <EmptyCell /> {/* e-BRC ID */}
+                      <EmptyCell />{/* Procurement ID */}
+                      <EmptyCell />{/* GRN ID */}
+                      <EmptyCell />{/* QA ID */}
+                      <EmptyCell />{/* Domestic Receipt No. */}
+                      <EmptyCell />{/* Domestic GST Invoice */}
+                      <EmptyCell />{/* Outward ID */}
+                      <EmptyCell />{/* PSD ID */}
+                      <EmptyCell />{/* e-BRC ID */}
                       <IdCell id={r.pi_no} date={r.pi_date} />
-                      <EmptyCell /> {/* PO Number */}
-                      <EmptyCell /> {/* SPI Number */}
-                      <EmptyCell /> {/* FFD PO Number */}
+                      <EmptyCell />{/* PO Number */}
+                      <EmptyCell />{/* SPI Number */}
+                      <EmptyCell />{/* FFD PO Number */}
                       <TxtCell v={r.customer_name} />
                       <TxtCell v={r.consignee_name} />
-                      <EmptyCell /> {/* Supplier */}
-                      <EmptyCell /> {/* FFD / Transporter */}
+                      <EmptyCell />{/* Supplier */}
+                      <EmptyCell />{/* FFD / Transporter */}
                       <YnCell yes={r.cold_chain} />
                       <td className="s360-port">{r.place_of_dispatch ?? '—'}</td>
                       <td className="s360-port">{r.place_of_delivery ?? '—'}</td>

@@ -92,6 +92,10 @@ type Shipment = {
   place_of_delivery?:   string | null;
   remarks:              string | null;
   attachments:          string[] | null;
+  /* Absolute URLs built server-side (file_url). Prefer these over resolving the
+     bare `attachments` path on the client — a client-built URL resolves against
+     the SPA origin and gets bounced to the dashboard by the router (QA #55). */
+  attachments_url?:     string[] | null;
   created_at:           string;
   proforma_invoice?:    { id: number; code: string | null; created_at: string } | null;
   creator?:             { id: number; name: string } | null;
@@ -510,13 +514,27 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
                   <div className="s6-shp-cell s6-shp-cell-wide">
                     <div className="s6-shp-label">ATTACHMENTS</div>
                     <div className="s6-shp-attach">
-                      {shipment.attachments.map((a, i) => (
-                        <a key={i} href={resolveFileUrl(a)} target="_blank" rel="noreferrer"
+                      {shipment.attachments.map((a, i) => {
+                        // Prefer the server-built absolute URL (index-matched);
+                        // fall back to client resolution only for legacy rows.
+                        const href = shipment.attachments_url?.[i] ?? resolveFileUrl(a);
+                        return (
+                        <a key={i} href={href} target="_blank" rel="noreferrer"
+                          // Open via window.open with a cache-bust, exactly like the
+                          // customer/consignee document viewers — a re-uploaded file
+                          // then never shows a stale cached copy. The href stays for
+                          // middle-click / right-click.
+                          onClick={(e) => {
+                            if (!href) return;
+                            e.preventDefault();
+                            window.open(`${href}${href.includes('?') ? '&' : '?'}t=${Date.now()}`, '_blank', 'noopener,noreferrer');
+                          }}
                           className="s6-shp-attach-chip" title={a.split('/').pop() ?? 'Attachment'}>
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                           <span className="s6-shp-attach-name">{a.split('/').pop() ?? 'Attachment'}</span>
                         </a>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

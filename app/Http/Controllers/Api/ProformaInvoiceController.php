@@ -9,10 +9,15 @@ use App\Models\Customer;
 use App\Models\ProformaInvoice;
 use App\Models\ProformaInvoiceItem;
 use App\Models\Quotation;
+use App\Services\ZohoBooksService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use RuntimeException;
 
 
 class ProformaInvoiceController extends Controller
@@ -329,6 +334,13 @@ class ProformaInvoiceController extends Controller
 
         $row = ProformaInvoice::findOrFail($id);
         $this->assertScope($row, $user, 'write');
+        // Once pushed to Zoho Books the invoice is the source of truth — block edits.
+        if (!empty($row->zoho_invoice_id)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This proforma invoice is synced to Zoho Books (invoice ' . ($row->zoho_invoice_number ?: $row->zoho_invoice_id) . ') and can no longer be edited — edit it in Zoho Books instead.',
+            ], 422);
+        }
         if ($row->status === ProformaInvoice::STATUS_CONVERTED_TO_CONTRACT) {
             return response()->json([
                 'status'  => false,
@@ -449,6 +461,12 @@ class ProformaInvoiceController extends Controller
         if (!$user) abort(401);
         $row = ProformaInvoice::findOrFail($id);
         $this->assertScope($row, $user, 'write');
+        if (!empty($row->zoho_invoice_id)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This proforma invoice is synced to Zoho Books and cannot be cancelled here — void the invoice in Zoho Books first.',
+            ], 422);
+        }
         if ($row->status === ProformaInvoice::STATUS_CONVERTED_TO_CONTRACT) {
             return response()->json([
                 'status'  => false,
@@ -896,6 +914,156 @@ class ProformaInvoiceController extends Controller
         return "{$startYear}-{$endShort}";
     }
 
+    /* ══════════════════════════ ZOHO SYNC (→ Invoice) ══════════════════════════ */
+
+    /**
+     * Push this proforma invoice to Zoho Books as an **Invoice**. Same shape as
+     * the Quotation → Estimate sync: 503 when unconfigured, an atomic lock,
+     * idempotent on zoho_invoice_id, customer + products created once (deduped).
+     */
+    public function sync(Request $request, $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $pi = ProformaInvoice::with('items')->findOrFail($id);
+        $this->assertScope($pi, $user, 'write');
+
+        $books = app(ZohoBooksService::class);
+        if (!$books->isConfigured()) {
+            return response()->json(['status' => false, 'message' => 'Zoho Books is not connected yet. Add the Zoho Books credentials to the server .env, then try again.'], 503);
+        }
+
+        $lock = Cache::lock('zoho:sync:pi:' . $pi->id, 120);
+        if (!$lock->get()) {
+            return response()->json(['status' => false, 'message' => 'A Zoho sync for this proforma invoice is already in progress — try again in a moment.'], 409);
+        }
+        try {
+            if (!empty($pi->zoho_invoice_id)) {
+                return response()->json(['status' => true, 'message' => 'This proforma invoice is already synced to Zoho Books (invoice ' . ($pi->zoho_invoice_number ?: $pi->zoho_invoice_id) . ').', 'data' => $this->shapeZoho($pi)]);
+            }
+            if (!$pi->customer_id) {
+                return response()->json(['status' => false, 'message' => 'Attach a customer to this proforma invoice before syncing to Zoho Books.'], 422);
+            }
+            if ($pi->items->isEmpty()) {
+                return response()->json(['status' => false, 'message' => 'Add at least one product line before syncing to Zoho Books.'], 422);
+            }
+
+            try {
+                $customer = Customer::where('id', $pi->customer_id)->where('client_id', $pi->client_id)->first();
+                if (!$customer) {
+                    return response()->json(['status' => false, 'message' => 'The linked customer could not be found for this proforma invoice.'], 422);
+                }
+                $gstin      = $pi->customer_gst_no ?: ($customer->gst_number ?: null);
+                $stateCode  = $pi->state_code ?: null;
+                $registered = (bool) $gstin;
+
+                // Inter-state IGST only for a GST-registered customer (Zoho forces
+                // intra-state for unregistered ones).
+                $orgState   = $books->orgStateCode() ?: $this->homeStateCode($pi->branch_id);
+                $interState = $registered && $stateCode && (string) $stateCode !== (string) $orgState;
+
+                $zohoCustomerId = $books->findOrCreateCustomerId($customer, $gstin, $stateCode);
+                $inv   = $books->createInvoice($this->buildZohoInvoicePayload($pi, $books, $zohoCustomerId, $interState, $registered ? $books->placeOfSupply($stateCode) : null));
+                $invId = (string) $inv['invoice_id'];
+
+                $pdfPath = null;
+                try {
+                    $rel = 'zoho/invoice/' . $pi->client_id . '/INV-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($pi->code ?: $pi->id)) . '.pdf';
+                    Storage::disk('public')->put($rel, $books->getInvoicePdf($invId));
+                    $pdfPath = '/storage/' . $rel;
+                } catch (\Throwable $e) {
+                    Log::warning('Zoho invoice PDF cache failed', ['pi' => $pi->id, 'err' => $e->getMessage()]);
+                }
+
+                $pi->update([
+                    'zoho_status'         => 'Sync',
+                    'zoho_invoice_id'     => $invId,
+                    'zoho_invoice_number' => $inv['invoice_number'] ?? null,
+                    'zoho_synced_at'      => now(),
+                    'zoho_error'          => null,
+                    'zoho_pdf_path'       => $pdfPath,
+                    'updated_by'          => $user->id,
+                ]);
+
+                return response()->json(['status' => true, 'message' => 'Synced to Zoho Books as invoice ' . ($inv['invoice_number'] ?? $invId) . '.', 'data' => $this->shapeZoho($pi->fresh())]);
+            } catch (RuntimeException $e) {
+                $pi->update(['zoho_status' => 'Not Sync', 'zoho_error' => $e->getMessage(), 'updated_by' => $user->id]);
+                return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
+            }
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /** Stream the cached Zoho invoice PDF for a synced proforma invoice. */
+    public function zohoPdf(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $pi = ProformaInvoice::findOrFail($id);
+        $this->assertScope($pi, $user);
+        if (!$pi->zoho_pdf_path) abort(404, 'No Zoho invoice PDF cached for this proforma invoice.');
+        $rel = ltrim(str_replace('/storage/', '', $pi->zoho_pdf_path), '/');
+        if (!Storage::disk('public')->exists($rel)) abort(404, 'Zoho invoice PDF file missing.');
+        return response(Storage::disk('public')->get($rel), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="ZOHO-INV-' . ($pi->code ?: $pi->id) . '.pdf"',
+        ]);
+    }
+
+    /** Build the Zoho invoice payload (forward GST always applies on a sale;
+     *  tax type follows the customer's place of supply). */
+    private function buildZohoInvoicePayload(ProformaInvoice $pi, ZohoBooksService $books, string $zohoCustomerId, bool $interState, ?string $placeOfSupply = null): array
+    {
+        $lineItems = $pi->items->map(function ($it) use ($books, $interState) {
+            $name = (string) ($it->product_name ?: 'Item');
+            $rate = (float) $it->rate;
+            $taxId = $books->resolveTaxId((float) $it->tax_pct, $interState);
+            $line = [
+                'item_id'  => $books->findOrCreateItemId($name, $rate, $taxId, $it->product_id),
+                'name'     => $name,
+                'rate'     => $rate,
+                'quantity' => (float) $it->quantity,
+            ];
+            if (!empty($it->hsn_code)) $line['hsn_or_sac'] = (string) $it->hsn_code;
+            if ($taxId) $line['tax_id'] = $taxId;
+            return $line;
+        })->values()->all();
+
+        $payload = [
+            'customer_id'      => $zohoCustomerId,
+            'date'             => now()->toDateString(),
+            // Our PI code rides on reference_number; Zoho auto-numbers the invoice.
+            'reference_number' => (string) $pi->code,
+            'line_items'       => $lineItems,
+        ];
+        if ($placeOfSupply) $payload['place_of_supply'] = $placeOfSupply;
+        if ((float) $pi->shipping != 0.0) $payload['shipping_charge'] = (float) $pi->shipping;
+        if ($ccyId = $books->resolveCurrencyId($pi->currency)) {
+            $payload['currency_id'] = $ccyId;
+            if ((float) $pi->exchange_rate > 0) $payload['exchange_rate'] = (float) $pi->exchange_rate;
+        }
+        return $payload;
+    }
+
+    private function shapeZoho(ProformaInvoice $pi): array
+    {
+        return [
+            'id' => $pi->id,
+            'code' => $pi->code,
+            'zoho' => $pi->zoho_status === 'Sync' ? 'sync' : 'not',
+            'zohoInvoice' => $pi->zoho_invoice_number,
+            'zohoPdf' => $pi->zoho_pdf_path ? true : false,
+        ];
+    }
+
+    /** This tenant's own registered GST state code (branch), default MH(27). */
+    private function homeStateCode(?int $branchId): string
+    {
+        $branch = $branchId ? \App\Models\Branch::find($branchId) : null;
+        $code = optional($branch)->gst_state_code ?: substr((string) optional($branch)->gst_number, 0, 2);
+        return $code !== '' && $code !== null ? (string) $code : '27';
+    }
 
     private function applyScope($q, $user, ?int $branchFilter = null): void
     {

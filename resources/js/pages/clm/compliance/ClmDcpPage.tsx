@@ -221,22 +221,8 @@ export default function ClmDcpPage() {
     return Array.from(set);
   };
 
-  // EVERY segment from the Segment Master gets a DCP entry: segments with no
-  // configured rule yet appear as "Not configured" placeholder rows (id 0,
-  // empty selections) so nothing in the master is invisible here. Their
-  // Configure action opens the modal pre-locked to that segment; saving
-  // creates the real rule (id 0 is falsy → the save path POSTs).
-  const allRows = useMemo<SegRule[]>(() => {
-    const have = new Set(rows.map(r => r.segment_code));
-    const placeholders: SegRule[] = (boot?.segments ?? [])
-      .filter(s => !have.has(s.code))
-      .map(s => ({
-        id: 0, rule_code: '', segment_id: s.id, segment_code: s.code,
-        regulatory_status: s.regulatory_status, auths_json: null,
-        doc_selections: {}, mandatory_count: 0, optional_count: 0,
-      }));
-    return [...rows, ...placeholders];
-  }, [rows, boot]);
+  
+  const allRows = useMemo<SegRule[]>(() => rows, [rows]);
 
   // Tab counts derived from the segment-master tier (matches the badges).
   const tierCounts = useMemo<Counts>(() => ({
@@ -453,13 +439,7 @@ export default function ClmDcpPage() {
                         })}
                         <td style={{ textAlign: 'center' }}>
                           <div className="clm-actions">
-                            {r.id ? (
-                              <Tooltip label="Edit rule"><button className="clm-act clm-act-edit" aria-label="Edit rule" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
-                            ) : (
-                              /* Placeholder row (segment with no rule yet) — Configure
-                                 opens the modal locked to this segment; save creates it. */
-                              <Tooltip label="Not configured yet — set up documents for this segment"><button className="clm-act clm-act-edit" aria-label="Configure rule" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button></Tooltip>
-                            )}
+                            <Tooltip label="Edit rule"><button className="clm-act clm-act-edit" aria-label="Edit rule" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
                           </div>
                         </td>
                       </tr>

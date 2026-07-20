@@ -107,6 +107,21 @@ type DraftRow = {
 };
 const EMPTY_DRAFT: DraftRow = { product_id: null, currency: 'USD', quantity: '', target_price: '', notes: '' };
 
+/* Quantity and Target Price are positive numbers, so the raw input is kept to
+ * digits and a single decimal point. This strips the minus sign, letters and a
+ * second dot at the keystroke — the whole point of the QA fix: a hyphen used to
+ * survive (type="number" accepts "-5"), and validation then reported "Enter a
+ * value greater than 0" for what was really an invalid character. Now the
+ * character never lands, and the validator below has a second, clearer message
+ * for anything that slips through (e.g. a paste). */
+const sanitizeDecimal = (raw: string): string => {
+  const cleaned = (raw ?? '').replace(/[^0-9.]/g, '');
+  const [whole, ...rest] = cleaned.split('.');
+  return rest.length ? `${whole}.${rest.join('')}` : whole;
+};
+// A well-formed non-negative number: digits, with an optional single decimal.
+const DECIMAL_RE = /^\d*\.?\d+$/;
+
 type Props = {
   open:    boolean;
   leadId:  number | null;
@@ -361,10 +376,19 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
      * a one-at-a-time toast. */
     const errs: typeof errors = {};
     if (!draft.product_id) errs.product = 'Select a product first.';
-    const qty = Number(draft.quantity);
-    if (!String(draft.quantity).trim() || !Number.isFinite(qty) || qty <= 0) errs.quantity = 'Enter a quantity greater than 0.';
-    const tp = Number(draft.target_price);
-    if (!String(draft.target_price).trim() || !Number.isFinite(tp) || tp <= 0) errs.target_price = 'Enter a target price greater than 0.';
+    /* Three-way check so the message matches the actual problem — the QA bug
+       was that a non-numeric entry (a hyphen) reported "greater than 0", which
+       reads as "your number is too small" rather than "that isn't a number".
+       Order: required → well-formed → positive. */
+    const qtyRaw = String(draft.quantity).trim();
+    if (!qtyRaw) errs.quantity = 'Enter a quantity greater than 0.';
+    else if (!DECIMAL_RE.test(qtyRaw)) errs.quantity = 'Quantity should only include digits and decimal values.';
+    else if (Number(qtyRaw) <= 0) errs.quantity = 'Enter a quantity greater than 0.';
+
+    const tpRaw = String(draft.target_price).trim();
+    if (!tpRaw) errs.target_price = 'Enter a target price greater than 0.';
+    else if (!DECIMAL_RE.test(tpRaw)) errs.target_price = 'Target price should only include digits and decimal values.';
+    else if (Number(tpRaw) <= 0) errs.target_price = 'Enter a target price greater than 0.';
     if (!draft.currency) errs.currency = 'Select a currency.';
     setErrors(errs);
     if (Object.keys(errs).length) {
@@ -577,11 +601,11 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                   <th style={{ width: 70 }}>SR NO</th>
                   <th style={{ width: 140 }}>PRODUCT CODE</th>
                   <th>PRODUCT NAME</th>
-                  <th style={{ width: 120 }}>STATUS</th>
+                  <th style={{ width: 120 }} className="pdm-ta-c">STATUS</th>
                   <th style={{ width: 110 }}>QUANTITY</th>
                   <th style={{ width: 150 }}>TARGET PRICE</th>
-                  <th style={{ width: 100 }}>CURRENCY</th>
-                  <th style={{ width: 110 }}>ACTIONS</th>
+                  <th style={{ width: 100 }} className="pdm-ta-c">CURRENCY</th>
+                  <th style={{ width: 110 }} className="pdm-ta-c">ACTIONS</th>
                 </tr>
               </thead>
               <tbody>
@@ -628,7 +652,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                           )}
                         </div>
                       </td>
-                      <td>
+                      <td className="pdm-ta-c">
                         <StatusPill status={r.product_status} />
                       </td>
                       <td className="pdm-num">{r.quantity != null ? Number(r.quantity).toLocaleString() : '—'}</td>
@@ -637,7 +661,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                           ? `${currencySymbol(r.currency)} ${Number(r.target_price).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           : '—'}
                       </td>
-                      <td><span className="pdm-curr-pill">{r.currency}</span></td>
+                      <td className="pdm-ta-c"><span className="pdm-curr-pill">{r.currency}</span></td>
                       <td className="pdm-act-cell">
                         {/* Themed Tooltip pills — same treatment as the Lead
                             Acknowledgement master's action column (QA ask),
@@ -790,7 +814,10 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                     const offSegment = customerSegmentSet.size > 0 && !!seg && !customerSegmentSet.has(seg.toLowerCase());
                     return {
                       value: String(p.id),
-                      label: `${p.product_code} · ${p.name}`,
+                      // Padded code for display (P-25 → P-025), same as the table
+                      // below. Safe to format the label because the option's value
+                      // is the numeric id, so matching/saving is unaffected.
+                      label: `${formatProductCode(p.product_code)} · ${p.name}`,
                       badge: { text: active ? 'Active' : 'Inactive', tone: active ? 'green' as const : 'red' as const },
                       badges: seg ? [{ text: seg, tone: 'violet' as const }] : undefined,
                       disabled: offSegment,
@@ -819,12 +846,16 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                         <rect x="14" y="14" width="7" height="7" rx="1" />
                       </svg>
                     </span>
+                    {/* text + inputMode instead of type=number: a number input
+                        still accepts a leading "-", so the minus reached state
+                        and mis-triggered the "greater than 0" message. Text lets
+                        sanitizeDecimal strip it before it lands. */}
                     <input
-                      type="number" min="0" step="any"
+                      type="text" inputMode="decimal"
                       className="pdm-form-input"
                       placeholder="Enter quantity"
                       value={draft.quantity}
-                      onChange={e => { setDraft(p => ({ ...p, quantity: e.target.value })); setErrors(er => ({ ...er, quantity: undefined })); }}
+                      onChange={e => { setDraft(p => ({ ...p, quantity: sanitizeDecimal(e.target.value) })); setErrors(er => ({ ...er, quantity: undefined })); }}
                     />
                   </div>
                   {errors.quantity && <div className="pdm-form-err">{errors.quantity}</div>}
@@ -835,12 +866,14 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                       separately below, so a hardcoded "$" was both redundant
                       and misleading (it showed $ even for INR/EUR/etc.). */}
                   <div className={`pdm-form-input-wrap ${errors.target_price ? 'pdm-form-input-wrap-err' : ''}`}>
+                    {/* text + inputMode so the minus/letters can't reach state —
+                        see the Quantity note above. */}
                     <input
-                      type="number" min="0" step="any"
+                      type="text" inputMode="decimal"
                       className="pdm-form-input"
                       placeholder="Enter target price"
                       value={draft.target_price}
-                      onChange={e => { setDraft(p => ({ ...p, target_price: e.target.value })); setErrors(er => ({ ...er, target_price: undefined })); }}
+                      onChange={e => { setDraft(p => ({ ...p, target_price: sanitizeDecimal(e.target.value) })); setErrors(er => ({ ...er, target_price: undefined })); }}
                     />
                   </div>
                   {errors.target_price && <div className="pdm-form-err">{errors.target_price}</div>}
@@ -1219,7 +1252,10 @@ const SCOPED_CSS = `
   text-align: center; padding: 24px 14px;
   color: #94a3b8; font-style: italic; font-size: 12px;
 }
-.pdm-act-cell { display: flex; gap: 6px; justify-content: flex-start; align-items: center; }
+.pdm-act-cell { display: flex; gap: 6px; justify-content: center; align-items: center; }
+/* Center STATUS + ACTIONS (header and cells). !important overrides the base
+   left-aligned th rule. */
+.pdm-ta-c { text-align: center !important; }
 .pdm-row-btn {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 5px 10px; border: 1.5px solid #cbd5e1;

@@ -25,6 +25,7 @@ class SupplierPurchaseInvoice extends Model
         'additional_charges', 'net_payable', 'total_paid', 'balance',
         'tds_percentage', 'tds_amount', 'tds_cut',
         'attachment_path', 'zoho_status', 'status', 'created_by', 'updated_by',
+        'zoho_bill_id', 'zoho_bill_number', 'zoho_synced_at', 'zoho_error', 'zoho_pdf_path',
     ];
 
     protected $casts = [

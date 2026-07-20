@@ -775,6 +775,8 @@ class AuthController extends Controller
      * Returns the freshly-formatted user so the SPA can swap state and the
      * theme effect repaints automatically.
      */
+
+
     public function updateBranding(\Illuminate\Http\Request $request)
     {
         $request->validate([
@@ -835,10 +837,11 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
+    /** 
      * Normalize a stored value (legacy "/storage/..." URL or already-relative
      * path) to a disk-relative path suitable for Storage::delete().
      */
+
     private function relativeFilePath(string $stored): string
     {
         if (preg_match('#^https?://#i', $stored)) {
@@ -851,4 +854,5 @@ class AuthController extends Controller
         }
         return $stored;
     }
+
 }

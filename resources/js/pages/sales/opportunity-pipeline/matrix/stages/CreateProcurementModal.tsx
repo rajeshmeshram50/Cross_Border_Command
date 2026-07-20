@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatDmy } from '../../../../../utils/formatDmy';
+import { formatProductCode } from '../../../../../utils/formatProductCode';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -230,7 +231,16 @@ export default function CreateProcurementModal({
   };
 
   const addRow    = () => setDrafts(prev => [...prev, mkDraft()]);
-  const removeRow = (key: number) => setDrafts(prev => prev.length > 1 ? prev.filter(d => d.key !== key) : prev);
+  const removeRow = (key: number) => {
+    // A procurement needs at least one product — block removing the last row.
+    if (drafts.length <= 1) {
+      toast.warning('At least one product', 'A procurement needs at least one product.');
+      return;
+    }
+    setDrafts(prev => prev.filter(d => d.key !== key));
+    // Toast fired OUTSIDE the state updater so it can't double-fire in StrictMode.
+    toast.success('Product removed', 'The product was removed from this procurement.');
+  };
 
   /* When the user picks a different product from the dropdown, refresh
    * the row's product_id + default qty / price (only if empty so they
@@ -331,12 +341,6 @@ export default function CreateProcurementModal({
   /* Compute first selected product for the OPP SUMMARY "Product" cell. Must
    * stay ABOVE the `open` early-return so the hook count never changes
    * between renders (rules of hooks). */
-  const firstProductName = useMemo(() => {
-    const first = drafts.find(d => d.lead_product_id);
-    if (!first?.lead_product_id) return '—';
-    return productById.get(first.lead_product_id)?.product_name ?? '—';
-  }, [drafts, productById]);
-
   // Body scroll lock — keep the page behind the modal from scrolling while open.
   useEffect(() => {
     if (!open) return;
@@ -390,15 +394,29 @@ export default function CreateProcurementModal({
               </span>
               <span className="cps-section-title">OPPORTUNITY SUMMARY</span>
             </div>
+            {/* Trimmed to the four identity fields the user asked for: OPP ID,
+                OPP DATE, CUSTOMER NAME, COUNTRY. Product / Source / Assigned To /
+                Status were dropped as noise for this read-only summary. COUNTRY
+                is a property OF the customer, so it only shows when a customer is
+                present — no customer, no country. */}
             <div className="cps-opp-grid">
-              <Field label="OPP ID"        value={leadContext?.oppId ?? '—'}                tone="amber" mono />
-              <Field label="CUSTOMER"      value={leadContext?.customer ?? '—'}             bold />
-              <Field label="PRODUCT"       value={firstProductName}                          bold />
-              <Field label="COUNTRY"       value={countryLabel(leadContext?.country)}        bold />
-              <Field label="SOURCE"        value="Offline" />
-              <Field label="ASSIGNED TO"   value={leadContext?.assignedTo ?? 'Assigned User'} />
-              <Field label="DATE"          value={formatDdMmYyyy(leadContext?.oppDate)} />
-              <Field label="STATUS"        value={<StatusPill text={leadContext?.status ?? 'Qualified'} />} />
+              <Field label="OPP ID"    value={leadContext?.oppId ?? '—'}            tone="amber" mono />
+              <Field label="OPP DATE"  value={formatDdMmYyyy(leadContext?.oppDate)} bold />
+              <Field
+                label="CUSTOMER"
+                bold
+                value={
+                  leadContext?.customer
+                    ? <span className="cps-cust-val">
+                        {leadContext.customer}
+                        {leadContext.country && <ScopeBadge country={leadContext.country} />}
+                      </span>
+                    : '—'
+                }
+              />
+              {leadContext?.customer && (
+                <Field label="COUNTRY" value={countryLabel(leadContext?.country)}   bold />
+              )}
             </div>
           </div>
 
@@ -474,6 +492,7 @@ export default function CreateProcurementModal({
                         Action out of view. Bounding it also finally gives
                         MasterSelect's own label ellipsis something to bite on. */}
                     <th style={{ width: 300 }}>PRODUCT NAME</th>
+                    <th style={{ width: 110 }}>STATUS</th>
                     <th style={{ width: 130 }}>QUANTITY</th>
                     <th style={{ width: 150 }}>TARGET PRICE</th>
                     <th style={{ width: 160 }}>ATTACHMENT</th>
@@ -484,7 +503,9 @@ export default function CreateProcurementModal({
                   {drafts.map((d, idx) => {
                     const opts = productPool
                       .filter(p => p.id === d.lead_product_id || !usedLpIds.has(p.id))
-                      .map(p => ({ value: String(p.id), label: `(${p.product_code ?? `P-${p.product_id}`}) ${p.product_name ?? ''}`.trim() }));
+                      // Code padded to 3 digits for display (P-10 → P-010). The
+                      // option value is the numeric id, so this is display-only.
+                      .map(p => ({ value: String(p.id), label: `(${formatProductCode(p.product_code ?? `P-${p.product_id}`)}) ${p.product_name ?? ''}`.trim() }));
                     return (
                       <tr key={d.key}>
                         <td><span className="cps-sr">{idx + 1}</span></td>
@@ -495,6 +516,17 @@ export default function CreateProcurementModal({
                             options={opts}
                             placeholder="Select Product"
                           />
+                        </td>
+                        <td>
+                          {/* Product's own Active / Inactive status — from the
+                              picked product; a dash until one is chosen. */}
+                          {(() => {
+                            const sel = d.lead_product_id != null ? productById.get(d.lead_product_id) : undefined;
+                            const st = (sel?.status ?? '').trim();
+                            if (!st) return <span className="cps-dash">—</span>;
+                            const active = st.toLowerCase() === 'active';
+                            return <span className={`cps-prod-st ${active ? 'cps-prod-st-active' : 'cps-prod-st-inactive'}`}>● {active ? 'Active' : 'Inactive'}</span>;
+                          })()}
                         </td>
                         <td>
                           {(() => {
@@ -621,6 +653,21 @@ function Field({ label, value, tone, mono, bold }: { label: string; value: React
   );
 }
 
+/* Domestic (India) vs International pill beside the customer name — so the
+ * summary makes the customer's scope obvious at a glance. Same rule as the QPI
+ * customer/consignee badges: India → Domestic, anything else → International. */
+function ScopeBadge({ country }: { country: string }) {
+  const domestic = country.trim().toLowerCase() === 'india';
+  return (
+    <span
+      className={`cps-scope ${domestic ? 'cps-scope-dom' : 'cps-scope-intl'}`}
+      title={domestic ? 'India — domestic' : `${country} — international`}
+    >
+      {domestic ? 'Domestic' : 'International'}
+    </span>
+  );
+}
+
 function StatusPill({ text }: { text: string }) {
   const t = text.toLowerCase();
   const cls = t === 'qualified' ? 'cps-stp-q' : t === 'disqualified' ? 'cps-stp-d' : 'cps-stp-c';
@@ -649,15 +696,27 @@ function RowAttach({ files, onAdd, onRemove }: { files: File[]; onAdd: (f: File[
   const popRef  = useRef<HTMLDivElement | null>(null);
   /* Overflow popover position (fixed, portalled to body so the scrolling
    * modal body can't clip it). null = closed. */
-  const [popPos, setPopPos] = useState<{ top: number; left: number } | null>(null);
+  const [popPos, setPopPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
 
   const overflow = files.slice(1);   // everything after the first chip
 
   const openPop = () => {
     const r = moreRef.current?.getBoundingClientRect();
     if (!r) return;
-    // Below the badge, clamped so a wide popover can't run off the right edge.
-    setPopPos({ top: r.bottom + 6, left: Math.min(r.left, window.innerWidth - 296) });
+    const GAP = 6, MARGIN = 12, CAP = 240;
+    // Estimate the list height (header + one row per file) so we know whether
+    // it fits below the badge.
+    const estH = Math.min(CAP, 30 + overflow.length * 30);
+    const spaceBelow = window.innerHeight - r.bottom - GAP - MARGIN;
+    const spaceAbove = r.top - GAP - MARGIN;
+    /* Flip ABOVE the badge when there isn't room below and there's more room up
+       — otherwise the popover ran off the bottom of the screen and its last
+       rows were clipped (exactly what the screenshot shows). Either way cap the
+       height to the space actually available so it always fits and scrolls. */
+    const flipUp = spaceBelow < estH && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(120, Math.min(CAP, flipUp ? spaceAbove : spaceBelow));
+    const top = flipUp ? Math.max(MARGIN, r.top - GAP - maxHeight) : r.bottom + GAP;
+    setPopPos({ top, left: Math.min(r.left, window.innerWidth - 296), maxHeight });
   };
   const closePop = () => setPopPos(null);
 
@@ -670,7 +729,14 @@ function RowAttach({ files, onAdd, onRemove }: { files: File[]; onAdd: (f: File[
       if (moreRef.current?.contains(t) || popRef.current?.contains(t)) return;
       closePop();
     };
-    const onMove = () => closePop();
+    /* A scroll INSIDE the popover's own list must NOT close it — otherwise the
+       first wheel tick on the "N more attachments" list dismissed it and it read
+       as "won't scroll". Only a scroll of an ancestor (the modal body / page),
+       which would slide the fixed popover out of place, should close it. */
+    const onMove = (e: Event) => {
+      if (e.target instanceof Node && popRef.current?.contains(e.target)) return;
+      closePop();
+    };
     const onEsc  = (e: KeyboardEvent) => { if (e.key === 'Escape') closePop(); };
     document.addEventListener('mousedown', onDoc);
     window.addEventListener('scroll', onMove, true);
@@ -722,7 +788,7 @@ function RowAttach({ files, onAdd, onRemove }: { files: File[]; onAdd: (f: File[
 
       {/* Overflow popover — lists every attachment past the first. */}
       {popPos && overflow.length > 0 && createPortal(
-        <div ref={popRef} className="cps-attach-pop" style={{ top: popPos.top, left: popPos.left }}>
+        <div ref={popRef} className="cps-attach-pop" style={{ top: popPos.top, left: popPos.left, maxHeight: popPos.maxHeight }}>
           <div className="cps-attach-pop-head">{overflow.length} more attachment{overflow.length === 1 ? '' : 's'}</div>
           {overflow.map((f, i) => (
             // realIdx = i + 1 — the overflow list starts at the second file, so
@@ -873,6 +939,28 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .cps-stp-d { background: rgba(239,68,68,.18); color: #fca5a5; border-color: rgba(239,68,68,.4); }
 [data-bs-theme="dark"] .cps-stp-c { background: rgba(59,130,246,.18); color: #93c5fd; border-color: rgba(59,130,246,.4); }
 
+/* Domestic / International scope pill beside the customer name. */
+.cps-cust-val { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cps-scope {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .03em; border: 1px solid; white-space: nowrap;
+}
+.cps-scope-dom  { background: #dcfce7; color: #16a34a; border-color: #86efac; }
+.cps-scope-intl { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+[data-bs-theme="dark"] .cps-scope-dom  { background: rgba(34,197,94,.18); color: #86efac; border-color: rgba(34,197,94,.4); }
+[data-bs-theme="dark"] .cps-scope-intl { background: rgba(124,58,237,.22); color: #c4b5fd; border-color: rgba(167,139,250,.42); }
+
+/* Product Active / Inactive pill in the STATUS column. */
+.cps-prod-st {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 10px; font-weight: 700; border: 1px solid; white-space: nowrap;
+}
+.cps-prod-st-active   { background: #dcfce7; color: #16a34a; border-color: #86efac; }
+.cps-prod-st-inactive { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+.cps-dash { color: #94a3b8; }
+[data-bs-theme="dark"] .cps-prod-st-active   { background: rgba(34,197,94,.18); color: #86efac; border-color: rgba(34,197,94,.4); }
+[data-bs-theme="dark"] .cps-prod-st-inactive { background: rgba(239,68,68,.18); color: #fca5a5; border-color: rgba(239,68,68,.4); }
+
 /* ─── Basic Information grid ─── */
 .cps-basic-grid {
   display: grid; grid-template-columns: repeat(4, 1fr);
@@ -961,7 +1049,12 @@ const SCOPED_CSS = `
 }
 .cps-prods-table tbody td {
   padding: 10px 12px; font-size: 12px; color: #1e293b;
-  border-bottom: 1px solid #cffafe; vertical-align: middle;
+  /* Top-aligned, not middle: the Attachment cell stacks an "Attach" button over
+     its chip row, so it's taller than the single-input cells. With middle
+     alignment that taller cell floated the button above the qty/price inputs
+     (the "misaligned" look with multiple attachments). Top-align lines the
+     Attach button up with the inputs; the chips flow underneath. */
+  border-bottom: 1px solid #cffafe; vertical-align: top;
 }
 .cps-prods-table tbody tr:last-child td { border-bottom: none; }
 
@@ -1044,6 +1137,10 @@ const SCOPED_CSS = `
 .cps-attach-pop {
   position: fixed; z-index: 1100;
   width: 280px; max-height: 240px; overflow-y: auto;
+  /* Keep the wheel inside the list — reaching the top/bottom doesn't spill the
+     scroll onto the page (which the outside-scroll guard would read as an
+     ancestor scroll and close the popover). */
+  overscroll-behavior: contain;
   background: #fff; border: 1.5px solid #a5f3fc; border-radius: 10px;
   box-shadow: 0 12px 32px rgba(15,23,42,.22);
   padding: 8px; display: flex; flex-direction: column; gap: 5px;

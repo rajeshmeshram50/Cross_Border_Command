@@ -215,6 +215,14 @@ class PurchaseOrderController extends Controller
             ], 503);
         }
 
+        // Serialize concurrent syncs of the SAME PO — a double-submit must not
+        // create two Zoho purchase orders.
+        $lock = \Illuminate\Support\Facades\Cache::lock('zoho:sync:po:' . $po->id, 120);
+        if (!$lock->get()) {
+            return response()->json(['status' => false, 'message' => 'A Zoho sync for this purchase order is already in progress — try again in a moment.'], 409);
+        }
+        try {
+
         if (!empty($po->zoho_purchaseorder_id)) {
             return response()->json([
                 'status' => true,
@@ -228,16 +236,12 @@ class PurchaseOrderController extends Controller
         if ($po->items->isEmpty()) {
             return response()->json(['status' => false, 'message' => 'Add at least one product line before syncing to Zoho Books.'], 422);
         }
-        // The PO must be e-signed (Zoho Sign completed) before it can be pushed
-        // to Zoho Books. The "signed" signal is a completed purchase-order
-        // signature request for this PO (flipped to 'completed' by the Zoho Sign
-        // webhook). Mirror the frontend guard so a direct API call can't bypass it.
-        if (!$this->isPoSigned($po)) {
-            return response()->json(['status' => false, 'message' => 'Sign the Purchase Order first — it must be e-signed via Zoho Sign before it can be synced to Zoho Books.'], 422);
-        }
         // The full PO amount must be utilised (all payments recorded so the
         // net-payable balance is cleared) before the PO is pushed to Zoho Books.
-        $paid = (float) $po->payments()->sum('amount');
+        // Only CLEARED payments count — an uncleared/Pending cheque must never
+        // satisfy the gate (else Zoho would receive a payment for money not yet
+        // received).
+        $paid = (float) $po->payments()->where('status', 'Cleared')->sum('amount');
         $netPayable = round((float) $po->grand_total - (float) $po->tds_amount, 2);
         if (!($netPayable > 0.005 && round($netPayable - $paid, 2) <= 0.005)) {
             return response()->json([
@@ -265,7 +269,7 @@ class PurchaseOrderController extends Controller
             // undo an otherwise-successful sync.
             $pdfPath = null;
             try {
-                $rel = 'zoho/po/PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($po->code ?: $po->id)) . '.pdf';
+                $rel = 'zoho/po/' . $po->client_id . '/PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($po->code ?: $po->id)) . '.pdf';
                 Storage::disk('public')->put($rel, $books->getPurchaseOrderPdf($zohoId));
                 $pdfPath = '/storage/' . $rel;
             } catch (\Throwable $e) {
@@ -297,6 +301,10 @@ class PurchaseOrderController extends Controller
         } catch (RuntimeException $e) {
             $po->update(['zoho_status' => 'Not Sync', 'zoho_error' => $e->getMessage(), 'updated_by' => $user->id]);
             return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        } finally {
+            $lock->release();
         }
     }
 
@@ -497,7 +505,7 @@ class PurchaseOrderController extends Controller
             $taxId = $registered ? $books->resolveTaxId((float) $it->cgst_pct + (float) $it->sgst_pct, $interState) : null;
             $line = [
                 // Zoho POs need a purchasable item id, not a free-text line.
-                'item_id' => $books->findOrCreateItemId($name, (float) $it->rate, $taxId),
+                'item_id' => $books->findOrCreateItemId($name, (float) $it->rate, $taxId, $it->product_id),
                 'name' => $name,
                 'description' => (string) $it->product_code,
                 'rate' => (float) $it->rate,
