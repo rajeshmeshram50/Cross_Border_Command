@@ -46,8 +46,6 @@ export type Quotation = {
   consignee: string;
   docType: 'International' | 'Domestic';
   currency: string;    // $, ₹, €
-  // Quotation grand total — shown as the "Quotation Value" in the
-  // Convert-to-PI confirmation popup.
   grandTotal?: number | null;
   salesManager: string;
   // Drives the "Convert to PI" button state. When the quotation has
@@ -122,22 +120,6 @@ const ROWS_PER_PAGE = 10;
 // auto-fit snaps to the nearest of these so the selected value is always a
 // listed option.
 const QPI_ROWS_OPTIONS = [10, 25, 50, 100];
-
-/**
- * Render the "Created By" cell as a colored pill with a small sub-label.
- *
- * Display rules (so the column says something meaningful from the
- * viewer's perspective, not just "who clicked Save"):
- *
- *   1. If the LOGGED-IN user is the creator → pill = "You"
- *      (showing your own name on your own dashboard is noise).
- *   2. Else → pill = creator's actual name + sub-label with their
- *      branch / role.
- *
- * Pill tone is keyed off `user_type` (super-admin / client / branch)
- * so the visual language matches the Master Details "Created By"
- * column.
- */
 function renderCreatorCell(
   name: string | undefined,
   creatorId: number | null | undefined,
@@ -2238,6 +2220,9 @@ function splitTax(p: ProductRow, intra: boolean): TaxSplit {
 type MasterOpt = {
   value: string;
   label: string;
+  /* Master row id, carried on options whose selection is stored by id rather
+     than by label (INCO Term — see shapeQpiMasters). */
+  id?: number;
   /* Optional pill shown to the right of the label in MasterSelect. Used on the
      Customer / Consignee lists to mark each party Domestic vs International, so
      the user can see at a glance which ones suit the chosen Document Type
@@ -2471,6 +2456,28 @@ function shapeQpiMasters(
       const label = code && name ? `${code} – ${name}` : (name || code || '');
       return { value: label, label };
     }).filter(o => o.label);
+  /* INCO Term — the trade desk works with four terms only, so the master's
+   * eleven official Incoterms are filtered down to them here (one place, so
+   * the Quotation/PI form and the Create Shipment form agree). CFR is the
+   * official code for what the desk writes as CNF, so that row is surfaced
+   * under the CNF name while keeping its real master id. Options carry `id`
+   * because shipments store the incoterm by id, not by label. */
+  const INCO_CODE_MAP: Record<string, string> = { EXW: 'EXW', FOB: 'FOB', CIF: 'CIF', CNF: 'CNF', CFR: 'CNF' };
+  const INCO_ORDER = ['FOB', 'EXW', 'CIF', 'CNF'];
+  const incoSeen = new Set<string>();
+  const incoOpts: MasterOpt[] = arr(inco)
+    .map((r: any) => {
+      const code = INCO_CODE_MAP[String(r.code ?? '').trim().toUpperCase()];
+      if (!code || incoSeen.has(code)) return null;
+      incoSeen.add(code);
+      const name = String(r.full_name ?? r.name ?? '').trim();
+      const label = name ? `${code} – ${name}` : code;
+      return { id: Number(r.id), value: label, label };
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) =>
+      INCO_ORDER.indexOf(String(a.label).split(/\s|–/)[0]) - INCO_ORDER.indexOf(String(b.label).split(/\s|–/)[0]));
+
   const customerRows = arr(cust);
   const consigneeRows = arr(cons);
   const bankRows = arr(bank);
@@ -2603,7 +2610,7 @@ function shapeQpiMasters(
   });
   return {
     currencies: optByCode(arr(cur)),
-    incoterms:  optByCode(arr(inco)),
+    incoterms:  incoOpts,
     ports:         optByCode(arr(port)),
     portsDischarge: optByCode(arr(portDis)),
     countries:  arr(ctry).map((r: any) => ({ value: r.name ?? '', label: r.name ?? '' })).filter((o: MasterOpt) => o.label),
