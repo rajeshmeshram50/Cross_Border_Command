@@ -488,7 +488,7 @@ export default function SalesDocSendForSignatureModal({
                 <div className="ssf-options">
                   <div className="ssf-inline">
                     <label><span>Expiry (days)</span>
-                      <input type="number" min={1} max={180} value={expiryDays} onChange={e => setExpiryDays(Math.max(1, Math.min(180, Number(e.target.value) || 1)))} />
+                      <input type="number" min={1} max={90} value={expiryDays} onChange={e => { const raw = Number(e.target.value) || 1; if (raw > 90) toast.warning('Maximum 90 days', 'Expiry can’t be more than 90 days — it’s been capped at 90.'); setExpiryDays(Math.max(1, Math.min(90, raw))); }} />
                     </label>
                   </div>
                   <label className="ssf-notes-label"><span>Notes to signers</span>

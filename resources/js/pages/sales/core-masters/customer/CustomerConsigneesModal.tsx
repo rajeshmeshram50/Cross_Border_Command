@@ -449,7 +449,23 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                 value={mapSelectId}
                 onChange={(v) => setMapSelectId(v)}
                 placeholder="Select a consignee to map…"
-                options={mappableConsignees.map(c => ({ value: String(c.db_id), label: `${c.id} — ${c.company}` }))}
+                /* Domestic / International pill on the right of each option —
+                   same convention as the Q/PI party dropdowns. The list is
+                   already filtered to the customer's own side (see
+                   mappableConsignees), so the badge confirms WHY only these
+                   consignees are offered. */
+                options={mappableConsignees.map(c => {
+                  const country = (c.country ?? '').trim();
+                  return {
+                    value: String(c.db_id),
+                    label: `${c.id} — ${c.company}`,
+                    badge: country
+                      ? (country === 'India'
+                        ? { text: 'Domestic', tone: 'green' as const, title: 'India — domestic consignee' }
+                        : { text: 'International', tone: 'violet' as const, title: `${country} — international consignee` })
+                      : undefined,
+                  };
+                })}
               />
               {mappableConsignees.length === 0 && (
                 <div style={{ fontSize: 12, color: pk.textMuted, marginTop: 8 }}>No other consignees available to map.</div>
@@ -480,7 +496,12 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
               <div style={{ maxHeight: ROWS_MAX_H, overflowY: 'auto' }}>
                 {segOpen.names.map((name, i) => (
                   <div key={i} className={`ccm-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                    <span className="ccm-seg" title={name}>{truncSegment(name)}</span>
+                    {/* Same themed tooltip the row's first segment chip and the
+                        Actions column use — the native `title` here rendered as
+                        an unstyled OS bubble and lagged a second behind. */}
+                    <Tooltip label={name} disabled={name.length <= 14}>
+                      <span className="ccm-seg">{truncSegment(name)}</span>
+                    </Tooltip>
                   </div>
                 ))}
               </div>

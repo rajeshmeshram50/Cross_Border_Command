@@ -337,7 +337,7 @@ class PurchaseOrderController extends Controller
             'signers'           => 'nullable|array|max:1',
             'signers.*.name'    => 'required_with:signers|string|max:255',
             'signers.*.email'   => 'required_with:signers|email|max:255',
-            'expiry_days'       => 'nullable|integer|min:1|max:180',
+            'expiry_days'       => 'nullable|integer|min:1|max:90',
             'is_sequential'     => 'nullable|boolean',
             'notes'             => 'nullable|string|max:1000',
             'document_settings' => 'nullable|array',
@@ -362,7 +362,7 @@ class PurchaseOrderController extends Controller
             file_put_contents($tmp, $pdfBytes);
             $tempPaths[] = $tmp;
 
-            $expiryDays  = (int) ($data['expiry_days'] ?? 30);
+            $expiryDays  = min(90, max(1, (int) ($data['expiry_days'] ?? 30)));  // Zoho caps expiration_days at 2 digits
             $requestName = 'Purchase Order ' . ($po->code ?: $po->id);
             $requestBody = ['requests' => [
                 'request_name'    => $requestName,
@@ -798,7 +798,20 @@ class PurchaseOrderController extends Controller
         ->filter(fn ($r) => $r['qty'] > 0)
         ->values();
 
-        return response()->json(['status' => true, 'data' => $data]);
+        /* An empty list has two very different causes and the caller must be
+         * able to tell them apart: the PI genuinely has no products, or every
+         * PI product has already been consumed by earlier POs on this shipment.
+         * The second is the common one (2 POs covering 4 PI products) and needs
+         * to be reported instead of opening an empty product table. */
+        return response()->json([
+            'status' => true,
+            'data'   => $data,
+            'meta'   => [
+                'pi_item_count'  => $items->count(),
+                'available'      => $data->count(),
+                'fully_ordered'  => $items->count() > 0 && $data->isEmpty(),
+            ],
+        ]);
     }
 
     /* ══════════════════════════ TRADE DOCS + AGREEMENTS (Stage 4) ══════════════════════════ */

@@ -161,7 +161,7 @@ class ClmSignatureController extends Controller
             // land at its own dragged position (per-role document_settings).
             // Absent on the legacy single-signer vault sends.
             'signers.*.role'       => 'nullable|string|max:32',
-            'expiry_days'          => 'nullable|integer|min:1|max:180',
+            'expiry_days'          => 'nullable|integer|min:1|max:90',
             'is_sequential'        => 'nullable|boolean',
             'notes'                => 'nullable|string|max:1000',
             'document_settings'    => 'nullable|array', // keyed by trade_doc_id → {x,y,page,width,height}
@@ -310,7 +310,7 @@ class ClmSignatureController extends Controller
             }
 
             // 2. Build the Zoho request body — recipient actions + metadata.
-            $expiryDays = (int) ($data['expiry_days'] ?? 30);
+            $expiryDays = min(90, max(1, (int) ($data['expiry_days'] ?? 30)));  // Zoho caps expiration_days at 2 digits
             $actions = [];
             foreach ($data['signers'] as $i => $signer) {
                 $actions[] = [
@@ -571,7 +571,7 @@ class ClmSignatureController extends Controller
             'agreement_ids'     => 'nullable|array|min:1|max:10',
             'agreement_ids.*'   => 'integer|exists:clm_agreement_library,id',
             'lead_id'           => 'required|integer|exists:leads,id',
-            'expiry_days'       => 'nullable|integer|min:1|max:180',
+            'expiry_days'       => 'nullable|integer|min:1|max:90',
             'is_sequential'     => 'nullable|boolean',
             'notes'             => 'nullable|string|max:1000',
             /* Per-doc signature placement keyed by agreement_id →
@@ -705,7 +705,7 @@ class ClmSignatureController extends Controller
             }
 
             // 2. Build Zoho request payload.
-            $expiryDays = (int) ($data['expiry_days'] ?? 30);
+            $expiryDays = min(90, max(1, (int) ($data['expiry_days'] ?? 30)));  // Zoho caps expiration_days at 2 digits
             $actions = [];
             foreach ($signers as $i => $signer) {
                 $actions[] = [
@@ -920,7 +920,7 @@ class ClmSignatureController extends Controller
             'signers.*.email'        => 'required|email|max:255',
             'signers.*.role'         => 'nullable|string|max:64',
             'signers.*.order'        => 'nullable|integer',
-            'expiry_days'            => 'nullable|integer|min:1|max:180',
+            'expiry_days'            => 'nullable|integer|min:1|max:90',
             'is_sequential'          => 'nullable|boolean',
             'notes'                  => 'nullable|string|max:1000',
             'document_settings'      => 'nullable|array',
@@ -958,7 +958,10 @@ class ClmSignatureController extends Controller
             file_put_contents($tmp, $pdf->output());
             $tempPaths[] = $tmp;
 
-            $expiryDays = (int) ($data['expiry_days'] ?? ($c->days_to_sign ?: 30));
+            // Clamp to Zoho's accepted range — its expiration_days field rejects
+            // 3-digit values ("too many characters", error 9011). days_to_sign is
+            // a stored fallback that skips request validation, so cap it here.
+            $expiryDays = min(90, max(1, (int) ($data['expiry_days'] ?? ($c->days_to_sign ?: 30))));
             $actions = [];
             foreach ($signers as $i => $signer) {
                 $actions[] = [
@@ -1435,7 +1438,7 @@ class ClmSignatureController extends Controller
             'signers.*.order'   => 'nullable|integer|min:1',
             // Per-signature placement keyed by doc_id → { role → {x,y,page,width,height} }.
             'document_settings' => 'nullable|array',
-            'expiry_days'       => 'nullable|integer|min:1|max:180',
+            'expiry_days'       => 'nullable|integer|min:1|max:90',
             'is_sequential'     => 'nullable|boolean',
             'notes'             => 'nullable|string|max:1000',
         ]);
@@ -1487,7 +1490,7 @@ class ClmSignatureController extends Controller
             $primaryIsCustomer = (int) ($record->customer_id ?? 0) > 0;
             $primaryId         = $primaryIsCustomer ? (int) $record->customer_id : (int) ($record->consignee_id ?? 0);
 
-            $expiryDays  = (int) ($data['expiry_days'] ?? 30);
+            $expiryDays  = min(90, max(1, (int) ($data['expiry_days'] ?? 30)));  // Zoho caps expiration_days at 2 digits
             $shortLabel  = $docKind === 'quotation' ? 'QT' : 'PI';
             $docName     = $record->code ? "{$shortLabel} {$record->code}" : $rendered['filename'];
             $requestName = $record->code ?: $rendered['filename'];
