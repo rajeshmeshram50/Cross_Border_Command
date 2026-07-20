@@ -28,8 +28,8 @@ const fmtPrice = (p: string) => {
   return isNaN(n) ? p : `₹${n.toLocaleString('en-IN')}`;
 };
 
-export default function MappedSuppliersModal({ product, recordId, recordSource, targetId, productId, onClose, onAddSupplier }: {
-  product: MappedProduct; recordId: string; recordSource: string; targetId?: string; productId?: string | number; onClose: () => void; onAddSupplier: () => void;
+export default function MappedSuppliersModal({ product, recordId, recordSource, targetId, productId, onClose, onAddSupplier, canAdd = true }: {
+  product: MappedProduct; recordId: string; recordSource: string; targetId?: string; productId?: string | number; onClose: () => void; onAddSupplier: () => void; canAdd?: boolean;
 }) {
   const [suppliers, setSuppliers] = useState<Sup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,7 +104,7 @@ export default function MappedSuppliersModal({ product, recordId, recordSource, 
               <div className="sv-empty">
                 <div className="sv-empty-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg></div>
                 <div className="sv-empty-title">No Suppliers Mapped</div>
-                <div className="sv-empty-sub">Click "Add Supplier" to map suppliers for this product.</div>
+                <div className="sv-empty-sub">{canAdd ? 'Click "Add Supplier" to map suppliers for this product.' : 'Supplier mapping is done by the assignee — this is view-only.'}</div>
               </div>
             ) : suppliers.map((sup, i) => (
               <div className="sv-card" key={sup.id + i}>
@@ -133,7 +133,7 @@ export default function MappedSuppliersModal({ product, recordId, recordSource, 
           <span className="sv-footer-note">{suppliers.length ? `${suppliers.length} supplier${suppliers.length !== 1 ? 's' : ''} mapped to ${product.name}` : 'No suppliers mapped yet'}</span>
           <div className="sv-footer-actions">
             <button className="sv-close-btn" onClick={onClose}>Close</button>
-            <button className="sv-footer-btn" onClick={onAddSupplier}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>Add Supplier</button>
+            {canAdd && <button className="sv-footer-btn" onClick={onAddSupplier}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>Add Supplier</button>}
           </div>
         </div>
       </div>

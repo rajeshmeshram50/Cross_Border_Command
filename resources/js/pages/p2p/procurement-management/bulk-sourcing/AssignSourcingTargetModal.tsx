@@ -116,9 +116,8 @@ function ClarityCell({ clarity, onEdit, onRemovePdf, onUpdate }: { clarity?: Cla
 }
 
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-// Long display format e.g. "16-July-2026" (used for the read-only Start Date).
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const fmtLong = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${parseInt(d, 10)}-${MONTHS[parseInt(m, 10) - 1] ?? m}-${y}`; };
+// Slash display format e.g. "16/07/2026" (used for the read-only Start Date).
+const fmtSlash = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
 // Keep only digits and a single decimal point — Target Price is numeric-only.
 const numOnly = (v: string) => { const c = v.replace(/[^0-9.]/g, ''); const p = c.split('.'); return p.length > 2 ? `${p[0]}.${p.slice(1).join('')}` : c; };
 // Clarity PDFs store a /storage/... path; show just the filename to the user.
@@ -269,7 +268,8 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     }))
       .then(paths => {
         const clean = paths.filter(Boolean);
-        if (clean.length) setClVal(prev => [...(prev ? prev.split('\n').filter(Boolean) : []), ...clean].join('\n'));
+        // Newest-first: prepend the just-uploaded files so the latest shows on top.
+        if (clean.length) setClVal(prev => [...clean, ...(prev ? prev.split('\n').filter(Boolean) : [])].join('\n'));
       })
       .catch((err) => toast.error('Upload failed', err?.response?.data?.message || 'Could not upload the PDF(s).'))
       .finally(() => { setClUploading(false); setClProgress(0); });
@@ -340,13 +340,22 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     setPriceTried(true);
     const n = masterRows.length + manualRows.length;
     if (!n) { toast.warning('Add products', 'Add at least one product to the list.'); return; }
-    if (masterRows.some(r => !String(r.price).trim()) || manualRows.some(r => !String(r.price).trim())) {
-      toast.warning('Target price required', 'Enter a target price for every product in the list.');
-      return;
-    }
-    const badPrice = (v: string) => { const num = parseFloat(String(v).replace(/,/g, '')); return isNaN(num) || num <= 0; };
-    if (masterRows.some(r => badPrice(r.price)) || manualRows.some(r => badPrice(r.price))) {
-      toast.warning('Invalid target price', 'Every target price must be a positive number.');
+    // Jump straight to the FIRST product whose target price is missing/invalid —
+    // check Master rows first, then Manual — switching to its tab and scrolling
+    // it into focus. Fixes the case where the offending product sits on the
+    // other tab (e.g. saving from Manual while a Master row has no price): the
+    // user is taken there and its red validation border is shown.
+    const firstBadMaster = masterRows.findIndex(r => isBadPrice(r.price));
+    const firstBadManual = manualRows.findIndex(r => isBadPrice(r.price));
+    if (firstBadMaster !== -1 || firstBadManual !== -1) {
+      const kind = firstBadMaster !== -1 ? 'master' : 'manual';
+      const idx  = firstBadMaster !== -1 ? firstBadMaster : firstBadManual;
+      setListTab(kind);
+      toast.warning('Target price required', 'Every product needs a valid target price — jumped to the first one that needs it.');
+      setTimeout(() => {
+        const el = document.getElementById(`ast-price-${kind}-${idx}`) as HTMLInputElement | null;
+        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
+      }, 80);
       return;
     }
     // On edit the assignee is fixed — reuse its id from the pre-fill (it may not
@@ -447,7 +456,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                   <div className="ast-srcgrid-sep" />
                   <div className="ast-field">
                     <label>Start Date {!isEdit && <span className="ast-lock"><LockIco /> Today</span>}</label>
-                    <div className="ast-inputwrap is-frozen"><span className="ast-input-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></span><input type="text" value={fmtLong(start)} readOnly tabIndex={-1} className="ast-readonly has-ico" /><span className="ast-freeze-ico"><LockIco /></span></div>
+                    <div className="ast-inputwrap is-frozen"><span className="ast-input-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></span><input type="text" value={fmtSlash(start)} readOnly tabIndex={-1} className="ast-readonly has-ico" /><span className="ast-freeze-ico"><LockIco /></span></div>
                   </div>
                   <div className="ast-srcgrid-sep" />
                   <div className="ast-field">
@@ -542,7 +551,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                             <span data-label="Product Name"><Tooltip label={r.name}><span className="asrc-name">{r.name}</span></Tooltip></span>
                             <span data-label="Segment"><span className={`srpt-seg ${(r.segment || 'General').replace(/ /g, '-')}`}>{r.segment}</span></span>
                             <span className="asrc-hsn" data-label="HSN Code"><span className="srpt-hsn">{r.hsn}</span></span>
-                            <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="e.g. 10000" inputMode="decimal" onChange={e => setMasterRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: numOnly(e.target.value) } : x))} /></span>
+                            <span data-label="Target Price (₹)"><input id={`ast-price-master-${i}`} type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="e.g. 10000" inputMode="decimal" onChange={e => setMasterRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: numOnly(e.target.value) } : x))} /></span>
                             <span data-label="Clarity"><ClarityCell clarity={r.clarity} onEdit={() => openClarity('master', i)} onRemovePdf={(path) => removeRowClarityPdf('master', i, path)} onUpdate={isEdit && r.id ? () => persistRowClarity('master', i) : undefined} /></span>
                             <span data-label=""><Tooltip label={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'}><button type="button" className="ast-pl-del" style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => r.mapped ? toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`) : setMasterRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></Tooltip></span>
                           </div>
@@ -557,7 +566,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                           <div className="asrc-row asrc-row--n" key={i}>
                             <span className="asrc-sr" data-label="Sr">{i + 1}</span>
                             <span data-label="Product Name"><input type="text" className="ast-pl-price" style={{ fontWeight: 600 }} value={r.name} onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x))} /></span>
-                            <span data-label="Target Price (₹)"><input type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="e.g. 10000" inputMode="decimal" onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: numOnly(e.target.value) } : x))} /></span>
+                            <span data-label="Target Price (₹)"><input id={`ast-price-manual-${i}`} type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="e.g. 10000" inputMode="decimal" onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: numOnly(e.target.value) } : x))} /></span>
                             <span data-label="Clarity"><ClarityCell clarity={r.clarity} onEdit={() => openClarity('manual', i)} onRemovePdf={(path) => removeRowClarityPdf('manual', i, path)} onUpdate={isEdit && r.id ? () => persistRowClarity('manual', i) : undefined} /></span>
                             <span data-label=""><Tooltip label={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'}><button type="button" className="ast-pl-del" style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => r.mapped ? toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`) : setManualRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></Tooltip></span>
                           </div>
