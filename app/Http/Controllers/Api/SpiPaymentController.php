@@ -8,6 +8,7 @@ use App\Models\SupplierPurchaseInvoice;
 use App\Models\Vendor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -88,44 +89,65 @@ class SpiPaymentController extends Controller
             'attachment'        => 'nullable|file|mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,webp|max:10240',
         ]);
 
-        // Guard against over-payment beyond the SPI's outstanding balance.
         $amount = round((float) $data['amount'], 2);
-        $paidBefore = (float) $inv->spiPayments()->sum('amount');
-        $netPayable = $this->netPayable($inv);
-        $balanceBefore = round($netPayable - $paidBefore, 2);
-        if ($amount > $balanceBefore + 0.001) {
-            return response()->json([
-                'status'  => false,
-                'message' => 'Amount exceeds the outstanding SPI balance of ' . number_format($balanceBefore, 2) . '.',
-                'errors'  => ['amount' => ['Amount cannot exceed the outstanding balance.']],
-            ], 422);
-        }
 
+        // Store the proof up-front so the per-SPI lock (below) isn't held during
+        // file I/O.
         $path = null;
         if ($request->hasFile('attachment')) {
             $path = $request->file('attachment')->store('spi-payments/attachments', 'public');
         }
 
-        $payment = SpiPayment::create([
-            'client_id'         => $inv->client_id,
-            'branch_id'         => $inv->branch_id,
-            'supplier_purchase_invoice_id' => $inv->id,
-            'amount'            => $amount,
-            'bank_name'         => $data['bank_name'] ?? null,
-            'utr_cheque_number' => $data['utr_cheque_number'] ?? null,
-            'utr_cheque_date'   => $data['utr_cheque_date'] ?? null,
-            'attachment_path'   => $path,
-            'balance_after'     => round($balanceBefore - $amount, 2),
-            'status'            => $data['status'] ?? 'Cleared',
-            'created_by'        => $user->id,
-        ]);
+        // Serialize concurrent payment writes for the same SPI so two tabs can't
+        // both pass the balance check and over-pay.
+        $lock = Cache::lock('spi:payment:' . $inv->id, 10);
+        try {
+            $lock->block(5);
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
+            if ($path) Storage::disk('public')->delete($path);
+            return response()->json([
+                'status'  => false,
+                'message' => 'Another payment for this invoice is being recorded — please retry in a moment.',
+            ], 409);
+        }
 
-        // Keep the SPI's stored paid/balance columns in sync with the ledger.
-        $paidAfter = round($paidBefore + $amount, 2);
-        $inv->update([
-            'total_paid' => $paidAfter,
-            'balance'    => round($netPayable - $paidAfter, 2),
-        ]);
+        try {
+            // Guard against over-payment beyond the SPI's outstanding balance.
+            $paidBefore = (float) $inv->spiPayments()->sum('amount');
+            $netPayable = $this->netPayable($inv);
+            $balanceBefore = round($netPayable - $paidBefore, 2);
+            if ($amount > $balanceBefore + 0.001) {
+                if ($path) Storage::disk('public')->delete($path);
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Amount exceeds the outstanding SPI balance of ' . number_format($balanceBefore, 2) . '.',
+                    'errors'  => ['amount' => ['Amount cannot exceed the outstanding balance.']],
+                ], 422);
+            }
+
+            $payment = SpiPayment::create([
+                'client_id'         => $inv->client_id,
+                'branch_id'         => $inv->branch_id,
+                'supplier_purchase_invoice_id' => $inv->id,
+                'amount'            => $amount,
+                'bank_name'         => $data['bank_name'] ?? null,
+                'utr_cheque_number' => $data['utr_cheque_number'] ?? null,
+                'utr_cheque_date'   => $data['utr_cheque_date'] ?? null,
+                'attachment_path'   => $path,
+                'balance_after'     => round($balanceBefore - $amount, 2),
+                'status'            => $data['status'] ?? 'Cleared',
+                'created_by'        => $user->id,
+            ]);
+
+            // Keep the SPI's stored paid/balance columns in sync with the ledger.
+            $paidAfter = round($paidBefore + $amount, 2);
+            $inv->update([
+                'total_paid' => $paidAfter,
+                'balance'    => round($netPayable - $paidAfter, 2),
+            ]);
+        } finally {
+            $lock->release();
+        }
 
         return response()->json(['status' => true, 'data' => $this->buildSummary($inv->fresh()), 'payment_id' => $payment->id], 201);
     }

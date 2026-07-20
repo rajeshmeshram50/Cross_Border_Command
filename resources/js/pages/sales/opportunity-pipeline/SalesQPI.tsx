@@ -1109,6 +1109,26 @@ export default function SalesQPI() {
     }
   };
 
+  // Push a quotation (→ Zoho Estimate) or PI (→ Zoho Invoice) to Zoho Books.
+  // The backend surfaces the real message (already-synced, GST errors, etc.).
+  const [syncingKeys, setSyncingKeys] = useState<Set<string>>(new Set());
+  const syncRow = async (kind: 'quotation' | 'pi', id: number | undefined, code: string) => {
+    if (!id) { toast.error('Cannot sync', 'This record has no server id yet.'); return; }
+    const key = `${kind}:${id}`;
+    if (syncingKeys.has(key)) return;
+    setSyncingKeys(s => new Set(s).add(key));
+    try {
+      const url = kind === 'quotation' ? `/sales/quotations/${id}/sync` : `/sales/proforma-invoices/${id}/sync`;
+      const { data } = await api.post(url);
+      toast.success(kind === 'quotation' ? 'Quotation synced' : 'PI synced', data?.message ?? `${code} synced to Zoho Books.`);
+      if (kind === 'quotation') reloadQuotations(); else reloadPis();
+    } catch (e: any) {
+      toast.error('Zoho sync failed', e?.response?.data?.message ?? 'Could not sync to Zoho Books.');
+    } finally {
+      setSyncingKeys(s => { const n = new Set(s); n.delete(key); return n; });
+    }
+  };
+
   // Direct convert: POST /sales/proforma-invoices/from-quotation/{id}.
   // The backend enforces "one PI per opportunity" — we also pre-check
   // against the in-memory PI list so the user gets instant feedback
@@ -1487,6 +1507,13 @@ export default function SalesQPI() {
             />
               );
             })()}
+            <ActionBtn
+              title={(r as any).zoho_status === 'Sync' ? 'Already synced to Zoho Books — sync again' : 'Sync to Zoho Books (Estimate)'}
+              icon={<IconZohoSync />}
+              color={(r as any).zoho_status === 'Sync' ? '#0d9488' : '#0ea5e9'}
+              disabled={readOnly || syncingKeys.has(`quotation:${r.id}`)}
+              onClick={() => syncRow('quotation', r.id, r.qtNo)}
+            />
             <Tooltip label="More Options">
               <button
                 type="button"
@@ -1661,6 +1688,13 @@ export default function SalesQPI() {
             />
               );
             })()}
+            <ActionBtn
+              title={(r as any).zoho_status === 'Sync' ? 'Already synced to Zoho Books — sync again' : 'Sync to Zoho Books (Invoice)'}
+              icon={<IconZohoSync />}
+              color={(r as any).zoho_status === 'Sync' ? '#0d9488' : '#0ea5e9'}
+              disabled={readOnly || syncingKeys.has(`pi:${r.id}`)}
+              onClick={() => syncRow('pi', r.id, r.piNo)}
+            />
             <Tooltip label="More Options">
               <button
                 type="button"
@@ -4723,6 +4757,12 @@ const IconEdit = () => (
 const IconKebab = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
     <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+  </svg>
+);
+const IconZohoSync = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 12a9 9 0 0 1-9 9 9 9 0 0 1-6.7-3M3 12a9 9 0 0 1 9-9 9 9 0 0 1 6.7 3" />
+    <path d="M21 3v5h-5M3 21v-5h5" />
   </svg>
 );
 const IconTrash = () => (

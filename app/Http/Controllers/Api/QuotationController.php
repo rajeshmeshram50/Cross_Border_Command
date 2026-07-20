@@ -4,13 +4,19 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Concerns\EnforcesSegmentBuyerConsignee;
 use App\Http\Controllers\Controller;
+use App\Models\Customer;
 use App\Models\Quotation;
 use App\Models\QuotationItem;
+use App\Services\ZohoBooksService;
 use App\Support\Gst;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use RuntimeException;
 
 class QuotationController extends Controller
 {
@@ -218,6 +224,14 @@ class QuotationController extends Controller
 
         $row = Quotation::findOrFail($id);
         $this->assertScope($row, $user, 'write');
+        // Once pushed to Zoho Books the estimate is the source of truth — block
+        // edits so the app and Zoho can't silently diverge.
+        if (!empty($row->zoho_estimate_id)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This quotation is synced to Zoho Books (estimate ' . ($row->zoho_estimate_number ?: $row->zoho_estimate_id) . ') and can no longer be edited — edit it in Zoho Books instead.',
+            ], 422);
+        }
         if ($row->status === Quotation::STATUS_CONVERTED_TO_PI) {
             return response()->json([
                 'status' => false,
@@ -343,6 +357,12 @@ class QuotationController extends Controller
 
         $row = Quotation::findOrFail($id);
         $this->assertScope($row, $user, 'write');
+        if (!empty($row->zoho_estimate_id)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This quotation is synced to Zoho Books and cannot be cancelled here — void the estimate in Zoho Books first.',
+            ], 422);
+        }
         if ($row->status === Quotation::STATUS_CONVERTED_TO_PI) {
             return response()->json([
                 'status' => false,
@@ -731,6 +751,162 @@ class QuotationController extends Controller
      * Branch-level isolation prevents one branch from seeing another
      * branch's quotations — every branch is an isolated peer.
      */
+    /* ══════════════════════════ ZOHO SYNC (→ Estimate) ══════════════════════════ */
+
+    /**
+     * Push this quotation to Zoho Books as an **Estimate**. Mirrors the P2P sync
+     * pattern: 503 when unconfigured, an atomic lock so a double-submit can't
+     * create two estimates, idempotent on zoho_estimate_id, and the customer +
+     * each product are created once in Zoho (deduped via their cached ids).
+     */
+    public function sync(Request $request, $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $q = Quotation::with('items')->findOrFail($id);
+        $this->assertScope($q, $user, 'write');
+
+        $books = app(ZohoBooksService::class);
+        if (!$books->isConfigured()) {
+            return response()->json(['status' => false, 'message' => 'Zoho Books is not connected yet. Add the Zoho Books credentials to the server .env, then try again.'], 503);
+        }
+
+        $lock = Cache::lock('zoho:sync:quotation:' . $q->id, 120);
+        if (!$lock->get()) {
+            return response()->json(['status' => false, 'message' => 'A Zoho sync for this quotation is already in progress — try again in a moment.'], 409);
+        }
+        try {
+            if (!empty($q->zoho_estimate_id)) {
+                return response()->json(['status' => true, 'message' => 'This quotation is already synced to Zoho Books (estimate ' . ($q->zoho_estimate_number ?: $q->zoho_estimate_id) . ').', 'data' => $this->shapeZoho($q)]);
+            }
+            if (!$q->customer_id) {
+                return response()->json(['status' => false, 'message' => 'Attach a customer to this quotation before syncing to Zoho Books.'], 422);
+            }
+            if ($q->items->isEmpty()) {
+                return response()->json(['status' => false, 'message' => 'Add at least one product line before syncing to Zoho Books.'], 422);
+            }
+
+            try {
+                $customer = Customer::where('id', $q->customer_id)->where('client_id', $q->client_id)->first();
+                if (!$customer) {
+                    return response()->json(['status' => false, 'message' => 'The linked customer could not be found for this quotation.'], 422);
+                }
+                $gstin      = $q->customer_gst_no ?: ($customer->gst_number ?: null);
+                $stateCode  = $q->state_code ?: null;
+                $registered = (bool) $gstin;
+
+                // Zoho forces intra-state (place of supply = supplier) for an
+                // UNREGISTERED customer, so inter-state IGST only applies to a
+                // GST-registered customer whose state differs from the org's.
+                $orgState   = $books->orgStateCode() ?: $this->homeStateCode($q->branch_id);
+                $interState = $registered && $stateCode && (string) $stateCode !== (string) $orgState;
+
+                $zohoCustomerId = $books->findOrCreateCustomerId($customer, $gstin, $stateCode);
+                $est   = $books->createEstimate($this->buildZohoEstimatePayload($q, $books, $zohoCustomerId, $interState, $registered ? $books->placeOfSupply($stateCode) : null));
+                $estId = (string) $est['estimate_id'];
+
+                $pdfPath = null;
+                try {
+                    $rel = 'zoho/estimate/' . $q->client_id . '/EST-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($q->code ?: $q->id)) . '.pdf';
+                    Storage::disk('public')->put($rel, $books->getEstimatePdf($estId));
+                    $pdfPath = '/storage/' . $rel;
+                } catch (\Throwable $e) {
+                    Log::warning('Zoho estimate PDF cache failed', ['quotation' => $q->id, 'err' => $e->getMessage()]);
+                }
+
+                $q->update([
+                    'zoho_status'          => 'Sync',
+                    'zoho_estimate_id'     => $estId,
+                    'zoho_estimate_number' => $est['estimate_number'] ?? null,
+                    'zoho_synced_at'       => now(),
+                    'zoho_error'           => null,
+                    'zoho_pdf_path'        => $pdfPath,
+                    'updated_by'           => $user->id,
+                ]);
+
+                return response()->json(['status' => true, 'message' => 'Synced to Zoho Books as estimate ' . ($est['estimate_number'] ?? $estId) . '.', 'data' => $this->shapeZoho($q->fresh())]);
+            } catch (RuntimeException $e) {
+                $q->update(['zoho_status' => 'Not Sync', 'zoho_error' => $e->getMessage(), 'updated_by' => $user->id]);
+                return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
+            }
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /** Stream the cached Zoho estimate PDF for a synced quotation. */
+    public function zohoPdf(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $q = Quotation::findOrFail($id);
+        $this->assertScope($q, $user);
+        if (!$q->zoho_pdf_path) abort(404, 'No Zoho estimate PDF cached for this quotation.');
+        $rel = ltrim(str_replace('/storage/', '', $q->zoho_pdf_path), '/');
+        if (!Storage::disk('public')->exists($rel)) abort(404, 'Zoho estimate PDF file missing.');
+        return response(Storage::disk('public')->get($rel), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="ZOHO-EST-' . ($q->code ?: $q->id) . '.pdf"',
+        ]);
+    }
+
+    /** Build the Zoho estimate payload. Forward GST always applies on a sale
+     *  (unlike a purchase from an unregistered vendor); the tax TYPE follows the
+     *  customer's place of supply (intra → CGST+SGST, inter → IGST). */
+    private function buildZohoEstimatePayload(Quotation $q, ZohoBooksService $books, string $zohoCustomerId, bool $interState, ?string $placeOfSupply = null): array
+    {
+        $lineItems = $q->items->map(function ($it) use ($books, $interState) {
+            $name = (string) ($it->product_name ?: 'Item');
+            $rate = (float) $it->rate;
+            $taxId = $books->resolveTaxId((float) $it->tax_pct, $interState);
+            $line = [
+                'item_id'  => $books->findOrCreateItemId($name, $rate, $taxId, $it->product_id),
+                'name'     => $name,
+                'rate'     => $rate,
+                'quantity' => (float) $it->quantity,
+            ];
+            if (!empty($it->hsn_code)) $line['hsn_or_sac'] = (string) $it->hsn_code;
+            if ($taxId) $line['tax_id'] = $taxId;
+            return $line;
+        })->values()->all();
+
+        $payload = [
+            'customer_id'      => $zohoCustomerId,
+            'date'             => now()->toDateString(),
+            // Our quotation code rides on reference_number; Zoho auto-numbers the
+            // estimate itself (the org has estimate auto-numbering on).
+            'reference_number' => (string) $q->code,
+            'line_items'       => $lineItems,
+        ];
+        if ($placeOfSupply) $payload['place_of_supply'] = $placeOfSupply;
+        if ((float) $q->shipping != 0.0) $payload['shipping_charge'] = (float) $q->shipping;
+        if ($ccyId = $books->resolveCurrencyId($q->currency)) {
+            $payload['currency_id'] = $ccyId;
+            if ((float) $q->exchange_rate > 0) $payload['exchange_rate'] = (float) $q->exchange_rate;
+        }
+        return $payload;
+    }
+
+    /** Small zoho-status payload for the sync response (the list row reads these). */
+    private function shapeZoho(Quotation $q): array
+    {
+        return [
+            'id' => $q->id,
+            'code' => $q->code,
+            'zoho' => $q->zoho_status === 'Sync' ? 'sync' : 'not',
+            'zohoEstimate' => $q->zoho_estimate_number,
+            'zohoPdf' => $q->zoho_pdf_path ? true : false,
+        ];
+    }
+
+    /** This tenant's own registered GST state code (branch), default MH(27). */
+    private function homeStateCode(?int $branchId): string
+    {
+        $branch = $branchId ? \App\Models\Branch::find($branchId) : null;
+        $code = optional($branch)->gst_state_code ?: substr((string) optional($branch)->gst_number, 0, 2);
+        return $code !== '' && $code !== null ? (string) $code : '27';
+    }
+
     private function applyScope($q, $user, ?int $branchFilter = null): void
     {
         if ($user->user_type === 'super_admin') {

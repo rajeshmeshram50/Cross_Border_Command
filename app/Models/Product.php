@@ -28,7 +28,7 @@ class Product extends Model
         'base_price', 'gst_id', 'gst_amount', 'total_price', 'mark_bottom',
         'net_weight', 'gross_weight', 'length_cm', 'width_cm', 'height_cm',
         'batch_no', 'serial_no', 'cat_no', 'lot_no',
-        'status', 'step_completed',
+        'status', 'step_completed', 'zoho_item_id',
     ];
 
     protected $casts = [

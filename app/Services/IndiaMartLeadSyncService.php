@@ -176,6 +176,11 @@ class IndiaMartLeadSyncService
                     if (!$existing->branch_id) {
                         $payload['branch_id'] = $this->resolveSyncBranchId($triggeredBy);
                     }
+                    // Never reset sales progress on an already-synced lead: a
+                    // salesperson may have advanced the pipeline stage or changed
+                    // the qualification. Refresh only the inbound contact/query
+                    // fields; preserve stage + qualification.
+                    unset($payload['lead_stage_id'], $payload['qualified'], $payload['disqualified']);
                     $existing->update($payload);
                     $stats['updated']++;
                 } else {

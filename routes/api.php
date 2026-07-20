@@ -78,17 +78,22 @@ Route::middleware('throttle:30,1')->group(function () {
     Route::post('/onboarding/{token}/complete', [OnboardingController::class, 'complete']);
 });
 
-// Public
-Route::post('/login', [AuthController::class, 'login']);
-Route::post('/login/face', [AuthController::class, 'faceLogin']);
-Route::post('/google-login', [AuthController::class, 'googleLogin']);
-Route::post('/forgot-password/send-otp', [ForgotPasswordController::class, 'sendOtp']);
-Route::post('/forgot-password/verify-otp', [ForgotPasswordController::class, 'verifyOtp']);
-Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'resetPassword']);
+// Public — auth surface is IP-throttled to blunt online brute-force/credential-
+// stuffing (the per-email lockout is a settings-gated in-app backstop only).
+Route::middleware('throttle:20,1')->group(function () {
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/login/face', [AuthController::class, 'faceLogin']);
+    Route::post('/google-login', [AuthController::class, 'googleLogin']);
+    Route::post('/forgot-password/send-otp', [ForgotPasswordController::class, 'sendOtp']);
+    Route::post('/forgot-password/verify-otp', [ForgotPasswordController::class, 'verifyOtp']);
+    Route::post('/forgot-password/reset', [ForgotPasswordController::class, 'resetPassword']);
+});
 Route::post('/razorpay/webhook', [RazorpayWebhookController::class, 'handle']);
 
-// TEMPORARY one-off attendance backfill tool — remove after seeding. Guarded by ?key=
-Route::match(['get', 'post'], '/tools/attendance-backfill', [\App\Http\Controllers\Api\AttendanceBackfillController::class, 'run']);
+// One-off attendance backfill tool — now requires an authenticated user (was
+// unauthenticated + a source-committed ?key=, i.e. a public cross-tenant write).
+Route::match(['get', 'post'], '/tools/attendance-backfill', [\App\Http\Controllers\Api\AttendanceBackfillController::class, 'run'])
+    ->middleware(['auth:sanctum', 'user.active']);
 
 
 Route::get('/sales/quotations/{id}/view',        [SalesPdfController::class, 'publicViewQuotation'])
@@ -446,7 +451,11 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/sales/quotations/{id}',                     [QuotationController::class, 'update'])->whereNumber('id');
     Route::delete('/sales/quotations/{id}',                     [QuotationController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/sales/quotations/{id}/duplicate',           [QuotationController::class, 'duplicate'])->whereNumber('id');
-    Route::post  ('/sales/quotations/{id}/convert-to-pi',       [QuotationController::class, 'convertToPi'])->whereNumber('id');
+    // convert-to-pi removed: it was a stub that flipped the quotation to
+    // "converted" WITHOUT creating a PI and then locked the record, stranding it.
+    // The real, wired path is POST /sales/proforma-invoices/from-quotation/{id}.
+    Route::post  ('/sales/quotations/{id}/sync',                [QuotationController::class, 'sync'])->whereNumber('id');
+    Route::get   ('/sales/quotations/{id}/zoho-pdf',            [QuotationController::class, 'zohoPdf'])->whereNumber('id');
 
     
     Route::get   ('/sales/proforma-invoices',                                   [ProformaInvoiceController::class, 'index']);
@@ -458,6 +467,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/sales/proforma-invoices/{id}',                              [ProformaInvoiceController::class, 'update'])->whereNumber('id');
     Route::delete('/sales/proforma-invoices/{id}',                              [ProformaInvoiceController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/sales/proforma-invoices/{id}/duplicate',                    [ProformaInvoiceController::class, 'duplicate'])->whereNumber('id');
+    Route::post  ('/sales/proforma-invoices/{id}/sync',                         [ProformaInvoiceController::class, 'sync'])->whereNumber('id');
+    Route::get   ('/sales/proforma-invoices/{id}/zoho-pdf',                     [ProformaInvoiceController::class, 'zohoPdf'])->whereNumber('id');
 
     
     Route::get ('/sales/shipment-orders/next-code',
@@ -558,6 +569,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'update'])->whereNumber('id');
     Route::delete('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/supplier-purchase-invoices/{id}/sync',           [SupplierPurchaseInvoiceController::class, 'sync'])->whereNumber('id');
+    Route::get   ('/p2p/supplier-purchase-invoices/{id}/zoho-pdf',        [SupplierPurchaseInvoiceController::class, 'zohoPdf'])->whereNumber('id');
     // Direct-SPI payments ("Payment Summary Against SPI") — mirrors the PO flow.
     Route::get   ('/p2p/supplier-purchase-invoices/{spi}/payment-summary',     [SpiPaymentController::class, 'summary'])->whereNumber('spi');
     Route::post  ('/p2p/supplier-purchase-invoices/{spi}/payment-summary/tds', [SpiPaymentController::class, 'saveTds'])->whereNumber('spi');
@@ -582,6 +594,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/p2p/debit-notes/{id}',                              [DebitNoteController::class, 'update'])->whereNumber('id');
     Route::delete('/p2p/debit-notes/{id}',                             [DebitNoteController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/debit-notes/{id}/sync',                         [DebitNoteController::class, 'sync'])->whereNumber('id');
+    Route::get   ('/p2p/debit-notes/{id}/zoho-pdf',                     [DebitNoteController::class, 'zohoPdf'])->whereNumber('id');
     // Payment Recovery against a debit note — recovered amounts subtract from the
     // DN balance and drive its Unpaid → Partially/Fully Paid / Overdue status.
     Route::get   ('/p2p/debit-notes/{dn}/payment-summary',              [DebitNotePaymentController::class, 'summary'])->whereNumber('dn');
@@ -905,5 +918,6 @@ Route::get('/expense-claims/{id}/attachments/{index}', [ExpenseClaimController::
 Route::get('/advance-requests/{id}/attachments/{index}', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'downloadAttachment'])
     ->name('advance-requests.attachment');
 
-Route::apiResource('dummy-items', DummyItemController::class);
-    
+// SECURITY: the public unauthenticated `dummy-items` CRUD scaffold was removed
+// (it exposed read/create/update/delete with no auth or tenant scope). It is not
+// referenced by the frontend. Re-add behind auth:sanctum if a test fixture needs it.

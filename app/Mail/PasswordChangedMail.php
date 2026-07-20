@@ -119,7 +119,11 @@ class PasswordChangedMail extends Mailable
             with: array_merge([
                 'userName'    => $this->userName,
                 'userEmail'   => $this->userEmail,
-                'newPassword' => $this->newPassword,
+                // SECURITY: never email the plaintext password. The blade hides
+                // the password card when this is empty (@if !empty($newPassword)).
+                // The field is retained on the constructor for backward-compat
+                // but is intentionally NOT surfaced in the message body.
+                'newPassword' => '',
                 'changedAt'   => $this->changedAt,
                 'loginUrl'    => $this->loginUrl,
                 'appName'     => $this->appName,

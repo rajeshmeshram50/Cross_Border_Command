@@ -64,6 +64,7 @@ class ProformaInvoice extends Model
         'status',
         'emailed_at', 'last_reminded_at', 'reminder_count',
         'terms',
+        'zoho_status', 'zoho_invoice_id', 'zoho_invoice_number', 'zoho_synced_at', 'zoho_error', 'zoho_pdf_path',
         'created_by', 'updated_by',
     ];
 
