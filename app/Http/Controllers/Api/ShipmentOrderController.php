@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Lead;
+use App\Models\Product;
 use App\Models\ProformaInvoice;
 use App\Models\ShipmentOrder;
 use Illuminate\Http\Request;
@@ -327,12 +328,44 @@ class ShipmentOrderController extends Controller
             'lead.consignee:id,company_name,consignee_code',
             // doc_type drives which logistics fields below are meaningful.
             'proformaInvoice:id,code,created_at,doc_type',
+            // Hazardous is not stored on the shipment — it is derived from the
+            // PI's line items (see $hazByPi below).
+            'proformaInvoice.items:id,proforma_invoice_id,product_id',
             'creator:id,name',
         ])
             ->where('client_id', $user->client_id)
             ->orderByDesc('id')
-            ->get()
-            ->map(function ($s) {
+            ->get();
+
+        /* Hazardous flag, derived: a shipment is hazardous when ANY product on
+         * its PI is flagged 'Haz' (products.haz_type); it is non-hazardous when
+         * every product is Non-Haz. PIs with no resolvable products stay null so
+         * the list shows a dash instead of a misleading "NO". One lookup for
+         * the whole page rather than per row. */
+        $productIds = $rows
+            ->flatMap(fn ($s) => $s->proformaInvoice?->items?->pluck('product_id') ?? collect())
+            ->filter()
+            ->unique()
+            ->values();
+
+        $hazProductIds = $productIds->isEmpty()
+            ? collect()
+            : Product::where('client_id', $user->client_id)
+                ->whereIn('id', $productIds)
+                ->whereRaw('LOWER(TRIM(haz_type)) = ?', ['haz'])
+                ->pluck('id')
+                ->flip();
+
+        $hazByPi = [];
+        foreach ($rows as $s) {
+            $pi = $s->proformaInvoice;
+            if (!$pi) continue;
+            $ids = $pi->items->pluck('product_id')->filter();
+            $hazByPi[$pi->id] = $ids->isEmpty() ? null : $ids->contains(fn ($id) => $hazProductIds->has($id));
+        }
+
+        $rows = $rows
+            ->map(function ($s) use ($hazByPi) {
                 $domestic = strtolower(trim((string) $s->proformaInvoice?->doc_type)) === 'domestic';
                 return [
                     'id'                 => $s->id,
@@ -347,6 +380,9 @@ class ShipmentOrderController extends Controller
                     'pi_date'            => $s->proformaInvoice?->created_at,
                     'shipping_liability' => $s->shipping_liability,
                     'cold_chain'         => (bool) $s->cold_chain,
+                    'hazardous'          => $s->proformaInvoice
+                        ? ($hazByPi[$s->proformaInvoice->id] ?? null)
+                        : null,
                     'shipping_mode'      => $s->shipping_mode,
                     /* Which flow this row belongs to, so the list can render the
                      * right columns instead of showing blank INCO/ports for

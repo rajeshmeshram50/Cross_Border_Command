@@ -18,9 +18,9 @@ import './shipment-360.css';
  * DATA — GET /sales/shipment-orders. The prototype's table is much wider than
  * that payload, so every column the API does not carry renders as an em-dash
  * placeholder rather than inventing data. Columns backed by real fields:
- * Shipment ID, Opportunity ID, PI Number, Customer, Consignee, Owner,
- * Shipping Liability, Cold Chain, INCO Term, Port of Loading / Discharge
- * (international) and Dispatch From / Deliver To (domestic).
+ * Shipment ID, Opportunity ID, PI Number, Customer, Consignee,
+ * Shipping Liability, Cold Chain, Hazardous, INCO Term, Port of Loading /
+ * Discharge (international) and Dispatch From / Deliver To (domestic).
  *
  * DOMESTIC vs INTERNATIONAL — the API stamps every row with is_domestic /
  * doc_type (derived from the PI's doc_type) and issues DSHP- codes for
@@ -42,6 +42,10 @@ type ShipmentRow = {
   pi_date: string | null;
   shipping_liability: string | null;
   cold_chain: boolean;
+  /* Derived server-side from the PI's products: true when ANY product is
+   * flagged Haz, false when all are Non-Haz, null when the PI has no
+   * products to judge by. */
+  hazardous: boolean | null;
   /* Flow flag — true for DSHP- (domestic) rows, false for SHP- (export). */
   is_domestic?: boolean;
   doc_type?: string | null;
@@ -302,6 +306,7 @@ export default function DeveloperShipments() {
         'Owner': r.owner_name ?? '',
         'Shipping Liability': r.shipping_liability ?? '',
         'Cold Chain': r.cold_chain ? 'Yes' : 'No',
+        'Hazardous': r.hazardous == null ? '' : (r.hazardous ? 'Yes' : 'No'),
         ...(tab === 'dom'
           ? {
               'Dispatch From': r.place_of_dispatch ?? '',
@@ -327,7 +332,7 @@ export default function DeveloperShipments() {
   };
 
   // Full column counts, Sr No + Action inclusive — used for the empty/loading colSpan.
-  const INTL_COLS = 28;
+  const INTL_COLS = 27;
   const DOM_COLS = 23;
 
   return (
@@ -435,7 +440,6 @@ export default function DeveloperShipments() {
                     <th>FFD PO<br />Number</th>
                     <th>Customer</th>
                     <th>Consignee</th>
-                    <th>Owner</th>
                     <th>Supplier</th>
                     <th>FFD /<br />Transporter</th>
                     <th>Shipping<br />Liability</th>
@@ -472,14 +476,15 @@ export default function DeveloperShipments() {
                       <EmptyCell /> {/* FFD PO Number */}
                       <TxtCell v={r.customer_name} />
                       <TxtCell v={r.consignee_name} />
-                      <TxtCell v={r.owner_name} />
                       <EmptyCell /> {/* Supplier */}
                       <EmptyCell /> {/* FFD / Transporter */}
                       {r.shipping_liability
                         ? <td><span className="s360-tag">{r.shipping_liability}</span></td>
                         : <EmptyCell />}
                       <YnCell yes={r.cold_chain} />
-                      <EmptyCell /> {/* Hazardous */}
+                      {r.hazardous === null || r.hazardous === undefined
+                        ? <EmptyCell /> /* PI has no products to judge by */
+                        : <YnCell yes={r.hazardous} warn />}
                       {r.inco_term
                         ? <td><span className="s360-tag is-inco">{r.inco_term}</span></td>
                         : <EmptyCell />}
@@ -488,7 +493,12 @@ export default function DeveloperShipments() {
                       <td className="rvtbl-actcell">
                         <div className="rvtbl-act">
                           <Tooltip label="More actions" themed>
-                            <button type="button" className="rvtbl-actbtn" aria-label="More actions">{Ico.dots}</button>
+                            <button
+                              type="button"
+                              className="rvtbl-actbtn"
+                              aria-label="More actions"
+                              onClick={() => toast.info('Development in progress', 'This action is not available yet.')}
+                            >{Ico.dots}</button>
                           </Tooltip>
                         </div>
                       </td>
@@ -580,7 +590,12 @@ export default function DeveloperShipments() {
                       <td className="rvtbl-actcell">
                         <div className="rvtbl-act">
                           <Tooltip label="More actions" themed>
-                            <button type="button" className="rvtbl-actbtn" aria-label="More actions">{Ico.dots}</button>
+                            <button
+                              type="button"
+                              className="rvtbl-actbtn"
+                              aria-label="More actions"
+                              onClick={() => toast.info('Development in progress', 'This action is not available yet.')}
+                            >{Ico.dots}</button>
                           </Tooltip>
                         </div>
                       </td>
