@@ -31,7 +31,28 @@ class Customer extends Model
         'company_name', 'legal_name', 'type', 'segment', 'classification', 'risk_level',
         'gst_applicable', 'gst_number',
         'website', 'primary_email', 'status', 'zoho_contact_id',
+        'is_map_lead',
     ];
+
+    /**
+     * Flip the customer to "mapped to a lead" — called the moment an
+     * opportunity is created against it or an existing one is re-pointed at
+     * it. Idempotent and deliberately cheap: a single conditional UPDATE, no
+     * model events, so it can sit inside the lead-save transaction without
+     * dragging observers along. Once 'Yes' the country is frozen (see
+     * CustomerController::mappedLeadCountryDenial).
+     */
+    public static function markMappedToLead(?int $customerId): void
+    {
+        if (!$customerId) {
+            return;
+        }
+
+        static::query()
+            ->whereKey($customerId)
+            ->where(fn ($q) => $q->where('is_map_lead', '!=', 'Yes')->orWhereNull('is_map_lead'))
+            ->update(['is_map_lead' => 'Yes']);
+    }
 
     public function client(): BelongsTo
     {

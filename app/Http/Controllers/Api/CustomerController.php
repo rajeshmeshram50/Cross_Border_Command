@@ -285,6 +285,10 @@ class CustomerController extends Controller
                 'website'        => $data['website']        ?? null,
                 'primary_email'  => $primary['cp_email']    ?? null,
                 'status'         => $data['status']         ?? 'Active',
+                // A brand-new customer is never mapped to a lead yet. Set
+                // explicitly rather than leaning on the column default so the
+                // create response carries the real value back to the form.
+                'is_map_lead'    => 'No',
             ]);
 
             // Primary address row — always exactly one.
@@ -344,6 +348,11 @@ class CustomerController extends Controller
          * it. (Live data already contained one such pair, created exactly this
          * way.) */
         if ($denial = $this->consigneeCountryDenial($customer, $data['primary_address']['country'] ?? null)) {
+            return $denial;
+        }
+
+        /* Country freeze once the customer has been used to raise a lead. */
+        if ($denial = $this->mappedLeadCountryDenial($customer, $data['primary_address']['country'] ?? null)) {
             return $denial;
         }
 
@@ -650,6 +659,46 @@ class CustomerController extends Controller
         ], 422);
     }
 
+    /**
+     * Blocks a country change on a customer that is already mapped to a lead.
+     *
+     * Creating an opportunity against a customer copies its country onto the
+     * lead (sender_country_name / sender_country_iso) and from there the whole
+     * downstream chain hangs off it — GST applicability, the India/non-India
+     * consignee pairing rule, quotation and PI costing. Those snapshots are
+     * never re-read from the customer, so moving the country afterwards leaves
+     * every existing opportunity quoting a country the customer no longer has.
+     *
+     * The flag (`customers.is_map_lead`) is set by SalesLeadController the
+     * moment a lead is created against or re-pointed at the customer.
+     *
+     * Compares the trimmed strings case-insensitively so a re-save that posts
+     * the country back unchanged (the normal edit path — the field is locked
+     * in the UI but still submitted) passes through untouched.
+     *
+     * @return JsonResponse|null 422 when the change is refused, null to proceed.
+     */
+    private function mappedLeadCountryDenial(Customer $customer, ?string $newCountry): ?JsonResponse
+    {
+        if (($customer->is_map_lead ?? 'No') !== 'Yes') {
+            return null;
+        }
+
+        $current = trim((string) optional($customer->primaryAddress)->country);
+        $next    = trim((string) $newCountry);
+
+        if (strcasecmp($current, $next) === 0) {
+            return null;   // unchanged — nothing to refuse
+        }
+
+        return response()->json([
+            'message' => 'Country cannot be changed — this customer is already mapped to one or more leads'
+                . ($current !== '' ? ' with the country "' . $current . '"' : '')
+                . '. Existing opportunities, quotations and proforma invoices were raised against it.',
+            'errors'  => ['primary_address.country' => ['Locked: the customer is mapped to a lead.']],
+        ], 422);
+    }
+
     private function shape(Customer $c): array
     {
         /* Derive `primary` from the already-loaded `addresses`
@@ -679,6 +728,10 @@ class CustomerController extends Controller
             'gstNumber'       => $c->gst_number,
             'website'         => $c->website,
             'status'          => $c->status,
+            // 'Yes' once an opportunity has been raised against this customer.
+            // The edit form reads it to lock the Country field (see
+            // mappedLeadCountryDenial for the server-side half of the rule).
+            'isMapLead'       => $c->is_map_lead ?: 'No',
             'country'         => $primary?->country,
             // Short ISO code (e.g. "United Arab Emirates" → "AE") resolved from
             // the countries master, so the list can show a compact, aligned

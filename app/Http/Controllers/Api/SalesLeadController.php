@@ -479,6 +479,15 @@ class SalesLeadController extends Controller
         }
 
         $lead = DB::transaction(function () use ($data, $user) {
+            // Raising an opportunity against an existing customer freezes that
+            // customer's country (the lead snapshots it into sender_country_*
+            // and the quotation/PI chain reads the snapshot, never the
+            // customer). Flag it inside the same transaction as the insert so
+            // the two can't drift apart.
+            \App\Models\Customer::markMappedToLead(
+                isset($data['customer_id']) ? (int) $data['customer_id'] : null,
+            );
+
             return Lead::create(array_merge($data, [
                 'client_id'       => $user->client_id,
                 'branch_id'       => $user->branch_id,
@@ -788,6 +797,12 @@ class SalesLeadController extends Controller
         $prevSalesId = $lead->salesperson_id ? (int) $lead->salesperson_id : null;
 
         $lead->update($data);
+
+        // Mapping a customer onto an existing lead counts the same as creating
+        // the lead against it — freeze that customer's country too.
+        if (!empty($data['customer_id'])) {
+            \App\Models\Customer::markMappedToLead((int) $data['customer_id']);
+        }
 
         // Activity tracker — log when the edit changed the lead's owner.
         if (array_key_exists('salesperson_id', $data)) {

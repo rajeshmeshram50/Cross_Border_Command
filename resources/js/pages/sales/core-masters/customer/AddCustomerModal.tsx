@@ -575,6 +575,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
    * latest list without re-binding. */
   const [gstRows, setGstRows] = useState<GstRow[]>([]);
   const [gstPopupOpen, setGstPopupOpen] = useState(false);
+  /* `is_map_lead` from the server — 'Yes' once an opportunity has been raised
+     against this customer. While it is set, Country is frozen: the lead
+     snapshotted the country into its own sender_country_* columns and the
+     quotation/PI chain reads that snapshot, so moving it here would leave every
+     existing opportunity quoting a country the customer no longer has. Only
+     ever true in edit mode — a brand-new customer has no leads yet. The server
+     enforces the same rule in CustomerController::mappedLeadCountryDenial. */
+  const [mapLeadLocked, setMapLeadLocked] = useState(false);
   const gstRowsRef = useRef<GstRow[]>([]);
   useEffect(() => { gstRowsRef.current = gstRows; }, [gstRows]);
 
@@ -1081,6 +1089,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     setKycOwners([]);
     setGstRows([]);
     setGstPopupOpen(false);
+    // Default to unlocked; the edit-mode hydration below sets it from the
+    // server. Create mode never locks — the customer has no leads yet.
+    setMapLeadLocked(false);
     setErrors({});
     // Edit mode arrives with db_id (Stage 2 KYC POSTs work
     // immediately); create mode starts null and gets filled by the
@@ -1160,6 +1171,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         if (cancelled) return;
         const d = r.data?.data ?? r.data ?? {};
         const pa = d.primary_address ?? {};
+        setMapLeadLocked(d.isMapLead === 'Yes');
         setForm({
           coName:   d.company       ?? '',
           coLegal:  d.legalName     ?? d.company ?? '',
@@ -2102,7 +2114,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
                 return [...vs, ...locked.filter(s => !vs.includes(s))];
               }
               return vs;
-            }} gstLocked={gstRows.length > 0} onCountryBlockedByGst={() => toast.warning('Country is locked to India', 'This customer has GST Scrutiny entries. Delete them first — an international customer has no GST.')} />
+            }} gstLocked={gstRows.length > 0} onCountryBlockedByGst={() => toast.warning('Country is locked to India', 'This customer has GST Scrutiny entries. Delete them first — an international customer has no GST.')}
+            mapLeadLocked={mapLeadLocked}
+            onCountryBlockedByLead={() => toast.warning('Country is locked', 'This customer is already mapped to a lead. Opportunities, quotations and proforma invoices were raised against its current country, so it can no longer be changed.')} />
           )}
           {stage === 1 && !showShimmer && tab === 'address-contact' && (
             <Stage1AdditionalLocations
@@ -2791,7 +2805,7 @@ function Stage2Shimmer() {
 /* Stage 3 (Evidence Vault) shimmer removed along with the stage itself. */
 
 /* ───── Stage 1 — Identification + Primary Address & Contact ───── */
-function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onCountryBlockedByGst, currentCustomerId, unruledSegments = [] }:
+function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onCountryBlockedByGst, mapLeadLocked = false, onCountryBlockedByLead, currentCustomerId, unruledSegments = [] }:
   { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[];
     /** True when GST Scrutiny entries exist. Only guards the Country field now —
      *  the GST Applicable toggle it used to lock no longer exists. */
@@ -2799,6 +2813,13 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
     /** Fired when the user tries to go international while GST Scrutiny entries
      *  exist — the change is refused rather than hiding those records. */
     onCountryBlockedByGst: () => void;
+    /** True when `is_map_lead = 'Yes'` — the customer has already been used to
+     *  raise a lead, so Country is frozen entirely (not just the India side,
+     *  the way gstLocked works). Disabled rather than refused-on-change: there
+     *  is no valid new value at all, so the control should read as inert. */
+    mapLeadLocked?: boolean;
+    /** Fired when the user clicks the disabled Country field, to explain why. */
+    onCountryBlockedByLead?: () => void;
     /** DB id of the customer being edited — excluded from the GST duplicate
      *  check so editing a record doesn't collide with its own GST number. */
     currentCustomerId?: number | null;
@@ -3004,7 +3025,11 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                   control; this has to refuse outright because the field vanishes.)
                   The gst_applicable flag itself needs no handling here — it is
                   derived from this country in buildPayload. */}
-              <MasterSelect value={form.country} options={optsWith(masters.countries, form.country)} placeholder="Select country" invalid={!!errors.country} onChange={v => {
+              {/* Frozen outright once the customer is mapped to a lead — see
+                  the mapLeadLocked prop doc. */}
+              <MasterSelect value={form.country} options={optsWith(masters.countries, form.country)} placeholder="Select country" invalid={!!errors.country}
+                disabled={mapLeadLocked}
+                onChange={v => {
                 if (gstLocked && !isDomesticCountry(v)) { onCountryBlockedByGst(); return; }
                 const nextForm = { ...form, country: v, state: '', stateCode: '' };
                 // State resets on a country change, so its derived code must go too.
@@ -3018,6 +3043,18 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                    "SL7 1TB" stays green after switching to India. */
                 validateField('pin', nextForm);
               }} />
+              {/* The disabled control alone doesn't say WHY. Spell it out
+                  inline — the user cannot hover-discover a reason on a
+                  non-interactive element. */}
+              {mapLeadLocked && (
+                <span
+                  className="acm-field-note"
+                  role="note"
+                  onClick={() => onCountryBlockedByLead?.()}
+                >
+                  Locked — this customer is already mapped to a lead.
+                </span>
+              )}
             </Field>
             {/* Required for every country. Where the master has no states for
                 the chosen country (163 of 249) the control stays disabled — there
@@ -5266,6 +5303,12 @@ const SCOPED_CSS = `
 .acm-field input.acm-input-error { border-color: #ef4444; background: #fef2f2; }
 .acm-field input.acm-input-error:focus { box-shadow: 0 0 0 3.5px rgba(239,68,68,.15); }
 .acm-field-error { color: #ef4444; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; }
+
+/* Neutral counterpart to .acm-field-error — explains a field that is locked
+   rather than wrong (e.g. Country on a customer already mapped to a lead), so
+   it must not read as a validation failure. */
+.acm-field-note { display: block; color: #94a3b8; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; cursor: help; }
+[data-bs-theme="dark"] .acm-field-note { color: #94a3b8; }
 
 /* GST Number debounced-check feedback — green "valid" confirmation mirrors
    the red .acm-field-error styling so both read as one system. */
