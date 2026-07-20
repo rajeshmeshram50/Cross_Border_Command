@@ -2770,6 +2770,9 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
   const states = selectedCountry
     ? masters.states.filter(s => s.country_id === selectedCountry.id)
     : [];
+  /* Drives the State control's placeholder and disabled state — see
+     countryHasStates(). Mirrors `locHasStates` on the additional-address form. */
+  const hasStates = countryHasStates(masters, form.country);
   // Wraps `setF` so each keystroke runs the per-field validator — the
   // inline red error appears the moment the input is wrong, mirroring
   // the desired UX of the consignee modal.

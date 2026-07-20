@@ -798,7 +798,20 @@ class PurchaseOrderController extends Controller
         ->filter(fn ($r) => $r['qty'] > 0)
         ->values();
 
-        return response()->json(['status' => true, 'data' => $data]);
+        /* An empty list has two very different causes and the caller must be
+         * able to tell them apart: the PI genuinely has no products, or every
+         * PI product has already been consumed by earlier POs on this shipment.
+         * The second is the common one (2 POs covering 4 PI products) and needs
+         * to be reported instead of opening an empty product table. */
+        return response()->json([
+            'status' => true,
+            'data'   => $data,
+            'meta'   => [
+                'pi_item_count'  => $items->count(),
+                'available'      => $data->count(),
+                'fully_ordered'  => $items->count() > 0 && $data->isEmpty(),
+            ],
+        ]);
     }
 
     /* ══════════════════════════ TRADE DOCS + AGREEMENTS (Stage 4) ══════════════════════════ */

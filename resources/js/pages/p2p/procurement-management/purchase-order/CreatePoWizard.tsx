@@ -143,6 +143,18 @@ const piItemToLine = (it: Record<string, unknown>, id: number): PoLine => {
 // PO's own lines when editing. So a PO can only ever use the remaining/missing
 // quantity, never over-allocate, and Missing Qty can never go negative. The
 // Without-Shipment flow has no PI (piQty === '') so it is left uncapped.
+/* Quantities, rates and charges accept digits and a single decimal point —
+ * nothing else. `type="number"` is deliberately NOT used: min={0} only marks a
+ * value invalid, and worse, when the text is un-parseable ("1-111111") the
+ * browser keeps it in the DOM while reporting value='' to React, so no
+ * onChange sanitiser can clean it up. A text input filtered here is the only
+ * way the field can't hold a sign, a '+', an 'e' or two dots. */
+const numOnly = (v: string): string => {
+  const s = v.replace(/[^\d.]/g, '');
+  const dot = s.indexOf('.');
+  return dot === -1 ? s : s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '');
+};
+
 const capQty = (v: string, piQty: string): string => {
   if (piQty === '' || v === '') return v;
   const cap = num(piQty);
@@ -402,7 +414,9 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   const [shipId, setShipId] = useState<string | null>(editRow?.ship || null);
   const [shipmentDbId, setShipmentDbId] = useState<number | null>(null);
   const [shipCustomer, setShipCustomer] = useState<string>(editRow?.cust || '');
-  const [shipErr, setShipErr] = useState(false);
+  /* Blocking message under the Shipment ID picker — either "pick one" or the
+     "this shipment's PI is already fully ordered" case (see confirmChoice). */
+  const [shipErr, setShipErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);   // choice-modal "Confirm & Continue" fetch
   const [supLoading, setSupLoading] = useState(false);    // supplier detail + legal fetch after select
@@ -721,7 +735,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
 
   const confirmChoice = () => {
     if (!poMode || confirming) return;
-    if (poMode === 'with' && !shipmentDbId) { setShipErr(true); return; }
+    if (poMode === 'with' && !shipmentDbId) { setShipErr('Please select a Shipment ID to continue.'); return; }
     // Transition into the wizard once seeding is done (so the button spinner
     // stays visible while the PI products are being fetched).
     const proceed = () => { setConfirming(false); setChoiceOpen(false); setTimeout(() => setPhase('form'), 180); };
@@ -730,12 +744,23 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
       // Seed Stage 2 from the shipment's PI products.
       api.get(`/p2p/purchase-orders/shipments/${shipmentDbId}/pi-products`).then(r => {
         const items = (r.data?.data ?? []) as Array<Record<string, unknown>>;
+        const meta = r.data?.meta as { fully_ordered?: boolean; pi_item_count?: number } | undefined;
+        /* Every PI product on this shipment is already covered by earlier POs
+         * (e.g. 4 PI products split across 2 POs) — there is nothing left to
+         * order, so say so at the picker instead of dropping the user into a
+         * product table whose only option is an empty "— Select PI Product —". */
+        if (meta?.fully_ordered) {
+          setShipErr(`All ${meta.pi_item_count} PI product(s) on this shipment are already covered by existing purchase orders — there is no remaining quantity to order. Edit an existing PO, or pick another Shipment ID.`);
+          setConfirming(false);
+          return;
+        }
         setPiSet(items.map(mapPiRow));
         if (items.length) {
           setRows(items.map((it, i) => piItemToLine(it, i + 1)));
           lineId.current = items.length;
         } else { lineId.current = 1; setRows([blankLine(1)]); }
-      }).catch(() => { lineId.current = 1; setRows([blankLine(1)]); }).finally(proceed);
+        proceed();
+      }).catch(() => { lineId.current = 1; setRows([blankLine(1)]); proceed(); });
     } else { lineId.current = 1; setRows([blankLine(1)]); proceed(); }
   };
   const backToChoice = () => { setPhase('choice'); setChoiceOpen(true); };
@@ -955,8 +980,8 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
               {opt('with', 'With Shipment ID', 'Recommended', 'ok', '3-way match & complete audit trail.', (
                 <div className="cpo-reveal">
                   <label className="cpo-lbl"><svg className="cpo-lbl-ico" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg> Select Shipment ID <span className="cpo-req">*</span></label>
-                  <ShipDd shipments={shipments} value={shipmentDbId} onPick={s => { setShipmentDbId(s.id); setShipId(s.code); setShipCustomer(s.customer || ''); setShipErr(false); }} />
-                  {shipErr && <div className="cpo-err"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> Please select a Shipment ID to continue.</div>}
+                  <ShipDd shipments={shipments} value={shipmentDbId} onPick={s => { setShipmentDbId(s.id); setShipId(s.code); setShipCustomer(s.customer || ''); setShipErr(null); }} />
+                  {shipErr && <div className="cpo-err"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg> {shipErr}</div>}
                 </div>
               ))}
               {opt('without', 'Without Shipment ID', 'Standalone', 'warn', 'Create a PO not linked to any shipment.', (
@@ -1216,9 +1241,9 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                                 : <Tooltip label={r.piName} disabled={!r.piName} zIndex={2999999}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
                               <td className="cpd-c">{r.piQty || 0}</td>
                               <td><input className="cpd-in cpd-in--name" disabled={poView} value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} /></td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} max={r.piQty || undefined} value={r.qty} onChange={e => setLine(r.id, { qty: capQty(e.target.value, r.piQty) })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: capQty(numOnly(e.target.value), r.piQty) })} /></td>
                               <td className={`cpd-c cpd-miss ${c.miss > 0 ? 'is-short' : ''}`}>{c.miss}</td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
                               <td className="cpd-c">{!poView && <Tooltip label="Remove product" themed zIndex={2999999}><button type="button" className="cpd-del" onClick={() => removeLine(r.id)}>✕</button></Tooltip>}</td>
@@ -1228,8 +1253,8 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                               <td className="cpd-c">{i + 1}</td>
                               <td className="cpd-c"><span className="cpd-code">{formatProductCode(r.code) || '—'}</span></td>
                               <td className="cpd-prodcell"><Dd tooltip value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} /></td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} value={r.qty} onChange={e => setLine(r.id, { qty: e.target.value })} /></td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="number" min={0} step="0.01" value={r.rate} onChange={e => setLine(r.id, { rate: e.target.value })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: numOnly(e.target.value) })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
                               <td className="cpd-c">{!poView && <Tooltip label="Remove product" themed zIndex={2999999}><button type="button" className="cpd-del" onClick={() => removeLine(r.id)}>✕</button></Tooltip>}</td>
@@ -1251,7 +1276,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                       <div className="cpd-sum__hd">Additional Charges</div>
                       <div className="cpd-chg-grid">
                         {([['Shipping Charges', 'ship'], ['Packaging Charges', 'pack'], ['Other Charges', 'other']] as const).map(([lbl, key]) => (
-                          <div className="cpd-chg-f" key={key}><label>{lbl}</label><div className="cpd-chg-inwrap"><span className="cpd-chg-cur">₹</span><input className="cpd-chg-in" disabled={poView} type="number" min={0} step="0.01" placeholder="0.00" value={charges[key]} onChange={e => setCharges(c => ({ ...c, [key]: e.target.value }))} /></div></div>
+                          <div className="cpd-chg-f" key={key}><label>{lbl}</label><div className="cpd-chg-inwrap"><span className="cpd-chg-cur">₹</span><input className="cpd-chg-in" disabled={poView} type="text" inputMode="decimal" placeholder="0.00" value={charges[key]} onChange={e => setCharges(c => ({ ...c, [key]: numOnly(e.target.value) }))} /></div></div>
                         ))}
                       </div>
                     </div>

@@ -106,7 +106,14 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   const leadId = header.leadId ?? null;
 
   const [docType, setDocType]   = useState<DocType>('quotation');
-  const [loading, setLoading]   = useState(false);
+  /* Starts TRUE: the quotation/PI lists aren't known until the first fetch
+   * lands, and `livePisCount`/`locked` are derived from them. If this began
+   * false, the very first paint (and the whole loading window) treated the
+   * opportunity as having ZERO PIs — so Create PI / Create Quotation looked
+   * enabled on a deal that already has a PI (or is already won), and only a
+   * refresh corrected it. True here means "checking…" until the data arrives,
+   * which also shows the table shimmer on first paint. */
+  const [loading, setLoading]   = useState(true);
   const [quotations, setQuotations] = useState<QuotationRow[]>([]);
   const [pis, setPis]           = useState<PIRow[]>([]);
   const [actingId, setActingId] = useState<number | null>(null);
@@ -611,9 +618,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             <button
               type="button"
               className="s5-create-btn s5-create-q"
-              style={(locked || livePisCount > 0) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-              title={locked ? 'Locked — the Proforma Invoice has been signed' : (livePisCount > 0 ? 'A Proforma Invoice already exists for this opportunity' : undefined)}
+              style={(loading || locked || livePisCount > 0) ? { opacity: 0.5, cursor: loading ? 'wait' : 'not-allowed' } : undefined}
+              title={loading ? 'Checking the latest quotation / PI status…' : locked ? 'Locked — the Proforma Invoice has been signed' : (livePisCount > 0 ? 'A Proforma Invoice already exists for this opportunity' : undefined)}
               onClick={() => {
+                // Block until the first fetch resolves — acting on the empty
+                // initial state let a duplicate slip through on a slow API.
+                if (loading) { toast.info('Please wait', 'Still loading this opportunity’s latest status…'); return; }
                 if (locked) { toast.warning('Deal locked', 'The Proforma Invoice is signed — this opportunity is read-only.'); return; }
                 if (livePisCount > 0) { toast.warning('PI already created', 'A Proforma Invoice already exists for this opportunity — you cannot create a new quotation against it.'); return; }
                 onCreate('quotation');
@@ -628,8 +638,15 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             <button
               type="button"
               className="s5-create-btn s5-create-p"
-              style={(locked || livePisCount > 0 || mandatoryIncomplete) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              style={(loading || locked || livePisCount > 0 || mandatoryIncomplete) ? { opacity: 0.5, cursor: loading ? 'wait' : 'not-allowed' } : undefined}
+              title={loading ? 'Checking the latest quotation / PI status…' : undefined}
               onClick={() => {
+                // Block until the first fetch resolves — otherwise a second PI
+                // could be created on a won deal while the list was still loading.
+                if (loading) {
+                  toast.info('Please wait', 'Still loading this opportunity’s latest status…');
+                  return;
+                }
                 if (locked) {
                   toast.warning('Deal locked', 'The Proforma Invoice is signed — this opportunity is read-only.');
                   return;

@@ -498,7 +498,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         <td><span className="s3-code s3-code-violet">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                         <td>
                           <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s3-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                          {r.product_category && <span className="s3-cat-badge s3-cat-badge-violet">{r.product_category.toUpperCase()}</span>}
+                          {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s3-cat-badge s3-cat-badge-violet">{r.product_category.toUpperCase()}</span></Tooltip>}
                         </td>
                         <td>
                           <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
@@ -667,7 +667,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                           <td><span className="s3-code s3-code-amber">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                           <td>
                             <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s3-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                            {r.product_category && <span className="s3-cat-badge s3-cat-badge-amber">{r.product_category.toUpperCase()}</span>}
+                            {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s3-cat-badge s3-cat-badge-amber">{r.product_category.toUpperCase()}</span></Tooltip>}
                           </td>
                           <td>
                             <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
@@ -830,7 +830,7 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                         <td><span className="s3-code s3-code-mint">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                         <td>
                           <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s3-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                          {r.product_category && <span className="s3-cat-badge s3-cat-badge-mint">{r.product_category.toUpperCase()}</span>}
+                          {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s3-cat-badge s3-cat-badge-mint">{r.product_category.toUpperCase()}</span></Tooltip>}
                         </td>
                         <td>
                           <span className={`s3-pill ${statusLc === 'active' ? 's3-pill-active' : 's3-pill-inactive'}`}>
@@ -1285,6 +1285,13 @@ const STAGE3_CSS = `
   display: inline-block; margin-top: 3px;
   padding: 2px 8px; border-radius: 6px;
   font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  /* A long segment name ("Travel & Luggage…") used to run the full width of the
+     row and shove the other columns off-screen. Cap it and ellipsize; the full
+     value is on the hover tooltip. max-width:100% keeps it inside the product
+     cell; vertical-align keeps the clipped chip aligned with the name above. */
+  max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: bottom;
 }
 .s3-cat-badge-violet { background: #ede9fe; color: #6d28d9; }
 .s3-cat-badge-amber  { background: #ede9fe; color: #6d28d9; }
