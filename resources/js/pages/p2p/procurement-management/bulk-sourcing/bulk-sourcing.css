@@ -1951,13 +1951,15 @@
   background: rgba(8,145,178,.3);
 }
 .asrc-picker {
-  border: 1.5px solid #e6edf2;
-  border-radius: 13px;
-  background: linear-gradient(180deg,#f7fafc,#f4fbfd);
-  padding: 11px;
+  /* Plain layout container — NO border/background of its own. The visible box is
+     the single `.asrc-pick-search` field; wrapping it in a second bordered box
+     produced a weird nested "double strip" on focus. Chips sit above as pills. */
+  border: none;
+  background: none;
+  padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .asrc-pick-chips {
   display: flex;
@@ -2303,8 +2305,38 @@
   display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 120px;
   padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;
   text-decoration: none; border: 1px solid transparent; line-height: 1.1; white-space: nowrap;
+  font-family: inherit; cursor: pointer;
 }
 .ast-clarity-chip-txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* "+N" more-PDFs pill — opens the download/view/delete popover. */
+.ast-clarity-more {
+  flex-shrink: 0; cursor: pointer; font-size: 11px; font-weight: 700; line-height: 1.1;
+  padding: 3px 8px; border-radius: 999px;
+  color: #0e7490; background: #ecfeff; border: 1px solid #a5f3fc;
+}
+.ast-clarity-more:hover { background: #cffafe; border-color: #67e8f9; }
+[data-bs-theme="dark"] .ast-clarity-more { color: #67e8f9; background: rgba(34,211,238,.14); border-color: rgba(34,211,238,.3); }
+/* Popover per-PDF action buttons (Download / View / Delete). */
+.ast-clarity-pop-act {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; flex-shrink: 0; border-radius: 7px; cursor: pointer;
+  border: 1px solid transparent; text-decoration: none; transition: all .13s;
+}
+.ast-clarity-pop-act.dl   { color: #0891b2; background: #ecfeff; border-color: #a5f3fc; }
+.ast-clarity-pop-act.dl:hover { background: #cffafe; }
+.ast-clarity-pop-act.view { color: #475569; background: #f1f5f9; border-color: #e2e8f0; }
+.ast-clarity-pop-act.view:hover { background: #e2e8f0; }
+.ast-clarity-pop-act.del  { color: #ef4444; background: #fef2f2; border-color: #fecaca; }
+.ast-clarity-pop-act.del:hover { background: #fee2e2; }
+.ast-clarity-pop-update {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; margin-top: 8px; padding: 7px 10px; border-radius: 8px; cursor: pointer;
+  border: none; font-size: 11.5px; font-weight: 800; letter-spacing: .2px;
+  color: #fff; background: linear-gradient(135deg, #0891b2, #0e7490);
+  box-shadow: 0 3px 10px rgba(8,145,178,.28); transition: filter .13s, transform .05s;
+}
+.ast-clarity-pop-update:hover { filter: brightness(1.06); }
+.ast-clarity-pop-update:active { transform: translateY(1px); }
 .ast-clarity-chip.is-pdf  { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
 .ast-clarity-chip.is-pdf:hover { background: #fee2e2; }
 .ast-clarity-chip.is-link { color: #0e7490; background: #ecfeff; border-color: #a5f3fc; }
@@ -3245,6 +3277,12 @@
 /* HSN code — was a hard-coded dark grey, unreadable in dark mode. */
 .srpt-hsncode { font-family: monospace; font-size: 11px; color: #475569; }
 [data-bs-theme="dark"] .srpt-hsncode { color: #94a3b8; }
+.srpt-clarity-pdfs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+}
 .srpt-clarity-link {
   display: inline-flex;
   align-items: center;
@@ -4801,6 +4839,22 @@
 .pl-stat-val.amber { color: #fcd34d; text-shadow: 0 0 14px rgba(252,211,77,.65); }
 
 /* Product Clarity — uploaded PDF row (delete to replace) */
+/* Stack multiple uploaded PDFs + the "add another" control. */
+.ast-pdf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+/* Scroll the uploaded-PDF list after ~3 rows so the popup never grows tall
+   regardless of how many PDFs are attached. Row ≈ 52px + 7px gap. */
+.ast-pdf-files-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 178px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
 .ast-pdf-file {
   display: flex;
   align-items: center;
@@ -4863,6 +4917,30 @@
 [data-bs-theme="dark"] .ast-pdf-del {
   background: rgba(239,68,68,.14);
   border-color: rgba(239,68,68,.3);
+}
+/* Download button — same size as delete, teal instead of red. */
+.ast-pdf-dl {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  border: 1px solid #a5f3fc;
+  background: #ecfeff;
+  color: #0891b2;
+  cursor: pointer;
+  transition: all .14s;
+}
+.ast-pdf-dl:hover {
+  background: #cffafe;
+  border-color: #67e8f9;
+}
+[data-bs-theme="dark"] .ast-pdf-dl {
+  background: rgba(34,211,238,.14);
+  border-color: rgba(34,211,238,.3);
+  color: #67e8f9;
 }
 
 /* ============================================================================

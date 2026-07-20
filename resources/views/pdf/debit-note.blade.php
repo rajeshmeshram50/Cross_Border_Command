@@ -6,10 +6,12 @@
     <title>DEBIT NOTE — {{ $dn->code ?? '' }}</title>
     <style>
         @page {
-            /* Reserve more than the 40px footer so a flowing line whose top fits
-               the content box (but bottom overshoots by ~one line) still clears
-               the fixed footer instead of overlapping the barcode/company strip. */
-            margin-bottom: 10px;
+            /* Clear the 40px fixed footer PLUS a full line of buffer. DomPDF can
+               let the last line dip a little below the margin line; with only a
+               few px gap that dip lands in the footer band and the clause is
+               hidden behind it. 40 (footer) + ~12 (one line) = 52px keeps every
+               line above the footer. (10-43px hid the last T&C clause.) */
+            margin-bottom: 52px;
         }
 
         .pdf-footer {
@@ -20,7 +22,9 @@
             right: 0;
             width: 100%;
             height: 40px;
-            border-top: 1px solid {{ $companyDetails->primary_color ?? '#8BC34A' }};
+            border-top: 1px solid
+                {{ $companyDetails->primary_color ?? '#8BC34A' }}
+            ;
             padding: 0;
             background: white;
             z-index: 1000;
@@ -158,6 +162,13 @@
             line-height: 12px;
             text-align: justify;
         }
+        /* Each T&C clause is its own block and is kept whole (never split across
+           a page). Clauses break BETWEEN each other, so the list fills from where
+           it starts, flows onto the next page as needed, and never drops a clause
+           (the DomPDF split-<ol> bug) or hides one behind the footer. */
+        .dn-tnc-item {
+            page-break-inside: avoid;
+        }
     </style>
 </head>
 
@@ -173,11 +184,16 @@
 
         // Footer compliance strip — only non-empty fields, joined by " | ".
         $__footerParts = [];
-        if (trim((string) ($companyDetails->name ?? '')) !== '') $__footerParts[] = $companyDetails->name;
-        if (trim((string) ($companyDetails->cin ?? '')) !== '') $__footerParts[] = 'CIN: ' . $companyDetails->cin;
-        if (trim((string) ($companyDetails->gst_no ?? '')) !== '') $__footerParts[] = 'GST: ' . $companyDetails->gst_no;
-        if (trim((string) ($companyDetails->iec ?? '')) !== '') $__footerParts[] = 'IEC: ' . $companyDetails->iec;
-        if (trim((string) ($companyDetails->pan_no ?? '')) !== '') $__footerParts[] = 'PAN: ' . $companyDetails->pan_no;
+        if (trim((string) ($companyDetails->name ?? '')) !== '')
+            $__footerParts[] = $companyDetails->name;
+        if (trim((string) ($companyDetails->cin ?? '')) !== '')
+            $__footerParts[] = 'CIN: ' . $companyDetails->cin;
+        if (trim((string) ($companyDetails->gst_no ?? '')) !== '')
+            $__footerParts[] = 'GST: ' . $companyDetails->gst_no;
+        if (trim((string) ($companyDetails->iec ?? '')) !== '')
+            $__footerParts[] = 'IEC: ' . $companyDetails->iec;
+        if (trim((string) ($companyDetails->pan_no ?? '')) !== '')
+            $__footerParts[] = 'PAN: ' . $companyDetails->pan_no;
         $__footerStrip = implode('  |  ', $__footerParts);
 
         // Amount in words (Indian English lakhs/crores).
@@ -185,31 +201,46 @@
         $__rupees = (int) floor($__grandTotal);
         $__paise = (int) round(($__grandTotal - $__rupees) * 100);
         $__spellInr = function (int $n): string {
-            if ($n === 0) return 'Zero';
+            if ($n === 0)
+                return 'Zero';
             $ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
             $tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
             $twoDigit = function (int $n) use ($ones, $tens): string {
-                if ($n < 20) return $ones[$n];
+                if ($n < 20)
+                    return $ones[$n];
                 return trim($tens[intdiv($n, 10)] . ' ' . ($n % 10 ? $ones[$n % 10] : ''));
             };
             $threeDigit = function (int $n) use ($ones, $twoDigit): string {
-                $h = intdiv($n, 100); $r = $n % 100; $out = '';
-                if ($h) $out .= $ones[$h] . ' Hundred';
-                if ($r) $out .= ($h ? ' ' : '') . $twoDigit($r);
+                $h = intdiv($n, 100);
+                $r = $n % 100;
+                $out = '';
+                if ($h)
+                    $out .= $ones[$h] . ' Hundred';
+                if ($r)
+                    $out .= ($h ? ' ' : '') . $twoDigit($r);
                 return $out;
             };
-            $crore = intdiv($n, 10000000); $n %= 10000000;
-            $lakh = intdiv($n, 100000); $n %= 100000;
-            $thou = intdiv($n, 1000); $n %= 1000;
-            $hund = $n; $parts = [];
-            if ($crore) $parts[] = $threeDigit($crore) . ' Crore';
-            if ($lakh) $parts[] = $twoDigit($lakh) . ' Lakh';
-            if ($thou) $parts[] = $twoDigit($thou) . ' Thousand';
-            if ($hund) $parts[] = $threeDigit($hund);
+            $crore = intdiv($n, 10000000);
+            $n %= 10000000;
+            $lakh = intdiv($n, 100000);
+            $n %= 100000;
+            $thou = intdiv($n, 1000);
+            $n %= 1000;
+            $hund = $n;
+            $parts = [];
+            if ($crore)
+                $parts[] = $threeDigit($crore) . ' Crore';
+            if ($lakh)
+                $parts[] = $twoDigit($lakh) . ' Lakh';
+            if ($thou)
+                $parts[] = $twoDigit($thou) . ' Thousand';
+            if ($hund)
+                $parts[] = $threeDigit($hund);
             return implode(' ', $parts);
         };
         try {
-            if (!class_exists(\NumberFormatter::class)) throw new \RuntimeException('intl missing');
+            if (!class_exists(\NumberFormatter::class))
+                throw new \RuntimeException('intl missing');
             $__formatter = new \NumberFormatter('en_IN', \NumberFormatter::SPELLOUT);
             $__rupeeWords = ucwords($__formatter->format($__rupees));
             $__paiseWords = $__paise > 0 ? ucwords($__formatter->format($__paise)) : '';
@@ -228,9 +259,11 @@
             $initials = '';
             foreach (preg_split('/[\s\-_.,&]+/', trim((string) ($companyDetails->name ?? ''))) as $word) {
                 $clean = preg_replace('/[^A-Za-z0-9]/', '', (string) $word);
-                if ($clean === '' || in_array(strtolower($clean), $skipWords, true)) continue;
+                if ($clean === '' || in_array(strtolower($clean), $skipWords, true))
+                    continue;
                 $initials .= strtoupper($clean[0]);
-                if (strlen($initials) >= 4) break;
+                if (strlen($initials) >= 4)
+                    break;
             }
             if (strlen($initials) < 2) {
                 $bare = preg_replace('/[^A-Za-z0-9]/', '', (string) ($companyDetails->name ?? ''));
@@ -252,10 +285,12 @@
             <tr>
                 <td style="width:15%; text-align:left; padding-left:8px;">
                     @if(!empty($barcodeData))
-                        <img src="{{ $barcodeData }}" alt="" class="pf-barcode" width="90" height="18" style="width:90px; height:18px;">
+                        <img src="{{ $barcodeData }}" alt="" class="pf-barcode" width="90" height="18"
+                            style="width:90px; height:18px;">
                     @endif
                 </td>
-                <td class="pf-company" style="width:70%; text-align:center; color:{{ $companyDetails->primary_color ?? '#7CB342' }};">
+                <td class="pf-company"
+                    style="width:70%; text-align:center; color:{{ $companyDetails->primary_color ?? '#7CB342' }};">
                     {{ $__footerStrip }}
                 </td>
                 <td style="width:15%;">&nbsp;</td>
@@ -297,7 +332,8 @@
                             <div class="info-line"><strong>GST No : </strong>{{ $companyDetails->gst_no }}</div>
                         @endif
                         @if(trim((string) $companyDetails->gst_state_code) !== '')
-                            <div class="info-line"><strong>GST State Code : </strong>{{ $companyDetails->gst_state_code }}</div>
+                            <div class="info-line"><strong>GST State Code : </strong>{{ $companyDetails->gst_state_code }}
+                            </div>
                         @endif
                         @if(trim((string) $companyDetails->pan_no) !== '')
                             <div class="info-line"><strong>PAN No : </strong>{{ $companyDetails->pan_no }}</div>
@@ -315,7 +351,8 @@
                             <div class="info-line"><strong>PCPNDT No : </strong>{{ $companyDetails->pcpndt_no }}</div>
                         @endif
                         @if(trim((string) $companyDetails->aeo_code) !== '')
-                            <div style="margin-bottom:10px;"><strong>AEO Code : </strong>{{ $companyDetails->aeo_code }}</div>
+                            <div style="margin-bottom:10px;"><strong>AEO Code : </strong>{{ $companyDetails->aeo_code }}
+                            </div>
                         @endif
                         @php
                             $oneStarFile = trim((string) $companyDetails->onestartfilename);
@@ -332,18 +369,20 @@
                         @endif
                     </div>
                 </td>
+                <td style="width:2.6%;"></td>
 
                 <!-- RIGHT: TITLE + DEBIT NOTE INFO GRID + SUPPLIER -->
-                <td style="width:50%; vertical-align:top;">
+                <td style="width:47.5%; vertical-align:top;">
                     <div style="min-height:80px;">
                         {{-- Row 1: title on its own line, full width. --}}
-                        <h3 style="margin:0 0 6px 0; padding:0; font-weight:bold; font-size:20px; line-height:1; color:#777777; letter-spacing:-0.3px; white-space:nowrap; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
+                        <h3
+                            style="margin:0 0 6px 0; padding:0; font-weight:bold; font-size:20px; line-height:1; color:#777777; letter-spacing:-0.3px; white-space:nowrap; font-family: Helvetica, 'DejaVu Sans', sans-serif;">
                             {{ strtoupper($pdf_title ?? 'DEBIT NOTE') }}
                         </h3>
                         {{-- Row 2: the two fields (No + Date) on the left, barcode on the right.
-                             The right cell uses the SAME 55%/45% split as the info grid below,
-                             and the barcode is LEFT-aligned so its left edge lines up exactly
-                             with the "Debit Note Date / SPI Date / …" fields underneath it. --}}
+                        The right cell uses the SAME 55%/45% split as the info grid below,
+                        and the barcode is LEFT-aligned so its left edge lines up exactly
+                        with the "Debit Note Date / SPI Date / …" fields underneath it. --}}
                         <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
                             <tr>
                                 <td style="width:55%; vertical-align:top; font-size:9px;">
@@ -354,11 +393,13 @@
                                     @if(!empty($barcodeData))
                                         <img src="{{ $barcodeData }}" alt="Barcode" width="130" height="30"
                                             style="width:130px; height:30px; display:block; margin:0;">
-                                        <div style="font-size:7.5px; color:#333; text-align:left; word-break:break-all; line-height:9px; margin-top:2px; max-width:140px;">
+                                        <div
+                                            style="font-size:7.5px; color:#333; text-align:left; word-break:break-all; line-height:9px; margin-top:2px; max-width:140px;">
                                             {{ $barcodeText ?? ($companyDetails->website ?? '') }}
                                         </div>
                                     @else
-                                        <div style="font-size:11px; font-weight:bold; color:#666666; text-align:left; line-height:13px; max-width:140px;">
+                                        <div
+                                            style="font-size:11px; font-weight:bold; color:#666666; text-align:left; line-height:13px; max-width:140px;">
                                             {{ $companyDetails->name ?? '' }}
                                         </div>
                                     @endif
@@ -368,7 +409,8 @@
                     </div>
 
                     {{-- DEBIT NOTE INFO GRID — two sub-columns like the PO layout. --}}
-                    <table style="width:100%; border-collapse:collapse; margin-top:12px; font-size:9px; line-height:14px;">
+                    <table
+                        style="width:100%; border-collapse:collapse; margin-top:12px; font-size:9px; line-height:14px;">
                         <tr>
                             <td style="width:55%; vertical-align:top;">
                                 <div class="info-line"><strong>SHP ID :</strong> {{ $dn->shipment_code }}</div>
@@ -381,25 +423,30 @@
                             </td>
                             <td style="width:45%; vertical-align:top;">
                                 <div class="info-line"><strong>Debit Note Date :</strong> {{ $dn->dn_date }}</div>
-                                <div class="info-line"><strong>Procurement ID :</strong> {{ $dn->procurement_code }}</div>
+                                <div class="info-line"><strong>Procurement ID :</strong> {{ $dn->procurement_code }}
+                                </div>
                                 <div class="info-line"><strong>Debit Note Type :</strong> {{ $dn->dn_type }}</div>
-                                <div class="info-line"><strong>Expected Debit Date :</strong> {{ $dn->expected_debit_date }}</div>
+                                <div class="info-line"><strong>Expected Debit Date :</strong>
+                                    {{ $dn->expected_debit_date }}</div>
                             </td>
                         </tr>
                     </table>
 
                     <div style="margin-top:8px; font-size:9px; line-height:14px;">
                         <div class="info-line"><strong>Supplier Name :</strong> {{ $supplier->name }}</div>
-                        <div class="info-line"><strong>Supplier Address :</strong> {{ $pdfClean($supplier->address) }}</div>
+                        <div class="info-line"><strong>Supplier Address :</strong> {{ $pdfClean($supplier->address) }}
+                        </div>
                         @if(trim((string) ($supplier->state_code ?? '')) !== '')
-                            <div style="margin-bottom:0;"><strong>Supplier State Code :</strong> {{ $supplier->state_code }}</div>
+                            <div style="margin-bottom:0;"><strong>Supplier State Code :</strong> {{ $supplier->state_code }}
+                            </div>
                         @endif
                     </div>
                 </td>
             </tr>
         </table>
 
-        <hr style="border: 0.1px solid {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-top:5px; margin-bottom:5px;">
+        <hr
+            style="border: 0.1px solid {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-top:5px; margin-bottom:5px;">
 
         <!-- DEBIT TO / BILL TO -->
         <table class="full-w" style="width:100%; border-collapse:collapse; margin-top:8px;">
@@ -437,7 +484,8 @@
         <section style="margin-top:10px;">
             <table class="prod_table" style="table-layout: fixed; font-size:9px; width:100%;">
                 <thead>
-                    <tr style="background-color:{{ $companyDetails->primary_color ?? '#7CB342' }}; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }};">
+                    <tr
+                        style="background-color:{{ $companyDetails->primary_color ?? '#7CB342' }}; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }};">
                         <th style="width:6%;  text-align: center;">Sr No</th>
                         <th style="width:34%; text-align: left;">Product Name</th>
                         <th style="width:14%; text-align: left;">HSN / SAC</th>
@@ -457,7 +505,9 @@
                                 {{ rtrim(rtrim(number_format($product['quantity'], 3, '.', ','), '0'), '.') }}
                             </td>
                             <td style="width:13%; text-align: right;">{{ number_format($product['rate'], 2) }}</td>
-                            <td style="width:9%;  text-align: center;">{{ rtrim(rtrim(number_format($product['gst_pct'], 2), '0'), '.') }}</td>
+                            <td style="width:9%;  text-align: center;">
+                                {{ rtrim(rtrim(number_format($product['gst_pct'], 2), '0'), '.') }}
+                            </td>
                             <td style="width:15%; text-align: right;">{{ number_format($product['amount'], 2) }}</td>
                         </tr>
                     @endforeach
@@ -467,7 +517,8 @@
 
         <!-- BANK + CHARGES/TOTALS -->
         <div style="margin-top: 16px; page-break-inside: avoid;">
-            <hr style="border: 0.2px solid {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-top:5px; margin-bottom:5px;">
+            <hr
+                style="border: 0.2px solid {{ $companyDetails->primary_color ?? '#7CB342' }}; margin-top:5px; margin-bottom:5px;">
 
             <table style="width:100%; table-layout:fixed; border-collapse:collapse; margin-top:12px;">
                 <tr>
@@ -476,14 +527,18 @@
                             <img src="{{ $qrData }}" alt="Bank Payment QR" width="120" height="120"
                                 style="width:120px; height:120px; display:block; margin-top:-6px;">
                         @else
-                            <span class="qr-placeholder" style="width:120px; height:120px; display:block; margin-top:-6px;"></span>
+                            <span class="qr-placeholder"
+                                style="width:120px; height:120px; display:block; margin-top:-6px;"></span>
                         @endif
                     </td>
 
                     <td style="width:48%; vertical-align: top; font-size:9px; line-height:14px; padding-right:16px;">
-                        <div class="info-line"><strong style="color:#555;">Bank Name :</strong> {{ $bankDetails->bank_name }}</div>
-                        <div class="info-line"><strong style="color:#555;">Account Holder Name :</strong> {{ $bankDetails->account_holder_name }}</div>
-                        <div class="info-line"><strong style="color:#555;">Address :</strong> {{ $bankDetails->address }}</div>
+                        <div class="info-line"><strong style="color:#555;">Bank Name :</strong>
+                            {{ $bankDetails->bank_name }}</div>
+                        <div class="info-line"><strong style="color:#555;">Account Holder Name :</strong>
+                            {{ $bankDetails->account_holder_name }}</div>
+                        <div class="info-line"><strong style="color:#555;">Address :</strong>
+                            {{ $bankDetails->address }}</div>
                         <div class="info-line">
                             <strong style="color:#555;">Branch :</strong> {{ $bankDetails->branch }}
                             &nbsp;&nbsp;
@@ -494,14 +549,16 @@
                             &nbsp;&nbsp;
                             <strong style="color:#555;">IFSC :</strong> {{ $bankDetails->ifsc }}
                         </div>
-                        <div style="margin-bottom:0;"><strong style="color:#555;">Swift Code :</strong> {{ $bankDetails->swift_code }}</div>
+                        <div style="margin-bottom:0;"><strong style="color:#555;">Swift Code :</strong>
+                            {{ $bankDetails->swift_code }}</div>
                     </td>
 
                     <td style="width:32%; vertical-align: top;">
                         <table style="width:100%; font-size:9px; line-height:14px; border-collapse:collapse;">
                             <tr>
                                 <td style="padding:3px 0;"><strong style="color:#555;">Sub Total</strong></td>
-                                <td style="text-align:right; padding:3px 0;"><strong style="color:#555;">{{ number_format($totals->sub_total, 2) }}</strong></td>
+                                <td style="text-align:right; padding:3px 0;"><strong
+                                        style="color:#555;">{{ number_format($totals->sub_total, 2) }}</strong></td>
                             </tr>
                             @if($interState)
                                 <tr>
@@ -520,17 +577,22 @@
                             @endif
                             <tr>
                                 <td style="padding:3px 0; color:#555;">Additions (+)</td>
-                                <td style="text-align:right; padding:3px 0;">{{ number_format($totals->additions, 2) }}</td>
+                                <td style="text-align:right; padding:3px 0;">{{ number_format($totals->additions, 2) }}
+                                </td>
                             </tr>
                             <tr>
                                 <td style="padding:3px 0; color:#555;">Deductions (–)</td>
-                                <td style="text-align:right; padding:3px 0;">– {{ number_format($totals->deductions, 2) }}</td>
+                                <td style="text-align:right; padding:3px 0;">–
+                                    {{ number_format($totals->deductions, 2) }}
+                                </td>
                             </tr>
                             <tr>
-                                <td style="padding:8px 0 0 0; font-size:12px; color:#333; border-top:1px solid #ddd; white-space:nowrap;">
+                                <td
+                                    style="padding:8px 0 0 0; font-size:12px; color:#333; border-top:1px solid #ddd; white-space:nowrap;">
                                     <strong>Grand Total:</strong>
                                 </td>
-                                <td style="text-align:right; padding:8px 0 0 0; font-size:12px; color:#333; border-top:1px solid #ddd; white-space:nowrap;">
+                                <td
+                                    style="text-align:right; padding:8px 0 0 0; font-size:12px; color:#333; border-top:1px solid #ddd; white-space:nowrap;">
                                     <strong>{{ $__ccyCode }} {{ number_format($totals->grand_total, 2) }}</strong>
                                 </td>
                             </tr>
@@ -540,8 +602,10 @@
             </table>
 
             <!-- AMOUNT IN WORDS -->
-            <div style="width:100%; display:block; font-size:10px; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }}; margin-top:10px; margin-bottom:15px; text-align:left; padding:8px 14px; background-color:{{ $companyDetails->primary_color ?? '#7CB342' }}; box-sizing:border-box; line-height: 14px; font-weight:600;">
-                <strong style="text-transform:capitalize; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }};">
+            <div
+                style="width:100%; display:block; font-size:10px; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }}; margin-top:10px; margin-bottom:15px; text-align:left; padding:8px 14px; background-color:{{ $companyDetails->primary_color ?? '#7CB342' }}; box-sizing:border-box; line-height: 14px; font-weight:600;">
+                <strong
+                    style="text-transform:capitalize; color:{{ $companyDetails->primary_text_color ?? '#ffffff' }};">
                     Amount In Words : {{ $__ccyCode }} {{ $amountInWords }}
                 </strong>
             </div>
@@ -561,7 +625,8 @@
                                 @else
                                     <table style="margin: 6px 0;">
                                         <tr>
-                                            <td style="width: 90px; height: 90px; border: 2px solid #1e3a8a; border-radius: 90px; text-align: center; vertical-align: middle; color: #1e3a8a; font-weight: 700; font-style: italic; font-size: 9px; line-height: 11px;">
+                                            <td
+                                                style="width: 90px; height: 90px; border: 2px solid #1e3a8a; border-radius: 90px; text-align: center; vertical-align: middle; color: #1e3a8a; font-weight: 700; font-style: italic; font-size: 9px; line-height: 11px;">
                                                 {{ strtoupper(explode(' ', $companyDetails->name)[0]) }}<br>
                                                 <span style="font-size:7px;">• AUTHORISED •</span><br>
                                                 SIGNED
@@ -571,7 +636,8 @@
                                 @endif
                                 <strong>Authorized Signatory</strong>
                             </td>
-                            <td style="width:50%; vertical-align: top; padding-top: 7px; font-size:9px; text-align: right; padding-right: 30px;">
+                            <td
+                                style="width:50%; vertical-align: top; padding-top: 7px; font-size:9px; text-align: right; padding-right: 30px;">
                                 Accept &amp; Acknowledge,<strong> {{ $supplier->name }}</strong><br>
                                 <br>
                                 <div style="margin-top: 75px;"></div>
@@ -588,7 +654,8 @@
         <!-- REASON -->
         @if(!empty(trim((string) ($dn->reason ?? ''))))
             <div style="margin-top: 14px;">
-                <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
+                <div
+                    style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
                     Reason :
                 </div>
                 <div class="po-terms">
@@ -601,19 +668,49 @@
         @php
             $__masterTerms = $masterTerms ?? [];
             $__formTerms = trim((string) ($dn->terms ?? ''));
+
+            /* Split a master-T&C HTML row into its intro (anything before the
+               list) + the individual <li> clauses, so each clause renders as its
+               OWN block. DomPDF drops <li> items when one <ol> is split across a
+               page break; separate blocks break cleanly BETWEEN clauses instead,
+               so the T&C fills from the current page and never loses a clause. */
+            $__splitTnc = function ($html) {
+                $html = (string) $html;
+                if (!preg_match('/<li[\s>]/i', $html)) {
+                    return ['intro' => $html, 'items' => []];
+                }
+                $intro = '';
+                if (preg_match('/^(.*?)<ol[^>]*>/is', $html, $m)) $intro = trim($m[1]);
+                preg_match_all('/<li[^>]*>(.*?)<\/li>/is', $html, $lm);
+                return ['intro' => $intro, 'items' => $lm[1] ?? []];
+            };
         @endphp
         @if(!empty($__masterTerms) || $__formTerms !== '')
             <div style="margin-top: 18px;">
-                <div style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
+                <div
+                    style="font-size: 10px; font-weight: 700; color: #000; margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1px solid {{ $companyDetails->primary_color ?? '#7CB342' }};">
                     Terms And Conditions :
                 </div>
-                {{-- Master T&C from the CLM library (rich text / HTML), one block per row. --}}
+                {{-- Each master-T&C clause is its own block (dn-tnc-item) so clauses
+                     break BETWEEN one another across pages — none dropped, none
+                     hidden — and the list fills from wherever it starts. --}}
                 @foreach($__masterTerms as $__t)
-                    <div class="po-terms" style="margin-bottom:6px;">{!! $__t !!}</div>
+                    @php $__p = $__splitTnc($__t); @endphp
+                    @if(trim(strip_tags((string) $__p['intro'])) !== '')
+                        <div class="po-terms dn-tnc-item" style="margin-bottom:4px;">{!! $__p['intro'] !!}</div>
+                    @endif
+                    @foreach($__p['items'] as $__i => $__li)
+                        <div class="po-terms dn-tnc-item" style="margin-bottom:3px; padding-left:16px;">
+                            <span style="display:inline-block; width:14px; margin-left:-16px;">{{ $__i + 1 }}.</span>{!! $__li !!}
+                        </div>
+                    @endforeach
+                    @if(empty($__p['items']) && trim(strip_tags((string) $__p['intro'])) === '')
+                        <div class="po-terms dn-tnc-item" style="margin-bottom:4px;">{!! $__t !!}</div>
+                    @endif
                 @endforeach
-                {{-- Free-text terms typed on the debit note form. --}}
+                {{-- Free-text terms typed on the debit note form (splits line-by-line). --}}
                 @if($__formTerms !== '')
-                    <div class="po-terms">{!! nl2br(e($__formTerms)) !!}</div>
+                    <div class="po-terms" style="margin-top:4px;">{!! nl2br(e($__formTerms)) !!}</div>
                 @endif
             </div>
         @endif
