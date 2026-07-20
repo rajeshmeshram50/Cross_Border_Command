@@ -4353,6 +4353,7 @@ function ProductsStep(props: {
 }) {
   const { form, products, removeProduct, draft, setDraft, addProduct, terms, setTerms, shipping, setShipping, subTotal, grandTotal, theme,
           productOptions, productsRaw, loadingProducts, homeStateCode, customerSegments } = props;
+  const toast = useToast();
 
   // Per-opportunity product filter. When the user picks an Opportunity
   // on Step 1, the Product Directory mapping (lead_products) tells us
@@ -4472,25 +4473,37 @@ function ProductsStep(props: {
       opts = opts.filter(o => allowedLabels.has(o.value));
     }
 
-    /* Segment gate — a product may only be quoted to a customer that shares its
-     * segment, so off-segment products are removed from the list entirely.
+    /* Segment gate + segment badge.
      *
-     * Three deliberate no-restriction cases, all matching the server guard in
-     * EnforcesSegmentBuyerConsignee so the UI can never hide something the API
-     * would have accepted:
-     *   · customer has no segment  → segmentSet empty  → everything allowed
-     *   · product has no segment   → nothing to compare → kept
-     *   · option has no master row → free-text edge case → kept
-     * Comparison is lowercased on both sides; segment names are free text in
-     * the master, so their case can drift. */
+     * Every product shows its SEGMENT as a violet pill (so the user can see
+     * which segment each belongs to — same as the Product Directory picker).
+     * A product whose segment isn't among the customer's is kept in the list
+     * but DISABLED (greyed) with a short reason on hover / toast on click,
+     * rather than hidden — the user asked to still see off-segment items and be
+     * told why they can't be added.
+     *
+     * Three deliberate no-disable cases, all matching the server guard in
+     * EnforcesSegmentBuyerConsignee so the UI never blocks something the API
+     * would accept:
+     *   · customer has no segment  → segmentSet empty  → nothing disabled
+     *   · product has no segment   → nothing to compare → enabled (no badge)
+     *   · option has no master row → free-text edge case → left alone
+     * Comparison is lowercased both sides; segment names are free text so their
+     * case can drift. The badge text is capped so a long segment name can't
+     * blow out the row. */
     const segmentSet = new Set(customerSegments.map(s => s.toLowerCase()));
-    if (segmentSet.size > 0) {
-      opts = opts.filter(o => {
-        const code = (o.value || '').split(' – ')[0]?.trim() ?? '';
-        const seg = productsRaw.find(pr => pr.code === code)?.segment;
-        return !seg || segmentSet.has(seg.toLowerCase());
-      });
-    }
+    opts = opts.map(o => {
+      const code = (o.value || '').split(' – ')[0]?.trim() ?? '';
+      const seg = productsRaw.find(pr => pr.code === code)?.segment;
+      if (!seg) return o;   // free-text / no-segment products stay as-is
+      // Short cap so the badge stays compact and the product code+name keeps the
+      // row — full segment name is on the badge's hover title.
+      const badge = { text: seg.length > 14 ? `${seg.slice(0, 14)}…` : seg, tone: 'violet' as const, title: seg };
+      const offSegment = segmentSet.size > 0 && !segmentSet.has(seg.toLowerCase());
+      return offSegment
+        ? { ...o, badge, disabled: true, disabledReason: 'Customer and product segment must match.' }
+        : { ...o, badge };
+    });
 
     // Build a set of already-added productIds (skip free-text rows that
     // have no productId, otherwise we'd over-filter).
@@ -4761,6 +4774,8 @@ function ProductsStep(props: {
                     ? [...visibleProductOptions, { value: draft.name, label: displayProductLabel(draft.name) }]
                     : visibleProductOptions}
                   onChange={onProductPick}
+                  // Clicking a greyed (off-segment) product explains why, short.
+                  onDisabledClick={() => toast.warning('Segment mismatch', 'Customer and product segment must match to add.')}
                 />
               </td>
               <td><input className="qpi-input qpi-input-num" type="number" min="0" value={draft.qty || ''} onChange={(e) => setDraft({ ...draft, qty: Number(e.target.value) })} /></td>

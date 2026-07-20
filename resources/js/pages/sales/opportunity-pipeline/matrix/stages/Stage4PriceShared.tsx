@@ -563,7 +563,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id).padStart(3,'0')}`}</span></td>
                             <td>
                               <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s4-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                              {r.product_category && <span className="s4-cat-badge">{r.product_category.toUpperCase()}</span>}
+                              {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s4-cat-badge">{r.product_category.toUpperCase()}</span></Tooltip>}
                             </td>
                             <td>
                               <span className={`s4-pill ${statusLc === 'active' ? 's4-pill-active' : statusLc === 'draft' ? 's4-pill-draft' : 's4-pill-inactive'}`}>
@@ -684,7 +684,7 @@ export default function Stage4PriceShared({ header, onPrev, onNext, reloadLead, 
                             <td><span className="s4-code s4-code-navy">{formatProductCode(r.product_code) || `P-${String(r.product_id ?? 0).padStart(3,'0')}`}</span></td>
                             <td>
                               <Tooltip label={r.product_name ?? ""} themed maxWidth={420}><div className="s4-prod-name">{r.product_name ?? "—"}</div></Tooltip>
-                              {r.product_category && <span className="s4-cat-badge">{r.product_category.toUpperCase()}</span>}
+                              {r.product_category && <Tooltip label={r.product_category.toUpperCase()} themed maxWidth={320}><span className="s4-cat-badge">{r.product_category.toUpperCase()}</span></Tooltip>}
                             </td>
                             <td><span className="s4-dt">
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
@@ -960,7 +960,11 @@ const STAGE4_CSS = `
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere;
 }
-.s4-cat-badge { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; background: #ede9fe; color: #6d28d9; }
+/* A long segment ("Travel & Luggage…") used to run the full row width and shove
+   the price columns off-screen. Cap + ellipsize; full value is on the hover
+   tooltip. max-width:100% keeps it inside the product cell (table-layout:fixed);
+   vertical-align keeps the clipped chip aligned with the name above it. */
+.s4-cat-badge { display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; background: #ede9fe; color: #6d28d9; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 
 .s4-pill {
   display: inline-flex; align-items: center; gap: 4px;

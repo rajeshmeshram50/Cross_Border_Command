@@ -129,6 +129,7 @@ export function MasterSelect({
   loadingMore,
   currentValueLabel,
   searchable = true,
+  onDisabledClick,
 }: {
   name?: string;
   value?: string;
@@ -175,6 +176,11 @@ export function MasterSelect({
    * option lists (e.g. a 3-value filter) so opening the dropdown on mobile
    * doesn't auto-focus the search field and pop up the on-screen keyboard. */
   searchable?: boolean;
+  /* Called when a DISABLED option is clicked. Without it a disabled option is
+     simply inert; with it the click is intercepted (still no selection) so the
+     caller can explain why — e.g. a toast "segment must match". The menu stays
+     open so the message lands in context. */
+  onDisabledClick?: (opt: { value: string; label: string; disabledReason?: string }) => void;
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
   useEffect(() => {
@@ -382,11 +388,21 @@ export function MasterSelect({
                     key={opt.value}
                     active={opt.value === currentValue}
                     /* Disabled options (e.g. a product outside the customer's
-                       segment) render greyed and can't be picked; reactstrap
-                       blocks the click, and we no-op handlePick as a belt. */
-                    disabled={opt.disabled}
+                       segment) render greyed and can't be selected. When an
+                       onDisabledClick handler is given we keep the row CLICKABLE
+                       (reactstrap `disabled` would swallow the event) and route
+                       the click there instead of selecting — so the caller can
+                       toast a reason. Without the handler it stays truly disabled.
+                       toggle=false either way keeps the menu open on a blocked
+                       pick. */
+                    disabled={opt.disabled && !onDisabledClick}
                     toggle={!opt.disabled}
-                    onClick={opt.disabled ? undefined : () => handlePick(opt.value)}
+                    aria-disabled={opt.disabled || undefined}
+                    onClick={
+                      opt.disabled
+                        ? (onDisabledClick ? () => onDisabledClick({ value: opt.value, label: opt.label, disabledReason: opt.disabledReason }) : undefined)
+                        : () => handlePick(opt.value)
+                    }
                     className="master-select-item"
                     style={opt.disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                   >
@@ -396,12 +412,14 @@ export function MasterSelect({
                     <Tooltip label={opt.disabled ? (opt.disabledReason ?? opt.label) : opt.label} position="top">
                       {(opt.badge || opt.badges?.length) ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', width: '100%' }}>
-                          {/* Cap the label at ~55% of the row so a long name
-                              truncates early (…). It does NOT grow (flex 0 1 auto),
-                              so the free space collapses into the badge wrapper's
-                              margin-left:auto, pinning the badges to the right edge. */}
-                          <span style={{ flex: '0 1 auto', minWidth: 0, maxWidth: '55%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
-                          <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
+                          {/* Label GROWS to take all free space (flex 1 1 auto)
+                              and only truncates when it would actually collide with
+                              the badge — a short badge like "food" now leaves the
+                              product code+name almost the whole row instead of being
+                              hard-capped at 55%. The badge wrapper never shrinks, so
+                              it always stays fully readable on the right. */}
+                          <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt.label}</span>
+                          <span style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
                             {badgesOf(opt).map((b, i) => <OptBadge key={i} b={b} />)}
                           </span>
                         </span>

@@ -1277,7 +1277,17 @@ export const SALES_MATRIX_DETAIL_CSS = `
 [data-bs-theme="dark"] .smd-root .smd-clm-row:hover { background: #2a2150; border-color: #a78bfa; }
 [data-bs-theme="dark"] .smd-root .smd-clm-row-title  { color: #ede9fe; }
 [data-bs-theme="dark"] .smd-root .smd-clm-row-meta   { color: #94a3b8; }
-[data-bs-theme="dark"] .smd-root .smd-clm-progress-track { background: rgba(255,255,255,.10); }
+/* The track element's class is .smd-clm-progress (see the base rule) — this
+   override used to target .smd-clm-progress-track, which doesn't exist, so the
+   light track (#f5f3ff) stayed white in dark mode: the bright bars under
+   Customer / Consignee Details. Also dim the % label and the loading shimmer,
+   which were light-on-dark for the same reason. */
+[data-bs-theme="dark"] .smd-root .smd-clm-progress { background: rgba(255,255,255,.10); }
+[data-bs-theme="dark"] .smd-root .smd-clm-progress-label { color: #a78bfa; }
+[data-bs-theme="dark"] .smd-root .smd-clm-row-loading .smd-clm-row-sub {
+  background: linear-gradient(90deg, rgba(167,139,250,.18) 0%, rgba(167,139,250,.32) 50%, rgba(167,139,250,.18) 100%);
+  background-size: 200% 100%;
+}
 /* Inner divider between the group head and its rows + the empty-state
  * card. Without these the dashed empty-state stayed near-white with
  * pale violet text — a bright island inside the dark CLM panel. */
