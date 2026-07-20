@@ -207,13 +207,35 @@ class SourcingController extends Controller
             ], 422);
         }
 
-        $dir  = 'p2p/' . ($request->input('kind') === 'card' ? 'supplier-cards' : 'clarity');
-        $path = $request->file('file')->store($dir, 'public');
+        // Keep the user's ORIGINAL filename on disk (so the UI shows "Basmati
+        // Spec.pdf", not a random hash) while still guaranteeing uniqueness by
+        // dropping each file into its own random sub-folder. store() alone would
+        // hash the name away; storeAs() under a per-file token folder preserves
+        // the real name and can never collide with another upload.
+        $file     = $request->file('file');
+        $token    = \Illuminate\Support\Str::random(24);
+        $safeName = $this->safeUploadName($file->getClientOriginalName(), $ext);
+        $dir      = 'p2p/' . ($request->input('kind') === 'card' ? 'supplier-cards' : 'clarity') . '/' . $token;
+        $path     = $file->storeAs($dir, $safeName, 'public');
 
         return $this->ok([
             'path' => '/storage/' . $path,
-            'name' => $request->file('file')->getClientOriginalName(),
+            'name' => $file->getClientOriginalName(),
         ]);
+    }
+
+    /* Sanitise an uploaded filename for safe storage while keeping it readable:
+     * strip the directory portion, drop characters that don't belong in a path,
+     * collapse whitespace, and force the validated extension. */
+    private function safeUploadName(string $original, string $ext): string
+    {
+        $base = pathinfo(basename($original), PATHINFO_FILENAME);
+        $base = preg_replace('/[^\p{L}\p{N}\-_. ]+/u', '', $base) ?? '';
+        $base = trim(preg_replace('/\s+/', ' ', $base) ?? '');
+        if ($base === '' || $base === '.') $base = 'document';
+        // Guard against an over-long name blowing the path limit.
+        if (mb_strlen($base) > 120) $base = mb_substr($base, 0, 120);
+        return $base . '.' . $ext;
     }
 
     /* Stream ONE clarity file for download. The path is passed as a query
@@ -626,16 +648,19 @@ class SourcingController extends Controller
         $user = $request->user();
         $t    = $this->target($request, $target);
 
-        // The creator of a sourcing target gets a view-only report — supplier
-        // mapping is the assignee's job. You can't map vendors to a target you
-        // raised yourself UNLESS you also assigned it to yourself (creator ==
-        // assignee), in which case you ARE the assignee and mapping is allowed.
-        if ((int) $t->created_by === (int) $user->id
-            && (int) $t->assignee_id !== (int) $user->id
+        // Supplier mapping is the ASSIGNEE's job only. Anyone who isn't the
+        // assignee — the creator, another branch user, or a viewer whose target
+        // is view-only because the assignee left — is blocked here (super_admin
+        // excepted). The report already hides the Map button off the assigned
+        // tab, but this is the real gate: the UI can be bypassed, this can't.
+        if ((int) $t->assignee_id !== (int) $user->id
             && $user->user_type !== 'super_admin') {
+            $mine = (int) $t->created_by === (int) $user->id;
             return response()->json([
                 'status'  => false,
-                'message' => 'You created this sourcing target — vendor mapping is done by the assignee, not the creator.',
+                'message' => $mine
+                    ? 'You created this sourcing target — vendor mapping is done by the assignee, not the creator.'
+                    : 'This sourcing target is assigned to someone else — only the assignee can map suppliers.',
             ], 403);
         }
 

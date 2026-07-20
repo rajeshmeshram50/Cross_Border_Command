@@ -244,6 +244,17 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
         <Header p={product} step={step === 'choose' ? undefined : 'Step 2 of 2'} />
         <button className="smp-close" style={{ position: 'absolute', top: 18, right: 22 }} onClick={onClose}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
 
+        {/* Full-form save lock — while mapping (existing OR new supplier) the whole
+            modal is covered so no field/button can be touched mid-request. */}
+        {saving && (
+          <div className="smp-savelock">
+            <div className="smp-savelock-card">
+              <span className="smp-savelock-spin" />
+              <span className="smp-savelock-txt">Mapping supplier…</span>
+            </div>
+          </div>
+        )}
+
         {step === 'choose' && (
           <div className="smp-choose-body">
             <div className="smp-opt-grid">

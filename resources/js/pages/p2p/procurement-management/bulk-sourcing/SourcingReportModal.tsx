@@ -310,6 +310,7 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
           targetId={row.id}
           productId={products[viewIdx].id}
           onClose={() => setViewIdx(null)}
+          canAdd={canMap}
           onAddSupplier={() => { const gi = viewIdx!; setViewIdx(null); setMapIdx(gi); }}
         />
       )}

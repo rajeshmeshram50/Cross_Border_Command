@@ -973,8 +973,22 @@ export default function AddVendorModal(props: {
       return;
     }
     setSegmentRefUploads(prev => {
-      Object.values(prev).forEach(u => { try { URL.revokeObjectURL(u.url); } catch {} });
-      return {};
+      /* Keep SERVER-persisted rows. They live in segment_doc_uploads keyed by
+       * (category, doc_code) — independent of which segments are selected — and
+       * the remove-segment guard reads this map to decide whether a removal
+       * would strand a file. Wiping the whole map blinded the guard after the
+       * FIRST segment change: the first removal was blocked correctly, every
+       * later one silently succeeded because the map was empty by then. It also
+       * re-hydrates only once per modal open, so nothing put them back.
+       *
+       * Unsaved local picks (blob: URLs, or a File with no URL yet) still go:
+       * their document row may not exist under the new segment set. */
+      const kept: Record<string, SegRefUpload> = {};
+      for (const [k, u] of Object.entries(prev)) {
+        if (u?.url && !u.url.startsWith('blob:')) { kept[k] = u; continue; }
+        try { URL.revokeObjectURL(u.url); } catch {}
+      }
+      return kept;
     });
   }, [segment]);
 
