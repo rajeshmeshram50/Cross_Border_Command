@@ -754,13 +754,17 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
           )}
         </div>
 
+        {/* While ANY action is in flight (download OR refresh) every action
+            button is disabled so a second action can't fire mid-request, and
+            the active one shows a spinner. Close stays enabled as an escape so
+            a slow/stuck request can never trap the user. */}
         <div className="qpi-trk-foot">
-          <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={downloadSignedPdf} disabled={dlSigned || !isDone}>
+          <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={downloadSignedPdf} disabled={dlSigned || loading || !isDone}>
             {dlSigned ? <span className="qpi-moremenu-spinner" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
             Download signed PDF
           </button>
-          <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={() => void load()}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+          <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={() => void load()} disabled={dlSigned || loading}>
+            {loading && !dlSigned ? <span className="qpi-moremenu-spinner" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>}
             Refresh
           </button>
           <button type="button" className="qpi-trk-btn qpi-trk-btn-primary" onClick={onClose}>Close</button>

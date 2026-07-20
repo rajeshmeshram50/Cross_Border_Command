@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
@@ -712,8 +713,13 @@ useEffect(() => {
       )}
 
       {/* Segment "+N" popover — small anchored card at the badge (mirrors the
-          Customer list's segment overflow popover), not a full centered modal. */}
-      {segPop && (
+          Customer list's segment overflow popover), not a full centered modal.
+          PORTALLED to <body>: the popover is position:fixed, and any ancestor
+          with a transform/will-change (the table hover effects, the auto-fit
+          card) turns "fixed" into "relative to that ancestor" — so after the
+          page scrolled, it opened at a stale, off-screen spot. A body portal has
+          no such ancestor, so it always positions against the real viewport. */}
+      {segPop && createPortal(
         <div className="sup-fig">
           <div className="sl-seg-pop-backdrop" onClick={() => setSegPop(null)} />
           <div
@@ -732,7 +738,8 @@ useEffect(() => {
               ))}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* Contact Persons popup — lists every contact for the chosen supplier
