@@ -1620,7 +1620,11 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           return 'Enter a valid website (e.g. https://example.com)';
         return null;
       case 'segment':
-        if (!Array.isArray(f.segment) || f.segment.length === 0) return 'Select at least one segment';
+        /* The field is read-only ("Inherited from customer"), so "select one"
+           was advice the user could not act on — there is nothing to select.
+           Empty here means the CUSTOMER has no segment, so point there. */
+        if (!Array.isArray(f.segment) || f.segment.length === 0)
+          return 'The selected customer has no segment — add it on the customer first';
         return null;
       case 'risk':
         if (!f.risk) return 'Select a risk level';
@@ -2839,6 +2843,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         (form1.addressType || '').trim(),
         ...otherLocs.map(l => (l.type || '').trim()),
       ].filter(Boolean);
+      /* primaryCountry reads form1 — this component's Stage-1 state is named
+         `form1`. It said `form.country`, an identifier that doesn't exist here,
+         so opening Add More Address threw a ReferenceError instead of rendering
+         the sub-modal. */
       return (
         <LocationSubModal
           editing={editingId ? locations.find(l => l.id === editingId) ?? null : null}
@@ -2851,7 +2859,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
           disallowedTypes={usedAddressTypes}
           existingEmails={existingEmails}
           existingPhones={existingPhones}
-          primaryCountry={form.country}
+          primaryCountry={form1.country}
           onClose={() => setLocModal({ open: false, editing: null })}
           onSave={(rec) => {
             if (editingId) {
@@ -3468,7 +3476,12 @@ const Stage1 = ({
                 <MasterSelect
                   value={form.state}
                   options={optsWith(filteredStates, form.state)}
-                  placeholder={form.country ? 'Select State' : 'Select country first'}
+                  /* State is required for every country, but only 86 of the 249
+                     in the master have states seeded. Point at where to add them
+                     rather than showing an empty "Select State" list. */
+                  placeholder={!form.country
+                    ? 'Select country first'
+                    : (filteredStates.length === 0 ? 'Add states in Master → States' : 'Select State')}
                   disabled={lock || !form.country}
                   invalid={!!errors.state}
                   onChange={v => set('state', v)}
@@ -5900,7 +5913,10 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
               <MasterSelect
                 value={d.state}
                 options={optsWith(filteredStates, d.state)}
-                placeholder={d.country ? 'Select state' : 'Select country first'}
+                // Mirrors the primary address — see the note there.
+                placeholder={!d.country
+                  ? 'Select country first'
+                  : (filteredStates.length === 0 ? 'Add states in Master → States' : 'Select state')}
                 disabled={!d.country}
                 invalid={!!errs.state}
                 onChange={v => set('state', v)}

@@ -15,7 +15,9 @@ class ShipmentOrder extends Model
         'shipping_liability', 'cold_chain', 'shipping_mode',
         'attachments', 'remarks', 'created_by',
         // International only
-        'zip_code', 'freight_cost', 'inco_term',
+        // inco_term_id is the real reference into master_incoterms; inco_term is
+        // the label snapshot kept for rows created before the id column existed.
+        'zip_code', 'freight_cost', 'inco_term', 'inco_term_id',
         'port_of_loading', 'port_of_unloading',
         'final_destination', 'origin_country',
         // Domestic only
@@ -42,5 +44,27 @@ class ShipmentOrder extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /** Master row behind the INCO term — null on pre-id shipments. */
+    public function incoterm(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Masters\Incoterms::class, 'inco_term_id');
+    }
+
+    /**
+     * What the UI should show for INCO Term: the live master value when the
+     * shipment carries an id (so renames propagate), else the label snapshot
+     * saved with older rows.
+     */
+    public function incoTermLabel(): ?string
+    {
+        $m = $this->relationLoaded('incoterm') ? $this->incoterm : null;
+        if ($m) {
+            $code = trim((string) $m->code);
+            $name = trim((string) $m->full_name);
+            return $code && $name ? "$code – $name" : ($name ?: ($code ?: null));
+        }
+        return $this->inco_term ?: null;
     }
 }

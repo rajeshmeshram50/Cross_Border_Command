@@ -327,13 +327,19 @@ const cleanPinFor = (v: any, country?: string): string | null => {
 /* Only 86 of the 249 countries in the master have states; the other 163
  * (Afghanistan, Croatia, Haiti …) have none at all.
  *
- * State was unconditionally required, so for those 163 the field sat empty,
- * red and unsatisfiable — there was no option to pick, which made the customer
- * impossible to save. The backend has always treated primary_address.state as
- * nullable, so the form was the only thing blocking; this realigns it.
+ * State is required for EVERY country — an address without one is incomplete
+ * wherever it is. It was briefly required only where the master happened to
+ * offer states, which made the same field mandatory for an Indian customer and
+ * ignorable for an Afghan one.
  *
- * Required-ness therefore follows the DATA: demand a state only where the
- * master actually offers one. */
+ * The consequence is deliberate: a country whose states aren't seeded yet
+ * CANNOT have a customer saved against it until someone adds them under
+ * Master → States. States are master data, not free text, so the control stays
+ * a dropdown and the placeholder says where to go instead of showing an empty
+ * list with no explanation.
+ *
+ * This helper no longer drives required-ness — only the placeholder and the
+ * disabled state, since there is genuinely nothing to open when it's empty. */
 function countryHasStates(masters: MasterLists, country?: string): boolean {
   const name = (country ?? '').trim();
   if (!name) return false;
@@ -1473,11 +1479,12 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         if (!f.country) return 'Select a country';
         return null;
       case 'state':
-        // State is ALWAYS required once a country is chosen — the user picks it
-        // from the master (if the dropdown is empty for that country, the state
-        // must be added in the State master first). QA #128 / product decision:
-        // no longer auto-optional when the country has no seeded states.
-        if (f.country && !f.state) return 'Select a state';
+        // Required for EVERY country — see the note above countryHasStates().
+        if (!f.state) {
+          return countryHasStates(masters, f.country)
+            ? 'Select a state'
+            : 'No states exist for this country yet — add them under Master → States first';
+        }
         return null;
       case 'city':
         if (!f.city.trim()) return 'City is required';
@@ -2962,10 +2969,10 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 validateField('pin', nextForm);
               }} />
             </Field>
-            {/* `required` tracks the data, not the field: a country the master
-                has no states for (163 of 249) shows no red star and can't be
-                marked invalid — a required-looking field with an empty dropdown
-                is a dead end the user cannot clear. */}
+            {/* Required for every country. Where the master has no states for
+                the chosen country (163 of 249) the control stays disabled — there
+                is nothing to open — and the placeholder points at where to add
+                them, so it isn't a silent dead end. */}
             <Field label="State" required error={errors.state} fieldKey="state">
               <MasterSelect
                 value={form.state}
@@ -2974,8 +2981,8 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                   if (form.state && !base.some(o => o.value === form.state)) return [{ value: form.state, label: form.state }, ...base];
                   return base;
                 })()}
-                placeholder={!form.country ? 'Select country first' : 'Select state'}
-                disabled={!form.country}
+                placeholder={!form.country ? 'Select country first' : hasStates ? 'Select state' : 'Add states in Master → States'}
+                disabled={!form.country || !hasStates}
                 invalid={!!errors.state}
                 onChange={v => {
                   set('state', v);
@@ -4614,8 +4621,12 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         if (!dd.country) return 'Select country';
         return null;
       case 'state':
-        // Same rule as the primary address — see countryHasStates().
-        if (countryHasStates(masters, dd.country) && !dd.state) return 'Select state';
+        // Same rule as the primary address — required for every country.
+        if (!dd.state) {
+          return countryHasStates(masters, dd.country)
+            ? 'Select state'
+            : 'No states exist for this country yet — add them under Master → States first';
+        }
         return null;
       case 'city':
         if (!dd.city.trim()) return 'City is required';
@@ -4750,7 +4761,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 }} />
             </Field>
             {/* Mirrors the primary address — see countryHasStates(). */}
-            <Field label="State" required={locHasStates} error={errs.state}>
+            <Field label="State" required error={errs.state}>
               <MasterSelect
                 value={d.state}
                 options={(() => {
@@ -4758,7 +4769,7 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                   if (d.state && !base.some(o => o.value === d.state)) return [{ value: d.state, label: d.state }, ...base];
                   return base;
                 })()}
-                placeholder={!d.country ? 'Select country first' : locHasStates ? 'Select state' : 'No states for this country'}
+                placeholder={!d.country ? 'Select country first' : locHasStates ? 'Select state' : 'Add states in Master → States'}
                 disabled={!d.country || !locHasStates}
                 invalid={!!errs.state}
                 onChange={v => set('state', v)}

@@ -28,6 +28,48 @@ class SegmentGuard
     }
 
     /**
+     * The segments a CONSIGNEE is entitled to: the union of its mapped
+     * customers' segments.
+     *
+     * A consignee never chooses its own segment — it works in whatever segments
+     * the customers shipping through it work in. The modal reflects that (the
+     * field is read-only, "Inherited from customer"), but until this existed the
+     * value was assembled in the browser and posted, so the server took the
+     * client's word for it: create trusted `$data['segment']` verbatim, and a
+     * consignee whose inherit never fired saved with an empty segment against a
+     * field the user had no control to fix.
+     *
+     * Union, not the primary customer's alone — a consignee can be mapped to
+     * several customers (consignee_customer pivot) and must cover all of them.
+     * De-duplicated case-insensitively; segment names are free text in the
+     * master, so "Rice" and "rice" are the same segment.
+     *
+     * Returns the comma-joined string the `segment` COLUMN stores, so callers
+     * write it straight to the column. It stays a real column rather than a
+     * computed accessor because ClmSegmentController scans it directly for
+     * usage-counts / delete-protection, and the list view filters on it.
+     *
+     * @param  int[] $customerIds
+     */
+    public static function forCustomers(array $customerIds): string
+    {
+        $ids = array_values(array_filter(array_map('intval', $customerIds)));
+        if (empty($ids)) return '';
+
+        $names = [];
+        $seen  = [];
+        foreach (\App\Models\Customer::whereIn('id', $ids)->pluck('segment') as $raw) {
+            foreach (self::names($raw) as $name) {
+                $key = mb_strtolower($name);
+                if (isset($seen[$key])) continue;
+                $seen[$key] = true;
+                $names[] = $name;
+            }
+        }
+        return implode(', ', $names);
+    }
+
+    /**
      * Of the given segment names, return those that have at least one uploaded
      * document for the entity — i.e. segments that may NOT be removed.
      *

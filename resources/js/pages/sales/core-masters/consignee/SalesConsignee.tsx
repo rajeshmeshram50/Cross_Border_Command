@@ -217,15 +217,23 @@ export default function SalesConsignee() {
       el.style.height = `${h}px`;
       el.style.maxHeight = `${h}px`;
 
+      if (manualSize) return;   // user chose a Rows-per-page value — don't override it
       const toolbarH = (el.querySelector('.smcg-toolbar') as HTMLElement | null)?.offsetHeight || 0;
+      // Filter-chips bar only exists when filters are active; leaving it out of
+      // the subtraction pushed the last row under the pager (mirrors customer).
+      const filterbarH = (el.querySelector('.smcg-filterbar') as HTMLElement | null)?.offsetHeight || 0;
       const theadH   = (el.querySelector('.smcg-table-wrap thead') as HTMLElement | null)?.offsetHeight || 0;
       // Worklist pager is `.tc-wl-pag`, not `.row` — measure the real footer so
       // the row auto-fit isn't off by one (QA #31, mirrors the customer table).
       const footerH  = (el.querySelector('.tc-wl-pag, .smcg-table-wrap > .row') as HTMLElement | null)?.offsetHeight || 0;
-      const rowH     = (el.querySelector('.smcg-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 40;
-      const avail = h - toolbarH - theadH - footerH - 26;
-      const rowsFit = Math.floor(avail / rowH);
-      if (!manualSize) setPageSize(Math.max(ROWS_PER_PAGE, rowsFit));
+      const rowH     = (el.querySelector('.smcg-table-wrap tbody tr') as HTMLElement | null)?.offsetHeight || 44;
+      const avail = h - toolbarH - filterbarH - theadH - footerH - 8;
+      /* Exactly how many rows fit — not `max(10, fit)`. The old floor pinned it
+         at 10 regardless of viewport (the "always 10" bug); it now tracks the
+         screen like the Lead Worksheet. Floor of 5 avoids a 1–2-row page on a
+         very short window. Mirrors SalesCustomers. */
+      const rowsFit = Math.max(5, Math.floor(avail / rowH));
+      setPageSize(rowsFit);
     };
     fit();
     const t = window.setTimeout(fit, 120);
