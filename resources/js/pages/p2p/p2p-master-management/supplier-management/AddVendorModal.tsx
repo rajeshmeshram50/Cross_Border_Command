@@ -3174,8 +3174,8 @@ export default function AddVendorModal(props: {
                             const badge = (text: string, title: string, color: string, bg: string, bd: string, onClick?: (e: React.MouseEvent) => void) => (
                               <span title={title} onClick={onClick} style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.02em', padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined }}>{text}</span>
                             );
-                            const intl = () => badge('Intl', 'International rule', '#3730a3', '#eef2ff', '#c7d2fe');
-                            const dom  = () => badge('Dom', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');
+                            const intl = () => badge('INT', 'International rule', '#3730a3', '#eef2ff', '#c7d2fe');
+                            const dom  = () => badge('DOM', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');
                             if (t.has('international') && t.has('domestic')) {
                               return expandedSegBadges.has(String(id))
                                 ? <>{intl()}{dom()}</>

@@ -3421,8 +3421,8 @@ const Stage1 = ({
                 const badgeEl = (text: string, title: string, color: string, bg: string, bd: string, onClick?: (e: React.MouseEvent) => void) => (
                   <span title={title} onClick={onClick} style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.02em', padding: '1px 5px', borderRadius: 9, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined }}>{text}</span>
                 );
-                const intlB = () => badgeEl('Intl', 'International rule', '#3730a3', '#eef2ff', '#c7d2fe');
-                const domB  = () => badgeEl('Dom', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');
+                const intlB = () => badgeEl('INT', 'International rule', '#3730a3', '#eef2ff', '#c7d2fe');
+                const domB  = () => badgeEl('DOM', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');
                 const typeBadge = (name: string) => {
                   const t = segTypesByName?.get(name);
                   if (!t || t.size === 0) return null;
