@@ -854,5 +854,5 @@ class AuthController extends Controller
         }
         return $stored;
     }
-
+ 
 }
