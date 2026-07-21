@@ -1726,7 +1726,7 @@ export default function AddProductModal(props: {
                 >
                   <div className="apm-grid-2">
                     <Field label="Product Name" required icon={<i className="ri-product-hunt-line" />} error={fieldErrors.name}>
-                      <input className="apm-input apm-input-mf" placeholder="Enter product name" value={name} onChange={e => handleProductNameChange(e.target.value, 'name', setName)} />
+                      <input className="apm-input apm-input-mf" placeholder="Enter product name" maxLength={100} value={name} onChange={e => handleProductNameChange(e.target.value, 'name', setName)} />
                     </Field>
                     <Field label="Generic Name" required icon={<i className="ri-price-tag-3-line" />} error={fieldErrors.genericName}>
                       <input className="apm-input apm-input-mf" placeholder="Enter generic name" value={genericName} onChange={e => handleProductNameChange(e.target.value, 'genericName', setGenericName)} />

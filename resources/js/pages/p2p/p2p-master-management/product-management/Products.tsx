@@ -236,7 +236,8 @@ export default function Products() {
   /* ─── Filter sidebar ─── */
   const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
-  const [expandedPanel, setExpandedPanel] = useState<string | null>(null);
+  // Master-detail filter: which category's options show in the right pane.
+  const [activeCategory, setActiveCategory] = useState<string>('gstRate');
 
   /* Filter dropdown options live in state so they can be refreshed
      from the master APIs on mount. The hardcoded `SEGMENTS` /
@@ -373,9 +374,6 @@ export default function Products() {
       document.body.style.overflow = prevOverflow;
     };
   }, [filterOpen]);
-
-  const togglePanel = (key: string) =>
-    setExpandedPanel(prev => (prev === key ? null : key));
 
   const toggleMulti = (key: keyof FilterState, value: string) => {
     setFilters(prev => {
@@ -1063,7 +1061,17 @@ export default function Products() {
       />
       <aside className={`prd-filter-drawer ${filterOpen ? 'open' : ''}`} aria-hidden={!filterOpen}>
         <div className="prd-filter-head">
-          <div className="prd-filter-head-title">Filters</div>
+          <div className="prd-filter-head-left">
+            <span className="prd-filter-head-icon" aria-hidden>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+              </svg>
+            </span>
+            <div className="prd-filter-head-titles">
+              <div className="prd-filter-head-title">Filters</div>
+              <div className="prd-filter-head-sub">Refine your product list</div>
+            </div>
+          </div>
           <div className="prd-filter-head-actions">
             <button
               className="prd-filter-icon-btn"
@@ -1089,176 +1097,170 @@ export default function Products() {
           </div>
         </div>
 
-        <div className="prd-filter-body">
-          <FilterPanel label="Product GST Rate" panelKey="gstRate" open={expandedPanel === 'gstRate'} onToggle={togglePanel} count={filters.gstRate.length}>
-            {gstRateOpts.map(v => (
-              <CheckRow key={v} label={v} checked={filters.gstRate.includes(v)} onChange={() => toggleMulti('gstRate', v)} />
-            ))}
-          </FilterPanel>
+        {(() => {
+          // Per-category selected count, for the left-rail badges.
+          const counts: Record<string, number> = {
+            gstRate: filters.gstRate.length, segment: filters.segment.length,
+            createdDate: (filters.createdFrom ? 1 : 0) + (filters.createdTo ? 1 : 0), hsn: filters.hsn.length,
+            hazType: filters.hazType.length, hazClass: filters.hazClass.length, uom: filters.uom.length,
+            condition: filters.condition.length, vendor: filters.vendor.length, scoreRange: filters.scoreRange.length,
+            topProducts: filters.topProducts ? 1 : 0, productOwner: filters.productOwner.length, inwardCount: filters.inwardCount.length,
+          };
+          const activeMeta = PANEL_META[activeCategory];
+          return (
+            <div className="prd-filter-body prd-md">
+              {/* LEFT RAIL — category list. Click switches the right pane. */}
+              <div className="prd-md-rail">
+                {CATEGORY_ORDER.map(k => {
+                  const m = PANEL_META[k];
+                  const c = counts[k] ?? 0;
+                  return (
+                    /* Icon-only rail: the category name shows on hover (tooltip)
+                       and again in the detail header once selected. */
+                    <Tooltip key={k} label={CATEGORY_LABELS[k]} position="right">
+                      <button
+                        type="button"
+                        className={`prd-md-cat ${activeCategory === k ? 'active' : ''}`}
+                        onClick={() => setActiveCategory(k)}
+                        aria-label={CATEGORY_LABELS[k]}
+                      >
+                        <span className="prd-md-cat-ic" aria-hidden>
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{m.path}</svg>
+                        </span>
+                        {c > 0 && <span className="prd-md-cat-ct">{c}</span>}
+                      </button>
+                    </Tooltip>
+                  );
+                })}
+              </div>
 
-          <FilterPanel label="Product Segment" panelKey="segment" open={expandedPanel === 'segment'} onToggle={togglePanel} count={filters.segment.length}>
-            {segmentOpts.filter(s => s !== 'All Segments').map(v => (
-              <CheckRow key={v} label={v} checked={filters.segment.includes(v)} onChange={() => toggleMulti('segment', v)} />
-            ))}
-          </FilterPanel>
+              {/* RIGHT PANE — the active category's options. */}
+              <div className="prd-md-detail">
+                <div className="prd-md-dhead">
+                  <span className="prd-md-dhead-ic" aria-hidden>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{activeMeta.path}</svg>
+                  </span>
+                  <div className="prd-md-dhead-tx">
+                    <div className="prd-md-dhead-title">{CATEGORY_LABELS[activeCategory]}</div>
+                    <div className="prd-md-dhead-sub">{activeMeta.sub}</div>
+                  </div>
+                </div>
 
-          {/* Created Date pulled up to position 3.
-              Its calendar popup is portalled & fixed-positioned, but when
-              the trigger sits near the bottom of the long sidebar the
-              floating month grid renders OVER the subsequent collapsible
-              panels — Product Owner / Inward Count read as "ghosting"
-              behind the calendar. Moving the panel near the top means
-              the popup has the full sidebar height below it to expand
-              into without overlapping any unrelated controls. */}
-          <FilterPanel label="Product Creation Date" panelKey="createdDate" open={expandedPanel === 'createdDate'} onToggle={togglePanel} count={(filters.createdFrom ? 1 : 0) + (filters.createdTo ? 1 : 0)}>
-            <div className="prd-filter-date-grid">
-              <label className="prd-filter-date-field">
-                <span>From</span>
-                <div className="prd-filter-date-picker">
-                  <MasterDatePicker
-                    value={filters.createdFrom}
-                    onChange={(v) => setFilters(prev => ({ ...prev, createdFrom: v }))}
-                    placeholder="Select date"
-                    maxDate={filters.createdTo || undefined}
-                  />
+                {/* key={activeCategory} → remounts on switch so the fade-in
+                    animation replays, giving the pane change a soft transition. */}
+                <div className="prd-md-dbody" key={activeCategory}>
+                  {activeCategory === 'gstRate' && gstRateOpts.map(v => (
+                    <CheckRow key={v} label={v} checked={filters.gstRate.includes(v)} onChange={() => toggleMulti('gstRate', v)} />
+                  ))}
+
+                  {activeCategory === 'segment' && segmentOpts.filter(s => s !== 'All Segments').map(v => (
+                    <CheckRow key={v} label={v} checked={filters.segment.includes(v)} onChange={() => toggleMulti('segment', v)} />
+                  ))}
+
+                  {activeCategory === 'createdDate' && (
+                    <div className="prd-filter-date-grid">
+                      <label className="prd-filter-date-field">
+                        <span>From</span>
+                        <div className="prd-filter-date-picker">
+                          <MasterDatePicker value={filters.createdFrom} onChange={(v) => setFilters(prev => ({ ...prev, createdFrom: v }))} placeholder="Select date" maxDate={filters.createdTo || undefined} />
+                        </div>
+                      </label>
+                      <label className="prd-filter-date-field">
+                        <span>To</span>
+                        <div className="prd-filter-date-picker">
+                          <MasterDatePicker value={filters.createdTo} onChange={(v) => setFilters(prev => ({ ...prev, createdTo: v }))} placeholder="Select date" minDate={filters.createdFrom || undefined} />
+                        </div>
+                      </label>
+                    </div>
+                  )}
+
+                  {activeCategory === 'hsn' && hsnOpts.map(v => (
+                    <CheckRow key={v} label={v} checked={filters.hsn.includes(v)} onChange={() => toggleMulti('hsn', v)} />
+                  ))}
+
+                  {activeCategory === 'hazType' && (<>
+                    {HAZ_TYPES.map(v => {
+                      const selected = filters.hazType[0] === v;
+                      return (
+                        <label key={v} className="prd-filter-row">
+                          <input type="radio" name="hazType" checked={selected}
+                            onChange={() => setFilters(prev => ({ ...prev, hazType: [v] }))}
+                            onClick={() => { if (selected) setFilters(prev => ({ ...prev, hazType: [] })); }} />
+                          <span>{v}</span>
+                        </label>
+                      );
+                    })}
+                    {filters.hazType.length > 0 && (
+                      <button className="prd-filter-clear-mini" onClick={() => setFilters(prev => ({ ...prev, hazType: [] }))}>Clear selection</button>
+                    )}
+                  </>)}
+
+                  {activeCategory === 'hazClass' && (hazClassOpts.length === 0
+                    ? <div className="prd-filter-empty">No haz classifications available</div>
+                    : hazClassOpts.map(v => (
+                      <CheckRow key={v} label={v} checked={filters.hazClass.includes(v)} onChange={() => toggleMulti('hazClass', v)} />
+                    )))}
+
+                  {activeCategory === 'uom' && uomOpts.map(v => (
+                    <CheckRow key={v} label={v} checked={filters.uom.includes(v)} onChange={() => toggleMulti('uom', v)} />
+                  ))}
+
+                  {activeCategory === 'condition' && conditionOpts.map(v => (
+                    <CheckRow key={v} label={v} checked={filters.condition.includes(v)} onChange={() => toggleMulti('condition', v)} />
+                  ))}
+
+                  {activeCategory === 'vendor' && vendorOpts.map(v => (
+                    <CheckRow key={v} label={v} checked={filters.vendor.includes(v)} onChange={() => toggleMulti('vendor', v)} />
+                  ))}
+
+                  {activeCategory === 'scoreRange' && SCORE_RANGES.map(v => (
+                    <CheckRow key={v} label={v} checked={filters.scoreRange.includes(v)} onChange={() => toggleMulti('scoreRange', v)} />
+                  ))}
+
+                  {activeCategory === 'topProducts' && (<>
+                    {TOP_PRODUCTS.map(v => (
+                      <label key={v} className="prd-filter-row">
+                        <input type="radio" name="topProducts" checked={filters.topProducts === v} onChange={() => setFilters(prev => ({ ...prev, topProducts: v }))} />
+                        <span>{v}</span>
+                      </label>
+                    ))}
+                    {filters.topProducts && (
+                      <button className="prd-filter-clear-mini" onClick={() => setFilters(prev => ({ ...prev, topProducts: '' }))}>Clear selection</button>
+                    )}
+                  </>)}
+
+                  {activeCategory === 'productOwner' && (ownerOpts.length === 0
+                    ? <div className="prd-filter-empty">No owners available</div>
+                    : ownerOpts.map(o => {
+                      const showBranch = ownerOpts.some(x => x.branchId !== o.branchId);
+                      const label = showBranch && o.branchName ? `${o.name} · ${o.branchName}` : o.name;
+                      const id = String(o.id);
+                      return (
+                        <CheckRow key={id} label={label} checked={filters.productOwner.includes(id)} onChange={() => toggleMulti('productOwner', id)} />
+                      );
+                    }))}
+
+                  {activeCategory === 'inwardCount' && INWARD_BUCKETS.map(v => (
+                    <CheckRow key={v} label={v} checked={filters.inwardCount.includes(v)} onChange={() => toggleMulti('inwardCount', v)} />
+                  ))}
                 </div>
-              </label>
-              <label className="prd-filter-date-field">
-                <span>To</span>
-                <div className="prd-filter-date-picker">
-                  <MasterDatePicker
-                    value={filters.createdTo}
-                    onChange={(v) => setFilters(prev => ({ ...prev, createdTo: v }))}
-                    placeholder="Select date"
-                    minDate={filters.createdFrom || undefined}
-                  />
-                </div>
-              </label>
+              </div>
             </div>
-          </FilterPanel>
-
-          <FilterPanel label="Product HSN/SAC Code" panelKey="hsn" open={expandedPanel === 'hsn'} onToggle={togglePanel} count={filters.hsn.length}>
-            {hsnOpts.map(v => (
-              <CheckRow key={v} label={v} checked={filters.hsn.includes(v)} onChange={() => toggleMulti('hsn', v)} />
-            ))}
-          </FilterPanel>
-
-          {/* Hazard Type is mutually exclusive — a product is either HAZ
-              or NON HAZ, never both. Render as radio rows so the user
-              can only pick one; clicking the active row again clears
-              it (returns to "any"). The underlying filters.hazType
-              stays a string[] for type consistency with the other
-              multi-select filters, but it never holds more than one
-              entry, so the include() match in filtered still works. */}
-          <FilterPanel label="Product Hazard Type" panelKey="hazType" open={expandedPanel === 'hazType'} onToggle={togglePanel} count={filters.hazType.length}>
-            {HAZ_TYPES.map(v => {
-              const selected = filters.hazType[0] === v;
-              return (
-                <label key={v} className="prd-filter-row">
-                  <input
-                    type="radio"
-                    name="hazType"
-                    checked={selected}
-                    onChange={() => setFilters(prev => ({ ...prev, hazType: [v] }))}
-                    onClick={() => {
-                      // Click on the already-selected radio clears it,
-                      // giving the user a way to drop the filter without
-                      // hunting for a separate Reset.
-                      if (selected) setFilters(prev => ({ ...prev, hazType: [] }));
-                    }}
-                  />
-                  <span>{v}</span>
-                </label>
-              );
-            })}
-            {filters.hazType.length > 0 && (
-              <button className="prd-filter-clear-mini" onClick={() => setFilters(prev => ({ ...prev, hazType: [] }))}>Clear selection</button>
-            )}
-          </FilterPanel>
-
-          {/* Haz Classification — the master haz_class the product carries
-              (e.g. "Class 3 — Flammable Liquid"). Multi-select against the
-              product's hazClassName. Only HAZ products carry one. */}
-          <FilterPanel label="Product Haz Classification" panelKey="hazClass" open={expandedPanel === 'hazClass'} onToggle={togglePanel} count={filters.hazClass.length}>
-            {hazClassOpts.length === 0 ? (
-              <div className="prd-filter-empty">No haz classifications available</div>
-            ) : hazClassOpts.map(v => (
-              <CheckRow key={v} label={v} checked={filters.hazClass.includes(v)} onChange={() => toggleMulti('hazClass', v)} />
-            ))}
-          </FilterPanel>
-
-          <FilterPanel label="Product Unit of Measurement" panelKey="uom" open={expandedPanel === 'uom'} onToggle={togglePanel} count={filters.uom.length}>
-            {uomOpts.map(v => (
-              <CheckRow key={v} label={v} checked={filters.uom.includes(v)} onChange={() => toggleMulti('uom', v)} />
-            ))}
-          </FilterPanel>
-
-          <FilterPanel label="Product Condition" panelKey="condition" open={expandedPanel === 'condition'} onToggle={togglePanel} count={filters.condition.length}>
-            {conditionOpts.map(v => (
-              <CheckRow key={v} label={v} checked={filters.condition.includes(v)} onChange={() => toggleMulti('condition', v)} />
-            ))}
-          </FilterPanel>
-
-          <FilterPanel label="Product Supplier" panelKey="vendor" open={expandedPanel === 'vendor'} onToggle={togglePanel} count={filters.vendor.length}>
-            {vendorOpts.map(v => (
-              <CheckRow key={v} label={v} checked={filters.vendor.includes(v)} onChange={() => toggleMulti('vendor', v)} />
-            ))}
-          </FilterPanel>
-
-          <FilterPanel label="Product Score Range" panelKey="scoreRange" open={expandedPanel === 'scoreRange'} onToggle={togglePanel} count={filters.scoreRange.length}>
-            {SCORE_RANGES.map(v => (
-              <CheckRow key={v} label={v} checked={filters.scoreRange.includes(v)} onChange={() => toggleMulti('scoreRange', v)} />
-            ))}
-          </FilterPanel>
-
-          <FilterPanel label="Top Products" panelKey="topProducts" open={expandedPanel === 'topProducts'} onToggle={togglePanel} count={filters.topProducts ? 1 : 0}>
-            {TOP_PRODUCTS.map(v => (
-              <label key={v} className="prd-filter-row">
-                <input
-                  type="radio"
-                  name="topProducts"
-                  checked={filters.topProducts === v}
-                  onChange={() => setFilters(prev => ({ ...prev, topProducts: v }))}
-                />
-                <span>{v}</span>
-              </label>
-            ))}
-            {filters.topProducts && (
-              <button className="prd-filter-clear-mini" onClick={() => setFilters(prev => ({ ...prev, topProducts: '' }))}>Clear selection</button>
-            )}
-          </FilterPanel>
-
-          <FilterPanel label="Product Owner" panelKey="productOwner" open={expandedPanel === 'productOwner'} onToggle={togglePanel} count={filters.productOwner.length}>
-            {ownerOpts.length === 0 ? (
-              <div className="prd-filter-empty">No owners available</div>
-            ) : ownerOpts.map(o => {
-              /* Append the branch suffix only when the list spans more
-                 than one branch, so two people named "Ravi" in different
-                 branches stay distinguishable; redundant noise otherwise. */
-              const showBranch = ownerOpts.some(x => x.branchId !== o.branchId);
-              const label = showBranch && o.branchName ? `${o.name} · ${o.branchName}` : o.name;
-              const id = String(o.id);
-              return (
-                <CheckRow key={id} label={label} checked={filters.productOwner.includes(id)} onChange={() => toggleMulti('productOwner', id)} />
-              );
-            })}
-          </FilterPanel>
-
-          <FilterPanel label="Product Inward Count" panelKey="inwardCount" open={expandedPanel === 'inwardCount'} onToggle={togglePanel} count={filters.inwardCount.length}>
-            {INWARD_BUCKETS.map(v => (
-              <CheckRow key={v} label={v} checked={filters.inwardCount.includes(v)} onChange={() => toggleMulti('inwardCount', v)} />
-            ))}
-          </FilterPanel>
-        </div>
+          );
+        })()}
 
         {/* prd-fbtn, NOT prd-filter-btn: that class belongs to the animated
             "Filter" trigger pill, whose ::before glow and ::after shine-sweep
             were bleeding onto these footer buttons — a shine animation running
             across a white Reset button. */}
         <div className="prd-filter-footer">
-          <button className="prd-fbtn ghost" onClick={resetFilters}>Reset</button>
+          <button className="prd-fbtn ghost" onClick={resetFilters}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
+            Reset All
+          </button>
           <button className="prd-fbtn primary" onClick={() => setFilterOpen(false)}>
-            Apply {activeFilterCount > 0 && <span className="prd-fbtn-count">{activeFilterCount}</span>}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+            Apply Filters {activeFilterCount > 0 && <span className="prd-fbtn-count">{activeFilterCount}</span>}
           </button>
         </div>
       </aside>
@@ -1271,6 +1273,38 @@ export default function Products() {
 /* ════════════════════════════════════════════════════════════════════════════
  * Sidebar helper components
  * ════════════════════════════════════════════════════════════════════════ */
+/* Per-section icon + one-line hint + a category TONE (soft bg / glyph / solid),
+   keyed by panelKey so the 13 call sites stay untouched. The tone colour-codes
+   each filter — icon chip, open-accent, header tint and count pill all pick it
+   up — so categories are recognisable at a glance (Stripe-style). Each `path`
+   is the inner geometry of a 24×24 line icon. */
+const PANEL_META: Record<string, { sub: string; bg: string; fg: string; solid: string; path: ReactNode }> = {
+  gstRate:      { sub: 'Select GST rate',        bg: '#d1fae5', fg: '#059669', solid: '#10b981', path: <><line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></> },
+  segment:      { sub: 'Choose segment',         bg: '#fef3c7', fg: '#d97706', solid: '#f59e0b', path: <><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></> },
+  createdDate:  { sub: 'Pick a date range',      bg: '#dbeafe', fg: '#2563eb', solid: '#3b82f6', path: <><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></> },
+  hsn:          { sub: 'Enter HSN / SAC code',   bg: '#ede9fe', fg: '#7c3aed', solid: '#8b5cf6', path: <><line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" /></> },
+  hazType:      { sub: 'Select hazard type',     bg: '#fee2e2', fg: '#dc2626', solid: '#ef4444', path: <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></> },
+  hazClass:     { sub: 'Select classification',  bg: '#e0e7ff', fg: '#4f46e5', solid: '#6366f1', path: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /> },
+  uom:          { sub: 'Select unit',            bg: '#cffafe', fg: '#0891b2', solid: '#06b6d4', path: <><path d="M21.3 15.3 8.7 2.7a1 1 0 0 0-1.4 0L2.7 7.3a1 1 0 0 0 0 1.4l12.6 12.6a1 1 0 0 0 1.4 0l4.6-4.6a1 1 0 0 0 0-1.4z" /><path d="m14.5 12.5-2 2" /><path d="m11.5 9.5-2 2" /><path d="m8.5 6.5-2 2" /></> },
+  condition:    { sub: 'Select condition',       bg: '#dcfce7', fg: '#16a34a', solid: '#22c55e', path: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></> },
+  vendor:       { sub: 'Select supplier',        bg: '#e0f2fe', fg: '#0284c7', solid: '#0ea5e9', path: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></> },
+  scoreRange:   { sub: 'Set score range',        bg: '#fef9c3', fg: '#ca8a04', solid: '#eab308', path: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /> },
+  topProducts:  { sub: 'Highlight top products', bg: '#fce7f3', fg: '#db2777', solid: '#ec4899', path: <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></> },
+  productOwner: { sub: 'Select owner',           bg: '#f3e8ff', fg: '#9333ea', solid: '#a855f7', path: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></> },
+  inwardCount:  { sub: 'Filter by inward count', bg: '#ffedd5', fg: '#ea580c', solid: '#f97316', path: <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></> },
+};
+
+/* Master-detail filter: left-rail order + display labels (the right pane's
+   options come from the JSX per activeCategory). */
+const CATEGORY_ORDER = ['gstRate', 'segment', 'createdDate', 'hsn', 'hazType', 'hazClass', 'uom', 'condition', 'vendor', 'scoreRange', 'topProducts', 'productOwner', 'inwardCount'] as const;
+/* Rail labels — concise so they fit on one line (the full context is always in
+   the detail header's title + subtitle). */
+const CATEGORY_LABELS: Record<string, string> = {
+  gstRate: 'GST Rate', segment: 'Segment', createdDate: 'Creation Date', hsn: 'HSN / SAC',
+  hazType: 'Hazard Type', hazClass: 'Haz Class', uom: 'Unit (UOM)', condition: 'Condition',
+  vendor: 'Supplier', scoreRange: 'Score Range', topProducts: 'Top Products', productOwner: 'Owner', inwardCount: 'Inward Count',
+};
+
 function FilterPanel(props: {
   label: string;
   panelKey: string;
@@ -1280,12 +1314,20 @@ function FilterPanel(props: {
   children: ReactNode;
 }) {
   const { label, panelKey, open, count, onToggle, children } = props;
+  const meta = PANEL_META[panelKey] ?? { sub: '', bg: '#f1ebfb', fg: '#7c3aed', solid: '#7c3aed', path: null };
+  const toneVars = { '--fpc-bg': meta.bg, '--fpc-fg': meta.fg, '--fpc-solid': meta.solid } as CSSProperties;
   return (
-    <div className={`prd-filter-panel ${open ? 'open' : ''}`}>
+    <div className={`prd-filter-panel ${open ? 'open' : ''}`} style={toneVars}>
       <button className="prd-filter-panel-head" onClick={() => onToggle(panelKey)}>
-        <span className="prd-filter-panel-label">{label}</span>
+        <span className="prd-fp-icon" aria-hidden>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{meta.path}</svg>
+        </span>
+        <span className="prd-fp-titles">
+          <span className="prd-filter-panel-label">{label}</span>
+          {meta.sub && <span className="prd-fp-sub">{meta.sub}</span>}
+        </span>
         <span className="prd-filter-panel-right">
-          {count > 0 && <span className="prd-filter-panel-count">{count}</span>}
+          {count > 0 && <span className="prd-filter-panel-count">{count} Selected</span>}
           <svg
             className="prd-filter-chevron"
             width="14"
@@ -1301,16 +1343,27 @@ function FilterPanel(props: {
           </svg>
         </span>
       </button>
-      {open && <div className="prd-filter-panel-body">{children}</div>}
+      {/* Body ALWAYS rendered — the grid-rows 0fr→1fr transition gives a smooth
+          expand/collapse without JS height measuring. */}
+      <div className="prd-fp-collapse" data-open={open ? '1' : '0'}>
+        <div className="prd-fp-collapse-inner">
+          <div className="prd-filter-panel-body">{children}</div>
+        </div>
+      </div>
     </div>
   );
 }
 
 function CheckRow(props: { label: string; checked: boolean; onChange: () => void }) {
+  /* Long option labels (a stray "Travel & Luggagewwww…" segment) used to wrap
+     over two lines and break the row. Truncate to one line; the full value is on
+     the hover tooltip. */
+  const long = props.label.length > 28;
+  const span = <span className="prd-filter-row-txt">{props.label}</span>;
   return (
     <label className="prd-filter-row">
       <input type="checkbox" checked={props.checked} onChange={props.onChange} />
-      <span>{props.label}</span>
+      {long ? <Tooltip label={props.label}>{span}</Tooltip> : span}
     </label>
   );
 }

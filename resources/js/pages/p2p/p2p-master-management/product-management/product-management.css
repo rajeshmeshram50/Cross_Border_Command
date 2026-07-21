@@ -231,8 +231,23 @@
 }
 
 /* ═══ Product card (.pl-card ported from the P2P prototype) ═══ */
-.prd-pcard { position: relative; display: flex; flex-direction: column; background: #fff; border: 1px solid #e6e2f5; border-radius: 18px; overflow: hidden; box-shadow: 0 2px 6px rgba(15,23,42,.05), 0 8px 22px rgba(124,58,237,.07); transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s, border-color .2s; }
-.prd-pcard:hover { transform: translateY(-4px); border-color: #c4b5fd; box-shadow: 0 10px 30px rgba(124,58,237,.18), 0 3px 10px rgba(15,23,42,.06); }
+.prd-pcard { position: relative; display: flex; flex-direction: column; background: linear-gradient(180deg, #ffffff 0%, #fdfcff 100%); border: 1px solid #e6e2f5; border-radius: 18px; overflow: hidden; box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(124,58,237,.06), 0 18px 40px -18px rgba(76,29,149,.18); transition: transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s, border-color .22s; }
+.prd-pcard:hover { transform: translateY(-5px); border-color: #c4b5fd; box-shadow: 0 4px 10px rgba(15,23,42,.05), 0 14px 32px rgba(124,58,237,.2), 0 28px 56px -20px rgba(76,29,149,.3); }
+/* Glossy glass sheen — a soft diagonal highlight across the whole card, plus a
+   brighter streak that sweeps on hover. Sits above the thumb but ignores
+   pointer events. */
+.prd-pcard::after {
+  content: ''; position: absolute; inset: 0; z-index: 4; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255,255,255,.28) 0%, rgba(255,255,255,0) 34%);
+}
+.prd-pcard::before {
+  content: ''; position: absolute; top: 0; left: -60%; width: 45%; height: 100%; z-index: 5; pointer-events: none;
+  background: linear-gradient(105deg, transparent, rgba(255,255,255,.45), transparent);
+  transform: skewX(-18deg); opacity: 0; transition: none;
+}
+.prd-pcard:hover::before { animation: prd-pcard-shine .8s cubic-bezier(.4,0,.2,1) .05s; }
+@keyframes prd-pcard-shine { 0% { left: -60%; opacity: 0; } 30% { opacity: 1; } 100% { left: 130%; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .prd-pcard:hover::before { animation: none; } }
 .prd-pcard-thumb { position: relative; height: 172px; display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--acc); background: linear-gradient(135deg, color-mix(in srgb, var(--acc) 16%, #fff), color-mix(in srgb, var(--acc) 6%, #f4f1fd)); border-bottom: 1px solid #efebfa; }
 .prd-pcard-thumb::before { content: ''; position: absolute; inset: 0; z-index: 0; background: radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--acc) 22%, transparent), transparent 60%); }
 .prd-pcard-thumb::after { content: ''; position: absolute; inset: 0; z-index: 0; opacity: .5; background-image: radial-gradient(color-mix(in srgb, var(--acc) 30%, transparent) 1px, transparent 1.4px); background-size: 16px 16px; -webkit-mask: radial-gradient(circle at 50% 42%, #000, transparent 70%); mask: radial-gradient(circle at 50% 42%, #000, transparent 70%); }
@@ -953,8 +968,9 @@
      position that's correct in all of them. */
   left: 0;
   /* max-width keeps it a drawer rather than a full-screen takeover on small
-     viewports — the 480px block below hands phones the 88vw treatment. */
-  width: 380px; max-width: 88vw;
+     viewports — the 480px block below hands phones the 88vw treatment.
+     Master-detail: a compact icon rail + a snug options pane. */
+  width: 348px; max-width: 90vw;
   background: #fff;
   border-right: 1.5px solid #ddd6fe;
   box-shadow: 14px 0 36px rgba(76, 29, 149, .18);
@@ -973,14 +989,26 @@
 .prd-filter-drawer.open { transform: translateX(0); }
 
 .prd-filter-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 18px;
-  /* Same purple gradient as the Add Product header. */
-  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
-  border-bottom: 1px solid #ddd6fe;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 15px 16px;
+  /* Faint purple wash + hairline so the header reads as a titled bar with depth. */
+  background: linear-gradient(180deg, #f7f4ff 0%, #fff 100%);
+  border-bottom: 1px solid #efeafa;
+  box-shadow: 0 1px 0 rgba(124, 58, 237, .04);
 }
-.prd-filter-head-title { font-size: 16px; font-weight: 800; color: #fff; letter-spacing: -.3px; }
-.prd-filter-head-actions { display: inline-flex; gap: 6px; }
+.prd-filter-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* Brand icon chip — the drawer's identity, purple gradient with a soft glow. */
+.prd-filter-head-icon {
+  flex-shrink: 0;
+  width: 38px; height: 38px; border-radius: 11px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, .32);
+}
+.prd-filter-head-titles { min-width: 0; }
+.prd-filter-head-title { font-size: 16px; font-weight: 800; color: #1e1b3a; letter-spacing: -.3px; line-height: 1.15; }
+.prd-filter-head-sub { font-size: 11.5px; font-weight: 500; color: #9a8fb8; margin-top: 1px; }
+.prd-filter-head-actions { display: inline-flex; gap: 6px; flex-shrink: 0; }
 .prd-filter-icon-btn {
   width: 32px; height: 32px; border-radius: 9px;
   border: 1.5px solid #ddd6fe; background: #fff; color: #5b21b6;
@@ -996,9 +1024,12 @@
   width: 100%;
   overflow-y: scroll;        /* always-visible track */
   overflow-x: hidden;        /* never grow horizontally */
-  padding: 14px 14px 8px;
-  display: flex; flex-direction: column; gap: 8px;
-  scrollbar-width: thin; scrollbar-color: #8b5cf6 #ede9fe;
+  padding: 8px 10px;
+  background: #fff;
+  /* Flat, Linear-style list — rows sit flush, separated by their own hairline,
+     not by boxy cards. */
+  display: flex; flex-direction: column; gap: 2px;
+  scrollbar-width: thin; scrollbar-color: #d4d4e0 transparent;
   scrollbar-gutter: stable;
 }
 .prd-filter-body::-webkit-scrollbar { width: 10px; }
@@ -1016,59 +1047,329 @@
   background: linear-gradient(180deg, #7c3aed, #5b21b6);
 }
 
+/* Each filter is a clean white CARD with a coloured left accent that lights up
+   when the panel is open — reads as a set of tidy, tappable modules rather than
+   a flat list. */
 .prd-filter-panel {
+  position: relative;
   width: 100%; min-width: 0;
-  background: #f5f3ff;
-  border: 1px solid #ede9fe;
+  background: transparent;
   border-radius: 10px;
-  overflow: hidden;
-  transition: border-color .15s, box-shadow .15s;
-  flex-shrink: 0;     /* don't expand into siblings */
+  transition: background .14s;
+  flex-shrink: 0;
 }
-.prd-filter-panel.open { border-color: #c4b5fd; box-shadow: 0 2px 8px rgba(124,58,237,.1); }
+/* Flat rows, so an open panel is set apart by a faint fill + rounded corners
+   rather than a heavy card outline. */
+.prd-filter-panel.open { background: #faf9ff; }
+
 .prd-filter-panel-head {
   width: 100%;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 11px 14px;
+  display: flex; align-items: center; gap: 11px;
+  padding: 9px 10px;
+  border-radius: 10px;
   background: transparent; border: none;
-  font-family: inherit; font-size: 12.5px; font-weight: 700;
-  color: #3b0764; cursor: pointer; text-align: left;
+  font-family: inherit;
+  color: #0f172a; cursor: pointer; text-align: left;
+  transition: background .14s;
 }
-.prd-filter-panel-head:hover { background: #ede9fe; }
-.prd-filter-panel-label { letter-spacing: -.1px; }
-.prd-filter-panel-right { display: inline-flex; align-items: center; gap: 8px; color: #7c3aed; }
-.prd-filter-panel-count {
-  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
-  background: #7c3aed; color: #fff;
-  font-size: 10px; font-weight: 800;
+.prd-filter-panel-head:hover { background: #f4f4f7; }
+.prd-filter-panel.open .prd-filter-panel-head { background: transparent; }
+
+/* Neutral, monochrome icon — slate on a soft grey square by default, purple
+   accent only when its section is active. Calm and refined, no rainbow. */
+.prd-fp-icon {
+  flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;
+  background: #f1f2f6; color: #64748b;
+  transition: background .16s, color .16s;
 }
-.prd-filter-chevron { transition: transform .22s ease; }
-.prd-filter-panel.open .prd-filter-chevron { transform: rotate(180deg); }
+.prd-fp-icon svg { width: 15px; height: 15px; }
+.prd-filter-panel-head:hover .prd-fp-icon { background: #e9eaf0; color: #475569; }
+.prd-filter-panel.open .prd-fp-icon { background: #ede9fe; color: #7c3aed; }
+
+/* Two-line title block — label + muted hint. Grows to push the count/chevron
+   to the right; min-width:0 lets a long label ellipsize instead of overflowing. */
+.prd-fp-titles { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.prd-filter-panel-label {
+  font-size: 12.5px; font-weight: 700; letter-spacing: -.1px; color: #241947;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.prd-filter-panel.open .prd-filter-panel-label { color: #4c1d95; }
+.prd-fp-sub {
+  font-size: 10.5px; font-weight: 500; color: #94a3b8; letter-spacing: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.prd-filter-panel-right { display: inline-flex; align-items: center; gap: 7px; color: #94a3b8; flex-shrink: 0; }
+/* "N Selected" pill — quiet purple status, only shows when something's picked. */
+.prd-filter-panel-count {
+  height: 19px; padding: 0 8px; border-radius: 99px;
+  background: #ede9fe; color: #6d28d9;
+  font-size: 10px; font-weight: 700; letter-spacing: .01em;
+  display: inline-flex; align-items: center; justify-content: center;
+  white-space: nowrap;
+}
+
+/* Smooth expand/collapse via animatable grid rows (0fr → 1fr). No JS height
+   measuring, no layout jank — the body just eases open. */
+.prd-fp-collapse {
+  display: grid; grid-template-rows: 0fr;
+  transition: grid-template-rows .28s cubic-bezier(.4, 0, .2, 1);
+}
+.prd-fp-collapse[data-open="1"] { grid-template-rows: 1fr; }
+.prd-fp-collapse-inner { overflow: hidden; min-height: 0; }
+/* Bare, muted chevron — no circle. Rotates + turns purple when open. */
+.prd-filter-chevron {
+  width: 16px; height: 16px; color: #94a3b8;
+  transition: transform .24s cubic-bezier(.4,0,.2,1), color .14s;
+}
+.prd-filter-panel-head:hover .prd-filter-chevron { color: #64748b; }
+.prd-filter-panel.open .prd-filter-chevron { transform: rotate(180deg); color: #7c3aed; }
 
 .prd-filter-panel-body {
   width: 100%; min-width: 0;
-  padding: 4px 10px 10px;
-  background: #fff;
-  border-top: 1px solid #ede9fe;
+  /* Options align under the label and hang off a faint guide line, so they
+     clearly belong to the section above (Linear-style grouping). */
+  margin: 2px 0 6px 20px;
+  padding: 2px 10px 2px 20px;
+  border-left: 1.5px solid #ece9f4;
+  background: transparent;
   max-height: 240px;
   overflow-y: auto;
   overflow-x: hidden;
-  display: flex; flex-direction: column; gap: 2px;
+  display: flex; flex-direction: column; gap: 1px;
   scrollbar-width: thin; scrollbar-color: #ddd6fe transparent;
 }
 .prd-filter-panel-body::-webkit-scrollbar { width: 6px; }
 .prd-filter-panel-body::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 99px; }
 
+/* ═══════════════════ MASTER-DETAIL FILTER LAYOUT ═══════════════════
+   Left rail = category list, right pane = the chosen category's options.
+   Scales to any number of filters with almost no scrolling. */
+.prd-filter-body.prd-md {
+  flex-direction: row;
+  padding: 0;
+  gap: 0;
+  background: #fff;
+  overflow: hidden;                 /* each column scrolls on its own */
+}
+
+/* ── LEFT RAIL ── */
+/* Icon-only rail — compact strip; names live on hover + the detail header. */
+.prd-md-rail {
+  flex: 0 0 60px; width: 60px;
+  height: 100%; overflow-y: auto; overflow-x: hidden;
+  padding: 8px 0;
+  border-right: 1px solid #f0eef7;
+  background: #fbfafd;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  scrollbar-width: none;
+}
+.prd-md-rail::-webkit-scrollbar { width: 0; }
+.prd-md-rail::-webkit-scrollbar { width: 3px; }
+.prd-md-rail::-webkit-scrollbar-track { background: transparent; }
+.prd-md-rail::-webkit-scrollbar-thumb { background: #e3e1ec; border-radius: 99px; }
+
+.prd-md-cat {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 42px; height: 42px; padding: 0;
+  border: none; background: transparent; border-radius: 11px;
+  cursor: pointer;
+  transition: background .13s;
+}
+.prd-md-cat:hover { background: #f1f0f7; }
+/* Active = a raised, softly-shadowed chip with a purple wash + glow. */
+.prd-md-cat.active {
+  background: linear-gradient(135deg, #f5f1ff 0%, #ece6fe 100%);
+  box-shadow: 0 3px 10px rgba(124, 58, 237, .14), inset 0 0 0 1px rgba(124, 58, 237, .10);
+}
+/* Purple left accent on the active category. */
+.prd-md-cat.active::before {
+  content: ''; position: absolute; left: -8px; top: 8px; bottom: 8px; width: 3px;
+  border-radius: 0 3px 3px 0; background: linear-gradient(180deg, #8b5cf6, #7c3aed);
+}
+.prd-md-cat-ic {
+  flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: #f1f2f6; color: #64748b;
+  transition: background .13s, color .13s, box-shadow .13s;
+}
+.prd-md-cat:hover .prd-md-cat-ic { background: #e7e7ef; }
+.prd-md-cat.active .prd-md-cat-ic {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff;
+  box-shadow: 0 3px 8px rgba(124, 58, 237, .38);
+  animation: prd-md-glow 2.4s ease-in-out infinite;
+}
+/* Gentle breathing glow on the active category — a subtle sign of life. */
+@keyframes prd-md-glow {
+  0%, 100% { box-shadow: 0 3px 8px rgba(124, 58, 237, .38); }
+  50% { box-shadow: 0 3px 14px rgba(124, 58, 237, .55); }
+}
+@media (prefers-reduced-motion: reduce) { .prd-md-cat.active .prd-md-cat-ic { animation: none; } }
+/* Count → tiny badge on the icon's top-right corner. */
+.prd-md-cat-ct {
+  position: absolute; top: 3px; right: 3px;
+  min-width: 15px; height: 15px; padding: 0 4px; border-radius: 99px;
+  background: #7c3aed; color: #fff; font-size: 9px; font-weight: 800;
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 2px #fbfafd;
+}
+
+/* ── RIGHT PANE ── */
+.prd-md-detail {
+  flex: 1 1 auto; min-width: 0; height: 100%;
+  display: flex; flex-direction: column;
+  background: #fff;
+  /* Soft inner shadow at the seam so the detail pane reads as a raised surface
+     over the rail — depth without a hard divider. */
+  box-shadow: inset 7px 0 14px -8px rgba(76, 29, 149, .08);
+}
+.prd-md-dhead {
+  display: flex; align-items: center; gap: 11px;
+  padding: 15px 16px 13px;
+  border-bottom: 1px solid #f2f0f8;
+  /* Faint purple wash so the header feels like a titled section, not a raw edge. */
+  background: linear-gradient(180deg, #faf8ff 0%, #fff 100%);
+}
+.prd-md-dhead-ic {
+  flex-shrink: 0; width: 34px; height: 34px; border-radius: 10px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff;
+  box-shadow: 0 4px 11px rgba(124, 58, 237, .34);
+}
+.prd-md-dhead-tx { min-width: 0; }
+.prd-md-dhead-title { font-size: 14px; font-weight: 800; color: #1e1b3a; letter-spacing: -.2px; line-height: 1.15; }
+.prd-md-dhead-sub { font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 1px; }
+.prd-md-dbody {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 2px;
+  scrollbar-width: thin; scrollbar-color: #e3e1ec transparent;
+  /* Soft fade+rise when the category switches (remounted via key). */
+  animation: prd-md-fade .22s cubic-bezier(.4, 0, .2, 1);
+}
+@keyframes prd-md-fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.prd-md-dbody::-webkit-scrollbar { width: 3px; }
+.prd-md-dbody::-webkit-scrollbar-track { background: transparent; }
+.prd-md-dbody::-webkit-scrollbar-thumb { background: #e3e1ec; border-radius: 99px; }
+.prd-md-dbody:hover::-webkit-scrollbar-thumb { background: #cfc9e0; }
+.prd-md-dbody::-webkit-scrollbar-thumb:hover { background: #c4b5fd; }
+
+/* Premium option rows inside the detail pane — roomy hit area, crisp custom
+   checkbox, clear selected state. */
+.prd-md-dbody .prd-filter-row {
+  position: relative;
+  padding: 11px 14px; border-radius: 12px; font-size: 12.5px; gap: 0;
+  font-weight: 600; color: #3a3550;
+  border: 1.5px solid #edeaf6; background: #fff;
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease, color .15s ease, transform .12s ease;
+}
+/* The whole pill is the control — hide the raw checkbox/radio. */
+.prd-md-dbody .prd-filter-row input[type="checkbox"],
+.prd-md-dbody .prd-filter-row input[type="radio"] {
+  position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none;
+}
+.prd-md-dbody .prd-filter-row:hover {
+  border-color: #d7ccf3; background: #faf8ff;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, .07);
+}
+.prd-md-dbody .prd-filter-row:active { transform: scale(.985); }
+/* Selected option — filled purple gradient pill + a crisp check on the right. */
+.prd-md-dbody .prd-filter-row:has(input:checked) {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  border-color: #7c3aed; color: #fff;
+  box-shadow: 0 5px 14px rgba(124, 58, 237, .32), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+.prd-md-dbody .prd-filter-row .prd-filter-row-txt { flex: 1 1 auto; }
+/* Check badge appears only when the pill is selected. */
+.prd-md-dbody .prd-filter-row::after {
+  content: ''; flex: 0 0 auto; width: 18px; height: 18px; margin-left: 10px;
+  border-radius: 50%; background: rgba(255, 255, 255, .28);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='11' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: center;
+  opacity: 0; transform: scale(.4); transition: opacity .18s ease, transform .2s cubic-bezier(.34, 1.56, .64, 1);
+}
+.prd-md-dbody .prd-filter-row:has(input:checked)::after { opacity: 1; transform: scale(1); }
+/* Hovering an already-selected pill must keep the filled gradient + white text,
+   otherwise the light hover wash hides the white label. Just lift it a touch. */
+.prd-md-dbody .prd-filter-row:has(input:checked):hover {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  border-color: #6d28d9; color: #fff;
+  box-shadow: 0 8px 20px rgba(124, 58, 237, .4), inset 0 1px 0 rgba(255, 255, 255, .24);
+}
+/* Staggered entrance so the options cascade in, not all at once. */
+.prd-md-dbody > * { animation: prd-md-row .26s cubic-bezier(.4, 0, .2, 1) both; }
+.prd-md-dbody > *:nth-child(1) { animation-delay: .01s; }
+.prd-md-dbody > *:nth-child(2) { animation-delay: .03s; }
+.prd-md-dbody > *:nth-child(3) { animation-delay: .05s; }
+.prd-md-dbody > *:nth-child(4) { animation-delay: .07s; }
+.prd-md-dbody > *:nth-child(5) { animation-delay: .09s; }
+.prd-md-dbody > *:nth-child(6) { animation-delay: .11s; }
+.prd-md-dbody > *:nth-child(7) { animation-delay: .13s; }
+.prd-md-dbody > *:nth-child(n+8) { animation-delay: .15s; }
+@keyframes prd-md-row { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .prd-md-dbody, .prd-md-dbody > * { animation: none; }
+}
+
+/* Dark mode — master-detail. */
+[data-bs-theme="dark"] .prd-filter-body.prd-md { background: #14102a; }
+[data-bs-theme="dark"] .prd-md-rail { background: #17122e; border-right-color: #262041; }
+/* Dark scrollbar — thin + a muted dark thumb, so it doesn't glow against the
+   dark surface (the light-mode thumb read as a bright bar). */
+[data-bs-theme="dark"] .prd-md-dbody { scrollbar-color: #35304f transparent; }
+[data-bs-theme="dark"] .prd-md-dbody::-webkit-scrollbar-thumb { background: #35304f; }
+[data-bs-theme="dark"] .prd-md-dbody::-webkit-scrollbar-thumb:hover { background: #4c1d95; }
+[data-bs-theme="dark"] .prd-md-rail::-webkit-scrollbar-thumb { background: #35304f; }
+[data-bs-theme="dark"] .prd-md-cat { color: #b9b4cc; }
+[data-bs-theme="dark"] .prd-md-cat:hover { background: rgba(255,255,255,.05); color: #ede9fe; }
+[data-bs-theme="dark"] .prd-md-cat.active { background: rgba(124,58,237,.2); color: #f0ebff; }
+[data-bs-theme="dark"] .prd-md-cat-ic { background: #262138; color: #94a3b8; }
+[data-bs-theme="dark"] .prd-md-cat:hover .prd-md-cat-ic { background: #302a48; color: #cbd5e1; }
+[data-bs-theme="dark"] .prd-md-cat.active .prd-md-cat-ic { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; }
+[data-bs-theme="dark"] .prd-md-cat-ct { box-shadow: 0 0 0 2px #17122e; }
+[data-bs-theme="dark"] .prd-md-detail { background: #14102a; box-shadow: inset 7px 0 14px -8px rgba(0,0,0,.4); }
+[data-bs-theme="dark"] .prd-md-cat.active { box-shadow: 0 3px 10px rgba(0,0,0,.35), inset 0 0 0 1px rgba(124,58,237,.3); }
+[data-bs-theme="dark"] .prd-md-cat.active .prd-md-cat-ic { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; }
+[data-bs-theme="dark"] .prd-md-dhead { border-bottom-color: #262041; background: linear-gradient(180deg, #1a1533 0%, #14102a 100%); }
+[data-bs-theme="dark"] .prd-md-dhead-ic { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; }
+[data-bs-theme="dark"] .prd-md-dhead-title { color: #f5f3ff; }
+[data-bs-theme="dark"] .prd-md-dhead-sub { color: #7c7595; }
+[data-bs-theme="dark"] .prd-md-dbody .prd-filter-row {
+  background: #1c1738; border-color: #2b2450; color: #d7d1ee;
+}
+[data-bs-theme="dark"] .prd-md-dbody .prd-filter-row:hover {
+  background: #241d45; border-color: #4c3d82; box-shadow: 0 2px 8px rgba(0,0,0,.35);
+}
+[data-bs-theme="dark"] .prd-md-dbody .prd-filter-row:has(input:checked),
+[data-bs-theme="dark"] .prd-md-dbody .prd-filter-row:has(input:checked):hover {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  border-color: #8b5cf6; color: #fff;
+  box-shadow: 0 5px 14px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.15);
+}
+
 .prd-filter-row {
-  display: flex; align-items: center; gap: 9px;
-  padding: 7px 8px;
-  border-radius: 7px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
   font-size: 12px; color: #1e1b4b; font-weight: 500;
   cursor: pointer;
-  transition: background .12s;
+  transition: background .12s, color .12s;
 }
 .prd-filter-row:hover { background: #f5f3ff; }
+/* Option text — one line, ellipsis. A long value shows in full on hover; it
+   must never wrap and blow out the row height. */
+.prd-filter-row-txt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prd-filter-row > span:not(.prd-filter-row-txt) { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Selected row reads as selected at a glance — soft tint + purple label — not
+   only the tick. `:has()` keeps it CSS-only (no class toggling in JS). */
+.prd-filter-row:has(input:checked) { background: #f3eeff; color: #5b21b6; font-weight: 600; }
+.prd-filter-row:has(input:checked):hover { background: #ece5fd; }
+/* Keyboard focus is visible without a permanent outline for mouse users. */
+.prd-filter-row:focus-within { background: #f5f3ff; box-shadow: inset 0 0 0 1.5px #c4b5fd; }
+.prd-filter-panel-head:focus-visible { outline: none; box-shadow: inset 0 0 0 2px #c4b5fd; }
 .prd-filter-empty {
   padding: 10px 8px;
   font-size: 12px;
@@ -1089,11 +1390,18 @@
 }
 .prd-filter-row input[type="checkbox"] { border-radius: 4px; }
 .prd-filter-row input[type="radio"] { border-radius: 50%; }
+.prd-filter-row input[type="checkbox"]:hover,
+.prd-filter-row input[type="radio"]:hover { border-color: #7c3aed; }
 .prd-filter-row input[type="checkbox"]:checked,
 .prd-filter-row input[type="radio"]:checked {
   background: linear-gradient(135deg, #8b5cf6, #7c3aed);
   border-color: #7c3aed;
+  box-shadow: 0 2px 5px rgba(124, 58, 237, .35);
+  /* A little pop on tick — satisfying, quick. */
+  animation: prd-check-pop .22s cubic-bezier(.34, 1.56, .64, 1);
 }
+@keyframes prd-check-pop { 0% { transform: scale(.7); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .prd-filter-row input:checked { animation: none; } }
 .prd-filter-row input[type="checkbox"]:checked::after {
   content: ''; position: absolute; left: 4px; top: 1px;
   width: 5px; height: 9px;
@@ -1300,8 +1608,11 @@
 [data-bs-theme="dark"] .prd-filter-badge { background: #ede9fe; color: #5b21b6; }
 
 /* Dark — product card */
-[data-bs-theme="dark"] .prd-pcard { background: #1a2130; border-color: rgba(167,139,250,.18); box-shadow: 0 8px 22px rgba(0,0,0,.4); }
-[data-bs-theme="dark"] .prd-pcard:hover { border-color: rgba(167,139,250,.4); box-shadow: 0 12px 30px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .prd-pcard { background: linear-gradient(180deg, #1c2333 0%, #171d2b 100%); border-color: rgba(167,139,250,.18); box-shadow: 0 6px 18px rgba(0,0,0,.42), 0 20px 44px -20px rgba(0,0,0,.6); }
+[data-bs-theme="dark"] .prd-pcard:hover { border-color: rgba(167,139,250,.4); box-shadow: 0 14px 34px rgba(0,0,0,.55), 0 28px 60px -22px rgba(124,58,237,.35); }
+/* Sheen is barely-there on the dark surface so it reads as a glass edge, not a fog. */
+[data-bs-theme="dark"] .prd-pcard::after { background: linear-gradient(135deg, rgba(255,255,255,.06) 0%, rgba(255,255,255,0) 34%); }
+[data-bs-theme="dark"] .prd-pcard::before { background: linear-gradient(105deg, transparent, rgba(255,255,255,.12), transparent); }
 [data-bs-theme="dark"] .prd-pcard-thumb { border-bottom-color: rgba(167,139,250,.14); }
 [data-bs-theme="dark"] .prd-pcard-title { color: #c4b5fd; }
 [data-bs-theme="dark"] .prd-pcard-code { color: #c4b5fd; }
@@ -1500,10 +1811,11 @@
   box-shadow: 14px 0 36px rgba(0,0,0,.7);
 }
 [data-bs-theme="dark"] .prd-filter-head {
-  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
-  border-bottom-color: #3b2a6b;
+  background: #14102a;
+  border-bottom-color: #2a2150;
 }
-[data-bs-theme="dark"] .prd-filter-head-title { color: #fff; }
+[data-bs-theme="dark"] .prd-filter-head-title { color: #f5f3ff; }
+[data-bs-theme="dark"] .prd-filter-head-sub { color: #8b7fb0; }
 [data-bs-theme="dark"] .prd-filter-icon-btn {
   background: #1a1430;
   border-color: #3b2a6b;
@@ -1532,21 +1844,30 @@
   background: linear-gradient(180deg, #c4b5fd, #7c3aed);
 }
 
-[data-bs-theme="dark"] .prd-filter-panel {
-  background: #1a1430;
-  border-color: #3b2a6b;
-}
-[data-bs-theme="dark"] .prd-filter-panel.open {
-  border-color: #7c3aed;
-  box-shadow: 0 2px 8px rgba(0,0,0,.4);
-}
-[data-bs-theme="dark"] .prd-filter-panel-head { color: #ede9fe; }
-[data-bs-theme="dark"] .prd-filter-panel-head:hover { background: #221852; }
-[data-bs-theme="dark"] .prd-filter-panel-right { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-filter-panel { background: transparent; }
+[data-bs-theme="dark"] .prd-filter-panel.open { background: rgba(124,58,237,.09); }
+[data-bs-theme="dark"] .prd-filter-panel-head { color: #e8e6f2; }
+[data-bs-theme="dark"] .prd-filter-panel-head:hover { background: rgba(255,255,255,.045); }
+[data-bs-theme="dark"] .prd-filter-panel.open .prd-filter-panel-head { background: transparent; }
+/* Neutral slate chip, purple accent when active — no rainbow. */
+[data-bs-theme="dark"] .prd-fp-icon { background: #232037; color: #94a3b8; }
+[data-bs-theme="dark"] .prd-filter-panel-head:hover .prd-fp-icon { background: #2c2942; color: #cbd5e1; }
+[data-bs-theme="dark"] .prd-filter-panel.open .prd-fp-icon { background: rgba(124,58,237,.28); color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-filter-panel-label { color: #ede9fe; }
+[data-bs-theme="dark"] .prd-filter-panel.open .prd-filter-panel-label { color: #f5f3ff; }
+[data-bs-theme="dark"] .prd-fp-sub { color: #7c7595; }
+[data-bs-theme="dark"] .prd-filter-panel-count { background: rgba(124,58,237,.24); color: #d6c8ff; }
+[data-bs-theme="dark"] .prd-filter-panel-right { color: #7c7595; }
+[data-bs-theme="dark"] .prd-filter-chevron { color: #7c7595; }
+[data-bs-theme="dark"] .prd-filter-panel-head:hover .prd-filter-chevron { color: #b4a9d6; }
+[data-bs-theme="dark"] .prd-filter-panel.open .prd-filter-chevron { color: #c4b5fd; }
+[data-bs-theme="dark"] .prd-filter-row:has(input:checked) { background: rgba(124,58,237,.18); color: #d6c8ff; }
+[data-bs-theme="dark"] .prd-filter-row:has(input:checked):hover { background: rgba(124,58,237,.26); }
+[data-bs-theme="dark"] .prd-filter-row:focus-within { background: #221852; box-shadow: inset 0 0 0 1.5px #7c3aed; }
 
 [data-bs-theme="dark"] .prd-filter-panel-body {
-  background: #14102a;
-  border-top-color: #3b2a6b;
+  background: transparent;
+  border-left-color: #2c2947;
   scrollbar-color: #4c1d95 transparent;
 }
 [data-bs-theme="dark"] .prd-filter-panel-body::-webkit-scrollbar-thumb { background: #4c1d95; }
