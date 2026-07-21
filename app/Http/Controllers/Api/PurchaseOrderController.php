@@ -322,16 +322,9 @@ class PurchaseOrderController extends Controller
         $po = PurchaseOrder::with('items')->findOrFail($id);
         $this->assertScope($po, $user, 'write');
 
-        // TDS must be deducted (once, in the PO Payment screen) before the PO can
-        // go out for signature — the signed document must reflect the final,
-        // post-TDS payable figures.
-        if (!$po->tds_cut) {
-            return response()->json([
-                'status'  => false,
-                'message' => 'Deduct TDS first — the TDS deduction must be cut in the PO Payment screen before sending the PO for signature.',
-                'errors'  => ['tds' => ['TDS must be deducted before sending for signature.']],
-            ], 422);
-        }
+        // Note: the PO PDF can be sent for signature at any time — the TDS
+        // deduction is NOT a prerequisite here. (TDS is still cut once in the PO
+        // Payment screen before any payment can be recorded; see PoPaymentController.)
 
         $zoho = app(\App\Services\ZohoSignService::class);
         if (!$zoho->isConfigured()) {
