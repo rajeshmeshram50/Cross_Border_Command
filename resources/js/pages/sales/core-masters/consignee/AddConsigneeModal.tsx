@@ -1685,7 +1685,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         return null;
       case 'contactNo':
         if (!f.contactNo.trim()) return 'Contact number is required';
-        if (!/^\+?[0-9\s-]{7,15}$/.test(f.contactNo)) return 'Phone must be 7-15 digits';
+        // India → exactly 10 digits (the +91 prefix is display-only, not
+        // stored); other countries keep the flexible 7–15 rule.
+        if (isDomesticCountry(f.country)) { if (!/^\d{10}$/.test(f.contactNo)) return 'Enter a valid 10-digit mobile number'; }
+        else if (!/^\+?[0-9\s-]{7,15}$/.test(f.contactNo)) return 'Phone must be 7-15 digits';
         if (locations.some(l => (l.cpContact || '').trim() === f.contactNo.trim()))
           return 'This phone number is already used by another address on this consignee';
         return null;
@@ -3525,7 +3528,13 @@ const Stage1 = ({
                   /* PIN and ZIP are different rules, so the code already typed
                      has to be re-judged against the NEW country — otherwise a
                      valid "SL7 1TB" stays green after switching to India. */
-                  onChange={v => { const nf = { ...form, country: v, state: '' }; setForm(nf); validateField('country', nf); validateField('state', nf); validateField('pin', nf); }}
+                  onChange={v => {
+                    // Switching to India scrubs the contact number to bare 10
+                    // digits for the +91-prefixed field; re-judge PIN/ZIP too.
+                    const nextTel = isDomesticCountry(v) ? (form.contactNo || '').replace(/\D/g, '').slice(0, 10) : form.contactNo;
+                    const nf = { ...form, country: v, state: '', contactNo: nextTel };
+                    setForm(nf); validateField('country', nf); validateField('state', nf); validateField('pin', nf); validateField('contactNo', nf);
+                  }}
                 />
               </Field>
               <Field label="State" required error={errors.state} fieldKey="state">
@@ -3584,7 +3593,14 @@ const Stage1 = ({
                 />
               </Field>
               <Field label="Contact No" required error={errors.contactNo} fieldKey="contactNo">
-                <input className={`acm-input ${errors.contactNo ? 'acm-input-error' : ''}`} type="tel" placeholder="Enter phone number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} disabled={lock} />
+                {isDomesticCountry(form.country) ? (
+                  <div className={`acm-phone-wrap${errors.contactNo ? ' acm-phone-invalid' : ''}`}>
+                    <span className="acm-phone-cc">+91</span>
+                    <input type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={form.contactNo} onChange={e => set('contactNo', e.target.value.replace(/\D/g, '').slice(0, 10))} disabled={lock} />
+                  </div>
+                ) : (
+                  <input className={`acm-input ${errors.contactNo ? 'acm-input-error' : ''}`} type="tel" placeholder="Enter phone number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} disabled={lock} />
+                )}
               </Field>
               <Field label="Email ID" required error={errors.email} fieldKey="email">
                 <input className={`acm-input ${errors.email ? 'acm-input-error' : ''}`} type="email" placeholder="Enter email address" value={form.email} onChange={e => set('email', e.target.value)} disabled={lock} />
@@ -5794,7 +5810,9 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'cpContact':
         if (!dd.cpContact.trim()) return 'Phone required';
-        if (!/^\+?[0-9\s-]{7,15}$/.test(dd.cpContact)) return 'Phone must be 7-15 digits';
+        // India → exactly 10 digits (+91 shown, not stored); else flexible 7–15.
+        if (isDomesticCountry(dd.country)) { if (!/^\d{10}$/.test(dd.cpContact)) return 'Enter a valid 10-digit mobile number'; }
+        else if (!/^\+?[0-9\s-]{7,15}$/.test(dd.cpContact)) return 'Phone must be 7-15 digits';
         if (existingPhones.includes(dd.cpContact.trim()))
           return 'This phone number is already used by another address on this consignee';
         return null;
@@ -5950,7 +5968,9 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 placeholder={primaryDomestic ? 'India' : 'Select country'}
                 invalid={!!errs.country}
                 onChange={v => {
-                  const nd = { ...d, country: v, state: '' } as typeof d;
+                  // Switching to India scrubs the contact number to bare 10 digits.
+                  const nextTel = isDomesticCountry(v) ? (d.cpContact || '').replace(/\D/g, '').slice(0, 10) : d.cpContact;
+                  const nd = { ...d, country: v, state: '', cpContact: nextTel } as typeof d;
                   setD(nd);
                   setErrs(prev => {
                     const next = { ...prev };
@@ -6030,13 +6050,20 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
             </div>
             <div className="acm-field">
               <label className="acm-field-label">CONTACT NO <span className="acm-req">*</span></label>
-              <input
-                className={`acm-input ${errs.cpContact ? 'acm-input-error' : ''}`}
-                type="tel"
-                placeholder="7-15 digit mobile"
-                value={d.cpContact}
-                onChange={e => set('cpContact', e.target.value)}
-              />
+              {isDomesticCountry(d.country) ? (
+                <div className={`acm-phone-wrap${errs.cpContact ? ' acm-phone-invalid' : ''}`}>
+                  <span className="acm-phone-cc">+91</span>
+                  <input type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={d.cpContact} onChange={e => set('cpContact', e.target.value.replace(/\D/g, '').slice(0, 10))} />
+                </div>
+              ) : (
+                <input
+                  className={`acm-input ${errs.cpContact ? 'acm-input-error' : ''}`}
+                  type="tel"
+                  placeholder="7-15 digit mobile"
+                  value={d.cpContact}
+                  onChange={e => set('cpContact', e.target.value)}
+                />
+              )}
               {errs.cpContact && <span className="acm-err-text">{errs.cpContact}</span>}
             </div>
             <div className="acm-field">
@@ -6952,6 +6979,16 @@ const SCOPED_CSS = `
 .acm-input::placeholder { color: #9ca3af; }
 .acm-input:disabled { background: #f9fafb; color: #9ca3af; cursor: not-allowed; }
 select.acm-input { appearance: none; background-image: linear-gradient(45deg, transparent 50%, #9ca3af 50%), linear-gradient(135deg, #9ca3af 50%, transparent 50%); background-position: calc(100% - 16px) 17px, calc(100% - 11px) 17px; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 28px; }
+.acm-phone-wrap { display: flex; align-items: stretch; height: 40px; border: 1.5px solid #e5e7eb; border-radius: 9px; background: #fff; overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+.acm-phone-wrap:focus-within { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.18); }
+.acm-phone-wrap.acm-phone-invalid { border-color: #ef4444; background: #fef2f2; }
+.acm-phone-cc { display: flex; align-items: center; padding: 0 12px; background: #f0fdf4; color: #065f46; font-size: 13px; font-weight: 700; border-right: 1.5px solid #e5e7eb; flex-shrink: 0; }
+.acm-phone-wrap input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; padding: 0 12px; font-family: inherit; font-size: 13px; color: #1f2937; }
+.acm-phone-wrap input::placeholder { color: #9ca3af; }
+[data-bs-theme="dark"] .acm-phone-wrap { background: #0a1f1a; border-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-phone-cc { background: #0d2a22; color: #6ee7b7; border-right-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-phone-wrap input { color: #ecfdf5; }
+[data-bs-theme="dark"] .acm-phone-wrap input::placeholder { color: #6b8a7e; }
 
 .acm-radio-row { display: flex; align-items: center; gap: 16px; height: 40px; }
 .acm-radio {

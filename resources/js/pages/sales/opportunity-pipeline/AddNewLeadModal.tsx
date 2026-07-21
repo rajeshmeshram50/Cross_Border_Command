@@ -153,6 +153,33 @@ export default function AddNewLeadModal(props: {
   const [customersLoading, setCustomersLoading] = useState(false);
   const [customerFetching, setCustomerFetching] = useState(false);
 
+  /* Country / State lists come from the same master bundle the Customer form
+     uses (/customers/master-bundle → countries + states with country_id), so
+     this dropdown shows every seeded country/state instead of the old
+     hardcoded handful. Falls back to the static lists if the fetch fails. */
+  const [masterCountries, setMasterCountries] = useState<Array<{ id: number; name: string }>>([]);
+  const [masterStates, setMasterStates] = useState<Array<{ id: number; name: string; country_id: number }>>([]);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    api
+      .get<{ countries?: any[]; states?: any[] }>('/customers/master-bundle')
+      .then(r => {
+        if (!alive) return;
+        const cs = (r.data?.countries ?? [])
+          .map((c: any) => ({ id: Number(c.id), name: String(c.name ?? '').trim() }))
+          .filter((c: { name: string }) => c.name);
+        const st = (r.data?.states ?? [])
+          .map((s: any) => ({ id: Number(s.id), name: String(s.name ?? '').trim(), country_id: Number(s.country_id ?? 0) }))
+          .filter((s: { name: string }) => s.name);
+        setMasterCountries(cs);
+        setMasterStates(st);
+      })
+      .catch(() => { /* keep static fallback lists */ });
+    return () => { alive = false; };
+  }, [open]);
+
   useEffect(() => {
     // Clear any previous-branch list when the modal closes so it can't flash
     // stale rows on the next open before the fresh fetch resolves.
@@ -254,22 +281,42 @@ export default function AddNewLeadModal(props: {
      country's STATE_BY_COUNTRY entry) ends up with an empty-looking
      dropdown even though `values.country` / `values.state` are set. */
   const countryOpts = useMemo(() => {
-    const list = [...COUNTRY_OPTIONS];
+    // Prefer the master bundle; fall back to the static list until it loads.
+    const list = masterCountries.length ? masterCountries.map(c => c.name) : [...COUNTRY_OPTIONS];
     if (values.country && !list.includes(values.country)) list.unshift(values.country);
     return list;
-  }, [values.country]);
+  }, [values.country, masterCountries]);
 
   const stateOpts = useMemo(() => {
-    const base = STATE_BY_COUNTRY[values.country] ?? [];
+    let base: string[];
+    if (masterStates.length && masterCountries.length) {
+      // States are scoped to the selected country via country_id — same rule
+      // the Customer form applies. A country with no seeded states yields [].
+      const c = masterCountries.find(x => x.name === values.country);
+      base = c ? masterStates.filter(s => s.country_id === c.id).map(s => s.name) : [];
+    } else {
+      base = STATE_BY_COUNTRY[values.country] ?? [];
+    }
     const list = [...base];
     if (values.state && !list.includes(values.state)) list.unshift(values.state);
     return list;
-  }, [values.country, values.state]);
+  }, [values.country, values.state, masterCountries, masterStates]);
+
+  // India → mobile is a fixed +91 prefix + exactly 10 digits; other countries
+  // keep the flexible 6–15 digit rule.
+  const isIndiaMobile = (values.country ?? '').trim().toLowerCase() === 'india';
+  // Picking India scrubs any non-digits / extra length the field already holds.
+  useEffect(() => {
+    if (!isIndiaMobile) return;
+    setValues(v => (/\D/.test(v.mobileNumber) || v.mobileNumber.length > 10)
+      ? { ...v, mobileNumber: v.mobileNumber.replace(/\D/g, '').slice(0, 10) } : v);
+  }, [isIndiaMobile]);
 
   const validate = (): boolean => {
     const next: Partial<Record<keyof LeadFormValues, string>> = {};
     if (!values.customerName.trim())  next.customerName  = 'Customer Name is required';
     if (!values.mobileNumber.trim())  next.mobileNumber  = 'Mobile Number is required';
+    else if (isIndiaMobile) { if (!/^\d{10}$/.test(values.mobileNumber)) next.mobileNumber = 'Enter a valid 10-digit mobile number'; }
     else if (values.mobileNumber.length < 6 || values.mobileNumber.length > 15) next.mobileNumber = 'Mobile Number must be 6 to 15 digits';
     if (!values.customerEmail.trim()) next.customerEmail = 'Customer Email is required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.customerEmail.trim())) next.customerEmail = 'Enter a valid email';
@@ -422,11 +469,12 @@ export default function AddNewLeadModal(props: {
             <Field label="Mobile Number" required error={errors.mobileNumber}>
               <TextInput
                 value={values.mobileNumber}
-                onChange={(v) => set('mobileNumber', digitsOnly(v))}
-                placeholder="10-15 digit number"
-                iconLeft="ri-smartphone-line"
+                onChange={(v) => set('mobileNumber', isIndiaMobile ? digitsOnly(v).slice(0, 10) : digitsOnly(v))}
+                placeholder={isIndiaMobile ? '10-digit mobile' : '10-15 digit number'}
+                iconLeft={isIndiaMobile ? undefined : 'ri-smartphone-line'}
+                prefix={isIndiaMobile ? '+91' : undefined}
                 inputMode="numeric"
-                maxLength={15}
+                maxLength={isIndiaMobile ? 10 : 15}
                 error={!!errors.mobileNumber}
                 disabled={lockCustomer}
               />
@@ -596,14 +644,16 @@ function TextInput(props: {
   onChange: (v: string) => void;
   placeholder?: string;
   iconLeft?: string;
+  prefix?: string;
   inputMode?: 'numeric' | 'text';
   maxLength?: number;
   error?: boolean;
   disabled?: boolean;
 }) {
   return (
-    <div className={`anl-input-wrap ${props.iconLeft ? 'has-icon' : ''} ${props.error ? 'has-error' : ''}`}>
+    <div className={`anl-input-wrap ${props.iconLeft ? 'has-icon' : ''} ${props.prefix ? 'has-prefix' : ''} ${props.error ? 'has-error' : ''}`}>
       {props.iconLeft && <i className={`${props.iconLeft} anl-input-icon`} />}
+      {props.prefix && <span className="anl-input-prefix">{props.prefix}</span>}
       <input
         type="text"
         className="anl-input"
@@ -839,6 +889,16 @@ const SCOPED_CSS = `
   transition: color .18s ease;
 }
 .anl-input-wrap:focus-within .anl-input-icon { color: #0891b2; }
+/* Fixed +91 country-code chip for India mobile numbers */
+.anl-input-prefix {
+  position: absolute; left: 1.5px; top: 1.5px; bottom: 1.5px;
+  display: flex; align-items: center; padding: 0 9px;
+  font-size: 12px; font-weight: 700; color: #0f172a;
+  background: #f1f5f9; border-right: 1.5px solid #e2e8f0;
+  border-radius: 8px 0 0 8px; pointer-events: none;
+}
+.anl-input-wrap.has-prefix .anl-input { padding-left: 48px; }
+[data-bs-theme="dark"] .anl-input-prefix { background: #23262e; color: #e2e8f0; border-right-color: #3a3f47; }
 
 /* Select arrow */
 .anl-select { appearance: none; -webkit-appearance: none; padding-right: 32px; cursor: pointer; }

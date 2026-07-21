@@ -1184,7 +1184,7 @@ export default function Products() {
                       return (
                         <label key={v} className="prd-filter-row">
                           <input type="radio" name="hazType" checked={selected}
-                            onChange={() => setFilters(prev => ({ ...prev, hazType: [v] }))}
+                            onChange={() => setFilters(prev => ({ ...prev, hazType: [v], hazClass: v === 'NON HAZ' ? [] : prev.hazClass }))}
                             onClick={() => { if (selected) setFilters(prev => ({ ...prev, hazType: [] })); }} />
                           <span>{v}</span>
                         </label>
@@ -1195,11 +1195,14 @@ export default function Products() {
                     )}
                   </>)}
 
-                  {activeCategory === 'hazClass' && (hazClassOpts.length === 0
-                    ? <div className="prd-filter-empty">No haz classifications available</div>
-                    : hazClassOpts.map(v => (
-                      <CheckRow key={v} label={v} checked={filters.hazClass.includes(v)} onChange={() => toggleMulti('hazClass', v)} />
-                    )))}
+                  {activeCategory === 'hazClass' && (
+                    filters.hazType.length === 1 && filters.hazType[0] === 'NON HAZ'
+                      ? <div className="prd-filter-empty">Not applicable — "Non-Hazardous" is selected under Hazard Type. Switch it to "HAZ" or clear it to pick a classification.</div>
+                      : hazClassOpts.length === 0
+                        ? <div className="prd-filter-empty">No haz classifications available</div>
+                        : hazClassOpts.map(v => (
+                          <CheckRow key={v} label={v} checked={filters.hazClass.includes(v)} onChange={() => toggleMulti('hazClass', v)} />
+                        )))}
 
                   {activeCategory === 'uom' && uomOpts.map(v => (
                     <CheckRow key={v} label={v} checked={filters.uom.includes(v)} onChange={() => toggleMulti('uom', v)} />

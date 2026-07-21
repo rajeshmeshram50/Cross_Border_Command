@@ -128,7 +128,15 @@ export default function ProductListModal({ row, onClose }: { row: PLRow; onClose
                     <td style={{ textAlign: 'center' }}><span className="srpt-sno">{i + 1}</span></td>
                     {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-code">{p.code}</span></td>}
                     <td style={{ textAlign: 'left' }}><Tooltip label={p.name}><div className={`srpt-pname ${tab === 'manual' ? 'srpt-pname-wide' : ''}`}>{p.name}</div></Tooltip></td>
-                    {tab === 'master' && <td style={{ textAlign: 'center' }}><span className={`srpt-seg ${(p.segment || 'General').replace(/ /g, '-')}`}>{p.segment}</span></td>}
+                    {tab === 'master' && <td style={{ textAlign: 'center' }}>{(() => {
+                      // Long segment names blow out the column — cap at 30 chars
+                      // and show the full name on hover.
+                      const seg = p.segment || '';
+                      const cls = `srpt-seg ${(p.segment || 'General').replace(/ /g, '-')}`;
+                      const long = seg.length > 30;
+                      const span = <span className={cls}>{long ? seg.slice(0, 30) + '…' : seg}</span>;
+                      return long ? <Tooltip label={seg}>{span}</Tooltip> : span;
+                    })()}</td>}
                     {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-hsn">{p.hsn}</span></td>}
                     <td style={{ textAlign: 'center' }} className="srpt-price">{fmtPrice(p.price)}</td>
                     <td style={{ textAlign: 'center' }}><span className={`srpt-status ${p.status === 'Completed' ? 'done' : 'prog'}`} style={{ cursor: 'default' }}><span className="srpt-sdot" />{p.status}</span></td>

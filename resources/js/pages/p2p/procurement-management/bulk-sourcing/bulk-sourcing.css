@@ -4028,6 +4028,47 @@
   color: #c0ccd8;
   font-weight: 400;
 }
+/* India mobile field: a fixed "+91" country-code chip glued to the left of the
+   number input, styled to read as one control. */
+.snf-phone-wrap {
+  display: flex;
+  align-items: stretch;
+  height: 38px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color .14s, box-shadow .14s;
+}
+.snf-phone-wrap:focus-within {
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .14);
+}
+.snf-phone-wrap.is-invalid {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, .12);
+}
+.snf-phone-cc {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 11px;
+  background: #f1f5f9;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  border-right: 1.5px solid #e2e8f0;
+  flex-shrink: 0;
+}
+.snf-phone-inp {
+  border: none;
+  border-radius: 0;
+  height: 100%;
+  box-shadow: none;
+}
+.snf-phone-inp:focus { border: none; box-shadow: none; }
+[data-bs-theme="dark"] .snf-phone-wrap { background: #1c1738; border-color: #2b2450; }
+[data-bs-theme="dark"] .snf-phone-cc { background: #241d45; color: #e2e8f0; border-right-color: #2b2450; }
 /* Read-only "auto" field (e.g. State Code) — muted fill, theme-aware. */
 .snf-inp-ro {
   background: #f8fafc;
@@ -4366,6 +4407,39 @@
   align-items: center;
   gap: 14px;
   margin-bottom: 16px;
+}
+.sv-card-edit {
+  flex-shrink: 0;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  border: 1.5px solid #bae6fd;
+  background: #f0f9ff;
+  color: #0891b2;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .14s ease, border-color .14s ease, color .14s ease, box-shadow .14s ease, transform .12s ease;
+}
+.sv-card-edit:hover {
+  background: linear-gradient(135deg, #22d3ee, #0369a1);
+  border-color: #0369a1;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(8, 145, 178, .3);
+}
+.sv-card-edit:active { transform: scale(.96); }
+[data-bs-theme="dark"] .sv-card-edit {
+  background: rgba(34, 211, 238, .1);
+  border-color: rgba(34, 211, 238, .3);
+  color: #67e8f9;
+}
+[data-bs-theme="dark"] .sv-card-edit:hover {
+  background: linear-gradient(135deg, #0891b2, #0369a1);
+  border-color: #0e7490;
+  color: #fff;
 }
 .sv-card-idx {
   width: 26px;

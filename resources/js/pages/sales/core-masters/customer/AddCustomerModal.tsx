@@ -569,6 +569,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.cpTel, form.cpEmail, locations]);
 
+  // Switching the country to India scrubs the contact number down to bare 10
+  // digits so the +91-prefixed field never carries stale junk / extra length.
+  useEffect(() => {
+    if (!isDomesticCountry(form.country)) return;
+    setForm(prev => (/\D/.test(prev.cpTel) || prev.cpTel.length > 10)
+      ? { ...prev, cpTel: prev.cpTel.replace(/\D/g, '').slice(0, 10) } : prev);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.country]);
+
   /* Numeric PK of the saved customer. In edit mode it comes from the
    * `customer` prop (passed in from the list). In create mode it's set
    * by the Stage 1 → 2 auto-save POST so Stage 2 KYC upload calls have
@@ -1576,7 +1585,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         return null;
       case 'cpTel':
         if (!f.cpTel.trim()) return 'Contact number is required';
-        if (!/^\+?[0-9\s-]{7,15}$/.test(f.cpTel)) return 'Phone must be 7–15 digits';
+        // India → exactly 10 digits (the +91 prefix is added on display, not
+        // stored); other countries keep the flexible 7–15 rule.
+        if (isDomesticCountry(f.country)) { if (!/^\d{10}$/.test(f.cpTel)) return 'Enter a valid 10-digit mobile number'; }
+        else if (!/^\+?[0-9\s-]{7,15}$/.test(f.cpTel)) return 'Phone must be 7–15 digits';
         if (locations.some(l => (l.cpContact || '').trim() === f.cpTel.trim()))
           return 'This phone number is already used by another address on this customer';
         return null;
@@ -2581,8 +2593,20 @@ function GstScrutinyManagePopup(props: {
                       <td style={{ fontWeight: 600 }}>{r.gst_number}</td>
                       <td><span className={`acm-gst-status acm-gst-status-${String(r.status).toLowerCase()}`}>{r.status}</span></td>
                       <td>{r.last_filing_date || '—'}</td>
-                      <td>{r.prev_non_gst_2a_invoice || '—'}</td>
-                      <td>{r.red_flags || '—'}</td>
+                      <td>{(() => {
+                        // Long free-text values overflow the column — cap with an
+                        // ellipsis and reveal the full text on hover.
+                        const v = r.prev_non_gst_2a_invoice || '';
+                        if (!v) return '—';
+                        const span = <span style={{ display: 'inline-block', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{v}</span>;
+                        return v.length > 26 ? <Tooltip label={v}>{span}</Tooltip> : span;
+                      })()}</td>
+                      <td>{(() => {
+                        const v = r.red_flags || '';
+                        if (!v) return '—';
+                        const span = <span style={{ display: 'inline-block', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{v}</span>;
+                        return v.length > 26 ? <Tooltip label={v}>{span}</Tooltip> : span;
+                      })()}</td>
                     </tr>
                   );
                 })}
@@ -3243,7 +3267,14 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 maxLength={60}
               />
             </Field>
-            <Field label="Contact No" required error={errors.cpTel} fieldKey="cpTel"><input className={errors.cpTel ? 'acm-input-error' : ''} type="tel" value={form.cpTel} onChange={e => set('cpTel', e.target.value)} placeholder="7–15 digit number" /></Field>
+            <Field label="Contact No" required error={errors.cpTel} fieldKey="cpTel">{domestic ? (
+              <div className={`acm-phone-wrap${errors.cpTel ? ' acm-phone-invalid' : ''}`}>
+                <span className="acm-phone-cc">+91</span>
+                <input type="tel" inputMode="numeric" maxLength={10} value={form.cpTel} onChange={e => set('cpTel', e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit mobile" />
+              </div>
+            ) : (
+              <input className={errors.cpTel ? 'acm-input-error' : ''} type="tel" value={form.cpTel} onChange={e => set('cpTel', e.target.value)} placeholder="7–15 digit number" />
+            )}</Field>
             <Field label="Email" required error={errors.cpEmail} fieldKey="cpEmail"><input className={errors.cpEmail ? 'acm-input-error' : ''} type="email" value={form.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
             {!domestic && whatsappField}
           </div>
@@ -4812,7 +4843,9 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'cpContact':
         if (!dd.cpContact.trim()) return 'Phone required';
-        if (!/^\+?[0-9\s-]{7,15}$/.test(dd.cpContact)) return 'Phone must be 7–15 digits';
+        // India → exactly 10 digits (+91 shown, not stored); else flexible 7–15.
+        if (isDomesticCountry(dd.country)) { if (!/^\d{10}$/.test(dd.cpContact)) return 'Enter a valid 10-digit mobile number'; }
+        else if (!/^\+?[0-9\s-]{7,15}$/.test(dd.cpContact)) return 'Phone must be 7–15 digits';
         if (existingPhones.includes(dd.cpContact.trim()))
           return 'This phone number is already used by another address on this customer';
         return null;
@@ -4917,7 +4950,10 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 placeholder={primaryDomestic ? 'India' : 'Select country'}
                 invalid={!!errs.country}
                 onChange={v => {
-                  const nd = { ...d, country: v, state: '' } as typeof d;
+                  // Switching to India scrubs the contact number to bare 10 digits
+                  // for the +91-prefixed field.
+                  const nextTel = isDomesticCountry(v) ? (d.cpContact || '').replace(/\D/g, '').slice(0, 10) : d.cpContact;
+                  const nd = { ...d, country: v, state: '', cpContact: nextTel } as typeof d;
                   setD(nd);
                   setErrs(prev => {
                     const next = { ...prev };
@@ -4959,7 +4995,14 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 maxLength={60}
               />
             </Field>
-            <Field label="Contact No" required error={errs.cpContact}><input className={errs.cpContact ? 'acm-input-error' : ''} type="tel" value={d.cpContact} onChange={e => set('cpContact', e.target.value)} placeholder="7–15 digit mobile" /></Field>
+            <Field label="Contact No" required error={errs.cpContact}>{isDomesticCountry(d.country) ? (
+              <div className={`acm-phone-wrap${errs.cpContact ? ' acm-phone-invalid' : ''}`}>
+                <span className="acm-phone-cc">+91</span>
+                <input type="tel" inputMode="numeric" maxLength={10} value={d.cpContact} onChange={e => set('cpContact', e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit mobile" />
+              </div>
+            ) : (
+              <input className={errs.cpContact ? 'acm-input-error' : ''} type="tel" value={d.cpContact} onChange={e => set('cpContact', e.target.value)} placeholder="7–15 digit mobile" />
+            )}</Field>
             <Field label="Email Id" required error={errs.cpEmail}><input className={errs.cpEmail ? 'acm-input-error' : ''} type="email" value={d.cpEmail} onChange={e => set('cpEmail', e.target.value)} placeholder="name@company.com" /></Field>
           </div>
           <div className="acm-row acm-row-1">
@@ -5377,6 +5420,14 @@ const SCOPED_CSS = `
 }
 .acm-field input:focus, .acm-field select:focus, .acm-field textarea:focus { border-color: #7c3aed; box-shadow: 0 0 0 3.5px rgba(124,58,237,.14); }
 .acm-field input::placeholder { color: #c4b5fd; font-size: 11.5px; }
+/* India mobile: fixed +91 country-code chip glued to the number input. */
+.acm-phone-wrap { display: flex; align-items: stretch; border: 1.5px solid #e0d9f7; border-radius: 9px; background: #fff; overflow: hidden; transition: border-color .18s, box-shadow .18s; }
+.acm-phone-wrap:focus-within { border-color: #7c3aed; box-shadow: 0 0 0 3.5px rgba(124,58,237,.14); }
+.acm-phone-wrap.acm-phone-invalid { border-color: #ef4444; background: #fef2f2; }
+.acm-phone-cc { display: flex; align-items: center; padding: 0 11px; background: #f5f3ff; color: #3b0764; font-size: 12px; font-weight: 700; border-right: 1.5px solid #e0d9f7; flex-shrink: 0; }
+.acm-phone-wrap input { border: none !important; border-radius: 0 !important; box-shadow: none !important; background: transparent !important; }
+[data-bs-theme="dark"] .acm-phone-wrap { background: #131c33; border-color: rgba(167,139,250,0.50); }
+[data-bs-theme="dark"] .acm-phone-cc { background: #1c2540; color: #e2e8f0; border-right-color: rgba(167,139,250,0.35); }
 /* Inline validation: red ring around the input + helper text underneath.
    The MasterSelect dropdown already renders its own invalid state when
    passed invalid={true}, so this rule only targets native inputs. */

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
@@ -137,6 +138,34 @@ export default function Vendors() {
   // Supplier wizard is 3 steps now (Trade Document Management / Evidence
   // Vault step removed): Identity → KYC → Map Products.
   const [editingStep, setEditingStep] = useState<1 | 2 | 3 | null>(null);
+  /* Deep-link: /suppliers?edit=<vendorId> opens that supplier's edit wizard
+     straight away. Used by the "Edit" action on a Master supplier in the Bulk
+     Sourcing → Mapped Suppliers popup, which redirects here. The param is
+     consumed once and stripped so a refresh/back doesn't reopen it. */
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  /* Where to send the user once the deep-linked edit is completed. Set from
+     the ?return=<path> param (e.g. Bulk Sourcing sends its own URL). Held in a
+     ref so it survives the wizard's step changes; consumed only on a real save
+     (handleSave), cleared on cancel so it can't leak into a later manual edit. */
+  const returnToRef = useRef<string | null>(null);
+  useEffect(() => {
+    const editParam = searchParams.get('edit');
+    if (!editParam) return;
+    const id = Number(editParam);
+    if (Number.isFinite(id) && id > 0) {
+      setEditingId(id);
+      setEditingStep(null);
+      setAddOpen(true);
+      const ret = searchParams.get('return');
+      returnToRef.current = ret && ret.startsWith('/') ? ret : null;
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('edit');
+    next.delete('return');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   /* Standalone Evidence Vault modal target — clicking the Vault action
    * on a row sets this; the modal pulls a fresh /vault payload from
    * the API and renders KPI cards + per-bucket tables read-only. */
@@ -399,6 +428,11 @@ useEffect(() => {
     setEditingId(null);
     setEditingStep(null);
     void refresh({ silent: true });
+    // Deep-linked from another page (e.g. Bulk Sourcing) — return there now
+    // that the supplier edit is saved.
+    const ret = returnToRef.current;
+    returnToRef.current = null;
+    if (ret) navigate(ret);
   };
 
   if (!allowed) {
@@ -707,7 +741,7 @@ useEffect(() => {
         <AddVendorModal
           vendorId={editingId}
           initialStep={editingStep ?? undefined}
-          onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); void refresh({ silent: true }); }}
+          onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); returnToRef.current = null; void refresh({ silent: true }); }}
           onSubmit={handleSave}
         />
       )}
