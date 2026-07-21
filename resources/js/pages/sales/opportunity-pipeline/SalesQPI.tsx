@@ -4759,8 +4759,10 @@ function ProductsStep(props: {
               return (
                 <tr key={p.id}>
                   {/* Formatted on the way OUT only — p.name keeps the raw
-                      master label, which is what gets saved. */}
-                  <td>{displayProductLabel(p.name)}</td>
+                      master label, which is what gets saved. Truncated to one
+                      line (full name on hover) so a long product name can't
+                      wrap and shove the QTY / rate columns out of alignment. */}
+                  <td><Tooltip label={displayProductLabel(p.name)} themed maxWidth={420}><div className="qpi-prodname-cell">{displayProductLabel(p.name)}</div></Tooltip></td>
                   <td>{p.qty}</td>
                   <td>{p.rate.toFixed(2)}</td>
                   {isIntl ? (
@@ -6417,6 +6419,10 @@ const SCOPED_CSS = `
    horizontal scrollbar. Narrow viewports reinstate the min-widths below
    (≤900px media block) and scroll instead of crushing the inputs. */
 .qpi-products-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; table-layout: fixed; }
+/* Saved product name cell — one line, ellipsis. Without this a long name
+   wrapped over several lines and misaligned QTY / rate / amount. Full name is
+   on the hover tooltip. */
+.qpi-prodname-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 /* Header matches the modal's popup chrome — teal gradient for the
    Quotation modal, purple for PI — using the same gradient as the modal
    header. The gradient lives on the ROW (with transparent cells) so it

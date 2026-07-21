@@ -421,8 +421,7 @@ export default function SalesConsignee() {
                     const b = (e.currentTarget as HTMLElement).getBoundingClientRect();
                     setSegOpen(prev => prev?.id === custPopId ? null : { id: custPopId, names: chips, x: b.left, y: b.bottom + 4, title: 'Customer IDs' });
                   }}
-                  className="smcg-cust-chip"
-                  style={{ cursor: 'pointer', background: '#ede9fe', color: '#5b21b6', fontWeight: 700 }}
+                  className="smcg-cust-more"
                 >
                   +{chips.length - 1}
                 </span>

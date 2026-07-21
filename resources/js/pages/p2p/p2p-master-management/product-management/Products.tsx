@@ -1394,7 +1394,17 @@ function ProductCard(props: {
           </span>
         )}
         <span className="prd-pcard-thumb-grad" />
-        <span className="prd-pcard-thumb-seg" style={segColor ? { background: segColor } : undefined}>{product.segment}</span>
+        {(() => {
+          /* A long segment name used to render in full over the thumbnail and
+             cover the whole image ("FLOWER FLOWER FLOWER…"). Cap at 30 chars
+             with an ellipsis; the full name is on the hover tooltip. */
+          const seg = product.segment ?? '';
+          const short = seg.length > 30 ? `${seg.slice(0, 30)}…` : seg;
+          const badge = (
+            <span className="prd-pcard-thumb-seg" style={segColor ? { background: segColor } : undefined}>{short}</span>
+          );
+          return seg.length > 30 ? <Tooltip label={seg}>{badge}</Tooltip> : badge;
+        })()}
         <span className={`prd-pcard-status prd-pcard-status--${isActive ? 'active' : 'inactive'}`}>
           <span className="prd-pcard-status-dot" />{isActive ? 'Active' : 'Inactive'}
         </span>

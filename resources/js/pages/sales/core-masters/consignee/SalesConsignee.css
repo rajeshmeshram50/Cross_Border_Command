@@ -907,6 +907,19 @@
   border: 1px solid #e0d9f7;
   letter-spacing: .02em;
 }
+/* "+N more" mapped-customers badge — follows the same convention as
+   .smcg-seg-more (gradient pill, white bold text, shadow) but tinted purple
+   to match the customer chips it sits beside. */
+.smcg-cust-more {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 20px;
+  border: 0; cursor: pointer; flex-shrink: 0;
+  font-size: 10px; font-weight: 800; color: #fff; font-family: inherit;
+  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  box-shadow: 0 2px 8px rgba(124,58,237,.35);
+}
+.smcg-cust-more:hover { filter: brightness(1.06); }
+
 .smcg-company { font-weight: 600; color: #064e3b; }
 
 .smcg-seg {
