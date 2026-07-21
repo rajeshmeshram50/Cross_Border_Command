@@ -770,4 +770,5 @@ class BranchController extends Controller
             'prefix'    => 'BR-',
         ]);
     }
+    
 }
