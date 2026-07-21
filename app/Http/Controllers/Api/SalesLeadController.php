@@ -648,6 +648,42 @@ class SalesLeadController extends Controller
         return response()->json(['status' => true, 'data' => $lead]);
     }
 
+    /**
+     * Currency ↔ customer trade-type guard. A lead's products share one currency
+     * (single-currency-per-lead); INR ⇒ a DOMESTIC sale, so only an Indian
+     * customer may be mapped, and any other currency ⇒ an EXPORT sale, so only a
+     * foreign customer may be mapped. Enforced in BOTH directions — at
+     * customer-mapping (update) and product-mapping (storeLeadProduct) time.
+     *
+     * Returns a 422 JsonResponse describing the mismatch, or null when it's fine
+     * (no product currency yet, no customer, or the two agree).
+     */
+    private function currencyCustomerMismatchResponse(int $clientId, ?string $currency, ?int $customerId): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$currency || !$customerId) return null;
+        $customer = Customer::where('client_id', $clientId)
+            ->with('primaryAddress:id,customer_id,country')
+            ->find($customerId);
+        if (!$customer) return null;
+        // Accept the country NAME or its ISO code, mirroring ProductDirectoryModal's isIndia().
+        $country = mb_strtolower(trim((string) optional($customer->primaryAddress)->country));
+        $isIndia = in_array($country, ['india', 'in', 'ind'], true);
+        $isInr   = strtoupper(trim($currency)) === 'INR';
+        if ($isInr && !$isIndia) {
+            return response()->json([
+                'status'  => false,
+                'message' => "This opportunity's products are priced in INR (a domestic sale), so only a domestic (Indian) customer can be mapped. Map an Indian customer, or remove the INR products first.",
+            ], 422);
+        }
+        if (!$isInr && $isIndia) {
+            return response()->json([
+                'status'  => false,
+                'message' => "This opportunity's products are priced in {$currency} (an export sale), so only an international (non-Indian) customer can be mapped. Map a foreign customer, or change the products' currency first.",
+            ], 422);
+        }
+        return null;
+    }
+
     public function update(Request $request, $id)
     {
         $user = $request->user();
@@ -786,6 +822,18 @@ class SalesLeadController extends Controller
             if ($block = $this->segmentCustomerProductMismatchResponse(
                 (int) $user->client_id,
                 $leadProductIds,
+                (int) $data['customer_id'],
+            )) {
+                return $block;
+            }
+            // Currency ↔ trade-type: INR products ⇒ only a domestic (Indian)
+            // customer, foreign-currency products ⇒ only an international one.
+            $leadCurrency = LeadProduct::where('lead_id', $lead->id)
+                ->whereNotNull('currency')
+                ->value('currency');
+            if ($block = $this->currencyCustomerMismatchResponse(
+                (int) $user->client_id,
+                $leadCurrency,
                 (int) $data['customer_id'],
             )) {
                 return $block;
@@ -1660,6 +1708,18 @@ class SalesLeadController extends Controller
         /* Default to the locked currency when the client didn't send one,
          * otherwise fall back to USD (the pre-existing default). */
         $effectiveCurrency = $picked ?? $lockedCurrency ?? 'USD';
+
+        // Currency ↔ mapped-customer trade type (mirror of the customer-mapping
+        // guard in update()): when a customer is already mapped, a domestic
+        // (Indian) customer may only carry INR products and a foreign customer
+        // only non-INR — block the mismatch with a 422 the worksheet toasts.
+        if ($lead->customer_id && $block = $this->currencyCustomerMismatchResponse(
+            (int) $user->client_id,
+            $effectiveCurrency,
+            (int) $lead->customer_id,
+        )) {
+            return $block;
+        }
 
         $row = LeadProduct::create([
             'client_id'    => $user->client_id,
