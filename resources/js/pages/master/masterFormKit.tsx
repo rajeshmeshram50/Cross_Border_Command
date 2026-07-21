@@ -54,6 +54,7 @@ export function MasterMultiSelect({
   lockedValues,
   disabledValues,
   disabledHint,
+  renderBadges,
 }: {
   name?: string;
   value: string[];
@@ -63,6 +64,10 @@ export function MasterMultiSelect({
   invalid?: boolean;
   onChange?: (value: string[]) => void;
   maxChips?: number;
+  /* Optional per-option trailing badge(s), rendered at the right of each row in
+     the dropdown list (e.g. a segment's Domestic / International rule badges).
+     Return null for options that need none. */
+  renderBadges?: (value: string) => React.ReactNode;
   /* Selected values that can't be removed (× hidden, can't be unchecked) but
      don't block adding others. Used e.g. for Supplier Segments that already
      have documents uploaded against them. */
@@ -341,6 +346,11 @@ export function MasterMultiSelect({
                   >
                     {opt.label}
                   </span>
+                  {renderBadges && !unusable && (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6, flexShrink: 0 }}>
+                      {renderBadges(opt.value)}
+                    </span>
+                  )}
                   {locked && <i className="ri-lock-2-line" style={{ fontSize: 12, opacity: 0.6, marginLeft: 6, flexShrink: 0 }} />}
                   {unusable && (
                     <span

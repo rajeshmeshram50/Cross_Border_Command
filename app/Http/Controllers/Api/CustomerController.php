@@ -374,6 +374,14 @@ class CustomerController extends Controller
                 'status'         => $data['status']         ?? $customer->status,
             ]);
 
+            // Propagate the customer's (possibly new) segment set to every
+            // consignee mapped to it. A consignee mirrors the union of its
+            // customers' segments (see ConsigneeController / SegmentGuard), so a
+            // segment added here must surface on those consignees at once —
+            // otherwise it would only appear the next time each consignee is
+            // saved. Runs inside the same transaction so the two never drift.
+            $this->syncMappedConsigneeSegments($customer->fresh());
+
             // The customer's GST number is the single source of truth. When it
             // changes, keep the existing GST Scrutiny records in sync so they
             // don't drift to the old number (the scrutiny form shows it read-
@@ -447,6 +455,35 @@ class CustomerController extends Controller
         });
 
         return response()->json(['id' => $customer->id, 'deleted' => true]);
+    }
+
+    /**
+     * Re-derive the segment of every consignee mapped to this customer from the
+     * union of its customers' segments, so a segment added to the customer shows
+     * on its consignees immediately (they must never drift — see
+     * ConsigneeController). Any segment that still has uploaded documents on a
+     * consignee is preserved so re-derivation can never orphan its evidence.
+     */
+    private function syncMappedConsigneeSegments(Customer $customer): void
+    {
+        foreach ($customer->consignees()->get() as $consignee) {
+            $custIds = $consignee->customers()->pluck('customers.id')->all();
+            $derived = \App\Support\SegmentGuard::forCustomers($custIds);
+            // Keep any removed segment that still has uploaded documents so we
+            // never orphan a consignee's evidence.
+            $keep = \App\Support\SegmentGuard::blockedRemovals(
+                \App\Models\Consignee::class,
+                (int) $consignee->id,
+                (int) $consignee->client_id,
+                $consignee->segment,
+                $derived,
+            );
+            $names = array_values(array_unique(array_merge(
+                \App\Support\SegmentGuard::names($derived),
+                $keep,
+            )));
+            $consignee->update(['segment' => $names ? implode(', ', $names) : null]);
+        }
     }
 
     /**

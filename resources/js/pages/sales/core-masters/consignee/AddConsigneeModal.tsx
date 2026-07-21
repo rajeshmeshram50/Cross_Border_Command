@@ -13,6 +13,7 @@ import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { truncSegment } from '../../../../utils/segmentLabel';
+import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
 import SalesCustomerSendForSignatureModal from '../customer/SalesCustomerSendForSignatureModal';
 import {
   readCustomerMasterBundle,
@@ -473,6 +474,18 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * Trade Licence Name dropdowns in the Stage 2 sub-modal. Field key
    * on the master is `title` (managed in Master → Document Types). */
   const [mDocumentTypes,   setMDocumentTypes]   = useState<Opt[]>([]);
+  /* Each segment's Domestic/International rule types (from the DCP), keyed by
+   * segment NAME to match how the consignee stores its segments — drives the
+   * Intl / Dom / +2 badges on the (read-only, customer-inherited) segment box. */
+  const { typesByCode: segTypesByCode } = useRuledSegments(open);
+  const segTypesByName = useMemo(() => {
+    const m = new Map<string, Set<SegDocType>>();
+    for (const s of mSegmentIds) {
+      const t = segTypesByCode.get(String(s.code ?? ''));
+      if (t && t.size) m.set(s.name, new Set(t));
+    }
+    return m;
+  }, [mSegmentIds, segTypesByCode]);
 
   // Stage 1 — Consignee Legal Identity
   const [idTab, setIdTab]         = useState<IdentityTab>('identification');
@@ -1311,10 +1324,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
 
     let cancelled = false;
     setSegmentDocsLoading(true);
+    /* Fetch the KYC/DD/TL set for the rule matching the consignee's trade type:
+     * India (primary address) → domestic rule, any other country → international.
+     * Keeps the consignee's Stage-2 documents aligned with its own country the
+     * same way the customer form does. */
+    const consDocType: SegDocType = isDomesticCountry(form1.country) ? 'domestic' : 'international';
     Promise.all([
       Promise.all(
         segRows.map(s =>
-          api.get(`/clm/segment-rules/for-segment/${s.id}`)
+          api.get(`/clm/segment-rules/for-segment/${s.id}`, { params: { document_type: consDocType } })
             .then(r => r.data?.data ?? {})
             .catch(() => ({}))
         )
@@ -1382,7 +1400,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     }).finally(() => { if (!cancelled) setSegmentDocsLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, stage, maxStage, form1.segment, mSegmentIds]);
+  }, [open, stage, maxStage, form1.segment, form1.country, mSegmentIds]);
 
   /* Poll the live signature-request list every 15s while the user is on
    * Stage 3 → Trade Documents. The backend's ?sync=true triggers a Zoho
@@ -2580,6 +2598,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               setTab={requestIdTab}
               form={form1}
               setForm={setForm1}
+              segTypesByName={segTypesByName}
               segCodeMap={segCodeMap}
               uploadedCodes={Object.entries(segmentRefUploads)
                 .filter(([, v]) => !!(v && (v.url || v.file)))
@@ -3196,7 +3215,7 @@ const Stage1 = ({
   tab, setTab, form, setForm, masters, errors, clearErr, validateField,
   sameAsCustomer, setSameAsCustomer, customer, mirrorAlreadyTakenByOther, mirrorLocked, onBlockedClick,
   locations, onAddLocation, onEditLocation, onDeleteLocation,
-  segCodeMap = {}, uploadedCodes = [], onBlockedSegmentRemove,
+  segCodeMap = {}, uploadedCodes = [], onBlockedSegmentRemove, segTypesByName,
 }: {
   tab: IdentityTab;
   setTab: (t: IdentityTab) => void;
@@ -3233,6 +3252,9 @@ const Stage1 = ({
   uploadedCodes?: string[];
   /** Fired with the segment names the user tried (and failed) to remove. */
   onBlockedSegmentRemove?: (segs: string[]) => void;
+  /** Segment NAME → its Domestic/International rule types, for the Intl/Dom/+2
+   *  badges shown on the inherited-segment box. */
+  segTypesByName?: Map<string, Set<SegDocType>>;
 }) => {
   /* When the "Same as Customer" toggle is on, Stage 1's basic
    * company + primary address fields lock to read-only — every
@@ -3243,6 +3265,15 @@ const Stage1 = ({
      `&& !!customer` guard let a saved mirror's fields stay editable on edit.) */
   const lock = sameAsCustomer;
   const [segPopOpen, setSegPopOpen] = useState(false);
+  /* Segment names whose "+2" badge has been clicked open — those show the
+   * individual Intl + Dom badges instead of the collapsed +2 (same as the
+   * customer form). */
+  const [expandedSegBadges, setExpandedSegBadges] = useState<Set<string>>(new Set());
+  const toggleSegBadge = (name: string) => setExpandedSegBadges(prev => {
+    const next = new Set(prev);
+    next.has(name) ? next.delete(name) : next.add(name);
+    return next;
+  });
   /* Segment "View all N segments" popover. It used to catch outside clicks with
    * a full-screen fixed overlay, but that overlay also swallowed wheel events,
    * so the form behind it couldn't scroll (QA #27 — "form gets stuck and does
@@ -3383,17 +3414,38 @@ const Stage1 = ({
                   the pill opens the full segment popover. */}
               {(() => {
                 const segVals = Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : []);
-                const labels = segVals.map(v => masters.segments.find(s => s.value === v)?.label ?? v);
+                const labels = segVals.map((v: string) => masters.segments.find(s => s.value === v)?.label ?? v);
+                /* Intl / Dom / +2 badge for a segment NAME (form.segment holds
+                 * names). Same visual language + clickable-"+2" as the customer
+                 * segment dropdown: clicking +2 reveals the individual badges. */
+                const badgeEl = (text: string, title: string, color: string, bg: string, bd: string, onClick?: (e: React.MouseEvent) => void) => (
+                  <span title={title} onClick={onClick} style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.02em', padding: '1px 5px', borderRadius: 9, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined }}>{text}</span>
+                );
+                const intlB = () => badgeEl('Intl', 'International rule', '#3730a3', '#eef2ff', '#c7d2fe');
+                const domB  = () => badgeEl('Dom', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');
+                const typeBadge = (name: string) => {
+                  const t = segTypesByName?.get(name);
+                  if (!t || t.size === 0) return null;
+                  const both = t.has('international') && t.has('domestic');
+                  if (both) {
+                    return expandedSegBadges.has(name)
+                      ? <>{intlB()}{domB()}</>
+                      : badgeEl('+2', 'Both International & Domestic — click to show', '#6d28d9', '#f5f3ff', '#ddd6fe',
+                          (e) => { e.stopPropagation(); toggleSegBadge(name); });
+                  }
+                  if (t.has('international')) return intlB();
+                  return domB();
+                };
                 return (
                   <div ref={segBoxRef} className={`acm-seg-box ${errors.segment ? 'acm-input-error' : ''}`}>
                     {labels.length === 0 ? (
                       <span style={{ color: '#94a3b8', fontSize: 13 }}>Inherited from customer</span>
                     ) : (
                       <>
-                        <span className="acm-seg-firstchip" title={labels[0]}>{truncSegment(labels[0])}</span>
+                        <span className="acm-seg-firstchip" title={labels[0]} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{truncSegment(labels[0])}{typeBadge(segVals[0])}</span>
                         {labels.length > 1 && (
-                          <span role="button" onClick={() => setSegPopOpen(o => !o)} className="acm-seg-morebtn">
-                            {segPopOpen ? 'Hide' : `View all ${labels.length} segments`}
+                          <span role="button" onClick={() => setSegPopOpen(o => !o)} className="acm-seg-morebtn" title={segPopOpen ? 'Hide segments' : `View all ${labels.length} segments`}>
+                            {segPopOpen ? 'Hide' : `+${labels.length}`}
                           </span>
                         )}
                       </>
@@ -3401,9 +3453,13 @@ const Stage1 = ({
                     {segPopOpen && labels.length > 1 && (
                       <div className="acm-seg-pop">
                         <div className="acm-seg-pop-title">SEGMENTS ({labels.length})</div>
-                        {labels.map((l: string, i: number) => (
-                          <div key={i} className="acm-seg-pop-row" title={l}><span className="acm-seg-dot" />{truncSegment(l)}</div>
-                        ))}
+                        {/* Show ~3 rows, then scroll — keeps the popover compact
+                            however many segments are inherited. */}
+                        <div className="acm-seg-pop-scroll" style={{ maxHeight: 132, overflowY: 'auto', paddingRight: 4 }}>
+                          {labels.map((l: string, i: number) => (
+                            <div key={i} className="acm-seg-pop-row" title={l} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span className="acm-seg-dot" />{truncSegment(l)}{typeBadge(segVals[i])}</div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -6293,7 +6349,10 @@ const SCOPED_CSS = `
   display: flex; align-items: center; flex-wrap: nowrap; gap: 8px;
   min-height: 40px; padding: 5px 12px;
   border: 1.5px solid #e2e8f0; border-radius: 10px; background: #fff;
-  overflow: hidden;
+  /* NOT overflow:hidden — that clipped the "View all N" popover (absolutely
+     positioned just below). The first chip truncates via its own overflow
+     rule, so the box itself doesn't need to clip. */
+  overflow: visible;
 }
 [data-bs-theme="dark"] .acm-seg-box { background: #0f1a17; border-color: rgba(148,163,184,.22); }
 .acm-seg-firstchip {

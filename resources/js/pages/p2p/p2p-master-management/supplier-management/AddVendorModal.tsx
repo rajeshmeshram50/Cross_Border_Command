@@ -8,7 +8,7 @@ import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { ShimmerForm } from '../../../../components/ui/Shimmer';
 import { MasterMultiSelect } from '../../../master/masterFormKit';
-import { useRuledSegments } from '../../../../hooks/useRuledSegments';
+import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { SegmentModal, nextSegmentCode, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
@@ -502,10 +502,18 @@ export default function AddVendorModal(props: {
    * disabled — a rule-less segment maps to no KYC/DD/TL documents, so tagging
    * a supplier with it leaves Step 2 empty. The modal only mounts while open,
    * so the fetch is gated on `true`. */
-  const { ruledIds: ruledSegIds, loaded: segRulesLoaded } = useRuledSegments(true);
+  const { ruledIds: ruledSegIds, typesById: segTypesById, loaded: segRulesLoaded } = useRuledSegments(true);
   const unruledSegmentIds = segRulesLoaded
     ? segmentOpts.map(o => o.value).filter(v => !ruledSegIds.has(v))
     : [];
+  /* Segment ids whose "+2" badge has been clicked open — those show the
+   * individual Intl + Dom badges instead of the collapsed +2. */
+  const [expandedSegBadges, setExpandedSegBadges] = useState<Set<string>>(new Set());
+  const toggleSegBadge = (id: string) => setExpandedSegBadges(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
   const [complianceBehaviour, setComplianceBehaviour] = useState('');
   /* Classification & Flags — FK to the shared classification master
    * (master_customer_classifications). Holds the selected id; options come
@@ -615,6 +623,13 @@ export default function AddVendorModal(props: {
       .map(r => ({ value: r.id, label: r.name }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [stateRows, country]);
+  /* Supplier trade type — India → domestic, any other country → international.
+   * `country` holds the master_countries id, so resolve to the name first.
+   * Drives the segment-rule document_type fetch and the segment validation. */
+  const supplierDocType: SegDocType = useMemo(() => {
+    const name = (countryOpts.find(o => o.value === country)?.label ?? '').trim();
+    return name === 'India' ? 'domestic' : 'international';
+  }, [country, countryOpts]);
   const [contactName, setContactName] = useState('');
   const [designation, setDesignation] = useState('');
   const [contactNo,   setContactNo]   = useState('');
@@ -1016,7 +1031,7 @@ export default function AddVendorModal(props: {
     Promise.all([
       Promise.all(
         ids.map(id =>
-          api.get(`/clm/segment-rules/for-segment/${id}`)
+          api.get(`/clm/segment-rules/for-segment/${id}`, { params: { document_type: supplierDocType } })
             .then(r => r.data?.data ?? {})
             .catch(() => ({}))
         )
@@ -1082,7 +1097,7 @@ export default function AddVendorModal(props: {
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, segment]);
+  }, [step, segment, supplierDocType]);
 
   /* Whether the removal guard can answer yet — `segmentDocKeys` is filled by an
    * async fetch, so on a first open the field is interactive before the map
@@ -1590,6 +1605,20 @@ export default function AddVendorModal(props: {
     if (!vendorBehaviour)    errs.vendorBehaviour     = 'Supplier Behaviour is required';
     if (!Array.isArray(segment) || segment.length === 0)
                               errs.segment             = 'Select at least one supplier segment';
+    else if (segRulesLoaded && country) {
+      /* Trade-type match: a segment's document-type rule must match the
+       * supplier's trade type — a Domestic supplier needs a Domestic rule, an
+       * International one needs an International rule. Both types satisfy either. */
+      const label = supplierDocType === 'domestic' ? 'Domestic' : 'International';
+      const mismatched = segment.filter(id => {
+        const t = segTypesById.get(String(id));
+        return t && t.size > 0 && !t.has(supplierDocType);
+      });
+      if (mismatched.length) {
+        const names = mismatched.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
+        errs.segment = `${names.join(', ')} ${mismatched.length > 1 ? 'have' : 'has'} no ${label} rule — this is a ${label} supplier, so the segment's document type must match.`;
+      }
+    }
     if (!complianceBehaviour) errs.complianceBehaviour = 'Compliance Behaviour is required';
     if (website)             { const e = validateWebsite(website); if (e) errs.website = e; }
     // Only enforced when GST applies. The GST Scrutiny popup renders this number
@@ -3139,6 +3168,23 @@ export default function AddVendorModal(props: {
                           placeholder="Select Segment"
                           disabledValues={unruledSegmentIds}
                           disabledHint="no document rule defined in the Document Control Panel yet"
+                          renderBadges={(id) => {
+                            const t = segTypesById.get(String(id));
+                            if (!t || t.size === 0) return null;
+                            const badge = (text: string, title: string, color: string, bg: string, bd: string, onClick?: (e: React.MouseEvent) => void) => (
+                              <span title={title} onClick={onClick} style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.02em', padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined }}>{text}</span>
+                            );
+                            const intl = () => badge('Intl', 'International rule', '#3730a3', '#eef2ff', '#c7d2fe');
+                            const dom  = () => badge('Dom', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');
+                            if (t.has('international') && t.has('domestic')) {
+                              return expandedSegBadges.has(String(id))
+                                ? <>{intl()}{dom()}</>
+                                : badge('+2', 'Both International & Domestic — click to show', '#6d28d9', '#f5f3ff', '#ddd6fe',
+                                    (e) => { e.stopPropagation(); toggleSegBadge(String(id)); });
+                            }
+                            if (t.has('international')) return intl();
+                            return dom();
+                          }}
                           onChange={vs => {
                             // Guard removal of a locked segment (one with uploaded docs) —
                             // block it, restore the segment, and explain why (mirrors the

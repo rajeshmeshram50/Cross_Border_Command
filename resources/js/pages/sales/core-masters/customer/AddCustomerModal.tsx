@@ -8,7 +8,7 @@ import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
-import { useRuledSegments } from '../../../../hooks/useRuledSegments';
+import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 import {
   readCustomerMasterBundle,
@@ -417,7 +417,18 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   /* Segments carrying a Document Control Panel rule. Everything else stays
    * visible in the dropdown but can't be picked — a rule-less segment brings
    * no documents, so tagging a customer with it means nothing downstream. */
-  const { ruledCodes: ruledSegCodes, loaded: segRulesLoaded } = useRuledSegments(open);
+  const { ruledCodes: ruledSegCodes, typesByCode: segTypesByCode, loaded: segRulesLoaded } = useRuledSegments(open);
+  /* Segment NAME → the Domestic/International rule types it has. The customer
+   * segment field stores names, so re-key the by-code map onto names for the
+   * dropdown badges and the trade-type validation below. */
+  const segTypesByName = useMemo(() => {
+    const m = new Map<string, Set<SegDocType>>();
+    for (const s of masters.segments) {
+      const t = segTypesByCode.get(String(s.code ?? ''));
+      if (t && t.size) m.set(s.name, new Set(t));
+    }
+    return m;
+  }, [masters.segments, segTypesByCode]);
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -1307,10 +1318,15 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
     let cancelled = false;
     setSegmentDocsLoading(true);
+    /* Fetch the KYC/DD/TL set for the rule matching the customer's trade type:
+     * India (primary address) → domestic rule, any other country → international.
+     * A segment with no rule of that type returns an empty set (and the Stage-1
+     * validation blocks the mismatch), so only the right documents ever load. */
+    const custDocType: SegDocType = isDomesticCountry(form.country) ? 'domestic' : 'international';
     Promise.all([
       Promise.all(
         segRows.map(s =>
-          api.get(`/clm/segment-rules/for-segment/${s.id}`)
+          api.get(`/clm/segment-rules/for-segment/${s.id}`, { params: { document_type: custDocType } })
             .then(r => r.data?.data ?? {})
             .catch(() => ({}))
         )
@@ -1384,7 +1400,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
 
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, stage, maxStage, form.coSeg, masters.segments]);
+  }, [open, stage, maxStage, form.coSeg, form.country, masters.segments]);
 
   // Inject DM Sans/Inter once
   useEffect(() => {
@@ -1474,9 +1490,26 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       case 'coType':
         if (!f.coType) return 'Select a customer category';
         return null;
-      case 'coSeg':
+      case 'coSeg': {
         if (!f.coSeg || f.coSeg.length === 0) return 'Select at least one segment';
+        /* Trade-type match: the segment's document-type rule must match the
+         * customer's trade type — a Domestic customer needs a Domestic rule, an
+         * International customer needs an International rule. A segment carrying
+         * both types satisfies either. Only checked once the rules have loaded
+         * and a country (which decides domestic vs international) is chosen. */
+        if (segRulesLoaded && f.country) {
+          const custType: SegDocType = isDomesticCountry(f.country) ? 'domestic' : 'international';
+          const custLabel = custType === 'domestic' ? 'Domestic' : 'International';
+          const mismatched = (f.coSeg as string[]).filter(name => {
+            const types = segTypesByName.get(name);
+            return types && types.size > 0 && !types.has(custType);
+          });
+          if (mismatched.length) {
+            return `${mismatched.join(', ')} ${mismatched.length > 1 ? 'have' : 'has'} no ${custLabel} rule — this is a ${custLabel} customer, so the segment's document type must match.`;
+          }
+        }
         return null;
+      }
       case 'coClass':
         if (!f.coClass) return 'Select a classification';
         return null;
@@ -2077,7 +2110,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               additional fields populate. */}
           {stage === 1 && showShimmer && <Stage1FormShimmer />}
           {stage === 1 && !showShimmer && tab === 'identification' && (
-            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} unruledSegments={segRulesLoaded ? masters.segments.filter(s => !ruledSegCodes.has(s.code ?? '')).map(s => s.name) : []} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} guardSegmentRemove={(prev, vs) => {
+            <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} unruledSegments={segRulesLoaded ? masters.segments.filter(s => !ruledSegCodes.has(s.code ?? '')).map(s => s.name) : []} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} segTypesByName={segTypesByName} guardSegmentRemove={(prev, vs) => {
               const removed = prev.filter(s => !vs.includes(s));
               if (!removed.length) return vs;
               /* Refuse to decide before the evidence is in. `segCodeMap` is
@@ -2115,6 +2148,8 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               }
               return vs;
             }} gstLocked={gstRows.length > 0} onCountryBlockedByGst={() => toast.warning('Country is locked to India', 'This customer has GST Scrutiny entries. Delete them first — an international customer has no GST.')}
+            docsLocked={Object.keys(segmentRefUploads).length > 0}
+            onCountryBlockedByDocs={() => toast.warning('Country is locked', 'KYC / Due-Diligence documents have already been uploaded for this customer’s trade type. Changing the country would switch the segment’s document rule (Domestic ↔ International) and orphan those files — delete the uploaded documents first.')}
             mapLeadLocked={mapLeadLocked}
             onCountryBlockedByLead={() => toast.warning('Country is locked', 'This customer is already mapped to a lead. Opportunities, quotations and proforma invoices were raised against its current country, so it can no longer be changed.')} />
           )}
@@ -2805,7 +2840,7 @@ function Stage2Shimmer() {
 /* Stage 3 (Evidence Vault) shimmer removed along with the stage itself. */
 
 /* ───── Stage 1 — Identification + Primary Address & Contact ───── */
-function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onCountryBlockedByGst, mapLeadLocked = false, onCountryBlockedByLead, currentCustomerId, unruledSegments = [] }:
+function Stage1Identification({ form, setF, masters, errors, clearErr, validateField, guardSegmentRemove, gstLocked, onCountryBlockedByGst, docsLocked = false, onCountryBlockedByDocs, mapLeadLocked = false, onCountryBlockedByLead, currentCustomerId, unruledSegments = [], segTypesByName }:
   { form: any; setF: (k: any, v: any) => void; masters: MasterLists; errors: Record<string, string>; clearErr: (k: string) => void; validateField: (k: string, nextForm: any) => void; guardSegmentRemove: (prev: string[], next: string[]) => string[];
     /** True when GST Scrutiny entries exist. Only guards the Country field now —
      *  the GST Applicable toggle it used to lock no longer exists. */
@@ -2813,6 +2848,13 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
     /** Fired when the user tries to go international while GST Scrutiny entries
      *  exist — the change is refused rather than hiding those records. */
     onCountryBlockedByGst: () => void;
+    /** True when KYC/DD/TL documents have been uploaded. Blocks any country
+     *  change that would FLIP the trade type (Domestic ↔ International), which
+     *  would switch the segment's document rule and orphan those uploads. */
+    docsLocked?: boolean;
+    /** Fired when a trade-type-flipping country change is refused because
+     *  documents are already uploaded. */
+    onCountryBlockedByDocs?: () => void;
     /** True when `is_map_lead = 'Yes'` — the customer has already been used to
      *  raise a lead, so Country is frozen entirely (not just the India side,
      *  the way gstLocked works). Disabled rather than refused-on-change: there
@@ -2825,11 +2867,22 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
     currentCustomerId?: number | null;
     /** Segment names with no Document Control Panel rule — listed but not
      *  selectable, since they'd bring no compliance documents with them. */
-    unruledSegments?: string[] }) {
+    unruledSegments?: string[];
+    /** Segment NAME → its Domestic/International rule types, for the dropdown
+     *  badges (Intl / Dom / +2 when a segment has both). */
+    segTypesByName: Map<string, Set<SegDocType>> }) {
   /* India (or not-yet-chosen) → domestic → GST fields render. Any other country
    * → international → they're hidden. Driven by the Primary Address & Contact
    * Person card's Country, which lives in this same component. */
   const domestic = isDomesticCountry(form.country);
+  /* Segment names whose "+2" badge has been clicked open — those show the
+   * individual Intl + Dom badges instead of the collapsed +2. */
+  const [expandedSegBadges, setExpandedSegBadges] = useState<Set<string>>(new Set());
+  const toggleSegBadge = (name: string) => setExpandedSegBadges(prev => {
+    const next = new Set(prev);
+    next.has(name) ? next.delete(name) : next.add(name);
+    return next;
+  });
   // States filter against the selected country: look up the country
   // name → its id from the countries master, then filter states by it.
   const selectedCountry = masters.countries.find(c => c.name === form.country);
@@ -2969,6 +3022,27 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 }}
                 disabledValues={unruledSegments}
                 disabledHint="no document rule defined in the Document Control Panel yet"
+                renderBadges={(name) => {
+                  const t = segTypesByName.get(name);
+                  if (!t || t.size === 0) return null;
+                  const both = t.has('international') && t.has('domestic');
+                  const badge = (text: string, title: string, color: string, bg: string, bd: string, onClick?: (e: React.MouseEvent) => void) => (
+                    <span title={title} onClick={onClick} style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '.02em', padding: '1px 6px', borderRadius: 10, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined }}>{text}</span>
+                  );
+                  const intl = () => badge('Intl', 'International rule', '#3730a3', '#eef2ff', '#c7d2fe');
+                  const dom  = () => badge('Dom', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');
+                  if (both) {
+                    // Collapsed: a clickable "+2"; expanded: the two individual
+                    // badges. Stop propagation so the click doesn't toggle the
+                    // segment's checkbox.
+                    return expandedSegBadges.has(name)
+                      ? <>{intl()}{dom()}</>
+                      : badge('+2', 'Has both International & Domestic — click to show', '#6d28d9', '#f5f3ff', '#ddd6fe',
+                          (e) => { e.stopPropagation(); toggleSegBadge(name); });
+                  }
+                  if (t.has('international')) return intl();
+                  return dom();
+                }}
                 maxChips={2}
               />
             </Field>
@@ -3031,6 +3105,9 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 disabled={mapLeadLocked}
                 onChange={v => {
                 if (gstLocked && !isDomesticCountry(v)) { onCountryBlockedByGst(); return; }
+                /* Uploaded KYC/DD/TL docs belong to the current trade type's
+                   rule — refuse a change that flips Domestic ↔ International. */
+                if (docsLocked && isDomesticCountry(v) !== domestic) { onCountryBlockedByDocs?.(); return; }
                 const nextForm = { ...form, country: v, state: '', stateCode: '' };
                 // State resets on a country change, so its derived code must go too.
                 setF('country', v); setF('state', ''); setF('stateCode', '');
@@ -3042,6 +3119,9 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                    to be re-judged against the NEW country — otherwise a valid
                    "SL7 1TB" stays green after switching to India. */
                 validateField('pin', nextForm);
+                /* Country decides domestic vs international, which the segment's
+                   document-type rule must match — re-judge the segment too. */
+                validateField('coSeg', nextForm);
               }} />
               {/* The disabled control alone doesn't say WHY. Spell it out
                   inline — the user cannot hover-discover a reason on a
