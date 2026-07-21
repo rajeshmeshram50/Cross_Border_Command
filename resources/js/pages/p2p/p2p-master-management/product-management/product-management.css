@@ -242,7 +242,7 @@
 .prd-pcard:hover .prd-pcard-thumb-ico { transform: translateY(-3px) scale(1.04); }
 .prd-pcard-thumb-ico svg { width: 30px; height: 30px; }
 .prd-pcard-thumb-grad { position: absolute; inset: 0; z-index: 2; pointer-events: none; background: linear-gradient(180deg,rgba(15,23,42,.04) 0%,transparent 32%,transparent 60%,rgba(15,23,42,.28) 100%); }
-.prd-pcard-thumb-seg { position: absolute; left: 10px; bottom: 9px; z-index: 3; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: #16a34a; border-radius: 20px; padding: 3px 10px; box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+.prd-pcard-thumb-seg { position: absolute; left: 10px; bottom: 9px; z-index: 3; font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #fff; background: #16a34a; border-radius: 20px; padding: 3px 10px; box-shadow: 0 2px 6px rgba(0,0,0,.25); /* One line, clipped — a long segment must never wrap across the image. */ white-space: nowrap; max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
 .prd-pcard-status { position: absolute; right: 10px; top: 10px; z-index: 3; display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 800; border-radius: 20px; padding: 4px 9px; box-shadow: 0 2px 6px rgba(0,0,0,.12); }
 .prd-pcard-status-dot { width: 6px; height: 6px; border-radius: 50%; }
 .prd-pcard-status--active { color: #15803d; background: rgba(220,252,231,.96); border: 1px solid #86efac; }
