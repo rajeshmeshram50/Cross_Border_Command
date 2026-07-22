@@ -558,6 +558,20 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     <>
       <style>{SHARED_STAGE_CSS}{STAGE5_CSS}</style>
 
+      {/* Full-page lock while a document is opening (view / download / email /
+          certificate). Portalled to <body> and fixed over the WHOLE viewport so
+          it also covers the step pills and action buttons OUTSIDE this stage —
+          no stage-switch or any other action can fire until the doc is ready. */}
+      {(anyActing || menuBusy) && createPortal(
+        <div className="s5-pagelock" role="status" aria-live="polite" aria-label="Opening document">
+          <div className="s5-pagelock-card">
+            <span className="s5-pagelock-spin" />
+            <span className="s5-pagelock-txt">Opening document…</span>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {/* ── Header (teal) with View-Summary button ── */}
       <div className="smd-stg-head">
         <div className="smd-stg-head-left">
@@ -1665,6 +1679,15 @@ const STAGE5_CSS = `
   transition: all .15s;
 }
 .s5-icn:disabled { opacity: .5; cursor: not-allowed; }
+/* Full-viewport lock shown while a document is opening — blocks every click on
+   the page (step pills, action buttons, side panels) until the fetch resolves. */
+.s5-pagelock { position: fixed; inset: 0; z-index: 13000; background: rgba(30, 18, 60, .18); backdrop-filter: none; cursor: wait; display: flex; align-items: center; justify-content: center; animation: s5PagelockIn .12s ease; }
+@keyframes s5PagelockIn { from { opacity: 0; } to { opacity: 1; } }
+.s5-pagelock-card { display: inline-flex; align-items: center; gap: 12px; padding: 14px 22px; border-radius: 14px; background: #fff; box-shadow: 0 18px 44px rgba(30, 18, 60, .28); font-size: 13px; font-weight: 700; color: #4c1d95; }
+.s5-pagelock-spin { width: 18px; height: 18px; border-radius: 50%; border: 2.6px solid #ede9fe; border-top-color: #7c3aed; animation: s5PagelockSpin .7s linear infinite; }
+@keyframes s5PagelockSpin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .s5-pagelock-card { background: #1c1738; color: #ede9fe; box-shadow: 0 18px 44px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .s5-pagelock-spin { border-color: #2b2450; border-top-color: #a78bfa; }
 /* Lock the tab switcher + summary button while a row action (PDF view /
    download / email) is in flight, so context can't change mid-load. */
 .s5-seg-btn:disabled, .s5-summary-btn:disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }

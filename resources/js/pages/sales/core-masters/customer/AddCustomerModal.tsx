@@ -3623,19 +3623,23 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                   : isOwners       ? filteredOwners.length
                   : filteredDocs.length;
 
-  const maxPage = Math.max(1, Math.ceil(totalRows / KYC_PER_PAGE));
+  // Rows-per-page is now user-selectable (via the shared WorklistPager) instead
+  // of a fixed KYC_PER_PAGE, so these in-modal doc tables get the same proper
+  // pagination as the full-page lists.
+  const [rpp, setRpp] = useState(KYC_PER_PAGE);
+  const maxPage = Math.max(1, Math.ceil(totalRows / rpp));
   const curPage = Math.min(page[sub], maxPage);
-  const start = (curPage - 1) * KYC_PER_PAGE;
-  const docSlice    = filteredDocs.slice(start, start + KYC_PER_PAGE);
-  const ownerSlice  = filteredOwners.slice(start, start + KYC_PER_PAGE);
-  const legacySlice = filteredTradeLegacy.slice(start, start + KYC_PER_PAGE);
+  const start = (curPage - 1) * rpp;
+  const docSlice    = filteredDocs.slice(start, start + rpp);
+  const ownerSlice  = filteredOwners.slice(start, start + rpp);
+  const legacySlice = filteredTradeLegacy.slice(start, start + rpp);
 
   // Compose an auto-code prefix that mirrors the design (DD-001 etc.).
   // Uses the row's sr position so codes stay stable per page render.
   const codeFor = (kindLetters: string, sr: number) => `${kindLetters}-${String(sr).padStart(3, '0')}`;
 
   return (
-    <div>
+    <div className="acm-kyc-stage">
       <div className="acm-subtabs-row">
         {(['company-dd','owner-kyc','trade-licence'] as KycSubTab[]).map(s => (
           <button key={s} type="button" className={`acm-subtab-pill ${sub === s ? 'is-active' : ''}`} onClick={() => setSub(s)}>
@@ -3836,18 +3840,13 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
             )}
           </div>
           <div className="acm-doc-pag-wrap">
-            <span className="acm-doc-pag-info">
-              {totalRows === 0 ? 'Showing 0 of 0 rows' : `Showing ${start + 1}–${Math.min(start + KYC_PER_PAGE, totalRows)} of ${totalRows} rows`}
-            </span>
-            {maxPage > 1 && (
-              <div className="acm-pagination">
-                <button type="button" className="acm-page-btn" disabled={curPage === 1} onClick={() => setPage(sub, curPage - 1)}>‹</button>
-                {Array.from({ length: maxPage }, (_, i) => i + 1).map(p => (
-                  <button key={p} type="button" className={`acm-page-btn ${p === curPage ? 'is-active' : ''}`} onClick={() => setPage(sub, p)}>{p}</button>
-                ))}
-                <button type="button" className="acm-page-btn" disabled={curPage === maxPage} onClick={() => setPage(sub, curPage + 1)}>›</button>
-              </div>
-            )}
+            <WorklistPager
+              total={totalRows}
+              page={curPage}
+              pageSize={rpp}
+              onPage={(p) => setPage(sub, p)}
+              onPageSize={(n) => { setRpp(n); setPage(sub, 1); }}
+            />
           </div>
         </div>
       </div>
@@ -5383,7 +5382,13 @@ const SCOPED_CSS = `
 .acm-tab-off:hover { background: #ede9fe; border-color: #7c3aed; }
 
 /* Body */
-.acm-body { flex: 1; overflow-y: auto; padding: 16px 22px 20px; background: #fff; scrollbar-width: thin; scrollbar-color: #a78bfa #ede9fe; }
+.acm-body { flex: 1; overflow-y: auto; padding: 16px 22px 20px; background: #fff; scrollbar-width: thin; scrollbar-color: #a78bfa #ede9fe; display: flex; flex-direction: column; }
+/* KYC stage (DD / Owner KYC / Trade Licence) — stretch the table card to fill
+   the modal's fixed height so the pager pins to the bottom instead of floating
+   with a big empty gap under a short list. Scoped so Stage 1 is untouched. */
+.acm-kyc-stage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.acm-kyc-stage .acm-section-purple { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.acm-kyc-stage .acm-section-body-table { flex: 1 1 auto; min-height: 0; }
 .acm-body::-webkit-scrollbar { width: 6px; }
 .acm-body::-webkit-scrollbar-track { background: #ede9fe; border-radius: 10px; }
 .acm-body::-webkit-scrollbar-thumb { background: #a78bfa; border-radius: 10px; }
@@ -5841,7 +5846,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-btn-ghost { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
 
 /* Pagination */
-.acm-doc-pag-wrap { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 16px; border-top: 1px solid #ede9fe; background: #fafafd; flex-wrap: wrap; }
+/* WorklistPager carries its own band (background + layout), so this wrapper is
+   just a full-width block — the old flex/border/background here double-drew a
+   half-width line above the pager. */
+.acm-doc-pag-wrap { display: block; padding: 0; border: 0; background: transparent; }
 .acm-doc-pag-info { font-size: 11px; color: #6b7280; font-weight: 500; }
 .acm-pagination { display: inline-flex; gap: 4px; }
 .acm-page-btn { min-width: 28px; height: 28px; padding: 0 8px; border-radius: 7px; border: 1px solid #e5e1f3; background: #fff; color: #6b7280; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .15s; }
@@ -6464,7 +6472,6 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .acm-doc-search-icon { color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-doc-count { color: #c4b5fd; }
-[data-bs-theme="dark"] .acm-doc-pag-wrap { background: rgba(28,37,49,0.40); border-color: rgba(255,255,255,0.06); }
 [data-bs-theme="dark"] .acm-doc-pag-info { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-page-btn { background: #1c2531; color: #c4b5fd; border-color: rgba(167,139,250,0.25); }
 [data-bs-theme="dark"] .acm-page-btn:hover:not(:disabled) { background: rgba(167,139,250,0.18); color: #ede9fe; }
