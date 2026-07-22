@@ -223,10 +223,32 @@ class PurchaseOrderController extends Controller
         }
         try {
 
-        if (!empty($po->zoho_purchaseorder_id)) {
+        // Fully synced (PO + bill) → top up any newly-recorded Cleared payments to
+        // the existing bill, then report. A PO that has a Zoho PO but no bill yet
+        // (a mid-flow failure) falls through to create the bill below.
+        if (!empty($po->zoho_purchaseorder_id) && !empty($po->zoho_bill_id)) {
+            try {
+                $vendor = Vendor::with('primaryAddress')->find($po->vendor_id);
+                if ($vendor) {
+                    $gstin = ($vendor->gst_number ?: null)
+                        ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
+                    $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, optional($vendor->primaryAddress)->state_code);
+                    $bill = $books->getBill((string) $po->zoho_bill_id);
+                    $r = $this->postPoPaymentsToBill($po, $books, $zohoVendorId, (string) $po->zoho_bill_id, (float) ($bill['balance'] ?? 0));
+                    if ($r['pushed'] > 0) {
+                        return response()->json([
+                            'status' => true,
+                            'message' => 'Posted ₹' . number_format($r['applied'], 2) . ' of newly-recorded payment(s) to bill ' . ($po->zoho_bill_number ?: $po->zoho_bill_id) . '.',
+                            'data' => $this->shapeListRow($po->fresh()),
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Zoho PO bill payment top-up failed', ['po' => $po->id, 'err' => $e->getMessage()]);
+            }
             return response()->json([
                 'status' => true,
-                'message' => 'This PO is already synced with Zoho Books.',
+                'message' => 'This PO is already synced with Zoho Books (bill ' . ($po->zoho_bill_number ?: $po->zoho_bill_id) . ').',
                 'data' => $this->shapeListRow($po),
             ]);
         }
@@ -253,7 +275,11 @@ class PurchaseOrderController extends Controller
 
         try {
             $vendor = Vendor::with('primaryAddress')->findOrFail($po->vendor_id);
-            $gstin = DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null;
+            // GST source of truth is vendors.gst_number (Stage-1); vendor_gst_scrutiny
+            // is only a fallback. Reading scrutiny alone makes a Stage-1-registered
+            // supplier sync as UNREGISTERED → no tax → Zoho rejects the bill.
+            $gstin = ($vendor->gst_number ?: null)
+                ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
             $stateCode = optional($vendor->primaryAddress)->state_code;
 
             // Intra- vs inter-state decides GST(CGST+SGST) vs IGST in Zoho.
@@ -262,40 +288,57 @@ class PurchaseOrderController extends Controller
             $interState = $stateCode && (string) $stateCode !== (string) $orgState;
 
             $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
-            $created = $books->createPurchaseOrder($this->buildZohoPayload($po, $books, $zohoVendorId, (bool) $gstin, $interState));
-            $zohoId = (string) $created['purchaseorder_id'];
 
-            // Cache Zoho's own rendered PDF — best-effort; a PDF hiccup must not
-            // undo an otherwise-successful sync.
-            $pdfPath = null;
-            try {
-                $rel = 'zoho/po/' . $po->client_id . '/PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($po->code ?: $po->id)) . '.pdf';
-                Storage::disk('public')->put($rel, $books->getPurchaseOrderPdf($zohoId));
-                $pdfPath = '/storage/' . $rel;
-            } catch (\Throwable $e) {
-                Log::warning('Zoho PO PDF cache failed', ['po' => $po->id, 'err' => $e->getMessage()]);
+            // 1) Create the Zoho PURCHASE ORDER once (skip if a prior sync made it
+            //    and only the bill is missing — mid-flow recovery).
+            $zohoId  = (string) $po->zoho_purchaseorder_id;
+            $pdfPath = $po->zoho_pdf_path;
+            if ($zohoId === '') {
+                $created = $books->createPurchaseOrder($this->buildZohoPayload($po, $books, $zohoVendorId, (bool) $gstin, $interState));
+                $zohoId  = (string) $created['purchaseorder_id'];
+
+                // Cache Zoho's own rendered PO PDF — best-effort.
+                try {
+                    $rel = 'zoho/po/' . $po->client_id . '/PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($po->code ?: $po->id)) . '.pdf';
+                    Storage::disk('public')->put($rel, $books->getPurchaseOrderPdf($zohoId));
+                    $pdfPath = '/storage/' . $rel;
+                } catch (\Throwable $e) {
+                    Log::warning('Zoho PO PDF cache failed', ['po' => $po->id, 'err' => $e->getMessage()]);
+                }
+
+                $delta = abs((float) ($created['total'] ?? 0) - (float) $po->grand_total);
+                if ($delta > 1.0) {
+                    Log::warning('Zoho PO total mismatch', ['po' => $po->code, 'local' => (float) $po->grand_total, 'zoho' => (float) ($created['total'] ?? 0)]);
+                }
             }
+
+            // 2) Create the BILL from the PO (the payable) and 3) post the PO's
+            //    Cleared payments against it. The bill is what holds the money in
+            //    Zoho — the PO alone can't. Payment posting is idempotent.
+            $bill       = $books->createBill($this->buildBillPayloadFromPo($po, $books, $zohoVendorId, (bool) $gstin, $interState));
+            $billId     = (string) $bill['bill_id'];
+            $billNumber = (string) ($bill['bill_number'] ?? $po->code);
+            $pay        = $this->postPoPaymentsToBill($po, $books, $zohoVendorId, $billId, (float) ($bill['balance'] ?? $bill['total'] ?? 0));
 
             $po->update([
-                'zoho_status' => 'Sync',
+                'zoho_status'           => 'Sync',
                 'zoho_purchaseorder_id' => $zohoId,
-                'zoho_synced_at' => now(),
-                'zoho_error' => null,
-                'zoho_pdf_path' => $pdfPath,
-                'updated_by' => $user->id,
+                'zoho_bill_id'          => $billId,
+                'zoho_bill_number'      => $billNumber,
+                'zoho_synced_at'        => now(),
+                'zoho_error'            => null,
+                'zoho_pdf_path'         => $pdfPath,
+                'updated_by'            => $user->id,
             ]);
 
-            // Reconcile totals — log (don't fail) when Zoho's total drifts from ours.
-            $delta = abs((float) ($created['total'] ?? 0) - (float) $po->grand_total);
-            if ($delta > 1.0) {
-                Log::warning('Zoho PO total mismatch', [
-                    'po' => $po->code, 'local' => (float) $po->grand_total, 'zoho' => (float) ($created['total'] ?? 0),
-                ]);
-            }
+            $note = '';
+            if ($pay['noAccount'])   $note = ' NOTE: payments were NOT posted — add a Bank/Cash account in Zoho, then re-sync to post them.';
+            elseif ($pay['pending']) $note = ' Some payments could not be posted yet — re-sync to retry.';
 
             return response()->json([
                 'status' => true,
-                'message' => 'Synced to Zoho Books (' . ($created['purchaseorder_number'] ?? $zohoId) . ').',
+                'message' => 'Synced to Zoho Books — PO + bill ' . $billNumber
+                    . ($pay['pushed'] ? (', posted ₹' . number_format($pay['applied'], 2) . ' payment(s)') : '') . '.' . $note,
                 'data' => $this->shapeListRow($po->fresh()),
             ]);
         } catch (RuntimeException $e) {
@@ -540,6 +583,148 @@ class PurchaseOrderController extends Controller
         }
 
         return $payload;
+    }
+
+    /**
+     * Build the Zoho BILL payload from a fully-utilised PO. Mirrors the PO
+     * payload but as a bill (the payable), so the PO's payments can be posted
+     * against it. Tax uses the same cgst+sgst rate + interState flag the PO
+     * uses (Zoho picks CGST/SGST vs IGST by place of supply). Charges fold into
+     * a single adjustment line so the bill total reconciles with ours. The PO
+     * code is the reference so the bill is traceable to the PO.
+     */
+    private function buildBillPayloadFromPo(PurchaseOrder $po, ZohoBooksService $books, string $zohoVendorId, bool $registered, bool $interState): array
+    {
+        $lineItems = $po->items->map(function ($it) use ($books, $registered, $interState) {
+            $name  = (string) ($it->product_name ?: $it->product_code ?: 'Item');
+            $taxId = $registered ? $books->resolveTaxId((float) $it->cgst_pct + (float) $it->sgst_pct, $interState) : null;
+            $line  = [
+                'item_id'     => $books->findOrCreateItemId($name, (float) $it->rate, $taxId, $it->product_id),
+                'name'        => $name,
+                'description' => (string) $it->product_code,
+                'rate'        => (float) $it->rate,
+                'quantity'    => (float) $it->quantity,
+            ];
+            if ($taxId) $line['tax_id'] = $taxId;
+            return $line;
+        })->values()->all();
+
+        // bill_number is required + unique per vendor in Zoho — the PO code is
+        // unique and keeps the bill unambiguously traceable to the PO.
+        $billNumber = (string) $po->code;
+
+        $payload = [
+            'vendor_id'        => $zohoVendorId,
+            'bill_number'      => $billNumber,
+            'date'             => optional($po->po_date)->toDateString() ?: now()->toDateString(),
+            'reference_number' => (string) $po->code,
+            'line_items'       => $lineItems,
+        ];
+
+        // Charges + TDS fold into the single adjustment field. When TDS has been
+        // cut we DEDUCT it here so the bill total equals our net payable
+        // (grand_total − TDS) and the bill settles fully once the net is paid —
+        // matching the app's Payment Summary. (This records TDS as a bill
+        // deduction, not a formal Zoho TDS entry; proper TDS reporting would use
+        // Zoho's TDS feature.)
+        $adjustment = (float) $po->shipping_charges + (float) $po->packaging_charges + (float) $po->other_charges;
+        $descParts  = [];
+        if ($adjustment != 0.0) $descParts[] = 'Charges ₹' . number_format($adjustment, 2);
+        if ($po->tds_cut && (float) $po->tds_amount > 0) {
+            $adjustment -= (float) $po->tds_amount;
+            $descParts[] = 'less TDS ₹' . number_format((float) $po->tds_amount, 2) . ' (' . rtrim(rtrim(number_format((float) $po->tds_percentage, 2), '0'), '.') . '%)';
+        }
+        if ($adjustment != 0.0) {
+            $payload['adjustment']             = round($adjustment, 2);
+            $payload['adjustment_description'] = trim(implode(' ', $descParts)) ?: 'Adjustment';
+        }
+
+        if ($ccyId = $books->resolveCurrencyId($po->currency_code)) {
+            $payload['currency_id'] = $ccyId;
+            if ((float) $po->exchange_rate > 0) $payload['exchange_rate'] = (float) $po->exchange_rate;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Post the PO's Cleared payments to its Zoho bill as vendor payments.
+     * Mirrors SupplierPurchaseInvoiceController::pushPaymentsToZoho but reads
+     * po_payments directly. Idempotent: each row's cumulative posted amount is
+     * tracked in zoho_applied_amount, so only the un-posted portion is sent and
+     * nothing is ever double-posted (top-up on re-sync). Capped at the bill's
+     * open balance. Returns ['applied','pushed','pending','noAccount'].
+     */
+    private function postPoPaymentsToBill(PurchaseOrder $po, ZohoBooksService $books, string $zohoVendorId, string $billId, float $billBalance): array
+    {
+        $result = ['applied' => 0.0, 'pushed' => 0, 'pending' => 0, 'noAccount' => false];
+
+        $payments = \App\Models\PoPayment::where('purchase_order_id', $po->id)
+            ->where('status', 'Cleared')
+            ->whereColumn('zoho_applied_amount', '<', 'amount')
+            ->orderBy('id')->get();
+        if ($payments->isEmpty()) return $result;
+
+        // SPI code per payment → the Zoho reference shows "UTR · SPI-code" so each
+        // payment surfaces which invoice it was for (the bill# is the constant PO).
+        $spiIds   = $payments->pluck('supplier_purchase_invoice_id')->filter()->unique()->values();
+        $spiCodes = $spiIds->isNotEmpty()
+            ? \App\Models\SupplierPurchaseInvoice::whereIn('id', $spiIds)->pluck('code', 'id')
+            : collect();
+
+        if (!$books->resolvePaidThroughAccountId(null)) {
+            $result['pending']   = $payments->count();
+            $result['noAccount'] = true;
+            Log::warning('Zoho PO vendor payment skipped — no Bank/Cash account in the org', ['po' => $po->id]);
+            return $result;
+        }
+
+        $exchangeRate = ((float) $po->exchange_rate > 0 && $books->resolveCurrencyId($po->currency_code)) ? (float) $po->exchange_rate : null;
+        $remaining = round($billBalance, 2);
+
+        foreach ($payments as $p) {
+            $available = round((float) $p->amount - (float) $p->zoho_applied_amount, 2);
+            if ($available <= 0.005) continue;
+            if ($remaining <= 0.005) { $result['pending']++; continue; }
+            $amt = round(min($available, $remaining), 2);
+
+            $payload = [
+                'vendor_id'               => $zohoVendorId,
+                'payment_mode'            => 'banktransfer',
+                'amount'                  => $amt,
+                'date'                    => optional($p->utr_cheque_date)->toDateString() ?: now()->toDateString(),
+                'paid_through_account_id' => $books->resolvePaidThroughAccountId($p->bank_name),
+                'bills'                   => [['bill_id' => $billId, 'amount_applied' => $amt]],
+            ];
+            // Reference = "UTR · SPI-code" (Option A) so the Payments Made list shows
+            // the bank UTR AND which SPI this payment was for. Falls back to whichever
+            // part exists (UTR-only, or SPI-only).
+            $spiCode  = $p->supplier_purchase_invoice_id ? ($spiCodes[$p->supplier_purchase_invoice_id] ?? null) : null;
+            $refParts = array_values(array_filter([
+                !empty($p->utr_cheque_number) ? (string) $p->utr_cheque_number : null,
+                $spiCode,
+            ]));
+            if ($refParts) $payload['reference_number'] = implode(' · ', $refParts);
+            $descParts = ['PO ' . $po->code];
+            $descParts[] = 'Date: ' . (optional($p->utr_cheque_date)->toDateString() ?: now()->toDateString());
+            if (!empty($p->utr_cheque_number)) $descParts[] = 'Ref: ' . $p->utr_cheque_number;
+            if ($spiCode)                      $descParts[] = 'SPI: ' . $spiCode;
+            if (!empty($p->bank_name))         $descParts[] = 'Bank: ' . $p->bank_name;
+            $payload['description'] = implode(' · ', $descParts);
+            if ($exchangeRate)                 $payload['exchange_rate'] = $exchangeRate;
+
+            $zpay = $books->recordVendorPayment($payload);
+
+            $newApplied = round((float) $p->zoho_applied_amount + $amt, 2);
+            $p->forceFill(['zoho_applied_amount' => $newApplied, 'zoho_payment_id' => (string) ($zpay['payment_id'] ?? $p->zoho_payment_id)])->saveQuietly();
+
+            $remaining         = round($remaining - $amt, 2);
+            $result['applied'] = round($result['applied'] + $amt, 2);
+            $result['pushed']++;
+            if ($newApplied + 0.005 < (float) $p->amount) $result['pending']++;
+        }
+
+        return $result;
     }
 
     /* ══════════════════════════ ZOHO PDF ══════════════════════════ */

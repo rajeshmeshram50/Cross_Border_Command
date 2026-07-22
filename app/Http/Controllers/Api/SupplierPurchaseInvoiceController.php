@@ -242,7 +242,8 @@ class SupplierPurchaseInvoiceController extends Controller
             try {
                 $vendor = Vendor::with('primaryAddress')->find($spi->vendor_id);
                 if ($vendor) {
-                    $gstin = DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null;
+                    $gstin = ($vendor->gst_number ?: null)
+                        ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
                     $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, optional($vendor->primaryAddress)->state_code);
                     $bill = $books->getBill((string) $spi->zoho_bill_id);
                     $r = $this->pushPaymentsToZoho($spi, $books, $zohoVendorId, (string) $spi->zoho_bill_id, (float) ($bill['balance'] ?? 0));
@@ -253,6 +254,18 @@ class SupplierPurchaseInvoiceController extends Controller
                 Log::warning('Zoho bill payment top-up failed', ['spi' => $spi->id, 'err' => $e->getMessage()]);
             }
             return response()->json(['status' => true, 'message' => $msg, 'data' => $this->shapeListRow($spi->fresh())]);
+        }
+        // With-PO invoices are billed through the PO now: the PO sync creates ONE
+        // bill and posts all of the PO's payments. So a NOT-yet-synced With-PO SPI
+        // must not create a second bill here — redirect to the PO sync. (An
+        // already-synced SPI carries a zoho_bill_id and is handled by the block
+        // above, so it still tops up its own bill.)
+        if ($spi->purchase_order_id) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This invoice is under a purchase order — sync the PO to Zoho Books instead. The PO creates the bill and posts all its payments.',
+                'errors'  => ['po' => ['With-PO invoices are billed through the PO sync.']],
+            ], 422);
         }
         if (!$spi->vendor_id) {
             return response()->json(['status' => false, 'message' => 'Attach a supplier to this invoice before syncing to Zoho Books.'], 422);
@@ -274,7 +287,13 @@ class SupplierPurchaseInvoiceController extends Controller
 
         try {
             $vendor    = Vendor::with('primaryAddress')->findOrFail($spi->vendor_id);
-            $gstin     = DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null;
+            // GST source of truth is vendors.gst_number (Stage-1); the legacy
+            // vendor_gst_scrutiny row is only a fallback. Without reading the
+            // Stage-1 column first, a supplier registered there (but with no
+            // scrutiny row) syncs as UNREGISTERED → no tax → Zoho rejects with
+            // "Specify either a Tax or Tax Exemption or Reverse Charge".
+            $gstin     = ($vendor->gst_number ?: null)
+                ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
             $stateCode = optional($vendor->primaryAddress)->state_code;
 
             // Intra- vs inter-state decides GST(CGST+SGST) vs IGST in Zoho. Prefer
@@ -376,24 +395,33 @@ class SupplierPurchaseInvoiceController extends Controller
             return $line;
         })->values()->all();
 
-        // bill_number is required + unique per vendor in Zoho: prefer the
-        // supplier's own invoice number, fall back to our SPI code.
-        $billNumber = trim((string) ($spi->invoice_no ?: $spi->code));
+        // Direct SPI (no PO): both bill# and reference# are the SPI code, so the
+        // bill is unambiguously tied to its invoice. (This builder only runs for
+        // Direct SPIs — With-PO invoices are billed through the PO.)
+        $billNumber = (string) $spi->code;
 
         $payload = [
             'vendor_id'        => $zohoVendorId,
-            'bill_number'      => $billNumber !== '' ? $billNumber : (string) $spi->code,
+            'bill_number'      => $billNumber,
             'date'             => optional($spi->invoice_date)->toDateString() ?: now()->toDateString(),
             'reference_number' => (string) $spi->code,
             'line_items'       => $lineItems,
         ];
 
-        // Additional (shipping/packaging/other) charges have no native bill field
-        // → fold into a single adjustment line so the bill total matches ours.
+        // Additional charges fold into the single adjustment field. For a DIRECT
+        // SPI (no PO) we also DEDUCT the cut TDS so the bill total equals net
+        // payable and settles fully once the net is paid — matching the PO bill.
+        // A With-PO SPI is billed through the PO, so TDS is never deducted here.
         $adjustment = (float) $spi->additional_charges;
+        $descParts  = [];
+        if ($adjustment != 0.0) $descParts[] = 'Additional charges ₹' . number_format($adjustment, 2);
+        if (empty($spi->purchase_order_id) && $spi->tds_cut && (float) $spi->tds_amount > 0) {
+            $adjustment -= (float) $spi->tds_amount;
+            $descParts[] = 'less TDS ₹' . number_format((float) $spi->tds_amount, 2) . ' (' . rtrim(rtrim(number_format((float) $spi->tds_percentage, 2), '0'), '.') . '%)';
+        }
         if ($adjustment != 0.0) {
-            $payload['adjustment']             = $adjustment;
-            $payload['adjustment_description'] = 'Additional charges';
+            $payload['adjustment']             = round($adjustment, 2);
+            $payload['adjustment_description'] = trim(implode(' ', $descParts)) ?: 'Adjustment';
         }
 
         // Currency (INR = org base, omitted); send exchange rate for non-base ccy.

@@ -218,7 +218,7 @@ class ZohoBooksService
      */
     public function resolveTaxId(float $rate, bool $interState = false): ?string
     {
-        if ($rate <= 0) return null;
+        if ($rate < 0) return null;
 
         $maps = Cache::remember('zoho_books_tax_maps:' . $this->orgId, now()->addMinutes(30), function () {
             $intra = [];
@@ -341,12 +341,42 @@ class ZohoBooksService
     {
         $numeric = str_pad(trim((string) $numeric), 2, '0', STR_PAD_LEFT);
         static $map = [
-            '01' => 'JK', '02' => 'HP', '03' => 'PB', '04' => 'CH', '05' => 'UT', '06' => 'HR',
-            '07' => 'DL', '08' => 'RJ', '09' => 'UP', '10' => 'BR', '11' => 'SK', '12' => 'AR',
-            '13' => 'NL', '14' => 'MN', '15' => 'MZ', '16' => 'TR', '17' => 'ML', '18' => 'AS',
-            '19' => 'WB', '20' => 'JH', '21' => 'OD', '22' => 'CT', '23' => 'MP', '24' => 'GJ',
-            '25' => 'DD', '26' => 'DN', '27' => 'MH', '29' => 'KA', '30' => 'GA', '31' => 'LD',
-            '32' => 'KL', '33' => 'TN', '34' => 'PY', '35' => 'AN', '36' => 'TS', '37' => 'AP',
+            '01' => 'JK',
+            '02' => 'HP',
+            '03' => 'PB',
+            '04' => 'CH',
+            '05' => 'UT',
+            '06' => 'HR',
+            '07' => 'DL',
+            '08' => 'RJ',
+            '09' => 'UP',
+            '10' => 'BR',
+            '11' => 'SK',
+            '12' => 'AR',
+            '13' => 'NL',
+            '14' => 'MN',
+            '15' => 'MZ',
+            '16' => 'TR',
+            '17' => 'ML',
+            '18' => 'AS',
+            '19' => 'WB',
+            '20' => 'JH',
+            '21' => 'OD',
+            '22' => 'CT',
+            '23' => 'MP',
+            '24' => 'GJ',
+            '25' => 'DD',
+            '26' => 'DN',
+            '27' => 'MH',
+            '29' => 'KA',
+            '30' => 'GA',
+            '31' => 'LD',
+            '32' => 'KL',
+            '33' => 'TN',
+            '34' => 'PY',
+            '35' => 'AN',
+            '36' => 'TS',
+            '37' => 'AP',
             '38' => 'LA',
         ];
         return $map[$numeric] ?? null;
@@ -450,7 +480,9 @@ class ZohoBooksService
             }
         }
 
-        foreach ($accounts as $a) { if ($a['type'] === 'bank') return $a['id']; }
+        foreach ($accounts as $a) {
+            if ($a['type'] === 'bank') return $a['id'];
+        }
         return $accounts[0]['id'];   // no bank → first cash
     }
 

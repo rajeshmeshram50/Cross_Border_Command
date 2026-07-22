@@ -68,7 +68,7 @@ class BackfillSourcingProductNames extends Command
                 $prod = Product::where('client_id', $clientId)
                     ->with(['segment:id,name', 'hsn:id,hsn_code'])
                     ->get()
-                    ->first(fn ($x) => $this->padCode($x->product_code) === $r->code);
+                    ->first(fn($x) => $this->padCode($x->product_code) === $r->code);
             }
             if (!$prod) {
                 $skipped++;
@@ -110,7 +110,7 @@ class BackfillSourcingProductNames extends Command
         if (!$code) return $code;
         return preg_replace_callback(
             '/(\d+)$/',
-            fn ($m) => str_pad($m[1], 3, '0', STR_PAD_LEFT),
+            fn($m) => str_pad($m[1], 3, '0', STR_PAD_LEFT),
             $code,
         );
     }

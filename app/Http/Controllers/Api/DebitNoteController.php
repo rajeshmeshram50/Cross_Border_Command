@@ -209,6 +209,17 @@ class DebitNoteController extends Controller
         if ($dn->items->isEmpty()) {
             return response()->json(['status' => false, 'message' => 'Add at least one product line before syncing to Zoho Books.'], 422);
         }
+        // The full debit amount must be recovered (fully paid) before the debit
+        // note can be pushed to Zoho Books as a vendor credit. Computed from
+        // grand_total − total_paid so a stale `balance` column can't slip through.
+        $outstanding = round((float) $dn->grand_total - (float) $dn->total_paid, 2);
+        if ((float) $dn->grand_total > 0.005 && $outstanding > 0.005) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Recover the full debit amount first — the debit note must be fully paid before syncing to Zoho Books.',
+                'errors'  => ['amount' => ['₹' . number_format($outstanding, 2) . ' is still outstanding. Fully pay the debit note before syncing.']],
+            ], 422);
+        }
 
         try {
             $vendor    = Vendor::with('primaryAddress')->findOrFail($dn->vendor_id);

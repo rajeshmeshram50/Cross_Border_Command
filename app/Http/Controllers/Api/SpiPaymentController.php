@@ -242,6 +242,13 @@ class SpiPaymentController extends Controller
                 'attachment_name'   => $p->attachment_path ? basename($p->attachment_path) : null,
                 'balance_after'     => (float) $p->balance_after,
                 'status'            => $p->status,
+                // Which document this payment was made against (+ id) — backend trace.
+                // A Direct SPI payment is booked against its own SPI (no PO).
+                'source'            => [
+                    'type' => 'spi',
+                    'po'   => null,
+                    'spi'  => ['id' => $inv->id, 'code' => $inv->code],
+                ],
             ]),
         ];
     }
