@@ -191,6 +191,30 @@ class ProformaInvoiceController extends Controller
 
         $row = DB::transaction(function () use ($user, $data, $items, $totals) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
+
+            // RE-CHECK the one-PI-per-opportunity rule INSIDE the lock. The check
+            // above (outside the transaction) is a fast fail for the common case,
+            // but two concurrent converts — e.g. the same lead open in two browser
+            // tabs, the stale tab's "Convert to PI" still enabled — both pass that
+            // outer check before either commits, so without this they'd each create
+            // a PI. The clients-row lock serialises them, so the second request now
+            // sees the first's committed PI here and aborts (409, transaction rolls
+            // back). HttpResponseException is turned into the response by Laravel.
+            if (!empty($data['opp_id'])) {
+                $dupePi = ProformaInvoice::where('client_id', $user->client_id)
+                    ->where('opp_id', $data['opp_id'])
+                    ->where('status', '!=', ProformaInvoice::STATUS_CANCELLED)
+                    ->select('id', 'code', 'opp_code')
+                    ->first();
+                if ($dupePi) {
+                    throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                        'status'      => false,
+                        'message'     => "Opportunity {$dupePi->opp_code} already has a PI: {$dupePi->code}. Only one PI is allowed per opportunity.",
+                        'existing_pi' => ['id' => $dupePi->id, 'code' => $dupePi->code],
+                    ], 409));
+                }
+            }
+
             $code = $this->nextCode($user->client_id, $user->branch_id);
             $btId = !empty($data['pi_type']) && $data['pi_type'] === ProformaInvoice::TYPE_WITH_SHIPMENT
                 ? ($data['bt_id'] ?? $this->nextBtCode($user->client_id))
@@ -573,6 +597,37 @@ class ProformaInvoiceController extends Controller
 
         $pi = DB::transaction(function () use ($user, $qt) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
+
+            // RE-CHECK inside the lock — the checks above run outside the
+            // transaction, so two concurrent converts of the same lead (the same
+            // opportunity open in two browser tabs, the stale tab's "Convert to
+            // PI" still enabled) both pass them before either commits and each
+            // creates a PI. The clients-row lock serialises the two requests, so
+            // the second one now sees the first's result and aborts (409, rolled
+            // back). Covers both the one-PI-per-opportunity rule and a plain
+            // double-convert of the same quotation.
+            $freshQt = Quotation::where('id', $qt->id)->first();
+            if ($freshQt && in_array($freshQt->status, [Quotation::STATUS_CONVERTED_TO_PI, Quotation::STATUS_CANCELLED], true)) {
+                throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                    'status'  => false,
+                    'message' => 'This quotation has already been converted (or cancelled) — refresh to see the current state.',
+                ], 409));
+            }
+            if ($qt->opp_id) {
+                $dupePi = ProformaInvoice::where('client_id', $user->client_id)
+                    ->where('opp_id', $qt->opp_id)
+                    ->where('status', '!=', ProformaInvoice::STATUS_CANCELLED)
+                    ->select('id', 'code')
+                    ->first();
+                if ($dupePi) {
+                    throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                        'status'      => false,
+                        'message'     => "Opportunity {$qt->opp_code} already has a PI: {$dupePi->code}. Only one PI is allowed per opportunity.",
+                        'existing_pi' => ['id' => $dupePi->id, 'code' => $dupePi->code],
+                    ], 409));
+                }
+            }
+
             $code = $this->nextCode($user->client_id, $user->branch_id);
             $btId = $this->nextBtCode($user->client_id);
 

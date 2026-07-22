@@ -1205,6 +1205,12 @@ export default function SalesQPI() {
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? 'Could not convert this quotation.';
       toast.error('Convert failed', String(msg));
+      // State changed under us (e.g. another tab already converted) — refresh
+      // both lists so the Convert button disables and the PI count updates
+      // immediately, and close the confirm popup.
+      reloadQuotations();
+      reloadPis();
+      setConvertTarget(null);
     } finally {
       setConvertingId(null);
     }
@@ -3107,7 +3113,10 @@ export function CreateQuotationModal(props: {
               form={form} setForm={setForm}
               masters={masters} theme="teal"
               titleLabel="Basic Quotation Details" partyKind="Quotation"
-              lockParty={!!initialOpp}
+              /* Lock the Customer on edit too (same as the PI wizard) — the
+               * party is fixed once the quotation exists; changing it would
+               * detach the saved doc from its customer/consignee/opportunity. */
+              lockParty={!!initialOpp || isEdit}
               /* Lock the consignee whenever the lead already has one mapped
                * (initialOpp carries it) OR we're editing an existing
                * quotation — the lead's FINAL consignee is fixed by the

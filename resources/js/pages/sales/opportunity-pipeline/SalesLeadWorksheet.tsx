@@ -484,6 +484,10 @@ export default function SalesLeadWorksheet() {
   // response, so we only re-run it when the bucket boundary could have
   // moved (tab / search / per-page).
   const countSigRef = useRef<string>('');
+  // Bumped after a create/delete to force a refetch with the CURRENT tab/page
+  // (calling fetchLeads() directly would run with a stale closure and race the
+  // effect-triggered fetch, so a just-added lead vanished until a page refresh).
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Fetch leads from the API whenever tab / search / pagination / filters change.
   const fetchLeads = useCallback(async () => {
@@ -524,7 +528,8 @@ export default function SalesLeadWorksheet() {
     } finally {
       setLoading(false);
     }
-  }, [tab, dealState, debouncedQ, page, rpp, toast, activeFilters]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, dealState, debouncedQ, page, rpp, toast, activeFilters, reloadKey]);
 
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
@@ -668,7 +673,11 @@ export default function SalesLeadWorksheet() {
       setAddLeadOpen(false);
       // Jump to the Qualified tab on page 1 so the newly created lead is visible.
       setTab('qualified'); setPage(1);
-      fetchLeads();
+      // Refresh the tab badges too, then force a refetch with the NEW tab/page.
+      // (Bumping reloadKey re-runs the fetch effect once state has settled — no
+      // stale-closure race that previously hid the lead until a manual refresh.)
+      countSigRef.current = '';
+      setReloadKey(k => k + 1);
     } catch (e: any) {
       // Laravel validation errors arrive as { errors: { field: ["msg"] } }.
       // Pull the first message we can find, otherwise fall back to the

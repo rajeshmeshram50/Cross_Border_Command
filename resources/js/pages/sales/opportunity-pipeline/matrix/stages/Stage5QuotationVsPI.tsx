@@ -364,6 +364,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       setConvertTarget(null);
     } catch (e: any) {
       toast.error('Conversion blocked', e?.response?.data?.message ?? 'Could not convert this quotation to a PI.');
+      // The server rejected because the state changed under us — e.g. another
+      // tab already converted this lead. Refresh so the row reflects reality
+      // immediately: the Convert-to-PI button disables and the PI count updates
+      // without needing a manual page refresh.
+      await fetchAll(true);
+      setConvertTarget(null);   // close the confirm modal
     } finally {
       setActingId(null);
     }
