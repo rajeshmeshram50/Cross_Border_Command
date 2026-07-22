@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import MapSupplierModal from './MapSupplierModal';
-import MappedSuppliersModal from './MappedSuppliersModal';
+import MappedSuppliersModal, { type ManualSupplierEdit } from './MappedSuppliersModal';
 import { useModalGuard } from './useModalGuard';
 import { resolveFileUrl, downloadClarityFile } from '../../../../utils/resolveFileUrl';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -132,6 +132,8 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
   const [mapped, setMapped] = useState<Record<number, { count: number; name: string }>>({});
   const [mapIdx, setMapIdx] = useState<number | null>(null);
   const [viewIdx, setViewIdx] = useState<number | null>(null);
+  // A manual (New Supplier) row being edited: which product (gi) + its data.
+  const [editManual, setEditManual] = useState<{ gi: number; sup: ManualSupplierEdit } | null>(null);
   const { pulse, guardOverlay } = useModalGuard();
 
   // Lock background page scroll while the report modal is open.
@@ -267,7 +269,15 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
                       <td style={{ textAlign: 'center' }}><span className="srpt-sno">{i + 1}</span></td>
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-code">{p.code}</span></td>}
                       <td style={{ textAlign: 'left' }}><Tooltip label={p.name}><div className="srpt-pname">{p.name}</div></Tooltip></td>
-                      {tab === 'master' && <td style={{ textAlign: 'center' }}><span className={`srpt-seg ${(p.segment || 'General').replace(/ /g, '-')}`}>{p.segment}</span></td>}
+                      {tab === 'master' && <td style={{ textAlign: 'center' }}>{(() => {
+                        // Long segment names blow out the column — cap at 30 chars
+                        // and show the full name on hover, same as elsewhere.
+                        const seg = p.segment || '';
+                        const cls = `srpt-seg ${(p.segment || 'General').replace(/ /g, '-')}`;
+                        const long = seg.length > 30;
+                        const span = <span className={cls}>{long ? seg.slice(0, 30) + '…' : seg}</span>;
+                        return long ? <Tooltip label={seg}>{span}</Tooltip> : span;
+                      })()}</td>}
                       {tab === 'master' && <td style={{ textAlign: 'center' }}><span className="srpt-hsncode">{p.hsn}</span></td>}
                       <td style={{ textAlign: 'center' }} className="srpt-price">{fmtPrice(p.price)}</td>
                       <td style={{ textAlign: 'center' }}><ClarityCell clarity={p.clarity} /></td>
@@ -289,6 +299,7 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
 
       {mapIdx !== null && (
         <MapSupplierModal
+          key="map-add"
           product={{ name: products[mapIdx].name, code: products[mapIdx].code, segment: products[mapIdx].segment, price: products[mapIdx].price, supplierCount: supCountOf(mapIdx) }}
           targetId={row.id}
           productId={products[mapIdx].id}
@@ -312,6 +323,19 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
           onClose={() => setViewIdx(null)}
           canAdd={canMap}
           onAddSupplier={() => { const gi = viewIdx!; setViewIdx(null); setMapIdx(gi); }}
+          onEditManual={canMap ? (sup) => { const gi = viewIdx!; setViewIdx(null); setEditManual({ gi, sup }); } : undefined}
+        />
+      )}
+      {editManual !== null && (
+        <MapSupplierModal
+          key={`map-edit-${editManual.sup.mappingId}`}
+          product={{ name: products[editManual.gi].name, code: products[editManual.gi].code, segment: products[editManual.gi].segment, price: products[editManual.gi].price, supplierCount: supCountOf(editManual.gi) }}
+          targetId={row.id}
+          productId={products[editManual.gi].id}
+          editSupplier={editManual.sup}
+          onClose={() => setEditManual(null)}
+          onMapped={() => setEditManual(null)}
+          onUpdated={(name) => { setEditManual(null); toast.success('Supplier updated', name); }}
         />
       )}
     </div>,

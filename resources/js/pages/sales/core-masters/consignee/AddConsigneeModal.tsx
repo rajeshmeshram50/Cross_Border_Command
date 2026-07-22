@@ -13,6 +13,7 @@ import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { truncSegment } from '../../../../utils/segmentLabel';
+import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
 import SalesCustomerSendForSignatureModal from '../customer/SalesCustomerSendForSignatureModal';
 import {
   readCustomerMasterBundle,
@@ -473,6 +474,18 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
    * Trade Licence Name dropdowns in the Stage 2 sub-modal. Field key
    * on the master is `title` (managed in Master → Document Types). */
   const [mDocumentTypes,   setMDocumentTypes]   = useState<Opt[]>([]);
+  /* Each segment's Domestic/International rule types (from the DCP), keyed by
+   * segment NAME to match how the consignee stores its segments — drives the
+   * Intl / Dom / +2 badges on the (read-only, customer-inherited) segment box. */
+  const { typesByCode: segTypesByCode } = useRuledSegments(open);
+  const segTypesByName = useMemo(() => {
+    const m = new Map<string, Set<SegDocType>>();
+    for (const s of mSegmentIds) {
+      const t = segTypesByCode.get(String(s.code ?? ''));
+      if (t && t.size) m.set(s.name, new Set(t));
+    }
+    return m;
+  }, [mSegmentIds, segTypesByCode]);
 
   // Stage 1 — Consignee Legal Identity
   const [idTab, setIdTab]         = useState<IdentityTab>('identification');
@@ -1311,10 +1324,15 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
 
     let cancelled = false;
     setSegmentDocsLoading(true);
+    /* Fetch the KYC/DD/TL set for the rule matching the consignee's trade type:
+     * India (primary address) → domestic rule, any other country → international.
+     * Keeps the consignee's Stage-2 documents aligned with its own country the
+     * same way the customer form does. */
+    const consDocType: SegDocType = isDomesticCountry(form1.country) ? 'domestic' : 'international';
     Promise.all([
       Promise.all(
         segRows.map(s =>
-          api.get(`/clm/segment-rules/for-segment/${s.id}`)
+          api.get(`/clm/segment-rules/for-segment/${s.id}`, { params: { document_type: consDocType } })
             .then(r => r.data?.data ?? {})
             .catch(() => ({}))
         )
@@ -1382,7 +1400,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     }).finally(() => { if (!cancelled) setSegmentDocsLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, stage, maxStage, form1.segment, mSegmentIds]);
+  }, [open, stage, maxStage, form1.segment, form1.country, mSegmentIds]);
 
   /* Poll the live signature-request list every 15s while the user is on
    * Stage 3 → Trade Documents. The backend's ?sync=true triggers a Zoho
@@ -1667,7 +1685,10 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
         return null;
       case 'contactNo':
         if (!f.contactNo.trim()) return 'Contact number is required';
-        if (!/^\+?[0-9\s-]{7,15}$/.test(f.contactNo)) return 'Phone must be 7-15 digits';
+        // India → exactly 10 digits (the +91 prefix is display-only, not
+        // stored); other countries keep the flexible 7–15 rule.
+        if (isDomesticCountry(f.country)) { if (!/^\d{10}$/.test(f.contactNo)) return 'Enter a valid 10-digit mobile number'; }
+        else if (!/^\+?[0-9\s-]{7,15}$/.test(f.contactNo)) return 'Phone must be 7-15 digits';
         if (locations.some(l => (l.cpContact || '').trim() === f.contactNo.trim()))
           return 'This phone number is already used by another address on this consignee';
         return null;
@@ -2580,6 +2601,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
               setTab={requestIdTab}
               form={form1}
               setForm={setForm1}
+              segTypesByName={segTypesByName}
               segCodeMap={segCodeMap}
               uploadedCodes={Object.entries(segmentRefUploads)
                 .filter(([, v]) => !!(v && (v.url || v.file)))
@@ -3196,7 +3218,7 @@ const Stage1 = ({
   tab, setTab, form, setForm, masters, errors, clearErr, validateField,
   sameAsCustomer, setSameAsCustomer, customer, mirrorAlreadyTakenByOther, mirrorLocked, onBlockedClick,
   locations, onAddLocation, onEditLocation, onDeleteLocation,
-  segCodeMap = {}, uploadedCodes = [], onBlockedSegmentRemove,
+  segCodeMap = {}, uploadedCodes = [], onBlockedSegmentRemove, segTypesByName,
 }: {
   tab: IdentityTab;
   setTab: (t: IdentityTab) => void;
@@ -3233,6 +3255,9 @@ const Stage1 = ({
   uploadedCodes?: string[];
   /** Fired with the segment names the user tried (and failed) to remove. */
   onBlockedSegmentRemove?: (segs: string[]) => void;
+  /** Segment NAME → its Domestic/International rule types, for the Intl/Dom/+2
+   *  badges shown on the inherited-segment box. */
+  segTypesByName?: Map<string, Set<SegDocType>>;
 }) => {
   /* When the "Same as Customer" toggle is on, Stage 1's basic
    * company + primary address fields lock to read-only — every
@@ -3243,6 +3268,15 @@ const Stage1 = ({
      `&& !!customer` guard let a saved mirror's fields stay editable on edit.) */
   const lock = sameAsCustomer;
   const [segPopOpen, setSegPopOpen] = useState(false);
+  /* Segment names whose "+2" badge has been clicked open — those show the
+   * individual Intl + Dom badges instead of the collapsed +2 (same as the
+   * customer form). */
+  const [expandedSegBadges, setExpandedSegBadges] = useState<Set<string>>(new Set());
+  const toggleSegBadge = (name: string) => setExpandedSegBadges(prev => {
+    const next = new Set(prev);
+    next.has(name) ? next.delete(name) : next.add(name);
+    return next;
+  });
   /* Segment "View all N segments" popover. It used to catch outside clicks with
    * a full-screen fixed overlay, but that overlay also swallowed wheel events,
    * so the form behind it couldn't scroll (QA #27 — "form gets stuck and does
@@ -3383,17 +3417,38 @@ const Stage1 = ({
                   the pill opens the full segment popover. */}
               {(() => {
                 const segVals = Array.isArray(form.segment) ? form.segment : (form.segment ? [form.segment] : []);
-                const labels = segVals.map(v => masters.segments.find(s => s.value === v)?.label ?? v);
+                const labels = segVals.map((v: string) => masters.segments.find(s => s.value === v)?.label ?? v);
+                /* Intl / Dom / +2 badge for a segment NAME (form.segment holds
+                 * names). Same visual language + clickable-"+2" as the customer
+                 * segment dropdown: clicking +2 reveals the individual badges. */
+                const badgeEl = (text: string, title: string, color: string, bg: string, bd: string, onClick?: (e: React.MouseEvent) => void) => (
+                  <span title={title} onClick={onClick} style={{ fontSize: 9, fontWeight: 700, letterSpacing: '.02em', padding: '1px 5px', borderRadius: 9, whiteSpace: 'nowrap', color, background: bg, border: `1px solid ${bd}`, cursor: onClick ? 'pointer' : undefined }}>{text}</span>
+                );
+                const intlB = () => badgeEl('INT', 'International rule', '#3730a3', '#eef2ff', '#c7d2fe');
+                const domB  = () => badgeEl('DOM', 'Domestic rule', '#0f766e', '#ecfdf5', '#99f6e4');
+                const typeBadge = (name: string) => {
+                  const t = segTypesByName?.get(name);
+                  if (!t || t.size === 0) return null;
+                  const both = t.has('international') && t.has('domestic');
+                  if (both) {
+                    return expandedSegBadges.has(name)
+                      ? <>{intlB()}{domB()}</>
+                      : badgeEl('+2', 'Both International & Domestic — click to show', '#6d28d9', '#f5f3ff', '#ddd6fe',
+                          (e) => { e.stopPropagation(); toggleSegBadge(name); });
+                  }
+                  if (t.has('international')) return intlB();
+                  return domB();
+                };
                 return (
                   <div ref={segBoxRef} className={`acm-seg-box ${errors.segment ? 'acm-input-error' : ''}`}>
                     {labels.length === 0 ? (
                       <span style={{ color: '#94a3b8', fontSize: 13 }}>Inherited from customer</span>
                     ) : (
                       <>
-                        <span className="acm-seg-firstchip" title={labels[0]}>{truncSegment(labels[0])}</span>
+                        <span className="acm-seg-firstchip" title={labels[0]} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{truncSegment(labels[0])}{typeBadge(segVals[0])}</span>
                         {labels.length > 1 && (
-                          <span role="button" onClick={() => setSegPopOpen(o => !o)} className="acm-seg-morebtn">
-                            {segPopOpen ? 'Hide' : `View all ${labels.length} segments`}
+                          <span role="button" onClick={() => setSegPopOpen(o => !o)} className="acm-seg-morebtn" title={segPopOpen ? 'Hide segments' : `View all ${labels.length} segments`}>
+                            {segPopOpen ? 'Hide' : `+${labels.length}`}
                           </span>
                         )}
                       </>
@@ -3401,9 +3456,13 @@ const Stage1 = ({
                     {segPopOpen && labels.length > 1 && (
                       <div className="acm-seg-pop">
                         <div className="acm-seg-pop-title">SEGMENTS ({labels.length})</div>
-                        {labels.map((l: string, i: number) => (
-                          <div key={i} className="acm-seg-pop-row" title={l}><span className="acm-seg-dot" />{truncSegment(l)}</div>
-                        ))}
+                        {/* Show ~3 rows, then scroll — keeps the popover compact
+                            however many segments are inherited. */}
+                        <div className="acm-seg-pop-scroll" style={{ maxHeight: 132, overflowY: 'auto', paddingRight: 4 }}>
+                          {labels.map((l: string, i: number) => (
+                            <div key={i} className="acm-seg-pop-row" title={l} style={{ display: 'flex', alignItems: 'center', gap: 6 }}><span className="acm-seg-dot" />{truncSegment(l)}{typeBadge(segVals[i])}</div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -3469,7 +3528,13 @@ const Stage1 = ({
                   /* PIN and ZIP are different rules, so the code already typed
                      has to be re-judged against the NEW country — otherwise a
                      valid "SL7 1TB" stays green after switching to India. */
-                  onChange={v => { const nf = { ...form, country: v, state: '' }; setForm(nf); validateField('country', nf); validateField('state', nf); validateField('pin', nf); }}
+                  onChange={v => {
+                    // Switching to India scrubs the contact number to bare 10
+                    // digits for the +91-prefixed field; re-judge PIN/ZIP too.
+                    const nextTel = isDomesticCountry(v) ? (form.contactNo || '').replace(/\D/g, '').slice(0, 10) : form.contactNo;
+                    const nf = { ...form, country: v, state: '', contactNo: nextTel };
+                    setForm(nf); validateField('country', nf); validateField('state', nf); validateField('pin', nf); validateField('contactNo', nf);
+                  }}
                 />
               </Field>
               <Field label="State" required error={errors.state} fieldKey="state">
@@ -3528,7 +3593,14 @@ const Stage1 = ({
                 />
               </Field>
               <Field label="Contact No" required error={errors.contactNo} fieldKey="contactNo">
-                <input className={`acm-input ${errors.contactNo ? 'acm-input-error' : ''}`} type="tel" placeholder="Enter phone number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} disabled={lock} />
+                {isDomesticCountry(form.country) ? (
+                  <div className={`acm-phone-wrap${errors.contactNo ? ' acm-phone-invalid' : ''}`}>
+                    <span className="acm-phone-cc">+91</span>
+                    <input type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={form.contactNo} onChange={e => set('contactNo', e.target.value.replace(/\D/g, '').slice(0, 10))} disabled={lock} />
+                  </div>
+                ) : (
+                  <input className={`acm-input ${errors.contactNo ? 'acm-input-error' : ''}`} type="tel" placeholder="Enter phone number" value={form.contactNo} onChange={e => set('contactNo', e.target.value)} disabled={lock} />
+                )}
               </Field>
               <Field label="Email ID" required error={errors.email} fieldKey="email">
                 <input className={`acm-input ${errors.email ? 'acm-input-error' : ''}`} type="email" placeholder="Enter email address" value={form.email} onChange={e => set('email', e.target.value)} disabled={lock} />
@@ -5738,7 +5810,9 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
         return null;
       case 'cpContact':
         if (!dd.cpContact.trim()) return 'Phone required';
-        if (!/^\+?[0-9\s-]{7,15}$/.test(dd.cpContact)) return 'Phone must be 7-15 digits';
+        // India → exactly 10 digits (+91 shown, not stored); else flexible 7–15.
+        if (isDomesticCountry(dd.country)) { if (!/^\d{10}$/.test(dd.cpContact)) return 'Enter a valid 10-digit mobile number'; }
+        else if (!/^\+?[0-9\s-]{7,15}$/.test(dd.cpContact)) return 'Phone must be 7-15 digits';
         if (existingPhones.includes(dd.cpContact.trim()))
           return 'This phone number is already used by another address on this consignee';
         return null;
@@ -5894,7 +5968,9 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
                 placeholder={primaryDomestic ? 'India' : 'Select country'}
                 invalid={!!errs.country}
                 onChange={v => {
-                  const nd = { ...d, country: v, state: '' } as typeof d;
+                  // Switching to India scrubs the contact number to bare 10 digits.
+                  const nextTel = isDomesticCountry(v) ? (d.cpContact || '').replace(/\D/g, '').slice(0, 10) : d.cpContact;
+                  const nd = { ...d, country: v, state: '', cpContact: nextTel } as typeof d;
                   setD(nd);
                   setErrs(prev => {
                     const next = { ...prev };
@@ -5974,13 +6050,20 @@ function LocationSubModal({ editing, masters, disallowedTypes, existingEmails = 
             </div>
             <div className="acm-field">
               <label className="acm-field-label">CONTACT NO <span className="acm-req">*</span></label>
-              <input
-                className={`acm-input ${errs.cpContact ? 'acm-input-error' : ''}`}
-                type="tel"
-                placeholder="7-15 digit mobile"
-                value={d.cpContact}
-                onChange={e => set('cpContact', e.target.value)}
-              />
+              {isDomesticCountry(d.country) ? (
+                <div className={`acm-phone-wrap${errs.cpContact ? ' acm-phone-invalid' : ''}`}>
+                  <span className="acm-phone-cc">+91</span>
+                  <input type="tel" inputMode="numeric" maxLength={10} placeholder="10-digit mobile" value={d.cpContact} onChange={e => set('cpContact', e.target.value.replace(/\D/g, '').slice(0, 10))} />
+                </div>
+              ) : (
+                <input
+                  className={`acm-input ${errs.cpContact ? 'acm-input-error' : ''}`}
+                  type="tel"
+                  placeholder="7-15 digit mobile"
+                  value={d.cpContact}
+                  onChange={e => set('cpContact', e.target.value)}
+                />
+              )}
               {errs.cpContact && <span className="acm-err-text">{errs.cpContact}</span>}
             </div>
             <div className="acm-field">
@@ -6293,7 +6376,10 @@ const SCOPED_CSS = `
   display: flex; align-items: center; flex-wrap: nowrap; gap: 8px;
   min-height: 40px; padding: 5px 12px;
   border: 1.5px solid #e2e8f0; border-radius: 10px; background: #fff;
-  overflow: hidden;
+  /* NOT overflow:hidden — that clipped the "View all N" popover (absolutely
+     positioned just below). The first chip truncates via its own overflow
+     rule, so the box itself doesn't need to clip. */
+  overflow: visible;
 }
 [data-bs-theme="dark"] .acm-seg-box { background: #0f1a17; border-color: rgba(148,163,184,.22); }
 .acm-seg-firstchip {
@@ -6893,6 +6979,16 @@ const SCOPED_CSS = `
 .acm-input::placeholder { color: #9ca3af; }
 .acm-input:disabled { background: #f9fafb; color: #9ca3af; cursor: not-allowed; }
 select.acm-input { appearance: none; background-image: linear-gradient(45deg, transparent 50%, #9ca3af 50%), linear-gradient(135deg, #9ca3af 50%, transparent 50%); background-position: calc(100% - 16px) 17px, calc(100% - 11px) 17px; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 28px; }
+.acm-phone-wrap { display: flex; align-items: stretch; height: 40px; border: 1.5px solid #e5e7eb; border-radius: 9px; background: #fff; overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+.acm-phone-wrap:focus-within { border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,.18); }
+.acm-phone-wrap.acm-phone-invalid { border-color: #ef4444; background: #fef2f2; }
+.acm-phone-cc { display: flex; align-items: center; padding: 0 12px; background: #f0fdf4; color: #065f46; font-size: 13px; font-weight: 700; border-right: 1.5px solid #e5e7eb; flex-shrink: 0; }
+.acm-phone-wrap input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; padding: 0 12px; font-family: inherit; font-size: 13px; color: #1f2937; }
+.acm-phone-wrap input::placeholder { color: #9ca3af; }
+[data-bs-theme="dark"] .acm-phone-wrap { background: #0a1f1a; border-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-phone-cc { background: #0d2a22; color: #6ee7b7; border-right-color: rgba(16,185,129,.25); }
+[data-bs-theme="dark"] .acm-phone-wrap input { color: #ecfdf5; }
+[data-bs-theme="dark"] .acm-phone-wrap input::placeholder { color: #6b8a7e; }
 
 .acm-radio-row { display: flex; align-items: center; gap: 16px; height: 40px; }
 .acm-radio {

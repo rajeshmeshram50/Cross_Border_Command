@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Loader2 } from 'lucide-react';
+import Tooltip from './Tooltip';
 
 interface Props {
   open: boolean;
@@ -50,7 +51,10 @@ export default function DeleteConfirmModal({
   if (!open) return null;
 
   const rawName = itemNameProp ?? clientName;
-  const itemName = rawName ? `"${rawName}"` : 'this item';
+  // Long names (e.g. a pasted product name) blow out the centered dialog — cap
+  // the shown name and reveal the full value on hover.
+  const nameTooLong = !!rawName && rawName.length > 40;
+  const itemName = rawName ? `"${nameTooLong ? rawName.slice(0, 40) + '…' : rawName}"` : 'this item';
   const resolvedTitle = title ?? 'Delete Client';
   const resolvedSub = subMessage ?? 'This action cannot be undone. All branches, users, and data will be permanently removed.';
 
@@ -231,8 +235,10 @@ export default function DeleteConfirmModal({
 
             <h2 className="dcm-title">{resolvedTitle}</h2>
 
-            <p className="dcm-message">
-              {actionVerb} <strong>{itemName}</strong>?
+            <p className="dcm-message" style={{ overflowWrap: 'anywhere' }}>
+              {actionVerb} {nameTooLong && rawName
+                ? <Tooltip label={rawName}><strong>{itemName}</strong></Tooltip>
+                : <strong>{itemName}</strong>}?
             </p>
             <p className="dcm-sub">
               {resolvedSub}

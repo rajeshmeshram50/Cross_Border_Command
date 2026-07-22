@@ -1100,8 +1100,7 @@ const SCOPED_CSS = `
 .pdm-prod-name {
   font-size: 13px; color: #0f172a; font-weight: 700; line-height: 1.3;
   max-width: 340px;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden; overflow-wrap: anywhere;
+  display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
 /* ── SR NO badge ── compact pale-lilac chip with a soft violet

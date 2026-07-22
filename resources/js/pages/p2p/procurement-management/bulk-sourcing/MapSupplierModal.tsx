@@ -17,7 +17,7 @@ import './bulk-sourcing.css';
  * On confirm → POST /p2p/sourcing-targets/{targetId}/products/{productId}/suppliers,
  * then onMapped(name). Static supplier data removed (see API.md). */
 
-export type SupplierMaster = { id: string; code: string; name: string; segment: string; contact: string; mobile: string; email: string };
+export type SupplierMaster = { id: string; code: string; name: string; segment: string; contact: string; mobile: string; email: string; country?: string; region?: string };
 // Master-backed dropdowns for the New Supplier form, from GET /p2p/form-masters.
 type FormMasters = {
   segments: { id: number; name: string }[];
@@ -27,6 +27,16 @@ type FormMasters = {
 };
 
 export type MapProduct = { name: string; code?: string; segment?: string; price?: string; supplierCount: number };
+/* An existing manual/New Supplier row being edited (from the Mapped Suppliers
+ * popup). mappingId = p2p_sourcing_product_suppliers.id; the rest prefills the
+ * New Supplier form. When present the modal opens straight into edit mode and
+ * saves via PUT instead of creating a fresh mapping. */
+export type EditManualSupplier = {
+  mappingId: string;
+  name: string; contact: string; mobile: string; email: string; segment: string;
+  gmaps: string; address: string; country: string; state: string; state_code: string; city: string;
+  card?: string; cardName?: string;
+};
 const tInit = (n: string) => n.split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
 /* Show Target Price in INR — master rows already carry ₹; manual ones are plain. */
 const fmtPrice = (p?: string) => {
@@ -52,7 +62,7 @@ function Header({ p, step }: { p: MapProduct; step?: string }) {
         <div className="smp-ppill"><div className="smp-ppill-lbl">Product Name</div><Tooltip label={p.name}><div className="smp-ppill-val" style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div></Tooltip></div>
         <div className="smp-ppill-sep" />
         <div className="smp-ppill"><div className="smp-ppill-lbl">Product Code</div><div className="smp-ppill-val cyan">{p.code || '—'}</div></div>
-        <div className="smp-ppill-sep" /><div className="smp-ppill"><div className="smp-ppill-lbl">Segment</div><div className="smp-ppill-val">{p.segment || '—'}</div></div>
+        <div className="smp-ppill-sep" /><div className="smp-ppill"><div className="smp-ppill-lbl">Segment</div><Tooltip label={p.segment || '—'}><div className="smp-ppill-val" style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.segment || '—'}</div></Tooltip></div>
         <div className="smp-ppill-sep" /><div className="smp-ppill pill-price"><div className="smp-ppill-lbl">Target Price</div><div className="smp-ppill-val amber">{fmtPrice(p.price)}</div></div>
         <div className="smp-ppill-sep" />
         <div className="smp-ppill pill-sup"><div className="smp-ppill-lbl">Suppliers Mapped</div><div className="smp-ppill-val green">{p.supplierCount} Supplier{p.supplierCount !== 1 ? 's' : ''}</div></div>
@@ -122,16 +132,25 @@ const NSS_CSS = `
 }
 `;
 
-export default function MapSupplierModal({ product, targetId, productId, onClose, onMapped }: { product: MapProduct; targetId?: string; productId?: string | number; onClose: () => void; onMapped: (name: string) => void }) {
+export default function MapSupplierModal({ product, targetId, productId, editSupplier, onClose, onMapped, onUpdated }: { product: MapProduct; targetId?: string; productId?: string | number; editSupplier?: EditManualSupplier | null; onClose: () => void; onMapped: (name: string) => void; onUpdated?: (name: string) => void }) {
   const toast = useToast();
   const confirmDialog = useConfirm();
   const { pulse, guardOverlay } = useModalGuard();
-  const [step, setStep] = useState<'choose' | 'master' | 'new'>('choose');
+  const isEdit = !!editSupplier;
+  // Edit mode jumps straight into the New Supplier form; add mode starts at the
+  // Master / New chooser.
+  const [step, setStep] = useState<'choose' | 'master' | 'new'>(editSupplier ? 'new' : 'choose');
   const [sel, setSel] = useState('');
-  const [co, setCo] = useState(''); const [contact, setContact] = useState(''); const [mobile, setMobile] = useState('');
-  const [seg, setSeg] = useState<string[]>([]); const [email, setEmail] = useState(''); const [gmaps, setGmaps] = useState('');
-  const [addr, setAddr] = useState(''); const [stateCode, setStateCode] = useState(''); const [city, setCity] = useState('');
-  const [card, setCard] = useState(''); const [cardName, setCardName] = useState(''); const [cardUploading, setCardUploading] = useState(false);
+  const [co, setCo] = useState(editSupplier?.name ?? ''); const [contact, setContact] = useState(editSupplier?.contact ?? '');
+  // Prefill: an Indian supplier's stored mobile may carry a "+91" prefix — strip
+  // it back to the bare 10 local digits for the +91-prefixed input.
+  const [mobile, setMobile] = useState(() => {
+    const m = editSupplier?.mobile ?? '';
+    return (editSupplier?.country ?? '').trim().toLowerCase() === 'india' ? m.replace(/\D/g, '').slice(-10) : m;
+  });
+  const [seg, setSeg] = useState<string[]>(editSupplier?.segment ? editSupplier.segment.split(',').map(s => s.trim()).filter(Boolean) : []); const [email, setEmail] = useState(editSupplier?.email ?? ''); const [gmaps, setGmaps] = useState(editSupplier?.gmaps ?? '');
+  const [addr, setAddr] = useState(editSupplier?.address ?? ''); const [stateCode, setStateCode] = useState(editSupplier?.state_code ?? ''); const [city, setCity] = useState(editSupplier?.city ?? '');
+  const [card, setCard] = useState(editSupplier?.card ?? ''); const [cardName, setCardName] = useState(editSupplier?.cardName ?? ''); const [cardUploading, setCardUploading] = useState(false);
   // Master-backed dropdowns + the selected country/state ids (names go to the API).
   const [masters, setMasters] = useState<FormMasters>({ segments: [], countries: [], states: [], stateCodes: [] });
   // True while /p2p/form-masters is in flight — drives the New Supplier form
@@ -157,10 +176,36 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
     }).catch(() => {}).finally(() => setMastersLoading(false));
   }, []);
 
+  /* Edit mode: the mapping row stores country/state as NAMES, but the form's
+     dropdowns are keyed by id. Once the masters arrive, resolve the saved names
+     back to ids so the pickers show the right selection (and the auto State
+     Code fills). Only seeds while countryId is still empty, so it never stomps
+     a change the user makes afterwards. */
+  useEffect(() => {
+    if (!editSupplier || !masters.countries.length || countryId !== '') return;
+    const c = masters.countries.find(x => x.name === editSupplier.country);
+    if (!c) return;
+    setCountryId(c.id);
+    const st = masters.states.find(s => s.name === editSupplier.state && Number(s.country_id) === c.id);
+    if (st) {
+      setStateId(st.id);
+      if (!editSupplier.state_code) {
+        setStateCode(masters.stateCodes.find(sc => Number(sc.state_id) === st.id)?.state_code ?? '');
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [masters]);
+
   // country_id / state_id come back from the API as strings (FK columns aren't
   // auto-cast like the primary `id`), so coerce before comparing to the numeric
   // selected id — otherwise "104" === 104 is false and the list looks empty.
   const statesForCountry = masters.states.filter(s => Number(s.country_id) === countryId);
+  // India → mobile takes a fixed +91 prefix and exactly 10 digits; other
+  // countries keep the flexible format.
+  const selectedCountryName = masters.countries.find(c => c.id === countryId)?.name ?? '';
+  const isIndiaMobile = selectedCountryName.trim().toLowerCase() === 'india';
+  // Picking India scrubs any non-digits / extra length the field already holds.
+  useEffect(() => { if (isIndiaMobile) setMobile(m => m.replace(/\D/g, '').slice(0, 10)); }, [isIndiaMobile]);
   // Selecting a state auto-fills its GST state code from the state-codes master.
   const pickState = (id: number | '') => {
     setStateId(id);
@@ -182,10 +227,15 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
   const supplier = suppliers.find(s => s.id === sel);
   const mapUrl = `/p2p/sourcing-targets/${targetId}/products/${productId}/suppliers`;
   const doMap = (payload: object, name: string) => {
-    if (!targetId || productId == null) { onMapped(name); return; }   // graceful until backend
+    const done = (n: string) => (isEdit ? (onUpdated ?? onMapped)(n) : onMapped(n));
+    if (!targetId || productId == null) { done(name); return; }   // graceful until backend
     setSaving(true);
-    api.post(mapUrl, payload)
-      .then(() => onMapped(name))
+    // Edit updates the existing mapping row via PUT; add creates via POST.
+    const req = isEdit
+      ? api.put(`${mapUrl}/${editSupplier!.mappingId}`, payload)
+      : api.post(mapUrl, payload);
+    req
+      .then(() => done(name))
       .catch((err) => {
         const errors = err?.response?.data?.errors as Record<string, string[]> | undefined;
         if (errors) {
@@ -214,6 +264,7 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
     if (!co.trim()) e.co = 'Supplier company name is required.';
     if (!contact.trim()) e.contact = 'Contact person is required.';
     if (!mobile.trim()) e.mobile = 'Mobile number is required.';
+    else if (isIndiaMobile) { if (!/^\d{10}$/.test(mobile)) e.mobile = 'Enter a valid 10-digit mobile number.'; }
     else if (!/^[0-9+\-\s()]{7,15}$/.test(mobile.trim())) e.mobile = 'Enter a valid mobile number.';
     if (!seg.length) e.seg = 'Segment is required.';
     if (!email.trim()) e.email = 'Email ID is required.';
@@ -235,13 +286,16 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
     if (Object.keys(e).length) { toast.warning('Missing details', 'Please fill all the required fields highlighted in red.'); return; }
     const countryName = masters.countries.find(c => c.id === countryId)?.name ?? '';
     const stateName = masters.states.find(s => s.id === stateId)?.name ?? '';
-    doMap({ new_supplier: { name: co.trim(), contact, mobile, segment: seg.join(', '), email, gmaps, address: addr, country: countryName, state: stateName, state_code: stateCode, city, card } }, co.trim());
+    // India stores the number with its +91 country code; other countries store
+    // the number as entered.
+    const mobileOut = isIndiaMobile ? `+91 ${mobile}` : mobile;
+    doMap({ new_supplier: { name: co.trim(), contact, mobile: mobileOut, segment: seg.join(', '), email, gmaps, address: addr, country: countryName, state: stateName, state_code: stateCode, city, card } }, co.trim());
   };
 
   return createPortal(
     <div id="smp-overlay" onMouseDown={guardOverlay}>
       <div className={`smp-box${pulse ? ' bsm-pulse' : ''}`}>
-        <Header p={product} step={step === 'choose' ? undefined : 'Step 2 of 2'} />
+        <Header p={product} step={step === 'choose' ? undefined : (isEdit ? 'Edit Supplier' : 'Step 2 of 2')} />
         <button className="smp-close" style={{ position: 'absolute', top: 18, right: 22 }} onClick={onClose}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
 
         {/* Full-form save lock — while mapping (existing OR new supplier) the whole
@@ -250,7 +304,7 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
           <div className="smp-savelock">
             <div className="smp-savelock-card">
               <span className="smp-savelock-spin" />
-              <span className="smp-savelock-txt">Mapping supplier…</span>
+              <span className="smp-savelock-txt">{isEdit ? 'Updating supplier…' : 'Mapping supplier…'}</span>
             </div>
           </div>
         )}
@@ -291,7 +345,13 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
               <MasterSelect
                 value={sel}
                 placeholder="Select supplier..."
-                options={suppliers.map(s => ({ value: s.id, label: `${s.code || s.id} — ${s.name}` }))}
+                // Domestic (India) → green pill, International → violet, so the
+                // buyer can tell a supplier's trade region at a glance.
+                options={suppliers.map(s => ({
+                  value: s.id,
+                  label: `${s.code || s.id} — ${s.name}`,
+                  badge: s.region ? { text: s.region, tone: s.region === 'Domestic' ? 'green' : 'violet', title: s.country || s.region } : undefined,
+                }))}
                 onChange={setSel}
               />
             </div>
@@ -329,7 +389,16 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
               <div className="snf-row snf-row-1"><div className="snf-field"><label className="snf-lbl">Supplier Company Name <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.co)} maxLength={255} value={co} onChange={e => setCo(e.target.value)} placeholder="e.g. TechParts India Pvt Ltd" />{errMsg(errs.co)}</div></div>
               <div className="snf-row snf-row-3">
                 <div className="snf-field"><label className="snf-lbl">Contact Person <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.contact)} maxLength={255} value={contact} onChange={e => setContact(e.target.value)} placeholder="Full name" />{errMsg(errs.contact)}</div>
-                <div className="snf-field"><label className="snf-lbl">Mobile Number <span className="snf-req">*</span></label><input className="snf-inp" style={invStyle(errs.mobile)} maxLength={64} value={mobile} onChange={e => setMobile(e.target.value)} placeholder="10-digit mobile" />{errMsg(errs.mobile)}</div>
+                <div className="snf-field"><label className="snf-lbl">Mobile Number <span className="snf-req">*</span></label>
+                  {isIndiaMobile ? (
+                    <div className={`snf-phone-wrap${errs.mobile ? ' is-invalid' : ''}`}>
+                      <span className="snf-phone-cc">+91</span>
+                      <input className="snf-inp snf-phone-inp" inputMode="numeric" maxLength={10} value={mobile} onChange={e => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} placeholder="10-digit mobile" />
+                    </div>
+                  ) : (
+                    <input className="snf-inp" style={invStyle(errs.mobile)} maxLength={64} value={mobile} onChange={e => setMobile(e.target.value)} placeholder="Enter mobile number" />
+                  )}
+                  {errMsg(errs.mobile)}</div>
                 <div className="snf-field"><label className="snf-lbl">Segment <span className="snf-req">*</span></label><MasterMultiSelect values={seg} invalid={!!errs.seg} collapse collapseNoun="segments" loading={mastersLoading} showDone placeholder="Select segment(s)..." options={masters.segments.map(s => ({ value: s.name, label: s.name }))} onChange={setSeg} />{errMsg(errs.seg)}</div>
               </div>
               <div className="snf-row snf-row-2">
@@ -370,8 +439,8 @@ export default function MapSupplierModal({ product, targetId, productId, onClose
               )}
             </div>
             <div className="snf-foot">
-              <button className="smp-btn-back" onClick={() => setStep('choose')}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>Back</button>
-              <button className="smp-btn-save smp-btn-map" onClick={saveNew} disabled={saving}>{saving ? <svg className="ast-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v14a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>}{saving ? 'Saving…' : 'Save Supplier'}</button>
+              <button className="smp-btn-back" onClick={() => (isEdit ? onClose() : setStep('choose'))}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>{isEdit ? 'Cancel' : 'Back'}</button>
+              <button className="smp-btn-save smp-btn-map" onClick={saveNew} disabled={saving}>{saving ? <svg className="ast-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg> : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v14a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>}{saving ? (isEdit ? 'Updating…' : 'Saving…') : (isEdit ? 'Update Supplier' : 'Save Supplier')}</button>
             </div>
           </div>
         )}

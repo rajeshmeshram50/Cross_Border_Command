@@ -787,6 +787,10 @@ class QuotationController extends Controller
             return response()->json(['status' => false, 'message' => 'A Zoho sync for this quotation is already in progress — try again in a moment.'], 409);
         }
         try {
+            // Re-read under the lock so a request that loaded the row before a
+            // concurrent sync finished sees the freshly-written Zoho id — the
+            // idempotency check must not act on a stale in-memory copy.
+            $q->refresh();
             if (!empty($q->zoho_estimate_id)) {
                 return response()->json(['status' => true, 'message' => 'This quotation is already synced to Zoho Books (estimate ' . ($q->zoho_estimate_number ?: $q->zoho_estimate_id) . ').', 'data' => $this->shapeZoho($q)]);
             }
@@ -810,7 +814,12 @@ class QuotationController extends Controller
                 // UNREGISTERED customer, so inter-state IGST only applies to a
                 // GST-registered customer whose state differs from the org's.
                 $orgState   = $books->orgStateCode() ?: $this->homeStateCode($q->branch_id);
-                $interState = $registered && $stateCode && (string) $stateCode !== (string) $orgState;
+                // Normalise both sides ("7" vs "07", or a legacy "27 – Maharashtra"
+                // label) before comparing so a single-digit / labelled code isn't
+                // mis-read as inter-state (which would apply IGST and drop
+                // place_of_supply on a same-state sale).
+                $partyState = \App\Services\ZohoBooksService::normStateCode($stateCode);
+                $interState = $registered && $partyState !== null && $partyState !== \App\Services\ZohoBooksService::normStateCode($orgState);
 
                 $zohoCustomerId = $books->findOrCreateCustomerId($customer, $gstin, $stateCode);
                 $est   = $books->createEstimate($this->buildZohoEstimatePayload($q, $books, $zohoCustomerId, $interState, $registered ? $books->placeOfSupply($stateCode) : null));
@@ -818,7 +827,7 @@ class QuotationController extends Controller
 
                 $pdfPath = null;
                 try {
-                    $rel = 'zoho/estimate/' . $q->client_id . '/EST-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($q->code ?: $q->id)) . '.pdf';
+                    $rel = 'zoho/estimate/' . $q->client_id . '/' . ($q->branch_id ?: 0) . '/EST-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($q->code ?: $q->id)) . '.pdf';
                     Storage::disk('public')->put($rel, $books->getEstimatePdf($estId));
                     $pdfPath = '/storage/' . $rel;
                 } catch (\Throwable $e) {

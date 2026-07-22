@@ -279,12 +279,21 @@ class SegmentDocUploadController extends Controller
         // FK column.
         $segmentIds = $this->resolveSegmentIds($owner, $type, $cid);
 
-        // 2. Load each rule's doc_selections — only the ones for this
-        // tenant. Empty selections array stays harmless downstream.
+        // 2. Load each rule's doc_selections. A segment can now carry a Domestic
+        // AND an International rule, so pick the one matching the entity's trade
+        // type (India primary address → domestic, else international). Fall back
+        // to whatever rule the segment has when it lacks the matching type, so
+        // legacy entities (whose segments may only carry one typed rule) never
+        // lose their documents. One rule per segment either way.
+        $docType = $this->resolveDocType($owner, $type);
         $rules = ClmSegmentRule::query()
             ->where('client_id', $cid)
             ->whereIn('segment_id', $segmentIds)
-            ->get();
+            ->get()
+            ->groupBy('segment_id')
+            ->map(fn ($g) => $g->firstWhere('document_type', $docType) ?? $g->first())
+            ->filter()
+            ->values();
 
         /* Per-category union of (code => requirement). When the same
          * code shows up under multiple selected segments, Mandatory
@@ -1250,10 +1259,18 @@ class SegmentDocUploadController extends Controller
         $segmentIds = $this->resolveSegmentIds($owner, $type, $cid);
         if (empty($segmentIds)) return [];
 
+        // Match the entity's trade type (with a fallback to any rule) exactly
+        // like vault() — otherwise the PI "required docs submitted" gate would
+        // count the wrong document set for a domestic/international entity.
+        $docType = $this->resolveDocType($owner, $type);
         $rules = ClmSegmentRule::query()
             ->where('client_id', $cid)
             ->whereIn('segment_id', $segmentIds)
-            ->get();
+            ->get()
+            ->groupBy('segment_id')
+            ->map(fn ($g) => $g->firstWhere('document_type', $docType) ?? $g->first())
+            ->filter()
+            ->values();
 
         // Per-category union of (code => requirement), Mandatory wins.
         $unionByCat = ['kyc' => [], 'dd' => [], 'tl' => [], 'td' => [], 'qc' => []];
@@ -1390,6 +1407,26 @@ class SegmentDocUploadController extends Controller
      * nothing's set — the caller renders an empty vault rather than
      * 500'ing.
      */
+    /**
+     * The entity's trade type — India (primary address) → domestic, any other
+     * country → international. Decides which of a segment's two document-type
+     * rules (Domestic / International) the Evidence Vault applies.
+     *
+     * Customer/Consignee addresses store the country NAME directly; Vendor
+     * addresses store a `country_id` FK, so resolve that through the relation.
+     * No address (or unresolved country) → international, mirroring the forms'
+     * `isDomesticCountry(unset) === false`.
+     */
+    private function resolveDocType(Model $owner, string $type): string
+    {
+        $addr = $owner->primaryAddress ?? null;
+        if (!$addr) return 'international';
+        $name = in_array($type, ['supplier', 'vendor'], true)
+            ? optional($addr->country)->name          // VendorAddress.country_id → Countries
+            : $addr->country;                          // Customer/Consignee: name string
+        return trim((string) $name) === 'India' ? 'domestic' : 'international';
+    }
+
     private function resolveSegmentIds(Model $owner, string $type, int $cid): array
     {
         if (in_array($type, ['supplier', 'vendor'], true)) {

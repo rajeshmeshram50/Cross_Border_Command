@@ -1238,5 +1238,5 @@ class CandidateController extends Controller
         // coerce so the FE can do `c.experience_years ?? 0` without surprises.
         $arr['experience_years'] = $row->experience_years !== null ? (float) $row->experience_years : 0;
         return $arr;
-    }
+    } 
 }

@@ -42,11 +42,21 @@ class ClmBuyerProfileController extends Controller
             $segRegById[(int) $s->id] = (string) $s->regulatory_status;   // 'highly' | 'less'
         }
 
-        /* ── 2. Segment rules → required-doc union per segment. ── */
-        $rulesBySeg = [];
-        foreach (ClmSegmentRule::where('client_id', $cid)->get(['segment_id', 'doc_selections']) as $r) {
-            $rulesBySeg[(int) $r->segment_id] = is_array($r->doc_selections) ? $r->doc_selections : [];
+        /* ── 2. Segment rules → required-doc union per segment.
+         * A segment can carry a Domestic AND an International rule, so key the
+         * doc_selections by document_type and let each buyer draw the set that
+         * matches its own trade type (India → domestic, else international).
+         * `$selForSeg` falls back to the segment's other-type rule when the
+         * matching one is absent, so legacy single-type setups never lose docs. */
+        $rulesBySegType = [];
+        foreach (ClmSegmentRule::where('client_id', $cid)->get(['segment_id', 'document_type', 'doc_selections']) as $r) {
+            $rulesBySegType[(int) $r->segment_id][(string) $r->document_type] = is_array($r->doc_selections) ? $r->doc_selections : [];
         }
+        $selForSeg = function (int $sid, string $docType) use ($rulesBySegType): array {
+            $byType = $rulesBySegType[$sid] ?? [];
+            if (isset($byType[$docType])) return $byType[$docType];
+            return $byType ? (array) reset($byType) : [];
+        };
 
         /* ── 3. Uploaded docs grouped by owner ("Type#id" → set of cat::code). ── */
         $uploadsByOwner = [];
@@ -139,10 +149,12 @@ class ClmBuyerProfileController extends Controller
             }
             return array_values(array_unique($ids));
         };
-        $unionFor = function (array $segIds) use ($rulesBySeg): array {
+        // Buyer trade type from its primary-address country (India → domestic).
+        $docTypeForCountry = fn (?string $country): string => trim((string) $country) === 'India' ? 'domestic' : 'international';
+        $unionFor = function (array $segIds, string $docType) use ($selForSeg): array {
             $u = ['kyc' => [], 'dd' => [], 'tl' => [], 'td' => []];
             foreach ($segIds as $sid) {
-                $sel = $rulesBySeg[$sid] ?? [];
+                $sel = $selForSeg($sid, $docType);
                 foreach (self::CATS as $c) {
                     $entries = $sel[$c] ?? [];
                     if (!is_array($entries)) continue;
@@ -310,7 +322,7 @@ class ClmBuyerProfileController extends Controller
         foreach ($customers as $c) {
             $sr++;
             $segIds   = $segIdsFromNames($c->segment);
-            $prog     = $progressFor($unionFor($segIds), Customer::class . '#' . $c->id);
+            $prog     = $progressFor($unionFor($segIds, $docTypeForCountry(optional($c->primaryAddress)->country)), Customer::class . '#' . $c->id);
             $applic   = $agrIdsForSegments($segIds);
             $agr      = $agrProgress($applic, $sigByParty['Customer#' . $c->id] ?? []);
             $segNames = collect(explode(',', (string) $c->segment))->map(fn ($n) => trim($n))->filter()->values()->all();
@@ -352,7 +364,7 @@ class ClmBuyerProfileController extends Controller
         foreach ($consignees as $c) {
             $sr++;
             $segIds = $segIdsFromNames($c->segment);
-            $prog   = $progressFor($unionFor($segIds), Consignee::class . '#' . $c->id);
+            $prog   = $progressFor($unionFor($segIds, $docTypeForCountry(optional($c->primaryAddress)->country)), Consignee::class . '#' . $c->id);
             $applic = $agrIdsForSegments($segIds);
             // Party-filter the agreement total to the CONSIGNEE side (same as the
             // transaction matrix's c_agr) — $agrProgress counted ALL segment

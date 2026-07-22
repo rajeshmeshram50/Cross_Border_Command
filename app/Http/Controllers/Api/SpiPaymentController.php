@@ -166,6 +166,16 @@ class SpiPaymentController extends Controller
         $inv = $this->findScoped($spi, $user, 'write');
 
         $row = SpiPayment::where('supplier_purchase_invoice_id', $inv->id)->findOrFail($payment);
+        // A payment already posted to Zoho Books as a vendor payment must not be
+        // deleted here: doing so orphans the Zoho payment AND reopens the local
+        // balance, letting a later re-sync double-post against the bill. Reverse
+        // it in Zoho Books first.
+        if ($row->zoho_payment_id || (float) $row->zoho_applied_amount > 0.005) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This payment is already posted to Zoho Books and can no longer be deleted here — reverse it in Zoho Books instead.',
+            ], 422);
+        }
         if ($row->attachment_path) {
             Storage::disk('public')->delete($row->attachment_path);
         }

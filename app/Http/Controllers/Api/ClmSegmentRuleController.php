@@ -115,21 +115,16 @@ class ClmSegmentRuleController extends Controller
 
         $data = $this->validatePayload($request);
 
-        // One rule per segment per tenant. If a rule already exists for this
-        // segment_code, return 409 with the existing row so the frontend can
-        // pivot the Add modal into Edit mode against it instead of creating
-        // a duplicate. The composite (client_id, segment_code) is the only
-        // guard — no DB-level UNIQUE because pre-existing duplicate data
-        // would block the migration; application-layer is sufficient.
-        // Scoped to the creator's branch so each branch can have its own rule
-        // for a segment without colliding with another branch's rule.
-        $existingQuery = ClmSegmentRule::query()->where('segment_code', $data['segment_code']);
+        $existingQuery = ClmSegmentRule::query()
+            ->where('segment_code', $data['segment_code'])
+            ->where('document_type', $data['document_type']);
         MasterVisibility::applyReadScope($existingQuery, $user, $user->branch_id ?: null);
         $existing = $existingQuery->first();
         if ($existing) {
+            $typeLabel = ucfirst($data['document_type']);
             return response()->json([
                 'status'   => false,
-                'message'  => "A rule already exists for segment {$data['segment_code']} ({$existing->rule_code}). Edit the existing rule instead.",
+                'message'  => "A {$typeLabel} rule already exists for segment {$data['segment_code']} ({$existing->rule_code}). Edit the existing rule instead.",
                 'existing' => $existing,
             ], 409);
         }
@@ -150,6 +145,7 @@ class ClmSegmentRuleController extends Controller
                 'segment_code'      => $data['segment_code'],
                 'rule_code'         => $code,
                 'regulatory_status' => $data['regulatory_status'],
+                'document_type'     => $data['document_type'],
                 'auths_json'        => $data['auths'] ?? [],
                 'doc_selections'    => $data['doc_selections'],
                 'mandatory_count'   => $mand,
@@ -172,6 +168,19 @@ class ClmSegmentRuleController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
         $data = $this->validatePayload($request);
+        $clashQuery = ClmSegmentRule::query()
+            ->whereKeyNot($row->id)
+            ->where('segment_code', $data['segment_code'])
+            ->where('document_type', $data['document_type']);
+        MasterVisibility::applyReadScope($clashQuery, $user, $user->branch_id ?: null);
+        if ($clash = $clashQuery->first()) {
+            $typeLabel = ucfirst($data['document_type']);
+            return response()->json([
+                'status'   => false,
+                'message'  => "A {$typeLabel} rule already exists for segment {$data['segment_code']} ({$clash->rule_code}).",
+                'existing' => $clash,
+            ], 409);
+        }
 
         [$mand, $opt] = $this->countSelections($data['doc_selections']);
 
@@ -179,6 +188,7 @@ class ClmSegmentRuleController extends Controller
             'segment_code'      => $data['segment_code'],
             'segment_id'        => ClmSegment::where('client_id', $user->client_id)->where('code', $data['segment_code'])->value('id'),
             'regulatory_status' => $data['regulatory_status'],
+            'document_type'     => $data['document_type'],
             'auths_json'        => $data['auths'] ?? [],
             'doc_selections'    => $data['doc_selections'],
             'mandatory_count'   => $mand,
@@ -228,9 +238,13 @@ class ClmSegmentRuleController extends Controller
             return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
         }
 
-        $rule = ClmSegmentRule::where('client_id', $cid)
-            ->where('segment_id', $segmentId)
-            ->first();
+        $ruleQuery = ClmSegmentRule::where('client_id', $cid)
+            ->where('segment_id', $segmentId);
+        $reqType = $request->query('document_type');
+        if (in_array($reqType, ClmSegmentRule::DOC_TYPE_VALUES, true)) {
+            $ruleQuery->where('document_type', $reqType);
+        }
+        $rule = $ruleQuery->first();
 
         // Document masters store the authority by id — resolve to current names
         // for the consumer forms.
@@ -291,6 +305,10 @@ class ClmSegmentRuleController extends Controller
         $data = $request->validate([
             'segment_code'      => 'required|string|max:16',
             'regulatory_status' => ['required', Rule::in(ClmSegmentRule::REG_VALUES)],
+            // Domestic / International is mandatory — every rule created or edited
+            // from the DCP going forward must be typed so a segment can carry a
+            // distinct domestic and international document set.
+            'document_type'     => ['required', Rule::in(ClmSegmentRule::DOC_TYPE_VALUES)],
             'auths'             => 'nullable|array',
             'auths.*'           => 'string',
             'doc_selections'              => 'required|array',

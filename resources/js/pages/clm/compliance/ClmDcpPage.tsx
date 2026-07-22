@@ -16,6 +16,7 @@ import BaseTooltip from '../../../components/ui/Tooltip';
 const Tooltip = (props: ComponentProps<typeof BaseTooltip>) => <BaseTooltip themed {...props} />;
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterMultiSelect } from '../../master/masterFormKit';
+import ClmDcpFilterModal, { type DcpFilters, countDcpFilters } from './ClmDcpFilterModal';
 import AuthorityBadges from './AuthorityBadges';
 import { KycModal } from './ClmKycPage';
 import { DdModal } from './ClmDdPage';
@@ -35,14 +36,17 @@ type DocSel = Record<string, 'M' | 'O'>;
  * longer a configurable category. The Bootstrap payload may still ship a `td`
  * array, but the panel neither renders nor saves it. */
 type DocSelections = { kyc?: DocSel; dd?: DocSel; tl?: DocSel; qc?: DocSel };
+type DocType = 'domestic' | 'international';
 
 type SegRule = {
   id: number; rule_code: string; segment_id: number | null;
   segment_code: string; regulatory_status: 'highly' | 'less';
+  document_type: DocType | null;
   auths_json: string[] | null;
   doc_selections: DocSelections;
   mandatory_count: number; optional_count: number;
 };
+const DOC_TYPE_LABEL: Record<DocType, string> = { domestic: 'Domestic', international: 'International' };
 
 type Counts = { all: number; highly: number; less: number };
 
@@ -96,7 +100,7 @@ function authsForSegment(segCode: string, allAuths: Authority[]): Authority[] {
 /* Tab bar restyled to match the My Workplace (Sales Lead Worksheet) pills —
  * a cyan gradient bar of pills with the count inline as "(N)". */
 const DCP_TABS_CSS = `
-.dcp-pre-table { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.dcp-pre-table { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 16px 18px 0; margin-bottom: 14px; }
 .dcp-pills {
   display: flex; align-items: center; gap: 4px;
   background: linear-gradient(110deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%);
@@ -122,8 +126,8 @@ const DCP_TABS_CSS = `
 /* Right-aligned toolbar: Regulatory + Customer≠Consignee filters + a compact search. */
 .dcp-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .dcp-filter-ms { flex: 0 0 auto; }
-.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 0 auto; width: 260px; max-width: 100%; }
-@media (max-width: 1100px) { .dcp-pre-table .dcp-toolbar .clm-search { width: 200px; } }
+.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 0 auto; width: 480px; max-width: 100%; }
+@media (max-width: 1100px) { .dcp-pre-table .dcp-toolbar .clm-search { width: 300px; } }
 @media (max-width: 760px) {
   .dcp-toolbar { width: 100%; }
   .dcp-pre-table .dcp-toolbar .clm-search { width: 100%; }
@@ -132,6 +136,35 @@ const DCP_TABS_CSS = `
 [data-bs-theme="dark"] .dcp-pill { color: #67e8f9; }
 [data-bs-theme="dark"] .dcp-pill:hover { background: rgba(8,145,178,.22); color: #a5f3fc; }
 [data-bs-theme="dark"] .dcp-pill.active { background: linear-gradient(135deg, #0891b2, #155e75); color: #fff; }
+/* Filter button — always wears the active tab pill's dark-cyan gradient. */
+.dcp-filter-btn {
+  display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+  height: 38px; padding: 0 20px; border-radius: 14px;
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
+  border: 1.5px solid #0891b2;
+  box-shadow: 0 3px 12px rgba(8,145,178,.4), 0 1px 0 rgba(255,255,255,.2) inset;
+  transition: all .18s;
+}
+.dcp-filter-btn:hover { filter: brightness(1.06); }
+.dcp-filter-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; line-height: 1;
+  background: rgba(255,255,255,.28); color: #fff;
+}
+[data-bs-theme="dark"] .dcp-filter-btn { background: linear-gradient(135deg, #0891b2, #155e75); color: #fff; }
+/* Document Type badge — light + dark variants (the inline dark text was
+   invisible on the dark table background). */
+.dcp-doctype-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
+}
+.dcp-doctype-badge--international { color: #3730a3; background: rgba(99,102,241,.12); border: 1px solid rgba(99,102,241,.30); }
+.dcp-doctype-badge--domestic      { color: #0f766e; background: rgba(20,184,166,.12); border: 1px solid rgba(20,184,166,.30); }
+[data-bs-theme="dark"] .dcp-doctype-badge--international { color: #c7d2fe; background: rgba(99,102,241,.22); border-color: rgba(129,140,248,.55); }
+[data-bs-theme="dark"] .dcp-doctype-badge--domestic      { color: #99f6e4; background: rgba(20,184,166,.22); border-color: rgba(45,212,191,.55); }
 `;
 
 export default function ClmDcpPage() {
@@ -142,8 +175,10 @@ export default function ClmDcpPage() {
   const [tab, setTab]         = useState<'all'|'highly'|'less'>('all');
   const [search, setSearch]   = useState('');
   const [page, setPage]       = useState(1);
-  // Customer ≠ Consignee filter (independent of the regulatory tab/dropdown).
-  const [bcFilter, setBcFilter] = useState<'all'|'allowed'|'not'>('all');
+  // "My Workplace"-style filter panel — Document Type, Regulatory Status,
+  // Customer ≠ Consignee, Authorities and Segment Name facets.
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [dcpFilters, setDcpFilters] = useState<DcpFilters>({});
 
   const [boot, setBoot]       = useState<Bootstrap | null>(null);
   const [editing, setEditing] = useState<SegRule | null>(null);
@@ -224,27 +259,83 @@ export default function ClmDcpPage() {
   
   const allRows = useMemo<SegRule[]>(() => rows, [rows]);
 
-  // Tab counts derived from the segment-master tier (matches the badges).
-  const tierCounts = useMemo<Counts>(() => ({
-    all:    allRows.length,
-    highly: allRows.filter(r => regOf(r) === 'highly').length,
-    less:   allRows.filter(r => regOf(r) === 'less').length,
-  }), [allRows, boot]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Rows matching the Filter panel + search box, IGNORING the active tab. The
+  // tab only partitions this set by regulatory tier, and the tab counts are
+  // derived from it — so applying a filter updates the tab counts too.
+  const filterMatched = useMemo(() => {
+    const f = dcpFilters;
+    let base = allRows;
+    if (f.document_type?.length)     base = base.filter(r => !!r.document_type && f.document_type!.includes(r.document_type));
+    if (f.regulatory_status?.length) base = base.filter(r => f.regulatory_status!.includes(regOf(r)));
+    if (f.buyer_consignee?.length)   base = base.filter(r => f.buyer_consignee!.includes(bcOf(r) === 'allowed' ? 'allowed' : 'not'));
+    if (f.segment_code?.length)      base = base.filter(r => f.segment_code!.includes(r.segment_code));
+    if (f.authorities?.length)       base = base.filter(r => { const a = authsForRule(r); return f.authorities!.some(x => a.includes(x)); });
+    if (search.trim()) {
+      const s = search.toLowerCase();
+      base = base.filter(r => {
+        const segName = boot?.segments.find(seg => seg.code === r.segment_code)?.name ?? '';
+        const regLabel = regOf(r) === 'highly' ? 'high' : 'less';
+        return r.rule_code.toLowerCase().includes(s)
+          || r.segment_code.toLowerCase().includes(s)
+          || segName.toLowerCase().includes(s)
+          || regLabel.includes(s);
+      });
+    }
+    return base;
+  }, [allRows, search, boot, dcpFilters]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtered = useMemo(() => {
-    let base = tab === 'all' ? allRows : allRows.filter(r => regOf(r) === tab);
-    if (bcFilter !== 'all') base = base.filter(r => bcFilter === 'allowed' ? bcOf(r) === 'allowed' : bcOf(r) !== 'allowed');
-    if (!search.trim()) return base;
-    const s = search.toLowerCase();
-    return base.filter(r => {
-      const segName = boot?.segments.find(seg => seg.code === r.segment_code)?.name ?? '';
-      const regLabel = regOf(r) === 'highly' ? 'high' : 'less';
-      return r.rule_code.toLowerCase().includes(s)
-        || r.segment_code.toLowerCase().includes(s)
-        || segName.toLowerCase().includes(s)
-        || regLabel.includes(s);
+  // Tab counts derived from the segment-master tier — over the FILTER-MATCHED
+  // set so they track the active filters/search (matches the badges).
+  const tierCounts = useMemo<Counts>(() => ({
+    all:    filterMatched.length,
+    highly: filterMatched.filter(r => regOf(r) === 'highly').length,
+    less:   filterMatched.filter(r => regOf(r) === 'less').length,
+  }), [filterMatched, boot]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Option lists for the filter panel — Authorities (union across all rules)
+  // and Segment Name (the segments actually present in the rules).
+  const filterOptions = useMemo(() => {
+    const authSet = new Set<string>();
+    const segMap = new Map<string, string>();
+    for (const r of allRows) {
+      for (const a of authsForRule(r)) authSet.add(a);
+      const name = boot?.segments.find(s => s.code === r.segment_code)?.name ?? r.segment_code;
+      segMap.set(r.segment_code, name);
+    }
+    return {
+      authorities: Array.from(authSet).sort((a, b) => a.localeCompare(b)).map(a => ({ value: a, label: a })),
+      segments: Array.from(segMap.entries())
+        .sort((a, b) => a[1].localeCompare(b[1]))
+        .map(([code, name]) => ({ value: code, label: `${name} (${code})` })),
+    };
+  }, [allRows, boot]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const filtered = useMemo(
+    () => tab === 'all' ? filterMatched : filterMatched.filter(r => regOf(r) === tab),
+    [filterMatched, tab, boot] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const dcpCount = countDcpFilters(dcpFilters);
+
+  // Active-filter chips — one per selected value, each removable inline.
+  const filterChips = useMemo(() => {
+    const chips: Array<{ field: keyof DcpFilters; value: string; label: string }> = [];
+    for (const v of dcpFilters.document_type ?? [])     chips.push({ field: 'document_type', value: v, label: `Type: ${v === 'international' ? 'International' : 'Domestic'}` });
+    for (const v of dcpFilters.regulatory_status ?? []) chips.push({ field: 'regulatory_status', value: v, label: `Regulatory: ${v === 'highly' ? 'High' : 'Less'}` });
+    for (const v of dcpFilters.buyer_consignee ?? [])   chips.push({ field: 'buyer_consignee', value: v, label: `Customer ≠ Consignee: ${v === 'allowed' ? 'Allowed' : 'Not Allowed'}` });
+    for (const v of dcpFilters.authorities ?? [])       chips.push({ field: 'authorities', value: v, label: `Authority: ${v}` });
+    for (const v of dcpFilters.segment_code ?? [])      chips.push({ field: 'segment_code', value: v, label: `Segment: ${boot?.segments.find(s => s.code === v)?.name ?? v}` });
+    return chips;
+  }, [dcpFilters, boot]);
+
+  const removeChip = (field: keyof DcpFilters, value: string) => {
+    setDcpFilters(prev => {
+      const cur = (prev[field] as string[] | undefined) ?? [];
+      const next = cur.filter(v => v !== value);
+      return { ...prev, [field]: next.length ? next : undefined };
     });
-  }, [allRows, tab, search, boot, bcFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+    setPage(1);
+  };
+
   const [rpp, setRpp]     = useState(PER_PAGE);
   const autoFitRef        = useRef(true);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
@@ -276,7 +367,7 @@ export default function ClmDcpPage() {
     return () => { window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
   }, [filtered.length]);
 
-  const onSave = async (form: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }, id?: number) => {
+  const onSave = async (form: { segment_code: string; regulatory_status: 'highly'|'less'; document_type: DocType; auths: string[]; doc_selections: DocSelections }, id?: number) => {
     try {
       if (id) { await api.put(`/clm/segment-rules/${id}`, form); toast.success('Updated', `${form.segment_code} rules saved`); }
       else    { await api.post('/clm/segment-rules', form);     toast.success('Added',   `${form.segment_code} rules created`); }
@@ -297,7 +388,7 @@ export default function ClmDcpPage() {
    * or POST per picked segment, then closes + reloads once at the end so
    * the table refreshes a single time regardless of selection size. The
    * 409 path still runs per segment to handle race conditions cleanly. */
-  const onBulkSave = async (rows: Array<{ form: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }; ruleId?: number }>) => {
+  const onBulkSave = async (rows: Array<{ form: { segment_code: string; regulatory_status: 'highly'|'less'; document_type: DocType; auths: string[]; doc_selections: DocSelections }; ruleId?: number }>) => {
     let created = 0, updated = 0;
     const failed: string[] = [];
     for (const { form, ruleId } of rows) {
@@ -319,7 +410,7 @@ export default function ClmDcpPage() {
   return (
     <div className="clm-root">
       <style>{CLM_CSS + DCP_PAGE_CSS}</style>
-      {loading && <ShimmerClmMaster cols={11} />}
+      {loading && <ShimmerClmMaster cols={12} />}
 
       <ClmPageHeader
         icon={ICO.hDcp}
@@ -357,24 +448,39 @@ export default function ClmDcpPage() {
             </div>
           </div>
           <div className="dcp-toolbar">
-            <div className="dcp-filter-ms" style={{ width: 216 }}>
-              <MasterSelect
-                value={bcFilter}
-                placeholder="Customer ≠ Consignee"
-                options={[
-                  { value: 'all',     label: 'Customer ≠ Consignee: All' },
-                  { value: 'allowed', label: 'Allowed' },
-                  { value: 'not',     label: 'Not Allowed' },
-                ]}
-                onChange={(v) => { setBcFilter((v || 'all') as 'all'|'allowed'|'not'); setPage(1); }}
-              />
-            </div>
             <div className="clm-search">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
               <input type="text" placeholder="Search segment rules…" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
             </div>
+            <button
+              type="button"
+              className={`dcp-filter-btn ${dcpCount > 0 ? 'active' : ''}`}
+              title="Filter segment rules"
+              onClick={() => setFilterOpen(true)}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+              </svg>
+              Filter
+              {dcpCount > 0 && <span className="dcp-filter-badge">{dcpCount}</span>}
+            </button>
           </div>
         </div>
+
+        {filterChips.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '0 18px 12px' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Filters:</span>
+            {filterChips.map(c => (
+              <span key={`${c.field}-${c.value}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#0e7490', background: 'rgba(8,145,178,.09)', border: '1px solid rgba(8,145,178,.22)', borderRadius: 999, padding: '3px 6px 3px 11px' }}>
+                {c.label}
+                <button type="button" onClick={() => removeChip(c.field, c.value)} aria-label={`Remove ${c.label}`}
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', border: 'none', cursor: 'pointer', background: 'rgba(8,145,178,.16)', color: '#0e7490', lineHeight: 1, fontSize: 12 }}>×</button>
+              </span>
+            ))}
+            <button type="button" onClick={() => { setDcpFilters({}); setPage(1); }}
+              style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', background: 'transparent', border: 'none', cursor: 'pointer', padding: '2px 4px' }}>Clear all</button>
+          </div>
+        )}
 
         <div className={`clm-tab-body ${slice.length > 0 ? 'has-data' : ''}`}>
           {slice.length === 0 && !loading ? (
@@ -391,6 +497,7 @@ export default function ClmDcpPage() {
                   <th style={{ width: 110, textAlign: 'center' }}>SEGMENT ID</th>
                   <th>SEGMENT NAME</th>
                   <th style={{ width: 130, textAlign: 'center' }}>REGULATORY STATUS</th>
+                  <th style={{ width: 120, textAlign: 'center' }}>DOCUMENT TYPE</th>
                   <th style={{ width: 140, textAlign: 'center' }}>CUSTOMER ≠ CONSIGNEE</th>
                   <th style={{ width: 180, textAlign: 'center' }}>AUTHORITIES</th>
                   <th style={{ width: 60, textAlign: 'center' }}>KYC</th>
@@ -412,6 +519,13 @@ export default function ClmDcpPage() {
                         <td className="clm-td-name">{seg?.name ?? r.segment_code}</td>
                         <td style={{ textAlign: 'center' }}>
                           <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-green'}`}><span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}</span>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          {r.document_type ? (
+                            <span className={`dcp-doctype-badge dcp-doctype-badge--${r.document_type}`}>
+                              {DOC_TYPE_LABEL[r.document_type]}
+                            </span>
+                          ) : <span style={{ color: '#94a3b8', fontSize: 11 }}>—</span>}
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           {seg?.buyer_consignee === 'allowed'
@@ -475,6 +589,14 @@ export default function ClmDcpPage() {
         />
       )}
 
+      <ClmDcpFilterModal
+        open={filterOpen}
+        initial={dcpFilters}
+        options={filterOptions}
+        onClose={() => setFilterOpen(false)}
+        onApply={(f) => { setDcpFilters(f); setPage(1); }}
+      />
+
     </div>
   );
 }
@@ -484,12 +606,12 @@ export default function ClmDcpPage() {
 function SegmentRuleModal(props: {
   existing: SegRule | null; existingRules: SegRule[]; boot: Bootstrap;
   onClose: () => void;
-  onSave: (f: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }, ruleId?: number) => void;
+  onSave: (f: { segment_code: string; regulatory_status: 'highly'|'less'; document_type: DocType; auths: string[]; doc_selections: DocSelections }, ruleId?: number) => void;
   /** Bulk save — used when the Less-Regulatory multi-select mode picks
    *  multiple segments. Parent loops the API calls and triggers a single
    *  reload + close on completion. Optional: when omitted the modal
    *  falls back to looping the single onSave (with N reloads). */
-  onBulkSave?: (rows: Array<{ form: { segment_code: string; regulatory_status: 'highly'|'less'; auths: string[]; doc_selections: DocSelections }; ruleId?: number }>) => void;
+  onBulkSave?: (rows: Array<{ form: { segment_code: string; regulatory_status: 'highly'|'less'; document_type: DocType; auths: string[]; doc_selections: DocSelections }; ruleId?: number }>) => void;
   /** Refresh the document masters after a quick-add so the new doc appears. */
   onDocAdded?: () => Promise<void> | void;
 }) {
@@ -497,6 +619,12 @@ function SegmentRuleModal(props: {
   const toast = useToast();
   const [stage, setStage]     = useState<1 | 2>(1);
   const [reg, setReg]         = useState<'highly'|'less'|null>(existing?.regulatory_status ?? null);
+  /* Domestic / International — defaults to International for every new rule
+   * (a segment can hold one rule per type). Scopes the segment picker, the
+   * "already ruled" exclusion, and the matched-rule (Add → Edit) pivot. */
+  // Add starts empty so the user must pick a type first (that gates the rest of
+  // step 1); Edit locks to the rule's existing type.
+  const [docType, setDocType] = useState<DocType | null>(existing?.document_type ?? null);
   /* Multi-select segment codes. Always an array internally; in edit mode
    * and in High-Regulatory create mode the UI forces it to length ≤ 1.
    * In Less-Regulatory create mode the user can pick many — each becomes
@@ -506,9 +634,9 @@ function SegmentRuleModal(props: {
   const [activeCat, setActiveCat] = useState<keyof DocSelections>('kyc');
   const [saving, setSaving]   = useState(false);
 
-  // Lock the background page from scrolling while the modal is open — otherwise
-  // a scroll over the overlay bleeds through and scrolls the page behind it.
-  useEffect(() => { document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; }; }, []);
+  // Lock the background page from scrolling while the modal is open (reserves
+  // the scrollbar's width so the page doesn't jump/shake on open).
+  useScrollLock();
   // Block selecting/copying the background while the modal is open (mounted only when open).
   useSelectionLock();
 
@@ -524,8 +652,8 @@ function SegmentRuleModal(props: {
    * already-configured segment in the picked set is collected so the
    * banner can list them and the save handler can PUT them individually. */
   const matchedRules = useMemo(
-    () => existingRules.filter(r => r.id !== existing?.id && segCodes.includes(r.segment_code)),
-    [existingRules, segCodes, existing?.id]
+    () => existingRules.filter(r => r.id !== existing?.id && segCodes.includes(r.segment_code) && r.document_type === docType),
+    [existingRules, segCodes, existing?.id, docType]
   );
   const matchedRule = matchedRules[0] ?? null;
   const isEdit = !!existing || (!isMulti && !!matchedRule);
@@ -541,12 +669,14 @@ function SegmentRuleModal(props: {
     }
   }, [matchedRule, existing, isMulti]);
 
-  /* Segments that already have a saved rule — hidden from the "Select Segment"
-     dropdown so a segment can't be configured twice (CBC-453). The rule being
-     edited is excluded from this set so its own segment stays selectable. */
+  /* Segments that already have a saved rule OF THE SELECTED DOCUMENT TYPE —
+     hidden from the "Select Segment" dropdown so a segment can't be configured
+     twice for the same type (CBC-453). A segment with only a Domestic rule
+     stays selectable while configuring its International rule, and vice-versa.
+     The rule being edited is excluded so its own segment stays selectable. */
   const ruledCodes = useMemo(
-    () => new Set(existingRules.filter(r => r.id !== existing?.id).map(r => r.segment_code)),
-    [existingRules, existing?.id]
+    () => new Set(existingRules.filter(r => r.id !== existing?.id && r.document_type === docType).map(r => r.segment_code)),
+    [existingRules, existing?.id, docType]
   );
   const segments = useMemo(() => reg ? boot.segments.filter(s => s.regulatory_status === reg && !ruledCodes.has(s.code)) : [], [reg, boot.segments, ruledCodes]);
   const selSeg   = useMemo(() => segCodes.length === 1 ? (boot.segments.find(s => s.code === segCodes[0]) ?? null) : null, [segCodes, boot.segments]);
@@ -555,6 +685,7 @@ function SegmentRuleModal(props: {
   const clearAllSegments  = () => setSegCodes([]);
 
   const goStage2 = () => {
+    if (!docType)          { toast.error('Document type required', 'Select Domestic or International to continue.'); return; }
     if (!reg)              { toast.error('Regulatory status required', 'Please select a Regulatory Status to continue.'); return; }
     if (segCodes.length === 0) { toast.error('Segment required', isMulti ? 'Pick at least one segment to continue.' : 'Please select a Segment to continue.'); return; }
     setStage(2);
@@ -619,8 +750,8 @@ function SegmentRuleModal(props: {
     // Guard at the TOP, not just `disabled` on the button — the button attribute
     // doesn't stop an Enter-key handler or a programmatic call.
     if (saving) return;
-    if (!reg || segCodes.length === 0) {
-      toast.error('Incomplete form', 'Select a regulatory status and segment first.');
+    if (!docType || !reg || segCodes.length === 0) {
+      toast.error('Incomplete form', 'Select a document type, regulatory status and segment first.');
       setStage(1);
       return;
     }
@@ -638,9 +769,9 @@ function SegmentRuleModal(props: {
        * POSTs. */
       const rows = segCodes.map(code => {
         const segAuths = authsForSegment(code, boot.authorities).map(a => a.code);
-        const existingRow = existingRules.find(r => r.id !== existing?.id && r.segment_code === code);
+        const existingRow = existingRules.find(r => r.id !== existing?.id && r.segment_code === code && r.document_type === docType);
         return {
-          form: { segment_code: code, regulatory_status: reg, auths: segAuths, doc_selections: docSel },
+          form: { segment_code: code, regulatory_status: reg, document_type: docType, auths: segAuths, doc_selections: docSel },
           ruleId: existing?.id && existing.segment_code === code ? existing.id : existingRow?.id,
         };
       });
@@ -696,7 +827,52 @@ function SegmentRuleModal(props: {
         <div className="clm-modal-body" style={{ maxHeight: '70vh' }}>
           {stage === 1 ? (
             <>
-              {/* Card 1: Regulatory Status + Segment Select */}
+              {/* Card 0: Document Type (Domestic / International) — empty by
+                  default, mandatory. A segment can hold one rule per type. */}
+              <div className="dcp-modal-card" style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden', marginBottom: 12 }}>
+                <div className="dcp-modal-card-head" style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 9, fontWeight: 800, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.09em' }}>Document Type</span>
+                  <span className="clm-req">*</span>
+                </div>
+                <div style={{ padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {(['domestic','international'] as const).map(v => {
+                      const on  = docType === v;
+                      const dom = v === 'domestic';
+                      // Domestic = the modal header cyan; International = indigo
+                      // (matches the table badge). Type is locked in the edit form.
+                      const accent  = dom ? '#0891b2' : '#6366f1';
+                      const onBd    = dom ? 'rgba(8,145,178,.30)' : 'rgba(99,102,241,.30)';
+                      const onBg    = dom ? 'rgba(8,145,178,.12)' : 'rgba(99,102,241,.12)';
+                      const titleC  = dom ? '#0e7490' : '#3730a3';
+                      const subOnC  = dom ? '#0e7490' : '#3730a3';
+                      return (
+                        <label key={v} className={`dcp-radio-label ${on ? 'dcp-radio-label-on' : ''}`} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, border: `1.5px solid ${on ? onBd : 'rgba(203,213,225,.38)'}`, background: on ? onBg : 'rgba(248,250,252,.5)', cursor: existing ? 'not-allowed' : 'pointer', opacity: existing && !on ? 0.55 : 1, transition: 'all .15s' }}
+                          onClick={() => {
+                            if (existing) return;
+                            setDocType(v);
+                            // Changing the type re-scopes which segments are already
+                            // ruled / available, so drop any stale segment pick.
+                            setSegCodes([]);
+                          }}>
+                          <input type="radio" checked={on} onChange={() => {}} disabled={!!existing} style={{ accentColor: accent, width: 14, height: 14 }} />
+                          <div>
+                            <div className="dcp-radio-title" style={{ fontSize: 12, fontWeight: 700, color: on ? titleC : '#1e293b' }}>{dom ? 'Domestic' : 'International'}</div>
+                            <div className="dcp-radio-sub" style={{ fontSize: 9, color: on ? subOnC : '#94a3b8', marginTop: 2 }}>{dom ? 'Rules & documents for in-country trade' : 'Rules & documents for cross-border trade'}</div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 6 }}>
+                    Each segment can have a separate Domestic and International rule with its own document set.
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 1: Regulatory Status + Segment Select — only surfaces once a
+                  Document Type is chosen (that scopes which rules already exist). */}
+              {docType && (
               <div className="dcp-modal-card" style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden' }}>
                 <div className="dcp-modal-card-head" style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 9, fontWeight: 800, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.09em' }}>Segment Regulatory Status</span>
@@ -777,6 +953,7 @@ function SegmentRuleModal(props: {
                   </div>
                 )}
               </div>
+              )}
 
               {/* Card 2: Segment Details */}
               {selSeg && (

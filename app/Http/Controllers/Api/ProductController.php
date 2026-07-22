@@ -356,7 +356,7 @@ class ProductController extends Controller
     {
         $data = $request->validate([
             'id'                    => 'nullable|integer|exists:products,id',
-            'name'                  => 'required|string|max:255',
+            'name'                  => 'required|string|max:100',
             'generic_name'          => 'nullable|string|max:255',
             'description'           => 'nullable|string',
             // Make / Brand / Specifications — no character cap (column widened to

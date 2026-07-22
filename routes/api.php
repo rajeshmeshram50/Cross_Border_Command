@@ -365,6 +365,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/p2p/sourcing-targets/{target}/products/{product}/clarity',   [\App\Http\Controllers\Api\P2p\SourcingController::class, 'updateProductClarity'])->whereNumber('product');
     Route::get   ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mappedSuppliers'])->whereNumber('product');
     Route::post  ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mapSupplier'])->whereNumber('product');
+    Route::put   ('/p2p/sourcing-targets/{target}/products/{product}/suppliers/{supplier}', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'updateSupplier'])->whereNumber('product')->whereNumber('supplier');
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');
     Route::get   ('/clm/buyer-profile',                          [ClmBuyerProfileController::class, 'index']);
     Route::get   ('/clm/supplier-profile',                       [ClmSupplierProfileController::class, 'index']);

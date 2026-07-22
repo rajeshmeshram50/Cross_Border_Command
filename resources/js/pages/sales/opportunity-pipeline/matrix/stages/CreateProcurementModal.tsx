@@ -20,6 +20,12 @@ import Tooltip from '../../../../../components/ui/Tooltip';
  * concept, wrong symbol. */
 const PROCUREMENT_CURRENCY_SYMBOL = '₹';
 
+/* Total attachment budget across ALL product rows. Kept under PHP's stock
+ * post_max_size (8 MB) so the multipart body always fits the default and no
+ * server config is needed — otherwise a few 5 MB files overflow it and the
+ * request fails as "Post data is too long" before Laravel even runs. */
+const MAX_PROC_ATTACH_TOTAL = 6 * 1024 * 1024;   // 6 MB across the whole form
+
 /* ─────────────────────────────────────────────────────────────────────────
  * Create Product Sourcing modal — Sales Matrix → Stage 3 (Required tab).
  *
@@ -296,6 +302,16 @@ export default function CreateProcurementModal({
       toast.warning('Fix required fields', `Please correct: ${labels.join(', ')}.`);
       return;
     }
+    /* Total-size gate across EVERY product row's attachments. Without it a few
+       5 MB files overflow PHP's post_max_size and the whole POST is rejected as
+       "Post data is too long" — a slow, cryptic failure. Refuse it here with a
+       clear message instead. */
+    const attachTotal = drafts.reduce((s, d) => s + d.attachments.reduce((t, f) => t + f.size, 0), 0);
+    if (attachTotal > MAX_PROC_ATTACH_TOTAL) {
+      toast.error('Attachments too large', `All attachments together must be under ${Math.round(MAX_PROC_ATTACH_TOTAL / (1024 * 1024))} MB. Remove some files and try again.`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const fd = new FormData();
@@ -319,6 +335,16 @@ export default function CreateProcurementModal({
       onClose();
     } catch (e: any) {
       const data = e?.response?.data;
+      /* Body-too-large: PHP rejects the POST before Laravel, so there's no JSON
+         `errors`. Detect the 413 / post_max_size overflow and explain it in size
+         terms. The submit-time guard above normally prevents this; this is the
+         backstop for a server whose limit is lower than 6 MB. */
+      const status = e?.response?.status;
+      const raw = typeof data === 'string' ? data : '';
+      if (status === 413 || /post ?data|content length|exceeds the limit|entity too large/i.test(`${data?.message ?? ''} ${raw}`)) {
+        toast.error('Attachments too large', `The attachments are over the server limit. Keep the total under ${Math.round(MAX_PROC_ATTACH_TOTAL / (1024 * 1024))} MB.`);
+        return;
+      }
       const fieldErrs = data?.errors as Record<string, string[]> | undefined;
       // Attachment errors come back as raw field paths ("products.0.attachment.0
       // has an unexpected file signature… must not be greater than 5120

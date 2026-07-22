@@ -542,11 +542,17 @@ class SourcingController extends Controller
         // (contact_name / contact_no / email) — `addresses` is ordered
         // is_primary-first, so first() is the primary (or the only) one.
         $rows = Vendor::where('client_id', $user->client_id)
-            ->with(['segment:id,name', 'addresses'])
+            ->with(['segment:id,name', 'addresses', 'addresses.country:id,name'])
             ->orderBy('company_name')
             ->get()
             ->map(function ($v) {
                 $addr = $v->addresses->first();
+                // Domestic (India) vs International, decided by the primary
+                // address country. Blank when no country is set yet.
+                $countryName = $addr && $addr->country ? $addr->country->name : '';
+                $region = $countryName === ''
+                    ? ''
+                    : (strcasecmp($countryName, 'India') === 0 ? 'Domestic' : 'International');
                 return [
                     'id'      => (string) $v->id,
                     // Human-facing supplier code (e.g. "S-002"). The picker
@@ -557,6 +563,8 @@ class SourcingController extends Controller
                     'contact' => $addr->contact_name ?? '',
                     'mobile'  => $addr->contact_no ?? '',
                     'email'   => ($addr->email ?? '') ?: ($v->primary_email ?? ''),
+                    'country' => $countryName,
+                    'region'  => $region,
                 ];
             });
 
@@ -782,6 +790,100 @@ class SourcingController extends Controller
         return $this->ok(['supplierCount' => $p->suppliers()->count()]);
     }
 
+    /**
+     * Update a mapped NEW (manual) supplier — the Bulk Sourcing → Mapped
+     * Suppliers → Edit flow for a "New Supplier" card. Master rows are edited
+     * on the Supplier master, not here, so this rejects source='master'.
+     * Updates both the snapshot mapping row and the shared p2p_suppliers row.
+     */
+    public function updateSupplier(Request $request, string $target, int $product, int $supplier)
+    {
+        $user = $request->user();
+        $t    = $this->target($request, $target);
+
+        // Same gate as mapSupplier — editing mapped suppliers is the assignee's
+        // job (super_admin excepted).
+        if ((int) $t->assignee_id !== (int) $user->id
+            && $user->user_type !== 'super_admin') {
+            $mine = (int) $t->created_by === (int) $user->id;
+            return response()->json([
+                'status'  => false,
+                'message' => $mine
+                    ? 'You created this sourcing target — supplier editing is done by the assignee, not the creator.'
+                    : 'This sourcing target is assigned to someone else — only the assignee can edit suppliers.',
+            ], 403);
+        }
+
+        $p   = $t->products()->where('id', $product)->firstOrFail();
+        $row = $p->suppliers()->where('id', $supplier)->firstOrFail();
+
+        if ($row->source !== 'new') {
+            return response()->json(['status' => false, 'message' => 'Only new (manual) suppliers can be edited here. Edit master suppliers from the Supplier master.'], 422);
+        }
+
+        // Same caps / friendly names as mapSupplier's new_supplier branch.
+        $request->validate([
+            'new_supplier'            => 'required|array',
+            'new_supplier.name'       => 'required|string|max:255',
+            'new_supplier.segment'    => 'nullable|string|max:512',
+            'new_supplier.contact'    => 'nullable|string|max:255',
+            'new_supplier.mobile'     => 'nullable|string|max:64',
+            'new_supplier.email'      => 'nullable|email|max:255',
+            'new_supplier.gmaps'      => 'nullable|string|max:512',
+            'new_supplier.address'    => 'nullable|string|max:255',
+            'new_supplier.country'    => 'nullable|string|max:128',
+            'new_supplier.state'      => 'nullable|string|max:128',
+            'new_supplier.state_code' => 'nullable|string|max:16',
+            'new_supplier.city'       => 'nullable|string|max:128',
+            'new_supplier.card'       => 'nullable|string|max:512',
+        ], [
+            'new_supplier.name.required' => 'Enter the supplier company name.',
+            'new_supplier.email.email'   => 'Enter a valid supplier email address.',
+        ], [
+            'new_supplier.name'       => 'Supplier Company Name',
+            'new_supplier.segment'    => 'Segment',
+            'new_supplier.contact'    => 'Contact Person',
+            'new_supplier.mobile'     => 'Contact Number',
+            'new_supplier.email'      => 'Email',
+            'new_supplier.gmaps'      => 'Google Maps Link',
+            'new_supplier.address'    => 'Street Address',
+            'new_supplier.country'    => 'Country',
+            'new_supplier.state'      => 'State',
+            'new_supplier.state_code' => 'State Code',
+            'new_supplier.city'       => 'City',
+        ]);
+
+        $n    = $request->input('new_supplier');
+        $name = trim($n['name'] ?? '') ?: '—';
+
+        $fields = [
+            'segment'    => $n['segment'] ?? null,
+            'contact'    => $n['contact'] ?? null,
+            'mobile'     => $n['mobile'] ?? null,
+            'email'      => $n['email'] ?? null,
+            'gmaps'      => $n['gmaps'] ?? null,
+            'address'    => $n['address'] ?? null,
+            'country'    => $n['country'] ?? null,
+            'state'      => $n['state'] ?? null,
+            'state_code' => $n['state_code'] ?? null,
+            'city'       => $n['city'] ?? null,
+            'card_path'  => $n['card'] ?? null,
+        ];
+
+        // Update the snapshot mapping row (name + all fields).
+        $row->update($fields + ['name' => $name]);
+
+        // Keep the shared directory row (p2p_suppliers) in sync so the same
+        // supplier reads the same details wherever it's mapped.
+        if ($row->supplier_id) {
+            P2pSupplier::where('client_id', $user->client_id)
+                ->where('id', $row->supplier_id)
+                ->update($fields + ['name' => $name]);
+        }
+
+        return $this->ok(['id' => (string) $row->id]);
+    }
+
 
     public function mappedSuppliers(Request $request, string $target, int $product)
     {
@@ -790,12 +892,24 @@ class SourcingController extends Controller
 
         $rows = $p->suppliers()->latest()->get()->map(fn($s) => [
             'id'      => (string) $s->id,
+            // Underlying directory id so the UI can open the right edit form:
+            // for a Master row this is the Vendor master id; for a New Supplier
+            // row it is the p2p_suppliers directory id.
+            'supplier_id' => $s->supplier_id,
             'name'    => $s->name,
             'segment' => $s->segment ?? '',
             'contact' => $s->contact ?? '',
             'mobile'  => $s->mobile ?? '',
             'email'   => $s->email ?? '',
             'card'    => $s->card_path ?? '',
+            // Manual-supplier address snapshot (only populated for source='new'),
+            // used to prefill the Map Supplier edit form.
+            'gmaps'      => $s->gmaps ?? '',
+            'address'    => $s->address ?? '',
+            'country'    => $s->country ?? '',
+            'state'      => $s->state ?? '',
+            'state_code' => $s->state_code ?? '',
+            'city'       => $s->city ?? '',
             'source'  => $s->source === 'new' ? 'New Supplier' : 'Master',
         ]);
 

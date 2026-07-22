@@ -20,11 +20,19 @@ export function useScrollLock(active = true): void {
     const body = document.body;
     const prevHtml = html.style.overflow;
     const prevBody = body.style.overflow;
+    const prevPad  = body.style.paddingRight;
+    const scrollbarW = window.innerWidth - html.clientWidth;
+
     html.style.overflow = 'hidden';
     body.style.overflow = 'hidden';
+    if (scrollbarW > 0) {
+      const currentPad = parseFloat(getComputedStyle(body).paddingRight) || 0;
+      body.style.paddingRight = `${currentPad + scrollbarW}px`;
+    }
     return () => {
       html.style.overflow = prevHtml;
       body.style.overflow = prevBody;
+      body.style.paddingRight = prevPad;
     };
   }, [active]);
 }
