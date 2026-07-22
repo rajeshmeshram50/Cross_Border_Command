@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "zb0f0000-0000-4000-8000-zohobooks0001",
     "name": "Cross_Border_Command — Zoho Books Sync (P2P + Sales)",
-    "description": "All app endpoints that push records into Zoho Books, folder-wise, with data + curl. Set collection variables base_url (default http://127.0.0.1:8000; prod https://cbc.idims.in) and token (Sanctum bearer from POST /api/login). Every sync needs Zoho Books connected on the server (ZOHO_BOOKS_REFRESH_TOKEN + ZOHO_BOOKS_ORG_ID in .env) else it returns 503. See ZOHO_BOOKS_FLOW.md for the end-to-end flow, prerequisites, and error matrix.",
+    "description": "Every app endpoint that pushes records into Zoho Books, folder-wise, with request payloads that match the CURRENT controller validation (verified 2026-07-21), plus curl. Set collection variables `base_url` (default http://127.0.0.1:8000; prod https://cbc.idims.in) and `token` (Sanctum bearer from POST /api/login — auto-saved by the login test script). Every sync needs Zoho Books connected on the server (ZOHO_BOOKS_REFRESH_TOKEN + ZOHO_BOOKS_ORG_ID in .env) else it returns 503. See ZOHO_BOOKS_FLOW.md for the end-to-end flow.\n\nP2P mapping: PO → Zoho PO + Bill + payments · Direct SPI → Zoho Bill + payments · Debit Note → Zoho Vendor Credit. A With-PO SPI is billed through its PO (its own sync is redirected).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -32,23 +32,23 @@
             ],
             "body": { "mode": "raw", "raw": "{\n  \"email\": \"igcceo@mailinator.com\",\n  \"password\": \"Secret@123\"\n}", "options": { "raw": { "language": "json" } } },
             "url": { "raw": "{{base_url}}/api/login", "host": ["{{base_url}}"], "path": ["api", "login"] },
-            "description": "Email + password login → `{ token, user }`. The test script stores the token into {{token}} for every other request.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/login -H 'Content-Type: application/json' -H 'Accept: application/json' -d '{\"email\":\"igcceo@mailinator.com\",\"password\":\"Secret@123\"}'"
+            "description": "Email + password login → `{ token, user }`. Validation: email required|email, password required. The test script stores the token into {{token}} for every other request.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/login -H 'Content-Type: application/json' -H 'Accept: application/json' -d '{\"email\":\"igcceo@mailinator.com\",\"password\":\"Secret@123\"}'"
           },
           "response": []
         }
       ]
     },
     {
-      "name": "01 · Purchase Order → Zoho Purchase Order",
-      "description": "Flow: cut TDS once → record payments until the PO balance is cleared → SYNC (creates the Zoho Purchase Order + caches its PDF). e-sign is NOT required (removed 2026-07-17). Idempotent + locked; edit/delete blocked after sync.",
+      "name": "01 · Purchase Order → Zoho PO + Bill + Payments",
+      "description": "WITH-PO flow lives here. Sequence: cut TDS once → record payments until the PO net-payable balance is cleared → SYNC.\n\nSYNC creates: (1) the Zoho Purchase Order, (2) the BILL from the PO — TDS is deducted in the adjustment so the bill settles at NET PAYABLE (grand_total − TDS), (3) each Cleared payment as its own Zoho vendor payment applied to that bill (reference = 'UTR · SPI-code'). Stores zoho_purchaseorder_id + zoho_bill_id + zoho_bill_number on the PO. Idempotent: a re-sync tops up only newly-added payments (tracked per row via zoho_applied_amount). The linked SPI's own sync is redirected here → one bill per PO. (updated 2026-07-21)",
       "item": [
         {
           "name": "GET payment-summary (against PO)",
           "request": {
             "method": "GET",
             "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
-            "url": { "raw": "{{base_url}}/api/p2p/purchase-orders/:po/payment-summary", "host": ["{{base_url}}"], "path": ["api","p2p","purchase-orders",":po","payment-summary"], "variable": [ { "key": "po", "value": "6" } ] },
-            "description": "`PoPaymentController@summary` — base/GST/TDS/net-payable/amount-paid/balance + payment history for the PO.\n\ncurl:\ncurl -s {{base_url}}/api/p2p/purchase-orders/6/payment-summary -H 'Authorization: Bearer {{token}}' -H 'Accept: application/json'"
+            "url": { "raw": "{{base_url}}/api/p2p/purchase-orders/:po/payment-summary", "host": ["{{base_url}}"], "path": ["api","p2p","purchase-orders",":po","payment-summary"], "variable": [ { "key": "po", "value": "8" } ] },
+            "description": "`PoPaymentController@summary`. Returns { po, supplier, amounts{ base,gstPct,gstAmount,additionalCharges,totalPo,tdsPct,tdsAmount,tdsCut,netPayable,amountPaid,balance,paidCount,progressPct }, payments[] }. Each payment row now carries `source`: { type:'po', po:{id,code}, spi:{id,code}|null } — backend trace of which PO/SPI the payment was made against.\n\ncurl:\ncurl -s {{base_url}}/api/p2p/purchase-orders/8/payment-summary -H 'Authorization: Bearer {{token}}' -H 'Accept: application/json'"
           },
           "response": []
         },
@@ -58,8 +58,8 @@
             "method": "POST",
             "header": [ { "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
             "body": { "mode": "raw", "raw": "{\n  \"tds_percentage\": 2\n}", "options": { "raw": { "language": "json" } } },
-            "url": { "raw": "{{base_url}}/api/p2p/purchase-orders/:po/payment-summary/tds", "host": ["{{base_url}}"], "path": ["api","p2p","purchase-orders",":po","payment-summary","tds"], "variable": [ { "key": "po", "value": "6" } ] },
-            "description": "`PoPaymentController@saveTds` — one-time TDS % on the base (Total PO − GST). 422 if already cut. Must run before any payment.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/purchase-orders/6/payment-summary/tds -H 'Authorization: Bearer {{token}}' -H 'Content-Type: application/json' -d '{\"tds_percentage\":2}'"
+            "url": { "raw": "{{base_url}}/api/p2p/purchase-orders/:po/payment-summary/tds", "host": ["{{base_url}}"], "path": ["api","p2p","purchase-orders",":po","payment-summary","tds"], "variable": [ { "key": "po", "value": "8" } ] },
+            "description": "`PoPaymentController@saveTds`. Validation: `tds_percentage` required|numeric|min:0|max:100. TDS is cut on the BASE (Total PO − GST − Additional Charges = goods value). 422 'TDS is already cut' if re-cut. Must run before any payment.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/purchase-orders/8/payment-summary/tds -H 'Authorization: Bearer {{token}}' -H 'Content-Type: application/json' -d '{\"tds_percentage\":2}'"
           },
           "response": []
         },
@@ -69,25 +69,26 @@
             "method": "POST",
             "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
             "body": { "mode": "formdata", "formdata": [
-              { "key": "amount", "type": "text", "value": "396169.67" },
-              { "key": "bank_name", "type": "text", "value": "HDFC" },
-              { "key": "utr_cheque_number", "type": "text", "value": "UTR-0001" },
-              { "key": "utr_cheque_date", "type": "text", "value": "2026-07-17" },
-              { "key": "status", "type": "text", "value": "Cleared" },
-              { "key": "attachment", "type": "file", "src": "/path/to/proof.pdf" }
+              { "key": "amount", "type": "text", "value": "50000.00", "description": "required|numeric|min:0.01 — cannot exceed the outstanding balance" },
+              { "key": "bank_name", "type": "text", "value": "HDFC", "description": "nullable|string|max:128" },
+              { "key": "utr_cheque_number", "type": "text", "value": "UTR0000012345", "description": "nullable|string|regex ^[A-Za-z0-9]{6,22}$ (cheque 6 → RTGS 22)" },
+              { "key": "utr_cheque_date", "type": "text", "value": "2026-07-21", "description": "nullable|date" },
+              { "key": "status", "type": "text", "value": "Cleared", "description": "nullable|in:Cleared,Pending — only Cleared payments post to Zoho" },
+              { "key": "supplier_purchase_invoice_id", "type": "text", "value": "16", "description": "nullable|integer — which SPI this payment is for (traces the source; shown in Zoho reference as 'UTR · SPI-code')" },
+              { "key": "attachment", "type": "file", "src": "/path/to/proof.pdf", "description": "nullable|file|mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,webp|max:10240 (10 MB)" }
             ] },
-            "url": { "raw": "{{base_url}}/api/p2p/purchase-orders/:po/payments", "host": ["{{base_url}}"], "path": ["api","p2p","purchase-orders",":po","payments"], "variable": [ { "key": "po", "value": "6" } ] },
-            "description": "`PoPaymentController@store` — record ONE payment against the PO (multipart, optional proof). 422 before TDS is cut, or if amount exceeds the outstanding balance. On sync these payments become Zoho vendor payments applied to the bill.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/purchase-orders/6/payments -H 'Authorization: Bearer {{token}}' -F amount=396169.67 -F bank_name=HDFC -F utr_cheque_number=UTR-0001 -F status=Cleared -F attachment=@/path/to/proof.pdf"
+            "url": { "raw": "{{base_url}}/api/p2p/purchase-orders/:po/payments", "host": ["{{base_url}}"], "path": ["api","p2p","purchase-orders",":po","payments"], "variable": [ { "key": "po", "value": "8" } ] },
+            "description": "`PoPaymentController@store` — record ONE payment against the PO (multipart). Guards: 422 before TDS is cut · 422 if amount > outstanding balance. Stored in `po_payments` (purchase_order_id always; supplier_purchase_invoice_id optional). On sync each Cleared payment becomes its own Zoho vendor payment applied to the bill.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/purchase-orders/8/payments -H 'Authorization: Bearer {{token}}' -F amount=50000.00 -F bank_name=HDFC -F utr_cheque_number=UTR0000012345 -F utr_cheque_date=2026-07-21 -F status=Cleared -F supplier_purchase_invoice_id=16 -F attachment=@/path/to/proof.pdf"
           },
           "response": []
         },
         {
-          "name": "POST {id}/sync  → Zoho Purchase Order",
+          "name": "POST {id}/sync  → Zoho PO + Bill + Payments",
           "request": {
             "method": "POST",
             "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
-            "url": { "raw": "{{base_url}}/api/p2p/purchase-orders/:id/sync", "host": ["{{base_url}}"], "path": ["api","p2p","purchase-orders",":id","sync"], "variable": [ { "key": "id", "value": "6" } ] },
-            "description": "`PurchaseOrderController@sync` — push the PO to Zoho Books as a Purchase Order (no body). Guards: 503 unconfigured · 409 concurrent · already-synced → idempotent · 422 no vendor / no items / not fully paid. Registered vendor → forward GST; intra vs inter state → CGST+SGST vs IGST.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/purchase-orders/6/sync -H 'Authorization: Bearer {{token}}' -H 'Accept: application/json'"
+            "url": { "raw": "{{base_url}}/api/p2p/purchase-orders/:id/sync", "host": ["{{base_url}}"], "path": ["api","p2p","purchase-orders",":id","sync"], "variable": [ { "key": "id", "value": "8" } ] },
+            "description": "`PurchaseOrderController@sync` — NO body. Creates the Zoho PO + Bill (TDS deducted → net payable) + posts each Cleared payment. GSTIN read from vendors.gst_number (fallback vendor_gst_scrutiny); registered → forward GST; intra vs inter (vendor state vs Zoho org state) → CGST+SGST vs IGST. Guards: 503 unconfigured · 409 concurrent (Cache::lock) · already-synced (zoho_purchaseorder_id + zoho_bill_id) → tops up new payments only · 422 no vendor / no items / not fully utilised (netPayable − paid > 0).\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/purchase-orders/8/sync -H 'Authorization: Bearer {{token}}' -H 'Accept: application/json'"
           },
           "response": []
         },
@@ -96,24 +97,24 @@
           "request": {
             "method": "GET",
             "header": [ { "key": "Accept", "value": "application/pdf" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
-            "url": { "raw": "{{base_url}}/api/p2p/purchase-orders/:id/zoho-pdf", "host": ["{{base_url}}"], "path": ["api","p2p","purchase-orders",":id","zoho-pdf"], "variable": [ { "key": "id", "value": "6" } ] },
-            "description": "`PurchaseOrderController@zohoPdf` — stream Zoho's own rendered PO PDF (tenant-scoped cache path). 404 until synced.\n\ncurl:\ncurl -s {{base_url}}/api/p2p/purchase-orders/6/zoho-pdf -H 'Authorization: Bearer {{token}}' -o zoho-po.pdf"
+            "url": { "raw": "{{base_url}}/api/p2p/purchase-orders/:id/zoho-pdf", "host": ["{{base_url}}"], "path": ["api","p2p","purchase-orders",":id","zoho-pdf"], "variable": [ { "key": "id", "value": "8" } ] },
+            "description": "`PurchaseOrderController@zohoPdf` — stream Zoho's own rendered PO PDF (tenant-scoped cache). 404 until synced.\n\ncurl:\ncurl -s {{base_url}}/api/p2p/purchase-orders/8/zoho-pdf -H 'Authorization: Bearer {{token}}' -o zoho-po.pdf"
           },
           "response": []
         }
       ]
     },
     {
-      "name": "02 · Supplier Invoice → Zoho Bill",
-      "description": "Flow: fully utilise the payable (With-PO SPI → pay through the linked PO; Direct SPI → cut TDS + pay the SPI) → SYNC. Sync creates the Zoho Bill from the line items + taxes, posts the payments as vendor payments (bank-matched, capped at the bill balance), and caches the PDF. Re-sync tops up any payment that failed. TDS stays as an open balance on the Zoho bill (by design).",
+      "name": "02 · Supplier Invoice → Zoho Bill (Direct SPI only)",
+      "description": "Only DIRECT SPIs (no linked PO) sync here. A WITH-PO SPI is REDIRECTED → 422 'This invoice is under a purchase order — sync the PO to Zoho Books instead' (so there is one bill per purchase, no duplicates).\n\nDirect-SPI flow: cut TDS + pay the SPI in full → SYNC. Sync creates the Zoho Bill from line items + taxes with TDS DEDUCTED (settles at NET PAYABLE), sets bill# AND reference# = the SPI code, posts its `spi_payments` as vendor payments (bank-matched, capped at bill balance), caches the PDF. Re-sync tops up any payment that failed. (updated 2026-07-21)",
       "item": [
         {
           "name": "GET {spi}/payment-summary (Direct SPI)",
           "request": {
             "method": "GET",
             "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
-            "url": { "raw": "{{base_url}}/api/p2p/supplier-purchase-invoices/:spi/payment-summary", "host": ["{{base_url}}"], "path": ["api","p2p","supplier-purchase-invoices",":spi","payment-summary"], "variable": [ { "key": "spi", "value": "1" } ] },
-            "description": "`SpiPaymentController@summary` — Direct-SPI payment popup (base/GST/TDS/net/paid/balance). A With-PO SPI pays through its PO instead (folder 01).\n\ncurl:\ncurl -s {{base_url}}/api/p2p/supplier-purchase-invoices/1/payment-summary -H 'Authorization: Bearer {{token}}'"
+            "url": { "raw": "{{base_url}}/api/p2p/supplier-purchase-invoices/:spi/payment-summary", "host": ["{{base_url}}"], "path": ["api","p2p","supplier-purchase-invoices",":spi","payment-summary"], "variable": [ { "key": "spi", "value": "7" } ] },
+            "description": "`SpiPaymentController@summary` — Direct-SPI payment popup (base/GST/TDS/net/paid/balance + history). Each payment row carries `source`: { type:'spi', po:null, spi:{id,code} }. A With-PO SPI pays through its PO instead (folder 01).\n\ncurl:\ncurl -s {{base_url}}/api/p2p/supplier-purchase-invoices/7/payment-summary -H 'Authorization: Bearer {{token}}'"
           },
           "response": []
         },
@@ -123,8 +124,8 @@
             "method": "POST",
             "header": [ { "key": "Content-Type", "value": "application/json" }, { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
             "body": { "mode": "raw", "raw": "{\n  \"tds_percentage\": 5\n}", "options": { "raw": { "language": "json" } } },
-            "url": { "raw": "{{base_url}}/api/p2p/supplier-purchase-invoices/:spi/payment-summary/tds", "host": ["{{base_url}}"], "path": ["api","p2p","supplier-purchase-invoices",":spi","payment-summary","tds"], "variable": [ { "key": "spi", "value": "1" } ] },
-            "description": "`SpiPaymentController@saveTds` — one-time TDS on a Direct SPI.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/supplier-purchase-invoices/1/payment-summary/tds -H 'Authorization: Bearer {{token}}' -H 'Content-Type: application/json' -d '{\"tds_percentage\":5}'"
+            "url": { "raw": "{{base_url}}/api/p2p/supplier-purchase-invoices/:spi/payment-summary/tds", "host": ["{{base_url}}"], "path": ["api","p2p","supplier-purchase-invoices",":spi","payment-summary","tds"], "variable": [ { "key": "spi", "value": "7" } ] },
+            "description": "`SpiPaymentController@saveTds`. Validation: `tds_percentage` required|numeric|min:0|max:100. TDS on the BASE (goods value only). 422 'already deducted' if re-cut.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/supplier-purchase-invoices/7/payment-summary/tds -H 'Authorization: Bearer {{token}}' -H 'Content-Type: application/json' -d '{\"tds_percentage\":5}'"
           },
           "response": []
         },
@@ -134,14 +135,15 @@
             "method": "POST",
             "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
             "body": { "mode": "formdata", "formdata": [
-              { "key": "amount", "type": "text", "value": "11800" },
-              { "key": "bank_name", "type": "text", "value": "SBI" },
-              { "key": "utr_cheque_number", "type": "text", "value": "UTR-SPI-1" },
-              { "key": "status", "type": "text", "value": "Cleared" },
-              { "key": "attachment", "type": "file", "src": "/path/to/proof.pdf" }
+              { "key": "amount", "type": "text", "value": "11800", "description": "required|numeric|min:0.01 — cannot exceed the outstanding balance" },
+              { "key": "bank_name", "type": "text", "value": "SBI", "description": "nullable|string|max:128" },
+              { "key": "utr_cheque_number", "type": "text", "value": "UTRSPI0000001", "description": "nullable|string|regex ^[A-Za-z0-9]{6,22}$" },
+              { "key": "utr_cheque_date", "type": "text", "value": "2026-07-21", "description": "nullable|date" },
+              { "key": "status", "type": "text", "value": "Cleared", "description": "nullable|in:Cleared,Pending" },
+              { "key": "attachment", "type": "file", "src": "/path/to/proof.pdf", "description": "nullable|file|mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png,webp|max:10240" }
             ] },
-            "url": { "raw": "{{base_url}}/api/p2p/supplier-purchase-invoices/:spi/payments", "host": ["{{base_url}}"], "path": ["api","p2p","supplier-purchase-invoices",":spi","payments"], "variable": [ { "key": "spi", "value": "1" } ] },
-            "description": "`SpiPaymentController@store` — pay a Direct SPI (multipart). 422 before TDS / over-balance.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/supplier-purchase-invoices/1/payments -H 'Authorization: Bearer {{token}}' -F amount=11800 -F bank_name=SBI -F utr_cheque_number=UTR-SPI-1 -F status=Cleared"
+            "url": { "raw": "{{base_url}}/api/p2p/supplier-purchase-invoices/:spi/payments", "host": ["{{base_url}}"], "path": ["api","p2p","supplier-purchase-invoices",":spi","payments"], "variable": [ { "key": "spi", "value": "7" } ] },
+            "description": "`SpiPaymentController@store` — pay a Direct SPI (multipart). Stored in `spi_payments` (supplier_purchase_invoice_id set). 422 before TDS is cut · 422 over-balance.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/supplier-purchase-invoices/7/payments -H 'Authorization: Bearer {{token}}' -F amount=11800 -F bank_name=SBI -F utr_cheque_number=UTRSPI0000001 -F utr_cheque_date=2026-07-21 -F status=Cleared"
           },
           "response": []
         },
@@ -150,8 +152,8 @@
           "request": {
             "method": "POST",
             "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
-            "url": { "raw": "{{base_url}}/api/p2p/supplier-purchase-invoices/:id/sync", "host": ["{{base_url}}"], "path": ["api","p2p","supplier-purchase-invoices",":id","sync"], "variable": [ { "key": "id", "value": "1" } ] },
-            "description": "`SupplierPurchaseInvoiceController@sync` — create the Zoho Bill + apply the recorded payments as vendor payments (no body). Guards: 503 · 409 · idempotent (re-sync tops up unposted payments) · 422 no vendor / no items / not fully utilised. Message flags TDS residual + any payment that could not post.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/supplier-purchase-invoices/1/sync -H 'Authorization: Bearer {{token}}' -H 'Accept: application/json'"
+            "url": { "raw": "{{base_url}}/api/p2p/supplier-purchase-invoices/:id/sync", "host": ["{{base_url}}"], "path": ["api","p2p","supplier-purchase-invoices",":id","sync"], "variable": [ { "key": "id", "value": "7" } ] },
+            "description": "`SupplierPurchaseInvoiceController@sync` — Direct SPI only, NO body. Creates the Zoho Bill (bill# = reference# = SPI code; TDS deducted → net payable) + posts spi_payments as vendor payments. Guards: 503 · 409 · idempotent (re-sync tops up unposted payments) · 422 no vendor / no items / not fully utilised · 422 if it has a purchase_order_id → 'sync the PO instead'. GSTIN from vendors.gst_number (fallback scrutiny).\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/supplier-purchase-invoices/7/sync -H 'Authorization: Bearer {{token}}' -H 'Accept: application/json'"
           },
           "response": []
         },
@@ -160,8 +162,8 @@
           "request": {
             "method": "GET",
             "header": [ { "key": "Accept", "value": "application/pdf" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
-            "url": { "raw": "{{base_url}}/api/p2p/supplier-purchase-invoices/:id/zoho-pdf", "host": ["{{base_url}}"], "path": ["api","p2p","supplier-purchase-invoices",":id","zoho-pdf"], "variable": [ { "key": "id", "value": "1" } ] },
-            "description": "`SupplierPurchaseInvoiceController@zohoPdf` — stream the cached Zoho Bill PDF. 404 until synced.\n\ncurl:\ncurl -s {{base_url}}/api/p2p/supplier-purchase-invoices/1/zoho-pdf -H 'Authorization: Bearer {{token}}' -o zoho-bill.pdf"
+            "url": { "raw": "{{base_url}}/api/p2p/supplier-purchase-invoices/:id/zoho-pdf", "host": ["{{base_url}}"], "path": ["api","p2p","supplier-purchase-invoices",":id","zoho-pdf"], "variable": [ { "key": "id", "value": "7" } ] },
+            "description": "`SupplierPurchaseInvoiceController@zohoPdf` — stream the cached Zoho Bill PDF. 404 until synced.\n\ncurl:\ncurl -s {{base_url}}/api/p2p/supplier-purchase-invoices/7/zoho-pdf -H 'Authorization: Bearer {{token}}' -o zoho-bill.pdf"
           },
           "response": []
         }
@@ -169,7 +171,7 @@
     },
     {
       "name": "03 · Debit Note → Zoho Vendor Credit",
-      "description": "A debit note REDUCES the payable, so it maps to a Zoho Vendor Credit (NOT a bill). The linked SPI must already be synced as a bill (its bill_id is sent at creation — this org enforces it). Sync creates the vendor credit AND applies it against the linked bill (capped at the bill's open + un-recovered balance). Re-sync retries the apply.",
+      "description": "A debit note REDUCES the payable → maps to a Zoho Vendor Credit (NOT a bill). It MUST be fully paid (grand_total − total_paid ≤ 0) before sync — else 422 'Recover the full debit amount first — ₹X outstanding' (2026-07-21). The linked SPI must already be synced as a bill (its bill_id is sent at creation — this org enforces 'raise credit against a bill'). Sync creates the vendor credit AND applies it against the linked bill (capped at the bill's open + un-recovered balance). Re-sync retries the apply. Recovery payments are tracked locally but NOT pushed to Zoho (would be a Vendor Credit Refund — not implemented).",
       "item": [
         {
           "name": "GET {dn}/payment-summary (recovery)",
@@ -177,7 +179,7 @@
             "method": "GET",
             "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
             "url": { "raw": "{{base_url}}/api/p2p/debit-notes/:dn/payment-summary", "host": ["{{base_url}}"], "path": ["api","p2p","debit-notes",":dn","payment-summary"], "variable": [ { "key": "dn", "value": "1" } ] },
-            "description": "`DebitNotePaymentController@summary` — recovery popup (total/recovered/balance + history).\n\ncurl:\ncurl -s {{base_url}}/api/p2p/debit-notes/1/payment-summary -H 'Authorization: Bearer {{token}}'"
+            "description": "`DebitNotePaymentController@summary` — recovery popup (grand_total / total_paid / balance + history).\n\ncurl:\ncurl -s {{base_url}}/api/p2p/debit-notes/1/payment-summary -H 'Authorization: Bearer {{token}}'"
           },
           "response": []
         },
@@ -187,15 +189,15 @@
             "method": "POST",
             "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
             "body": { "mode": "formdata", "formdata": [
-              { "key": "amount", "type": "text", "value": "500" },
-              { "key": "bank_name", "type": "text", "value": "HDFC" },
-              { "key": "reference_no", "type": "text", "value": "REC-1" },
-              { "key": "paid_date", "type": "text", "value": "2026-07-17" },
-              { "key": "status", "type": "text", "value": "Cleared" },
-              { "key": "attachment", "type": "file", "src": "/path/to/proof.pdf" }
+              { "key": "amount", "type": "text", "value": "500", "description": "required|numeric|min:0.01 — cannot exceed the outstanding (un-recovered) balance" },
+              { "key": "bank_name", "type": "text", "value": "HDFC", "description": "nullable|string|max:128" },
+              { "key": "reference_no", "type": "text", "value": "REC-1", "description": "nullable|string|max:64" },
+              { "key": "paid_date", "type": "text", "value": "2026-07-21", "description": "nullable|date" },
+              { "key": "status", "type": "text", "value": "Cleared", "description": "nullable|in:Cleared,Pending" },
+              { "key": "attachment", "type": "file", "src": "/path/to/proof.pdf", "description": "nullable|file|mimes:pdf,jpg,jpeg,png|max:10240 — PDF/JPG/PNG only" }
             ] },
             "url": { "raw": "{{base_url}}/api/p2p/debit-notes/:dn/payments", "host": ["{{base_url}}"], "path": ["api","p2p","debit-notes",":dn","payments"], "variable": [ { "key": "dn", "value": "1" } ] },
-            "description": "`DebitNotePaymentController@store` — record an amount recovered against the debit note (multipart). 422 over-recovery. The recovered slice is NOT applied to the Zoho bill (avoids double-count).\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/debit-notes/1/payments -H 'Authorization: Bearer {{token}}' -F amount=500 -F bank_name=HDFC -F reference_no=REC-1 -F status=Cleared"
+            "description": "`DebitNotePaymentController@store` — record an amount recovered against the debit note (multipart). 422 over-recovery. Note: fields are `reference_no` + `paid_date` (NOT utr_cheque_*). Recovering the full amount is what unlocks the Zoho sync.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/debit-notes/1/payments -H 'Authorization: Bearer {{token}}' -F amount=500 -F bank_name=HDFC -F reference_no=REC-1 -F paid_date=2026-07-21 -F status=Cleared"
           },
           "response": []
         },
@@ -205,7 +207,7 @@
             "method": "POST",
             "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
             "url": { "raw": "{{base_url}}/api/p2p/debit-notes/:id/sync", "host": ["{{base_url}}"], "path": ["api","p2p","debit-notes",":id","sync"], "variable": [ { "key": "id", "value": "1" } ] },
-            "description": "`DebitNoteController@sync` — create a Zoho Vendor Credit (bill_id = linked SPI's bill) and apply it to that bill (no body). Guards: 503 · 409 · idempotent (re-sync retries the apply) · 422 no vendor / no items / linked SPI not yet synced.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/debit-notes/1/sync -H 'Authorization: Bearer {{token}}' -H 'Accept: application/json'"
+            "description": "`DebitNoteController@sync` — NO body. Create a Zoho Vendor Credit (bill_id = linked SPI's bill) and apply it to that bill. Guards: 503 · 409 · idempotent (re-sync retries the apply) · 422 no vendor / no items / linked SPI not yet synced / NOT fully paid ('Recover the full debit amount first — ₹X outstanding').\n\ncurl:\ncurl -s -X POST {{base_url}}/api/p2p/debit-notes/1/sync -H 'Authorization: Bearer {{token}}' -H 'Accept: application/json'"
           },
           "response": []
         },
@@ -223,7 +225,7 @@
     },
     {
       "name": "04 · Quotation → Zoho Estimate",
-      "description": "Sales side. Sync creates a Zoho Estimate from the quotation's line items (customer created once + deduped). Zoho auto-numbers the estimate; our QT code rides on reference_number. Forward GST always applies on a sale; inter-state IGST only for a GST-registered customer.",
+      "description": "Sales side. Sync creates a Zoho Estimate from the quotation's line items (customer created once + deduped by name). Zoho auto-numbers the estimate; our QT code rides on reference_number. Forward GST always applies on a sale; inter-state IGST only for a GST-registered customer.",
       "item": [
         {
           "name": "POST {id}/sync  → Zoho Estimate",
@@ -231,7 +233,7 @@
             "method": "POST",
             "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
             "url": { "raw": "{{base_url}}/api/sales/quotations/:id/sync", "host": ["{{base_url}}"], "path": ["api","sales","quotations",":id","sync"], "variable": [ { "key": "id", "value": "13" } ] },
-            "description": "`QuotationController@sync` — push the quotation to Zoho Books as an Estimate (no body). Guards: 503 · 409 · idempotent · 422 no customer / no items. Edit/delete blocked after sync.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/sales/quotations/13/sync -H 'Authorization: Bearer {{token}}' -H 'Accept: application/json'"
+            "description": "`QuotationController@sync` — NO body. Guards: 503 · 409 · idempotent · 422 no customer / no items. Edit/delete blocked after sync.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/sales/quotations/13/sync -H 'Authorization: Bearer {{token}}' -H 'Accept: application/json'"
           },
           "response": []
         },
@@ -257,7 +259,7 @@
             "method": "POST",
             "header": [ { "key": "Accept", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
             "url": { "raw": "{{base_url}}/api/sales/proforma-invoices/:id/sync", "host": ["{{base_url}}"], "path": ["api","sales","proforma-invoices",":id","sync"], "variable": [ { "key": "id", "value": "10" } ] },
-            "description": "`ProformaInvoiceController@sync` — push the PI to Zoho Books as an Invoice (no body). Guards: 503 · 409 · idempotent · 422 no customer / no items. Edit/delete blocked after sync.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/sales/proforma-invoices/10/sync -H 'Authorization: Bearer {{token}}' -H 'Accept: application/json'"
+            "description": "`ProformaInvoiceController@sync` — NO body. Guards: 503 · 409 · idempotent · 422 no customer / no items. Edit/delete blocked after sync.\n\ncurl:\ncurl -s -X POST {{base_url}}/api/sales/proforma-invoices/10/sync -H 'Authorization: Bearer {{token}}' -H 'Accept: application/json'"
           },
           "response": []
         },

@@ -584,9 +584,7 @@ export default function PurchaseOrder() {
                       <td>
                         <div className="polist-act">
                           {synced ? (
-                            <Tooltip label="Already synced with Zohobook" themed>
-                              <button type="button" className="polist-zoho is-synced" disabled>{Ico.sync(14)}<span>Synced</span></button>
-                            </Tooltip>
+                            <button type="button" className="polist-zoho is-synced" onClick={() => toast.info('Already synced', `${r.po} is already synced to Zoho Books.`)}>{Ico.sync(14)}<span>Synced</span></button>
                           ) : (
                             <Tooltip label="Sync with Zohobook" themed>
                               <button type="button" className="polist-zoho" onClick={() => openZohoConfirm(r)}>{Ico.sync(14)}<span>Zoho Sync</span></button>

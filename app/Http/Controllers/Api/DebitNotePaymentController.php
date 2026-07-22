@@ -7,6 +7,7 @@ use App\Models\DebitNote;
 use App\Models\DebitNotePayment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -40,6 +41,17 @@ class DebitNotePaymentController extends Controller
         if (!$user) abort(401);
         $note = $this->findScoped($dn, $user, 'write');
 
+        // Once the debit note's vendor credit has been APPLIED to the Zoho Books
+        // bill, that payable was already reduced in Zoho. Recording a further cash
+        // recovery here would cut the same payable twice — and the re-apply cap
+        // can't claw an applied slice back. Record it as a refund in Zoho instead.
+        if ((float) $note->zoho_applied_amount > 0.005) {
+            return response()->json([
+                'status'  => false,
+                'message' => "This debit note's credit is already applied to the Zoho Books bill — record any further recovery as a refund in Zoho Books.",
+            ], 422);
+        }
+
         $data = $request->validate([
             'amount'       => 'required|numeric|min:0.01',
             'bank_name'    => 'nullable|string|max:128',
@@ -52,41 +64,62 @@ class DebitNotePaymentController extends Controller
             'attachment.mimes' => 'Only PDF, JPG or PNG files are allowed as proof of payment.',
         ]);
 
-        // Guard against recovering beyond the debit note's outstanding balance.
         $amount = round((float) $data['amount'], 2);
-        $grand = round((float) $note->grand_total, 2);
-        $paidBefore = round((float) $note->payments()->sum('amount'), 2);
-        $balanceBefore = round($grand - $paidBefore, 2);
-        if ($amount > $balanceBefore + 0.001) {
-            return response()->json([
-                'status'  => false,
-                'message' => 'Amount exceeds the outstanding balance of ' . number_format($balanceBefore, 2) . '.',
-                'errors'  => ['amount' => ['Amount cannot exceed the outstanding balance.']],
-            ], 422);
-        }
 
+        // Store the proof up-front so the per-note lock isn't held during file I/O.
         $path = null;
         if ($request->hasFile('attachment')) {
             $path = $request->file('attachment')->store('debit-note-payments/attachments', 'public');
         }
 
-        $payment = DB::transaction(function () use ($note, $user, $data, $amount, $balanceBefore, $path) {
-            $payment = DebitNotePayment::create([
-                'client_id'       => $note->client_id,
-                'branch_id'       => $note->branch_id,
-                'debit_note_id'   => $note->id,
-                'amount'          => $amount,
-                'bank_name'       => $data['bank_name'] ?? null,
-                'reference_no'    => $data['reference_no'] ?? null,
-                'paid_date'       => $data['paid_date'] ?? now()->toDateString(),
-                'attachment_path' => $path,
-                'balance_after'   => round($balanceBefore - $amount, 2),
-                'status'          => $data['status'] ?? 'Cleared',
-                'created_by'      => $user->id,
-            ]);
-            $this->recomputeStatus($note, $user);
-            return $payment;
-        });
+        // Serialize concurrent recoveries for the same debit note so two tabs can't
+        // both pass the balance check and over-recover (which would corrupt the
+        // vendor-credit apply cap on the next Zoho sync).
+        $lock = Cache::lock('dn:payment:' . $note->id, 10);
+        try {
+            $lock->block(5);
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
+            if ($path) Storage::disk('public')->delete($path);
+            return response()->json([
+                'status'  => false,
+                'message' => 'Another recovery for this debit note is being recorded — please retry in a moment.',
+            ], 409);
+        }
+
+        try {
+            // Guard against recovering beyond the debit note's outstanding balance.
+            $grand = round((float) $note->grand_total, 2);
+            $paidBefore = round((float) $note->payments()->sum('amount'), 2);
+            $balanceBefore = round($grand - $paidBefore, 2);
+            if ($amount > $balanceBefore + 0.001) {
+                if ($path) Storage::disk('public')->delete($path);
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Amount exceeds the outstanding balance of ' . number_format($balanceBefore, 2) . '.',
+                    'errors'  => ['amount' => ['Amount cannot exceed the outstanding balance.']],
+                ], 422);
+            }
+
+            $payment = DB::transaction(function () use ($note, $user, $data, $amount, $balanceBefore, $path) {
+                $payment = DebitNotePayment::create([
+                    'client_id'       => $note->client_id,
+                    'branch_id'       => $note->branch_id,
+                    'debit_note_id'   => $note->id,
+                    'amount'          => $amount,
+                    'bank_name'       => $data['bank_name'] ?? null,
+                    'reference_no'    => $data['reference_no'] ?? null,
+                    'paid_date'       => $data['paid_date'] ?? now()->toDateString(),
+                    'attachment_path' => $path,
+                    'balance_after'   => round($balanceBefore - $amount, 2),
+                    'status'          => $data['status'] ?? 'Cleared',
+                    'created_by'      => $user->id,
+                ]);
+                $this->recomputeStatus($note, $user);
+                return $payment;
+            });
+        } finally {
+            $lock->release();
+        }
 
         return response()->json(['status' => true, 'data' => $this->buildSummary($note->fresh()), 'payment_id' => $payment->id], 201);
     }

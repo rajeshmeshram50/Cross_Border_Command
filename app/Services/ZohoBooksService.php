@@ -108,9 +108,11 @@ class ZohoBooksService
     /** GET against the Books API; org id auto-appended. Returns decoded JSON. */
     private function get(string $endpoint, array $query = []): array
     {
-        $resp = Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $this->getAccessToken()])
-            ->get("{$this->baseUrl}/" . ltrim($endpoint, '/'), array_merge(['organization_id' => $this->orgId], $query));
-        return $this->handle($resp, 'GET ' . $endpoint);
+        return $this->sendWithAuthRetry(
+            fn (string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])
+                ->get("{$this->baseUrl}/" . ltrim($endpoint, '/'), array_merge(['organization_id' => $this->orgId], $query)),
+            'GET ' . $endpoint
+        );
     }
 
     /** POST a JSON body against the Books API; org id in the query string. Extra
@@ -121,9 +123,28 @@ class ZohoBooksService
         foreach ($query as $k => $v) {
             $url .= '&' . $k . '=' . rawurlencode((string) $v);
         }
-        $resp = Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $this->getAccessToken()])
-            ->post($url, $body);
-        return $this->handle($resp, 'POST ' . $endpoint);
+        return $this->sendWithAuthRetry(
+            fn (string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])->post($url, $body),
+            'POST ' . $endpoint
+        );
+    }
+
+    /**
+     * Run an authorized Books call and, if Zoho rejects the cached access token
+     * with a 401, drop the cache, force a fresh token, and retry once. Zoho can
+     * revoke a token before our local TTL runs out (re-auth, scope change,
+     * security event); without this one early expiry wedges EVERY sync until the
+     * stale token's cache TTL elapses. $call receives the bearer token and must
+     * return the Http Response.
+     */
+    private function sendWithAuthRetry(callable $call, string $label): array
+    {
+        $resp = $call($this->getAccessToken());
+        if ($resp->status() === 401) {
+            Cache::forget(self::TOKEN_CACHE_KEY);
+            $resp = $call($this->refreshAccessToken());
+        }
+        return $this->handle($resp, $label);
     }
 
     /**
@@ -166,8 +187,18 @@ class ZohoBooksService
         }
 
         // Try to match an existing Zoho vendor by name before creating a duplicate.
+        // Zoho's contact_name filter can return near-matches, so confirm the name
+        // ACTUALLY equals ours before caching the id — otherwise a substring hit
+        // (e.g. "ABC" matching "ABC Traders") gets permanently bound to this
+        // vendor. Mirrors the exact-name check in findOrCreateItemId.
         $found = $this->get('contacts', ['contact_name' => $name, 'contact_type' => 'vendor']);
-        $existing = $found['contacts'][0]['contact_id'] ?? null;
+        $existing = null;
+        foreach (($found['contacts'] ?? []) as $c) {
+            if (mb_strtolower(trim((string) ($c['contact_name'] ?? ''))) === mb_strtolower($name)) {
+                $existing = (string) $c['contact_id'];
+                break;
+            }
+        }
 
         if ($existing) {
             $vendor->forceFill(['zoho_contact_id' => (string) $existing])->saveQuietly();
@@ -218,7 +249,7 @@ class ZohoBooksService
      */
     public function resolveTaxId(float $rate, bool $interState = false): ?string
     {
-        if ($rate <= 0) return null;
+        if ($rate < 0) return null;
 
         $maps = Cache::remember('zoho_books_tax_maps:' . $this->orgId, now()->addMinutes(30), function () {
             $intra = [];
@@ -276,6 +307,10 @@ class ZohoBooksService
         }
 
         $name = trim($name) !== '' ? trim($name) : 'Item';
+        // Zoho caps item names at 100 chars; a longer name hard-rejects item
+        // creation and takes the whole PO/bill/estimate sync down with it. Cap it
+        // (search + create use the same capped value so dedup stays consistent).
+        $name = mb_substr($name, 0, 100);
         $key = mb_strtolower($name);
         $resolved = $this->itemCache[$key] ?? null;
 
@@ -336,17 +371,58 @@ class ZohoBooksService
         return self::placeOfContact($numeric);
     }
 
+    /** Normalise a stored GST state code — "27", "7", or a legacy label like
+     *  "27 – Maharashtra" — to its 2-digit numeric form for a reliable
+     *  intra/inter-state comparison. Null when the value carries no digits. */
+    public static function normStateCode(?string $s): ?string
+    {
+        $digits = preg_replace('/\D+/', '', (string) $s);
+        return $digits === '' ? null : str_pad(substr($digits, 0, 2), 2, '0', STR_PAD_LEFT);
+    }
+
     /** GST numeric state code (e.g. "27") → Zoho 2-letter place-of-supply ("MH"). */
     private static function placeOfContact(?string $numeric): ?string
     {
-        $numeric = str_pad(trim((string) $numeric), 2, '0', STR_PAD_LEFT);
+        // Tolerate "7" and legacy "27 – Maharashtra" labels: keep leading digits.
+        $numeric = self::normStateCode($numeric);
+        if ($numeric === null) return null;
         static $map = [
-            '01' => 'JK', '02' => 'HP', '03' => 'PB', '04' => 'CH', '05' => 'UT', '06' => 'HR',
-            '07' => 'DL', '08' => 'RJ', '09' => 'UP', '10' => 'BR', '11' => 'SK', '12' => 'AR',
-            '13' => 'NL', '14' => 'MN', '15' => 'MZ', '16' => 'TR', '17' => 'ML', '18' => 'AS',
-            '19' => 'WB', '20' => 'JH', '21' => 'OD', '22' => 'CT', '23' => 'MP', '24' => 'GJ',
-            '25' => 'DD', '26' => 'DN', '27' => 'MH', '29' => 'KA', '30' => 'GA', '31' => 'LD',
-            '32' => 'KL', '33' => 'TN', '34' => 'PY', '35' => 'AN', '36' => 'TS', '37' => 'AP',
+            '01' => 'JK',
+            '02' => 'HP',
+            '03' => 'PB',
+            '04' => 'CH',
+            '05' => 'UT',
+            '06' => 'HR',
+            '07' => 'DL',
+            '08' => 'RJ',
+            '09' => 'UP',
+            '10' => 'BR',
+            '11' => 'SK',
+            '12' => 'AR',
+            '13' => 'NL',
+            '14' => 'MN',
+            '15' => 'MZ',
+            '16' => 'TR',
+            '17' => 'ML',
+            '18' => 'AS',
+            '19' => 'WB',
+            '20' => 'JH',
+            '21' => 'OD',
+            '22' => 'CT',
+            '23' => 'MP',
+            '24' => 'GJ',
+            '25' => 'DD',
+            '26' => 'DN',
+            '27' => 'MH',
+            '29' => 'KA',
+            '30' => 'GA',
+            '31' => 'LD',
+            '32' => 'KL',
+            '33' => 'TN',
+            '34' => 'PY',
+            '35' => 'AN',
+            '36' => 'TS',
+            '37' => 'AP',
             '38' => 'LA',
         ];
         return $map[$numeric] ?? null;
@@ -450,7 +526,9 @@ class ZohoBooksService
             }
         }
 
-        foreach ($accounts as $a) { if ($a['type'] === 'bank') return $a['id']; }
+        foreach ($accounts as $a) {
+            if ($a['type'] === 'bank') return $a['id'];
+        }
         return $accounts[0]['id'];   // no bank → first cash
     }
 
@@ -548,8 +626,16 @@ class ZohoBooksService
         }
 
         // Reuse an existing Zoho customer of the same name before creating a dup.
+        // Confirm the returned contact's name actually equals ours — Zoho's filter
+        // can return near-matches (see findOrCreateVendorId / findOrCreateItemId).
         $found = $this->get('contacts', ['contact_name' => $name, 'contact_type' => 'customer']);
-        $existing = $found['contacts'][0]['contact_id'] ?? null;
+        $existing = null;
+        foreach (($found['contacts'] ?? []) as $c) {
+            if (mb_strtolower(trim((string) ($c['contact_name'] ?? ''))) === mb_strtolower($name)) {
+                $existing = (string) $c['contact_id'];
+                break;
+            }
+        }
         if ($existing) {
             $customer->forceFill(['zoho_contact_id' => (string) $existing])->saveQuietly();
             return (string) $existing;

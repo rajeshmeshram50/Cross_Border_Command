@@ -77,6 +77,7 @@ export default function DebitNote() {
   const [menu, setMenu] = useState<{ row: DnRow; x: number; top: number; bottom: number } | null>(null);
   const [payRow, setPayRow] = useState<DnRow | null>(null);   // Payment Recovery popup
   const [syncConfirm, setSyncConfirm] = useState<DnRow | null>(null);   // "Sync with Zohobook?" confirm
+  const [syncingId, setSyncingId] = useState<number | null>(null);      // row currently syncing to Zoho
   const [detailOpen, setDetailOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [viewOnly, setViewOnly] = useState(false);   // opened for a locked (paid) debit note
@@ -226,8 +227,11 @@ export default function DebitNote() {
   };
 
   const syncRow = async (r: DnRow) => {
+    if (r.id == null) return;
+    setSyncingId(r.id);
     try { const resp = await api.post(`/p2p/debit-notes/${r.id}/sync`); toast.success(`${r.no} synced with Zohobook`, resp?.data?.message); reload(); }
     catch (e: any) { toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this debit note.'); }
+    finally { setSyncingId(null); }
   };
 
   const delRow = async (r: DnRow) => {
@@ -414,7 +418,9 @@ export default function DebitNote() {
                     <span className="spi-acts">
                       {r.zoho === 'sync'
                         ? <Tooltip label="Already synced to Zohobook" themed><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
-                        : <Tooltip label="Sync this debit note to Zohobook" themed><button type="button" className="spi-zohobtn" onClick={() => setSyncConfirm(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
+                        : r.status === 'Fully Paid'
+                          ? <Tooltip label="Sync this debit note to Zohobook (vendor credit)" themed><button type="button" className="spi-zohobtn" disabled={syncingId === r.id} onClick={() => setSyncConfirm(r)}>{syncingId === r.id ? <><IcoSpinner size={13} /> Syncing…</> : <><IcoSync size={13} /> Zoho Sync</>}</button></Tooltip>
+                          : <button type="button" className="spi-zohobtn" style={{ opacity: .6 }} onClick={() => toast.warning('Payment incomplete', 'Recover the full debit amount first — the debit note must be fully paid before syncing to Zohobook.')}><IcoSync size={13} /> Zoho Sync</button>}
                       <Tooltip label={r.locked ? 'View debit note (locked — payment recorded)' : 'Edit debit note'} themed><button type="button" className="spi-iconbtn" onClick={() => openEdit(r)}>{r.locked ? <IcoEye /> : <IcoEdit />}</button></Tooltip>
                       <Tooltip label={r.id && emailing[r.id] ? 'Sending…' : 'Email debit note to supplier'} themed><button type="button" className="spi-iconbtn" disabled={!!(r.id && emailing[r.id])} onClick={() => emailDn(r)}>{r.id && emailing[r.id] ? <IcoSpinner /> : <IcoMail />}</button></Tooltip>
                       <Tooltip label="Payment recovery" themed><button type="button" className="spi-iconbtn" onClick={() => setPayRow(r)}><IcoRupee /></button></Tooltip>
@@ -464,8 +470,8 @@ export default function DebitNote() {
             <div className="dn-sync-sub">This will push the latest debit note data to your Zohobook account and update its sync status.</div>
             <div className="dn-sync-dn"><span className="po">{syncConfirm.no}</span> <span className="sup">· {syncConfirm.supplier ?? '—'}</span></div>
             <div className="dn-sync-foot">
-              <button type="button" className="dn-pay-cancel" onClick={() => setSyncConfirm(null)}>Cancel</button>
-              <button type="button" className="dn-pay-record" onClick={() => { const r = syncConfirm; setSyncConfirm(null); syncRow(r); }}>Yes, Sync</button>
+              <button type="button" className="dn-pay-cancel" disabled={syncingId != null} onClick={() => setSyncConfirm(null)}>Cancel</button>
+              <button type="button" className="dn-pay-record" disabled={syncingId != null} onClick={async () => { const r = syncConfirm; if (!r) return; await syncRow(r); setSyncConfirm(null); }}>{syncingId != null ? <><IcoSpinner size={14} /> Syncing…</> : 'Yes, Sync'}</button>
             </div>
           </div>
         </div>

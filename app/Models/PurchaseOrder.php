@@ -23,7 +23,7 @@ class PurchaseOrder extends Model
         'terms', 'shipping_charges', 'packaging_charges', 'other_charges',
         'total_product_cost', 'total_cgst', 'total_sgst', 'additional_charges', 'grand_total',
         'tds_percentage', 'tds_amount', 'tds_cut',
-        'zoho_status', 'zoho_purchaseorder_id', 'zoho_synced_at', 'zoho_error', 'zoho_pdf_path',
+        'zoho_status', 'zoho_purchaseorder_id', 'zoho_bill_id', 'zoho_bill_number', 'zoho_synced_at', 'zoho_error', 'zoho_pdf_path',
         'status', 'created_by', 'updated_by',
     ];
 

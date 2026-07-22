@@ -622,7 +622,9 @@ function SegmentRuleModal(props: {
   /* Domestic / International — defaults to International for every new rule
    * (a segment can hold one rule per type). Scopes the segment picker, the
    * "already ruled" exclusion, and the matched-rule (Add → Edit) pivot. */
-  const [docType, setDocType] = useState<DocType | null>(existing?.document_type ?? 'international');
+  // Add starts empty so the user must pick a type first (that gates the rest of
+  // step 1); Edit locks to the rule's existing type.
+  const [docType, setDocType] = useState<DocType | null>(existing?.document_type ?? null);
   /* Multi-select segment codes. Always an array internally; in edit mode
    * and in High-Regulatory create mode the UI forces it to length ≤ 1.
    * In Less-Regulatory create mode the user can pick many — each becomes
@@ -833,28 +835,44 @@ function SegmentRuleModal(props: {
                   <span className="clm-req">*</span>
                 </div>
                 <div style={{ padding: '10px 12px' }}>
-                  <MasterSelect
-                    value={docType ?? ''}
-                    placeholder="— Select Document Type —"
-                    options={[
-                      { value: 'domestic',      label: 'Domestic' },
-                      { value: 'international', label: 'International' },
-                    ]}
-                    onChange={(v) => {
-                      const next = (v || null) as DocType | null;
-                      setDocType(next);
-                      // Changing the type re-scopes which segments are already
-                      // ruled / available, so drop any stale segment pick.
-                      if (!existing) setSegCodes([]);
-                    }}
-                  />
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {(['domestic','international'] as const).map(v => {
+                      const on  = docType === v;
+                      const dom = v === 'domestic';
+                      // Domestic = the modal header cyan; International = indigo
+                      // (matches the table badge). Type is locked in the edit form.
+                      const accent  = dom ? '#0891b2' : '#6366f1';
+                      const onBd    = dom ? 'rgba(8,145,178,.30)' : 'rgba(99,102,241,.30)';
+                      const onBg    = dom ? 'rgba(8,145,178,.12)' : 'rgba(99,102,241,.12)';
+                      const titleC  = dom ? '#0e7490' : '#3730a3';
+                      const subOnC  = dom ? '#0e7490' : '#3730a3';
+                      return (
+                        <label key={v} className={`dcp-radio-label ${on ? 'dcp-radio-label-on' : ''}`} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, border: `1.5px solid ${on ? onBd : 'rgba(203,213,225,.38)'}`, background: on ? onBg : 'rgba(248,250,252,.5)', cursor: existing ? 'not-allowed' : 'pointer', opacity: existing && !on ? 0.55 : 1, transition: 'all .15s' }}
+                          onClick={() => {
+                            if (existing) return;
+                            setDocType(v);
+                            // Changing the type re-scopes which segments are already
+                            // ruled / available, so drop any stale segment pick.
+                            setSegCodes([]);
+                          }}>
+                          <input type="radio" checked={on} onChange={() => {}} disabled={!!existing} style={{ accentColor: accent, width: 14, height: 14 }} />
+                          <div>
+                            <div className="dcp-radio-title" style={{ fontSize: 12, fontWeight: 700, color: on ? titleC : '#1e293b' }}>{dom ? 'Domestic' : 'International'}</div>
+                            <div className="dcp-radio-sub" style={{ fontSize: 9, color: on ? subOnC : '#94a3b8', marginTop: 2 }}>{dom ? 'Rules & documents for in-country trade' : 'Rules & documents for cross-border trade'}</div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
                   <div style={{ fontSize: 9.5, color: '#94a3b8', marginTop: 6 }}>
                     Each segment can have a separate Domestic and International rule with its own document set.
                   </div>
                 </div>
               </div>
 
-              {/* Card 1: Regulatory Status + Segment Select */}
+              {/* Card 1: Regulatory Status + Segment Select — only surfaces once a
+                  Document Type is chosen (that scopes which rules already exist). */}
+              {docType && (
               <div className="dcp-modal-card" style={{ background: '#fff', border: '1.5px solid rgba(6,182,212,.13)', borderRadius: 12, overflow: 'hidden' }}>
                 <div className="dcp-modal-card-head" style={{ padding: '8px 13px', background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1px solid rgba(6,182,212,.08)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 9, fontWeight: 800, color: '#0891b2', textTransform: 'uppercase', letterSpacing: '.09em' }}>Segment Regulatory Status</span>
@@ -935,6 +953,7 @@ function SegmentRuleModal(props: {
                   </div>
                 )}
               </div>
+              )}
 
               {/* Card 2: Segment Details */}
               {selSeg && (

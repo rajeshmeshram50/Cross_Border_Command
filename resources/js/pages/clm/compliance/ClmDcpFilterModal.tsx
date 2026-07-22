@@ -142,8 +142,14 @@ export default function ClmDcpFilterModal({ open, onClose, onApply, initial, opt
   const facetCount = (k: FacetKey): number => (filters[FACET_FIELD[k]] as string[] | undefined)?.length ?? 0;
 
   return createPortal((
-    <div className="lfm-backdrop">
+    <div className="lfm-backdrop dcp-filter-scope">
       <style>{LFM_CSS}</style>
+      {/* Wider FILTER BY sidebar for the DCP modal only — the shared LFM_CSS
+          uses 178px; scope the override so the Leads filter is unaffected. */}
+      <style>{`
+        .dcp-filter-scope .lfm-left { width: 230px; }
+        @media (max-width: 640px) { .dcp-filter-scope .lfm-left { width: 100%; } }
+      `}</style>
       <div className="lfm-modal">
         <div className="lfm-head">
           <div className="lfm-head-left">
