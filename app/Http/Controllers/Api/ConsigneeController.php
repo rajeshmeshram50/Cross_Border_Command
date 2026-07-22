@@ -269,35 +269,23 @@ class ConsigneeController extends Controller
          * the two can never drift. The request's own `segment` is ignored. */
         $derivedSegment = SegmentGuard::forCustomers($data['customer_ids']);
 
-        /* Segment-document protection — a segment with uploaded documents can't
-         * just disappear, or the evidence is orphaned.
-         *
-         * Under derivation this fires when a CUSTOMER drops a segment the
-         * consignee has already uploaded documents for. Blocking the edit would
-         * be wrong: the user is editing the consignee, and the removal came from
-         * a change made elsewhere — there'd be nothing on this screen to fix. So
-         * those names are RETAINED on top of the derived set instead, keeping
-         * the uploads reachable until someone deletes them deliberately. */
-        $retained = SegmentGuard::blockedRemovals(
+        $oldSegment = $consignee->segment;
+
+        /* A segment referenced by a Proforma Invoice or Shipment for this
+         * consignee must remain attached even if re-derivation dropped it (its
+         * association stays, no document changes). Any OTHER dropped segment's
+         * documents are cleaned up after the update below. */
+        $usedRetained = SegmentGuard::blockedByCompletedDocs(
             \App\Models\Consignee::class,
             (int) $consignee->id,
             (int) $consignee->client_id,
-            $consignee->segment,
-            $derivedSegment ?: null,
+            SegmentGuard::removedNames($oldSegment, $derivedSegment ?: null),
         );
-        if (!empty($retained)) {
-            $names = SegmentGuard::names($derivedSegment);
-            $seen  = array_map('mb_strtolower', $names);
-            foreach ($retained as $name) {
-                if (!in_array(mb_strtolower($name), $seen, true)) {
-                    $names[] = $name;
-                    $seen[]  = mb_strtolower($name);
-                }
-            }
-            $derivedSegment = implode(', ', $names);
+        if (!empty($usedRetained)) {
+            $derivedSegment = SegmentGuard::mergeRetained($derivedSegment, $usedRetained);
         }
 
-        $row = DB::transaction(function () use ($consignee, $data, $derivedSegment) {
+        $row = DB::transaction(function () use ($consignee, $data, $derivedSegment, $oldSegment) {
             $primary = $data['primary_address'];
 
             $consignee->update([
@@ -332,6 +320,17 @@ class ConsigneeController extends Controller
 
             // Re-sync the customer mapping (adds new, removes unchecked).
             $consignee->customers()->sync($data['customer_ids']);
+
+            // Clean up documents of segments genuinely removed from the consignee
+            // (not retained above): delete those required only by a removed
+            // segment; keep documents shared with a segment that stays.
+            SegmentGuard::cleanupOrphanedDocs(
+                \App\Models\Consignee::class,
+                (int) $consignee->id,
+                (int) $consignee->client_id,
+                SegmentGuard::removedNames($oldSegment, $derivedSegment ?: null),
+                SegmentGuard::names($derivedSegment ?: null),
+            );
 
             return $consignee->load(['primaryAddress', 'addresses', 'customer', 'customers.primaryAddress']);
         });

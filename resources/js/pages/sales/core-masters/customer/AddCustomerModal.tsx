@@ -2132,38 +2132,24 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} unruledSegments={segRulesLoaded ? masters.segments.filter(s => !ruledSegCodes.has(s.code ?? '')).map(s => s.name) : []} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} segTypesByName={segTypesByName} guardSegmentRemove={(prev, vs) => {
               const removed = prev.filter(s => !vs.includes(s));
               if (!removed.length) return vs;
-              /* Refuse to decide before the evidence is in. `segCodeMap` is
-               * filled by an async fetch keyed off the masters bundle, so on a
-               * FIRST open (cold bundle cache) the field went interactive while
-               * the map was still empty — every removal then looked safe and
-               * sailed through to a 422 at save. Re-opening the modal hit the
-               * cached bundle, won the race, and blocked correctly, which is why
-               * this only ever reproduced "the first time".
-               *
-               * Only guards a persisted customer: before the first save there
-               * are no uploads to orphan, and the fetch may never run. */
-              if (!segGuardReady) {
-                toast.info('Checking documents', 'Still loading this customer’s uploaded documents — try removing the segment again in a moment.');
-                return prev;
-              }
-              // Doc codes with an ACTUAL upload (file or URL). Hydration seeds an
-              // empty entry per reference row, so check the value.
-              const uploaded = new Set(
-                Object.entries(segmentRefUploads)
-                  .filter(([, v]) => !!(v && (v.url || v.file)))
-                  .map(([k]) => k.split('::')[1])
-              );
-              /* A segment can't be removed if ANY of its documents has an
-               * upload — including one shared with a segment being kept. Four
-               * segments sharing a mandatory DD doc are all locked by that one
-               * file; delete it to free them. Mirrors SegmentGuard so the field
-               * never allows something the save would reject. */
-              const locked = removed.filter(seg =>
-                (segCodeMap[seg] ?? []).some(c => uploaded.has(c))
-              );
-              if (locked.length) {
-                toast.error('Cannot remove segment', `You can't remove ${locked.join(', ')} — ${locked.length > 1 ? 'they have' : 'it has'} completed standard documents. Delete those documents first to drop the segment.`);
-                return [...vs, ...locked.filter(s => !vs.includes(s))];
+              /* Removal is ALLOWED here. On save the backend deletes the documents
+               * required ONLY by the removed segment(s) and keeps those shared with
+               * a segment that stays (cascade cleanup). A segment that is in use by
+               * a Proforma Invoice / Shipment is rejected at save with a 422 that
+               * surfaces on the segment field. We only WARN up-front when the
+               * removed segment actually has uploads so the cleanup isn't silent. */
+              if (segGuardReady) {
+                const uploaded = new Set(
+                  Object.entries(segmentRefUploads)
+                    .filter(([, v]) => !!(v && (v.url || v.file)))
+                    .map(([k]) => k.split('::')[1])
+                );
+                const withDocs = removed.filter(seg =>
+                  (segCodeMap[seg] ?? []).some(c => uploaded.has(c))
+                );
+                if (withDocs.length) {
+                  toast.info('Documents will be updated', `Removing ${withDocs.join(', ')} will delete the documents that aren’t shared with the remaining segment(s) when you save.`);
+                }
               }
               return vs;
             }} gstLocked={gstRows.length > 0} onCountryBlockedByGst={() => toast.warning('Country is locked to India', 'This customer has GST Scrutiny entries. Delete them first — an international customer has no GST.')}

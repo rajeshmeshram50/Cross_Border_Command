@@ -131,6 +131,18 @@ class ClmTncController extends Controller
             $data['party'] = '';
         }
 
+        // One Terms & Conditions entry per (segment, document category) within a
+        // branch — e.g. "Tobacco + Proforma Invoice" can exist only once. A row
+        // may scope many segments (CSV, for "less" regulatory), so any overlap
+        // with an existing same-category row is a duplicate. (CBC #18)
+        if ($dup = $this->findDuplicate($user->client_id, $user->branch_id, $data['category'], $data['segment'] ?? null)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'A Terms & Conditions entry already exists for this segment and document category (' . $dup->code . ').',
+                'errors'  => ['category' => ['This segment already has a "' . trim($data['category']) . '" entry.']],
+            ], 422);
+        }
+
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             $code = $this->nextCode(ClmTncLibrary::class, $user->client_id, $user->branch_id, 'TNC-');
@@ -177,6 +189,19 @@ class ClmTncController extends Controller
             $data['regulatory'] = '';
             $data['party'] = '';
         }
+
+        // Re-run the segment+category uniqueness guard against the row's OWN
+        // branch, ignoring itself. Fall back to the stored values for whichever
+        // of category/segment this partial update omits. (CBC #18)
+        $effCategory = $data['category'] ?? $row->category;
+        $effSegment  = array_key_exists('segment', $data) ? $data['segment'] : $row->segment;
+        if ($dup = $this->findDuplicate($row->client_id, $row->branch_id, $effCategory, $effSegment, $row->id)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'A Terms & Conditions entry already exists for this segment and document category (' . $dup->code . ').',
+                'errors'  => ['category' => ['This segment already has a "' . trim((string) $effCategory) . '" entry.']],
+            ], 422);
+        }
         $row->update($data);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
@@ -185,6 +210,44 @@ class ClmTncController extends Controller
     private function isNoteCategory(?string $name): bool
     {
         return in_array(mb_strtolower(trim((string) $name)), ['debit note', 'credit note'], true);
+    }
+
+    /**
+     * Find an existing T&C library row that collides with (segment, category)
+     * for the given branch — the one-entry-per-segment-per-category rule (CBC
+     * #18). Segment is a CSV (many segments for "less" regulatory rows), so a
+     * collision is ANY same-category row whose segment set overlaps the incoming
+     * one. Note-category docs carry no segment, so they're exempt. Scoped to the
+     * SAME branch (T&C is branch-isolated — the same combo may exist per branch).
+     */
+    private function findDuplicate(int $clientId, ?int $branchId, ?string $category, ?string $segmentCsv, $ignoreId = null): ?ClmTncLibrary
+    {
+        $cat = mb_strtolower(trim((string) $category));
+        if ($cat === '' || $this->isNoteCategory($category)) return null;
+
+        $incoming = $this->segmentTokens($segmentCsv);
+        if (empty($incoming)) return null;
+
+        $query = ClmTncLibrary::where('client_id', $clientId)
+            ->whereRaw('LOWER(TRIM(category)) = ?', [$cat]);
+        $branchId === null ? $query->whereNull('branch_id') : $query->where('branch_id', $branchId);
+        if ($ignoreId !== null) $query->where('id', '!=', $ignoreId);
+
+        foreach ($query->get(['id', 'code', 'segment']) as $existing) {
+            if (array_intersect($incoming, $this->segmentTokens($existing->segment))) {
+                return $existing;
+            }
+        }
+        return null;
+    }
+
+    /** Normalise a segment CSV to a de-duplicated set of lowercased tokens. */
+    private function segmentTokens(?string $csv): array
+    {
+        return array_values(array_unique(array_filter(array_map(
+            fn ($s) => mb_strtolower(trim($s)),
+            explode(',', (string) $csv)
+        ), fn ($s) => $s !== '')));
     }
 
     public function libraryDestroy(Request $request, $id)

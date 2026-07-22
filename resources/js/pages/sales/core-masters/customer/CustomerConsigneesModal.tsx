@@ -8,21 +8,6 @@ import AddConsigneeModal, { type ConsigneeRow } from '../consignee/AddConsigneeM
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import { useTheme } from '../../../../contexts/ThemeContext';
 
-/* ────────────────────────────────────────────────────────────────────────────
- * CustomerConsigneesModal — the "Map Consignee" popup.
- *
- * Opened from the SalesCustomers table when the user clicks the team icon
- * next to a customer. Shows every consignee linked to that customer,
- * scoped server-side via `GET /consignees?customer_id={db_id}`.
- *
- * Actions:
- *   + Add Consignee     → opens AddConsigneeModal with the customer
- *                         already locked in (preselectedCustomerId).
- *   ✎ Edit Consignee    → opens AddConsigneeModal in edit mode.
- *
- * Tenant scope is enforced by the backend; the modal itself is
- * presentation-only.
- * ──────────────────────────────────────────────────────────────────────── */
 
 export interface CustomerLite {
   id: string;          // C-001 display code
@@ -35,8 +20,6 @@ interface Props {
   open: boolean;
   customer: CustomerLite | null;
   onClose: () => void;
-  /* Header title — defaults to "Consignees". The Sales Matrix opens
-   * this same popup with "Manage Consignees" from its toolbar button. */
   title?: string;
 }
 
@@ -46,7 +29,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
   const toast = useToast();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  // Theme-aware palette for the chooser + map popups (portaled → inline styles).
   const pk = {
     card:          isDark ? '#0f1420' : '#ffffff',
     text:          isDark ? '#e2e8f0' : '#334155',
@@ -64,20 +46,12 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
   const [loading, setLoading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<ConsigneeRow | null>(null);
-  /* "Add Or Map Consignee" flow: a chooser (create new vs map existing), then
-   * a consignee dropdown for the map path. */
   const [chooseOpen, setChooseOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [allConsignees, setAllConsignees] = useState<any[]>([]);
   const [mapSelectId, setMapSelectId] = useState('');
   const [mapping, setMapping] = useState(false);
-  /* Client-side pagination — 5 rows per page. Reset to page 1 whenever
-   * the search term or underlying row set changes so the user never
-   * lands on an empty page beyond the new last page. */
   const [page, setPage] = useState(1);
-  /* "+N" segment-overflow popover — shows the first segment as a pill plus a
-   * "+N" badge that reveals the rest (mirrors the SalesCustomers table) so the
-   * cell never wraps a long comma list. */
   const [segOpen, setSegOpen] = useState<{ id: string | number; names: string[]; x: number; y: number } | null>(null);
 
   const fetchRows = useCallback(async () => {
@@ -99,11 +73,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
         phone:          d.phone ?? '',
         country:        d.country ?? '',
         countryDetail:  d.city ?? '',
-        // Pull the mirror flag so we can compute the live "already-
-        // mirrored" count and pass it to AddConsigneeModal as the
-        // source of truth. The popup's data is always fresh (we
-        // refetch on every save), so this beats relying on the
-        // /customers withCount which may lag behind during a session.
         same_as_customer: !!d.same_as_customer,
       })));
     } catch (e: any) {
@@ -112,20 +81,13 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer?.db_id]);
 
   useEffect(() => {
     if (open) fetchRows();
     else { setQ(''); setRows([]); setChooseOpen(false); setMapOpen(false); }
   }, [open, fetchRows]);
-
-  // Domestic (India) customer maps ONLY domestic consignees; an international
-  // customer maps ONLY international ones — a domestic party can't be linked to
-  // an international one (mirrors the India→India / intl→intl mapping rule).
   const custDomestic = (customer?.country ?? '').trim() === 'India';
-  // Existing consignees NOT already mapped to this customer, not "same as
-  // customer" mirrors, and matching the customer's domestic/international side.
   const mappableConsignees = useMemo(
     () => allConsignees.filter(c =>
       !c.same_as_customer
@@ -158,8 +120,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
     } finally { setMapping(false); }
   };
 
-  // Filter client-side so the search feels instant — the server-side
-  // result is already scoped to the customer, so the list stays small.
   const filtered = useMemo(() => {
     if (!q) return rows;
     const lo = q.toLowerCase();
@@ -179,7 +139,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
   const pageRows = filtered.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE);
 
-  // Scroll lock — lock BOTH <html> and <body> so the page behind can't scroll.
   useEffect(() => {
     if (!open) return;
     const b = document.body.style.overflow;
@@ -191,8 +150,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
 
   if (!open || !customer) return null;
 
-  /* Render via portal so the modal isn't clipped by SalesCustomers'
-   * table overflow / z-index, and stacks above the rest of the page. */
   return createPortal(
     <>
       <div className="ccm-overlay" onMouseDown={onClose}>
@@ -215,9 +172,7 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
               </div>
             </div>
             <div className="ccm-header-right">
-              {/* Customer chip — slimmer two-row layout (label on top,
-                 code + name below) so the long company names don't push
-                 the close button off-screen on tablets. */}
+             
               <div className="ccm-link-chip">
                 <span className="ccm-link-chip-lbl">Consignees for</span>
                 <div className="ccm-link-chip-row">
@@ -389,11 +344,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
         </div>
       </div>
 
-      {/* Embedded Add/Edit Consignee — pre-locked to this customer.
-          existingMirrorCount is the source of truth for the "max 1
-          same-as-customer per customer" guard because we just
-          refreshed the consignee list here — no stale-data race
-          window like the /customers withCount can have. */}
       <AddConsigneeModal
         open={addOpen}
         consignee={editing}
@@ -449,11 +399,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
                 value={mapSelectId}
                 onChange={(v) => setMapSelectId(v)}
                 placeholder="Select a consignee to map…"
-                /* Domestic / International pill on the right of each option —
-                   same convention as the Q/PI party dropdowns. The list is
-                   already filtered to the customer's own side (see
-                   mappableConsignees), so the badge confirms WHY only these
-                   consignees are offered. */
                 options={mappableConsignees.map(c => {
                   const country = (c.country ?? '').trim();
                   return {
@@ -481,9 +426,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
       )}
 
       {segOpen && (() => {
-        /* Clamp BOTH axes to the viewport so the popover can't bleed below the
-           fold (QA #37) — it previously clamped only `left`. Title stays pinned;
-           ~3 rows show, the rest scroll (mirrors the customer table popover). */
         const ROWS_MAX_H = 108;                          // ≈ 3 rows (~34px each)
         const estH = Math.min(24 + ROWS_MAX_H + 16, 40 + segOpen.names.length * 34);
         const left = Math.max(8, Math.min(segOpen.x, window.innerWidth - 340));
@@ -496,9 +438,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
               <div style={{ maxHeight: ROWS_MAX_H, overflowY: 'auto' }}>
                 {segOpen.names.map((name, i) => (
                   <div key={i} className={`ccm-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                    {/* Same themed tooltip the row's first segment chip and the
-                        Actions column use — the native `title` here rendered as
-                        an unstyled OS bubble and lagged a second behind. */}
                     <Tooltip label={name} disabled={name.length <= 14}>
                       <span className="ccm-seg">{truncSegment(name)}</span>
                     </Tooltip>
@@ -516,11 +455,6 @@ export default function CustomerConsigneesModal({ open, customer, onClose, title
   );
 }
 
-/* ─── Scoped CSS ─── */
-/* Purple palette throughout — this popup is opened from the Customer
- * list (which is purple-themed) and represents the customer's
- * relationship with its consignees, so it owns the customer's
- * palette, not the consignee module's emerald. */
 const SCOPED_CSS = `
 .ccm-overlay {
   position: fixed; inset: 0;

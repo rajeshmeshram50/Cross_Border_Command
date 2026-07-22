@@ -296,7 +296,28 @@ class VendorController extends Controller
             );
         }
 
-        DB::transaction(function () use (&$vendor, $isEdit, $user, $data, $segIds, $address) {
+        // Segment-usage protection (supplier): a segment referenced by an issued
+        // Purchase Order cannot be removed from the vendor. The pivot sync below
+        // would otherwise detach it, so reject the edit up-front — outside the
+        // write transaction, keeping the segment attached (no other changes).
+        $oldSegIds = ($isEdit && $vendor)
+            ? DB::table('vendor_segments')->where('vendor_id', $vendor->id)->pluck('segment_id')->all()
+            : [];
+        if ($isEdit && $vendor) {
+            $removedIds = array_values(array_diff(
+                array_map('intval', $oldSegIds),
+                array_map('intval', $segIds),
+            ));
+            if (!empty($removedIds) && \App\Support\SegmentGuard::hasCompletedReference(\App\Models\Vendor::class, (int) $vendor->id, (int) $vendor->client_id)) {
+                $removedNames = DB::table('clm_segments')->whereIn('id', $removedIds)->pluck('name')->all();
+                return response()->json([
+                    'message' => 'This Segment cannot be removed because it is already associated with one or more completed Purchase Orders.',
+                    'errors'  => ['segment_ids' => ['Segment(s) associated with completed Purchase Orders cannot be removed: ' . implode(', ', $removedNames) . '.']],
+                ], 422);
+            }
+        }
+
+        DB::transaction(function () use (&$vendor, $isEdit, $user, $data, $segIds, $address, $oldSegIds) {
             if ($isEdit) {
                 $vendor->fill($data);
                 $vendor->step_completed = max((int) $vendor->step_completed, 1);
@@ -326,6 +347,25 @@ class VendorController extends Controller
 
             // Replace the segment pivot rows with the new selection.
             $vendor->segments()->sync($segIds);
+
+            // Clean up documents of segments removed from the vendor: delete those
+            // required only by a removed segment; keep documents shared with a
+            // segment that stays. (PO-locked removals are already rejected above.)
+            $removedIds = array_values(array_diff(
+                array_map('intval', $oldSegIds),
+                array_map('intval', $segIds),
+            ));
+            if (!empty($removedIds)) {
+                $removedNames   = DB::table('clm_segments')->whereIn('id', $removedIds)->pluck('name')->all();
+                $remainingNames = DB::table('clm_segments')->whereIn('id', array_map('intval', $segIds))->pluck('name')->all();
+                \App\Support\SegmentGuard::cleanupOrphanedDocs(
+                    \App\Models\Vendor::class,
+                    (int) $vendor->id,
+                    (int) $vendor->client_id,
+                    $removedNames,
+                    $remainingNames,
+                );
+            }
 
             // Persist the registered-office address onto the primary VendorAddress
             // WITHOUT touching the contact fields — so the address survives saving

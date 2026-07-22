@@ -322,21 +322,22 @@ class CustomerController extends Controller
 
         $data = $this->validatePayload($request, (int) $customer->id, $customer->client_id, $customer->branch_id);
 
-        // Segment-document protection: a segment that already has uploaded
-        // documents cannot be removed from the customer (its evidence would be
-        // orphaned). Reject the edit naming the offending segment(s).
-        $blockedSegments = \App\Support\SegmentGuard::blockedRemovals(
+        // Segment-usage protection: a segment referenced by a Proforma Invoice
+        // (any non-cancelled) or a Shipment cannot be removed — the association
+        // must remain and no document changes occur. Reject the edit if any
+        // removed segment is still in use downstream. (A segment that only has
+        // uploaded documents is no longer blocked here: its documents are cleaned
+        // up on save — see the cascade below.)
+        $usedSegments = \App\Support\SegmentGuard::blockedByCompletedDocs(
             \App\Models\Customer::class,
             (int) $customer->id,
             (int) $customer->client_id,
-            $customer->segment,
-            $data['segment'] ?? null,
+            \App\Support\SegmentGuard::removedNames($customer->segment, $data['segment'] ?? null),
         );
-        if (!empty($blockedSegments)) {
+        if (!empty($usedSegments)) {
             return response()->json([
-                'message' => 'Cannot remove the segment(s): ' . implode(', ', $blockedSegments)
-                    . ' — documents have already been uploaded for them. Remove those documents first.',
-                'errors'  => ['segment' => ['Segment(s) with uploaded documents cannot be removed: ' . implode(', ', $blockedSegments) . '.']],
+                'message' => 'This Segment cannot be removed because it is already associated with one or more completed Proforma Invoices or Shipments.',
+                'errors'  => ['segment' => ['Segment(s) associated with completed Proforma Invoices or Shipments cannot be removed: ' . implode(', ', $usedSegments) . '.']],
             ], 422);
         }
 
@@ -356,7 +357,8 @@ class CustomerController extends Controller
             return $denial;
         }
 
-        $row = DB::transaction(function () use ($customer, $data) {
+        $oldSegment = $customer->segment;
+        $row = DB::transaction(function () use ($customer, $data, $oldSegment) {
             $primary = $data['primary_address'];
 
             $customer->update([
@@ -373,6 +375,17 @@ class CustomerController extends Controller
                 'primary_email'  => $primary['cp_email']    ?? null,
                 'status'         => $data['status']         ?? $customer->status,
             ]);
+
+            // A removed segment's documents are cleaned up: those required ONLY by
+            // the removed segment(s) are deleted; documents shared with a segment
+            // that stays are kept.
+            \App\Support\SegmentGuard::cleanupOrphanedDocs(
+                \App\Models\Customer::class,
+                (int) $customer->id,
+                (int) $customer->client_id,
+                \App\Support\SegmentGuard::removedNames($oldSegment, $data['segment'] ?? null),
+                \App\Support\SegmentGuard::names($data['segment'] ?? null),
+            );
 
             // Propagate the customer's (possibly new) segment set to every
             // consignee mapped to it. A consignee mirrors the union of its
@@ -467,22 +480,31 @@ class CustomerController extends Controller
     private function syncMappedConsigneeSegments(Customer $customer): void
     {
         foreach ($customer->consignees()->get() as $consignee) {
-            $custIds = $consignee->customers()->pluck('customers.id')->all();
-            $derived = \App\Support\SegmentGuard::forCustomers($custIds);
-            // Keep any removed segment that still has uploaded documents so we
-            // never orphan a consignee's evidence.
-            $keep = \App\Support\SegmentGuard::blockedRemovals(
+            $custIds    = $consignee->customers()->pluck('customers.id')->all();
+            $derived    = \App\Support\SegmentGuard::forCustomers($custIds);
+            $oldSegment = $consignee->segment;
+
+            // A segment referenced by a PI/Shipment for the consignee must remain
+            // attached even if re-derivation dropped it (no document changes).
+            $usedKeep = \App\Support\SegmentGuard::blockedByCompletedDocs(
                 \App\Models\Consignee::class,
                 (int) $consignee->id,
                 (int) $consignee->client_id,
-                $consignee->segment,
-                $derived,
+                \App\Support\SegmentGuard::removedNames($oldSegment, $derived),
             );
-            $names = array_values(array_unique(array_merge(
-                \App\Support\SegmentGuard::names($derived),
-                $keep,
-            )));
-            $consignee->update(['segment' => $names ? implode(', ', $names) : null]);
+            $finalSegment = \App\Support\SegmentGuard::mergeRetained($derived, $usedKeep);
+            $consignee->update(['segment' => $finalSegment !== '' ? $finalSegment : null]);
+
+            // Clean up documents of segments genuinely removed from the consignee
+            // (not retained above): delete those required only by a removed
+            // segment; keep documents shared with a segment that stays.
+            \App\Support\SegmentGuard::cleanupOrphanedDocs(
+                \App\Models\Consignee::class,
+                (int) $consignee->id,
+                (int) $consignee->client_id,
+                \App\Support\SegmentGuard::removedNames($oldSegment, $finalSegment),
+                \App\Support\SegmentGuard::names($finalSegment),
+            );
         }
     }
 

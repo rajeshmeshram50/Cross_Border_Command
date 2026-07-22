@@ -269,17 +269,41 @@ class SupplierPurchaseInvoiceController extends Controller
             }
             return response()->json(['status' => true, 'message' => $msg, 'data' => $this->shapeListRow($spi->fresh())]);
         }
-        // With-PO invoices are billed through the PO now: the PO sync creates ONE
-        // bill and posts all of the PO's payments. So a NOT-yet-synced With-PO SPI
-        // must not create a second bill here — redirect to the PO sync. (An
-        // already-synced SPI carries a zoho_bill_id and is handled by the block
-        // above, so it still tops up its own bill.)
+        // With-PO invoices are billed through the PO: the PO sync creates ONE bill
+        // and posts all of the PO's payments. Syncing from the invoice therefore
+        // delegates to the PO sync (idempotent — one bill per PO, payments topped up
+        // via the zoho_applied_amount ledger), then stamps every With-PO invoice on
+        // that PO so their rows reflect the shared bill.
         if ($spi->purchase_order_id) {
+            $po = PurchaseOrder::find($spi->purchase_order_id);
+            if (!$po) {
+                return response()->json(['status' => false, 'message' => 'The linked purchase order no longer exists.'], 422);
+            }
+            $poResp = app(PurchaseOrderController::class)->sync($request, $po->id);
+            $poData = $poResp->getData(true);
+            if (($poData['status'] ?? false) !== true) {
+                // PO sync refused (e.g. amount not fully utilised) — surface its
+                // message/status verbatim so the invoice screen shows the reason.
+                return response()->json($poData, $poResp->getStatusCode());
+            }
+            $fresh = $po->fresh();
+            if (!empty($fresh->zoho_bill_id)) {
+                SupplierPurchaseInvoice::where('purchase_order_id', $po->id)
+                    ->whereNull('deleted_at')
+                    ->update([
+                        'zoho_status'      => 'Sync',
+                        'zoho_bill_id'     => $fresh->zoho_bill_id,
+                        'zoho_bill_number' => $fresh->zoho_bill_number,
+                        'zoho_synced_at'   => now(),
+                        'zoho_error'       => null,
+                        'updated_by'       => $user->id,
+                    ]);
+            }
             return response()->json([
-                'status'  => false,
-                'message' => 'This invoice is under a purchase order — sync the PO to Zoho Books instead. The PO creates the bill and posts all its payments.',
-                'errors'  => ['po' => ['With-PO invoices are billed through the PO sync.']],
-            ], 422);
+                'status'  => true,
+                'message' => $poData['message'] ?? ('Synced through purchase order ' . $po->code . ' — bill and payments posted to Zoho Books.'),
+                'data'    => $this->shapeListRow($spi->fresh()),
+            ]);
         }
         if (!$spi->vendor_id) {
             return response()->json(['status' => false, 'message' => 'Attach a supplier to this invoice before syncing to Zoho Books.'], 422);
@@ -394,21 +418,64 @@ class SupplierPurchaseInvoiceController extends Controller
      * applied (cgst+sgst halves, or full igst) is what's sent so Zoho's recomputed
      * total reconciles with ours.
      */
+    /**
+     * Resolve per-line Zoho metadata (real description, unit, HSN) for the given
+     * items' products in ONE query — products.description + master_uom.short_code
+     * + master_hsn_codes.hsn_code, keyed by product_id. Ad-hoc lines with no
+     * product_id simply get no meta and fall back to the product code.
+     */
+    private function zohoLineMeta($items): array
+    {
+        $ids = collect($items)->pluck('product_id')->filter()->unique()->values()->all();
+        if (empty($ids)) return [];
+        $rows = DB::table('products as p')
+            ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
+            ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
+            ->whereIn('p.id', $ids)
+            ->get(['p.id', 'p.description', 'u.short_code', 'u.title', 'h.hsn_code']);
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int) $r->id] = [
+                'description' => trim((string) ($r->description ?? '')) ?: null,
+                'unit'        => $r->short_code ?: ($r->title ?: null),
+                'hsn'         => $r->hsn_code ?: null,
+            ];
+        }
+        return $map;
+    }
+
+    /**
+     * Compose a Zoho line description: the product code stays for traceability,
+     * the real product description is appended when present ("P-81 · Honey…").
+     */
+    private function lineDescription($code, ?string $description): string
+    {
+        $code = trim((string) $code);
+        $desc = trim((string) $description);
+        if ($code !== '' && $desc !== '') return $code . ' · ' . $desc;
+        return $desc !== '' ? $desc : $code;
+    }
+
     private function buildZohoBillPayload(SupplierPurchaseInvoice $spi, ZohoBooksService $books, string $zohoVendorId, bool $registered, bool $interState): array
     {
-        $lineItems = $spi->items->map(function ($it) use ($books, $registered, $interState) {
+        $meta = $this->zohoLineMeta($spi->items);
+        $lineItems = $spi->items->map(function ($it) use ($books, $registered, $interState, $meta) {
             $name = (string) ($it->product_name ?: $it->product_code ?: 'Item');
             $rate = (float) $it->rate;
             $effRate = $interState ? (float) $it->igst_pct : ((float) $it->cgst_pct + (float) $it->sgst_pct);
             $taxId = $registered ? $books->resolveTaxId($effRate, $interState) : null;
+            $m = $meta[(int) $it->product_id] ?? [];
             $line = [
                 'item_id'     => $books->findOrCreateItemId($name, $rate, $taxId, $it->product_id),
                 'name'        => $name,
-                'description' => (string) $it->product_code,
+                'description' => $this->lineDescription($it->product_code, $m['description'] ?? null),
                 'rate'        => $rate,
                 'quantity'    => (float) $it->quantity,
             ];
-            if (!empty($it->hsn_code)) $line['hsn_or_sac'] = (string) $it->hsn_code;
+            // The SPI line carries its own hsn_code; fall back to the product's HSN.
+            $hsn = !empty($it->hsn_code) ? (string) $it->hsn_code : ($m['hsn'] ?? null);
+            if (!empty($hsn))       $line['hsn_or_sac'] = (string) $hsn;
+            if (!empty($m['unit'])) $line['unit'] = (string) $m['unit'];
             if ($taxId) $line['tax_id'] = $taxId;
             return $line;
         })->values()->all();

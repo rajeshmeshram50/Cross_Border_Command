@@ -143,27 +143,164 @@ class SegmentGuard
     }
 
     /**
-     * Given the row's current segment string and the incoming one, return the
-     * REMOVED segments that still have uploads (so the edit must be rejected).
-     *
-     * @return string[] blocked segment names ([] = safe to proceed)
+     * Proforma-Invoice statuses that DON'T lock a segment. Any other PI status
+     * (i.e. a PI that has merely been created) blocks segment removal — a
+     * cancelled PI is void and is the only state that doesn't count.
      */
-    public static function blockedRemovals(string $uploadableType, int $uploadableId, int $clientId, ?string $oldSegment, ?string $newSegment): array
+    public const PI_IGNORED = ['cancelled'];
+
+    /**
+     * Purchase-Order statuses that count as an issued/committed reference for a
+     * supplier's segment (a Draft/Pending PO is not yet committed).
+     */
+    public const PO_COMMITTED = ['Sent for Sign', 'Signed', 'Approved'];
+
+    /**
+     * The segment NAMES present before the edit but not after (case-insensitive).
+     *
+     * @return string[]
+     */
+    public static function removedNames(?string $oldSegment, ?string $newSegment): array
     {
         $old = self::names($oldSegment);
         $new = array_map('mb_strtolower', self::names($newSegment));
+        return array_values(array_filter($old, fn ($s) => !in_array(mb_strtolower($s), $new, true)));
+    }
 
-        // Segments present before but not after (case-insensitive compare).
-        $removed = array_values(array_filter($old, fn ($s) => !in_array(mb_strtolower($s), $new, true)));
+    /**
+     * Is the party referenced by a COMPLETED downstream document that locks its
+     * segments?  PIs/Shipments carry no segment of their own, so the link is
+     * party-level: any qualifying document locks ALL of the party's segments.
+     *   - Customer  → an approved/converted PI, or any Shipment through its PIs.
+     *   - Consignee → same, matched on the PI's consignee_id.
+     *   - Vendor    → an issued Purchase Order (Sent for Sign / Signed / Approved).
+     *
+     * @param  string $partyType  App\Models\Customer|Consignee|Vendor ::class
+     */
+    public static function hasCompletedReference(string $partyType, int $partyId, int $clientId): bool
+    {
+        // Supplier/Vendor: an issued Purchase Order.
+        if ($partyType === \App\Models\Vendor::class) {
+            return \Illuminate\Support\Facades\DB::table('purchase_orders')
+                ->where('client_id', $clientId)
+                ->where('vendor_id', $partyId)
+                ->whereIn('status', self::PO_COMMITTED)
+                ->whereNull('deleted_at')
+                ->exists();
+        }
+
+        // Customer / Consignee: which PI column identifies the party.
+        $piCol = $partyType === \App\Models\Consignee::class ? 'consignee_id'
+            : ($partyType === \App\Models\Customer::class ? 'customer_id' : null);
+        if ($piCol === null) return false;
+
+        // Any Proforma Invoice created for this party (cancelled PIs excepted)…
+        $piExists = \Illuminate\Support\Facades\DB::table('proforma_invoices')
+            ->where('client_id', $clientId)
+            ->where($piCol, $partyId)
+            ->whereNotIn('status', self::PI_IGNORED)
+            ->exists();
+        if ($piExists) return true;
+
+        // …or a Shipment (its mere existence = Stage-6 won) linked through the
+        // party's PI.
+        return \Illuminate\Support\Facades\DB::table('shipment_orders as so')
+            ->join('proforma_invoices as pi', 'pi.id', '=', 'so.proforma_invoice_id')
+            ->where('so.client_id', $clientId)
+            ->where('pi.' . $piCol, $partyId)
+            ->exists();
+    }
+
+    /**
+     * Of the segments being removed from a party, return those blocked because
+     * the party is referenced by a completed PI/Shipment (customer/consignee) or
+     * an issued Purchase Order (vendor). Party-level, so it's all-or-nothing: any
+     * completed reference blocks EVERY removed segment.
+     *
+     * @param  string[] $removedNames
+     * @return string[] blocked segment names ([] = safe to proceed)
+     */
+    public static function blockedByCompletedDocs(string $partyType, int $partyId, int $clientId, array $removedNames): array
+    {
+        $removed = array_values(array_filter(array_map('trim', $removedNames), fn ($s) => $s !== ''));
         if (empty($removed)) return [];
+        return self::hasCompletedReference($partyType, $partyId, $clientId) ? $removed : [];
+    }
 
-        /* A shared document counts for EVERY segment listing it, whether or not
-         * another selected segment also requires it. Four segments sharing one
-         * mandatory DD doc are therefore all locked by a single upload — the
-         * document must be deleted before any of them can be dropped. (An
-         * "orphan-only" variant that allowed removing all but the last was
-         * tried and rejected: blocking 3-of-4 removals silently reads as
-         * arbitrary.) */
-        return self::segmentsWithUploads($uploadableType, $uploadableId, $clientId, $removed);
+    /**
+     * After segment(s) are removed from a party, delete the uploaded documents
+     * required ONLY by the removed segment(s) — i.e. whose (category, doc_code)
+     * is NOT required by any REMAINING segment. Documents shared with a segment
+     * that stays are kept. Mirrors the manual doc delete: the stored file is
+     * removed, then the row. Returns the number of documents deleted.
+     *
+     * @param  string   $partyType       App\Models\Customer|Consignee|Vendor ::class
+     * @param  string[] $removedNames    segment names being removed
+     * @param  string[] $remainingNames  segment names that stay
+     */
+    public static function cleanupOrphanedDocs(string $partyType, int $partyId, int $clientId, array $removedNames, array $remainingNames): int
+    {
+        $removed = array_values(array_filter(array_map('trim', $removedNames), fn ($s) => $s !== ''));
+        if (empty($removed)) return 0;
+
+        // (category|doc_code) keys required by the removed segment(s).
+        $removedKeys = [];
+        foreach ($removed as $name) {
+            $removedKeys = array_merge($removedKeys, self::docKeys($clientId, $name));
+        }
+        $removedKeys = array_values(array_unique($removedKeys));
+        if (empty($removedKeys)) return 0;
+
+        // Keys still required by a remaining segment must survive.
+        $keepKeys = [];
+        foreach ($remainingNames as $name) {
+            $keepKeys = array_merge($keepKeys, self::docKeys($clientId, trim((string) $name)));
+        }
+        $keepKeys = array_flip($keepKeys);
+
+        // Orphaned = required by a removed segment, by no remaining one.
+        $orphan = array_values(array_filter($removedKeys, fn ($k) => !isset($keepKeys[$k])));
+        if (empty($orphan)) return 0;
+
+        $rows = SegmentDocUpload::query()
+            ->where('uploadable_type', $partyType)
+            ->where('uploadable_id', $partyId)
+            ->where('client_id', $clientId)
+            ->where(function ($q) use ($orphan) {
+                foreach ($orphan as $key) {
+                    [$cat, $code] = explode('|', $key, 2);
+                    $q->orWhere(fn ($w) => $w->where('category', $cat)->where('doc_code', $code));
+                }
+            })
+            ->get();
+
+        foreach ($rows as $row) {
+            if ($row->attachment_path) {
+                \Illuminate\Support\Facades\Storage::disk('public')->delete($row->attachment_path);
+            }
+            $row->delete();
+        }
+        return $rows->count();
+    }
+
+    /**
+     * Merge names that must be RETAINED back into a derived segment string
+     * (case-insensitive union), keeping the derived order first. Used where a
+     * consignee's segment is derived from its customers: a segment locked by a
+     * completed PI/Shipment must remain attached even if derivation dropped it.
+     *
+     * @param  string[] $retain
+     */
+    public static function mergeRetained(?string $derivedSegment, array $retain): string
+    {
+        $names = self::names($derivedSegment);
+        $seen  = array_map('mb_strtolower', $names);
+        foreach ($retain as $name) {
+            $name = trim($name);
+            if ($name === '' || in_array(mb_strtolower($name), $seen, true)) continue;
+            $names[] = $name;
+            $seen[]  = mb_strtolower($name);
+        }
+        return implode(', ', $names);
     }
 }
