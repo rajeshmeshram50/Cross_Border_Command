@@ -171,17 +171,29 @@ export default function SupplierPurchaseInvoice() {
   const switchShip = (t: ShipTab) => { setShipTab(t); setPage(1); };
   const onSearch = (v: string) => setQ(v);
 
+  // Which invoice id is mid-sync — guards against a double-click firing two
+  // POST /sync calls (the second would hit the backend lock and 409).
+  const [syncingId, setSyncingId] = useState<number | null>(null);
+
   // Zoho-sync one invoice. Blocked until the linked PO's amount is fully
   // utilised (the backend enforces the same rule; this surfaces it up-front).
   const syncRow = async (r: SpiRow) => {
     setMenu(null);
+    if (syncingId === r.id) return; // already in flight — ignore the re-click
     if (!r.po_fully_utilized) {
       const where = r.poId ? 'the linked purchase order' : 'this invoice';
       toast.warning('Utilise the full amount first', `Record payments against ${where} until its balance is cleared before syncing to Zohobook.`);
       return;
     }
+    setSyncingId(r.id);
     try { const resp = await api.post(`/p2p/supplier-purchase-invoices/${r.id}/sync`); toast.success(`${r.spiNo} synced with Zohobook`, resp?.data?.message); reload(); }
-    catch (e: any) { toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this invoice.'); }
+    catch (e: any) {
+      // A 409 means a sync for this same invoice is already running — not a real
+      // failure; the row will reflect the result on the next refresh.
+      if (e?.response?.status === 409) { toast.warning('Sync already in progress', e?.response?.data?.message ?? 'This invoice is already being synced — try again in a moment.'); reload(); }
+      else toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this invoice.');
+    }
+    finally { setSyncingId(null); }
   };
 
   // View / download the attachment by STREAMING it through the backend
@@ -364,7 +376,7 @@ export default function SupplierPurchaseInvoice() {
                     <span className="spi-acts">
                       {r.zoho === 'sync'
                         ? <Tooltip label="Already synced to Zohobook"><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
-                        : <Tooltip label="Sync this invoice to Zohobook"><button type="button" className="spi-zohobtn" onClick={() => syncRow(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
+                        : <Tooltip label="Sync this invoice to Zohobook"><button type="button" className="spi-zohobtn" disabled={syncingId === r.id} onClick={() => syncRow(r)}><IcoSync size={13} /> {syncingId === r.id ? 'Syncing…' : 'Zoho Sync'}</button></Tooltip>}
                       <Tooltip label="View invoice"><button type="button" className="spi-iconbtn" onClick={() => { setEditId(r.id); setMapCtx(null); setDetailOpen(true); }}><IcoEye /></button></Tooltip>
                       <Tooltip label="Record payment"><button type="button" className="spi-iconbtn" onClick={() => openPoPayment(r)}><IcoRupee /></button></Tooltip>
                       <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => openMenu(e, r)}><IcoMore /></button></Tooltip>
@@ -413,7 +425,7 @@ export default function SupplierPurchaseInvoice() {
               <div className="spi-menu-sup">Supplier: <Tooltip label={menu.row.supplier} disabled={!menu.row.supplier || menu.row.supplier.length <= 25} position="bottom" zIndex={2999999}><span>{menu.row.supplier}</span></Tooltip></div>
             </div>
             <div className="spi-menu-items">
-              <button type="button" className="spi-menu-item is-teal" onClick={() => syncRow(menu.row)}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
+              <button type="button" className="spi-menu-item is-teal" disabled={syncingId === menu.row.id} onClick={() => syncRow(menu.row)}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> {syncingId === menu.row.id ? 'Syncing…' : 'Sync with Zohobook'}</button>
               <button type="button" className="spi-menu-item" onClick={() => void downloadRow(menu.row)}><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> Download SPI</button>
               <button type="button" className="spi-menu-item" onClick={() => { const row = menu.row; setMenu(null); openPoPayment(row); }}><span className="spi-menu-item-ico spi-menu-item-ico-pay"><IcoCard /></span> SPI Payment</button>
             </div>

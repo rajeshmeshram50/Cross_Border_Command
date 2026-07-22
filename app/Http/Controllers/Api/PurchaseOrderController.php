@@ -186,6 +186,23 @@ class PurchaseOrderController extends Controller
                 'message' => 'This PO is synced to Zoho Books and can no longer be deleted.',
             ], 422);
         }
+        // A mapped supplier invoice reconciled its figures against this PO (and may
+        // itself already be a live Zoho bill) — deleting the PO would orphan the SPI
+        // and its payments. Same lock the edit path enforces.
+        if ($po->supplierPurchaseInvoices()->exists()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This PO has a supplier invoice mapped to it and can no longer be deleted.',
+            ], 422);
+        }
+        // Out for e-signature (or already signed) → the document is frozen; deleting
+        // it would strand the Zoho Sign request.
+        if ($po->status === 'Sent for Sign' || $this->isPoSigned($po)) {
+            return response()->json([
+                'status' => false,
+                'message' => 'This PO has been sent for signature and can no longer be deleted.',
+            ], 422);
+        }
         $po->delete();
         return response()->json(['status' => true]);
     }
@@ -223,6 +240,11 @@ class PurchaseOrderController extends Controller
         }
         try {
 
+        // Re-read under the lock so a request that loaded the row before a
+        // concurrent sync finished sees the freshly-written Zoho id — the
+        // idempotency check must not act on a stale in-memory copy.
+        $po->refresh();
+
         if (!empty($po->zoho_purchaseorder_id)) {
             return response()->json([
                 'status' => true,
@@ -259,7 +281,12 @@ class PurchaseOrderController extends Controller
             // Intra- vs inter-state decides GST(CGST+SGST) vs IGST in Zoho.
             // Prefer the Zoho org's own state; fall back to this tenant's home state.
             $orgState = $books->orgStateCode() ?: $this->homeStateCode($po->branch_id);
-            $interState = $stateCode && (string) $stateCode !== (string) $orgState;
+            // Normalise both sides ("7" vs "07", or a legacy "27 – Maharashtra"
+            // label) before comparing — a raw string compare mis-classifies
+            // single-digit / labelled state codes and Zoho then rejects the wrong
+            // tax type (IGST on an intra-state supply, or vice-versa).
+            $partyState = \App\Services\ZohoBooksService::normStateCode($stateCode);
+            $interState = $partyState !== null && $partyState !== \App\Services\ZohoBooksService::normStateCode($orgState);
 
             $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
             $created = $books->createPurchaseOrder($this->buildZohoPayload($po, $books, $zohoVendorId, (bool) $gstin, $interState));
@@ -269,7 +296,7 @@ class PurchaseOrderController extends Controller
             // undo an otherwise-successful sync.
             $pdfPath = null;
             try {
-                $rel = 'zoho/po/' . $po->client_id . '/PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($po->code ?: $po->id)) . '.pdf';
+                $rel = 'zoho/po/' . $po->client_id . '/' . ($po->branch_id ?: 0) . '/PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($po->code ?: $po->id)) . '.pdf';
                 Storage::disk('public')->put($rel, $books->getPurchaseOrderPdf($zohoId));
                 $pdfPath = '/storage/' . $rel;
             } catch (\Throwable $e) {
