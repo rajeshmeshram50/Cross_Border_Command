@@ -317,7 +317,17 @@ class EmployeeController extends Controller
         $eq = Employee::query()
             ->whereNotNull('id')
             ->where('status', 'Active')
-            ->where('onboarding_stage_completed', '>=', 6);
+            ->where('onboarding_stage_completed', '>=', 6)
+            // Belt-and-braces on top of the status filter: an exit that was
+            // finalised (case Closed / completed / final status "Exited") but
+            // whose employees.status wasn't flipped for some reason must still
+            // never surface as a pickable reporting manager. Anyone who has
+            // exited is dropped regardless of their status column.
+            ->whereDoesntHave('exit', function ($q) {
+                $q->where('exit_case_status', 'Closed')
+                  ->orWhereNotNull('completed_at')
+                  ->orWhere('final_employee_status', 'Exited');
+            });
         $this->applyScope($eq, $user, $request->integer('branch_id') ?: null);
         // HOD designation ids so the picker can flag which employees are a
         // department's Head — the reporting-manager rule points a non-HOD hire
