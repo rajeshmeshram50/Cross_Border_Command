@@ -135,6 +135,10 @@ export interface VaultData {
   owner_kyc:              VaultDoc[];
   trade_licenses:         VaultDoc[];
   trade_documents:        VaultDoc[];
+  /** Top-level Agreements bucket — segment-applicable agreements for the entity
+   *  (customer/consignee) or vendor, overlaid with signature status. Used by the
+   *  single-bucket ClmDocsPopup 'agr' view (NOT the per-shipment vault tab). */
+  agreements?:            VaultDoc[];
   shipment_agreements:    VaultShipmentRow[];
   last_updated:           string;   // DD/MM/YYYY
 }
