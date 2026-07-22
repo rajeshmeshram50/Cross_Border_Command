@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
+import { CLM_CSS } from '../../../clm/shared/clmShared';
 import api from '../../../../api';
 import { MasterSelect, MasterDatePicker, MasterMultiSelect } from '../../../master/masterFormKit';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -144,6 +146,7 @@ const optsWith = (rows: MasterOpt[], current?: string | null) => {
  *   - Trade Licence on Stage 2 also reads TL_DOCS for now (the
  *     same design-only treatment). */
 type KycDocRow = { code: string; name: string; authority: string; expiry: string; status: string };
+
 const DD_DOCS: KycDocRow[] = [
   { code: 'DD-001', name: 'Certificate of Incorporation',                          authority: 'Registrar of Companies (ROC)', expiry: 'N/A',     status: 'mandatory' },
   { code: 'DD-002', name: 'Memorandum & Articles of Association (MOA/AOA)',        authority: 'Registrar of Companies (ROC)', expiry: 'N/A',     status: 'mandatory' },
@@ -1983,6 +1986,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
        button or the ESC key. */
     <div className="acm-root">
       <style>{SCOPED_CSS}</style>
+      {/* CLM shared styles — powers the teal AuthorityBadges "+N" popover used in
+          the KYC / DD / Trade Licence issuing-authority columns, matching the
+          Supplier form exactly. */}
+      <style>{CLM_CSS}</style>
       <div className="acm-card">
 
         {/* HEADER */}
@@ -3706,8 +3713,14 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                       <tr key={dl.code}>
                         <td>{srPad}</td>
                         <td><span className="acm-doc-code">{dl.code}</span></td>
-                        <td style={{ fontWeight: 700, color: '#1f2937' }}>{dl.name}</td>
-                        <td style={{ color: '#6b7280' }}>{dl.authority}</td>
+                        <td style={{ fontWeight: 700, color: '#1f2937' }}>{(() => {
+                          // Long name → one line + ellipsis, full text on hover
+                          // (same reveal as the Segment column's single value).
+                          const v = dl.name || '';
+                          const span = <span style={{ display: 'inline-block', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{v || '—'}</span>;
+                          return v.length > 32 ? <Tooltip label={v}>{span}</Tooltip> : span;
+                        })()}</td>
+                        <td><AuthorityBadges value={dl.authority} variant="violet" /></td>
                         {/* Requirement — tells the user up-front whether this
                             doc must be uploaded (Mandatory) or is optional. */}
                         <td>
@@ -3797,7 +3810,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                         <td><span className="acm-doc-code">{code}</span></td>
                         <td style={{ fontWeight: 700, color: '#1f2937' }}>{d.name}</td>
                         <td style={{ fontFamily: 'JetBrains Mono, ui-monospace, monospace', fontSize: 11 }}>{d.license_number || '—'}</td>
-                        <td style={{ color: '#6b7280' }}>{d.issuing_authority || '—'}</td>
+                        <td><AuthorityBadges value={d.issuing_authority} variant="violet" /></td>
                         <td><span className={issClass}>{issLabel}</span></td>
                         <td><span className={expClass}>{expLabel}</span></td>
                         <td><BustedLink url={d.attachment_url} path={d.attachment_path} /></td>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import type { VaultData, VaultDoc, VaultStatus } from '../../sales/core-masters/customer/CustomerEvidenceVaultModal';
@@ -28,7 +28,7 @@ const CATEGORY_META: Record<DocCategory, { label: string; sub: string }> = {
   dd:  { label: 'COMPANY DUE DILIGENCE',   sub: 'Licenses, statutory documents & compliance proofs' },
   tl:  { label: 'TRADE LICENSES',          sub: 'Trade licence documents & regulatory approvals' },
   td:  { label: 'TRADE DOCUMENTS',         sub: 'Agreements, frameworks & confidentiality documents' },
-  agr: { label: 'AGREEMENTS',              sub: 'Shipment agreements & signing status' },
+  agr: { label: 'AGREEMENTS',              sub: 'Applicable agreements & signing status' },
 };
 
 interface Props {
@@ -43,10 +43,14 @@ interface Props {
 /* Pull the rows for a category out of a vault payload, normalised to DocItem. */
 function itemsFor(vault: VaultData, category: DocCategory): DocItem[] {
   if (category === 'agr') {
-    return (vault.shipment_agreements ?? []).map((s) => ({
-      name: s.shipment_id,
-      sub: `${s.customer}${s.country ? ` · ${s.country}` : ''}`,
-      status: (s.agreement?.pct ?? 0) === 100 ? 'Verified' : 'Pending',
+    // Segment-applicable agreements for the entity (customer/consignee/vendor),
+    // overlaid with signature status — the same set the Buyer/Supplier Profile
+    // agr cell counts. NOT the per-shipment list, which is shipment-gated and
+    // read "0 of 0" for parties without a shipment order (CBC #66).
+    return (vault.agreements ?? []).map((a) => ({
+      name: a.name,
+      sub: a.authority || '—',
+      status: (a.status === 'Signed' || a.status === 'Verified') ? a.status : 'Pending',
     }));
   }
   const bucket: VaultDoc[] =
@@ -59,6 +63,18 @@ function itemsFor(vault: VaultData, category: DocCategory): DocItem[] {
     sub: d.authority || '—',
     status: d.status,
   }));
+}
+
+/* Shimmer placeholder box — a tinted base with a sweeping highlight, used by
+ * the loading skeleton so a spinner-less wait still reads as "loading". */
+function skBox(dark?: boolean): CSSProperties {
+  const base = dark ? 'rgba(148,163,184,.16)' : '#e9eef3';
+  const hl   = dark ? 'rgba(203,213,225,.28)' : '#f5f9fc';
+  return {
+    backgroundImage: `linear-gradient(90deg, ${base} 25%, ${hl} 50%, ${base} 75%)`,
+    backgroundSize: '200% 100%',
+    animation: 'clmDocsSk 1.3s ease-in-out infinite',
+  };
 }
 
 /* Status pill — same palette as the Evidence Vault's StatusPill, with dark
@@ -184,7 +200,20 @@ export default function ClmDocsPopup({ open, onClose, category, ownerType, owner
         {/* ── Body ── */}
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: c.card }}>
           {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', fontSize: 13, color: c.muted }}>Loading documents…</div>
+            <>
+              <style>{`@keyframes clmDocsSk{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px', borderBottom: `1px solid ${c.rowBorder}` }}>
+                  <span style={{ width: 38, height: 38, flexShrink: 0, borderRadius: 10, ...skBox(isDark) }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', height: 13, width: '55%', borderRadius: 5, ...skBox(isDark) }} />
+                    <span style={{ display: 'block', height: 11, width: '35%', borderRadius: 5, marginTop: 7, ...skBox(isDark) }} />
+                  </div>
+                  <span style={{ width: 38, height: 18, flexShrink: 0, borderRadius: 6, ...skBox(isDark) }} />
+                  <span style={{ width: 74, height: 22, flexShrink: 0, borderRadius: 20, ...skBox(isDark) }} />
+                </div>
+              ))}
+            </>
           ) : total === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', fontSize: 13, color: c.muted }}>No {noun} in this bucket yet.</div>
           ) : (

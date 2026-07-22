@@ -9,10 +9,20 @@ import Tooltip from '../../../components/ui/Tooltip';
  * DCP table's AUTHORITIES column and the Agreement master's Applicable Party
  * column use, so KYC / DD / Trade Licence masters read (and behave) consistently.
  */
-export default function AuthorityBadges({ value }: { value?: string | string[] | null }) {
+export default function AuthorityBadges({ value, variant = 'teal' }: { value?: string | string[] | null; variant?: 'teal' | 'violet' }) {
   const list = Array.isArray(value)
     ? value.map(s => String(s).trim()).filter(Boolean)
     : String(value ?? '').split(',').map(s => s.trim()).filter(Boolean);
+
+  // Palette — default teal (CLM masters / Supplier form); `violet` matches the
+  // purple Customer form so the badge blends with that modal.
+  const v = variant === 'violet';
+  const badgeClass = v ? 'clm-badge clm-badge-violet' : 'clm-badge clm-badge-teal';
+  const chipBg = v ? 'linear-gradient(135deg, #8b5cf6, #7c3aed, #6d28d9)' : 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)';
+  const chipShadow = v ? '0 2px 8px rgba(124,58,237,.4)' : '0 2px 8px rgba(8,145,178,.4)';
+  const codePillStyle: React.CSSProperties = v
+    ? { display: 'inline-block', fontFamily: "'Geist Mono', ui-monospace, monospace", fontSize: 11, fontWeight: 500, letterSpacing: '.05em', color: '#6d28d9', background: 'linear-gradient(135deg, rgba(124,58,237,.10), rgba(124,58,237,.06))', padding: '4px 9px', borderRadius: 7, border: '1px solid rgba(124,58,237,.25)', whiteSpace: 'normal', wordBreak: 'break-word' }
+    : { whiteSpace: 'normal', wordBreak: 'break-word' };
 
   const [pop, setPop] = useState<{ x: number; y: number; flipUp: boolean } | null>(null);
 
@@ -45,7 +55,7 @@ export default function AuthorityBadges({ value }: { value?: string | string[] |
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-      <Tooltip label={list[0]}><span className="clm-badge clm-badge-teal" style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>{list[0]}</span></Tooltip>
+      <Tooltip label={list[0]}><span className={badgeClass} style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block' }}>{list[0]}</span></Tooltip>
       {extra > 0 && (
         <Tooltip label="View all issuing authorities">
           <button
@@ -65,9 +75,9 @@ export default function AuthorityBadges({ value }: { value?: string | string[] |
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20,
-              background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)',
+              background: chipBg,
               color: '#fff', fontSize: 10, fontWeight: 800, cursor: 'pointer',
-              flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)', border: 'none',
+              flexShrink: 0, boxShadow: chipShadow, border: 'none',
               fontFamily: 'inherit',
             }}
           >
@@ -86,12 +96,13 @@ export default function AuthorityBadges({ value }: { value?: string | string[] |
               top: pop.flipUp ? undefined : pop.y,
               bottom: pop.flipUp ? (window.innerHeight - pop.y) : undefined,
               zIndex: 100001, width: 320, maxHeight: 280, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', borderRadius: 12, padding: 8,
+              ...(v ? { border: '1.5px solid #ddd6fe' } : {}),
             }}
           >
-            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Issuing Authorities ({list.length})</div>
+            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px', ...(v ? { color: '#7c3aed' } : {}) }}>Issuing Authorities ({list.length})</div>
             {list.map((name, i) => (
-              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
-                <span className="clm-code-pill" style={{ whiteSpace: 'normal', wordBreak: 'break-word' }}>{name}</span>
+              <div key={i} className={!v && i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8, ...(v && i % 2 ? { background: '#f5f3ff' } : {}) }}>
+                <span className={v ? undefined : 'clm-code-pill'} style={codePillStyle}>{name}</span>
               </div>
             ))}
           </div>

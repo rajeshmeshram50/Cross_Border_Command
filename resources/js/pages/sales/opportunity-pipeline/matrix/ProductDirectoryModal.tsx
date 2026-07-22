@@ -36,6 +36,9 @@ type DirectoryRow = {
   quantity:         string | number | null;
   target_price:     string | number | null;
   notes:            string | null;
+  /* Stage 3 sourcing decision: null = not decided yet (still unmappable),
+     'required' / 'not_required' = a status has been set (unmap now locked). */
+  sourcing_status:  string | null;
 };
 
 type ProductOpt = {
@@ -174,10 +177,6 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
     () => new Set((customerSegments ?? []).map(s => s.trim().toLowerCase()).filter(Boolean)),
     [customerSegments],
   );
-
-  /* Sourcing complete → product list is locked from unmapping (and the
-   * backend enforces the same rule with a 422). */
-  const sourcingLocked = (leadStage ?? 0) >= 4;
 
   const [rows, setRows]               = useState<DirectoryRow[]>([]);
   const [page, setPage]               = useState(1);   // 4 products per page
@@ -475,6 +474,8 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
           quantity:         draft.quantity     ? Number(draft.quantity)     : null,
           target_price:     draft.target_price ? Number(draft.target_price) : null,
           notes:            draft.notes || null,
+          // A freshly mapped product has no sourcing decision yet → unmappable.
+          sourcing_status:  null,
         }, ...prev]);
         toast.success('Product mapped', 'Added to the directory');
       }
@@ -663,6 +664,11 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                       </td>
                       <td className="pdm-ta-c"><span className="pdm-curr-pill">{r.currency}</span></td>
                       <td className="pdm-act-cell">
+                        {/* Inner flex wrapper — the <td> itself stays a normal
+                            table cell (vertical-align: middle) so the icons
+                            center in a tall row; the flex lives here, not on the
+                            cell, otherwise the row's vertical-align is ignored. */}
+                        <div className="pdm-act-inner">
                         {/* Themed Tooltip pills — same treatment as the Lead
                             Acknowledgement master's action column (QA ask),
                             replacing the browser-native title bubbles. */}
@@ -674,9 +680,12 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                             </svg>
                           </button>
                         </Tooltip>
+                        {/* Unmap is allowed ONLY while the product has no sourcing
+                            decision yet (Stage 3 "— Select —"). Once it's marked
+                            Sourcing Required / Not Required, it's locked here. */}
                         <Tooltip
-                          label={sourcingLocked
-                            ? "Can't unmap — Product Sourcing (Stage 3) is complete"
+                          label={r.sourcing_status != null
+                            ? "Can't unmap — a sourcing status is already set for this product"
                             : 'Unmap'}
                           themed
                         >
@@ -684,9 +693,9 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                               shows on the locked button — a disabled element
                               swallows the hover events the Tooltip needs. */}
                           <button
-                            className={`pdm-icon-btn pdm-icon-btn-del ${sourcingLocked ? 'pdm-icon-btn-locked' : ''}`}
-                            onClick={() => { if (!sourcingLocked) setPendingDelete(r); }}
-                            aria-disabled={sourcingLocked}
+                            className={`pdm-icon-btn pdm-icon-btn-del ${r.sourcing_status != null ? 'pdm-icon-btn-locked' : ''}`}
+                            onClick={() => { if (r.sourcing_status == null) setPendingDelete(r); }}
+                            aria-disabled={r.sourcing_status != null}
                             aria-label="Unmap"
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -695,6 +704,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                             </svg>
                           </button>
                         </Tooltip>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1175,10 +1185,13 @@ const SCOPED_CSS = `
    are visually a family. Blue palette kept — only the geometry
    was changed. */
 .pdm-curr-pill {
-  display: inline-block; padding: 3px 12px; border-radius: 8px;
+  /* Match the STATUS pill's vertical rhythm (padding/font) so the two badges
+     sit at the same height and read as aligned across the row. */
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 5px 14px; border-radius: 20px;
   background: #dbeafe; color: #1d4ed8;
-  font-size: 11px; font-weight: 800; letter-spacing: .02em;
-  border: 1px solid #bfdbfe;
+  font-size: 12px; font-weight: 700; letter-spacing: .02em; line-height: 1.2;
+  border: 1px solid #bfdbfe; vertical-align: middle;
 }
 
 /* ── Icon-only action buttons ── square chip the same size and
@@ -1251,7 +1264,8 @@ const SCOPED_CSS = `
   text-align: center; padding: 24px 14px;
   color: #94a3b8; font-style: italic; font-size: 12px;
 }
-.pdm-act-cell { display: flex; gap: 6px; justify-content: center; align-items: center; }
+.pdm-act-cell { text-align: center; vertical-align: middle; white-space: nowrap; }
+.pdm-act-inner { display: inline-flex; gap: 6px; justify-content: center; align-items: center; }
 /* Center STATUS + ACTIONS (header and cells). !important overrides the base
    left-aligned th rule. */
 .pdm-ta-c { text-align: center !important; }
