@@ -204,6 +204,15 @@ class SupplierPurchaseInvoiceController extends Controller
                 'message' => 'This invoice is synced to Zoho Books and cannot be deleted here — remove the bill in Zoho Books first.',
             ], 422);
         }
+        // Money has already moved (TDS cut or a recorded payment) — deleting the
+        // invoice would orphan the spi_payments rows and discard the TDS trail.
+        // Same lock the edit path enforces.
+        if ($spi->tds_cut || $spi->spiPayments()->exists()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This invoice already has a cut TDS / recorded payment and cannot be deleted — reverse the payments and TDS first.',
+            ], 422);
+        }
         $spi->delete();
         return response()->json(['status' => true]);
     }
@@ -232,6 +241,11 @@ class SupplierPurchaseInvoiceController extends Controller
             return response()->json(['status' => false, 'message' => 'A Zoho sync for this invoice is already in progress — try again in a moment.'], 409);
         }
         try {
+
+        // Re-read under the lock so a request that loaded the row before a
+        // concurrent sync finished sees the freshly-written bill id — the
+        // idempotency check must not act on a stale in-memory copy.
+        $spi->refresh();
 
         // Idempotent on the BILL — never push a second bill for the same invoice.
         // But re-sync still TOPS UP any payments that didn't fully post last time
@@ -280,7 +294,11 @@ class SupplierPurchaseInvoiceController extends Controller
             // Intra- vs inter-state decides GST(CGST+SGST) vs IGST in Zoho. Prefer
             // the Zoho org's own state; fall back to this tenant's home state.
             $orgState   = $books->orgStateCode() ?: $this->homeStateCode($spi->branch_id);
-            $interState = $stateCode && (string) $stateCode !== (string) $orgState;
+            // Normalise both sides ("7" vs "07", or a legacy "27 – Maharashtra"
+            // label) before comparing — a raw compare mis-classifies the supply and
+            // Zoho rejects the wrong tax type.
+            $partyState = \App\Services\ZohoBooksService::normStateCode($stateCode);
+            $interState = $partyState !== null && $partyState !== \App\Services\ZohoBooksService::normStateCode($orgState);
 
             $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
             $bill   = $books->createBill($this->buildZohoBillPayload($spi, $books, $zohoVendorId, (bool) $gstin, $interState));
@@ -301,7 +319,7 @@ class SupplierPurchaseInvoiceController extends Controller
             // Cache Zoho's own rendered bill PDF — best-effort.
             $pdfPath = null;
             try {
-                $rel = 'zoho/bill/' . $spi->client_id . '/BILL-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($spi->code ?: $spi->id)) . '.pdf';
+                $rel = 'zoho/bill/' . $spi->client_id . '/' . ($spi->branch_id ?: 0) . '/BILL-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($spi->code ?: $spi->id)) . '.pdf';
                 Storage::disk('public')->put($rel, $books->getBillPdf($billId));
                 $pdfPath = '/storage/' . $rel;
             } catch (\Throwable $e) {

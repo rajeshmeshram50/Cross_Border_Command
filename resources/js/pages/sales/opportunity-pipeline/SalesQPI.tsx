@@ -70,6 +70,9 @@ export type Quotation = {
   createdBy?: string;
   createdById?: number | null;
   creatorUserType?: string;
+  // Zoho Books sync state ('Sync' | 'Not Sync') — drives the sync button's
+  // tooltip/colour so a synced row reads as synced.
+  zoho_status?: string;
 };
 
 type PI = {
@@ -111,6 +114,9 @@ type PI = {
   // stays in "Without Shipment" until the shipment id is created & the
   // shipment form is submitted.
   hasShipment?: boolean;
+  // Zoho Books sync state ('Sync' | 'Not Sync') — drives the sync button's
+  // tooltip/colour so a synced row reads as synced.
+  zoho_status?: string;
 };
 
 // Default page size — 10 to match the Customer page. The dynamic page-size
@@ -673,6 +679,7 @@ export default function SalesQPI() {
           createdBy:    r.creator_name ?? r.creator?.name ?? '',
           createdById:  r.created_by ?? r.creator?.id ?? null,
           creatorUserType:     r.creator_user_type ?? r.creator?.user_type ?? '',
+          zoho_status:  r.zoho_status ?? 'Not Sync',
         }));
         setQuotations(rows);
       })
@@ -733,6 +740,7 @@ export default function SalesQPI() {
           // counted here, so an auto-assigned BT-code alone keeps the PI in
           // the Without-Shipment bucket until the shipment form is submitted.
           hasShipment: Boolean(r.shipment_code),
+          zoho_status: r.zoho_status ?? 'Not Sync',
           // Stash pi_type on the row so the sub-tab filter can split it.
           // Cast to any so we don't have to widen the public PI type.
           ...(r.pi_type ? { _piType: r.pi_type } : {}),

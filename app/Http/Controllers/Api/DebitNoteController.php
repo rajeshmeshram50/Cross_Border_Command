@@ -185,6 +185,11 @@ class DebitNoteController extends Controller
         }
         try {
 
+        // Re-read under the lock so a request that loaded the row before a
+        // concurrent sync finished sees the freshly-written credit id — the
+        // idempotency check must not act on a stale in-memory copy.
+        $dn->refresh();
+
         // Idempotent on the CREDIT — never push a second vendor credit. But
         // re-sync RETRIES the apply-to-bill if it didn't land last time (the
         // credit was created, but the apply failed or the linked bill was synced
@@ -217,7 +222,11 @@ class DebitNoteController extends Controller
 
             // Intra- vs inter-state → GST(CGST+SGST) vs IGST, same rule as the bill.
             $orgState   = $books->orgStateCode() ?: $this->homeStateCode($dn->branch_id);
-            $interState = $stateCode && (string) $stateCode !== (string) $orgState;
+            // Normalise both sides ("7" vs "07", or a legacy "27 – Maharashtra"
+            // label) before comparing — a raw compare mis-classifies the supply and
+            // Zoho rejects the wrong tax type.
+            $partyState = \App\Services\ZohoBooksService::normStateCode($stateCode);
+            $interState = $partyState !== null && $partyState !== \App\Services\ZohoBooksService::normStateCode($orgState);
 
             $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
 
@@ -252,7 +261,7 @@ class DebitNoteController extends Controller
             // Cache Zoho's own rendered vendor-credit PDF — best-effort.
             $pdfPath = null;
             try {
-                $rel = 'zoho/vendorcredit/' . $dn->client_id . '/VC-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($dn->code ?: $dn->id)) . '.pdf';
+                $rel = 'zoho/vendorcredit/' . $dn->client_id . '/' . ($dn->branch_id ?: 0) . '/VC-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($dn->code ?: $dn->id)) . '.pdf';
                 Storage::disk('public')->put($rel, $books->getVendorCreditPdf($vcId));
                 $pdfPath = '/storage/' . $rel;
             } catch (\Throwable $e) {
@@ -361,7 +370,13 @@ class DebitNoteController extends Controller
         // bill, or the payable would be cut twice across the two systems. That
         // recovered slice stays as an open vendor credit (refund it in Zoho).
         $unrecovered = round((float) $dn->grand_total - (float) $dn->total_paid, 2);
-        $apply = round(min($creditBalance, $billBalance, max(0, $unrecovered)), 2);
+        // Subtract what THIS debit note already applied on an earlier sync. The
+        // live credit/bill balances alone don't bound the re-apply when cash was
+        // recovered before the first apply (the first apply was capped by
+        // $unrecovered, leaving credit/bill balance above it) — without this the
+        // un-recovered slice would be applied to the bill a second time.
+        $remainingToApply = round($unrecovered - (float) $dn->zoho_applied_amount, 2);
+        $apply = round(min($creditBalance, $billBalance, max(0, $remainingToApply)), 2);
         if ($apply <= 0.005) return 0.0;
 
         $books->applyVendorCreditToBills($vendorCreditId, [[
