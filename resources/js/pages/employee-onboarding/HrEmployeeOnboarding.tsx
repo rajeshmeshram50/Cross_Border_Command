@@ -4533,7 +4533,16 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
         {/* Header */}
         <div className="onb-init-header">
-          <button type="button" className="close-btn" onClick={onClose} aria-label="Close">
+          {/* Close is disabled while an explicit save is in flight so the user
+              can't dismiss the modal mid-save (CBC #34). */}
+          <button
+            type="button"
+            className="close-btn"
+            onClick={onClose}
+            aria-label="Close"
+            disabled={formLocked}
+            style={formLocked ? { cursor: 'wait', opacity: 0.5, pointerEvents: 'none' } : undefined}
+          >
             <i className="ri-close-line" style={{ fontSize: 14 }} />
           </button>
 
