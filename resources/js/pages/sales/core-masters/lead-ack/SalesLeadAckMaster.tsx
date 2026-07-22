@@ -90,10 +90,32 @@ export default function SalesLeadAckMaster() {
   const [rpp, setRpp]   = useState(10);
   const [page, setPage] = useState(1);
 
-  // Rows-per-page is a plain fixed value (default 10), changed only via the
-  // footer dropdown — exactly like the Customers module. (An earlier auto-fit
-  // derived it from the container height, which produced an unpredictable
-  // "random" page size like 13 or 17; that machinery is gone.)
+  // Dynamic rows-per-page — auto-fit the number of rows to the space between the
+  // table's top and the viewport bottom, so the page fills the screen (same as
+  // CLM Segment Master / the QPI list). Stops overriding once the user manually
+  // picks a value in the footer dropdown.
+  const scrollRef  = useRef<HTMLDivElement>(null);
+  const autoFitRef = useRef(true);
+  useEffect(() => {
+    const recompute = () => {
+      if (!autoFitRef.current) return;
+      const el = scrollRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      const THEAD = 46, ROW = 46, FOOTER = 60;   // header + row + pager (px)
+      const avail = window.innerHeight - top - THEAD - FOOTER;
+      if (avail <= 0) return;
+      const fit = Math.max(4, Math.floor(avail / ROW));
+      setRpp(prev => (prev === fit ? prev : fit));
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    let t: ReturnType<typeof setTimeout>;
+    const onResize = () => { clearTimeout(t); t = setTimeout(recompute, 140); };
+    window.addEventListener('resize', onResize);
+    return () => { cancelAnimationFrame(raf); clearTimeout(t); window.removeEventListener('resize', onResize); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, loading, q]);
 
   // Transient shimmer flags. All three tabs are fetched once on mount, so a
   // tab switch is instant — we flash the table skeleton briefly on switch so
@@ -400,7 +422,7 @@ export default function SalesLeadAckMaster() {
 
       {/* ── Table card ── */}
       <div className="lam-table-card">
-        <div className="lam-table-wrap">
+        <div className="lam-table-wrap" ref={scrollRef}>
           <table className="lam-table" style={{ tableLayout: 'fixed', minWidth: 560 }}>
             <thead>
               <tr>
@@ -501,7 +523,7 @@ export default function SalesLeadAckMaster() {
               Rows per page:
               <select
                 value={rpp}
-                onChange={e => { setRpp(parseInt(e.target.value, 10)); setPage(1); }}
+                onChange={e => { autoFitRef.current = false; setRpp(parseInt(e.target.value, 10)); setPage(1); }}
                 aria-label="Rows per page"
               >
                 {[...new Set([rpp, 5, 10, 15, 25, 50])].sort((a, b) => a - b).map(n => (

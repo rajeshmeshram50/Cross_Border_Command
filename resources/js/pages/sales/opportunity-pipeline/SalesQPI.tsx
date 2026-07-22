@@ -1848,6 +1848,9 @@ export default function SalesQPI() {
               dropdown (as the default "Doc Type: All Types" option), matching
               the app's other filter dropdowns. Uses the styled MasterSelect. */}
           <div className={`qpi-doctype-filter ${docTypeFilter !== 'all' ? 'active' : ''}`}>
+            {/* Funnel icon so it reads as a filter (like the app's other filter
+                dropdowns). */}
+            <svg className="qpi-doctype-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
             <MasterSelect
               value={docTypeFilter}
               options={[
@@ -5430,6 +5433,7 @@ const SCOPED_CSS = `
    with the "Doc Type" label baked into its default option. */
 .qpi-doctype-filter {
   display: flex; align-items: center;
+  position: relative;
   height: 42px;
   /* Locked flex-basis (grow 0, shrink 0, basis 200px) so the box is EXACTLY
      200px no matter which label is selected — the toolbar never reflows. */
@@ -5439,7 +5443,10 @@ const SCOPED_CSS = `
 /* Force the MasterSelect wrap + toggle to the container's fixed width/height so
    they never resize to their text content. */
 .qpi-doctype-filter .master-select-wrap { width: 100% !important; }
-.qpi-doctype-filter .master-select-toggle { height: 42px; width: 100% !important; }
+.qpi-doctype-filter .master-select-toggle { height: 42px; width: 100% !important; padding-left: 34px !important; }
+/* Funnel icon pinned to the left of the Doc Type dropdown. */
+.qpi-doctype-ico { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: #7c3aed; pointer-events: none; z-index: 2; }
+[data-bs-theme="dark"] .qpi-doctype-ico { color: #c4b5fd; }
 /* Truncate an over-long selected label instead of stretching the box. */
 .qpi-doctype-filter .master-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qpi-doctype-filter.active .master-select-toggle { border-color: #7c3aed; background: rgba(124,58,237,.06); }
