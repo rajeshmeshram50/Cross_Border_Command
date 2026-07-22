@@ -3811,6 +3811,8 @@ const validateStage1 = (): boolean => {
   if (!s1.department_id?.toString().trim())   errors.department_id   = 'Department is required';
   if (!s1.designation_id?.toString().trim())  errors.designation_id  = 'Designation is required';
   if (!s1.primary_role_id?.toString().trim()) errors.primary_role_id = 'Primary role is required';
+  // A role can't be both Primary and Ancillary for the same employee.
+  else if (s1.ancillary_role_id && String(s1.ancillary_role_id) === String(s1.primary_role_id)) errors.primary_role_id = 'The Primary role cannot also be the Ancillary role.';
 
   // Organisational Details — Legal Entity + Reporting Manager are required.
   if (!s1.legal_entity_id?.toString().trim()) errors.legal_entity_id = 'Legal entity is required';
@@ -4879,8 +4881,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   </Col>
                   <Col md={4} data-field="department_id"><label className="onb-init-label">Department<span className="req">*</span></label><MasterSelect options={departmentOpts} loading={mastersLoading} placeholder="Select department" value={s1.department_id} invalid={!!s1Errors.department_id} onChange={(v) => { setS1(p => { const mgr = managerOpts.find(m => m.value === p.reporting_manager); const keepMgr = !mgr || mgr.value.startsWith('branch_user:') || (mgr.deptId && mgr.deptId === String(v)); return { ...p, department_id: v, reporting_manager: keepMgr ? p.reporting_manager : '' }; }); setS1Errors(p => ({ ...p, department_id: '', reporting_manager: '' })); }} />{s1Errors.department_id && <div className="onb-error-msg">{s1Errors.department_id}</div>}</Col>
                   <Col md={4} data-field="designation_id"><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} loading={mastersLoading} placeholder="Select designation" value={s1.designation_id} invalid={!!s1Errors.designation_id} onChange={(v) => { const nowHod = !!hodDesignationId && String(v) === hodDesignationId; setS1(p => { const rmIsBranchUser = String(p.reporting_manager || '').startsWith('branch_user:'); const clearMgr = nowHod && !!p.reporting_manager && !rmIsBranchUser; return { ...p, designation_id: v, reporting_manager: clearMgr ? '' : p.reporting_manager }; }); setS1Errors(p => ({ ...p, designation_id: '', reporting_manager: '' })); }} />{s1Errors.designation_id && <div className="onb-error-msg">{s1Errors.designation_id}</div>}</Col>
-                  <Col md={4} data-field="primary_role_id"><label className="onb-init-label">Primary Role<span className="req">*</span></label><MasterSelect options={roleOpts} loading={mastersLoading} placeholder="Select role" value={s1.primary_role_id} invalid={!!s1Errors.primary_role_id} onChange={(v) => { setS1(p => ({ ...p, primary_role_id: v })); setS1Errors(p => ({ ...p, primary_role_id: '' })); }} />{s1Errors.primary_role_id && <div className="onb-error-msg">{s1Errors.primary_role_id}</div>}</Col>
-                  <Col md={4}><label className="onb-init-label">Ancillary Role</label><MasterSelect options={roleOpts} loading={mastersLoading} placeholder="Select role" value={s1.ancillary_role_id} onChange={(v) => setS1(p => ({ ...p, ancillary_role_id: v }))} /></Col>
+                  {/* Primary & Ancillary share the same list, but a role can't be
+                      both — exclude the other side's pick from each dropdown. */}
+                  <Col md={4} data-field="primary_role_id"><label className="onb-init-label">Primary Role<span className="req">*</span></label><MasterSelect options={roleOpts.filter(o => o.value !== String(s1.ancillary_role_id ?? ''))} loading={mastersLoading} placeholder="Select role" value={s1.primary_role_id} invalid={!!s1Errors.primary_role_id} onChange={(v) => { setS1(p => ({ ...p, primary_role_id: v, ancillary_role_id: String(p.ancillary_role_id ?? '') === v ? '' : p.ancillary_role_id })); setS1Errors(p => ({ ...p, primary_role_id: '' })); }} />{s1Errors.primary_role_id && <div className="onb-error-msg">{s1Errors.primary_role_id}</div>}</Col>
+                  <Col md={4}><label className="onb-init-label">Ancillary Role</label><MasterSelect options={roleOpts.filter(o => o.value !== String(s1.primary_role_id ?? ''))} loading={mastersLoading} placeholder="Select role" value={s1.ancillary_role_id} onChange={(v) => setS1(p => ({ ...p, ancillary_role_id: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Work Type <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="Full Time" /></Col>
                 </Row>
 
@@ -6130,8 +6134,9 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
       }
 
       // Yes path: at least one company, each fully filled, HR Email 1 set, and
-      // the two mandatory docs (Previous Offer Letter + Last 3 Months Salary
-      // Slips) uploaded. Freshers ('no') skip all of this.
+      // the mandatory doc (Last 3 Months Salary Slips) uploaded. The Previous
+      // Offer Letter is OPTIONAL (Bug #39) — it must not block saving. Freshers
+      // ('no') skip all of this.
       if (hasExperience === 'yes') {
         const companies = prevCompaniesRef.current;
         if (companies.length === 0) {
@@ -6158,8 +6163,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           if (!c.end_date)            errs[`${k}:end_date`]     = 'End date is required';
           if (!c.hr_email_1.trim())   errs[`${k}:hr_email_1`]   = 'HR Email ID 1 is required';
           else if (EMAIL_INVALID(c.hr_email_1)) errs[`${k}:hr_email_1`] = 'Enter a valid email address';
-          if (!docUploaded(c, 'offer_letter')) errs[`${k}:doc`] = 'Upload the Previous Offer Letter and the Last 3 Months Salary Slips';
-          else if (!docUploaded(c, 'salary_slips')) errs[`${k}:doc`] = 'Upload the Last 3 Months Salary Slips';
+          // Previous Offer Letter is optional — only the salary slips are required.
+          if (!docUploaded(c, 'salary_slips')) errs[`${k}:doc`] = 'Upload the Last 3 Months Salary Slips';
         });
         if (Object.keys(errs).length) {
           setCompErrors(errs);
@@ -7845,10 +7850,15 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                 </span>
                 {/* ONE action: Send for Signature. If the template has custom
                     fields we open the fill form first (it sends from there);
-                    otherwise we send directly via the confirm modal. After a run
-                    exists (signed / rejected / cancelled) it becomes "Resend"
-                    and each resend creates a new signed version. */}
+                    otherwise we send directly via the confirm modal. A rejected /
+                    cancelled run becomes "Resend"; a fully-signed (Completed) run
+                    is final and shows no action at all (Bug #40). */}
                 {(() => {
+                  // Once every signer has signed (run Completed) the document is
+                  // final — no Resend action at all (Bug #40). The "Signed" status
+                  // pill + the ⋮ download menu remain. Rejected / cancelled runs
+                  // are NOT signed, so those still stay re-sendable below.
+                  if (run?.status === 'Completed') return null;
                   const fieldsReady = readyTpls.has(tpl.id);
                   const hasFields = !!tplHasFields[tpl.id];
                   const sendBlocked = tpl.status !== 'Active' || !emp.dbId || isSending || runActive || !fieldsReady;

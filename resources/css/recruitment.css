@@ -5185,6 +5185,9 @@
   border: 1px solid #ececf2;
   background: #ffffff;
 }
+/* Exit Details fields sit in a white card so they read like the Impact
+ * Assessment cards below instead of floating on the grey modal body. */
+.ep-details-card { padding: 14px 16px; }
 [data-bs-theme="dark"] .ep-approval-card { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
 .ep-approval-head {
   display: inline-flex; align-items: center; gap: 6px;
@@ -7117,10 +7120,32 @@
        shadow of its own (the parent surface provides those); just the
        Bootstrap card structure. ── */
 .att-logs-card {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
+  /* Enclose the whole Logs & Requests section (header + tabs + table) in a
+     visible card so it doesn't float container-less (CBC #33). Theme vars keep
+     it correct in dark mode. */
+  background: var(--vz-card-bg);
+  border: 1px solid var(--vz-border-color);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+/* Regularization Requests header — match the Logs & Requests table header
+   (CBC #37): a subtle light band + uppercase muted labels in light mode, and a
+   subtle dark band in dark mode. */
+.reg-req-table thead th {
+  background: #f9fafb;
+  color: var(--vz-secondary-color);
+  text-transform: uppercase;
+  font-weight: 800;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #f1f2f4;
+}
+[data-bs-theme="dark"] .reg-req-table thead th,
+[data-layout-mode="dark"] .reg-req-table thead th {
+  background: rgba(255,255,255,0.02);
+  border-bottom-color: var(--vz-border-color);
+  color: rgba(255,255,255,0.60);
 }
 
 /* WorklistPager footer — retheme from the shared violet to this page's teal
@@ -7298,14 +7323,16 @@
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 14px 18px;
   margin-bottom: 12px;
-  background: linear-gradient(135deg, rgba(204,251,241,0.40) 0%, var(--vz-card-bg) 60%);
-  border: 1px solid #99f6e4;
+  /* Plain white card (no teal tint) so the employee-info bar reads white like
+     the rest of the cards. */
+  background: var(--vz-card-bg);
+  border: 1px solid var(--vz-border-color);
   border-radius: 14px;
   box-shadow: 0 2px 8px rgba(13,148,136,0.06);
 }
 [data-bs-theme="dark"] .att-emp-bar {
-  background: linear-gradient(135deg, rgba(20,184,166,0.12) 0%, rgba(255,255,255,0.04) 100%);
-  border-color: rgba(20,184,166,0.30);
+  background: var(--vz-card-bg);
+  border-color: var(--vz-border-color);
 }
 .att-emp-bar-avatar {
   display: inline-flex; align-items: center; justify-content: center;

@@ -110,6 +110,17 @@ class AdvanceRequestController extends Controller
             abort(403, 'You can only file advance requests for your own employee record.');
         }
 
+        // A future-joining employee is not yet on the roster — they cannot raise
+        // an advance request before their joining date (CBC #32).
+        if ($employee->date_of_joining
+            && $employee->date_of_joining->toDateString() > now()->toDateString()) {
+            return response()->json([
+                'message' => 'You cannot raise an advance request before your joining date ('
+                    . $employee->date_of_joining->format('d M Y') . ').',
+                'errors'  => ['employee_id' => ['Joining date is in the future.']],
+            ], 422);
+        }
+
         $data = $request->validate([
             'advance_type'        => ['required', 'string', 'in:' . implode(',', self::ADVANCE_TYPES)],
             // Only meaningful when advance_type='Other'. The frontend already

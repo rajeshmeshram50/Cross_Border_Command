@@ -333,7 +333,7 @@ export default function PayslipViewerModal({
                   <div className="text-end">
                     <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>PAYSLIP</div>
                     <h4 className="text-white mb-0 fw-bold" style={{ fontSize: 17 }}>{month} {year}</h4>
-                    <small style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10 }}>Pay Period: 01–31 {month.slice(0,3)} {year}</small>
+                    <small style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>Pay Period: 01–31 {month.slice(0,3)} {year}</small>
                   </div>
                 </div>
 
