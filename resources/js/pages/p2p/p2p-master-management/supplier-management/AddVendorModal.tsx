@@ -1109,14 +1109,11 @@ export default function AddVendorModal(props: {
     .filter(s => Number.isFinite(Number(s)) && Number(s) > 0)
     .every(s => segmentDocKeys[String(s)] !== undefined);
 
-  /* Of the segments being removed, those that can't go because one of their
-   * documents already has an upload. Adding segments stays free.
-   *
-   * A document shared with a segment being KEPT still blocks: uploads are
-   * stored per doc code, so one file belongs to every segment requiring it and
-   * has to be deleted before any of them can be dropped. Mirrors SegmentGuard
-   * on the server, so the field never allows what the save would reject. */
-  const blockedSegmentRemovals = (next: string[]): string[] => {
+  /* Of the segments being removed, those that actually have an uploaded
+   * document — used only to WARN the user that removing them will clean up
+   * those documents on save (removal itself is allowed; the backend deletes the
+   * docs required only by a removed segment and keeps the shared ones). */
+  const removedSegmentsWithDocs = (next: string[]): string[] => {
     const removed = (segment ?? []).filter(s => !next.includes(s));
     if (!removed.length) return [];
     // Require an ACTUAL file/URL, not just a map entry — the ref tables can
@@ -3186,19 +3183,17 @@ export default function AddVendorModal(props: {
                             return dom();
                           }}
                           onChange={vs => {
-                            // Guard removal of a locked segment (one with uploaded docs) —
-                            // block it, restore the segment, and explain why (mirrors the
-                            // Customer master's guardSegmentRemove).
-                            if (segment.some(s => !vs.includes(s)) && !segGuardReady) {
-                              toast.info('Checking documents', 'Still loading this supplier’s uploaded documents — try removing the segment again in a moment.');
-                              return;
-                            }
-                            const blocked = blockedSegmentRemovals(vs);
-                            if (blocked.length) {
-                              const names = blocked.map(s => segmentOpts.find(o => o.value === s)?.label ?? s);
-                              toast.error('Cannot remove segment', `You can't remove ${names.join(', ')} — ${blocked.length > 1 ? 'they have' : 'it has'} uploaded documents. Delete those documents first to drop the segment.`);
-                              setSegment([...vs, ...blocked.filter(s => !vs.includes(s))]);
-                              return;
+                            // Removal is ALLOWED: on save the backend deletes documents
+                            // required only by the removed segment(s) and keeps those shared
+                            // with a segment that stays. A segment used by a Purchase Order is
+                            // rejected at save (422 → toast). Warn up-front when the removed
+                            // segment actually has uploads so the cleanup isn't silent.
+                            if (segment.some(s => !vs.includes(s)) && segGuardReady) {
+                              const withDocs = removedSegmentsWithDocs(vs);
+                              if (withDocs.length) {
+                                const names = withDocs.map(s => segmentOpts.find(o => o.value === s)?.label ?? s);
+                                toast.info('Documents will be updated', `Removing ${names.join(', ')} will delete the documents that aren’t shared with the remaining segment(s) when you save.`);
+                              }
                             }
                             setSegment(vs);
                             clearFieldError('segment');

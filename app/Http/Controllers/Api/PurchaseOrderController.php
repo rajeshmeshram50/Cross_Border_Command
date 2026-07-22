@@ -551,6 +551,44 @@ class PurchaseOrderController extends Controller
     }
 
     /**
+     * Resolve per-line Zoho metadata (real description, unit, HSN) for the given
+     * items' products in ONE query — products.description + master_uom.short_code
+     * + master_hsn_codes.hsn_code, keyed by product_id. Ad-hoc lines with no
+     * product_id simply get no meta and fall back to the product code.
+     */
+    private function zohoLineMeta($items): array
+    {
+        $ids = collect($items)->pluck('product_id')->filter()->unique()->values()->all();
+        if (empty($ids)) return [];
+        $rows = DB::table('products as p')
+            ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
+            ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
+            ->whereIn('p.id', $ids)
+            ->get(['p.id', 'p.description', 'u.short_code', 'u.title', 'h.hsn_code']);
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int) $r->id] = [
+                'description' => trim((string) ($r->description ?? '')) ?: null,
+                'unit'        => $r->short_code ?: ($r->title ?: null),
+                'hsn'         => $r->hsn_code ?: null,
+            ];
+        }
+        return $map;
+    }
+
+    /**
+     * Compose a Zoho line description: the product code stays for traceability,
+     * the real product description is appended when present ("P-81 · Honey…").
+     */
+    private function lineDescription($code, ?string $description): string
+    {
+        $code = trim((string) $code);
+        $desc = trim((string) $description);
+        if ($code !== '' && $desc !== '') return $code . ' · ' . $desc;
+        return $desc !== '' ? $desc : $code;
+    }
+
+    /**
      * Build the Zoho Books purchase-order payload from a local PO + its items.
      * Forward GST is only attached when the supplier is GST-registered; for an
      * unregistered supplier Zoho rejects forward tax (reverse-charge rule), so
@@ -558,20 +596,24 @@ class PurchaseOrderController extends Controller
      */
     private function buildZohoPayload(PurchaseOrder $po, ZohoBooksService $books, string $zohoVendorId, bool $registered, bool $interState = false): array
     {
-        $lineItems = $po->items->map(function ($it) use ($books, $registered, $interState) {
+        $meta = $this->zohoLineMeta($po->items);
+        $lineItems = $po->items->map(function ($it) use ($books, $registered, $interState, $meta) {
             $name = (string) ($it->product_name ?: $it->product_code ?: 'Item');
             // Effective tax the app ACTUALLY applied (covers the Maharashtra
             // intra-state 9+9 override, not just the nominal gst_pct) so Zoho's
             // recomputed total reconciles with ours — registered vendors only.
             $taxId = $registered ? $books->resolveTaxId((float) $it->cgst_pct + (float) $it->sgst_pct, $interState) : null;
+            $m = $meta[(int) $it->product_id] ?? [];
             $line = [
                 // Zoho POs need a purchasable item id, not a free-text line.
                 'item_id' => $books->findOrCreateItemId($name, (float) $it->rate, $taxId, $it->product_id),
                 'name' => $name,
-                'description' => (string) $it->product_code,
+                'description' => $this->lineDescription($it->product_code, $m['description'] ?? null),
                 'rate' => (float) $it->rate,
                 'quantity' => (float) $it->quantity,
             ];
+            if (!empty($m['hsn']))  $line['hsn_or_sac'] = (string) $m['hsn'];
+            if (!empty($m['unit'])) $line['unit'] = (string) $m['unit'];
             if ($taxId) $line['tax_id'] = $taxId;
             return $line;
         })->values()->all();
@@ -613,16 +655,20 @@ class PurchaseOrderController extends Controller
      */
     private function buildBillPayloadFromPo(PurchaseOrder $po, ZohoBooksService $books, string $zohoVendorId, bool $registered, bool $interState): array
     {
-        $lineItems = $po->items->map(function ($it) use ($books, $registered, $interState) {
+        $meta = $this->zohoLineMeta($po->items);
+        $lineItems = $po->items->map(function ($it) use ($books, $registered, $interState, $meta) {
             $name  = (string) ($it->product_name ?: $it->product_code ?: 'Item');
             $taxId = $registered ? $books->resolveTaxId((float) $it->cgst_pct + (float) $it->sgst_pct, $interState) : null;
+            $m = $meta[(int) $it->product_id] ?? [];
             $line  = [
                 'item_id'     => $books->findOrCreateItemId($name, (float) $it->rate, $taxId, $it->product_id),
                 'name'        => $name,
-                'description' => (string) $it->product_code,
+                'description' => $this->lineDescription($it->product_code, $m['description'] ?? null),
                 'rate'        => (float) $it->rate,
                 'quantity'    => (float) $it->quantity,
             ];
+            if (!empty($m['hsn']))  $line['hsn_or_sac'] = (string) $m['hsn'];
+            if (!empty($m['unit'])) $line['unit'] = (string) $m['unit'];
             if ($taxId) $line['tax_id'] = $taxId;
             return $line;
         })->values()->all();
