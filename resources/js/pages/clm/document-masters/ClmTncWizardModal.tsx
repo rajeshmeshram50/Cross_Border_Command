@@ -335,6 +335,10 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       }
       onSaved();
     } catch (e: any) {
+      // Surface field-level validation (e.g. the duplicate segment+category
+      // guard, CBC #18) inline as well as in the toast.
+      const fieldErrs = e?.response?.data?.errors as Record<string, string[]> | undefined;
+      if (fieldErrs) setErrors(Object.fromEntries(Object.entries(fieldErrs).map(([k, v]) => [k, v[0]])));
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
     } finally {
       setSaving(false);
