@@ -286,9 +286,11 @@ export default function HrDocumentTemplates() {
             })}
           </div>
 
-          {/* Filters + count badge */}
-          <Card className="mb-3" style={{ borderRadius: 12 }}>
-            <CardBody className="d-flex flex-wrap gap-3 align-items-center" style={{ padding: 12 }}>
+          {/* Filters + table share ONE card (Bug #15) so the search/filters
+              read as controls for the table below, not a detached strip. */}
+          <Card style={{ borderRadius: 12 }}>
+            <CardBody style={{ padding: 0 }}>
+              <div className="d-flex flex-wrap gap-3 align-items-center dtm-filter-bar" style={{ padding: 12, borderBottom: '1px solid var(--vz-border-color)' }}>
               <div className="rec-req-search search-box" style={{ flex: '1 1 260px', minWidth: 260 }}>
                 <Input type="text" className="form-control" placeholder="Search templates…" value={search} onChange={e => setSearch(e.target.value)} />
                 <i className="ri-search-line search-icon" />
@@ -325,15 +327,12 @@ export default function HrDocumentTemplates() {
                   {filtered.length} {filtered.length === 1 ? 'template' : 'templates'}
                 </span>
               </div>
-            </CardBody>
-          </Card>
+              </div>
 
-          {/* Table */}
-          <Card style={{ borderRadius: 12 }}>
-            <CardBody style={{ padding: 0 }}>
+              {/* Table */}
               <div className="table-responsive">
                 <table className="table align-middle mb-0 dtm-table" style={{ fontSize: 13 }}>
-                  <thead className="dtm-thead" style={{ background: '#f5f3ff' }}>
+                  <thead className="table-light dtm-thead">
                     <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
                       <th style={{ padding: '10px 12px', width: 44 }}>Sr No</th>
                       <th>Code</th>
@@ -494,12 +493,21 @@ function DtmDarkStyles() {
       [data-bs-theme="dark"] .dtm-page .dtm-kpi-num { color: rgba(255,255,255,0.95) !important; }
       [data-bs-theme="dark"] .dtm-page .dtm-kpi-label { color: rgba(255,255,255,0.55) !important; }
       [data-bs-theme="dark"] .dtm-page .dtm-filter-label { color: rgba(255,255,255,0.5) !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-thead {
-        background: rgba(124,92,252,0.14) !important;
+
+      /* Header separation (Bug #14 / #15) — match the Employee & Employee
+         Onboarding tables: light 'table-light' band in light mode with a firm
+         bottom border, and the shared blurple gradient header in dark mode. */
+      .dtm-page .dtm-thead th {
+        border-bottom: 2px solid #c4b5fd;
+        color: #4b5563;
+        box-shadow: inset 0 -1px 0 rgba(124,92,252,0.10);
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-thead tr,
       [data-bs-theme="dark"] .dtm-page .dtm-thead th {
-        color: rgba(255,255,255,0.65) !important;
+        background-color: #6355e0 !important;
+        background-image: linear-gradient(180deg, #7a6ef0 0%, #5a4ce2 100%) !important;
+        color: #ffffff !important;
+        border-bottom-color: rgba(255,255,255,0.12) !important;
+        box-shadow: none;
       }
       [data-bs-theme="dark"] .dtm-page .dtm-table tbody td {
         border-bottom-color: var(--vz-border-color) !important;

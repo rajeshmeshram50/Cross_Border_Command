@@ -1416,7 +1416,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
             {stage === 1 && (
               <>
                 <div className="ep-section-label">Exit Details</div>
-                <Row className="g-2 mb-2">
+                <div className="ep-approval-card ep-details-card mb-2">
+                <Row className="g-2">
                   <Col md={6}>
                     <EpField label="Exit Type" required invalid={s1Errors.has('exitType')}>
                       <EpSelect
@@ -1551,6 +1552,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     </EpField>
                   </Col>
                 </Row>
+                </div>
 
                 <div className="ep-section-label">Impact Assessment</div>
                 <Row className="g-2">

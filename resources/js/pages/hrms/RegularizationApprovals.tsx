@@ -3,6 +3,7 @@ import { Card, CardBody } from 'reactstrap';
 import Swal from 'sweetalert2';
 import { useToast } from '../../contexts/ToastContext';
 import { Shimmer } from '../../components/ui/Shimmer';
+import WorklistPager from '../../components/ui/WorklistPager';
 import { regularizationApi, type ApiRegularization, type RegularizationStatus } from './regularizationApi';
 
 const STATUS_FILTERS: { key: RegularizationStatus | 'All'; label: string }[] = [
@@ -49,6 +50,8 @@ export default function RegularizationApprovals() {
   const [status, setStatus]   = useState<RegularizationStatus | 'All'>('Pending');
   const [busyId, setBusyId]   = useState<number | null>(null);
   const [open, setOpen]       = useState(true);
+  const [page, setPage]       = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -60,6 +63,14 @@ export default function RegularizationApprovals() {
   }, [status]);
 
   useEffect(() => { load(); }, [load]);
+  // Reset to the first page whenever the status filter changes.
+  useEffect(() => { setPage(1); }, [status]);
+
+  // Client-side pagination so the table gets the standard footer (record count
+  // + pager) like the rest of the app (CBC #37).
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage  = Math.min(page, pageCount);
+  const paged     = rows.slice((safePage - 1) * pageSize, (safePage - 1) * pageSize + pageSize);
 
   const act = async (row: ApiRegularization, decision: 'approve' | 'reject') => {
     let comment: string | undefined;
@@ -129,10 +140,11 @@ export default function RegularizationApprovals() {
           ) : rows.length === 0 ? (
             <div className="text-center text-muted ep-fs-13 py-3">No {status === 'All' ? '' : status.toLowerCase()} regularization requests.</div>
           ) : (
+            <>
             <div className="table-responsive">
-              <table className="table table-sm align-middle mb-0">
-                <thead>
-                  <tr className="att-thead-row">
+              <table className="table table-sm align-middle mb-0 reg-req-table">
+                <thead className="table-light">
+                  <tr>
                     <th>Employee</th>
                     <th>Date</th>
                     <th>Type</th>
@@ -143,7 +155,7 @@ export default function RegularizationApprovals() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(r => {
+                  {paged.map(r => {
                     const tone = STATUS_TONE[r.status] || STATUS_TONE.Cancelled;
                     const punches = (r.punches ?? []).map(p => `${p.in ?? '—'}–${p.out ?? '—'}`).join(', ');
                     return (
@@ -166,22 +178,41 @@ export default function RegularizationApprovals() {
                         </td>
                         <td className="text-end">
                           {r.can_act_now ? (
-                            <div className="d-inline-flex gap-1">
+                            /* Round gradient icon-pills — same standard Approve /
+                               Reject action buttons the Expense Claims table uses
+                               (CBC #41). */
+                            <div className="d-inline-flex align-items-center gap-1">
                               <button
                                 type="button"
-                                className="btn btn-sm btn-success"
+                                data-tooltip="Approve"
+                                data-tooltip-pos="left"
+                                aria-label="Approve"
                                 disabled={busyId === r.id}
                                 onClick={() => act(r, 'approve')}
+                                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                                style={{
+                                  width: 28, height: 28, padding: 0,
+                                  background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+                                  color: '#fff', border: 'none',
+                                }}
                               >
-                                <i className="ri-check-line" /> Approve
+                                <i className="ri-check-line" />
                               </button>
                               <button
                                 type="button"
-                                className="btn btn-sm btn-outline-danger"
+                                data-tooltip="Reject"
+                                data-tooltip-pos="left"
+                                aria-label="Reject"
                                 disabled={busyId === r.id}
                                 onClick={() => act(r, 'reject')}
+                                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                                style={{
+                                  width: 28, height: 28, padding: 0,
+                                  background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
+                                  color: '#fff', border: 'none',
+                                }}
                               >
-                                <i className="ri-close-line" /> Reject
+                                <i className="ri-close-line" />
                               </button>
                             </div>
                           ) : (
@@ -194,6 +225,14 @@ export default function RegularizationApprovals() {
                 </tbody>
               </table>
             </div>
+            <WorklistPager
+              total={rows.length}
+              page={page}
+              pageSize={pageSize}
+              onPage={setPage}
+              onPageSize={(n) => { setPageSize(n); setPage(1); }}
+            />
+            </>
           )}
         </div>
       )}

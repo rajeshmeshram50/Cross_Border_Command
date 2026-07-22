@@ -762,8 +762,11 @@ export default function HrExpenseManagement() {
           )}
         </div>
 
-        <Card className="border-0 mb-3" style={{ borderRadius: 14 }}>
-          <CardBody className="py-3">
+        {/* Tabs, search and the claims table share ONE card (Bug #30) so the
+            filters read as controls for the table below — matching the Employee
+            Onboarding layout instead of a detached toolbar card. */}
+        <Card className="border-0" style={{ borderRadius: 14 }}>
+          <CardBody>
             <Row className="g-2 align-items-center">
               <Col xs={12}>
                 <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
@@ -817,7 +820,7 @@ export default function HrExpenseManagement() {
                     );
                   })}
                 </div>
-                <div className="rec-req-search search-box" style={{ flex: '1 1 280px', maxWidth: 440, minWidth: 220 }}>
+                <div className="rec-req-search search-box" style={{ flex: '1 1 0', minWidth: 240 }}>
                   <input
                     type="text"
                     className="form-control"
@@ -830,12 +833,7 @@ export default function HrExpenseManagement() {
                 </div>
               </Col>
             </Row>
-          </CardBody>
-        </Card>
-
-        <Card className="border-0" style={{ borderRadius: 14 }}>
-          <CardBody>
-            <Row className="g-2 align-items-center mb-3">
+            <Row className="g-2 align-items-center mb-3 mt-2">
               <Col xs={12}>
                 <div className="rec-tab-track">
                   {(() => {

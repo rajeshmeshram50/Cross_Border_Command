@@ -60,10 +60,15 @@
 [data-layout-mode="dark"] .onb-list-table tbody td .text-muted {
   color: rgba(241,245,249,0.62) !important;
 }
+/* Dark-mode header — match the Employee / Exit Management tables' blurple
+   gradient header instead of the near-invisible faint tint (Bug #38). The
+   !important beats Bootstrap's .table-light --bs-table-bg variable. */
 [data-bs-theme="dark"] .onb-list-table thead th,
 [data-layout-mode="dark"] .onb-list-table thead th {
-  color: rgba(241,245,249,0.72) !important;
-  background: rgba(99,102,241,0.10);
+  background-color: #6355e0 !important;
+  background-image: linear-gradient(180deg, #7a6ef0 0%, #5a4ce2 100%) !important;
+  color: #ffffff !important;
+  border-bottom-color: rgba(255,255,255,0.12) !important;
 }
 [data-bs-theme="dark"] .onb-list-table tbody tr:hover,
 [data-layout-mode="dark"] .onb-list-table tbody tr:hover {

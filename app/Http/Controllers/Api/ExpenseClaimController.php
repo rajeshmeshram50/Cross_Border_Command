@@ -173,6 +173,17 @@ class ExpenseClaimController extends Controller
             abort(403, 'You can only file claims for your own employee record.');
         }
 
+        // A future-joining employee is not yet on the roster — they cannot raise
+        // an expense claim before their joining date (CBC #32).
+        if ($employee->date_of_joining
+            && $employee->date_of_joining->toDateString() > now()->toDateString()) {
+            return response()->json([
+                'message' => 'You cannot raise an expense claim before your joining date ('
+                    . $employee->date_of_joining->format('d M Y') . ').',
+                'errors'  => ['employee_id' => ['Joining date is in the future.']],
+            ], 422);
+        }
+
         // Expense date window — today back to 30 days ago. Mirrors the
         // client-side bound so a direct API call can't backdate a claim
         // beyond policy or file a future-dated expense.
