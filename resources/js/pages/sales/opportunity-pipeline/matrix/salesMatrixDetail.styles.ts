@@ -28,6 +28,12 @@ export const SALES_MATRIX_DETAIL_CSS = `
   /* clip (not hidden) kills the page-wide horizontal bar WITHOUT turning
      overflow-y into auto — hidden would create a second vertical scrollbar. */
   overflow-x: clip;
+  /* Promote the page to its own GPU layer so scrolling COMPOSITES the layer
+     instead of repainting every card shadow + the gradient each frame — that
+     per-frame repaint made the scroll wavy/laggy. (Safe: no position:fixed
+     descendants live inside .smd-root.) */
+  transform: translateZ(0);
+  backface-visibility: hidden;
   color: #1e293b;
   font-size: 12px;
 }
@@ -95,10 +101,11 @@ export const SALES_MATRIX_DETAIL_CSS = `
   display: inline-flex; align-items: center; gap: 4px;
   margin-top: 3px;
   padding: 1px 9px; border-radius: 20px;
-  background: rgba(255,255,255,.60);
+  /* Solid-ish fill instead of a translucent + backdrop-blur pill: backdrop-filter
+     re-composites the blurred backdrop on every scroll frame, which made the
+     whole stage page scroll shaky/laggy. A near-opaque white reads the same. */
+  background: rgba(255,255,255,.88);
   border: 1px solid rgba(139,92,246,.35);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 .smd-cust-tag-dot {
   width: 4px; height: 4px; border-radius: 50%;
@@ -177,14 +184,14 @@ export const SALES_MATRIX_DETAIL_CSS = `
 .smd-meta {
   display: flex; align-items: center; gap: 9px;
   padding: 7px 14px;
-  background: rgba(255,255,255,.65);
+  /* Near-opaque instead of translucent + backdrop-blur — see .smd-cust-tag:
+     the blur was re-composited every scroll frame and made the page shaky. */
+  background: rgba(255,255,255,.92);
   border: 1.5px solid rgba(139,92,246,.30);
   border-radius: 12px;
   box-shadow:
     0 2px 8px rgba(124,58,237,.12),
     inset 0 1px 0 rgba(255,255,255,.95);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
   flex-shrink: 0;
 }
 .smd-meta-icon {
@@ -1018,10 +1025,15 @@ export const SALES_MATRIX_DETAIL_CSS = `
    tall centre content scrolling internally instead of growing the row.
    Stays a flex column so short stages fill the card the same as before. */
 .smd-stg-scroll {
-  position: absolute;
-  inset: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  /* In normal flow (not absolute) with NO internal scroll — the stage content
+     grows the card, and the page (the layout's main-content) is the single
+     scroll. The old absolute + overflow-auto gave the card its OWN scrollbar
+     nested inside the page scroll, which made scrolling shaky/laggy (two scroll
+     containers fighting). min-height:100% keeps a short stage filling the card
+     to the side panels' height. */
+  position: relative;
+  min-height: 100%;
+  overflow: visible;
   display: flex;
   flex-direction: column;
 }

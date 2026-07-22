@@ -616,7 +616,7 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
         and a "View details" button that opens the full panel. ── */
   if (view === 'compact') {
     return createPortal(
-      <div className="qpi-trk-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><style>{TRACKER_CSS}</style>
+      <div className="qpi-trk-overlay" role="dialog" aria-modal="true"><style>{TRACKER_CSS}</style>
         <div className="qpi-trk-card qpi-trk-card-info" onMouseDown={(e) => e.stopPropagation()}>
           {/* Coloured workflow header (Figma "Agreement Timeline" look). */}
           <div className="qpi-trk-ihead">
@@ -660,7 +660,7 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   }
 
   return createPortal(
-    <div className="qpi-trk-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}><style>{TRACKER_CSS}</style>
+    <div className="qpi-trk-overlay" role="dialog" aria-modal="true"><style>{TRACKER_CSS}</style>
       <div className="qpi-trk-card" onMouseDown={(e) => e.stopPropagation()}>
         <span className="qpi-trk-orb qpi-trk-orb-1" aria-hidden />
         <span className="qpi-trk-orb qpi-trk-orb-2" aria-hidden />
