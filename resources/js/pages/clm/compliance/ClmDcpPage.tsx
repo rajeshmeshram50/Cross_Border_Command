@@ -495,7 +495,7 @@ export default function ClmDcpPage() {
                 <thead><tr>
                   <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                   <th style={{ width: 110, textAlign: 'center' }}>SEGMENT ID</th>
-                  <th>SEGMENT NAME</th>
+                  <th style={{ width: 200 }}>SEGMENT NAME</th>
                   <th style={{ width: 130, textAlign: 'center' }}>REGULATORY STATUS</th>
                   <th style={{ width: 120, textAlign: 'center' }}>DOCUMENT TYPE</th>
                   <th style={{ width: 140, textAlign: 'center' }}>CUSTOMER ≠ CONSIGNEE</th>
@@ -516,7 +516,14 @@ export default function ClmDcpPage() {
                       <tr key={r.id || `seg-${r.segment_code}`}>
                         <td className="clm-td-num">{start + i + 1}</td>
                         <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.segment_code}</span></td>
-                        <td className="clm-td-name">{seg?.name ?? r.segment_code}</td>
+                        <td className="clm-td-name">
+                          <span
+                            title={seg?.name ?? r.segment_code}
+                            style={{ display: 'block', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          >
+                            {seg?.name ?? r.segment_code}
+                          </span>
+                        </td>
                         <td style={{ textAlign: 'center' }}>
                           <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-green'}`}><span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}</span>
                         </td>
