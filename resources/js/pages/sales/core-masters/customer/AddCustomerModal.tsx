@@ -5388,7 +5388,10 @@ const SCOPED_CSS = `
    with a big empty gap under a short list. Scoped so Stage 1 is untouched. */
 .acm-kyc-stage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .acm-kyc-stage .acm-section-purple { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.acm-kyc-stage .acm-section-body-table { flex: 1 1 auto; min-height: 0; }
+/* Flex column so the TABLE grows and the pager (its last sibling) pins to the
+   bottom — without this the pager floated mid-card with empty space beneath. */
+.acm-kyc-stage .acm-section-body-table { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.acm-kyc-stage .acm-section-body-table .acm-table-wrap { flex: 1 1 auto; min-height: 0; }
 .acm-body::-webkit-scrollbar { width: 6px; }
 .acm-body::-webkit-scrollbar-track { background: #ede9fe; border-radius: 10px; }
 .acm-body::-webkit-scrollbar-thumb { background: #a78bfa; border-radius: 10px; }
