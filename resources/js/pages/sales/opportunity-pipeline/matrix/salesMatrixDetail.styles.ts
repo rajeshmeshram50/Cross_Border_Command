@@ -19,10 +19,15 @@ export const SALES_MATRIX_DETAIL_CSS = `
   padding: 10px 14px 18px;
   margin: -1rem -0.75rem;
   /* At least the viewport height — the columns fill it (see the card
-     min-height below) and the whole page scrolls when content overflows
-     (matches the figma; internal column scroll was over-constraining the
-     layout at 100% zoom). */
+     min-height below) and the page scrolls in the layout's own content area
+     (whose scrollbar already starts below the navbar). Giving .smd-root its own
+     overflow created a SECOND scrollbar, so it stays min-height only.
+     overflow-x hidden keeps the page-wide horizontal bar off — the step /
+     action rows scroll their own overflow-x internally. */
   min-height: calc(100vh - 70px);
+  /* clip (not hidden) kills the page-wide horizontal bar WITHOUT turning
+     overflow-y into auto — hidden would create a second vertical scrollbar. */
+  overflow-x: clip;
   color: #1e293b;
   font-size: 12px;
 }

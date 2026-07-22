@@ -151,10 +151,15 @@ const Layout = (props : any) => {
     if (layoutType === 'horizontal') {
         return (
             <React.Fragment>
-                <div id="layout-wrapper" className="idims-active">
+                {/* Fixed header + single scroll UNDER it: the wrapper fills the
+                    viewport and does not scroll; the header keeps its natural
+                    height at top; only .main-content scrolls, so the scrollbar
+                    starts below the navbar (not a full-height window scrollbar)
+                    and there's exactly one scrollbar (no double scroll). */}
+                <div id="layout-wrapper" className="idims-active" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
                     <style>{'.idims-active .main-content{margin-left:0!important;margin-top:0!important;padding-top:0!important;}.idims-active .page-content{margin-top:0!important;padding-top:1rem!important;}'}</style>
                     <IdimsHeader />
-                    <div className="main-content mb-2">
+                    <div className="main-content mb-2" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
                         {props.children}
                         <Footer />
                     </div>

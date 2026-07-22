@@ -803,6 +803,11 @@ export default function SalesQPI() {
    * page). `rpp` starts at ROWS_PER_PAGE and grows on taller screens; the
    * remaining rows spill onto the next page (no internal scroll). */
   const tableHostRef = useRef<HTMLDivElement>(null);
+  // Card is stretched to fill the space from its top down to the viewport bottom
+  // so the pager pins to the bottom even when there are few rows — the same
+  // dynamic table-fill as My Workplace / CLM Segment Master / Suppliers.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
   const [rpp, setRpp] = useState(ROWS_PER_PAGE);
   // Once the user picks a Rows-per-page value the auto-fit stops overriding it.
   const rppManualRef = useRef(false);
@@ -810,6 +815,14 @@ export default function SalesQPI() {
     const host = tableHostRef.current;
     if (!host) return;
     const fit = () => {
+      // Stretch the card to the viewport bottom (always — even when the row
+      // count is a manual pick), so the pager sits at the bottom, not mid-page.
+      const cardEl = cardRef.current;
+      if (cardEl) {
+        const cardTop = cardEl.getBoundingClientRect().top;
+        const cardH = Math.max(0, window.innerHeight - cardTop - 16);
+        setFillH(prev => (prev === cardH ? prev : cardH));
+      }
       if (rppManualRef.current) return;   // user chose a value — respect it
       const top    = host.getBoundingClientRect().top;
       const theadH = (host.querySelector('thead') as HTMLElement | null)?.offsetHeight || 44;
@@ -817,14 +830,12 @@ export default function SalesQPI() {
       const FOOTER  = 56;   // .qpi-pag height
       const HOSTPAD = 26;   // .qpi-table-host vertical padding (14 top + 12 bottom)
       const avail   = window.innerHeight - top - theadH - FOOTER - HOSTPAD - 16;
-      const rowsFit = Math.max(ROWS_PER_PAGE, Math.floor(avail / rowH));
-      // Snap to the nearest FIXED option so the dropdown value always matches
-      // a listed option (QA CBC-547).
-      const snapped = QPI_ROWS_OPTIONS.reduce(
-        (best, o) => (Math.abs(o - rowsFit) < Math.abs(best - rowsFit) ? o : best),
-        QPI_ROWS_OPTIONS[0],
-      );
-      setRpp(prev => (prev === snapped ? prev : snapped));
+      // Continuous fit — the EXACT number of rows that fit, no snapping to fixed
+      // options (that kept the count stuck at 10). WorklistPager adds whatever
+      // the current value is to its dropdown, so an off-list count is fine.
+      // Mirrors CLM Segment Master's Math.max(4, floor(avail / ROW)).
+      const rowsFit = Math.max(4, Math.floor(avail / rowH));
+      setRpp(prev => (prev === rowsFit ? prev : rowsFit));
     };
     fit();
     // Re-fit after the layout settles (banner animation / async rows).
@@ -1799,7 +1810,7 @@ export default function SalesQPI() {
       </div>
 
       {/* ─── Table card ─── */}
-      <div className="qpi-card">
+      <div className="qpi-card" ref={cardRef} style={fillH ? { minHeight: fillH } : undefined}>
         {/* Row 1 — "<Tab> List" pill + search + create button (matches the
             Figma reference, which keeps the list pill on the left of the
             toolbar). Label follows the active tab so it reads correctly on
@@ -3023,7 +3034,13 @@ export function CreateQuotationModal(props: {
     setProducts(p => [...p, { ...draft, id: Date.now() }]);
     setDraft({ id:0, productId:null, hsn:null, name:'', qty:0, rate:0, taxPct:0 });
   };
-  const removeProduct = (id: number) => setProducts(p => p.filter(x => x.id !== id));
+  const removeProduct = (id: number) => {
+    // Look up the name BEFORE filtering so the toast can name the product; the
+    // toast fires outside the state updater so it isn't double-called.
+    const removed = products.find(x => x.id === id);
+    setProducts(p => p.filter(x => x.id !== id));
+    toast.success('Product removed', removed?.name ? `${removed.name} removed from the list.` : 'Removed from the list.');
+  };
 
   const subTotal = products.reduce((s, p) => s + calcRow(p).amount, 0);
   const grandTotal = subTotal + (Number(shipping) || 0);
@@ -3427,7 +3444,13 @@ export function CreatePIModal(props: {
     setProducts(p => [...p, { ...draft, id: Date.now() }]);
     setDraft({ id:0, productId:null, hsn:null, name:'', qty:0, rate:0, taxPct:0 });
   };
-  const removeProduct = (id: number) => setProducts(p => p.filter(x => x.id !== id));
+  const removeProduct = (id: number) => {
+    // Look up the name BEFORE filtering so the toast can name the product; the
+    // toast fires outside the state updater so it isn't double-called.
+    const removed = products.find(x => x.id === id);
+    setProducts(p => p.filter(x => x.id !== id));
+    toast.success('Product removed', removed?.name ? `${removed.name} removed from the list.` : 'Removed from the list.');
+  };
 
   const subTotal = products.reduce((s, p) => s + calcRow(p).amount, 0);
   const grandTotal = subTotal + (Number(shipping) || 0);
@@ -4128,11 +4151,15 @@ function BasicForm(props: {
             <input className="qpi-input qpi-input-readonly" value={form.customer} readOnly title="Fixed by the lead this was opened from" />
           ) : (
             <MasterSelect
-              key={`cust-${masters.customers.length}`}
+              key={`cust-${masters.customers.length}-${form.docType}`}
               value={form.customer}
               loading={masters.loading}
               placeholder="— Select Customer —"
-              options={withCurrent(masters.customers, form.customer)}
+              /* Only customers matching the chosen Document Type: International →
+                 foreign customers, Domestic → Indian ones. The scope pill already
+                 marks each; here we filter to it. Customers with no country stay
+                 visible (can't be classified, so never hidden). */
+              options={withCurrent(masters.customers.filter(o => !o.badge?.text || o.badge.text === form.docType), form.customer)}
               onChange={(v) => { onCustomerChange(v); if (v) clearError?.('customer'); }}
             />
           )}
@@ -5257,6 +5284,10 @@ const SCOPED_CSS = `
   border-radius: 16px;
   overflow: hidden;
   box-shadow: 0 2px 10px rgba(0,0,0,.04);
+  /* Flex column so the table host grows to fill the stretched card and the
+     pager (last child) pins to the bottom. */
+  display: flex;
+  flex-direction: column;
 }
 .qpi-tablebar {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -5421,7 +5452,7 @@ const SCOPED_CSS = `
  * areas don't visually merge into one blob. Mirrors the same
  * padding 14/14/12 on .smc-table-wrap in SalesCustomers, which is
  * the visual baseline the user pointed to. */
-.qpi-table-host { padding: 14px 14px 12px; }
+.qpi-table-host { padding: 14px 14px 12px; flex: 1 1 auto; min-height: 0; }
 /* Inner table is flush inside .qpi-card (which already provides the
  * white background + border + 16px outer radius). Giving the table
  * its OWN border/radius produced a card-within-a-card whose rounded
