@@ -4251,7 +4251,16 @@ function BasicForm(props: {
                   value={form.currency}
                   loading={masters.loading}
                   placeholder="— Select Currency —"
-                  options={withCurrent(masters.currencies, form.currency)}
+                  /* International documents are never quoted in rupees, so INR
+                     is dropped from the picker here. (This branch only renders
+                     for International; Domestic is rupees by definition and has
+                     no Currency field at all.) withCurrent still re-adds the
+                     saved value so an older INR-tagged International row keeps
+                     displaying its currency when reopened. */
+                  options={withCurrent(
+                    masters.currencies.filter((o) => currencyCode(o.value) !== 'INR'),
+                    form.currency,
+                  )}
                   onChange={(v) => set('currency', v)}
                 />
               )}
