@@ -1083,9 +1083,9 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               </td>
               <td>
                 {d.attachment_url ? (
-                  <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cev-attach"><i className="ri-download-2-line" /> {d.attachment || 'View'}</a>
+                  <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cev-attach" title={d.attachment || 'View'}><i className="ri-download-2-line" /> <span className="cev-attach-name">{d.attachment || 'View'}</span></a>
                 ) : d.attachment ? (
-                  <span className="cev-attach cev-attach-muted"><i className="ri-file-line" /> {d.attachment}</span>
+                  <span className="cev-attach cev-attach-muted" title={d.attachment}><i className="ri-file-line" /> <span className="cev-attach-name">{d.attachment}</span></span>
                 ) : <span style={{ color: '#9ca3af' }}>—</span>}
               </td>
               <td>
@@ -2369,7 +2369,10 @@ export const CEV_CSS = `
 .cev-date { font-size: 12px; color: #475569; white-space: nowrap; }
 .cev-attach { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #0891b2; text-decoration: none; padding: 4px 10px; border: 1px solid #a5f3fc; border-radius: 8px; background: #f0fdff; white-space: nowrap; transition: all .15s; }
 .cev-attach:hover { background: #cffafe; border-color: #67e8f9; color: #0e7490; }
-.cev-attach i { font-size: 14px; }
+.cev-attach i { font-size: 14px; flex-shrink: 0; }
+/* Keep long filenames from stretching the Attachment column — cap the label
+ * and ellipsize; the full name stays available via the cell's title tooltip. */
+.cev-attach-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cev-attach-muted { color: #94a3b8; background: #f8fafc; border-color: #e2e8f0; cursor: default; }
 .cev-empty { padding: 30px !important; text-align: center; color: #94a3b8; font-style: italic; }
 [data-bs-theme="dark"] .cev-date { color: #94a3b8; }
