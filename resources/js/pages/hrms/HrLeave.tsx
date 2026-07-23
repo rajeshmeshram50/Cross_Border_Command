@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
@@ -1045,7 +1045,7 @@ export default function HrLeave() {
 type LeaveFacetKey = 'department' | 'type' | 'payroll';
 type LeaveFilterValues = { department: string; type: string; payroll: string };
 
-const LEAVE_FACET_ICONS: Record<LeaveFacetKey, JSX.Element> = {
+const LEAVE_FACET_ICONS: Record<LeaveFacetKey, ReactNode> = {
   department: (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" />
