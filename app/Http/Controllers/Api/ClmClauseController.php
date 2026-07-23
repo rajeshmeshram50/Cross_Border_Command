@@ -55,7 +55,7 @@ class ClmClauseController extends Controller
          * still work; new ones can send empty string or omit. */
         $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
-            'name'        => ['required', 'string', 'max:255'],
+            'name'        => ['required', 'string', 'max:100'],
             'description' => 'nullable|string|max:500',
         ]);
 
@@ -110,7 +110,7 @@ class ClmClauseController extends Controller
 
         if ($request->has('name')) $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate([
-            'name'        => ['sometimes', 'required', 'string', 'max:255'],
+            'name'        => ['sometimes', 'required', 'string', 'max:100'],
             'description' => 'sometimes|nullable|string|max:500',
         ]);
         if (isset($data['name']))        $data['name']        = trim($data['name']);
@@ -158,7 +158,39 @@ class ClmClauseController extends Controller
         $query = ClmClauseLibrary::query()->orderBy('id');
         MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
         $rows = $query->get();
+
+        // Best-effort "used in a CTC agreement" flag. Clauses are COPIED into an
+        // agreement's draft as `<h3>Name</h3>…` (see ClmClauseInsertPanel), not
+        // linked by FK — so we detect usage by looking for that heading in every
+        // CTC contract's current content + saved versions. Drives the client-side
+        // "can't delete a clause that's used in a CTC" guard.
+        $haystacks = $this->ctcHaystacks((int) $user->client_id);
+        $rows->each(function ($row) use ($haystacks) {
+            $needle = $this->clauseNeedle((string) $row->name);
+            $row->in_use = 0;
+            foreach ($haystacks as $h) { if ($needle !== '' && mb_strpos($h, $needle) !== false) { $row->in_use = 1; break; } }
+        });
+
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
+    }
+
+    /** Lower-cased content of every CTC contract (current draft + each version),
+     *  used to detect whether a library clause has been inserted into any CTC. */
+    private function ctcHaystacks(int $clientId): array
+    {
+        return \App\Models\CtcContract::where('client_id', $clientId)->get(['content', 'versions'])
+            ->map(function ($c) {
+                $parts = [(string) $c->content];
+                foreach ((array) ($c->versions ?? []) as $v) { $parts[] = (string) ($v['content'] ?? ''); }
+                return mb_strtolower(implode("\n", $parts));
+            })->all();
+    }
+
+    /** The heading a clause is inserted with — `<h3>Name</h3>`, lower-cased. */
+    private function clauseNeedle(string $name): string
+    {
+        $name = trim($name);
+        return $name === '' ? '' : mb_strtolower('<h3>' . e($name) . '</h3>');
     }
 
     public function libraryStore(Request $request)
@@ -252,6 +284,16 @@ class ClmClauseController extends Controller
         $row = $lookup->firstOrFail();
         if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
+        }
+        // Block deletion of a clause that has been inserted into any CTC agreement
+        // (same best-effort heading match as libraryIndex's in_use flag).
+        $needle = $this->clauseNeedle((string) $row->name);
+        if ($needle !== '') {
+            foreach ($this->ctcHaystacks((int) $user->client_id) as $h) {
+                if (mb_strpos($h, $needle) !== false) {
+                    return response()->json(['status' => false, 'message' => 'This clause is used in one or more CTC agreements and cannot be deleted.'], 409);
+                }
+            }
         }
         $row->delete();
         return response()->json(['status' => true, 'message' => 'Deleted']);

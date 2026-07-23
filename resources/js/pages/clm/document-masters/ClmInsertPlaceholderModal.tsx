@@ -285,8 +285,8 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
                 <button key={i} type="button" className={`ipm-tab ${active ? 'is-active' : ''}`} onClick={() => setCpIdx(i)} style={active ? { ['--ipm-accent' as any]: meta.color } : undefined}>
                   <span className="ipm-tab-ico" style={{ background: `${meta.color}1f`, color: meta.color }}>{meta.icon}</span>
                   <span className="ipm-tab-text">
-                    <span className="ipm-tab-label" style={{ color: meta.color }}>{cp.name || `Counter Party ${i + 1}`}</span>
-                    <span className="ipm-tab-sub">{[meta.label, cp.code].filter(Boolean).join(' · ')}</span>
+                    <span className="ipm-tab-label" style={{ color: meta.color }} title={cp.name || `Counter Party ${i + 1}`}>{cp.name || `Counter Party ${i + 1}`}</span>
+                    <span className="ipm-tab-sub" title={[meta.label, cp.code].filter(Boolean).join(' · ')}>{[meta.label, cp.code].filter(Boolean).join(' · ')}</span>
                   </span>
                 </button>
               );
@@ -309,7 +309,7 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
             <header className="ipm-pane-head">
               <span className="ipm-pane-ico" style={{ background: `${tabHeader.color}1f`, color: tabHeader.color }}>{tabHeader.icon}</span>
               <div>
-                <div className="ipm-pane-title">{activeCp ? activeCp.cp.name : `${tabHeader.label} Fields`}</div>
+                <div className="ipm-pane-title" title={activeCp ? activeCp.cp.name : undefined}>{activeCp ? activeCp.cp.name : `${tabHeader.label} Fields`}</div>
                 <div className="ipm-pane-sub">
                   {activeCp
                     ? `Referred as ${tabHeader.label}${activeCp.cp.code ? ` · ${activeCp.cp.code}` : ''} — inserts {{${activeKey}.*}} placeholders`
@@ -468,7 +468,8 @@ const IPM_CSS = `
   overflow-y: auto;
 }
 .ipm-tab {
-  display: inline-flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; max-width: 100%; box-sizing: border-box;
   padding: 10px 12px; border-radius: 11px;
   border: 1.5px solid transparent;
   background: transparent;
@@ -486,9 +487,9 @@ const IPM_CSS = `
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 14px;
 }
-.ipm-tab-text { display: flex; flex-direction: column; min-width: 0; }
-.ipm-tab-label { font-size: 13px; font-weight: 800; letter-spacing: -.01em; }
-.ipm-tab-sub { font-size: 11px; color: #94a3b8; margin-top: 1px; font-weight: 600; }
+.ipm-tab-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ipm-tab-label { font-size: 13px; font-weight: 800; letter-spacing: -.01em; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ipm-tab-sub { font-size: 11px; color: #94a3b8; margin-top: 1px; font-weight: 600; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .ipm-pane {
   display: flex; flex-direction: column; gap: 14px;
@@ -496,9 +497,10 @@ const IPM_CSS = `
   overflow-y: auto;
   min-height: 0;
 }
-.ipm-pane-head { display: inline-flex; align-items: center; gap: 12px; }
-.ipm-pane-ico { width: 32px; height: 32px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
-.ipm-pane-title { font-size: 16px; font-weight: 800; color: #0c4a6e; letter-spacing: -.01em; }
+.ipm-pane-head { display: flex; align-items: center; gap: 12px; max-width: 100%; }
+.ipm-pane-head > div { min-width: 0; flex: 1; }
+.ipm-pane-ico { width: 32px; height: 32px; flex-shrink: 0; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
+.ipm-pane-title { font-size: 16px; font-weight: 800; color: #0c4a6e; letter-spacing: -.01em; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ipm-pane-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
 
 .ipm-selbar {

@@ -70,7 +70,14 @@ export function VersionHistoryModal({ t, code, workingId, versions, onClose }: {
   const jumpTo = (no: number) => { setActiveVer(no); scrollRef.current?.querySelector(`[data-ver="${no}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
   const overall = sorted[0] ? pillOf(sorted[0]) : null;
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+    <div onClick={() => { if (busy === null) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <style>{`
+        @keyframes ctcm-spin { to { transform: rotate(360deg); } }
+        @keyframes ctcm-bar { 0% { left: -45%; } 100% { left: 100%; } }
+        .ctcm-spin { animation: ctcm-spin .7s linear infinite; transform-origin: 50% 50%; }
+        .ctcm-prog { position: relative; height: 5px; border-radius: 4px; overflow: hidden; background: rgba(124,58,237,.16); margin-top: 9px; }
+        .ctcm-prog::before { content: ''; position: absolute; top: 0; height: 100%; width: 45%; border-radius: 4px; background: linear-gradient(90deg, transparent, #7C3AED 40%, #a78bfa 60%, transparent); animation: ctcm-bar 1.05s ease-in-out infinite; }
+      `}</style>
       <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px,94vw)', maxHeight: '84vh', background: t.surface, borderRadius: 16, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
         {/* Header */}
         <div style={{ padding: '13px 16px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -85,7 +92,7 @@ export function VersionHistoryModal({ t, code, workingId, versions, onClose }: {
               </div>
             </div>
           </div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+          <button onClick={() => { if (busy === null) onClose(); }} disabled={busy !== null} title={busy !== null ? 'Please wait — preparing your download' : 'Close'} style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: 'rgba(255,255,255,.18)', cursor: busy !== null ? 'wait' : 'pointer', opacity: busy !== null ? .45 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
         </div>
         {/* Quick-jump number rail + sort */}
         {sorted.length > 0 && (
@@ -126,10 +133,23 @@ export function VersionHistoryModal({ t, code, workingId, versions, onClose }: {
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>{ver.date}</span>
                     {ver.by && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>{ver.by}</span>}
                   </div>
-                  <button onClick={() => download(ver.v)} disabled={busy === ver.v} style={{ width: '100%', marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#C4B5FD'}`, background: t.dark ? 'rgba(124,58,237,.16)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 9.5, fontWeight: 800, cursor: busy === ver.v ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                  <button onClick={() => download(ver.v)} disabled={busy !== null} style={{ width: '100%', marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#C4B5FD'}`, background: t.dark ? 'rgba(124,58,237,.16)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 9.5, fontWeight: 800, cursor: busy !== null ? 'wait' : 'pointer', opacity: busy !== null && busy !== ver.v ? .5 : 1, fontFamily: 'inherit' }}>
+                    {busy === ver.v
+                      ? <svg className="ctcm-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                      : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>}
                     {busy === ver.v ? 'Preparing…' : `Download v${ver.no} Draft`}
                   </button>
+                  {/* Indeterminate progress + status line while this version is generating.
+                      No real % — the server builds the PDF before streaming, so a
+                      determinate bar would lie; the sweep signals active work. */}
+                  {busy === ver.v && (
+                    <>
+                      <div className="ctcm-prog" />
+                      <div style={{ marginTop: 6, fontSize: 8.5, fontWeight: 700, color: t.dark ? '#a78bfa' : '#7C3AED', textAlign: 'center', letterSpacing: '.02em' }}>
+                        Generating your PDF… large agreements can take a moment
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             );
