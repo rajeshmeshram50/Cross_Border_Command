@@ -654,22 +654,24 @@ export default function HrLeavePlans() {
       <MasterFormStyles />
       <Row>
         <Col xs={12}>
-          <div className="lp-shell">
-            <div className="frm-cstrip mb-3">
-              <span className="frm-cstrip-accent" />
-              <div className="frm-cstrip-left">
-                <div className="frm-cstrip-icon"><i className="ri-calendar-2-line" /></div>
-                <div className="min-w-0">
-                  <div className="frm-cstrip-title">Leave Plans</div>
-                  <div className="frm-cstrip-sub">Configure leave policies for employee groups</div>
-                </div>
+          {/* Header lives OUTSIDE the shell so it reads as its own container,
+              separated from the content card below — matching Leave Management. */}
+          <div className="frm-cstrip mb-3">
+            <span className="frm-cstrip-accent" />
+            <div className="frm-cstrip-left">
+              <div className="frm-cstrip-icon"><i className="ri-calendar-2-line" /></div>
+              <div className="min-w-0">
+                <div className="frm-cstrip-title">Leave Plans</div>
+                <div className="frm-cstrip-sub">Configure leave policies for employee groups</div>
               </div>
-              <button type="button" className="frm-cstrip-back" onClick={() => navigate('/hr/leave')}>
-                <i className="ri-arrow-left-line" />
-                Back
-              </button>
             </div>
+            <button type="button" className="frm-cstrip-back" onClick={() => navigate('/hr/leave')}>
+              <i className="ri-arrow-left-line" />
+              Back
+            </button>
+          </div>
 
+          <div className="lp-shell">
             <div className="lp-top-tabs">
               <div className="lp-tabs-row">
                 {([
