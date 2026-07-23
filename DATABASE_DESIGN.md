@@ -633,3 +633,6 @@ switch ($user->user_type) {
 *Project: Cross_Border_Command*
 *Database: PostgreSQL 18*
 *Framework: Laravel 12*
+
+
+

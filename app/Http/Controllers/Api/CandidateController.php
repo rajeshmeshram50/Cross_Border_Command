@@ -1206,6 +1206,7 @@ class CandidateController extends Controller
             'status_notes'        => 'nullable|string',
         ]);
     }
+    
 
     /**
      * Save the uploaded CV on the public disk and return [path, originalName].
