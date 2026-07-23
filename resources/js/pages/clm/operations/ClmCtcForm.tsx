@@ -1054,6 +1054,12 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   const allSigned = signers.length > 0 && signers.every(s => s.signed);
   const declinedSigner = signers.find(s => s.declined);
   const isDeclined = !!declinedSigner;
+  // Already handed to the counterparty for e-signature — a Zoho request exists /
+  // signers are set / status says so. Once sent, "Send for Signing" must lock
+  // until the counterparty responds (signs or declines); no re-send from here.
+  const sentForSigning = !!record?.signature_request_id
+    || signers.length > 0
+    || String(record?.status ?? '').toLowerCase() === 'sent for signing';
   // Fully signed / stored → locked. No re-send for signing, no resubmit — only
   // viewing (and the legitimate "Move to Final Repository" once all signed).
   const signedLock = allSigned || String(record?.status ?? '') === 'signed' || stage >= 4;
@@ -1227,8 +1233,13 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               {!signedLock && stage === 2 && approval === 'rejected' && (
                 <button onClick={onResubmitEdit} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(217,119,6,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg> Edit &amp; Resubmit for Review</button>
               )}
-              {!signedLock && stage === 2 && approval === 'approved' && (
+              {!signedLock && stage === 2 && approval === 'approved' && !sentForSigning && (
                 <button onClick={() => setSigningOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(8,145,178,.35)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> Send for Signing &amp; Negotiation</button>
+              )}
+              {/* Already sent for e-signature — lock the button until the
+                  counterparty responds (signs / declines). No re-send. */}
+              {!signedLock && stage === 2 && approval === 'approved' && sentForSigning && (
+                <button disabled title="Already sent to the counterparty for signature — waiting for their response" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9', border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0'}`, cursor: 'not-allowed', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Sent for Signature — awaiting response</button>
               )}
               {!signedLock && stage === 2 && approval !== 'approved' && approval !== 'rejected' && (
                 <button disabled title={inClarification ? 'Reply to the clarification in the review panel — the approver decides after you respond' : approverCount > 1 ? `All ${approverCount} approvers must approve before this can be sent for signing` : "Waiting for the approver's decision"} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9', border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0'}`, cursor: 'not-allowed', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> {inClarification ? 'Clarification Requested' : `Awaiting Approval${approverCount > 1 ? ` · ${approvedCount} of ${approverCount} approved` : ''}`}</button>

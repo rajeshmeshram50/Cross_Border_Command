@@ -536,7 +536,7 @@ function ClauseLibModal(props: {
                     invalid={!!errors.type}
                     placeholder="— Select Clause Type —"
                     options={[
-                      ...types.map(t => ({ value: t.name, label: `${t.code} - ${t.name}`, fullLabel: `${t.code} - ${t.name}` })),
+                      ...types.map(t => ({ value: t.name, label: `${t.code} - ${t.name}`, selectedLabel: t.name, fullLabel: `${t.code} - ${t.name}` })),
                       ...(type && !types.find(t => t.name === type) ? [{ value: type, label: type }] : []),
                     ]}
                     onChange={(v) => { setType(v); setErrors(p => ({ ...p, type: '' })); }}

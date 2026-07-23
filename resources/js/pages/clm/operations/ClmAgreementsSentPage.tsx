@@ -12,6 +12,7 @@ import {
   inits, pad2, PER_PAGE,
 } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+import WorklistPager from '../../../components/ui/WorklistPager';
 import { VersionHistoryModal, AgreementTimelineModal, type CtcVersion, type CtcSigner } from './clmCtcModals';
 import { ShimmerTable } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
@@ -67,7 +68,13 @@ export default function ClmAgreementsSentPage() {
   // ("My Workplace") page so a tall screen shows more rows and a short one
   // fewer, instead of a fixed PER_PAGE.
   const [pageSize, setPageSize] = useState(PER_PAGE);
+  // Auto-fit stays on until the user picks a rows-per-page from the pager; then
+  // their choice sticks (matches the CTC / Clause Library dynamic tables).
+  const autoFitRef = useRef(true);
+  const onPageSize = (n: number) => { autoFitRef.current = false; setPageSize(n); setPage(1); };
   const cardRef = useRef<HTMLDivElement | null>(null);
+  // Card stretches to fill the viewport so the pager pins to the screen bottom.
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
   const [respondId, setRespondId] = useState<string | null>(null);
   const [cpOpen, setCpOpen] = useState<{ id: string; names: string[]; x: number; y: number } | null>(null);   // counterparties popover
   // Auto-close the +N counterparty popover on page scroll/resize so it can't
@@ -214,13 +221,18 @@ export default function ClmAgreementsSentPage() {
       const el = cardRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const avail = window.innerHeight - top;
+      // Stretch the card to the viewport (leave room for the layout footer + the
+      // scroll container's padding, else the pager lands at the fold / cut off).
+      const fh = Math.max(240, window.innerHeight - top - 56);
+      setFillH(prev => (prev === fh ? prev : fh));
+
       const toolbarH = (el.querySelector('.aws-toolbar') as HTMLElement | null)?.offsetHeight || 0;
       const theadH   = (el.querySelector('table thead') as HTMLElement | null)?.offsetHeight || 0;
       const rowH     = (el.querySelector('table tbody tr') as HTMLElement | null)?.offsetHeight || 48;
-      const pagerH   = 54;   // Pager footer is a fixed-height bar
-      const rowsFit  = Math.floor((avail - toolbarH - theadH - pagerH - 24) / rowH);
-      setPageSize(prev => { const next = Math.max(PER_PAGE, rowsFit); return prev === next ? prev : next; });
+      const pagerH   = (el.querySelector('.wl-pager') as HTMLElement | null)?.offsetHeight || 54;
+      const rowsFit  = Math.floor((fh - toolbarH - theadH - pagerH - 20) / rowH);
+      if (!autoFitRef.current) return;   // user set an explicit rows-per-page
+      setPageSize(prev => { const next = Math.max(4, rowsFit); return prev === next ? prev : next; });
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
@@ -232,6 +244,16 @@ export default function ClmAgreementsSentPage() {
   return (
     <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 14, fontFamily: 'var(--font-sans)' }}>
       <style>{AWS_CSS}</style>
+
+      {/* Whole-page lock while a contract is downloading or its history is
+          loading — block every other action (edit, other rows, tabs, download)
+          until it finishes and can't be cut off. */}
+      {(downloadingId !== null || lifecycleBusy !== null) && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000000, background: 'rgba(8,47,73,.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 15, fontFamily: 'var(--font-sans)' }}>
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#67e8f9" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'awsSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>{downloadingId !== null ? 'Preparing your download…' : 'Loading…'}</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Please wait — don't leave this page.</div>
+        </div>, document.body)}
 
       {/* HEADER STRIP */}
       <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: 64, border: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : 'rgba(6,182,212,.3)'}`, borderRadius: 14, background: t.dark ? '#102234' : 'linear-gradient(110deg,#ecfffe 0%,#cffafe 25%,#a5f3fc 55%,#67e8f9 80%,#22d3ee 100%)', boxShadow: t.dark ? '0 2px 10px rgba(6,182,212,.1)' : '0 2px 0 rgba(255,255,255,.88) inset,0 4px 18px rgba(6,182,212,.2)' }}>
@@ -270,8 +292,8 @@ export default function ClmAgreementsSentPage() {
       </div>
 
       {/* FILTER TABS + TABLE */}
-      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#B2EBF2'}`, boxShadow: '0 1px 4px rgba(6,182,212,.07)', overflow: 'hidden' }}>
-        <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap' }}>
+      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#B2EBF2'}`, boxShadow: '0 1px 4px rgba(6,182,212,.07)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
+        <div className="aws-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
           {/* Tab rail — same pill design as the CTC page (translucent rail with a
               hairline + separated pills), recoloured teal to match this page. On
               small screens it wraps full width, 2 tabs per row (QA #10). */}
@@ -312,13 +334,15 @@ export default function ClmAgreementsSentPage() {
           </div>
         </div>
 
-        {loading
-          ? <ShimmerTable rows={6} cols={11} />
-          : tab === 'clarify'
-          ? <ClarifyTable rows={clarifyList} onRespond={setRespondId} t={t} />
-          : tab === 'rejected'
-            ? <RejectedTable rows={filtered} ata={sent} page={page} setPage={setPage} pageSize={pageSize} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} onDownload={downloadContract} toast={toast} t={t} />
-            : <StandardTable rows={filtered} page={page} setPage={setPage} pageSize={pageSize} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} lifecycleBusy={lifecycleBusy} cpOpen={cpOpen} setCpOpen={setCpOpen} onVersion={(c) => openLifecycle(c, 'version')} onTimeline={(c) => openLifecycle(c, 'timeline')} onDownload={downloadContract} onEdit={(c) => navigate(`/clm/case-to-case?edit=${c.dbId}`)} toast={toast} t={t} />}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          {loading
+            ? <ShimmerTable rows={6} cols={11} />
+            : tab === 'clarify'
+            ? <ClarifyTable rows={clarifyList} onRespond={setRespondId} t={t} />
+            : tab === 'rejected'
+              ? <RejectedTable rows={filtered} ata={sent} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} onDownload={downloadContract} toast={toast} t={t} />
+              : <StandardTable rows={filtered} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} tab={tab} dlOpen={dlOpen} setDlOpen={setDlOpen} downloadingId={downloadingId} lifecycleBusy={lifecycleBusy} cpOpen={cpOpen} setCpOpen={setCpOpen} onVersion={(c) => openLifecycle(c, 'version')} onTimeline={(c) => openLifecycle(c, 'timeline')} onDownload={downloadContract} onEdit={(c) => navigate(`/clm/case-to-case?edit=${c.dbId}`)} toast={toast} t={t} />}
+        </div>
       </div>
 
       {respondContract && (
@@ -483,7 +507,7 @@ function DownloadMenu({ id, dlOpen, setDlOpen, onPick, t, busy, disabled }: { id
 }
 
 /* ── Standard contracts table (all / approved / pending) ── */
-function StandardTable({ rows, page, setPage, pageSize, tab, dlOpen, setDlOpen, downloadingId, lifecycleBusy, cpOpen, setCpOpen, onVersion, onTimeline, onDownload, onEdit, toast, t }: { rows: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; tab: AwsTab; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; lifecycleBusy: { id: string; kind: 'version' | 'timeline' } | null; cpOpen: { id: string; names: string[]; x: number; y: number } | null; setCpOpen: (s: { id: string; names: string[]; x: number; y: number } | null) => void; onVersion: (c: SentRow) => void; onTimeline: (c: SentRow) => void; onDownload: (c: SentRow, fmt: string) => void; onEdit: (c: SentRow) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function StandardTable({ rows, page, setPage, pageSize, onPageSize, tab, dlOpen, setDlOpen, downloadingId, lifecycleBusy, cpOpen, setCpOpen, onVersion, onTimeline, onDownload, onEdit, toast, t }: { rows: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; tab: AwsTab; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; lifecycleBusy: { id: string; kind: 'version' | 'timeline' } | null; cpOpen: { id: string; names: string[]; x: number; y: number } | null; setCpOpen: (s: { id: string; names: string[]; x: number; y: number } | null) => void; onVersion: (c: SentRow) => void; onTimeline: (c: SentRow) => void; onDownload: (c: SentRow, fmt: string) => void; onEdit: (c: SentRow) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * pageSize;
@@ -491,10 +515,10 @@ function StandardTable({ rows, page, setPage, pageSize, tab, dlOpen, setDlOpen, 
   const empty = `No ${tab === 'all' ? 'contracts yet' : tab + ' contracts'}.`;
 
   return (
-    <div style={{ background: t.tableBg, overflow: 'hidden' }}>
+    <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
       {slice.length === 0 ? <EmptyState msg={empty} t={t} /> : (
         <>
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto', flex: 1 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1300 }}>
               <thead><tr style={{ background: THEAD_BG }}>
                 <th style={{ ...TH, width: 50 }}>SR NO</th>
@@ -559,7 +583,7 @@ function StandardTable({ rows, page, setPage, pageSize, tab, dlOpen, setDlOpen, 
               </tbody>
             </table>
           </div>
-          <Pager total={rows.length} page={page} setPage={setPage} perPage={pageSize} t={t} />
+          <WorklistPager total={rows.length} page={safe} pageSize={pageSize} onPage={setPage} onPageSize={onPageSize} className="wl-teal" />
         </>
       )}
     </div>
@@ -567,7 +591,7 @@ function StandardTable({ rows, page, setPage, pageSize, tab, dlOpen, setDlOpen, 
 }
 
 /* ── Rejected contracts table ── */
-function RejectedTable({ rows, ata, page, setPage, pageSize, dlOpen, setDlOpen, downloadingId, onDownload, toast, t }: { rows: SentRow[]; ata: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; onDownload: (c: SentRow, fmt: string) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
+function RejectedTable({ rows, ata, page, setPage, pageSize, onPageSize, dlOpen, setDlOpen, downloadingId, onDownload, toast, t }: { rows: SentRow[]; ata: SentRow[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; dlOpen: string | null; setDlOpen: (s: string | null) => void; downloadingId: string | null; onDownload: (c: SentRow, fmt: string) => void; toast: ReturnType<typeof useToast>; t: OpsTokens }) {
   const getRej = (id: string) => { const a = ata.find(x => x.id === id); return { by: a?.approver ?? '—', reason: a?.rejReason ?? '—' }; };
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
@@ -575,10 +599,10 @@ function RejectedTable({ rows, ata, page, setPage, pageSize, dlOpen, setDlOpen, 
   const slice = rows.slice(start, start + pageSize);
 
   return (
-    <div style={{ background: t.tableBg, overflow: 'hidden' }}>
+    <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
       {slice.length === 0 ? <EmptyState msg="No rejected contracts." t={t} /> : (
         <>
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto', flex: 1 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
               <thead><tr style={{ background: THEAD_BG }}>
                 <th style={{ ...TH, width: 52 }}>SR. NO</th>
@@ -618,7 +642,7 @@ function RejectedTable({ rows, ata, page, setPage, pageSize, dlOpen, setDlOpen, 
               </tbody>
             </table>
           </div>
-          <Pager total={rows.length} page={page} setPage={setPage} perPage={pageSize} t={t} />
+          <WorklistPager total={rows.length} page={safe} pageSize={pageSize} onPage={setPage} onPageSize={onPageSize} className="wl-teal" />
         </>
       )}
     </div>
@@ -640,7 +664,7 @@ function ClarifyTable({ rows, onRespond, t }: { rows: SentRow[]; onRespond: (id:
     );
   }
   return (
-    <div style={{ background: t.tableBg, overflow: 'hidden' }}>
+    <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
           <thead><tr style={{ background: THEAD_BG }}>

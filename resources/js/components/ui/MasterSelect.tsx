@@ -140,8 +140,11 @@ export function MasterSelect({
      `disabled` greys the row and blocks selection (e.g. a product whose
      segment doesn't match the customer's); `disabledReason` is its tooltip. */
   /* `fullLabel` — when the visible `label` is deliberately shortened (e.g. a
-     30-char-capped agreement type), the full text shows in the hover tooltip. */
-  options: { value: string; label: string; fullLabel?: string; badge?: OptBadgeSpec; badges?: OptBadgeSpec[]; disabled?: boolean; disabledReason?: string }[];
+     30-char-capped agreement type), the full text shows in the hover tooltip.
+     `selectedLabel` — an alternate, shorter text shown in the CLOSED trigger
+     when this option is picked (e.g. options list "CLT-004 - Risk", but the
+     trigger shows just "Risk"); falls back to `label`. */
+  options: { value: string; label: string; fullLabel?: string; selectedLabel?: string; badge?: OptBadgeSpec; badges?: OptBadgeSpec[]; disabled?: boolean; disabledReason?: string }[];
   placeholder?: string;
   /* Label to show for the current value when it is NOT among `options`
    * (e.g. the option was deliberately excluded from the pickable list, or an
@@ -290,7 +293,7 @@ export function MasterSelect({
                the truncating label and stays visible. */
             <Tooltip label={selected.fullLabel ?? selected.label} position="bottom">
               <span className="master-select-value">
-                <span className="master-select-value-text">{selected.label}</span>
+                <span className="master-select-value-text">{selected.selectedLabel ?? selected.label}</span>
                 {badgesOf(selected).map((b, i) => <OptBadge key={i} b={b} staticPill />)}
               </span>
             </Tooltip>
