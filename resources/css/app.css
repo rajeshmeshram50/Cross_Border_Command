@@ -117,6 +117,12 @@ body { overflow-x: hidden; }
 .page-content { padding-left: 8px !important; padding-right: 8px !important; }
 .page-content > .container-fluid { padding-left: 6px !important; padding-right: 6px !important; }
 
+/* Footer flows with the page instead of being pinned to the bottom of
+ * .main-content (Velzon sets .footer { position: absolute }). Pinned, it
+ * overlapped tall page content — e.g. the Products card grid's last row. As a
+ * normal in-flow block it always sits BELOW the content and scrolls with it. */
+.footer { position: static !important; }
+
 /* Responsive tenant logo — a wide uploaded logo must scale DOWN to fit the
  * brand box instead of overflowing the bar. Applies to all three layouts:
  * vertical sidebar (.navbar-brand-box), horizontal header (.horizontal-logo),

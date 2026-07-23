@@ -3809,7 +3809,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                 </tr></thead>
                 <tbody>
                   {totalRows === 0 ? (
-                    <tr className="acm-empty-row"><td colSpan={9}>{q ? 'No documents match your search.' : 'No documents captured yet. Click "+ Add Document / License" to add one.'}</td></tr>
+                    <tr className="acm-empty-row"><td colSpan={9}>{q ? 'No documents match your search.' : 'No documents in this bucket yet.'}</td></tr>
                   ) : docSlice.map((d, i) => {
                     const sr = start + i + 1;
                     const code = codeFor(kind.toUpperCase(), sr);
