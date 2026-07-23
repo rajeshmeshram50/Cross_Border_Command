@@ -4,6 +4,8 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
+import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
+import { CLM_CSS } from '../../../clm/shared/clmShared';
 import { useToast } from '../../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../../../utils/vaultSignatureRows';
@@ -627,6 +629,9 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   return createPortal(
     <div className="cev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <style>{CEV_CSS}</style>
+      {/* CLM shared styles — powers the teal AuthorityBadges "+N" popover on the
+          issuing-authority column, matching the CLM masters / Supplier vault. */}
+      <style>{CLM_CSS}</style>
       <div className="cev-card" onMouseDown={(e) => e.stopPropagation()}>
         {/* ─── HEADER ─── */}
         <div className="cev-header">
@@ -1073,7 +1078,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               <td>{i + 1}</td>
               <td className="cev-mono">{d.reference || d.doc_code || '—'}</td>
               <td className="cev-doc-name">{d.name}</td>
-              <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
+              <td><AuthorityBadges value={d.authority} /></td>
               <td>
                 {d.requirement === 'M' ? (
                   <span className="cev-req cev-req-m" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>

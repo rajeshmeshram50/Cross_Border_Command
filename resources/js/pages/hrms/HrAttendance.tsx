@@ -273,13 +273,8 @@ export default function HrAttendance() {
       <>
         <MasterFormStyles />
         <Row>
-          <Col xs={12}>
             <div
-              className="hr-employees-surface att-page"
               style={{
-                borderRadius: 18,
-                border: '1px solid var(--vz-border-color)',
-                boxShadow: '0 8px 28px rgba(15,23,42,0.06), 0 2px 6px rgba(15,23,42,0.04)',
                 padding: '18px',
                 marginBottom: '24px',
               }}
@@ -342,7 +337,6 @@ export default function HrAttendance() {
                 <ShimmerTable rows={6} cols={6} />
               </div>
             </div>
-          </Col>
         </Row>
       </>
     );
@@ -383,16 +377,7 @@ export default function HrAttendance() {
       <MasterFormStyles />
       <Row>
         <Col xs={12}>
-          <div
-            className="hr-employees-surface att-page"
-            style={{
-              borderRadius: 18,
-              border: '1px solid var(--vz-border-color)',
-              boxShadow: '0 8px 28px rgba(15,23,42,0.06), 0 2px 6px rgba(15,23,42,0.04)',
-              padding: '18px',
-              marginBottom: '24px',
-            }}
-          >
+          
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -558,7 +543,6 @@ export default function HrAttendance() {
             </div>
 
             <RegularizationApprovals />
-          </div>
         </Col>
       </Row>
 
@@ -1012,9 +996,11 @@ function LogsRequestsCard({
                             {isHolidayDay ? (l.holidayName ? `Holiday — ${l.holidayName}` : 'Holiday') : 'Full day Weekly-off'}
                           </td>
                           <td className="text-center">
-                            <button type="button" className="att-log-action-btn" disabled>
-                              <i className="ri-more-2-fill" />
-                            </button>
+                            {/* Holiday / Weekly-off rows have no punches to review
+                                or regularize, so there's no Log action — show a
+                                muted dash instead of a dead three-dot button that
+                                does nothing on click (CBC #40). */}
+                            <span className="text-muted">—</span>
                           </td>
                         </tr>
                       );

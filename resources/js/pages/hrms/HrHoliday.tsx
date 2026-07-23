@@ -669,8 +669,8 @@ function HolidayModal({
 
   return (
     <Modal isOpen={isOpen} toggle={onClose} centered size="lg" backdrop="static" keyboard={false}
-      modalClassName="rec-form-modal" contentClassName="rec-form-content border-0">
-      <ModalBody className="p-0" style={{ background: 'var(--bs-body-bg, #fff)' }}>
+      modalClassName="rec-form-modal master-modal" contentClassName="rec-form-content border-0">
+      <ModalBody className="p-0" >
         <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
@@ -831,8 +831,8 @@ function ManageGroupsModal({
 
   return (
     <Modal isOpen={isOpen} toggle={onClose} centered size="lg" backdrop="static" keyboard={false}
-      modalClassName="rec-form-modal" contentClassName="rec-form-content border-0">
-      <ModalBody className="p-0" style={{ background: 'var(--bs-body-bg, #fff)' }}>
+      modalClassName="rec-form-modal master-modal" contentClassName="rec-form-content border-0">
+      <ModalBody className="p-0" >
         <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
@@ -917,9 +917,9 @@ function ManageGroupsModal({
         {/* Add / Edit Group — a separate popup over the groups list (opened from
             the header "Add Group" button or a row's Edit icon). */}
         <Modal isOpen={formOpen} toggle={closeForm} centered backdrop="static" keyboard={false}
-          zIndex={1060} modalClassName="rec-form-modal" contentClassName="rec-form-content border-0"
+          zIndex={1060} modalClassName="rec-form-modal master-modal" contentClassName="rec-form-content border-0"
           style={{ maxWidth: 540, width: '94vw' }}>
-          <ModalBody className="p-0" style={{ background: 'var(--bs-body-bg, #fff)' }}>
+          <ModalBody className="p-0" >
             <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
               <div className="d-flex align-items-center justify-content-between">
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15 }}>{editing ? 'Edit Group' : 'Add Group'}</h5>

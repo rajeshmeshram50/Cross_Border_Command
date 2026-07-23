@@ -137,7 +137,8 @@ export default function PayrollRunModal({
   const shell = (children: React.ReactNode, maxWidth: number) => (
     <div
       className="ep-modal-overlay"
-      onClick={onClose}
+      /* No backdrop-click close — an accidental outside click must NOT dismiss
+         the payroll run / blocked popup; only the explicit X / buttons do. */
       style={{
         position: 'fixed', inset: 0, zIndex: 5000,
         background: 'rgba(15,23,42,0.55)',
