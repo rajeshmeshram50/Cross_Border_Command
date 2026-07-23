@@ -498,6 +498,13 @@ export default function AddVendorModal(props: {
    * legacy `segment_id` column is scalar, so on save we send the first
    * id as `segment_id` and the joined list as `segment_ids`. */
   const [segment,     setSegment]     = useState<string[]>([]);
+  // Segment IDS locked against removal because a product on an issued Purchase
+  // Order belongs to them (server-driven, per-segment).
+  const [lockedSegments, setLockedSegments] = useState<string[]>([]);
+  // Server-provided data for the unique-document removal guard (condition 2):
+  // required doc keys (category|code) per segment ID, and the keys uploaded.
+  const [segReqKeys, setSegReqKeys] = useState<Record<string, string[]>>({});
+  const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
   /* Segments carrying a Document Control Panel rule. The rest stay listed but
    * disabled — a rule-less segment maps to no KYC/DD/TL documents, so tagging
    * a supplier with it leaves Step 2 empty. The modal only mounts while open,
@@ -1109,25 +1116,6 @@ export default function AddVendorModal(props: {
     .filter(s => Number.isFinite(Number(s)) && Number(s) > 0)
     .every(s => segmentDocKeys[String(s)] !== undefined);
 
-  /* Of the segments being removed, those that actually have an uploaded
-   * document — used only to WARN the user that removing them will clean up
-   * those documents on save (removal itself is allowed; the backend deletes the
-   * docs required only by a removed segment and keeps the shared ones). */
-  const removedSegmentsWithDocs = (next: string[]): string[] => {
-    const removed = (segment ?? []).filter(s => !next.includes(s));
-    if (!removed.length) return [];
-    // Require an ACTUAL file/URL, not just a map entry — the ref tables can
-    // hold a placeholder row for a document that was never uploaded. Same
-    // check the customer form makes.
-    const hasFile = (k: string) => {
-      const u = segmentRefUploads[k];
-      return !!(u && (u.url || u.file));
-    };
-    return removed
-      .filter(s => (segmentDocKeys[String(s)] || []).some(hasFile))
-      .map(String);
-  };
-
   /* Apply the bundled segment_uploads payload to segmentRefUploads.
    * Declared AFTER the segment-rules effect above so it fires LATER in
    * the same commit cycle — segment-rules wipes segmentRefUploads
@@ -1393,6 +1381,9 @@ export default function AddVendorModal(props: {
         // (an empty array would otherwise sync the pivot to nothing on save).
         const segIds: string[] = fromIds.length ? fromIds : (v.segment_id ? [String(v.segment_id)] : []);
         setSegment(segIds);
+        setLockedSegments(Array.isArray((v as any).locked_segments) ? (v as any).locked_segments.map(String) : []);
+        setSegReqKeys((v as any).segment_required_doc_keys && typeof (v as any).segment_required_doc_keys === 'object' ? (v as any).segment_required_doc_keys : {});
+        setUploadedKeys(Array.isArray((v as any).uploaded_doc_keys) ? (v as any).uploaded_doc_keys : []);
         setComplianceBehaviour(numStr(v.compliance_behaviour_id));
         setClassificationId(numStr(v.classification_id));
 
@@ -3183,17 +3174,30 @@ export default function AddVendorModal(props: {
                             return dom();
                           }}
                           onChange={vs => {
-                            // Removal is ALLOWED: on save the backend deletes documents
-                            // required only by the removed segment(s) and keeps those shared
-                            // with a segment that stays. A segment used by a Purchase Order is
-                            // rejected at save (422 → toast). Warn up-front when the removed
-                            // segment actually has uploads so the cleanup isn't silent.
-                            if (segment.some(s => !vs.includes(s)) && segGuardReady) {
-                              const withDocs = removedSegmentsWithDocs(vs);
-                              if (withDocs.length) {
-                                const names = withDocs.map(s => segmentOpts.find(o => o.value === s)?.label ?? s);
-                                toast.info('Documents will be updated', `Removing ${names.join(', ')} will delete the documents that aren’t shared with the remaining segment(s) when you save.`);
+                            // A segment can't be removed when (1) a PRODUCT on an issued PO
+                            // or a Supplier Invoice belongs to it, or (2) it has an uploaded
+                            // document not shared with any remaining segment. Block only those
+                            // (re-add them) and let the rest go through. Mirrors the server.
+                            const removed = segment.filter(s => !vs.includes(s));
+                            if (removed.length) {
+                              const lockedRemoved = removed.filter(s => lockedSegments.includes(s));
+                              // (2) Unique-document lock — SAME server data as the backend
+                              // (required category|code keys per segment id + uploaded keys),
+                              // so the UI blocks exactly what save does.
+                              const uploadedSet = new Set(uploadedKeys);
+                              const keepKeys = new Set(vs.flatMap(s => segReqKeys[String(s)] ?? []));
+                              const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
+                                && (segReqKeys[String(s)] ?? []).some(k => uploadedSet.has(k) && !keepKeys.has(k)));
+                              if (lockedRemoved.length) {
+                                const names = lockedRemoved.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
+                                toast.error('Cannot remove segment', `${names.join(', ')} — used in a PO / Invoice.`);
                               }
+                              if (docRemoved.length) {
+                                const names = docRemoved.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
+                                toast.error('Cannot remove segment', `${names.join(', ')} — has its own uploaded document.`);
+                              }
+                              const blocked = [...lockedRemoved, ...docRemoved];
+                              if (blocked.length) vs = [...vs, ...blocked.filter(s => !vs.includes(s))];
                             }
                             setSegment(vs);
                             clearFieldError('segment');

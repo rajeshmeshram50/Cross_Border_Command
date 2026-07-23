@@ -606,6 +606,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
      ever true in edit mode — a brand-new customer has no leads yet. The server
      enforces the same rule in CustomerController::mappedLeadCountryDenial. */
   const [mapLeadLocked, setMapLeadLocked] = useState(false);
+  // Segment NAMES locked against removal because a product on a PI / Shipment
+  // belongs to them (server-driven, per-segment).
+  const [lockedSegments, setLockedSegments] = useState<string[]>([]);
+  // Server-provided data for the unique-document removal guard (condition 2):
+  // required doc keys (category|code) per segment NAME, and the keys uploaded.
+  const [segReqKeys, setSegReqKeys] = useState<Record<string, string[]>>({});
+  const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
   const gstRowsRef = useRef<GstRow[]>([]);
   useEffect(() => { gstRowsRef.current = gstRows; }, [gstRows]);
 
@@ -1115,6 +1122,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     // Default to unlocked; the edit-mode hydration below sets it from the
     // server. Create mode never locks — the customer has no leads yet.
     setMapLeadLocked(false);
+    setLockedSegments([]);
+    setSegReqKeys({});
+    setUploadedKeys([]);
     setErrors({});
     // Edit mode arrives with db_id (Stage 2 KYC POSTs work
     // immediately); create mode starts null and gets filled by the
@@ -1195,6 +1205,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         const d = r.data?.data ?? r.data ?? {};
         const pa = d.primary_address ?? {};
         setMapLeadLocked(d.isMapLead === 'Yes');
+        setLockedSegments(Array.isArray(d.locked_segments) ? d.locked_segments : []);
+        setSegReqKeys(d.segment_required_doc_keys && typeof d.segment_required_doc_keys === 'object' ? d.segment_required_doc_keys : {});
+        setUploadedKeys(Array.isArray(d.uploaded_doc_keys) ? d.uploaded_doc_keys : []);
         setForm({
           coName:   d.company       ?? '',
           coLegal:  d.legalName     ?? d.company ?? '',
@@ -2132,24 +2145,29 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} unruledSegments={segRulesLoaded ? masters.segments.filter(s => !ruledSegCodes.has(s.code ?? '')).map(s => s.name) : []} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} segTypesByName={segTypesByName} guardSegmentRemove={(prev, vs) => {
               const removed = prev.filter(s => !vs.includes(s));
               if (!removed.length) return vs;
-              /* Removal is ALLOWED here. On save the backend deletes the documents
-               * required ONLY by the removed segment(s) and keeps those shared with
-               * a segment that stays (cascade cleanup). A segment that is in use by
-               * a Proforma Invoice / Shipment is rejected at save with a 422 that
-               * surfaces on the segment field. We only WARN up-front when the
-               * removed segment actually has uploads so the cleanup isn't silent. */
-              if (segGuardReady) {
-                const uploaded = new Set(
-                  Object.entries(segmentRefUploads)
-                    .filter(([, v]) => !!(v && (v.url || v.file)))
-                    .map(([k]) => k.split('::')[1])
-                );
-                const withDocs = removed.filter(seg =>
-                  (segCodeMap[seg] ?? []).some(c => uploaded.has(c))
-                );
-                if (withDocs.length) {
-                  toast.info('Documents will be updated', `Removing ${withDocs.join(', ')} will delete the documents that aren’t shared with the remaining segment(s) when you save.`);
-                }
+              /* A segment can't be removed when (1) a PRODUCT on a PI / Shipment
+               * belongs to it, or (2) it has an uploaded document not shared with
+               * any remaining segment. Block only those (re-add them) and let the
+               * rest go through. Mirrors the server, which rejects the same at save. */
+              const lockedRemoved = removed.filter(s => lockedSegments.some(l => l.toLowerCase() === s.toLowerCase()));
+              // (2) Unique-document lock — uses the SAME server data the backend
+              // uses (required category|code keys per segment + the uploaded keys),
+              // so the UI blocks exactly what save does. A removed segment is
+              // blocked when it requires an UPLOADED key that no REMAINING segment
+              // requires (removing it would orphan that file).
+              const uploadedSet = new Set(uploadedKeys);
+              const keepKeys = new Set(vs.flatMap(s => segReqKeys[s] ?? []));
+              const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
+                && (segReqKeys[s] ?? []).some(k => uploadedSet.has(k) && !keepKeys.has(k)));
+              if (lockedRemoved.length) {
+                toast.error('Cannot remove segment', `${lockedRemoved.join(', ')} — used in a PI / Shipment.`);
+              }
+              if (docRemoved.length) {
+                toast.error('Cannot remove segment', `${docRemoved.join(', ')} — has its own uploaded document.`);
+              }
+              const blocked = [...lockedRemoved, ...docRemoved];
+              if (blocked.length) {
+                vs = [...vs, ...blocked.filter(s => !vs.includes(s))];
               }
               return vs;
             }} gstLocked={gstRows.length > 0} onCountryBlockedByGst={() => toast.warning('Country is locked to India', 'This customer has GST Scrutiny entries. Delete them first — an international customer has no GST.')}
