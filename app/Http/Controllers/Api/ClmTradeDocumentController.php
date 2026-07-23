@@ -544,7 +544,7 @@ class ClmTradeDocumentController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        $request->validate(['docx' => 'required|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB]);
+        $this->validateDocxUpload($request);
 
         $file       = $request->file('docx');
         $clientSlug = $user->client_id ? 'c' . $user->client_id : 'public';
@@ -578,10 +578,30 @@ class ClmTradeDocumentController extends Controller
      * load a .docx straight into the contentEditable. The uploaded file is
      * read from its temp path and converted via the shared roundtrip trait.
      */
+    /**
+     * Validate an uploaded Word document. We deliberately do NOT use Laravel's
+     * `mimes:doc,docx` rule: a .docx is a ZIP container, and php-fileinfo on
+     * many servers reports it as `application/zip` (or `application/octet-stream`),
+     * so `mimes:docx` rejects perfectly valid Word files with a 422 ("Import
+     * failed / Could not convert this document"). Instead we check file + size +
+     * the client extension. Genuinely broken/other content still fails safely
+     * later, when PhpWord tries to read it (caught → friendly 422).
+     */
+    private function validateDocxUpload(Request $request): void
+    {
+        $request->validate(['docx' => ['required', 'file', 'max:' . self::DOCX_MAX_KB]]);
+        $ext = strtolower((string) $request->file('docx')->getClientOriginalExtension());
+        if (!in_array($ext, ['doc', 'docx'], true)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'docx' => 'The file must be a Word document (.doc or .docx).',
+            ]);
+        }
+    }
+
     public function docxToHtmlPreview(Request $request)
     {
         $user = $request->user(); if (!$user) abort(401);
-        $request->validate(['docx' => 'required|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB]);
+        $this->validateDocxUpload($request);
 
         try {
             $html = $this->docxToHtml($request->file('docx')->getRealPath());

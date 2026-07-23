@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Tooltip from '../../../components/ui/Tooltip';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
@@ -148,7 +149,9 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
                 {loading ? (
                   <span className="clp-dd-ph">Loading…</span>
                 ) : typeName ? (
-                  <span className="clp-dd-val">{typeName}</span>
+                  <Tooltip label={typeName} position="bottom" zIndex={300001} disabled={typeName.length <= 30}>
+                    <span className="clp-dd-val">{typeName.length > 30 ? typeName.slice(0, 30) + '…' : typeName}</span>
+                  </Tooltip>
                 ) : (
                   <span className="clp-dd-ph">— Select clause type —</span>
                 )}
@@ -176,7 +179,9 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
                         className={`clp-dd-item ${t.name === typeName ? 'is-active' : ''}`}
                         onClick={() => { setTypeName(t.name); setDdOpen(false); setDdSearch(''); }}
                       >
-                        {t.name}
+                        {t.name.length > 30
+                          ? <Tooltip label={t.name} position="right" zIndex={300001}><span>{t.name.slice(0, 30) + '…'}</span></Tooltip>
+                          : t.name}
                       </button>
                     ))}
                   </div>
@@ -188,7 +193,10 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
           <div className="clp-list-label">Clauses {visible.length > 0 ? `(${visible.length})` : ''}</div>
           <div className="clp-list">
             {loading ? (
-              <div className="clp-empty">Loading clauses…</div>
+              <div className="clp-loading">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                <span>Loading clauses…</span>
+              </div>
             ) : !typeName ? (
               <div className="clp-empty">Pick a clause type above to see its clauses.</div>
             ) : visible.length === 0 ? (
@@ -283,6 +291,11 @@ const CLP_CSS = `
 .clp-list-label { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #0e7490; margin-top: 2px; }
 .clp-list { display: flex; flex-direction: column; gap: 8px; min-height: 120px; max-height: 300px; overflow-y: auto; padding: 2px; }
 .clp-empty { padding: 28px 12px; text-align: center; font-size: 12.5px; color: #64748b; }
+@keyframes clpSpin { to { transform: rotate(360deg); } }
+.clp-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 30px 12px; }
+.clp-loading svg { animation: clpSpin .7s linear infinite; color: #0891b2; }
+.clp-loading span { font-size: 12px; font-weight: 700; color: #0891b2; letter-spacing: .01em; }
+[data-bs-theme="dark"] .clp-loading svg, [data-bs-theme="dark"] .clp-loading span { color: #22d3ee; }
 .clp-item { display: flex; flex-direction: row; align-items: flex-start; gap: 9px; text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(6,182,212,.18); background: #f8feff; cursor: pointer; transition: border-color .15s ease, background .15s ease, transform .15s ease; }
 .clp-item:hover { border-color: #0891b2; background: #ecfeff; transform: translateY(-1px); }
 .clp-item.is-on { border-color: #0891b2; background: #ecfeff; box-shadow: 0 0 0 1px rgba(8,145,178,.25) inset; }

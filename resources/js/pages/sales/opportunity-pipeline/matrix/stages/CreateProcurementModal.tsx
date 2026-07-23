@@ -25,6 +25,7 @@ const PROCUREMENT_CURRENCY_SYMBOL = '₹';
  * server config is needed — otherwise a few 5 MB files overflow it and the
  * request fails as "Post data is too long" before Laravel even runs. */
 const MAX_PROC_ATTACH_TOTAL = 6 * 1024 * 1024;   // 6 MB across the whole form
+const MAX_PROC_ATTACH_FILES = 5;                 // at most 5 files across the whole form
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Create Product Sourcing modal — Sales Matrix → Stage 3 (Required tab).
@@ -601,19 +602,29 @@ export default function CreateProcurementModal({
                           <RowAttach
                             files={d.attachments}
                             onAdd={(files) => {
-                              // Only JPG / PNG / PDF, max 5 MB (matches the backend
-                              // mimes + 5120 KB rule). Reject the rest up front with
-                              // a clear message instead of failing on Save.
+                              // Only JPG / PNG / PDF, per-file ≤ 5 MB (backend mimes +
+                              // 5120 KB rule). ALSO enforce the FORM-WIDE caps up front —
+                              // at most 5 files and 6 MB total across every product row —
+                              // and DON'T add files that would breach either, instead of
+                              // accepting them and only failing on Save (QA #172).
+                              const existingCount = drafts.reduce((n, x) => n + x.attachments.length, 0);
+                              const existingSize  = drafts.reduce((s, x) => s + x.attachments.reduce((t, f) => t + f.size, 0), 0);
                               const ok: File[] = [];
-                              let badType = false, tooBig = false;
+                              let badType = false, tooBig = false, overCount = false, overTotal = false;
+                              let runningSize = existingSize;
                               for (const f of files) {
                                 const ext = f.name.split('.').pop()?.toLowerCase() ?? '';
                                 if (!['jpg', 'jpeg', 'png', 'pdf'].includes(ext)) { badType = true; continue; }
                                 if (f.size > 5 * 1024 * 1024) { tooBig = true; continue; }
+                                if (existingCount + ok.length >= MAX_PROC_ATTACH_FILES) { overCount = true; continue; }
+                                if (runningSize + f.size > MAX_PROC_ATTACH_TOTAL) { overTotal = true; continue; }
                                 ok.push(f);
+                                runningSize += f.size;
                               }
                               if (badType) toast.error('File not supported', 'Please attach only JPG, PNG or PDF files.');
                               else if (tooBig) toast.error('File too large', 'Each attachment must be 5 MB or smaller.');
+                              else if (overCount) toast.error('Too many files', `You can attach at most ${MAX_PROC_ATTACH_FILES} files in total.`);
+                              else if (overTotal) toast.error('Attachments too large', `All attachments together must be under ${Math.round(MAX_PROC_ATTACH_TOTAL / (1024 * 1024))} MB.`);
                               if (ok.length) setDraft(d.key, { attachments: [...d.attachments, ...ok] });
                             }}
                             onRemove={(i) => setDraft(d.key, { attachments: d.attachments.filter((_, idx) => idx !== i) })}

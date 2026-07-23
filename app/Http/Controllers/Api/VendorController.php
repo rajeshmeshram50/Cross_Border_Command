@@ -68,10 +68,13 @@ class VendorController extends Controller
             // Honour the BranchSwitcher (see CustomerController::index).
             ->forUser($user, $request->integer('branch_id') ?: null)
             ->with([
-                'primaryAddress:id,vendor_id,city,state_id,state_code,contact_name,email,contact_no,designation',
+                'primaryAddress:id,vendor_id,city,country_id,state_id,state_code,contact_name,email,contact_no,designation',
                 // Resolve the state FK to its name so the list shows "Maharashtra"
                 // instead of the raw state_id (e.g. 8999) in the Supplier State column.
                 'primaryAddress.state:id,name',
+                // Same for the country FK — without this the list had no country
+                // data and every row fell back to a hardcoded "India" (QA #77).
+                'primaryAddress.country:id,name',
                 // All address-contacts (primary + extras) so the list page can
                 // render the "+N" contact badge + Contact Persons popup.
                 'addresses:id,vendor_id,is_primary,contact_name,designation,contact_no,email',

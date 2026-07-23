@@ -90,11 +90,14 @@ type ApiVendor = {
   opportunity_count?: number | string | null;
   primary_address?: {
     city: string | null;
+    country_id: number | null;
     state_id: number | null;
     state_code: string | null;
     /* Resolved state name from the master_states relation (VendorController
        index eager-loads primaryAddress.state:id,name). Falls back to code. */
     state?: { id: number; name: string | null } | null;
+    /* Resolved country name (primaryAddress.country:id,name). */
+    country?: { id: number; name: string | null } | null;
     contact_name: string | null;
     email: string | null;
     contact_no: string | null;
@@ -275,6 +278,7 @@ export default function Vendors() {
                      ? row.primary_address.state_code
                      : null,
       city:        row.primary_address?.city ?? '—',
+      country:     row.primary_address?.country?.name ?? undefined,
       contactName: contacts[0]?.name || row.primary_address?.contact_name || '—',
       designation: '—',
       phone:       row.primary_address?.contact_no ?? '—',
@@ -651,7 +655,7 @@ useEffect(() => {
                               </span>
                             </td>
                             <td><span className="sl-state">{v.state}{v.stateCode ? <> (<strong>{v.stateCode}</strong>)</> : ''}</span></td>
-                            <td><span className="sl-country">{v.country || 'India'}</span></td>
+                            <td><span className="sl-country">{v.country || '—'}</span></td>
                             <td>
                               <span className="sl-contact-wrap">
                                 <Tooltip label={v.contactName}><span className="sl-contact sl-trunc">{v.contactName}</span></Tooltip>

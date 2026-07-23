@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
 import api from '../../../../api';
@@ -1993,10 +1994,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   const stage2Missing = '';
   const nextLocked = false;
 
-  return (
+  return createPortal((
     /* No backdrop-click-to-close — users were losing partially filled
        forms by misclicking the overlay. Close only via the X / Cancel
-       button or the ESC key. */
+       button or the ESC key.
+       Portalled to <body> so the fixed overlay centres in the VIEWPORT:
+       rendered inline it inherited a transformed ancestor as its containing
+       block, which pushed the modal low on the page instead of centre. */
     <div className="acm-root">
       <style>{SCOPED_CSS}</style>
       {/* CLM shared styles — powers the teal AuthorityBadges "+N" popover used in
@@ -2486,7 +2490,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         defaultGstNumber={form.coGstNumber}
       />
     </div>
-  );
+  ), document.body);
 }
 
 /* ───────────────────────────────────────────────────────────────────
@@ -3809,7 +3813,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                 </tr></thead>
                 <tbody>
                   {totalRows === 0 ? (
-                    <tr className="acm-empty-row"><td colSpan={9}>{q ? 'No documents match your search.' : 'No documents captured yet. Click "+ Add Document / License" to add one.'}</td></tr>
+                    <tr className="acm-empty-row"><td colSpan={9}>{q ? 'No documents match your search.' : 'No documents in this bucket yet.'}</td></tr>
                   ) : docSlice.map((d, i) => {
                     const sr = start + i + 1;
                     const code = codeFor(kind.toUpperCase(), sr);

@@ -1852,6 +1852,16 @@
   border-color: #7c5cfc;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.85), 0 0 0 3px rgba(124,92,252,0.16);
 }
+/* When the search shares a filter row with the status-tab pill, match its
+   height to the pill (48px) so their top AND bottom edges line up — the
+   centres already match via align-items:center, but the shorter 34px box read
+   as "slightly lower" (bugs #40 / #41). Scoped with :has() so filter rows
+   WITHOUT tabs (e.g. Leave, whose row holds 36px dropdowns next to the search)
+   keep the compact search height and don't regress. */
+.rec-req-filter-row:has(.rec-tab-track) .rec-req-search .form-control,
+.cand-toolbar .rec-req-search .form-control {
+  height: 48px;
+}
 .rec-req-search .search-icon {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
   color: #7c5cfc; font-size: 15px; pointer-events: none;
@@ -5069,7 +5079,14 @@
   min-width: 0;
   padding: 14px 20px;
   overflow-y: auto;
+  background: #ffffff;
 }
+[data-bs-theme="dark"] .ep-content { background: transparent; }
+/* Exit-form select fields read pure white — the shared MasterSelect toggle
+   otherwise uses var(--vz-card-bg), a light grey in this theme. Scoped to the
+   exit form so MasterSelect elsewhere is untouched. */
+.ep-content .master-select-toggle { background: #ffffff; }
+[data-bs-theme="dark"] .ep-content .master-select-toggle { background: var(--vz-card-bg); }
 .ep-stage-banner {
   display: flex; align-items: center; gap: 12px;
   padding: 12px 16px;
@@ -6605,7 +6622,7 @@
 
 /* ── Left pane: employee list — sub-card inside the page surface. ── */
 .att-emplist {
-  background: var(--vz-card-bg);
+  background: #ffffff;
   border: 1px solid var(--vz-border-color);
   border-radius: 12px;
   box-shadow: none;
@@ -6646,7 +6663,7 @@
   display: flex; gap: 4px;
   padding: 8px;
   border-bottom: 1px solid #f1f2f4;
-  background: #f9fafb;
+  background: #ffffff;
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(15,23,42,0.18) transparent;
@@ -6845,7 +6862,7 @@
    teal-tinted titlebar + drop shadow + hover lift. ── */
 .att-today-card {
   position: relative;
-  background: linear-gradient(165deg, #ffffff 0%, #f6fdfb 58%, #edfbf6 100%);
+  background: #ffffff;
   border: 1px solid #e3f0ed;
   border-radius: 16px;
   box-shadow: 0 8px 26px rgba(15,23,42,0.07), 0 2px 8px rgba(13,148,136,0.06), 0 1px 0 rgba(255,255,255,0.9) inset;
@@ -6969,10 +6986,11 @@
    (slate gradient since OUT punches use slate) + soft shadow + hover lift. ── */
 .att-timeline-card {
   position: relative;
-  background: linear-gradient(165deg, #ffffff 0%, #f6fdfb 58%, #edfbf6 100%);
+  background: #ffffff;
   border: 1px solid #e3f0ed;
   border-radius: 16px;
   box-shadow: 0 8px 26px rgba(15,23,42,0.07), 0 2px 8px rgba(13,148,136,0.06), 0 1px 0 rgba(255,255,255,0.9) inset;
+  height: 100%;
   min-height: 312px;
   overflow: hidden;
   transition: box-shadow .25s ease, transform .25s ease, border-color .25s ease;
@@ -7325,7 +7343,7 @@
   margin-bottom: 12px;
   /* Plain white card (no teal tint) so the employee-info bar reads white like
      the rest of the cards. */
-  background: var(--vz-card-bg);
+  background: #ffffff;
   border: 1px solid var(--vz-border-color);
   border-radius: 14px;
   box-shadow: 0 2px 8px rgba(13,148,136,0.06);

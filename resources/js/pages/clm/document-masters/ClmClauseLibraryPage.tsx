@@ -52,7 +52,7 @@ function nextSeqCode(codes: string[], prefix: string): string {
 const capitalizeFirst = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 type ClType = { id: number; code: string; name: string; description: string; in_use?: number };
-type ClLib = { id: number; code: string; clause_type: string; name: string; party: string; clause_status: string; content: string | null };
+type ClLib = { id: number; code: string; clause_type: string; name: string; party: string; clause_status: string; content: string | null; in_use?: number };
 
 export default function ClmClauseLibraryPage() {
   const toast = useToast();
@@ -126,9 +126,10 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
   const [pendingDelete, setPendingDelete] = useState<ClType | null>(null);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
+    const sorted = [...rows].sort((a, b) => b.id - a.id);   // newest first
+    if (!search.trim()) return sorted;
     const s = search.toLowerCase();
-    return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s));
+    return sorted.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
   const autoFitRef        = useRef(true);
@@ -217,7 +218,7 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <td className="clm-td-name">{r.name}</td>
+                    <td className="clm-td-name">{r.name.length > 30 ? <Tooltip label={r.name}><span>{r.name.slice(0, 30) + '…'}</span></Tooltip> : r.name}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
                         {(() => {
@@ -236,7 +237,22 @@ function TypesPane({ rows, loading, reload }: { rows: ClType[]; loading: boolean
                             </Tooltip>
                           );
                         })()}
-                        <Tooltip label="Delete"><button className="clm-act clm-act-del" aria-label="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></Tooltip>
+                        {(() => {
+                          // Same rule as edit: a clause type referenced by the Clause
+                          // Library can't be deleted — it would orphan those clauses.
+                          const used = (r.in_use ?? 0) > 0;
+                          return (
+                            <Tooltip label={used ? `Used by ${r.in_use} clause${r.in_use === 1 ? '' : 's'} in the Clause Library — can't delete. Remove or reassign ${r.in_use === 1 ? 'that clause' : 'those clauses'} first.` : 'Delete'}>
+                              <button
+                                className="clm-act clm-act-del"
+                                aria-label="Delete"
+                                disabled={used}
+                                style={used ? { opacity: .4, cursor: 'not-allowed' } : undefined}
+                                onClick={() => { if (used) return; setPendingDelete(r); }}
+                              ><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                            </Tooltip>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>
@@ -265,9 +281,10 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
   const [pendingDelete, setPendingDelete] = useState<ClLib | null>(null);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
+    const sorted = [...rows].sort((a, b) => b.id - a.id);   // newest first
+    if (!search.trim()) return sorted;
     const s = search.toLowerCase();
-    return rows.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.clause_type.toLowerCase().includes(s));
+    return sorted.filter(r => r.name.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.clause_type.toLowerCase().includes(s));
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
   const autoFitRef        = useRef(true);
@@ -361,12 +378,23 @@ function LibraryPane({ rows, types, loading, reload }: { rows: ClLib[]; types: C
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
-                    <td style={{ textAlign: 'center' }}><span className={`clm-badge ${typeBadge(r.clause_type)}`}>{r.clause_type}</span></td>
-                    <td className="clm-td-name">{r.name}</td>
+                    <td style={{ textAlign: 'center' }}>{r.clause_type.length > 30
+                      ? <Tooltip label={r.clause_type}><span className={`clm-badge ${typeBadge(r.clause_type)}`}>{r.clause_type.slice(0, 30) + '…'}</span></Tooltip>
+                      : <span className={`clm-badge ${typeBadge(r.clause_type)}`}>{r.clause_type}</span>}</td>
+                    <td className="clm-td-name">{r.name.length > 30 ? <Tooltip label={r.name}><span>{r.name.slice(0, 30) + '…'}</span></Tooltip> : r.name}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
                         <Tooltip label="Edit"><button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
-                        <Tooltip label="Delete"><button className="clm-act clm-act-del" aria-label="Delete" onClick={() => setPendingDelete(r)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></Tooltip>
+                        {(() => {
+                          // A clause inserted into a CTC agreement can't be deleted
+                          // (best-effort match, see libraryIndex). Guard mirrors clause types.
+                          const used = (r.in_use ?? 0) > 0;
+                          return (
+                            <Tooltip label={used ? "Used in one or more CTC agreements — can't delete." : 'Delete'}>
+                              <button className="clm-act clm-act-del" aria-label="Delete" disabled={used} style={used ? { opacity: .4, cursor: 'not-allowed' } : undefined} onClick={() => { if (used) return; setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                            </Tooltip>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>
@@ -498,7 +526,7 @@ function ClauseLibModal(props: {
         {/* ── BODY ── */}
         <div className="clm-modal-body">
           {/* Top row — Type + Name */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 14 }}>
             <div className="clm-field">
               <label className="clm-field-label">Clause Type <span className="clm-req">*</span></label>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -508,7 +536,7 @@ function ClauseLibModal(props: {
                     invalid={!!errors.type}
                     placeholder="— Select Clause Type —"
                     options={[
-                      ...types.map(t => ({ value: t.name, label: t.name })),
+                      ...types.map(t => ({ value: t.name, label: `${t.code} - ${t.name}`, selectedLabel: t.name, fullLabel: `${t.code} - ${t.name}` })),
                       ...(type && !types.find(t => t.name === type) ? [{ value: type, label: type }] : []),
                     ]}
                     onChange={(v) => { setType(v); setErrors(p => ({ ...p, type: '' })); }}
@@ -675,7 +703,7 @@ function ClauseTypeModal(props: {
             <input
               className={`clm-input ${err ? 'clm-input-err' : ''}`}
               autoFocus
-              maxLength={255}
+              maxLength={100}
               value={name}
               onChange={e => { setName(capitalizeFirst(e.target.value)); setErr(''); }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void handle(); } }}

@@ -40,7 +40,10 @@ class EmployeeController extends Controller
         // designation.level === template.role_type, so it must be selected.
         'designation:id,name,level',
         'holidayGroup:id,name',
-        'primaryRole:id,name',
+        // role_category / role_type are needed so role-aware pickers (e.g. the
+        // Recruitment "Assigned HR" = HR-category only, "Hiring Manager" =
+        // exclude HR/Intern) can filter employees by their primary role.
+        'primaryRole:id,name,role_category,role_type',
         'ancillaryRole:id,name',
         'legalEntity:id,entity_name,city,state_id,country_id',
         'workCountry:id,name',
@@ -318,16 +321,15 @@ class EmployeeController extends Controller
             ->whereNotNull('id')
             ->where('status', 'Active')
             ->where('onboarding_stage_completed', '>=', 6)
-            // Belt-and-braces on top of the status filter: an exit that was
-            // finalised (case Closed / completed / final status "Exited") but
-            // whose employees.status wasn't flipped for some reason must still
-            // never surface as a pickable reporting manager. Anyone who has
-            // exited is dropped regardless of their status column.
-            ->whereDoesntHave('exit', function ($q) {
-                $q->where('exit_case_status', 'Closed')
-                  ->orWhereNotNull('completed_at')
-                  ->orWhere('final_employee_status', 'Exited');
-            });
+            // Drop anyone tied to an exit case — whether it's still IN PROGRESS
+            // (exit_case_status 'Open') or already finalised ('Closed' /
+            // completed / final status "Exited"). An exit has no withdraw/cancel
+            // path and EmployeeExit isn't soft-deleted, so the mere existence of
+            // an exit row means the person is leaving or already gone: never a
+            // valid reporting manager for a new hire. This also acts as
+            // belt-and-braces for finalised exits whose employees.status column
+            // wasn't flipped for some reason.
+            ->whereDoesntHave('exit');
         $this->applyScope($eq, $user, $request->integer('branch_id') ?: null);
         // HOD designation ids so the picker can flag which employees are a
         // department's Head — the reporting-manager rule points a non-HOD hire

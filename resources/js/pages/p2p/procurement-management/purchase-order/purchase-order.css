@@ -555,7 +555,7 @@
 
 /* ── Product table (cpd-*) ────────────────────────────────────────────── */
 .pom .cpd-scroll{overflow-x:auto;border:1px solid #e3eef3;border-radius:11px;}
-.pom .cpd-tbl{width:100%;border-collapse:collapse;font-size:12px;background:#fff;table-layout:auto;}
+.pom .cpd-tbl{width:100%;border-collapse:collapse;font-size:12px;background:#fff;table-layout:fixed;}
 .pom .cpd-tbl thead{background:linear-gradient(110deg,#0e7490 0%,#0891b2 50%,#06b6d4 100%);}
 .pom .cpd-tbl thead th{text-align:center;font-size:8.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#fff;padding:9px 12px;white-space:nowrap;}
 .pom .cpd-tbl tbody td{padding:7px 12px;border-bottom:1px solid #eef4f7;color:#334155;font-weight:600;vertical-align:middle;white-space:nowrap;text-align:center;}

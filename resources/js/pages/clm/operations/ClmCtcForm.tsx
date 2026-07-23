@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import PdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import { useToast } from '../../../contexts/ToastContext';
@@ -9,6 +10,7 @@ import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../../master/m
 import ClmInsertPlaceholderModal from '../document-masters/ClmInsertPlaceholderModal';
 import ClmClauseInsertPanel from '../document-masters/ClmClauseInsertPanel';
 import HeaderFooterPanel, { DEFAULT_HEADER, DEFAULT_FOOTER, type HeaderConfig, type FooterConfig } from '../../hrms/doc-templates/HeaderFooterPanel';
+import { useCtcEditor, CtcToolbar, CtcEditorContent, CTC_EDITOR_CSS } from './CtcRichEditor';
 import { pad2, type CtcContract } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { VersionHistoryModal, type CtcVersion } from './clmCtcModals';
@@ -148,7 +150,13 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   useEffect(() => {
     let alive = true;
     api.get('/clm/agreement-types')
-      .then(res => { if (!alive) return; const rows = (res.data?.data ?? res.data ?? []) as Record<string, unknown>[]; setAgTypes(rows.map(r => ({ value: String(r.name ?? r.code ?? ''), label: String(r.name ?? r.code ?? '') })).filter(o => o.value)); })
+      .then(res => { if (!alive) return; const rows = (res.data?.data ?? res.data ?? []) as Record<string, unknown>[]; setAgTypes(rows.map(r => {
+        // Agreement types can be up to 255 chars — cap the VISIBLE label at 30
+        // so a long name doesn't blow out the dropdown; the full name shows on
+        // hover (fullLabel) and is still what gets stored (value).
+        const name = String(r.name ?? r.code ?? '');
+        return { value: name, label: name.length > 30 ? name.slice(0, 30) + '…' : name, fullLabel: name };
+      }).filter(o => o.value)); })
       .catch(() => { if (alive) setAgTypes([]); })
       .finally(() => { if (alive) setAgTypesLoading(false); });
     return () => { alive = false; };
@@ -518,94 +526,57 @@ function Stage1(p: {
   const [rightOpen, setRightOpen] = useState(true);
   const [midStep, setMidStep] = useState<1 | 2 | 3>(1);          // inner Step 01 / 02 / 03
   const [editorFs, setEditorFs] = useState(false);              // draft editor full-screen
-  const [linkOpen, setLinkOpen] = useState(false);              // themed "insert link" dialog
-  const [linkUrl, setLinkUrl] = useState('');
+  const [docxBusy, setDocxBusy] = useState(false);              // DOCX → HTML conversion in flight
   // Page-shell header/footer config (logo, header name, footer text, pagination) —
   // lifted to the parent so the Stage-2 preview shares the same config.
   const header = p.header, setHeader = p.setHeader, footer = p.footer, setFooter = p.setFooter;
   const [phOpen, setPhOpen] = useState(false);                  // placeholder picker
   const [clauseOpen, setClauseOpen] = useState(false);          // clause library picker
   const [approvalOpen, setApprovalOpen] = useState(false);      // Review & Approval Workflow popup
-  // contentEditable draft editor (mirrors the Agreement / Trade-Document editors:
-  // native execCommand, caret stashing, placeholder/clause/upload-docx insertion).
-  const editorRef = useRef<HTMLDivElement | null>(null);
-  const lastRange = useRef<Range | null>(null);
+  // TipTap-backed rich editor (replaces the old contentEditable + execCommand
+  // machinery). The hook owns the ProseMirror document model, formatting-toolbar
+  // commands, caret-safe insertion, and debounced sync back to the parent draft.
   const docxRef = useRef<HTMLInputElement | null>(null);
-  // Seed the editor's HTML once it appears (Step 3) without clobbering it on every keystroke.
+  const ctcEd = useCtcEditor({ value: p.draft, onChange: p.setDraft, editable: !p.editLock });
+  // Placeholder / clause side-panels call these; route them through the editor.
+  const insertText = (text: string) => ctcEd.insertText(text);
+  const insertHtml = (html: string) => ctcEd.insertHTML(html);
+  // Escape exits the draft editor's full-screen overlay.
   useEffect(() => {
-    if (midStep === 3 && editorRef.current && editorRef.current.innerHTML !== p.draft) editorRef.current.innerHTML = p.draft || '';
-  }, [midStep]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Stash the caret whenever the selection sits inside the editor.
-  useEffect(() => {
-    const onSel = () => {
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount && editorRef.current && editorRef.current.contains(sel.anchorNode)) lastRange.current = sel.getRangeAt(0).cloneRange();
-    };
-    document.addEventListener('selectionchange', onSel);
-    return () => document.removeEventListener('selectionchange', onSel);
-  }, []);
-  // Push the editor's HTML up to the parent draft state. The editor is
-  // uncontrolled (seeded once via innerHTML above), so execCommand formatting
-  // applies to the DOM instantly — but setDraft() re-renders the whole (large)
-  // Stage-1 tree, which on a long agreement blocked the UI after EVERY
-  // keystroke / format and read as "the editor is loading". Debounce it so
-  // rapid edits coalesce into one re-render ~250ms after the user pauses; the
-  // formatting itself is never delayed. flushDraft() forces an immediate sync
-  // (on blur / before the parent reads the draft) so nothing is ever lost.
-  const syncTimer = useRef<number | null>(null);
-  const flushDraft = () => {
-    if (syncTimer.current) { window.clearTimeout(syncTimer.current); syncTimer.current = null; }
-    if (editorRef.current) p.setDraft(editorRef.current.innerHTML);
-  };
-  const syncDraft = () => {
-    if (syncTimer.current) window.clearTimeout(syncTimer.current);
-    syncTimer.current = window.setTimeout(flushDraft, 250);
-  };
-  useEffect(() => () => { if (syncTimer.current) window.clearTimeout(syncTimer.current); }, []);
-  // preventScroll is load-bearing: the editor element IS the whole agreement, so
-  // a plain focus() makes the browser scroll it into view — i.e. jump the mid
-  // pane to the editor's top, Page 1 — every time a placeholder / clause was
-  // inserted from a side panel, which made continuous insertion impossible.
-  // The caret is re-applied below, so the view stays exactly where the user was.
-  const restoreCaret = () => {
-    const el = editorRef.current; if (!el) return; el.focus({ preventScroll: true });
-    const sel = window.getSelection(); if (!sel) return;
-    if (lastRange.current && el.contains(lastRange.current.commonAncestorContainer)) { sel.removeAllRanges(); sel.addRange(lastRange.current); }
-    else { const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); sel.removeAllRanges(); sel.addRange(r); }
-  };
-  const insertText = (text: string) => { restoreCaret(); document.execCommand('insertText', false, text + ' '); syncDraft(); };
-  const insertHtml = (html: string) => { restoreCaret(); document.execCommand('insertHTML', false, html); syncDraft(); };
-  const exec = (cmd: string, val?: string) => { editorRef.current?.focus({ preventScroll: true }); document.execCommand(cmd, false, val); syncDraft(); };
-  // Apply the link from the themed dialog. restoreCaret() puts the stashed editor
-  // selection back (the dialog input stole focus) so createLink wraps the right text.
-  const applyLink = () => {
-    const url = linkUrl.trim();
-    if (!url) { setLinkOpen(false); return; }
-    // Put the stashed editor selection back (the dialog input stole focus).
-    restoreCaret();
-    const sel = window.getSelection();
-    const hasText = !!sel && sel.rangeCount > 0 && !sel.getRangeAt(0).collapsed;
-    if (hasText) {
-      // Wrap the selected text in a hyperlink.
-      document.execCommand('createLink', false, url);
-    } else {
-      // No text selected (or the selection was lost) → insert the URL itself as
-      // a clickable link so the Insert button always produces a result rather
-      // than appearing "non-responsive".
-      const safe = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      document.execCommand('insertHTML', false, `<a href="${safe}">${url}</a>`);
-    }
-    syncDraft();
-    setLinkOpen(false);
-  };
+    if (!editorFs) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setEditorFs(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [editorFs]);
   const uploadDocx = async (file: File) => {
+    if (docxBusy) return;                     // ignore re-trigger while a conversion is running
+    // Only Word documents are supported — the picker filter can be bypassed via
+    // "All files", so validate the extension/type and reject PDFs & everything else.
+    const isWord = /\.docx?$/i.test(file.name)
+      || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      || file.type === 'application/msword';
+    if (!isWord) {
+      toast.error('Only Word files', 'Please upload a .doc or .docx file — PDFs aren’t supported here.');
+      return;
+    }
     const fd = new FormData(); fd.append('docx', file);
+    // Converting a large (200-300 page) DOCX takes several seconds server-side.
+    // Lock the whole surface behind a spinner so the user knows work is happening
+    // and can't cut it off (close the modal / switch step) mid-conversion.
+    setDocxBusy(true);
     try {
       const res = await api.post('/clm/docx-to-html', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       const html = String(res.data?.html ?? '');
-      if (editorRef.current) editorRef.current.innerHTML = html;
-      p.setDraft(html);
-    } catch { /* keep current content if parsing fails */ }
+      // Replace the whole document via the ProseMirror model — no innerHTML,
+      // no ghost caret, no manual scroll reset (TipTap handles all of that).
+      ctcEd.setHTML(html);
+      (docxRef.current?.closest('.ctc-mid-scroll') as HTMLElement | null)?.scrollTo({ top: 0 });
+      toast.success('Document imported', 'Your file was converted into the editor.');
+    } catch {
+      toast.error('Import failed', 'Could not convert this document. Please try another file.');
+    } finally {
+      setDocxBusy(false);
+    }
   };
   const ipt: React.CSSProperties = { width: '100%', height: 34, padding: '0 12px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 9, fontSize: 11, fontFamily: 'inherit', color: t.text, outline: 'none', background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', boxSizing: 'border-box' };
   const MID_STEPS = [
@@ -940,36 +911,28 @@ function Stage1(p: {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <input ref={docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) uploadDocx(f); e.target.value = ''; }} />
+                    {/* Editing tools are hidden when the draft is locked (view-only):
+                        TipTap commands still mutate a non-editable doc, so an Upload
+                        Doc / placeholder / clause here would overwrite a locked draft. */}
+                    {!p.editLock && <>
                     <FrostBtn onClick={() => docxRef.current?.click()} icon={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></>}>Upload Doc</FrostBtn>
                     <FrostBtn onClick={() => setPhOpen(true)} icon={<><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></>}>{'{} Placeholder'}</FrostBtn>
                     <FrostBtn onClick={() => setClauseOpen(true)} icon={<><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>}>Clause Library</FrostBtn>
+                    </>}
                     <FrostBtn active onClick={() => setEditorFs(v => !v)} icon={editorFs ? <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" /> : <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />}>{editorFs ? 'Exit Full Screen' : 'Full Screen'}</FrostBtn>
                   </div>
                 </div>
-                {/* full toolbar */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 1, padding: '7px 10px', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.18)' : '#ECE6FB'}`, background: t.dark ? 'rgba(255,255,255,.02)' : '#F6F3FF', flexWrap: 'wrap' }}>
-                  <select defaultValue="12" onChange={e => exec('fontSize', ({ '10': '1', '11': '2', '12': '3', '14': '4', '16': '5', '18': '6' } as Record<string, string>)[e.target.value] || '3')} style={{ height: 24, padding: '0 4px', borderRadius: 5, border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E4DEFF'}`, fontSize: 9, fontFamily: 'inherit', color: t.dark ? '#c4b5fd' : '#4C1D95', background: t.dark ? 'rgba(255,255,255,.04)' : '#F8F6FF', cursor: 'pointer', marginRight: 3 }}>{['10', '11', '12', '14', '16', '18'].map(s => <option key={s}>{s}</option>)}</select>
-                  <select defaultValue="Paragraph" onChange={e => exec('formatBlock', ({ 'Paragraph': 'p', 'Heading 1': 'h1', 'Heading 2': 'h2', 'Heading 3': 'h3' } as Record<string, string>)[e.target.value] || 'p')} style={{ height: 24, padding: '0 5px', borderRadius: 5, border: `1px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#E4DEFF'}`, fontSize: 9, fontFamily: 'inherit', color: t.dark ? '#c4b5fd' : '#4C1D95', background: t.dark ? 'rgba(255,255,255,.04)' : '#F8F6FF', cursor: 'pointer', marginRight: 5, minWidth: 72 }}>{['Paragraph', 'Heading 1', 'Heading 2', 'Heading 3'].map(s => <option key={s}>{s}</option>)}</select>
-                  <ToolDiv t={t} />
-                  {([['B', 'bold'], ['I', 'italic'], ['U', 'underline'], ['S', 'strikeThrough']] as const).map(([b, cmd]) => <button key={b} type="button" title={b} onMouseDown={e => e.preventDefault()} onClick={() => exec(cmd)} style={{ width: 24, height: 24, borderRadius: 5, border: 'none', background: 'none', cursor: 'pointer', fontSize: 11, fontWeight: b === 'B' ? 900 : 600, fontStyle: b === 'I' ? 'italic' : 'normal', textDecoration: b === 'U' ? 'underline' : b === 'S' ? 'line-through' : 'none', color: t.dark ? '#c4b5fd' : '#4C1D95', fontFamily: 'Georgia, serif' }} onMouseEnter={e => (e.currentTarget.style.background = t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE')} onMouseLeave={e => (e.currentTarget.style.background = 'none')}>{b}</button>)}
-                  <ToolDiv t={t} />
-                  <ToolBtn t={t} title="Align left" onClick={() => exec('justifyLeft')}><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="15" y2="12" /><line x1="3" y1="18" x2="18" y2="18" /></ToolBtn>
-                  <ToolBtn t={t} title="Align center" onClick={() => exec('justifyCenter')}><line x1="3" y1="6" x2="21" y2="6" /><line x1="6" y1="12" x2="18" y2="12" /><line x1="4" y1="18" x2="20" y2="18" /></ToolBtn>
-                  <ToolBtn t={t} title="Align right" onClick={() => exec('justifyRight')}><line x1="3" y1="6" x2="21" y2="6" /><line x1="9" y1="12" x2="21" y2="12" /><line x1="6" y1="18" x2="21" y2="18" /></ToolBtn>
-                  <ToolBtn t={t} title="Justify" onClick={() => exec('justifyFull')}><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></ToolBtn>
-                  <ToolDiv t={t} />
-                  <ToolBtn t={t} title="Bullet list" onClick={() => exec('insertUnorderedList')}><line x1="9" y1="6" x2="20" y2="6" /><line x1="9" y1="12" x2="20" y2="12" /><line x1="9" y1="18" x2="20" y2="18" /><circle cx="4" cy="6" r="1.5" fill="currentColor" /><circle cx="4" cy="12" r="1.5" fill="currentColor" /><circle cx="4" cy="18" r="1.5" fill="currentColor" /></ToolBtn>
-                  <ToolBtn t={t} title="Numbered list" onClick={() => exec('insertOrderedList')}><line x1="10" y1="6" x2="21" y2="6" /><line x1="10" y1="12" x2="21" y2="12" /><line x1="10" y1="18" x2="21" y2="18" /><path d="M4 6h1v4" /><path d="M4 10h2" /></ToolBtn>
-                  <ToolBtn t={t} title="Indent" onClick={() => exec('indent')}><line x1="3" y1="6" x2="21" y2="6" /><polyline points="3 12 8 16 3 20" /><line x1="10" y1="12" x2="21" y2="12" /><line x1="10" y1="18" x2="21" y2="18" /></ToolBtn>
-                  <ToolBtn t={t} title="Outdent" onClick={() => exec('outdent')}><line x1="3" y1="6" x2="21" y2="6" /><polyline points="11 12 6 16 11 20" /><line x1="13" y1="12" x2="21" y2="12" /><line x1="13" y1="18" x2="21" y2="18" /></ToolBtn>
-                  <ToolDiv t={t} />
-                  <ToolBtn t={t} title="Insert link" onClick={() => { setLinkUrl(''); setLinkOpen(true); }}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></ToolBtn>
-                  <ToolBtn t={t} title="Undo" onClick={() => exec('undo')}><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-4.95" /></ToolBtn>
-                  <ToolBtn t={t} title="Redo" onClick={() => exec('redo')}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-.49-4.95" /></ToolBtn>
-                </div>
+                {/* full toolbar (TipTap-backed) — hidden in view-only mode */}
+                <style>{CTC_EDITOR_CSS}</style>
+                {!p.editLock
+                  ? <CtcToolbar editor={ctcEd.editor} dark={t.dark} />
+                  : <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.18)' : '#ECE6FB'}`, background: t.dark ? 'rgba(255,255,255,.02)' : '#F6F3FF', flexShrink: 0 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                      <span style={{ fontSize: 9.5, fontWeight: 800, color: t.dark ? '#a78bfa' : '#6D28D9', letterSpacing: '.03em' }}>Read-only — this agreement is locked</span>
+                    </div>}
                 <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
                   <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
-                    <div ref={editorRef} className="ctc-editor" contentEditable={!p.editLock} suppressContentEditableWarning data-ph="Start drafting your agreement content here…  This Agreement is entered into between [Counter Party 1] and [Counter Party 2]…" onInput={p.editLock ? undefined : syncDraft} onBlur={p.editLock ? undefined : flushDraft} style={{ minHeight: 220, padding: '14px 16px', border: 'none', outline: 'none', fontSize: 12, fontFamily: 'inherit', color: t.dark ? '#e8eaed' : '#1f2937', lineHeight: 1.8, background: t.dark ? '#1b2230' : '#fff', boxSizing: 'border-box' }} />
+                    <CtcEditorContent editor={ctcEd.editor} />
                   </HeaderFooterPanel>
                 </div>
                 {/* footer hint */}
@@ -979,24 +942,14 @@ function Stage1(p: {
                 </div>
                 {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase(), type: c.sourceType, id: c.sourceId }))} onClose={() => setPhOpen(false)} onInsert={tok => { const isHtml = /^\s*</.test(tok); toast.success(isHtml ? 'Inserted' : 'Placeholder added', isHtml ? 'Added to the agreement draft.' : tok); if (isHtml) insertHtml(tok); else insertText(tok); }} />}
                 {clauseOpen && <ClmClauseInsertPanel onClose={() => setClauseOpen(false)} onInsert={html => insertHtml(html)} />}
-                {linkOpen && (
-                  <div onMouseDown={e => { if (e.target === e.currentTarget) setLinkOpen(false); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.55)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'var(--font-sans)' }}>
-                    <div style={{ width: 'min(420px,92vw)', background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD'}`, boxShadow: '0 30px 80px rgba(8,3,28,.5)', overflow: 'hidden' }}>
-                      <div style={{ padding: '13px 18px', background: t.dark ? 'rgba(124,58,237,.16)' : 'linear-gradient(110deg,#EDE9FE,#F3F0FF)', borderBottom: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#ede9fe' : '#4C1D95' }}>Insert Link</span>
-                      </div>
-                      <div style={{ padding: 18 }}>
-                        <label style={{ fontSize: 9.5, fontWeight: 800, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.07em' }}>Link URL</label>
-                        <input autoFocus value={linkUrl} onChange={e => setLinkUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyLink(); } else if (e.key === 'Escape') setLinkOpen(false); }} placeholder="https://example.com" style={{ width: '100%', marginTop: 6, height: 38, padding: '0 12px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', color: t.textStrong, fontSize: 13, fontFamily: 'inherit', outline: 'none' }} />
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-                          <button type="button" onClick={() => setLinkOpen(false)} style={{ padding: '8px 16px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: 'none', color: t.textMuted, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-                          <button type="button" onClick={applyLink} style={{ padding: '8px 18px', borderRadius: 9, border: 'none', background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(91,33,182,.4)' }}>Insert</button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                {/* DOCX conversion lock — blocks the whole surface (incl. the modal's
+                    close button) so a long import can't be cut off mid-flight. */}
+                {docxBusy && createPortal(
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 2000000, background: 'rgba(15,7,50,.62)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, fontFamily: 'var(--font-sans)' }}>
+                    <svg className="ctc-spin" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>Converting document…</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Large files can take a moment — please don't close this window.</div>
+                  </div>, document.body)}
               </div>
             )}
           </div>
@@ -1066,7 +1019,7 @@ function Stage1(p: {
       <div style={{ flex: rightOpen ? 2.5 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
         {!rightOpen ? <CollapsedBar t={t} title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" dir="right" onExpand={() => setRightOpen(true)} /> :
         <Panel t={t} header="Panel 03" title="Agreement Summary Details" headGrad="#6D28D9,#7C3AED,#8B5CF6,#A78BFA,#C4B5FD" onCollapse={() => setRightOpen(false)} collapseDir="right" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1" /><line x1="9" y1="12" x2="15" y2="12" /><line x1="9" y1="16" x2="13" y2="16" /></svg>}>
-          <RightTools t={t} active={midStep === 3 && !p.editLock} draft={p.draft} declineReason={p.declineReason} declinedBy={p.declinedBy} onInsert={(tok) => { if (midStep !== 3 || p.editLock) return; if (editorRef.current) insertText(tok); else p.setDraft((p.draft ? p.draft + ' ' : '') + tok); }} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['Counterparties', p.cps.length ? `${p.cps.length} added` : '—'], ['CP 1', cp1?.name || '—'], ['Organisation', p.org?.name || '—']]} />
+          <RightTools t={t} active={midStep === 3 && !p.editLock} draft={p.draft} declineReason={p.declineReason} declinedBy={p.declinedBy} onInsert={(tok) => { if (midStep !== 3 || p.editLock) return; insertText(tok); }} summary={[['Agreement', p.agTitle || '—'], ['Type', p.agType || '—'], ['Eff. Date', p.effDate || '—'], ['End Date', p.endDate || '—'], ['Counterparties', p.cps.length ? `${p.cps.length} added` : '—'], ['CP 1', cp1?.name || '—'], ['Organisation', p.org?.name || '—']]} />
         </Panel>}
       </div>
     </div>
@@ -1101,6 +1054,12 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   const allSigned = signers.length > 0 && signers.every(s => s.signed);
   const declinedSigner = signers.find(s => s.declined);
   const isDeclined = !!declinedSigner;
+  // Already handed to the counterparty for e-signature — a Zoho request exists /
+  // signers are set / status says so. Once sent, "Send for Signing" must lock
+  // until the counterparty responds (signs or declines); no re-send from here.
+  const sentForSigning = !!record?.signature_request_id
+    || signers.length > 0
+    || String(record?.status ?? '').toLowerCase() === 'sent for signing';
   // Fully signed / stored → locked. No re-send for signing, no resubmit — only
   // viewing (and the legitimate "Move to Final Repository" once all signed).
   const signedLock = allSigned || String(record?.status ?? '') === 'signed' || stage >= 4;
@@ -1274,8 +1233,13 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               {!signedLock && stage === 2 && approval === 'rejected' && (
                 <button onClick={onResubmitEdit} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#B45309,#D97706,#F59E0B)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(217,119,6,.35)' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg> Edit &amp; Resubmit for Review</button>
               )}
-              {!signedLock && stage === 2 && approval === 'approved' && (
+              {!signedLock && stage === 2 && approval === 'approved' && !sentForSigning && (
                 <button onClick={() => setSigningOpen(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: '#fff', boxShadow: '0 3px 10px rgba(8,145,178,.35)' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> Send for Signing &amp; Negotiation</button>
+              )}
+              {/* Already sent for e-signature — lock the button until the
+                  counterparty responds (signs / declines). No re-send. */}
+              {!signedLock && stage === 2 && approval === 'approved' && sentForSigning && (
+                <button disabled title="Already sent to the counterparty for signature — waiting for their response" style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9', border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0'}`, cursor: 'not-allowed', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Sent for Signature — awaiting response</button>
               )}
               {!signedLock && stage === 2 && approval !== 'approved' && approval !== 'rejected' && (
                 <button disabled title={inClarification ? 'Reply to the clarification in the review panel — the approver decides after you respond' : approverCount > 1 ? `All ${approverCount} approvers must approve before this can be sent for signing` : "Waiting for the approver's decision"} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 9, background: t.dark ? 'rgba(255,255,255,.04)' : '#F1F5F9', border: `1.5px solid ${t.dark ? 'rgba(148,163,184,.2)' : '#E2E8F0'}`, cursor: 'not-allowed', fontFamily: 'inherit', fontSize: 9.5, fontWeight: 800, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> {inClarification ? 'Clarification Requested' : `Awaiting Approval${approverCount > 1 ? ` · ${approvedCount} of ${approverCount} approved` : ''}`}</button>
@@ -1401,9 +1365,12 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
             {/* Agreement summary */}
             <div style={{ borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.surface }}>
               <div style={{ padding: '6px 10px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE,#F3F0FF)', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}`, display: 'flex', justifyContent: 'space-between' }}><span style={{ fontSize: 7, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#6D28D9', letterSpacing: '.1em', textTransform: 'uppercase' }}>Agreement Summary</span><span style={{ fontSize: 7, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 600 }}>{code}</span></div>
-              <div style={{ padding: '8px 10px 4px' }}>{summary.map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 6, padding: '4px 0', borderBottom: `1px solid ${t.dark ? 'rgba(148,163,184,.1)' : '#FAF8FF'}` }}><span style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em' }}>{k}</span><span style={{ fontSize: 8.5, fontWeight: 700, color: t.textStrong, textAlign: 'right' }}>{v}</span></div>
-              ))}</div>
+              <div style={{ padding: '8px 10px 4px' }}>{summary.map(([k, v]) => {
+                const long = (v ?? '').length > 30;
+                return (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', gap: 6, padding: '4px 0', borderBottom: `1px solid ${t.dark ? 'rgba(148,163,184,.1)' : '#FAF8FF'}` }}><span style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', flexShrink: 0 }}>{k}</span><Tooltip label={v} position="top" disabled={!long}><span style={{ fontSize: 8.5, fontWeight: 700, color: t.textStrong, textAlign: 'right' }}>{long ? v.slice(0, 30) + '…' : v}</span></Tooltip></div>
+                );
+              })}</div>
             </div>
             {/* Approvers & review status */}
             <div style={{ borderRadius: 11, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, background: t.surface }}>
@@ -2129,12 +2096,15 @@ function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy, ac
       <div style={{ background: t.surface, borderRadius: 12, border: cardBd, overflow: 'hidden' }}>
         <div style={{ padding: '6px 12px', background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(110deg,#EDE9FE,#F3F0FF)', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}` }}><span style={{ fontSize: 7.5, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#6D28D9', letterSpacing: '.1em', textTransform: 'uppercase' }}>Agreement Summary</span></div>
         <div style={{ padding: '8px 12px 4px' }}>
-          {summary.map(([k, v]) => (
+          {summary.map(([k, v]) => {
+            const long = (v ?? '').length > 30;
+            return (
             <div key={k} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6, padding: '4px 0', borderBottom: `1px solid ${t.dark ? 'rgba(148,163,184,.1)' : '#FAF8FF'}` }}>
               <span style={{ fontSize: 7.5, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.06em', flexShrink: 0, minWidth: 55 }}>{k}</span>
-              <span style={{ fontSize: 8.5, fontWeight: 700, color: t.textStrong, textAlign: 'right', wordBreak: 'break-word', lineHeight: 1.4, flex: 1 }}>{v}</span>
+              <Tooltip label={v} position="top" disabled={!long}><span style={{ fontSize: 8.5, fontWeight: 700, color: t.textStrong, textAlign: 'right', wordBreak: 'break-word', lineHeight: 1.4, flex: 1 }}>{long ? v.slice(0, 30) + '…' : v}</span></Tooltip>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
@@ -2270,7 +2240,7 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
   };
   const tagBg = (c: string) => c === '#D97706' ? (t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7') : c === '#DC2626' ? (t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2') : (t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE');
   return (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.72)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontFamily: 'var(--font-sans)' }}>
+    <div onClick={e => { if (!submitting && e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.72)', backdropFilter: 'blur(10px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, fontFamily: 'var(--font-sans)', cursor: submitting ? 'wait' : 'auto' }}>
       <div style={{ width: '100%', maxWidth: 420, borderRadius: 20, overflow: 'hidden', boxShadow: '0 40px 80px rgba(109,40,217,.3)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}` }}>
         {/* header */}
         <div style={{ background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#3B0764,#5B21B6,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -2278,10 +2248,11 @@ function ApprovalWorkflowModal({ t, orgName, onClose, onSubmit }: { t: OpsTokens
             <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg></div>
             <div><div style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.6)', letterSpacing: '.12em', textTransform: 'uppercase' }}>Stage 02</div><div style={{ fontSize: 14, fontWeight: 800, color: '#fff' }}>Review &amp; Approval Workflow</div><div style={{ fontSize: 8.5, color: 'rgba(255,255,255,.65)', fontWeight: 500 }}>Select approvers for this agreement draft</div></div>
           </div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.12)', border: '1.5px solid rgba(255,255,255,.22)', color: '#fff', cursor: 'pointer', fontSize: 13, flexShrink: 0 }}>✕</button>
+          <button onClick={() => { if (!submitting) onClose(); }} disabled={submitting} style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.12)', border: '1.5px solid rgba(255,255,255,.22)', color: '#fff', cursor: submitting ? 'not-allowed' : 'pointer', opacity: submitting ? .5 : 1, fontSize: 13, flexShrink: 0 }}>✕</button>
         </div>
-        {/* body */}
-        <div style={{ background: t.surface, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* body — while submitting, lock every control inside (remove approver,
+            add member, and the submit button itself) so no action fires mid-send. */}
+        <div style={{ background: t.surface, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: submitting ? 'none' : 'auto' }}>
           {/* initiator */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px', borderRadius: 11, background: t.dark ? 'rgba(124,58,237,.14)' : 'linear-gradient(135deg,#EDE9FE,#DDD6FE)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#C4B5FD'}` }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -2519,11 +2490,18 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, onClose, onPick }: { t:
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
                       <span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 9.5, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '2px 7px', borderRadius: 6, letterSpacing: '.02em' }}>{p.id}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                      <Tooltip label={p.name} position="top" zIndex={10000001} disabled={!p.name || p.name === '—'}><span style={{ fontSize: 13, fontWeight: 700, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span></Tooltip>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 4 }}>
-                      <span style={{ flexShrink: 0, fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em', color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '2px 8px', borderRadius: 20 }}>{tabBadge.label}</span>
-                      <span style={{ fontSize: 10.5, color: t.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.country}</span>
+                      {/* Tab already says the party type (Customer/Consignee/Supplier),
+                          so the redundant type badge is dropped — show the country
+                          in the badge instead. */}
+                      {p.country && p.country !== '—'
+                        ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, fontSize: 9.5, fontWeight: 700, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '2px 9px', borderRadius: 20, maxWidth: '100%', overflow: 'hidden' }}>
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0 }}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z" /></svg>
+                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.country}</span>
+                          </span>
+                        : <span style={{ fontSize: 10, color: t.textMuted }}>No country</span>}
                     </div>
                   </div>
                 </div>
@@ -2535,7 +2513,7 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, onClose, onPick }: { t:
           <div style={{ padding: '12px 14px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10 }}>
               <div style={{ width: 34, height: 34, borderRadius: 9, background: `linear-gradient(135deg,${pending.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{pending.initials}</span></div>
-              <div style={{ minWidth: 0 }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontFamily: "'Geist Mono', monospace", fontSize: 7, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '1px 5px', borderRadius: 5 }}>{pending.id}</span><span style={{ fontSize: 11, fontWeight: 800, color: t.textStrong }}>{pending.name}</span></div><div style={{ fontSize: 8, color: t.textMuted, marginTop: 1 }}>{pending.email}</div></div>
+              <div style={{ minWidth: 0, flex: 1 }}><div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}><span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 7, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '1px 5px', borderRadius: 5 }}>{pending.id}</span><Tooltip label={pending.name} position="top" zIndex={10000001} disabled={!pending.name}><span style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.name}</span></Tooltip></div><Tooltip label={pending.email} position="bottom" zIndex={10000001} disabled={!pending.email || pending.email === '—'}><div style={{ fontSize: 8, color: t.textMuted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.email}</div></Tooltip></div>
             </div>
             <label style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#A78BFA' }}>Referred As In Agreement</label>
             <input value={referred} onChange={e => setReferred(e.target.value)} style={{ width: '100%', padding: '7px 10px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 8, fontSize: 10.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box', marginTop: 4 }} />

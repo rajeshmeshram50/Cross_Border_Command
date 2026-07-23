@@ -43,11 +43,13 @@ class PoPaymentController extends Controller
 
         $data = $request->validate(['tds_percentage' => 'required|numeric|min:0|max:100']);
 
-        // TDS is cut exactly ONCE per PO — block any re-cut once it's done.
-        if ($order->tds_cut) {
+        // TDS % stays editable until the FIRST payment is recorded — re-saving
+        // just recomputes the deduction. Once any payment exists, changing the
+        // TDS would desync the already-paid balance, so it locks (QA #15).
+        if ($order->payments()->exists()) {
             return response()->json([
                 'status'  => false,
-                'message' => 'TDS is already cut for this PO — it cannot be changed.',
+                'message' => 'TDS cannot be changed — a payment has already been recorded against this PO.',
             ], 422);
         }
 
@@ -103,6 +105,24 @@ class PoPaymentController extends Controller
             // Entry-point trace only (when paid from the SPI screen).
             'supplier_purchase_invoice_id' => 'nullable|integer',
         ]);
+
+        // A UTR / Cheque number is a bank transaction reference — it can back at
+        // most one PO payment. Reject a duplicate within this tenant so the same
+        // reference can't be recorded against multiple payments (QA #14).
+        // Case-insensitive; the model's SoftDeletes scope means a deleted
+        // payment's reference is freed for reuse.
+        if (!empty($data['utr_cheque_number'])) {
+            $dupExists = PoPayment::where('client_id', $order->client_id)
+                ->whereRaw('LOWER(utr_cheque_number) = ?', [mb_strtolower($data['utr_cheque_number'])])
+                ->exists();
+            if ($dupExists) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'This UTR / Cheque number has already been used for another PO payment.',
+                    'errors'  => ['utr_cheque_number' => ['This UTR / Cheque number has already been used for another PO payment.']],
+                ], 422);
+            }
+        }
 
         $amount = round((float) $data['amount'], 2);
 

@@ -341,38 +341,37 @@ export default function HrCandidates() {
               ))}
             </Row>
 
-            <div className="cand-toolbar d-flex align-items-center gap-2 mb-2 flex-wrap">
-              <div className="rec-tab-track">
-                {([
-                  { key: 'final' as const,    label: 'Final Round Selected', count: totals.finalRound,                icon: 'ri-user-search-line',     variant: 'in-progress' },
-                  { key: 'selected' as const, label: 'Selected Candidates',  count: totals.selected + totals.offered, icon: 'ri-checkbox-circle-line', variant: 'completed' },
-                  { key: 'rejected' as const, label: 'Rejected Candidates',  count: totals.rejected,                  icon: 'ri-close-circle-line',    variant: 'cancelled' },
-                ]).map(t => (
-                  <button
-                    key={t.key}
-                    type="button"
-                    onClick={() => setTab(t.key)}
-                    className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
-                  >
-                    <i className={t.icon} />
-                    {t.label}
-                    <span className="badge">{t.count}</span>
-                  </button>
-                ))}
-              </div>
-              <div className="rec-req-search search-box ms-auto" style={{ flex: '1 1 240px', maxWidth: 380, minWidth: 200 }}>
-                <Input type="text" className="form-control" placeholder="Search name, email, mobile…" value={search} onChange={e => setSearch(e.target.value)} />
-                <i className="ri-search-line search-icon"></i>
-              </div>
-              <span className="cand-result-chip">
-                <i className="ri-filter-3-line" />
-                {filtered.length} result{filtered.length === 1 ? '' : 's'}
-              </span>
-            </div>
-
             <Card className="border-0 shadow-none mb-0 bg-transparent">
               <CardBody className="p-0">
                 <div className="rec-list-frame">
+                  <div className="cand-toolbar d-flex align-items-center gap-2 flex-wrap p-2 border-bottom">
+                    <div className="rec-tab-track">
+                      {([
+                        { key: 'final' as const,    label: 'Final Round Selected', count: totals.finalRound,                icon: 'ri-user-search-line',     variant: 'in-progress' },
+                        { key: 'selected' as const, label: 'Selected Candidates',  count: totals.selected + totals.offered, icon: 'ri-checkbox-circle-line', variant: 'completed' },
+                        { key: 'rejected' as const, label: 'Rejected Candidates',  count: totals.rejected,                  icon: 'ri-close-circle-line',    variant: 'cancelled' },
+                      ]).map(t => (
+                        <button
+                          key={t.key}
+                          type="button"
+                          onClick={() => setTab(t.key)}
+                          className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
+                        >
+                          <i className={t.icon} />
+                          {t.label}
+                          <span className="badge">{t.count}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220 }}>
+                      <Input type="text" className="form-control" placeholder="Search name, email, mobile…" value={search} onChange={e => setSearch(e.target.value)} />
+                      <i className="ri-search-line search-icon"></i>
+                    </div>
+                    <span className="cand-result-chip">
+                      <i className="ri-filter-3-line" />
+                      {filtered.length} result{filtered.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
                   <div className="p-2 rec-list-scroll">
                   <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
                     <thead>

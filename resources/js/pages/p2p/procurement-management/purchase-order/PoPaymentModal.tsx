@@ -89,7 +89,7 @@ export default function PoPaymentModal({
   }, [open, poId, spiId]);
 
   const preview = useMemo(() => {
-    if (!data || data.amounts.tdsCut) return null;
+    if (!data || (data.amounts.paidCount ?? 0) > 0) return null;
     const pct = Math.max(0, Math.min(100, Number(tdsInput) || 0));
     const tdsAmount = Math.round(data.amounts.base * pct) / 100;
     const addl = data.amounts.additionalCharges ?? 0;
@@ -101,7 +101,9 @@ export default function PoPaymentModal({
 
   const a = data?.amounts;
   const sup = data?.supplier;
-  const tdsLocked = !!a?.tdsCut;
+  // TDS % is editable until the first payment is recorded; it locks only once a
+  // payment exists (changing it afterwards would desync the paid balance). QA #15.
+  const tdsLocked = (a?.paidCount ?? 0) > 0;
   const tryAddPayment = () => {
     if (!entityId) return;
     if (!a?.tdsCut) { toast.warning('Deduct the TDS first', 'Save the TDS deduction in Payment Details before recording a payment.'); return; }
@@ -116,7 +118,7 @@ export default function PoPaymentModal({
       const { data: r } = await api.post<{ status: boolean; data: Summary }>(
         `${apiBase}/payment-summary/tds`, { tds_percentage: Number(tdsInput) || 0 });
       setData(r.data); setTdsInput(String(r.data.amounts.tdsPct ?? 0));
-      toast.success('TDS deducted', `TDS can be deducted only once for this ${label}.`);
+      toast.success('TDS saved', `You can edit the TDS % until the first payment is recorded against this ${label}.`);
       onTdsCut?.();
     } catch (e: any) {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save TDS %.');
@@ -209,7 +211,7 @@ export default function PoPaymentModal({
                        }} disabled={tdsLocked} /></td>
                   <td><span className="pop-ro">{inr(preview?.tdsAmount ?? a?.tdsAmount)}</span></td>
                   <td><span className="pop-ro">{inr(preview?.netPayable ?? a?.netPayable)}</span></td>
-                  <td><Tooltip label={a?.tdsCut ? `TDS already deducted for this ${label}` : 'Deduct the TDS'} themed zIndex={2999999}><button className={`pop-btn-save ${a?.tdsCut ? 'is-cut' : ''}`} disabled={savingTds || tdsLocked} onClick={saveTds}>{savingTds ? '…' : (a?.tdsCut ? '✓ Deducted' : 'Deduct')}</button></Tooltip></td>
+                  <td><Tooltip label={tdsLocked ? `TDS locked — a payment has been recorded for this ${label}` : (a?.tdsCut ? 'Edit the TDS % (allowed until the first payment)' : 'Deduct the TDS')} themed zIndex={2999999}><button className={`pop-btn-save ${tdsLocked ? 'is-cut' : ''}`} disabled={savingTds || tdsLocked} onClick={saveTds}>{savingTds ? '…' : (tdsLocked ? '✓ Deducted' : (a?.tdsCut ? 'Update' : 'Deduct'))}</button></Tooltip></td>
                 </tr></tbody>
               </table>
             </div>
@@ -305,6 +307,9 @@ function UpdatePaymentModal({
   const [amount, setAmount] = useState('');
   const [bank, setBank] = useState('');
   const [utr, setUtr] = useState('');
+  // Server-side UTR error (e.g. duplicate number) — shown inline under the field,
+  // cleared as soon as the user edits the value. QA #14 follow-up.
+  const [utrServerErr, setUtrServerErr] = useState<string | null>(null);
   const [utrDate, setUtrDate] = useState(todayLocal());
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -358,7 +363,12 @@ function UpdatePaymentModal({
       toast.success('Payment recorded', `The payment was added against this ${label}.`);
       onSaved(r.data);
     } catch (e: any) {
-      toast.error('Save failed', e?.response?.data?.message ?? 'Could not record the payment.');
+      const resp = e?.response?.data;
+      // Duplicate / invalid UTR comes back as a field error — surface it inline
+      // under the UTR input (and mark it touched so it renders immediately).
+      const utrErr = resp?.errors?.utr_cheque_number?.[0];
+      if (utrErr) { setUtrServerErr(utrErr); mark('utr'); }
+      toast.error('Save failed', resp?.message ?? 'Could not record the payment.');
     } finally { setSaving(false); }
   };
 
@@ -422,11 +432,13 @@ function UpdatePaymentModal({
             </label>
             <label className="upm-fld">
               <span className="upm-fld-lab">UTR / CHEQUE NUMBER <span className="upm-req">*</span></span>
-              <input className={`upm-in ${showErr('utr') ? 'is-error' : ''}`} value={utr}
-                onChange={(e) => setUtr(e.target.value)} onBlur={() => mark('utr')} placeholder="e.g. 123456 or HDFCR52026123456789012" />
+              <input className={`upm-in ${(showErr('utr') || utrServerErr) ? 'is-error' : ''}`} value={utr}
+                onChange={(e) => { setUtr(e.target.value); if (utrServerErr) setUtrServerErr(null); }} onBlur={() => mark('utr')} placeholder="e.g. 123456 or HDFCR52026123456789012" />
               {showErr('utr')
                 ? <span className="upm-err">{errors.utr}</span>
-                : <span className="upm-help">Letters &amp; digits only · Cheque: 6 · IMPS/UPI: 12 · NEFT: 16 · RTGS: 22 chars</span>}
+                : utrServerErr
+                  ? <span className="upm-err">{utrServerErr}</span>
+                  : <span className="upm-help">Letters &amp; digits only · Cheque: 6 · IMPS/UPI: 12 · NEFT: 16 · RTGS: 22 chars</span>}
             </label>
             <div className="upm-fld upm-fld-full">
               <span className="upm-fld-lab">PROOF OF PAYMENT <span className="upm-req">*</span></span>

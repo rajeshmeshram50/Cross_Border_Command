@@ -139,7 +139,12 @@ export function MasterSelect({
      of the label, badges first, then the primary badge.
      `disabled` greys the row and blocks selection (e.g. a product whose
      segment doesn't match the customer's); `disabledReason` is its tooltip. */
-  options: { value: string; label: string; badge?: OptBadgeSpec; badges?: OptBadgeSpec[]; disabled?: boolean; disabledReason?: string }[];
+  /* `fullLabel` — when the visible `label` is deliberately shortened (e.g. a
+     30-char-capped agreement type), the full text shows in the hover tooltip.
+     `selectedLabel` — an alternate, shorter text shown in the CLOSED trigger
+     when this option is picked (e.g. options list "CLT-004 - Risk", but the
+     trigger shows just "Risk"); falls back to `label`. */
+  options: { value: string; label: string; fullLabel?: string; selectedLabel?: string; badge?: OptBadgeSpec; badges?: OptBadgeSpec[]; disabled?: boolean; disabledReason?: string }[];
   placeholder?: string;
   /* Label to show for the current value when it is NOT among `options`
    * (e.g. the option was deliberately excluded from the pickable list, or an
@@ -286,9 +291,9 @@ export function MasterSelect({
                the full text shows on hover in the project's styled dark pill
                (Tooltip) instead of the plain native title. Any badge sits after
                the truncating label and stays visible. */
-            <Tooltip label={selected.label} position="bottom">
+            <Tooltip label={selected.fullLabel ?? selected.label} position="bottom">
               <span className="master-select-value">
-                <span className="master-select-value-text">{selected.label}</span>
+                <span className="master-select-value-text">{selected.selectedLabel ?? selected.label}</span>
                 {badgesOf(selected).map((b, i) => <OptBadge key={i} b={b} staticPill />)}
               </span>
             </Tooltip>
@@ -409,7 +414,7 @@ export function MasterSelect({
                     {/* Full label (or the disabled reason) shows on hover in the
                         project's styled dark pill (Tooltip) so a truncated (long)
                         option name stays readable — replaces the plain native title. */}
-                    <Tooltip label={opt.disabled ? (opt.disabledReason ?? opt.label) : opt.label} position="top">
+                    <Tooltip label={opt.disabled ? (opt.disabledReason ?? opt.fullLabel ?? opt.label) : (opt.fullLabel ?? opt.label)} position="top">
                       {(opt.badge || opt.badges?.length) ? (
                         <span style={{ display: 'inline-flex', alignItems: 'center', width: '100%' }}>
                           {/* Label GROWS to take all free space (flex 1 1 auto)

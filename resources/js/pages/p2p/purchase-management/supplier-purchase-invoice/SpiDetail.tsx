@@ -425,6 +425,15 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
     toast.error('No products added', 'Select at least one product with a quantity and rate before saving.');
     return true;
   };
+  // HSN codes are 4–8 numeric digits (4 / 6 / 8 in practice). Block a non-empty
+  // HSN outside that range so an invalid code can't be saved (QA #11).
+  const invalidHsnRow = () => rows.find(r => r.hsn.trim() !== '' && !/^\d{4,8}$/.test(r.hsn.trim()));
+  const blockIfInvalidHsn = (): boolean => {
+    const bad = invalidHsnRow();
+    if (!bad) return false;
+    toast.error('Invalid HSN Code', `${bad.code ? formatProductCode(bad.code) : 'A product'}: HSN Code must be 4 to 8 digits.`);
+    return true;
+  };
 
   // Scroll the first highlighted (empty) field into view after a validation fail.
   const scrollToFirstError = () => {
@@ -516,6 +525,14 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
     if (ie.invoiceNo || ie.invoiceDate || ie.file) {
       setInvOpen(true); // expand the invoice section so the errors are visible
       toast.error('Required fields missing', 'Invoice number, date & attachment are mandatory.');
+      scrollToFirstError();
+      return;
+    }
+    // The invoice date may be today or earlier, never in the future (QA #9).
+    if (invoiceDate > todayIso) {
+      setErrs(prev => ({ ...prev, invoiceDate: true }));
+      setInvOpen(true);
+      toast.error('Invalid Purchase Invoice Date', 'The invoice date cannot be in the future — pick today or an earlier date.');
       scrollToFirstError();
       return;
     }
@@ -894,7 +911,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
           <div className="spi-dt-sec-body">
             <div className="spi-dt-grid3">
               <Field label="PURCHASE INVOICE NUMBER" req><input className={`spi-dt-inp ${errs.invoiceNo ? 'is-invalid' : ''}`} value={invoiceNo} onChange={e => { setInvoiceNo(e.target.value); setErrs(x => ({ ...x, invoiceNo: false })); }} placeholder="e.g. INV-2025-001" /></Field>
-              <Field label="PURCHASE INVOICE DATE" req><MasterDatePicker value={invoiceDate} onChange={v => { setInvoiceDate(v); setErrs(x => ({ ...x, invoiceDate: false })); }} invalid={!!errs.invoiceDate} placeholder="Select date" popupClassName="spi-cal" /></Field>
+              {/* Invoice date can be today or any PAST date, never the future
+                  (QA #9) — maxDate caps the picker at today. */}
+              <Field label="PURCHASE INVOICE DATE" req><MasterDatePicker value={invoiceDate} onChange={v => { setInvoiceDate(v); setErrs(x => ({ ...x, invoiceDate: false })); }} maxDate={todayIso} invalid={!!errs.invoiceDate} placeholder="Select date" popupClassName="spi-cal" /></Field>
               <Field label="PURCHASE INVOICE ATTACHMENT" req>
                 <div className={`spi-dt-file is-clickable ${errs.file ? 'is-invalid' : ''}`} role="button" tabIndex={0} onClick={() => fileRef.current?.click()} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}>
                   <span className="spi-dt-file-txt"><IcoClip /> {file ? file.name : (existingAttach ? (existingAttach.split('/').pop() || 'Attached file') : 'Choose file…')}</span>
@@ -982,7 +1001,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                       <td className="spi-dt-mc-c">{r.poQty}</td>
                       <td><input type="number" min={0} step="any" className="spi-dt-minp spi-dt-minp-sm" value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value.replace(/[^0-9.]/g, '') })} /></td>
                       <td className="spi-dt-mc-c">{Number.isFinite(missing) ? missing : 0}</td>
-                      <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value })} /></td>
+                      <td><input className="spi-dt-minp spi-dt-minp-sm" inputMode="numeric" maxLength={8} value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value.replace(/\D/g, '').slice(0, 8) })} /></td>
                       <td className="spi-dt-amt spi-dt-mc-c">{inr(r.ratePo)}</td>
                       <td><input type="number" min={0} step="any" className="spi-dt-minp spi-dt-minp-sm" value={r.spiRate} onChange={e => setRow(i, { spiRate: e.target.value })} /></td>
                     </tr>
@@ -996,6 +1015,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
               <button type="button" className="spi-dt-save-btn" disabled={savingDetails} onClick={() => {
                 if (savingDetails) return;
                 if (blockIfNoProducts()) return;     // at least one product with qty & rate
+                if (blockIfInvalidHsn()) return;     // HSN must be 4–8 digits
                 if (blockIfOverInvoiced()) return;   // can't invoice more than the PO's remaining qty
                 setSavingDetails(true);
                 setTimeout(() => { setSavingDetails(false); setShowMissing(true); setDetailsSaved(true); toast.success('Product details saved'); }, 500);
@@ -1067,7 +1087,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                         ? <input className="spi-dt-minp spi-dt-minp-name" value={r.spiName} placeholder="Product name" onChange={e => setRow(i, { spiName: e.target.value })} />
                         : <EditSelect value={r.spiName} options={prodOpts.filter(o => o.id === r.productId || !rows.some((x, idx) => idx !== i && x.productId === o.id)).map(p => p.name)} placeholder="— Select Product —" onChange={v => pickProduct(i, v)} />}</td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value.replace(/[^0-9.]/g, '') })} /></td>
-                      <td><input className="spi-dt-minp spi-dt-minp-sm" value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value })} /></td>
+                      <td><input className="spi-dt-minp spi-dt-minp-sm" inputMode="numeric" maxLength={8} value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value.replace(/\D/g, '').slice(0, 8) })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiRate} onChange={e => setRow(i, { spiRate: e.target.value })} /></td>
                       {intra
                         ? (<><td className="spi-dt-mc-c">{r.gst / 2}%</td><td className="spi-dt-mc-c">{r.gst / 2}%</td><td className="spi-dt-amt spi-dt-mc-c">{inr(c.cgstA)}</td><td className="spi-dt-amt spi-dt-mc-c">{inr(c.sgstA)}</td></>)
@@ -1100,6 +1120,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 <button type="button" className="spi-dt-save-btn" disabled={savingDetails} onClick={() => {
                   if (savingDetails) return;
                   if (blockIfNoProducts()) return;   // must have at least one valid product
+                  if (blockIfInvalidHsn()) return;   // HSN must be 4–8 digits
                   setSavingDetails(true);
                   setTimeout(() => { setSavingDetails(false); setShowMissing(true); setDetailsSaved(true); toast.success('Product details saved'); }, 500);
                 }}>

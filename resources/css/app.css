@@ -117,6 +117,12 @@ body { overflow-x: hidden; }
 .page-content { padding-left: 8px !important; padding-right: 8px !important; }
 .page-content > .container-fluid { padding-left: 6px !important; padding-right: 6px !important; }
 
+/* Footer flows with the page instead of being pinned to the bottom of
+ * .main-content (Velzon sets .footer { position: absolute }). Pinned, it
+ * overlapped tall page content — e.g. the Products card grid's last row. As a
+ * normal in-flow block it always sits BELOW the content and scrolls with it. */
+.footer { position: static !important; }
+
 /* Responsive tenant logo — a wide uploaded logo must scale DOWN to fit the
  * brand box instead of overflowing the bar. Applies to all three layouts:
  * vertical sidebar (.navbar-brand-box), horizontal header (.horizontal-logo),
@@ -1192,6 +1198,26 @@ tbody tr:nth-child(10) {
   border-radius: 0 0 12px 12px;
 }
 [data-bs-theme="dark"] .wl-pager { background: linear-gradient(90deg, rgba(124, 58, 237, .08), rgba(124, 58, 237, .14), rgba(124, 58, 237, .08)); border-top-color: rgba(167, 139, 250, .30); }
+
+/* Teal/cyan variant of the WorklistPager — for teal-themed pages (CTC
+   Agreements Sent / To-Approve). Recolours the child pills via the tcwl vars
+   and the hardcoded .wl-pager band so the footer matches the page theme
+   instead of the default violet. */
+.wl-pager.wl-teal {
+  border-top-color: #a5e8f5;
+  background: linear-gradient(90deg, #f0fdff 0%, #e6fafe 40%, #f0fdff 100%);
+  --tcwl-accent: #0891b2;
+  --tcwl-text: #0e7490;
+  --tcwl-border: #a5f3fc;
+  --tcwl-range-bg: linear-gradient(135deg, #22d3ee 0%, #0891b2 55%, #0e7490 100%);
+  --tcwl-glow: rgba(8, 145, 178, .4);
+}
+[data-bs-theme="dark"] .wl-pager.wl-teal {
+  border-top-color: #0e5063;
+  background: linear-gradient(90deg, #0c1e27 0%, #0b2430 45%, #0c1e27 100%);
+  --tcwl-text-dark: #67e8f9;
+  --tcwl-border-dark: #173947;
+}
 
 /* Unified list frame (search + filters + table) — mirrors the Clients frame. */
 .pmt-list-frame {

@@ -517,6 +517,23 @@ class MasterController extends Controller
             ], 403);
         }
 
+        // A GST rate that products or HSN codes still reference must not be
+        // deleted — doing so orphans products.gst_id / hsn_codes.gst_rate_id and
+        // the Product screens then render a stale/random rate (QA #43, #44).
+        if ($slug === 'gst_percentage') {
+            $productHits = \App\Models\Product::where('gst_id', $row->id)->count();
+            $hsnHits     = \App\Models\Masters\HsnCodes::where('gst_rate_id', $row->id)->count();
+            if ($productHits > 0 || $hsnHits > 0) {
+                $parts = [];
+                if ($productHits > 0) $parts[] = $productHits . ' product' . ($productHits === 1 ? '' : 's');
+                if ($hsnHits > 0)     $parts[] = $hsnHits . ' HSN code' . ($hsnHits === 1 ? '' : 's');
+                return response()->json([
+                    'message' => 'This GST rate is in use by ' . implode(' and ', $parts)
+                        . ' and cannot be deleted. Reassign those records to another GST rate first.',
+                ], 409);
+            }
+        }
+
         $row->delete();
 
         // Removing a master must drop it from the cached form-bundle dropdowns.
@@ -615,6 +632,15 @@ class MasterController extends Controller
         // legal_entities → banks; add additional cases here as new masters opt in.
         if ($row instanceof \App\Models\Masters\LegalEntities) {
             $arr['banks'] = $row->banks()->orderByDesc('is_primary')->orderBy('id')->get()->toArray();
+        }
+
+        // GST rates referenced by any product or HSN code are "in use" — the
+        // frontend disables their Delete button + shows a tooltip, mirroring the
+        // hard guard in destroy() (QA #43). Cheap: gst_percentage has a handful
+        // of rows, so the two exists() probes per row are negligible.
+        if ($row instanceof \App\Models\Masters\GstPercentage) {
+            $arr['in_use'] = \App\Models\Product::where('gst_id', $row->id)->exists()
+                || \App\Models\Masters\HsnCodes::where('gst_rate_id', $row->id)->exists();
         }
 
         return $arr;

@@ -10,6 +10,7 @@ import { TypingIndicator } from '../../../components/TypingIndicator';
 import api from '../../../api';
 import { type AtaContract, inits, pad2, PER_PAGE } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
+import WorklistPager from '../../../components/ui/WorklistPager';
 import { ShimmerTable } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
 
@@ -81,6 +82,15 @@ export default function ClmAgreementsToApprovePage() {
   const t = useOpsTheme('cyan');
   const [tab, setTab]   = useState<AtaTab>('pending');
   const [page, setPage] = useState(1);
+  // Dynamic rows-per-page — auto-fits the table to the viewport (like the CTC /
+  // Sent pages); the user's explicit pick from the pager sticks thereafter.
+  const [pageSize, setPageSize] = useState(PER_PAGE);
+  const autoFitRef = useRef(true);
+  const onPageSize = (n: number) => { autoFitRef.current = false; setPageSize(n); setPage(1); };
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  // Card stretches to fill the viewport so the pager pins to the screen bottom
+  // instead of floating under a short list (leaving a big empty gap).
+  const [fillH, setFillH] = useState<number | undefined>(undefined);
   const [actionId, setActionId] = useState<string | null>(null);
   const [actionChoice, setActionChoice] = useState<'clarify' | 'reject' | null>(null);
   const [reviewId, setReviewId] = useState<string | null>(null);
@@ -150,6 +160,33 @@ export default function ClmAgreementsToApprovePage() {
     finally { setSubmitting(false); }
   };
 
+  // Auto-fit rows-per-page to the space below the card so the table fills the
+  // viewport. Recomputes on data load, tab switch, and resize; skips while the
+  // user has an explicit rows-per-page selected.
+  useEffect(() => {
+    const recompute = () => {
+      const el = cardRef.current; if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      // Stretch the card to the viewport (leave room for the layout footer + the
+      // scroll container's padding, else the pager lands at the fold / cut off).
+      const fh = Math.max(240, window.innerHeight - top - 56);
+      setFillH(prev => (prev === fh ? prev : fh));
+
+      if (!autoFitRef.current) return;
+      const toolbarH = (el.firstElementChild as HTMLElement | null)?.offsetHeight || 0;
+      const theadH   = (el.querySelector('table thead') as HTMLElement | null)?.offsetHeight || 0;
+      const footerH  = (el.querySelector('.wl-pager') as HTMLElement | null)?.offsetHeight || 54;
+      const rowH     = (el.querySelector('table tbody tr') as HTMLElement | null)?.offsetHeight || 48;
+      const rowsFit  = Math.floor((fh - toolbarH - theadH - footerH - 20) / rowH);
+      setPageSize(prev => { const next = Math.max(4, rowsFit); return prev === next ? prev : next; });
+    };
+    recompute();
+    const raf = requestAnimationFrame(recompute);
+    const tm = window.setTimeout(recompute, 120);
+    window.addEventListener('resize', recompute);
+    return () => { window.removeEventListener('resize', recompute); window.clearTimeout(tm); cancelAnimationFrame(raf); };
+  }, [loading, tab, ata.length]);
+
   return (
     <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 14, fontFamily: 'var(--font-sans)' }}>
       <style>{ATA_CSS}</style>
@@ -193,8 +230,8 @@ export default function ClmAgreementsToApprovePage() {
       </div>
 
       {/* FILTER TABS + TABLE */}
-      <div style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#A5F3FC'}`, boxShadow: '0 1px 4px rgba(6,182,212,.08)', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap' }}>
+      <div ref={cardRef} style={{ background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? t.border : '#A5F3FC'}`, boxShadow: '0 1px 4px rgba(6,182,212,.08)', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: fillH }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', background: t.surface, borderBottom: `1.5px solid ${t.dark ? t.border : 'rgba(6,182,212,.18)'}`, flexWrap: 'wrap', flexShrink: 0 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', background: t.tabCapsule, borderRadius: 30, padding: 4, boxShadow: t.dark ? 'none' : 'inset 0 1px 4px rgba(6,182,212,.15)' }}>
             {([
               ['all', 'All Agreements', null],
@@ -219,11 +256,13 @@ export default function ClmAgreementsToApprovePage() {
           </div>
         </div>
 
-        {loading
-          ? <ShimmerTable rows={6} cols={9} />
-          : tab === 'clarification'
-          ? <ClarificationTable rows={list} page={page} setPage={setPage} onReview={setReviewId} onChat={(id) => { setActionChoice('clarify'); setActionId(id); }} t={t} />
-          : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} onReview={setReviewId} t={t} />}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          {loading
+            ? <ShimmerTable rows={6} cols={9} />
+            : tab === 'clarification'
+            ? <ClarificationTable rows={list} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} onReview={setReviewId} onChat={(id) => { setActionChoice('clarify'); setActionId(id); }} t={t} />
+            : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} onReview={setReviewId} t={t} />}
+        </div>
       </div>
 
       {reviewContract && (
@@ -343,11 +382,11 @@ function ApproverList({ c, t }: { c: AtaContract; t: OpsTokens }) {
   );
 }
 
-function StandardTable({ rows, tab, page, setPage, onReview, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; onReview: (id: string) => void; t: OpsTokens }) {
-  const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+function StandardTable({ rows, tab, page, setPage, pageSize, onPageSize, onReview, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; onReview: (id: string) => void; t: OpsTokens }) {
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
-  const start = (safe - 1) * PER_PAGE;
-  const slice = rows.slice(start, start + PER_PAGE);
+  const start = (safe - 1) * pageSize;
+  const slice = rows.slice(start, start + pageSize);
   const isRej = tab === 'rejected';
 
   if (!slice.length) {
@@ -363,8 +402,8 @@ function StandardTable({ rows, tab, page, setPage, onReview, t }: { rows: AtaCon
   }
 
   return (
-    <div style={{ background: t.tableBg, overflow: 'hidden' }}>
-      <div style={{ overflowX: 'auto' }}>
+    <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ overflowX: 'auto', flex: 1 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
           <thead><tr style={{ background: 'linear-gradient(90deg,#0e7490 0%,#0891b2 35%,#06b6d4 70%,#22d3ee 100%)' }}>
             <th style={{ ...TH, width: 52 }}>SR. NO</th>
@@ -413,25 +452,25 @@ function StandardTable({ rows, tab, page, setPage, onReview, t }: { rows: AtaCon
           </tbody>
         </table>
       </div>
-      <Pager total={rows.length} page={page} setPage={setPage} t={t} />
+      <WorklistPager total={rows.length} page={safe} pageSize={pageSize} onPage={setPage} onPageSize={onPageSize} className="wl-teal" />
     </div>
   );
 }
 
-function ClarificationTable({ rows, page, setPage, onReview, onChat, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; onReview: (id: string) => void; onChat: (id: string) => void; t: OpsTokens }) {
+function ClarificationTable({ rows, page, setPage, pageSize, onPageSize, onReview, onChat, t }: { rows: AtaContract[]; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; onReview: (id: string) => void; onChat: (id: string) => void; t: OpsTokens }) {
   const toast = useToast();
-  const totalPages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
-  const start = (safe - 1) * PER_PAGE;
-  const slice = rows.slice(start, start + PER_PAGE);
+  const start = (safe - 1) * pageSize;
+  const slice = rows.slice(start, start + pageSize);
 
   if (!slice.length) {
     return <div style={{ background: t.dark ? t.tableBg : '#F0FDFF', minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 20px' }}><div style={{ fontSize: 13, fontWeight: 800, color: t.dark ? '#67e8f9' : '#164e63' }}>No clarification requests.</div></div>;
   }
 
   return (
-    <div style={{ background: t.tableBg, overflow: 'hidden' }}>
-      <div style={{ overflowX: 'auto' }}>
+    <div style={{ background: t.tableBg, overflow: 'hidden', flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ overflowX: 'auto', flex: 1 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1200 }}>
           <thead><tr style={{ background: 'linear-gradient(90deg,#0e7490 0%,#0891b2 35%,#06b6d4 70%,#22d3ee 100%)' }}>
             <th style={{ ...TH, width: 52 }}>SR. NO</th>
@@ -480,7 +519,7 @@ function ClarificationTable({ rows, page, setPage, onReview, onChat, t }: { rows
           </tbody>
         </table>
       </div>
-      <Pager total={rows.length} page={page} setPage={setPage} t={t} />
+      <WorklistPager total={rows.length} page={safe} pageSize={pageSize} onPage={setPage} onPageSize={onPageSize} className="wl-teal" />
     </div>
   );
 }
