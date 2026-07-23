@@ -101,6 +101,15 @@ class SupplierPurchaseInvoiceController extends Controller
 
         $data = $this->validatePayload($request);
 
+        // Purchase Invoice Number must be unique within the tenant (QA #10).
+        if ($this->duplicateInvoiceNo($user->client_id, $data['invoice_no'] ?? null, null)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This Purchase Invoice Number already exists — enter a unique number.',
+                'errors'  => ['invoice_no' => ['This Purchase Invoice Number already exists.']],
+            ], 422);
+        }
+
         // A PO may be invoiced across multiple SPIs — but only until its full
         // quantity is covered. Reject once the PO is already fully invoiced.
         if ($data['_po'] && $this->poFullyInvoiced($data['_po']->id)) {
@@ -168,6 +177,16 @@ class SupplierPurchaseInvoiceController extends Controller
         }
 
         $data = $this->validatePayload($request);
+
+        // Purchase Invoice Number must stay unique within the tenant — ignore
+        // this same row while editing it (QA #10).
+        if ($this->duplicateInvoiceNo($user->client_id, $data['invoice_no'] ?? null, $spi->id)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This Purchase Invoice Number already exists — enter a unique number.',
+                'errors'  => ['invoice_no' => ['This Purchase Invoice Number already exists.']],
+            ], 422);
+        }
 
         if ($this->overInvoiced($data, $spi->id)) {
             return response()->json([
@@ -1015,11 +1034,27 @@ class SupplierPurchaseInvoiceController extends Controller
         return false;
     }
 
+    /**
+     * A Purchase Invoice Number must be unique within the tenant (QA #10).
+     * Case-insensitive; ignores the row being edited and (via the model's
+     * SoftDeletes scope) soft-deleted rows. Blank numbers are never "duplicate".
+     */
+    private function duplicateInvoiceNo($clientId, ?string $invoiceNo, ?int $ignoreId): bool
+    {
+        $invoiceNo = trim((string) $invoiceNo);
+        if ($invoiceNo === '') return false;
+        return SupplierPurchaseInvoice::where('client_id', $clientId)
+            ->whereRaw('LOWER(invoice_no) = ?', [mb_strtolower($invoiceNo)])
+            ->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->exists();
+    }
+
     private function validatePayload(Request $request): array
     {
         $v = $request->validate([
             'invoice_no' => 'nullable|string|max:128',
-            'invoice_date' => 'nullable|date',
+            // The invoice date may be today or earlier, never in the future (QA #9).
+            'invoice_date' => 'nullable|date|before_or_equal:today',
             'document_type' => 'nullable|string|max:32',
             'po_type' => 'nullable|string|max:64',
             'mode_of_transport' => 'nullable|string|max:64',
@@ -1052,9 +1087,14 @@ class SupplierPurchaseInvoiceController extends Controller
             'items.*.rate_po' => 'nullable|numeric|min:0',
             'items.*.product_name' => 'nullable|string|max:255',
             'items.*.quantity' => 'nullable|numeric|min:0',
-            'items.*.hsn_code' => 'nullable|string|max:32',
+            // HSN codes are 4–8 numeric digits (4 / 6 / 8 in practice) — reject
+            // any other length so an invalid code can't be persisted (QA #11).
+            'items.*.hsn_code' => ['nullable', 'string', 'regex:/^\d{4,8}$/'],
             'items.*.rate' => 'nullable|numeric|min:0',
             'items.*.gst_pct' => 'nullable|numeric|min:0|max:100',
+        ], [
+            'items.*.hsn_code.regex' => 'HSN Code must be 4 to 8 digits.',
+            'invoice_date.before_or_equal' => 'The Purchase Invoice Date cannot be in the future — pick today or an earlier date.',
         ]);
 
         $user = $request->user();

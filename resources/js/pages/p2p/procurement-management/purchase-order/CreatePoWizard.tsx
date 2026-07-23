@@ -945,7 +945,12 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   // While creating, the stepper may only jump back to a stage already passed — moving
   // forward has to go through Save & Next so each stage is validated and the PO persisted.
   // Editing / view-only work on a PO that already exists, so any stage is reachable.
-  const canJumpTo = (n: number) => isEdit || viewOnly || n <= stage;
+  //
+  // While an edit is still hydrating (editLoading), NO stage is reachable via the
+  // stepper: jumping to Step 4 before the supplier + rest of the form have loaded
+  // let stale/empty data through and triggered false "select a supplier" style
+  // validations downstream (QA #13). The lock lifts the moment the fetch settles.
+  const canJumpTo = (n: number) => !editLoading && (isEdit || viewOnly || n <= stage);
 
   /* ── Trade docs helpers ── */
   /* ═══════════════════ CHOICE MODAL ═══════════════════ */
@@ -1215,6 +1220,25 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                   }>
                   <div className={`cpd-scroll ${poView ? 'cpd-scroll--ro' : ''}`}>
                     <table className={`cpd-tbl ${withShip ? '' : 'cpd-tbl--po'}`}>
+                      {/* Fixed column widths keep the table STABLE while editing
+                          Qty / Rate. The derived cells (Product Cost, tax amounts,
+                          Missing Qty) change digit-width as the numbers grow, and
+                          under table-layout:auto that reflowed EVERY column on each
+                          keystroke — the visible "shake" (QA #4). Numeric/derived
+                          columns get explicit widths; the two Product Name columns
+                          stay auto (undefined) so they flex to fill the row. Column
+                          count/order mirrors the thead + TaxHeadCells below. */}
+                      {(() => {
+                        const tax = intra ? [76, 76, 116, 116] : [76, 116];
+                        const widths: (number | undefined)[] = withShip
+                          ? [48, 110, undefined, 90, undefined, 96, 96, 100, ...tax, 124, 46]
+                          : [48, 110, undefined, 96, 100, ...tax, 124, 46];
+                        return (
+                          <colgroup>
+                            {widths.map((w, i) => <col key={i} style={w != null ? { width: w } : undefined} />)}
+                          </colgroup>
+                        );
+                      })()}
                       <thead><tr>
                         {withShip ? (<>
                           <th className="cpd-c">Sr. No</th><th>Product Code</th><th>Product Name (PI)</th><th className="cpd-c">Quantity (PI)</th>
