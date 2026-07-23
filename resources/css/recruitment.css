@@ -6605,7 +6605,7 @@
 
 /* ── Left pane: employee list — sub-card inside the page surface. ── */
 .att-emplist {
-  background: var(--vz-card-bg);
+  background: #ffffff;
   border: 1px solid var(--vz-border-color);
   border-radius: 12px;
   box-shadow: none;
@@ -6646,7 +6646,7 @@
   display: flex; gap: 4px;
   padding: 8px;
   border-bottom: 1px solid #f1f2f4;
-  background: #f9fafb;
+  background: #ffffff;
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(15,23,42,0.18) transparent;
@@ -6845,7 +6845,7 @@
    teal-tinted titlebar + drop shadow + hover lift. ── */
 .att-today-card {
   position: relative;
-  background: linear-gradient(165deg, #ffffff 0%, #f6fdfb 58%, #edfbf6 100%);
+  background: #ffffff;
   border: 1px solid #e3f0ed;
   border-radius: 16px;
   box-shadow: 0 8px 26px rgba(15,23,42,0.07), 0 2px 8px rgba(13,148,136,0.06), 0 1px 0 rgba(255,255,255,0.9) inset;
@@ -6969,10 +6969,11 @@
    (slate gradient since OUT punches use slate) + soft shadow + hover lift. ── */
 .att-timeline-card {
   position: relative;
-  background: linear-gradient(165deg, #ffffff 0%, #f6fdfb 58%, #edfbf6 100%);
+  background: #ffffff;
   border: 1px solid #e3f0ed;
   border-radius: 16px;
   box-shadow: 0 8px 26px rgba(15,23,42,0.07), 0 2px 8px rgba(13,148,136,0.06), 0 1px 0 rgba(255,255,255,0.9) inset;
+  height: 100%;
   min-height: 312px;
   overflow: hidden;
   transition: box-shadow .25s ease, transform .25s ease, border-color .25s ease;
@@ -7325,7 +7326,7 @@
   margin-bottom: 12px;
   /* Plain white card (no teal tint) so the employee-info bar reads white like
      the rest of the cards. */
-  background: var(--vz-card-bg);
+  background: #ffffff;
   border: 1px solid var(--vz-border-color);
   border-radius: 14px;
   box-shadow: 0 2px 8px rgba(13,148,136,0.06);

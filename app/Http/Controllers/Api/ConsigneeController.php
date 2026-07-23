@@ -139,8 +139,17 @@ class ConsigneeController extends Controller
             \Log::warning('ConsigneeController::show customer_locations bundle failed: ' . $e->getMessage());
         }
 
+        // Per-segment lock: the segment NAMES whose product appears on a PI (or a
+        // PI with a Shipment) for this consignee.
+        $data = $this->shape($row);
+        $data['locked_segments'] = SegmentGuard::lockedSegmentNames(
+            \App\Models\Consignee::class,
+            (int) $row->id,
+            (int) $row->client_id,
+        );
+
         return response()->json([
-            'data'            => $this->shape($row),
+            'data'            => $data,
             'documents'       => $documents['data'] ?? [],
             'owners'          => $owners['data'] ?? [],
             // segment_uploads keeps its full shape (data + by_category + count)
@@ -270,22 +279,24 @@ class ConsigneeController extends Controller
         $derivedSegment = SegmentGuard::forCustomers($data['customer_ids']);
 
         $oldSegment = $consignee->segment;
+        $removed    = SegmentGuard::removedNames($oldSegment, $derivedSegment ?: null);
 
-        /* A segment referenced by a Proforma Invoice or Shipment for this
-         * consignee must remain attached even if re-derivation dropped it (its
-         * association stays, no document changes). Any OTHER dropped segment's
-         * documents are cleaned up after the update below. */
-        $usedRetained = SegmentGuard::blockedByCompletedDocs(
-            \App\Models\Consignee::class,
-            (int) $consignee->id,
-            (int) $consignee->client_id,
-            SegmentGuard::removedNames($oldSegment, $derivedSegment ?: null),
-        );
-        if (!empty($usedRetained)) {
-            $derivedSegment = SegmentGuard::mergeRetained($derivedSegment, $usedRetained);
+        /* A dropped segment must remain ATTACHED (not blocked — nothing to fix on
+         * this screen) when it is either (1) used by a PI/Shipment product, or
+         * (2) has an uploaded document not shared with a remaining segment. */
+        $keep = array_values(array_unique(array_merge(
+            SegmentGuard::blockedByCompletedDocs(
+                \App\Models\Consignee::class, (int) $consignee->id, (int) $consignee->client_id, $removed,
+            ),
+            SegmentGuard::blockedByOrphanDocs(
+                \App\Models\Consignee::class, (int) $consignee->id, (int) $consignee->client_id, $removed, SegmentGuard::names($derivedSegment ?: null),
+            ),
+        )));
+        if (!empty($keep)) {
+            $derivedSegment = SegmentGuard::mergeRetained($derivedSegment, $keep);
         }
 
-        $row = DB::transaction(function () use ($consignee, $data, $derivedSegment, $oldSegment) {
+        $row = DB::transaction(function () use ($consignee, $data, $derivedSegment) {
             $primary = $data['primary_address'];
 
             $consignee->update([
@@ -320,17 +331,6 @@ class ConsigneeController extends Controller
 
             // Re-sync the customer mapping (adds new, removes unchecked).
             $consignee->customers()->sync($data['customer_ids']);
-
-            // Clean up documents of segments genuinely removed from the consignee
-            // (not retained above): delete those required only by a removed
-            // segment; keep documents shared with a segment that stays.
-            SegmentGuard::cleanupOrphanedDocs(
-                \App\Models\Consignee::class,
-                (int) $consignee->id,
-                (int) $consignee->client_id,
-                SegmentGuard::removedNames($oldSegment, $derivedSegment ?: null),
-                SegmentGuard::names($derivedSegment ?: null),
-            );
 
             return $consignee->load(['primaryAddress', 'addresses', 'customer', 'customers.primaryAddress']);
         });

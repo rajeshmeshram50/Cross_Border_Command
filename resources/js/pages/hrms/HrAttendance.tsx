@@ -493,7 +493,7 @@ export default function HrAttendance() {
                   </div>
                 </div>
 
-                <Row className="g-2 mb-2 align-items-stretch row-cols-xl-4 row-cols-md-2 row-cols-2">
+                <Row className="g-2 mb-3 align-items-stretch row-cols-xl-4 row-cols-md-2 row-cols-2">
                   {([
                     { key: 'pres', label: 'Present Days',   sub: 'This month',     value: selected.presentDays,        icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)', deep: '#0ab39c' },
                     { key: 'late', label: 'Late Marks',     sub: 'This month',     value: selected.lateMarks,          icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)', deep: '#92400e' },
@@ -520,7 +520,7 @@ export default function HrAttendance() {
                   <span className="att-section-label">{isToday ? "TODAY'S RECORD" : 'DAY RECORD'}</span>
                   <span className="att-section-date">{fmtLong(viewDate)}</span>
                 </div>
-                <Row className="g-2 mb-2 align-items-stretch">
+                <Row className="g-2 align-items-stretch">
                   <Col xl={7} lg={12}>
                     <TodayRecordCard employee={selected} viewDate={viewDate} isPast={isPast} hour24={hour24} />
                   </Col>
@@ -647,7 +647,11 @@ function TodayRecordCard({
           <div className="att-tile">
             <div className="att-tile-label"><i className="ri-logout-circle-r-line" />LAST OUT</div>
             <div className="att-tile-value">
-              {employee.lastOut === null ? <span className="att-in-progress">In Progress</span> : renderTime(employee.lastOut, hour24)}
+              {!employee.firstIn
+                ? '—'
+                : employee.lastOut === null
+                  ? <span className="att-in-progress">In Progress</span>
+                  : renderTime(employee.lastOut, hour24)}
             </div>
             {(() => {
               const outPunches = employee.punches.filter(p => p.type === 'out' && p.lat != null && p.lng != null);
@@ -1248,7 +1252,7 @@ function CalendarMonthGrid({
       </div>
 
       <div className="att-cal-summary">
-        {(['Present','Late','Half Day','Work From Home','On Duty','Leave','Absent','Weekly Off'] as DayStatus[]).map(s => {
+        {(['Present','Late','Half Day','Work From Home','On Duty','Leave','Absent','Weekly Off','Missing Out','Holiday'] as DayStatus[]).map(s => {
           const tone = STATUS_TONE[s];
           return (
             <span key={s} className="att-cal-sum">

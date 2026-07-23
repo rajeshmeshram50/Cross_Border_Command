@@ -12,7 +12,7 @@ class EmployeeOnboardingInvite extends Model
         'client_id', 'branch_id', 'created_by',
         'invitee_name', 'invitee_email',
         'department_id', 'expected_join_date',
-        'token', 'expires_at',
+        'token', 'slug', 'expires_at',
         'status', 'completed_at', 'employee_id',
     ];
 

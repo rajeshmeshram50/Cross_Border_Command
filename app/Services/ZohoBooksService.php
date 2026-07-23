@@ -129,6 +129,20 @@ class ZohoBooksService
         );
     }
 
+    /** DELETE against the Books API; org id in the query string. Used to reverse
+     *  a partially-created sync (compensating action). Returns decoded JSON. */
+    private function delete(string $endpoint, array $query = []): array
+    {
+        $url = "{$this->baseUrl}/" . ltrim($endpoint, '/') . '?organization_id=' . $this->orgId;
+        foreach ($query as $k => $v) {
+            $url .= '&' . $k . '=' . rawurlencode((string) $v);
+        }
+        return $this->sendWithAuthRetry(
+            fn (string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])->delete($url),
+            'DELETE ' . $endpoint
+        );
+    }
+
     /**
      * Run an authorized Books call and, if Zoho rejects the cached access token
      * with a 401, drop the cache, force a fresh token, and retry once. Zoho can
@@ -441,6 +455,12 @@ class ZohoBooksService
         return $po;
     }
 
+    /** Reverse helper — delete a Zoho purchase order created by a failed sync. */
+    public function deletePurchaseOrder(string $zohoId): void
+    {
+        $this->delete('purchaseorders/' . rawurlencode($zohoId));
+    }
+
     /** Raw PDF bytes of Zoho's own rendered PO — cached alongside the app PDF. */
     public function getPurchaseOrderPdf(string $zohoId): string
     {
@@ -469,6 +489,12 @@ class ZohoBooksService
         return $bill;
     }
 
+    /** Reverse helper — delete a Zoho bill created by a failed sync. */
+    public function deleteBill(string $billId): void
+    {
+        $this->delete('bills/' . rawurlencode($billId));
+    }
+
     /**
      * POST a vendor payment (records a payment against one or more bills).
      * Returns the vendorpayment node (carries payment_id).
@@ -481,6 +507,12 @@ class ZohoBooksService
             throw new RuntimeException('Zoho Books did not return a vendor-payment id.');
         }
         return $pay;
+    }
+
+    /** Reverse helper — delete a Zoho vendor payment created by a failed sync. */
+    public function deleteVendorPayment(string $paymentId): void
+    {
+        $this->delete('vendorpayments/' . rawurlencode($paymentId));
     }
 
     /**
@@ -573,6 +605,12 @@ class ZohoBooksService
         // Normalise so callers can always read vendor_credit_id.
         $vc['vendor_credit_id'] = (string) $id;
         return $vc;
+    }
+
+    /** Reverse helper — delete a Zoho vendor credit created by a failed sync. */
+    public function deleteVendorCredit(string $vendorCreditId): void
+    {
+        $this->delete('vendorcredits/' . rawurlencode($vendorCreditId));
     }
 
     /**

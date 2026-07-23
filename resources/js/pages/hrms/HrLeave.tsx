@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
@@ -409,6 +411,10 @@ export default function HrLeave() {
   const [payroll, setPayroll] = useState<string>('All');
   const [page,    setPage]    = useState(1);
   const [pageSize, setPageSize] = useState(10);
+  // Filter modal (Department / Type / Payroll live inside it now) — same
+  // two-pane shell the Customers list uses, via the shared LFM_CSS sheet.
+  const [filterOpen, setFilterOpen] = useState(false);
+  const activeFilterCount = [department, type, payroll].filter(v => v !== 'All').length;
 
   const [detail, setDetail] = useState<LeaveRequest | null>(null);
 
@@ -706,7 +712,13 @@ export default function HrLeave() {
                     <span className="lv-today-empty-icon">
                       <i className="ri-emotion-happy-line" />
                     </span>
-                    <div className="fw-bold mt-2" style={{ fontSize: 13 }}>Everyone is in today</div>
+                    <div className="fw-bold mt-2" style={{ fontSize: 13 }}>
+                      {onLeaveDate === new Date().toISOString().slice(0, 10)
+                        ? 'Everyone is in today'
+                        : onLeaveDate < new Date().toISOString().slice(0, 10)
+                          ? `Everyone was in on ${formatDate(onLeaveDate)}`
+                          : `Everyone is in on ${formatDate(onLeaveDate)}`}
+                    </div>
                     <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>
                       No approved leaves overlap {formatDate(onLeaveDate)}.
                     </div>
@@ -751,27 +763,6 @@ export default function HrLeave() {
               )}
             </div>
 
-            <div className="rec-tab-track mb-2">
-              {([
-                { key: 'All',      label: 'All Leaves',      count: counts.tabs.All,      icon: 'ri-stack-line',          variant: 'in-progress' },
-                { key: 'Pending',  label: 'Pending',         count: counts.tabs.Pending,  icon: 'ri-time-line',           variant: 'in-progress' },
-                { key: 'Approved', label: 'Approved',        count: counts.tabs.Approved, icon: 'ri-checkbox-circle-line',variant: 'completed'   },
-                { key: 'Rejected', label: 'Rejected',        count: counts.tabs.Rejected, icon: 'ri-close-circle-line',   variant: 'cancelled'   },
-                { key: 'Cancelled', label: 'Cancelled',      count: counts.tabs.Cancelled, icon: 'ri-forbid-line',        variant: 'cancelled'   },
-              ] as const).map(t => (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => { setStatus(t.key); setPage(1); }}
-                  className={`rec-tab ${status === t.key ? `is-active ${t.variant}` : ''}`}
-                >
-                  <i className={t.icon} />
-                  {t.label}
-                  <span className="badge">{t.count}</span>
-                </button>
-              ))}
-            </div>
-
             {canApprove && selectedIds.size > 0 && (
               <div className="d-flex align-items-center gap-2 flex-wrap p-2 rounded-3 border mb-2 bg-light">
                 <span className="rec-header-count">
@@ -798,6 +789,29 @@ export default function HrLeave() {
               <CardBody className="p-0">
                 <div className="rec-list-frame">
                   <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
+                    {/* Tabs — moved into the list container, left-aligned. */}
+                    <div className="rec-tab-track mb-0">
+                      {([
+                        { key: 'All',      label: 'All Leaves',      count: counts.tabs.All,      icon: 'ri-stack-line',          variant: 'in-progress' },
+                        { key: 'Pending',  label: 'Pending',         count: counts.tabs.Pending,  icon: 'ri-time-line',           variant: 'in-progress' },
+                        { key: 'Approved', label: 'Approved',        count: counts.tabs.Approved, icon: 'ri-checkbox-circle-line',variant: 'completed'   },
+                        { key: 'Rejected', label: 'Rejected',        count: counts.tabs.Rejected, icon: 'ri-close-circle-line',   variant: 'cancelled'   },
+                        { key: 'Cancelled', label: 'Cancelled',      count: counts.tabs.Cancelled, icon: 'ri-forbid-line',        variant: 'cancelled'   },
+                      ] as const).map(t => (
+                        <button
+                          key={t.key}
+                          type="button"
+                          onClick={() => { setStatus(t.key); setPage(1); }}
+                          className={`rec-tab ${status === t.key ? `is-active ${t.variant}` : ''}`}
+                        >
+                          <i className={t.icon} />
+                          {t.label}
+                          <span className="badge">{t.count}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Search — grows to fill the space between the tabs and the Filter button. */}
                     <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220 }}>
                       <Input
                         type="text"
@@ -808,18 +822,27 @@ export default function HrLeave() {
                       />
                       <i className="ri-search-line search-icon" />
                     </div>
-                    <span className="text-uppercase fw-semibold text-muted" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Department</span>
-                    <div style={{ minWidth: 160 }}>
-                      <MasterSelect value={department} onChange={v => { setDepartment(v); setPage(1); }} options={DEPT_OPTIONS} placeholder="All Departments" />
-                    </div>
-                    <span className="text-uppercase fw-semibold text-muted" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Type</span>
-                    <div style={{ minWidth: 140 }}>
-                      <MasterSelect value={type} onChange={v => { setType(v); setPage(1); }} options={TYPE_OPTIONS} placeholder="All" />
-                    </div>
-                    <span className="text-uppercase fw-semibold text-muted" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Payroll</span>
-                    <div style={{ minWidth: 140 }}>
-                      <MasterSelect value={payroll} onChange={v => { setPayroll(v); setPage(1); }} options={PAYROLL_OPTIONS} placeholder="All" />
-                    </div>
+
+                    {/* Filter button — right corner. Opens the two-pane filter
+                        modal (Department / Type / Payroll), matching the
+                        Customers list's filter popup. */}
+                    <button
+                      type="button"
+                      onClick={() => setFilterOpen(true)}
+                      className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
+                      style={{
+                        fontSize: 13,
+                        border: '1px solid var(--vz-border-color)',
+                        background: activeFilterCount > 0 ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'var(--vz-card-bg)',
+                        color: activeFilterCount > 0 ? '#fff' : 'var(--vz-body-color)',
+                      }}
+                    >
+                      <i className="ri-equalizer-line" />
+                      Filter
+                      {activeFilterCount > 0 && (
+                        <span className="badge bg-white text-dark ms-1">{activeFilterCount}</span>
+                      )}
+                    </button>
                   </div>
 
 
@@ -995,6 +1018,15 @@ export default function HrLeave() {
       </Row>
 
       <LeaveDetailsModal row={detail} onClose={() => setDetail(null)} />
+      <LeaveFilterModal
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        initial={{ department, type, payroll }}
+        deptOptions={DEPT_OPTIONS}
+        typeOptions={TYPE_OPTIONS}
+        payrollOptions={PAYROLL_OPTIONS}
+        onApply={(f) => { setDepartment(f.department); setType(f.type); setPayroll(f.payroll); setPage(1); }}
+      />
       <HolidayListModal open={holidaysOpen} onClose={() => setHolidaysOpen(false)} />
       <ConfirmActionModal
         state={confirmAction}
@@ -1003,6 +1035,198 @@ export default function HrLeave() {
       />
     </>
   );
+}
+
+/* Leave filter modal — same two-pane shell as the Customers list's filter
+ * (left menu picks a facet, right pane lists its single-select options), reusing
+ * that modal's shared LFM_CSS sheet + lfm-* class names. Facets: Department /
+ * Type / Payroll. Each is single-select; "no selection" means "All". Collects a
+ * draft and commits on Apply, so the table only re-filters once. */
+type LeaveFacetKey = 'department' | 'type' | 'payroll';
+type LeaveFilterValues = { department: string; type: string; payroll: string };
+
+const LEAVE_FACET_ICONS: Record<LeaveFacetKey, ReactNode> = {
+  department: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  ),
+  type: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="3" /><polyline points="8 12 11 15 16 9" />
+    </svg>
+  ),
+  payroll: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="5" width="20" height="14" rx="2" /><circle cx="12" cy="12" r="3" />
+    </svg>
+  ),
+};
+
+function LeaveFilterModal({
+  open, onClose, onApply, initial, deptOptions, typeOptions, payrollOptions,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onApply: (f: LeaveFilterValues) => void;
+  initial: LeaveFilterValues;
+  deptOptions: { value: string; label: string }[];
+  typeOptions: { value: string; label: string }[];
+  payrollOptions: { value: string; label: string }[];
+}) {
+  const [active, setActive] = useState<LeaveFacetKey>('department');
+  const [search, setSearch] = useState('');
+  const [draft, setDraft] = useState<LeaveFilterValues>(initial);
+
+  useEffect(() => {
+    if (open) { setDraft(initial); setActive('department'); setSearch(''); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initial]);
+
+  // Scroll lock (both <html> and <body>) while open — same as PartyFilterModal.
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', esc);
+    return () => document.removeEventListener('keydown', esc);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const FACETS: { key: LeaveFacetKey; label: string }[] = [
+    { key: 'department', label: 'Department' },
+    { key: 'type',       label: 'Type' },
+    { key: 'payroll',    label: 'Payroll' },
+  ];
+  const optsFor = (k: LeaveFacetKey) =>
+    (k === 'department' ? deptOptions : k === 'type' ? typeOptions : payrollOptions)
+      // Drop the 'All' sentinel — an empty selection already means "All".
+      .filter(o => o.value !== 'All');
+
+  const facetCount = (k: LeaveFacetKey) => (draft[k] !== 'All' ? 1 : 0);
+  const selectedCount = FACETS.reduce((n, f) => n + facetCount(f.key), 0);
+  const isChecked = (value: string) => draft[active] === value;
+  // Re-clicking the chosen option clears it back to "All".
+  const pick = (value: string) => setDraft(prev => ({ ...prev, [active]: prev[active] === value ? 'All' : value }));
+
+  const currentList = optsFor(active);
+  const searched = search.trim()
+    ? currentList.filter(o => o.label.toLowerCase().includes(search.toLowerCase()))
+    : currentList;
+
+  const onApplyClick = () => { onApply(draft); onClose(); };
+  const onReset = () => {
+    const cleared: LeaveFilterValues = { department: 'All', type: 'All', payroll: 'All' };
+    setDraft(cleared);
+    onApply(cleared);
+  };
+
+  return createPortal((
+    <div className="lfm-backdrop lfm-purple">
+      <style>{LFM_CSS}</style>
+      <div className="lfm-modal">
+        <div className="lfm-head">
+          <div className="lfm-head-left">
+            <div className="lfm-head-ico">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="4" y1="6" x2="20" y2="6" /><line x1="6" y1="12" x2="18" y2="12" /><line x1="9" y1="18" x2="15" y2="18" />
+              </svg>
+            </div>
+            <div>
+              <div className="lfm-head-title">Filter Leaves</div>
+              <div className="lfm-head-sub">Select filters to narrow down results</div>
+            </div>
+          </div>
+          {selectedCount > 0 && <span className="lfm-head-count">{selectedCount} selected</span>}
+          <button className="lfm-close" onClick={onClose} aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="lfm-body">
+          <div className="lfm-left">
+            <div className="lfm-left-label">FILTER BY</div>
+            <div className="lfm-menu">
+              {FACETS.map(f => {
+                const count = facetCount(f.key);
+                return (
+                  <button
+                    type="button"
+                    key={f.key}
+                    className={`lfm-menu-item ${active === f.key ? 'on' : ''}`}
+                    onClick={() => { setActive(f.key); setSearch(''); }}
+                  >
+                    <span className="lfm-menu-ico">{LEAVE_FACET_ICONS[f.key]}</span>
+                    <span className="lfm-menu-label">{f.label}</span>
+                    {count > 0 && <span className="lfm-menu-count" aria-hidden="true">{count}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="lfm-left-foot">
+              <button className="lfm-btn lfm-btn-primary" onClick={onApplyClick}>Apply Filter</button>
+              <button className="lfm-btn-reset" onClick={onReset}>Reset All</button>
+            </div>
+          </div>
+
+          <div className="lfm-right">
+            <div className="lfm-search-wrap">
+              <svg className="lfm-search-ico" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                className="lfm-search"
+                placeholder={`Search ${FACETS.find(f => f.key === active)?.label.toLowerCase()}…`}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+            </div>
+
+            <div className="lfm-options">
+              {searched.length === 0 ? (
+                <div className="lfm-empty">No options available</div>
+              ) : (
+                searched.map(opt => {
+                  const checked = isChecked(opt.value);
+                  return (
+                    <label key={opt.value} className={`lfm-card ${checked ? 'on' : ''}`}>
+                      <input
+                        type="radio"
+                        name={`leave-facet-${active}`}
+                        checked={checked}
+                        readOnly
+                        onClick={() => pick(opt.value)}
+                      />
+                      <span className="lfm-check lfm-check-round" aria-hidden="true">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </span>
+                      <span className="lfm-card-label">
+                        <span className="lfm-card-name">{opt.label}</span>
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  ), document.body);
 }
 
 function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -1212,13 +1436,6 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
             )}
           </div>
 
-        </div>
-
-        <div className="rec-form-footer">
-          <span className="hint" />
-          <button type="button" className="rec-btn-ghost" onClick={onClose}>
-            <i className="ri-close-line" />Close
-          </button>
         </div>
       </ModalBody>
     </Modal>

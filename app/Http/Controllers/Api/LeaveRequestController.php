@@ -148,6 +148,19 @@ class LeaveRequestController extends Controller
             abort(422, 'You cannot apply for leave in the past. Pick a date from tomorrow onward.');
         }
 
+        // Joining-date guard — leave cannot start before the employee has
+        // actually joined. Blocks future-dated joiners from booking leave that
+        // falls before their start date (CBC #85). Already-joined employees are
+        // unaffected: their date_of_joining is in the past, so from_date (which
+        // must be today or later, per the guard above) is always >= DOJ.
+        // Skipped only when DOJ is unset (can't enforce what we don't know).
+        if ($employee->date_of_joining) {
+            $dojStr = Carbon::parse($employee->date_of_joining)->toDateString();
+            if ($fromStr < $dojStr) {
+                abort(422, "You cannot apply for leave before your joining date ({$dojStr}).");
+            }
+        }
+
         $from = Carbon::parse($data['from_date']);
         $to = Carbon::parse($data['to_date']);
         $dayType = $data['day_type'] ?? 'full';
