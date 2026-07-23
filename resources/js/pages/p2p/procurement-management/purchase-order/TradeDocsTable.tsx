@@ -89,6 +89,12 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   // ── Zoho Sign (reuse the CLM Send-for-Signature flow for the supplier) ──
   type Party = { id: string; db_id?: number; company: string; contact?: string; email?: string };
   const [party, setParty] = useState<Party | null>(null);
+  // True while the supplier detail (which carries db_id) is still being fetched
+  // for a selected supplier. Send/preview actions must treat this as "not ready
+  // yet", NOT as "no supplier selected" — otherwise the first click on an edited
+  // PO wrongly reported the supplier missing and only the second click (after
+  // the fetch settled) worked (QA #13).
+  const [partyLoading, setPartyLoading] = useState(false);
   const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
   const [sendKind, setSendKind] = useState<'trade' | 'agreement'>('trade');
   const [sentBatch, setSentBatch] = useState<string[]>([]);
@@ -99,12 +105,13 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   // Zoho request (the PO row was checked with ≥1 real trade document).
   const [bundlePoActive, setBundlePoActive] = useState(false);
   useEffect(() => {
-    if (!supplierId) { setParty(null); return; }
+    if (!supplierId) { setParty(null); setPartyLoading(false); return; }
     let cancelled = false;
+    setPartyLoading(true);
     api.get(`/p2p/purchase-orders/suppliers/${supplierId}`).then(r => {
       const d = r.data?.data; if (cancelled || !d) return;
       setParty({ id: d.code || 'S-001', db_id: supplierId, company: d.name || 'Supplier', contact: d.contact || undefined, email: d.email || undefined });
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => { if (!cancelled) setPartyLoading(false); });
     return () => { cancelled = true; };
   }, [supplierId]);
   /* ── Live signature status ────────────────────────────────────────────────
@@ -262,7 +269,8 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   const toggleDoc = (id: string, on: boolean) => setSel(s => { const n = { ...s }; if (on) n[id] = true; else delete n[id]; return n; });
   const toggleAll = (on: boolean) => setSel(s => { const n = { ...s }; visible.forEach(d => { if (stateOf(d) === 'pending') { if (on) n[d.id] = true; else delete n[d.id]; } }); return n; });
   const launchSign = (rowIds: string[]) => {
-    if (!party?.db_id) { toast.error('Supplier required', 'Select a supplier first to send documents for signature.'); return; }
+    if (!supplierId) { toast.error('Supplier required', 'Select a supplier first to send documents for signature.'); return; }
+    if (!party?.db_id) { toast.info('Loading supplier…', 'Supplier details are still loading — please try again in a moment.'); return; }
     const parsed = rowIds.map(parseRow).filter(Boolean) as Array<{ libId: number; kind: 'trade' | 'agreement' }>;
     const wantsPo = rowIds.includes('po') && !!poId;   // bundle the PO PDF into this request
     if (!parsed.length) {
@@ -287,7 +295,8 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
       // show the draft PO preview instead of blocking. Once the PO is saved
       // (edit mode / after generate), open the full sign modal.
       if (!poId) { runBusy('send:po', openPoPdf(false)); return; }
-      if (!party?.db_id) { toast.error('Supplier required', 'Select a supplier first to send the PO for signature.'); return; }
+      if (!supplierId) { toast.error('Supplier required', 'Select a supplier first to send the PO for signature.'); return; }
+      if (!party?.db_id) { toast.info('Loading supplier…', 'Supplier details are still loading — please try again in a moment.'); return; }
       setPoSign(true);
       return;
     }
@@ -330,7 +339,8 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   const openDraftPreview = (d: TradeDoc): Promise<void> => {
     const parsed = parseRow(d.id);
     if (!parsed) { toast.info(`Viewing ${d.name} (draft)`); return Promise.resolve(); }
-    if (!party?.db_id) { toast.error('Supplier required', 'Select a supplier first to preview this document.'); return Promise.resolve(); }
+    if (!supplierId) { toast.error('Supplier required', 'Select a supplier first to preview this document.'); return Promise.resolve(); }
+    if (!party?.db_id) { toast.info('Loading supplier…', 'Supplier details are still loading — please try again in a moment.'); return Promise.resolve(); }
     const w = window.open('', '_blank');
     toast.info(`Preparing ${d.name} preview…`);
     const body = parsed.kind === 'agreement'
