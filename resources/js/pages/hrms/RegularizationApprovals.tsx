@@ -137,8 +137,6 @@ export default function RegularizationApprovals() {
             <Shimmer height={120} radius={10} />
           ) : error ? (
             <div className="text-center text-muted ep-fs-13 py-3"><i className="ri-error-warning-line me-1" />{error}</div>
-          ) : rows.length === 0 ? (
-            <div className="text-center text-muted ep-fs-13 py-3">No {status === 'All' ? '' : status.toLowerCase()} regularization requests.</div>
           ) : (
             <>
             <div className="table-responsive">
@@ -155,7 +153,13 @@ export default function RegularizationApprovals() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paged.map(r => {
+                  {paged.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-center text-muted ep-fs-13 py-4">
+                        No {status === 'All' ? '' : status.toLowerCase()} regularization requests.
+                      </td>
+                    </tr>
+                  ) : paged.map(r => {
                     const tone = STATUS_TONE[r.status] || STATUS_TONE.Cancelled;
                     const punches = (r.punches ?? []).map(p => `${p.in ?? '—'}–${p.out ?? '—'}`).join(', ');
                     return (
