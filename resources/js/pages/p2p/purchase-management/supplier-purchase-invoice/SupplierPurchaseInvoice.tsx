@@ -376,7 +376,7 @@ export default function SupplierPurchaseInvoice() {
                     <span className="spi-acts">
                       {r.zoho === 'sync'
                         ? <Tooltip label="Already synced to Zohobook"><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
-                        : <Tooltip label="Sync this invoice to Zohobook"><button type="button" className="spi-zohobtn" disabled={syncingId === r.id} onClick={() => syncRow(r)}><IcoSync size={13} /> {syncingId === r.id ? 'Syncing…' : 'Zoho Sync'}</button></Tooltip>}
+                        : <Tooltip label={withPo ? 'Sync the linked PO — creates its bill and posts all payments' : 'Sync this invoice to Zohobook'}><button type="button" className="spi-zohobtn" disabled={syncingId === r.id} onClick={() => syncRow(r)}><IcoSync size={13} /> {syncingId === r.id ? 'Syncing…' : 'Zoho Sync'}</button></Tooltip>}
                       <Tooltip label="View invoice"><button type="button" className="spi-iconbtn" onClick={() => { setEditId(r.id); setMapCtx(null); setDetailOpen(true); }}><IcoEye /></button></Tooltip>
                       <Tooltip label="Record payment"><button type="button" className="spi-iconbtn" onClick={() => openPoPayment(r)}><IcoRupee /></button></Tooltip>
                       <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => openMenu(e, r)}><IcoMore /></button></Tooltip>

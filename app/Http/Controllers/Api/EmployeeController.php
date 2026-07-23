@@ -320,7 +320,16 @@ class EmployeeController extends Controller
         $eq = Employee::query()
             ->whereNotNull('id')
             ->where('status', 'Active')
-            ->where('onboarding_stage_completed', '>=', 6);
+            ->where('onboarding_stage_completed', '>=', 6)
+            // Drop anyone tied to an exit case — whether it's still IN PROGRESS
+            // (exit_case_status 'Open') or already finalised ('Closed' /
+            // completed / final status "Exited"). An exit has no withdraw/cancel
+            // path and EmployeeExit isn't soft-deleted, so the mere existence of
+            // an exit row means the person is leaving or already gone: never a
+            // valid reporting manager for a new hire. This also acts as
+            // belt-and-braces for finalised exits whose employees.status column
+            // wasn't flipped for some reason.
+            ->whereDoesntHave('exit');
         $this->applyScope($eq, $user, $request->integer('branch_id') ?: null);
         // HOD designation ids so the picker can flag which employees are a
         // department's Head — the reporting-manager rule points a non-HOD hire

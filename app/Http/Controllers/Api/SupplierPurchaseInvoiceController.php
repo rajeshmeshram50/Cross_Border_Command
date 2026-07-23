@@ -256,7 +256,8 @@ class SupplierPurchaseInvoiceController extends Controller
             try {
                 $vendor = Vendor::with('primaryAddress')->find($spi->vendor_id);
                 if ($vendor) {
-                    $gstin = DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null;
+                    $gstin = ($vendor->gst_number ?: null)
+                        ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
                     $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, optional($vendor->primaryAddress)->state_code);
                     $bill = $books->getBill((string) $spi->zoho_bill_id);
                     $r = $this->pushPaymentsToZoho($spi, $books, $zohoVendorId, (string) $spi->zoho_bill_id, (float) ($bill['balance'] ?? 0));
@@ -267,6 +268,42 @@ class SupplierPurchaseInvoiceController extends Controller
                 Log::warning('Zoho bill payment top-up failed', ['spi' => $spi->id, 'err' => $e->getMessage()]);
             }
             return response()->json(['status' => true, 'message' => $msg, 'data' => $this->shapeListRow($spi->fresh())]);
+        }
+        // With-PO invoices are billed through the PO: the PO sync creates ONE bill
+        // and posts all of the PO's payments. Syncing from the invoice therefore
+        // delegates to the PO sync (idempotent — one bill per PO, payments topped up
+        // via the zoho_applied_amount ledger), then stamps every With-PO invoice on
+        // that PO so their rows reflect the shared bill.
+        if ($spi->purchase_order_id) {
+            $po = PurchaseOrder::find($spi->purchase_order_id);
+            if (!$po) {
+                return response()->json(['status' => false, 'message' => 'The linked purchase order no longer exists.'], 422);
+            }
+            $poResp = app(PurchaseOrderController::class)->sync($request, $po->id);
+            $poData = $poResp->getData(true);
+            if (($poData['status'] ?? false) !== true) {
+                // PO sync refused (e.g. amount not fully utilised) — surface its
+                // message/status verbatim so the invoice screen shows the reason.
+                return response()->json($poData, $poResp->getStatusCode());
+            }
+            $fresh = $po->fresh();
+            if (!empty($fresh->zoho_bill_id)) {
+                SupplierPurchaseInvoice::where('purchase_order_id', $po->id)
+                    ->whereNull('deleted_at')
+                    ->update([
+                        'zoho_status'      => 'Sync',
+                        'zoho_bill_id'     => $fresh->zoho_bill_id,
+                        'zoho_bill_number' => $fresh->zoho_bill_number,
+                        'zoho_synced_at'   => now(),
+                        'zoho_error'       => null,
+                        'updated_by'       => $user->id,
+                    ]);
+            }
+            return response()->json([
+                'status'  => true,
+                'message' => $poData['message'] ?? ('Synced through purchase order ' . $po->code . ' — bill and payments posted to Zoho Books.'),
+                'data'    => $this->shapeListRow($spi->fresh()),
+            ]);
         }
         if (!$spi->vendor_id) {
             return response()->json(['status' => false, 'message' => 'Attach a supplier to this invoice before syncing to Zoho Books.'], 422);
@@ -286,9 +323,32 @@ class SupplierPurchaseInvoiceController extends Controller
             ], 422);
         }
 
+        // Pre-flight (the "bridge"): a vendor payment can only post through a Zoho
+        // Bank/Cash account. If this Direct SPI has cleared payments to post but the
+        // org has none, ABORT now — before creating the bill — so the sync is
+        // all-or-nothing and never leaves an unpaid bill that needs a manual re-sync.
+        if (\App\Models\SpiPayment::where('supplier_purchase_invoice_id', $spi->id)->where('status', 'Cleared')->exists()
+            && !$books->resolvePaidThroughAccountId(null)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Add a Bank / Cash account in Zoho Books before syncing — this invoice’s payments cannot be posted without one.',
+                'errors'  => ['account' => ['No Bank/Cash account exists in the Zoho organization.']],
+            ], 422);
+        }
+
+        // Track what THIS run creates in Zoho so a mid-flow failure can be fully
+        // reversed (all-or-nothing): the bill and each vendor payment.
+        $createdBillId   = null;
+        $createdPayments = [];
         try {
             $vendor    = Vendor::with('primaryAddress')->findOrFail($spi->vendor_id);
-            $gstin     = DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null;
+            // GST source of truth is vendors.gst_number (Stage-1); the legacy
+            // vendor_gst_scrutiny row is only a fallback. Without reading the
+            // Stage-1 column first, a supplier registered there (but with no
+            // scrutiny row) syncs as UNREGISTERED → no tax → Zoho rejects with
+            // "Specify either a Tax or Tax Exemption or Reverse Charge".
+            $gstin     = ($vendor->gst_number ?: null)
+                ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
             $stateCode = optional($vendor->primaryAddress)->state_code;
 
             // Intra- vs inter-state decides GST(CGST+SGST) vs IGST in Zoho. Prefer
@@ -303,18 +363,17 @@ class SupplierPurchaseInvoiceController extends Controller
             $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
             $bill   = $books->createBill($this->buildZohoBillPayload($spi, $books, $zohoVendorId, (bool) $gstin, $interState));
             $billId = (string) $bill['bill_id'];
+            $createdBillId = $billId; // created THIS run → reversible on failure
 
             // Post each recorded payment against this invoice to Zoho as a vendor
             // payment applied to the new bill (best-effort — a payment hiccup must
             // not undo an otherwise-successful bill push; any un-posted portion is
             // topped up on the next re-sync via the zoho_applied_amount ledger).
-            $pay = ['applied' => 0.0, 'pushed' => 0, 'pending' => 0, 'noAccount' => false, 'error' => false];
-            try {
-                $pay = array_merge($pay, $this->pushPaymentsToZoho($spi, $books, $zohoVendorId, $billId, (float) ($bill['balance'] ?? $bill['total'] ?? 0)));
-            } catch (\Throwable $e) {
-                Log::warning('Zoho bill payments partially posted', ['spi' => $spi->id, 'err' => $e->getMessage()]);
-                $pay['error'] = true;
-            }
+            // All-or-nothing: a payment that Zoho rejects throws through to the
+            // catch below, which reverses the bill + any payments already posted.
+            // ($createdPayments is filled by reference, so the reverse still sees
+            // payments made before the throw.)
+            $pay = $this->pushPaymentsToZoho($spi, $books, $zohoVendorId, $billId, (float) ($bill['balance'] ?? $bill['total'] ?? 0), $createdPayments);
 
             // Cache Zoho's own rendered bill PDF — best-effort.
             $pdfPath = null;
@@ -348,7 +407,7 @@ class SupplierPurchaseInvoiceController extends Controller
             // never implies a fully-paid bill when it isn't.
             if ($pay['noAccount']) {
                 $note .= ' NOTE: payments were NOT posted — add a Bank/Cash account in Zoho, then re-sync to post them.';
-            } elseif ($pay['error'] || $pay['pending'] > 0) {
+            } elseif (($pay['pending'] ?? 0) > 0) {
                 $note .= ' Some payments could not be posted yet — re-sync to retry.';
             }
 
@@ -357,7 +416,11 @@ class SupplierPurchaseInvoiceController extends Controller
                 'message' => 'Synced to Zoho Books as bill ' . ($bill['bill_number'] ?? $billId) . '.' . $note,
                 'data'    => $this->shapeListRow($spi->fresh()),
             ]);
-        } catch (RuntimeException $e) {
+        } catch (\Throwable $e) {
+            // All-or-nothing: reverse the Zoho bill + any payments created THIS
+            // run (payments → bill) so a partial sync never leaves an orphan,
+            // then record the failure.
+            $this->reverseSpiSync($books, $createdBillId, $createdPayments);
             $spi->update(['zoho_status' => 'Not Sync', 'zoho_error' => $e->getMessage(), 'updated_by' => $user->id]);
             return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
         }
@@ -375,43 +438,95 @@ class SupplierPurchaseInvoiceController extends Controller
      * applied (cgst+sgst halves, or full igst) is what's sent so Zoho's recomputed
      * total reconciles with ours.
      */
+    /**
+     * Resolve per-line Zoho metadata (real description, unit, HSN) for the given
+     * items' products in ONE query — products.description + master_uom.short_code
+     * + master_hsn_codes.hsn_code, keyed by product_id. Ad-hoc lines with no
+     * product_id simply get no meta and fall back to the product code.
+     */
+    private function zohoLineMeta($items): array
+    {
+        $ids = collect($items)->pluck('product_id')->filter()->unique()->values()->all();
+        if (empty($ids)) return [];
+        $rows = DB::table('products as p')
+            ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
+            ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
+            ->whereIn('p.id', $ids)
+            ->get(['p.id', 'p.description', 'u.short_code', 'u.title', 'h.hsn_code']);
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int) $r->id] = [
+                'description' => trim((string) ($r->description ?? '')) ?: null,
+                'unit'        => $r->short_code ?: ($r->title ?: null),
+                'hsn'         => $r->hsn_code ?: null,
+            ];
+        }
+        return $map;
+    }
+
+    /**
+     * Compose a Zoho line description: the product code stays for traceability,
+     * the real product description is appended when present ("P-81 · Honey…").
+     */
+    private function lineDescription($code, ?string $description): string
+    {
+        $code = trim((string) $code);
+        $desc = trim((string) $description);
+        if ($code !== '' && $desc !== '') return $code . ' · ' . $desc;
+        return $desc !== '' ? $desc : $code;
+    }
+
     private function buildZohoBillPayload(SupplierPurchaseInvoice $spi, ZohoBooksService $books, string $zohoVendorId, bool $registered, bool $interState): array
     {
-        $lineItems = $spi->items->map(function ($it) use ($books, $registered, $interState) {
+        $meta = $this->zohoLineMeta($spi->items);
+        $lineItems = $spi->items->map(function ($it) use ($books, $registered, $interState, $meta) {
             $name = (string) ($it->product_name ?: $it->product_code ?: 'Item');
             $rate = (float) $it->rate;
             $effRate = $interState ? (float) $it->igst_pct : ((float) $it->cgst_pct + (float) $it->sgst_pct);
             $taxId = $registered ? $books->resolveTaxId($effRate, $interState) : null;
+            $m = $meta[(int) $it->product_id] ?? [];
             $line = [
                 'item_id'     => $books->findOrCreateItemId($name, $rate, $taxId, $it->product_id),
                 'name'        => $name,
-                'description' => (string) $it->product_code,
+                'description' => $this->lineDescription($it->product_code, $m['description'] ?? null),
                 'rate'        => $rate,
                 'quantity'    => (float) $it->quantity,
             ];
-            if (!empty($it->hsn_code)) $line['hsn_or_sac'] = (string) $it->hsn_code;
+            // The SPI line carries its own hsn_code; fall back to the product's HSN.
+            $hsn = !empty($it->hsn_code) ? (string) $it->hsn_code : ($m['hsn'] ?? null);
+            if (!empty($hsn))       $line['hsn_or_sac'] = (string) $hsn;
+            if (!empty($m['unit'])) $line['unit'] = (string) $m['unit'];
             if ($taxId) $line['tax_id'] = $taxId;
             return $line;
         })->values()->all();
 
-        // bill_number is required + unique per vendor in Zoho: prefer the
-        // supplier's own invoice number, fall back to our SPI code.
-        $billNumber = trim((string) ($spi->invoice_no ?: $spi->code));
+        // Direct SPI (no PO): both bill# and reference# are the SPI code, so the
+        // bill is unambiguously tied to its invoice. (This builder only runs for
+        // Direct SPIs — With-PO invoices are billed through the PO.)
+        $billNumber = (string) $spi->code;
 
         $payload = [
             'vendor_id'        => $zohoVendorId,
-            'bill_number'      => $billNumber !== '' ? $billNumber : (string) $spi->code,
+            'bill_number'      => $billNumber,
             'date'             => optional($spi->invoice_date)->toDateString() ?: now()->toDateString(),
             'reference_number' => (string) $spi->code,
             'line_items'       => $lineItems,
         ];
 
-        // Additional (shipping/packaging/other) charges have no native bill field
-        // → fold into a single adjustment line so the bill total matches ours.
+        // Additional charges fold into the single adjustment field. For a DIRECT
+        // SPI (no PO) we also DEDUCT the cut TDS so the bill total equals net
+        // payable and settles fully once the net is paid — matching the PO bill.
+        // A With-PO SPI is billed through the PO, so TDS is never deducted here.
         $adjustment = (float) $spi->additional_charges;
+        $descParts  = [];
+        if ($adjustment != 0.0) $descParts[] = 'Additional charges ₹' . number_format($adjustment, 2);
+        if (empty($spi->purchase_order_id) && $spi->tds_cut && (float) $spi->tds_amount > 0) {
+            $adjustment -= (float) $spi->tds_amount;
+            $descParts[] = 'less TDS ₹' . number_format((float) $spi->tds_amount, 2) . ' (' . rtrim(rtrim(number_format((float) $spi->tds_percentage, 2), '0'), '.') . '%)';
+        }
         if ($adjustment != 0.0) {
-            $payload['adjustment']             = $adjustment;
-            $payload['adjustment_description'] = 'Additional charges';
+            $payload['adjustment']             = round($adjustment, 2);
+            $payload['adjustment_description'] = trim(implode(' ', $descParts)) ?: 'Adjustment';
         }
 
         // Currency (INR = org base, omitted); send exchange rate for non-base ccy.
@@ -437,8 +552,11 @@ class SupplierPurchaseInvoiceController extends Controller
      * applying more than a bill owes). The bank name is mapped to the matching
      * Zoho Bank ledger. Returns ['applied','pushed','pending','noAccount'].
      */
-    private function pushPaymentsToZoho(SupplierPurchaseInvoice $spi, ZohoBooksService $books, string $zohoVendorId, string $billId, float $billBalance): array
+    private function pushPaymentsToZoho(SupplierPurchaseInvoice $spi, ZohoBooksService $books, string $zohoVendorId, string $billId, float $billBalance, array &$created = []): array
     {
+        // $created accumulates the Zoho vendor payments made THIS run so a later
+        // failure can reverse them — BY REFERENCE, so the caller still has the
+        // list even if this method throws midway.
         $result = ['applied' => 0.0, 'pushed' => 0, 'pending' => 0, 'noAccount' => false];
 
         // Rows that still have an un-posted portion (posted < recorded amount).
@@ -486,11 +604,24 @@ class SupplierPurchaseInvoiceController extends Controller
             $payload['description'] = implode(' · ', $descParts);
             if ($exchangeRate)                 $payload['exchange_rate']     = $exchangeRate;
 
+            // Capture the pre-post ledger so a reverse can restore it exactly.
+            $prevApplied = (float) $p->zoho_applied_amount;
+            $prevPayId   = $p->zoho_payment_id;
+
             $zpay = $books->recordVendorPayment($payload);
 
-            $newApplied = round((float) $p->zoho_applied_amount + $amt, 2);
+            $newApplied = round($prevApplied + $amt, 2);
             $fields = ['zoho_applied_amount' => $newApplied, 'zoho_payment_id' => (string) ($zpay['payment_id'] ?? $p->zoho_payment_id)];
             $p->forceFill($fields)->saveQuietly();
+
+            if (!empty($zpay['payment_id'])) {
+                $created[] = [
+                    'payment_id'   => (string) $zpay['payment_id'],
+                    'po_payment'   => $p,
+                    'prev_applied' => $prevApplied,
+                    'prev_pay_id'  => $prevPayId,
+                ];
+            }
 
             $remaining        = round($remaining - $amt, 2);
             $result['applied'] = round($result['applied'] + $amt, 2);
@@ -499,6 +630,39 @@ class SupplierPurchaseInvoiceController extends Controller
         }
 
         return $result;
+    }
+
+    /**
+     * Compensating reverse for a Direct-SPI sync that failed partway: delete the
+     * Zoho entities created THIS run (payments → bill — a bill with applied
+     * payments can't be deleted) and restore the local payment ledger.
+     * Best-effort: a delete that itself fails is logged, never rethrown.
+     *
+     * @param array $createdPayments list of ['payment_id','po_payment','prev_applied','prev_pay_id']
+     */
+    private function reverseSpiSync(ZohoBooksService $books, ?string $createdBillId, array $createdPayments): void
+    {
+        foreach (array_reverse($createdPayments) as $c) {
+            try {
+                if (!empty($c['payment_id'])) $books->deleteVendorPayment((string) $c['payment_id']);
+            } catch (\Throwable $e) {
+                Log::warning('Zoho reverse: vendor payment delete failed', ['payment' => $c['payment_id'] ?? null, 'err' => $e->getMessage()]);
+            }
+            try {
+                if (!empty($c['po_payment'])) {
+                    $c['po_payment']->forceFill([
+                        'zoho_applied_amount' => $c['prev_applied'] ?? 0,
+                        'zoho_payment_id'     => $c['prev_pay_id'] ?? null,
+                    ])->saveQuietly();
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Zoho reverse: local payment restore failed', ['err' => $e->getMessage()]);
+            }
+        }
+        if ($createdBillId) {
+            try { $books->deleteBill($createdBillId); }
+            catch (\Throwable $e) { Log::warning('Zoho reverse: bill delete failed', ['bill' => $createdBillId, 'err' => $e->getMessage()]); }
+        }
     }
 
     /** Stream the cached Zoho Books bill PDF for a synced SPI ("View in Zoho"). */

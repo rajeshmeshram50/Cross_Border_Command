@@ -589,6 +589,17 @@ export default function HrEmployees() {
   const [ePrimaryRole, setEPrimaryRole]          = useState('');
   const [eAncillaryRole, setEAncillaryRole]      = useState<string[]>([]);
   const [eWorkType, setEWorkType]                = useState('');
+  // Primary & Ancillary share the SAME role list, but a role can't be BOTH for
+  // one employee: exclude the other side's current pick from each dropdown so
+  // the clash is physically unselectable (a save-time guard backs it up too).
+  const primaryRoleOptionsX   = useMemo(
+    () => primaryRoleOptions.filter(o => !eAncillaryRole.includes(o.value)),
+    [primaryRoleOptions, eAncillaryRole],
+  );
+  const ancillaryRoleOptionsX = useMemo(
+    () => primaryRoleOptions.filter(o => o.value !== ePrimaryRole),
+    [primaryRoleOptions, ePrimaryRole],
+  );
   const [eLegalEntity, setELegalEntity]          = useState('');
   const [eLocation, setELocation]                = useState('');
   const [eReportingMgr, setEReportingMgr]        = useState('');
@@ -1544,6 +1555,8 @@ export default function HrEmployees() {
     if (!eDept)            e.department_id     = 'Department is required';
     if (!eDesignation)     e.designation_id    = 'Designation is required';
     if (!ePrimaryRole)     e.primary_role_id   = 'Primary role is required';
+    // A role can't be both Primary and Ancillary for the same employee.
+    else if (eAncillaryRole.includes(ePrimaryRole)) e.primary_role_id = 'The Primary role cannot also be an Ancillary role.';
     if (!eWorkType)        e.work_type         = 'Work type is required';
     if (!eLegalEntity)     e.legal_entity_id   = 'Legal entity is required';
     if (!eReportingMgr)    e.reporting_manager_id = 'Reporting manager is required';
@@ -3524,7 +3537,7 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Primary Role<span className="req">*</span></label>
-                      <MasterSelect value={ePrimaryRole} onChange={(v) => { setEPrimaryRole(v); clearEErr('primary_role_id'); }} placeholder="Select role" options={primaryRoleOptions} invalid={!!eErrors.primary_role_id} />
+                      <MasterSelect value={ePrimaryRole} onChange={(v) => { setEPrimaryRole(v); clearEErr('primary_role_id'); setEAncillaryRole(prev => prev.filter(id => id !== v)); }} placeholder="Select role" options={primaryRoleOptionsX} invalid={!!eErrors.primary_role_id} />
                       {eErrors.primary_role_id && <small className="emp-err">{eErrors.primary_role_id}</small>}
                     </Col>
                     <Col md={4}>
@@ -3532,7 +3545,7 @@ export default function HrEmployees() {
                       <MultiSelectChips
                         value={eAncillaryRole}
                         onChange={setEAncillaryRole}
-                        options={ancillaryRoleOptions}
+                        options={ancillaryRoleOptionsX}
                         placeholder="Select one or more roles"
                       />
                     </Col>

@@ -115,7 +115,7 @@ class SegmentGuard
      *
      * @return string[]
      */
-    private static function docKeys(int $clientId, string $segmentName): array
+    public static function docKeys(int $clientId, string $segmentName): array
     {
         $name = trim($segmentName);
         if ($name === '') return [];
@@ -143,27 +143,196 @@ class SegmentGuard
     }
 
     /**
-     * Given the row's current segment string and the incoming one, return the
-     * REMOVED segments that still have uploads (so the edit must be rejected).
+     * The (category|doc_code) keys of every document ACTUALLY uploaded for a
+     * party — the exact shape docKeys() returns, so the removal guard can match
+     * "required by X" against "uploaded" without reconstructing it on the client.
      *
-     * @return string[] blocked segment names ([] = safe to proceed)
+     * @return string[]
      */
-    public static function blockedRemovals(string $uploadableType, int $uploadableId, int $clientId, ?string $oldSegment, ?string $newSegment): array
+    public static function uploadedDocKeys(string $uploadableType, int $uploadableId, int $clientId): array
+    {
+        return SegmentDocUpload::query()
+            ->where('uploadable_type', $uploadableType)
+            ->where('uploadable_id', $uploadableId)
+            ->where('client_id', $clientId)
+            ->get(['category', 'doc_code'])
+            ->map(fn ($r) => $r->category . '|' . $r->doc_code)
+            ->unique()->values()->all();
+    }
+
+    /**
+     * Proforma-Invoice statuses that DON'T lock a segment. Any other PI status
+     * (i.e. a PI that has merely been created) blocks segment removal — a
+     * cancelled PI is void and is the only state that doesn't count.
+     */
+    public const PI_IGNORED = ['cancelled'];
+
+    /**
+     * Purchase-Order statuses that count as an issued/committed reference for a
+     * supplier's segment (a Draft/Pending PO is not yet committed).
+     */
+    public const PO_COMMITTED = ['Sent for Sign', 'Signed', 'Approved'];
+
+    /**
+     * The segment NAMES present before the edit but not after (case-insensitive).
+     *
+     * @return string[]
+     */
+    public static function removedNames(?string $oldSegment, ?string $newSegment): array
     {
         $old = self::names($oldSegment);
         $new = array_map('mb_strtolower', self::names($newSegment));
+        return array_values(array_filter($old, fn ($s) => !in_array(mb_strtolower($s), $new, true)));
+    }
 
-        // Segments present before but not after (case-insensitive compare).
-        $removed = array_values(array_filter($old, fn ($s) => !in_array(mb_strtolower($s), $new, true)));
+    /**
+     * Is the party referenced by a COMPLETED downstream document that locks its
+     * segments?  The link is per-segment via the document's PRODUCTS — a segment
+     * is locked only when a product on a qualifying document belongs to it:
+     *   - Customer  → a product on a non-cancelled PI, or a PI that has a Shipment.
+     *   - Consignee → same, matched on the PI's consignee_id.
+     *   - Vendor    → a product on an issued PO (Sent for Sign / Signed / Approved).
+     *
+     * Returns the SEGMENT NAMES locked for the party (a segment the party carries
+     * but that is NOT among these can be removed freely).
+     *
+     * @param  string $partyType  App\Models\Customer|Consignee|Vendor ::class
+     * @return string[]
+     */
+    public static function lockedSegmentNames(string $partyType, int $partyId, int $clientId): array
+    {
+        // Supplier/Vendor: segments of the products on an issued Purchase Order
+        // OR a Supplier Purchase Invoice (a Direct SPI has no PO, so both count).
+        if ($partyType === \App\Models\Vendor::class) {
+            $poNames = \Illuminate\Support\Facades\DB::table('purchase_orders as po')
+                ->join('purchase_order_items as poi', 'poi.purchase_order_id', '=', 'po.id')
+                ->join('products as p', 'p.id', '=', 'poi.product_id')
+                ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
+                ->where('po.client_id', $clientId)
+                ->where('po.vendor_id', $partyId)
+                ->whereIn('po.status', self::PO_COMMITTED)
+                ->whereNull('po.deleted_at')
+                ->distinct()
+                ->pluck('cs.name')
+                ->all();
+            $spiNames = \Illuminate\Support\Facades\DB::table('supplier_purchase_invoices as spi')
+                ->join('supplier_purchase_invoice_items as si', 'si.supplier_purchase_invoice_id', '=', 'spi.id')
+                ->join('products as p', 'p.id', '=', 'si.product_id')
+                ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
+                ->where('spi.client_id', $clientId)
+                ->where('spi.vendor_id', $partyId)
+                ->whereNull('spi.deleted_at')
+                ->distinct()
+                ->pluck('cs.name')
+                ->all();
+            return array_values(array_unique(array_merge($poNames, $spiNames)));
+        }
+
+        // Customer / Consignee: which PI column identifies the party.
+        $piCol = $partyType === \App\Models\Consignee::class ? 'consignee_id'
+            : ($partyType === \App\Models\Customer::class ? 'customer_id' : null);
+        if ($piCol === null) return [];
+
+        // Segments of the products on this party's PIs — a PI counts if it is not
+        // cancelled OR it has a Shipment (Stage-6 won).
+        return \Illuminate\Support\Facades\DB::table('proforma_invoices as pi')
+            ->join('proforma_invoice_items as pii', 'pii.proforma_invoice_id', '=', 'pi.id')
+            ->join('products as p', 'p.id', '=', 'pii.product_id')
+            ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
+            ->where('pi.client_id', $clientId)
+            ->where('pi.' . $piCol, $partyId)
+            ->where(function ($q) {
+                $q->whereNotIn('pi.status', self::PI_IGNORED)
+                  ->orWhereExists(function ($s) {
+                      $s->selectRaw('1')->from('shipment_orders as so')->whereColumn('so.proforma_invoice_id', 'pi.id');
+                  });
+            })
+            ->distinct()
+            ->pluck('cs.name')
+            ->all();
+    }
+
+    /**
+     * Of the segments being removed from a party, return those blocked because a
+     * product on a completed PI/Shipment (customer/consignee) or an issued
+     * Purchase Order (vendor) belongs to that segment. Per-segment: only the
+     * segments actually used downstream are blocked; the rest remove freely.
+     *
+     * @param  string[] $removedNames
+     * @return string[] blocked segment names ([] = safe to proceed)
+     */
+    public static function blockedByCompletedDocs(string $partyType, int $partyId, int $clientId, array $removedNames): array
+    {
+        $removed = array_values(array_filter(array_map('trim', $removedNames), fn ($s) => $s !== ''));
+        if (empty($removed)) return [];
+        $locked = array_map('mb_strtolower', self::lockedSegmentNames($partyType, $partyId, $clientId));
+        if (empty($locked)) return [];
+        return array_values(array_filter($removed, fn ($s) => in_array(mb_strtolower($s), $locked, true)));
+    }
+
+    /**
+     * Of the segments being removed, return those blocked because they have an
+     * uploaded document UNIQUE to them — a (category, doc_code) the segment
+     * requires, that is uploaded, and that NO remaining segment also requires
+     * (so removing the segment would orphan it). A document shared with a segment
+     * that stays does NOT block (it survives on that segment).
+     *
+     * @param  string[] $removedNames
+     * @param  string[] $remainingNames
+     * @return string[] blocked segment names ([] = safe to proceed)
+     */
+    public static function blockedByOrphanDocs(string $uploadableType, int $uploadableId, int $clientId, array $removedNames, array $remainingNames): array
+    {
+        $removed = array_values(array_filter(array_map('trim', $removedNames), fn ($s) => $s !== ''));
         if (empty($removed)) return [];
 
-        /* A shared document counts for EVERY segment listing it, whether or not
-         * another selected segment also requires it. Four segments sharing one
-         * mandatory DD doc are therefore all locked by a single upload — the
-         * document must be deleted before any of them can be dropped. (An
-         * "orphan-only" variant that allowed removing all but the last was
-         * tried and rejected: blocking 3-of-4 removals silently reads as
-         * arbitrary.) */
-        return self::segmentsWithUploads($uploadableType, $uploadableId, $clientId, $removed);
+        // Doc keys still required by a remaining segment survive (never orphaned).
+        $keepKeys = [];
+        foreach ($remainingNames as $name) {
+            $keepKeys = array_merge($keepKeys, self::docKeys($clientId, trim((string) $name)));
+        }
+        $keepKeys = array_flip($keepKeys);
+
+        $blocked = [];
+        foreach ($removed as $name) {
+            // Keys this segment requires that no remaining segment does.
+            $orphan = array_values(array_filter(self::docKeys($clientId, $name), fn ($k) => !isset($keepKeys[$k])));
+            if (empty($orphan)) continue;
+            // Blocked only if one of those orphan docs is actually uploaded.
+            $hasUpload = SegmentDocUpload::query()
+                ->where('uploadable_type', $uploadableType)
+                ->where('uploadable_id', $uploadableId)
+                ->where('client_id', $clientId)
+                ->where(function ($q) use ($orphan) {
+                    foreach ($orphan as $key) {
+                        [$cat, $code] = explode('|', $key, 2);
+                        $q->orWhere(fn ($w) => $w->where('category', $cat)->where('doc_code', $code));
+                    }
+                })
+                ->exists();
+            if ($hasUpload) $blocked[] = $name;
+        }
+        return $blocked;
+    }
+
+    /**
+     * Merge names that must be RETAINED back into a derived segment string
+     * (case-insensitive union), keeping the derived order first. Used where a
+     * consignee's segment is derived from its customers: a segment locked by a
+     * completed PI/Shipment must remain attached even if derivation dropped it.
+     *
+     * @param  string[] $retain
+     */
+    public static function mergeRetained(?string $derivedSegment, array $retain): string
+    {
+        $names = self::names($derivedSegment);
+        $seen  = array_map('mb_strtolower', $names);
+        foreach ($retain as $name) {
+            $name = trim($name);
+            if ($name === '' || in_array(mb_strtolower($name), $seen, true)) continue;
+            $names[] = $name;
+            $seen[]  = mb_strtolower($name);
+        }
+        return implode(', ', $names);
     }
 }

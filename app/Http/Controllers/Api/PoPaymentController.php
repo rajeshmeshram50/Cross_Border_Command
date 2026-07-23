@@ -228,6 +228,14 @@ class PoPaymentController extends Controller
         // amount actually owed, so 100% = balance cleared.
         $progress  = $netPay > 0 ? min(100, round($amountPaid / $netPay * 100)) : 0;
 
+        // Source-trace key (backend only): every PO payment belongs to this PO and,
+        // when it was recorded via a specific invoice, traces to that SPI. Batch-load
+        // the SPI codes so the per-payment mapping stays N+1-free.
+        $spiIds   = $payments->pluck('supplier_purchase_invoice_id')->filter()->unique()->values();
+        $spiCodes = $spiIds->isNotEmpty()
+            ? \App\Models\SupplierPurchaseInvoice::whereIn('id', $spiIds)->pluck('code', 'id')
+            : collect();
+
         return [
             'po' => [
                 'id'        => $po->id,
@@ -264,6 +272,16 @@ class PoPaymentController extends Controller
                 'attachment_name'   => $p->attachment_path ? basename($p->attachment_path) : null,
                 'balance_after'     => (float) $p->balance_after,
                 'status'            => $p->status,
+                // Which PO / SPI this payment was made against (+ ids) — backend trace.
+                // `type` = the document the payment is booked against: always 'po'
+                // here (po_payments); `spi` only traces the invoice it was for.
+                'source'            => [
+                    'type' => 'po',
+                    'po'   => ['id' => $po->id, 'code' => $po->code],
+                    'spi'  => $p->supplier_purchase_invoice_id
+                        ? ['id' => (int) $p->supplier_purchase_invoice_id, 'code' => $spiCodes[$p->supplier_purchase_invoice_id] ?? null]
+                        : null,
+                ],
             ]),
         ];
     }

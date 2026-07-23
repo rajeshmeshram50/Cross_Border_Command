@@ -358,7 +358,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                         return (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
                             <Tooltip label={`Segment scope · ${list[0]}`}>
-                              <span className="clm-badge clm-badge-teal">{list[0]}</span>
+                              <span className="clm-badge clm-badge-teal" style={{ display: 'inline-block', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{list[0]}</span>
                             </Tooltip>
                             {extra > 0 && (
                               <Tooltip label="View all segments">

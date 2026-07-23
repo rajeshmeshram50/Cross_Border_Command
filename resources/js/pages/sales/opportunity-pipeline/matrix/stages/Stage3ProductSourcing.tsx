@@ -928,9 +928,13 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
         leadContext={{
           oppId:        header.oppId,
           oppDate:      header.oppDate,
-          customer:     header.customer,
-          customerCode: header.customerCode,
-          country:      header.country,
+          // Only surface the customer (name/code/country) when a real customer is
+          // MAPPED to the lead. Without this, header.customer fell back to the
+          // lead's seed name, so the procurement modal showed a "customer" even
+          // when none was mapped. No mapping → blank → the modal renders "—".
+          customer:     header.customerId ? header.customer : '',
+          customerCode: header.customerId ? header.customerCode : '',
+          country:      header.customerId ? header.country : '',
           assignedTo:   header.salespersonName,
           status:       header.qualified ? 'Qualified' : header.disqualified ? 'Disqualified' : 'Pending',
         }}

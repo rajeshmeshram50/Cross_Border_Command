@@ -403,9 +403,14 @@ class SegmentDocUploadController extends Controller
         // Supplier/vendor vaults model their per-deal docs differently (vendor
         // deals, not $shipments) and DO use the standard 'td' bucket, so they
         // keep the original all-inclusive standard tally.
-        // Vendor-only top-level Agreements bucket (populated in the else branch).
+        // Top-level Agreements bucket. Vendors fill it in the else branch;
+        // customers/consignees fill it here from their OWN segment-applicable
+        // agreements (segment-driven, NOT shipment-gated), so the single-bucket
+        // Agreements popup matches the Buyer Profile's agr cell even when the
+        // party has applicable agreements but no shipment order yet (CBC #66).
         $agreements = [];
         if (in_array($type, ['customer', 'consignee'], true)) {
+            $agreements = $this->buildEntityAgreements($cid, $type, $id, $segmentIds);
             $c2c = function (string $key) use ($shipments) {
                 $signed = 0; $total = 0;
                 foreach ($shipments as $s) {
@@ -1073,6 +1078,63 @@ class SegmentDocUploadController extends Controller
         $forBuyer     = in_array('buyer', $tokens, true);
         $forConsignee = in_array('consignee', $tokens, true);
         return [$forBuyer, $forConsignee];
+    }
+
+    /**
+     * Customer / Consignee top-level Agreements bucket — the agreements applicable
+     * to the ENTITY'S OWN segments (segment-driven, exactly like the Buyer
+     * Profile's agr cell), overlaid with this entity's COMPLETED agreement
+     * e-signatures. Unlike buildShipmentAgreements() this is NOT gated on a
+     * shipment order existing, so a party with applicable agreements but no
+     * shipment still lists them (CBC #66: popup read "0 of 0" while the profile
+     * cell read N). The customer counts every segment agreement; the consignee is
+     * party-filtered to the consignee side — matching ClmBuyerProfileController.
+     *
+     * @param  int[]  $segmentIds  the entity's resolved segment ids
+     * @return array<int,array<string,mixed>>  VaultDoc-shaped rows (name + status)
+     */
+    private function buildEntityAgreements(int $cid, string $type, int $entityId, array $segmentIds): array
+    {
+        if (!in_array($type, ['customer', 'consignee'], true) || !$cid || empty($segmentIds)) return [];
+
+        $segments = ClmSegment::where('client_id', $cid)->whereIn('id', $segmentIds)->get();
+        if ($segments->isEmpty()) return [];
+
+        // Completed agreement e-signatures for THIS entity → set of signed lib ids.
+        $modelName = $type === 'consignee' ? 'Consignee' : 'Customer';
+        $signed = [];
+        foreach (ClmSignatureRequest::where('client_id', $cid)
+            ->where('document_type', ClmSignatureRequest::DOC_AGREEMENT)
+            ->where('status', 'completed')
+            ->where('model_name', $modelName)
+            ->where('party_id', $entityId)
+            ->get(['trade_doc_ids']) as $sr) {
+            foreach ((is_array($sr->trade_doc_ids) ? $sr->trade_doc_ids : []) as $aid) {
+                $signed[(int) $aid] = true;
+            }
+        }
+
+        $rows = []; $seen = [];
+        foreach ($segments as $seg) {
+            foreach ($this->matchSegmentLibrary(ClmAgreementLibrary::query(), $cid, $seg, 'agr_status') as $a) {
+                $aid = (int) $a->id;
+                if (isset($seen[$aid])) continue;
+                // Consignee vault lists only consignee-side agreements; the customer
+                // vault lists every segment agreement (mirrors the profile cell).
+                if ($type === 'consignee') {
+                    [, $forCons] = $this->partyFlags($a->party);
+                    if (!$forCons) continue;
+                }
+                $seen[$aid] = true;
+                $rows[] = [
+                    'db_id'     => $aid,
+                    'name'      => $a->title ?: $a->code,
+                    'authority' => null,
+                    'status'    => isset($signed[$aid]) ? 'Signed' : 'Pending',
+                ];
+            }
+        }
+        return $rows;
     }
 
     /**

@@ -596,6 +596,18 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     contactName: '', designation: '', contactNo: '', email: '', whatsapp: 'Yes',
   });
 
+  /* A domestic (India) customer trades only within India, so its consignees are
+     India-only. Freeze the consignee country to India the moment such a customer
+     is linked (the Country field is also disabled in the UI). Keeps the SAVED
+     value correct even in the blank/normal flow where nothing seeds it.
+     International customers leave the country free. */
+  useEffect(() => {
+    if (isDomesticCountry(customer?.country)) {
+      setForm1(f => (f.country === 'India' ? f : { ...f, country: 'India', state: '' }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer?.country]);
+
   /* Address & Contact table — each row carries an address plus the
    * contact person who is authoritative at that location. Mirrors
    * AddCustomerModal so the JSX stays uniform. */
@@ -2202,7 +2214,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                       {customer.name}
                       <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>CUSTOMER</span>
                     </div>
-                    <div className="acm-picked-meta">{customer.id} • {customer.segment} • {customer.country}</div>
+                    <div className="acm-picked-meta">{customer.id} • {truncSegment(customer.segment)} • {customer.country}</div>
                   </div>
                 </>
               ) : (
@@ -2295,7 +2307,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                         {c.name}
                         {isPrimary && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>}
                       </div>
-                      <div className="acm-pop-meta">{c.id} • {c.segment} • {c.country}</div>
+                      <div className="acm-pop-meta">{c.id} • {truncSegment(c.segment)} • {c.country}</div>
                     </div>
                   </button>
                   );
@@ -2325,7 +2337,7 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
                     {customer.name}
                     <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 20, padding: '1px 7px' }}>PRIMARY</span>
                   </div>
-                  <div className="acm-picked-meta">{customer.id} • {customer.segment} • {customer.country}</div>
+                  <div className="acm-picked-meta">{customer.id} • {truncSegment(customer.segment)} • {customer.country}</div>
                 </div>
                 {primaryLocked ? (
                   <span title="Locked — you're mapping under this customer" style={{ fontSize: 10, fontWeight: 700, color: '#6b7280', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -3519,12 +3531,18 @@ const Stage1 = ({
             </div>
             <div className="acm-grid-4 acm-mt-12">
               <Field label="Country" required error={errors.country} fieldKey="country">
+                {/* A domestic (India) customer trades only within India, so its
+                    consignees are India-only — freeze the Country to India,
+                    exactly like the customer's own address rule. International
+                    customers keep the country free. */}
                 <MasterSelect
-                  value={form.country}
-                  options={optsWith(masters.countries, form.country)}
+                  value={isDomesticCountry(customer?.country) ? 'India' : form.country}
+                  options={isDomesticCountry(customer?.country)
+                    ? [{ value: 'India', label: 'India' }]
+                    : optsWith(masters.countries, form.country)}
                   placeholder="Select Country"
                   invalid={!!errors.country}
-                  disabled={lock}
+                  disabled={lock || isDomesticCountry(customer?.country)}
                   /* PIN and ZIP are different rules, so the code already typed
                      has to be re-judged against the NEW country — otherwise a
                      valid "SL7 1TB" stays green after switching to India. */

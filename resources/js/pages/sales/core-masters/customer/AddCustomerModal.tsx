@@ -1,4 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
+import { CLM_CSS } from '../../../clm/shared/clmShared';
 import api from '../../../../api';
 import { MasterSelect, MasterDatePicker, MasterMultiSelect } from '../../../master/masterFormKit';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -144,6 +146,7 @@ const optsWith = (rows: MasterOpt[], current?: string | null) => {
  *   - Trade Licence on Stage 2 also reads TL_DOCS for now (the
  *     same design-only treatment). */
 type KycDocRow = { code: string; name: string; authority: string; expiry: string; status: string };
+
 const DD_DOCS: KycDocRow[] = [
   { code: 'DD-001', name: 'Certificate of Incorporation',                          authority: 'Registrar of Companies (ROC)', expiry: 'N/A',     status: 'mandatory' },
   { code: 'DD-002', name: 'Memorandum & Articles of Association (MOA/AOA)',        authority: 'Registrar of Companies (ROC)', expiry: 'N/A',     status: 'mandatory' },
@@ -603,6 +606,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
      ever true in edit mode — a brand-new customer has no leads yet. The server
      enforces the same rule in CustomerController::mappedLeadCountryDenial. */
   const [mapLeadLocked, setMapLeadLocked] = useState(false);
+  // Segment NAMES locked against removal because a product on a PI / Shipment
+  // belongs to them (server-driven, per-segment).
+  const [lockedSegments, setLockedSegments] = useState<string[]>([]);
+  // Server-provided data for the unique-document removal guard (condition 2):
+  // required doc keys (category|code) per segment NAME, and the keys uploaded.
+  const [segReqKeys, setSegReqKeys] = useState<Record<string, string[]>>({});
+  const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
   const gstRowsRef = useRef<GstRow[]>([]);
   useEffect(() => { gstRowsRef.current = gstRows; }, [gstRows]);
 
@@ -1112,6 +1122,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     // Default to unlocked; the edit-mode hydration below sets it from the
     // server. Create mode never locks — the customer has no leads yet.
     setMapLeadLocked(false);
+    setLockedSegments([]);
+    setSegReqKeys({});
+    setUploadedKeys([]);
     setErrors({});
     // Edit mode arrives with db_id (Stage 2 KYC POSTs work
     // immediately); create mode starts null and gets filled by the
@@ -1192,6 +1205,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         const d = r.data?.data ?? r.data ?? {};
         const pa = d.primary_address ?? {};
         setMapLeadLocked(d.isMapLead === 'Yes');
+        setLockedSegments(Array.isArray(d.locked_segments) ? d.locked_segments : []);
+        setSegReqKeys(d.segment_required_doc_keys && typeof d.segment_required_doc_keys === 'object' ? d.segment_required_doc_keys : {});
+        setUploadedKeys(Array.isArray(d.uploaded_doc_keys) ? d.uploaded_doc_keys : []);
         setForm({
           coName:   d.company       ?? '',
           coLegal:  d.legalName     ?? d.company ?? '',
@@ -1983,6 +1999,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
        button or the ESC key. */
     <div className="acm-root">
       <style>{SCOPED_CSS}</style>
+      {/* CLM shared styles — powers the teal AuthorityBadges "+N" popover used in
+          the KYC / DD / Trade Licence issuing-authority columns, matching the
+          Supplier form exactly. */}
+      <style>{CLM_CSS}</style>
       <div className="acm-card">
 
         {/* HEADER */}
@@ -2125,38 +2145,29 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
             <Stage1Identification form={form} setF={setF} masters={masters} errors={errors} currentCustomerId={savedDbId ?? customer?.db_id ?? null} unruledSegments={segRulesLoaded ? masters.segments.filter(s => !ruledSegCodes.has(s.code ?? '')).map(s => s.name) : []} clearErr={(k) => setErrors(e => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; })} validateField={validateField} segTypesByName={segTypesByName} guardSegmentRemove={(prev, vs) => {
               const removed = prev.filter(s => !vs.includes(s));
               if (!removed.length) return vs;
-              /* Refuse to decide before the evidence is in. `segCodeMap` is
-               * filled by an async fetch keyed off the masters bundle, so on a
-               * FIRST open (cold bundle cache) the field went interactive while
-               * the map was still empty — every removal then looked safe and
-               * sailed through to a 422 at save. Re-opening the modal hit the
-               * cached bundle, won the race, and blocked correctly, which is why
-               * this only ever reproduced "the first time".
-               *
-               * Only guards a persisted customer: before the first save there
-               * are no uploads to orphan, and the fetch may never run. */
-              if (!segGuardReady) {
-                toast.info('Checking documents', 'Still loading this customer’s uploaded documents — try removing the segment again in a moment.');
-                return prev;
+              /* A segment can't be removed when (1) a PRODUCT on a PI / Shipment
+               * belongs to it, or (2) it has an uploaded document not shared with
+               * any remaining segment. Block only those (re-add them) and let the
+               * rest go through. Mirrors the server, which rejects the same at save. */
+              const lockedRemoved = removed.filter(s => lockedSegments.some(l => l.toLowerCase() === s.toLowerCase()));
+              // (2) Unique-document lock — uses the SAME server data the backend
+              // uses (required category|code keys per segment + the uploaded keys),
+              // so the UI blocks exactly what save does. A removed segment is
+              // blocked when it requires an UPLOADED key that no REMAINING segment
+              // requires (removing it would orphan that file).
+              const uploadedSet = new Set(uploadedKeys);
+              const keepKeys = new Set(vs.flatMap(s => segReqKeys[s] ?? []));
+              const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
+                && (segReqKeys[s] ?? []).some(k => uploadedSet.has(k) && !keepKeys.has(k)));
+              if (lockedRemoved.length) {
+                toast.error('Cannot remove segment', `${lockedRemoved.join(', ')} — used in a PI / Shipment.`);
               }
-              // Doc codes with an ACTUAL upload (file or URL). Hydration seeds an
-              // empty entry per reference row, so check the value.
-              const uploaded = new Set(
-                Object.entries(segmentRefUploads)
-                  .filter(([, v]) => !!(v && (v.url || v.file)))
-                  .map(([k]) => k.split('::')[1])
-              );
-              /* A segment can't be removed if ANY of its documents has an
-               * upload — including one shared with a segment being kept. Four
-               * segments sharing a mandatory DD doc are all locked by that one
-               * file; delete it to free them. Mirrors SegmentGuard so the field
-               * never allows something the save would reject. */
-              const locked = removed.filter(seg =>
-                (segCodeMap[seg] ?? []).some(c => uploaded.has(c))
-              );
-              if (locked.length) {
-                toast.error('Cannot remove segment', `You can't remove ${locked.join(', ')} — ${locked.length > 1 ? 'they have' : 'it has'} completed standard documents. Delete those documents first to drop the segment.`);
-                return [...vs, ...locked.filter(s => !vs.includes(s))];
+              if (docRemoved.length) {
+                toast.error('Cannot remove segment', `${docRemoved.join(', ')} — has its own uploaded document.`);
+              }
+              const blocked = [...lockedRemoved, ...docRemoved];
+              if (blocked.length) {
+                vs = [...vs, ...blocked.filter(s => !vs.includes(s))];
               }
               return vs;
             }} gstLocked={gstRows.length > 0} onCountryBlockedByGst={() => toast.warning('Country is locked to India', 'This customer has GST Scrutiny entries. Delete them first — an international customer has no GST.')}
@@ -3630,19 +3641,23 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                   : isOwners       ? filteredOwners.length
                   : filteredDocs.length;
 
-  const maxPage = Math.max(1, Math.ceil(totalRows / KYC_PER_PAGE));
+  // Rows-per-page is now user-selectable (via the shared WorklistPager) instead
+  // of a fixed KYC_PER_PAGE, so these in-modal doc tables get the same proper
+  // pagination as the full-page lists.
+  const [rpp, setRpp] = useState(KYC_PER_PAGE);
+  const maxPage = Math.max(1, Math.ceil(totalRows / rpp));
   const curPage = Math.min(page[sub], maxPage);
-  const start = (curPage - 1) * KYC_PER_PAGE;
-  const docSlice    = filteredDocs.slice(start, start + KYC_PER_PAGE);
-  const ownerSlice  = filteredOwners.slice(start, start + KYC_PER_PAGE);
-  const legacySlice = filteredTradeLegacy.slice(start, start + KYC_PER_PAGE);
+  const start = (curPage - 1) * rpp;
+  const docSlice    = filteredDocs.slice(start, start + rpp);
+  const ownerSlice  = filteredOwners.slice(start, start + rpp);
+  const legacySlice = filteredTradeLegacy.slice(start, start + rpp);
 
   // Compose an auto-code prefix that mirrors the design (DD-001 etc.).
   // Uses the row's sr position so codes stay stable per page render.
   const codeFor = (kindLetters: string, sr: number) => `${kindLetters}-${String(sr).padStart(3, '0')}`;
 
   return (
-    <div>
+    <div className="acm-kyc-stage">
       <div className="acm-subtabs-row">
         {(['company-dd','owner-kyc','trade-licence'] as KycSubTab[]).map(s => (
           <button key={s} type="button" className={`acm-subtab-pill ${sub === s ? 'is-active' : ''}`} onClick={() => setSub(s)}>
@@ -3720,8 +3735,14 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                       <tr key={dl.code}>
                         <td>{srPad}</td>
                         <td><span className="acm-doc-code">{dl.code}</span></td>
-                        <td style={{ fontWeight: 700, color: '#1f2937' }}>{dl.name}</td>
-                        <td style={{ color: '#6b7280' }}>{dl.authority}</td>
+                        <td style={{ fontWeight: 700, color: '#1f2937' }}>{(() => {
+                          // Long name → one line + ellipsis, full text on hover
+                          // (same reveal as the Segment column's single value).
+                          const v = dl.name || '';
+                          const span = <span style={{ display: 'inline-block', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{v || '—'}</span>;
+                          return v.length > 32 ? <Tooltip label={v}>{span}</Tooltip> : span;
+                        })()}</td>
+                        <td><AuthorityBadges value={dl.authority} variant="violet" /></td>
                         {/* Requirement — tells the user up-front whether this
                             doc must be uploaded (Mandatory) or is optional. */}
                         <td>
@@ -3811,7 +3832,7 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
                         <td><span className="acm-doc-code">{code}</span></td>
                         <td style={{ fontWeight: 700, color: '#1f2937' }}>{d.name}</td>
                         <td style={{ fontFamily: 'JetBrains Mono, ui-monospace, monospace', fontSize: 11 }}>{d.license_number || '—'}</td>
-                        <td style={{ color: '#6b7280' }}>{d.issuing_authority || '—'}</td>
+                        <td><AuthorityBadges value={d.issuing_authority} variant="violet" /></td>
                         <td><span className={issClass}>{issLabel}</span></td>
                         <td><span className={expClass}>{expLabel}</span></td>
                         <td><BustedLink url={d.attachment_url} path={d.attachment_path} /></td>
@@ -3837,18 +3858,13 @@ function Stage2KYC({ sub, setSub, page, setPage, search, setSearch, onAdd, docs,
             )}
           </div>
           <div className="acm-doc-pag-wrap">
-            <span className="acm-doc-pag-info">
-              {totalRows === 0 ? 'Showing 0 of 0 rows' : `Showing ${start + 1}–${Math.min(start + KYC_PER_PAGE, totalRows)} of ${totalRows} rows`}
-            </span>
-            {maxPage > 1 && (
-              <div className="acm-pagination">
-                <button type="button" className="acm-page-btn" disabled={curPage === 1} onClick={() => setPage(sub, curPage - 1)}>‹</button>
-                {Array.from({ length: maxPage }, (_, i) => i + 1).map(p => (
-                  <button key={p} type="button" className={`acm-page-btn ${p === curPage ? 'is-active' : ''}`} onClick={() => setPage(sub, p)}>{p}</button>
-                ))}
-                <button type="button" className="acm-page-btn" disabled={curPage === maxPage} onClick={() => setPage(sub, curPage + 1)}>›</button>
-              </div>
-            )}
+            <WorklistPager
+              total={totalRows}
+              page={curPage}
+              pageSize={rpp}
+              onPage={(p) => setPage(sub, p)}
+              onPageSize={(n) => { setRpp(n); setPage(sub, 1); }}
+            />
           </div>
         </div>
       </div>
@@ -5384,7 +5400,16 @@ const SCOPED_CSS = `
 .acm-tab-off:hover { background: #ede9fe; border-color: #7c3aed; }
 
 /* Body */
-.acm-body { flex: 1; overflow-y: auto; padding: 16px 22px 20px; background: #fff; scrollbar-width: thin; scrollbar-color: #a78bfa #ede9fe; }
+.acm-body { flex: 1; overflow-y: auto; padding: 16px 22px 20px; background: #fff; scrollbar-width: thin; scrollbar-color: #a78bfa #ede9fe; display: flex; flex-direction: column; }
+/* KYC stage (DD / Owner KYC / Trade Licence) — stretch the table card to fill
+   the modal's fixed height so the pager pins to the bottom instead of floating
+   with a big empty gap under a short list. Scoped so Stage 1 is untouched. */
+.acm-kyc-stage { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.acm-kyc-stage .acm-section-purple { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+/* Flex column so the TABLE grows and the pager (its last sibling) pins to the
+   bottom — without this the pager floated mid-card with empty space beneath. */
+.acm-kyc-stage .acm-section-body-table { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.acm-kyc-stage .acm-section-body-table .acm-table-wrap { flex: 1 1 auto; min-height: 0; }
 .acm-body::-webkit-scrollbar { width: 6px; }
 .acm-body::-webkit-scrollbar-track { background: #ede9fe; border-radius: 10px; }
 .acm-body::-webkit-scrollbar-thumb { background: #a78bfa; border-radius: 10px; }
@@ -5842,7 +5867,10 @@ const SCOPED_CSS = `
 [data-bs-theme="dark"] .acm-btn-ghost { background: rgba(167,139,250,0.12); border-color: rgba(167,139,250,0.40); color: #c4b5fd; }
 
 /* Pagination */
-.acm-doc-pag-wrap { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 16px; border-top: 1px solid #ede9fe; background: #fafafd; flex-wrap: wrap; }
+/* WorklistPager carries its own band (background + layout), so this wrapper is
+   just a full-width block — the old flex/border/background here double-drew a
+   half-width line above the pager. */
+.acm-doc-pag-wrap { display: block; padding: 0; border: 0; background: transparent; }
 .acm-doc-pag-info { font-size: 11px; color: #6b7280; font-weight: 500; }
 .acm-pagination { display: inline-flex; gap: 4px; }
 .acm-page-btn { min-width: 28px; height: 28px; padding: 0 8px; border-radius: 7px; border: 1px solid #e5e1f3; background: #fff; color: #6b7280; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all .15s; }
@@ -6465,7 +6493,6 @@ const SCOPED_CSS = `
 }
 [data-bs-theme="dark"] .acm-doc-search-icon { color: #c4b5fd; }
 [data-bs-theme="dark"] .acm-doc-count { color: #c4b5fd; }
-[data-bs-theme="dark"] .acm-doc-pag-wrap { background: rgba(28,37,49,0.40); border-color: rgba(255,255,255,0.06); }
 [data-bs-theme="dark"] .acm-doc-pag-info { color: #94a3b8; }
 [data-bs-theme="dark"] .acm-page-btn { background: #1c2531; color: #c4b5fd; border-color: rgba(167,139,250,0.25); }
 [data-bs-theme="dark"] .acm-page-btn:hover:not(:disabled) { background: rgba(167,139,250,0.18); color: #ede9fe; }

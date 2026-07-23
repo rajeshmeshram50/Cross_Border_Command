@@ -1844,15 +1844,14 @@ class SalesLeadController extends Controller
 
         $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
 
-        // Lock the product list once Product Sourcing (Stage 3) is complete —
-        // i.e. the opportunity has advanced to Stage 4 (Price Shared) or beyond.
-        // From that point the mapped products feed shared prices, quotation and
-        // PI, so removing one would orphan downstream data. The user must step
-        // the opportunity back below Stage 4 before changing its products.
-        if ((int) ($lead->lead_stage_id ?? 1) >= 4) {
+        // Unmap is allowed ONLY while the product has no sourcing decision yet.
+        // Once it's marked Sourcing Required / Not Required (Stage 3), it feeds
+        // shared prices, quotation and PI downstream, so removing it would
+        // orphan that data. Set the status back to undecided before unmapping.
+        if ($row->sourcing_status !== null) {
             return response()->json([
                 'status'  => false,
-                'message' => "You can't unmap this product now — Product Sourcing (Stage 3) is already complete for this opportunity.",
+                'message' => "You can't unmap this product — a sourcing status (Required / Not Required) is already set for it.",
             ], 422);
         }
 

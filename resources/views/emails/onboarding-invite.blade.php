@@ -174,9 +174,9 @@
       This link expires in <strong style="color:#7c3aed;font-weight:700;">{{ $expiryDays }} day{{ $expiryDays === 1 ? '' : 's' }}</strong>.
     </p>
     <p style="margin:0 0 6px;font-size:11.5px;color:#9ca3af;">
-      If the button doesn&rsquo;t work, use this link instead:
+      Button not working?
     </p>
-    <a href="{{ $onboardingUrl }}" target="_blank" style="font-size:12.5px;color:#7c3aed;text-decoration:underline;font-weight:700;">Complete Onboarding</a>
+    <a href="{{ $onboardingUrl }}" target="_blank" style="font-size:12.5px;color:#7c3aed;text-decoration:underline;font-weight:700;">Open your onboarding form &rarr;</a>
   </td></tr>
 
   {{-- ============ FOOTER ============ --}}

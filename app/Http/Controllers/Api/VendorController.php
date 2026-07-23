@@ -149,8 +149,36 @@ class VendorController extends Controller
             fn () => (new \App\Http\Controllers\Api\SegmentDocUploadController())->index($request, 'supplier', $id)
         );
 
+        // Per-segment lock: the segments whose product appears on an issued
+        // Purchase Order. The vendor form keys segments by ID, so resolve the
+        // locked NAMES to IDS here so the UI can disable only those chips' ×.
+        $data = $this->shape($vendor);
+        $lockedNames = \App\Support\SegmentGuard::lockedSegmentNames(
+            \App\Models\Vendor::class,
+            (int) $vendor->id,
+            (int) $vendor->client_id,
+        );
+        $data['locked_segments'] = empty($lockedNames) ? [] : DB::table('clm_segments')
+            ->whereIn('name', $lockedNames)
+            ->where(fn ($q) => $q->where('client_id', $vendor->client_id)->orWhereNull('client_id'))
+            ->pluck('id')->map(fn ($i) => (string) $i)->values()->all();
+
+        // Data for the removal guard's unique-document check (condition 2). Keyed
+        // by segment ID (the vendor form keys segments by id): each segment's
+        // required doc keys (category|code) + the keys actually uploaded.
+        $segReq = [];
+        foreach (DB::table('vendor_segments as vsg')->join('clm_segments as cs', 'cs.id', '=', 'vsg.segment_id')->where('vsg.vendor_id', $vendor->id)->get(['cs.id', 'cs.name']) as $s) {
+            $segReq[(string) $s->id] = \App\Support\SegmentGuard::docKeys((int) $vendor->client_id, $s->name);
+        }
+        $data['segment_required_doc_keys'] = $segReq;
+        $data['uploaded_doc_keys'] = \App\Support\SegmentGuard::uploadedDocKeys(
+            \App\Models\Vendor::class,
+            (int) $vendor->id,
+            (int) $vendor->client_id,
+        );
+
         return response()->json([
-            'data'            => $this->shape($vendor),
+            'data'            => $data,
             'segment_uploads' => $segmentUploads ?: ['data' => [], 'by_category' => [], 'count' => 0],
         ]);
     }
@@ -296,7 +324,42 @@ class VendorController extends Controller
             );
         }
 
-        DB::transaction(function () use (&$vendor, $isEdit, $user, $data, $segIds, $address) {
+        // Segment-usage protection (supplier). The pivot sync below would detach a
+        // removed segment, so reject the edit up-front — outside the write
+        // transaction — when a removed segment is either (1) used by a product on
+        // an issued PO or a Supplier Invoice, or (2) has an uploaded document not
+        // shared with a remaining segment.
+        $oldSegIds = ($isEdit && $vendor)
+            ? DB::table('vendor_segments')->where('vendor_id', $vendor->id)->pluck('segment_id')->all()
+            : [];
+        if ($isEdit && $vendor) {
+            $removedIds = array_values(array_diff(
+                array_map('intval', $oldSegIds),
+                array_map('intval', $segIds),
+            ));
+            if (!empty($removedIds)) {
+                $removedNames   = DB::table('clm_segments')->whereIn('id', $removedIds)->pluck('name')->all();
+                $remainingNames = DB::table('clm_segments')->whereIn('id', array_map('intval', $segIds))->pluck('name')->all();
+                // (1) Product lock — a product on a PO / SPI belongs to it.
+                $blocked = \App\Support\SegmentGuard::blockedByCompletedDocs(\App\Models\Vendor::class, (int) $vendor->id, (int) $vendor->client_id, $removedNames);
+                if (!empty($blocked)) {
+                    return response()->json([
+                        'message' => 'Cannot remove ' . implode(', ', $blocked) . ' — a product on a Purchase Order or Supplier Invoice belongs to it.',
+                        'errors'  => ['segment_ids' => ['Segment(s) used by a PO / Supplier Invoice product cannot be removed: ' . implode(', ', $blocked) . '.']],
+                    ], 422);
+                }
+                // (2) Unique-document lock — an uploaded doc no remaining segment needs.
+                $docBlocked = \App\Support\SegmentGuard::blockedByOrphanDocs(\App\Models\Vendor::class, (int) $vendor->id, (int) $vendor->client_id, $removedNames, $remainingNames);
+                if (!empty($docBlocked)) {
+                    return response()->json([
+                        'message' => 'Cannot remove ' . implode(', ', $docBlocked) . ' — it has an uploaded document not shared with any remaining segment. Delete that document first.',
+                        'errors'  => ['segment_ids' => ['Segment(s) with an unshared uploaded document cannot be removed: ' . implode(', ', $docBlocked) . '.']],
+                    ], 422);
+                }
+            }
+        }
+
+        DB::transaction(function () use (&$vendor, $isEdit, $user, $data, $segIds, $address, $oldSegIds) {
             if ($isEdit) {
                 $vendor->fill($data);
                 $vendor->step_completed = max((int) $vendor->step_completed, 1);
@@ -324,7 +387,9 @@ class VendorController extends Controller
                 $vendor->save();
             }
 
-            // Replace the segment pivot rows with the new selection.
+            // Replace the segment pivot rows with the new selection. Removals that
+            // would strand a PO/SPI product or an unshared document are already
+            // rejected above, so nothing needs cleaning up here.
             $vendor->segments()->sync($segIds);
 
             // Persist the registered-office address onto the primary VendorAddress

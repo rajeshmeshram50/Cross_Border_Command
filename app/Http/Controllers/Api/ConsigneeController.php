@@ -139,8 +139,17 @@ class ConsigneeController extends Controller
             \Log::warning('ConsigneeController::show customer_locations bundle failed: ' . $e->getMessage());
         }
 
+        // Per-segment lock: the segment NAMES whose product appears on a PI (or a
+        // PI with a Shipment) for this consignee.
+        $data = $this->shape($row);
+        $data['locked_segments'] = SegmentGuard::lockedSegmentNames(
+            \App\Models\Consignee::class,
+            (int) $row->id,
+            (int) $row->client_id,
+        );
+
         return response()->json([
-            'data'            => $this->shape($row),
+            'data'            => $data,
             'documents'       => $documents['data'] ?? [],
             'owners'          => $owners['data'] ?? [],
             // segment_uploads keeps its full shape (data + by_category + count)
@@ -269,32 +278,22 @@ class ConsigneeController extends Controller
          * the two can never drift. The request's own `segment` is ignored. */
         $derivedSegment = SegmentGuard::forCustomers($data['customer_ids']);
 
-        /* Segment-document protection — a segment with uploaded documents can't
-         * just disappear, or the evidence is orphaned.
-         *
-         * Under derivation this fires when a CUSTOMER drops a segment the
-         * consignee has already uploaded documents for. Blocking the edit would
-         * be wrong: the user is editing the consignee, and the removal came from
-         * a change made elsewhere — there'd be nothing on this screen to fix. So
-         * those names are RETAINED on top of the derived set instead, keeping
-         * the uploads reachable until someone deletes them deliberately. */
-        $retained = SegmentGuard::blockedRemovals(
-            \App\Models\Consignee::class,
-            (int) $consignee->id,
-            (int) $consignee->client_id,
-            $consignee->segment,
-            $derivedSegment ?: null,
-        );
-        if (!empty($retained)) {
-            $names = SegmentGuard::names($derivedSegment);
-            $seen  = array_map('mb_strtolower', $names);
-            foreach ($retained as $name) {
-                if (!in_array(mb_strtolower($name), $seen, true)) {
-                    $names[] = $name;
-                    $seen[]  = mb_strtolower($name);
-                }
-            }
-            $derivedSegment = implode(', ', $names);
+        $oldSegment = $consignee->segment;
+        $removed    = SegmentGuard::removedNames($oldSegment, $derivedSegment ?: null);
+
+        /* A dropped segment must remain ATTACHED (not blocked — nothing to fix on
+         * this screen) when it is either (1) used by a PI/Shipment product, or
+         * (2) has an uploaded document not shared with a remaining segment. */
+        $keep = array_values(array_unique(array_merge(
+            SegmentGuard::blockedByCompletedDocs(
+                \App\Models\Consignee::class, (int) $consignee->id, (int) $consignee->client_id, $removed,
+            ),
+            SegmentGuard::blockedByOrphanDocs(
+                \App\Models\Consignee::class, (int) $consignee->id, (int) $consignee->client_id, $removed, SegmentGuard::names($derivedSegment ?: null),
+            ),
+        )));
+        if (!empty($keep)) {
+            $derivedSegment = SegmentGuard::mergeRetained($derivedSegment, $keep);
         }
 
         $row = DB::transaction(function () use ($consignee, $data, $derivedSegment) {

@@ -67,7 +67,7 @@ class PurchaseOrderController extends Controller
 
         return response()->json([
             'status' => true,
-            'data' => collect($paginator->items())->map(fn ($po) => $this->shapeListRow($po))->all(),
+            'data' => collect($paginator->items())->map(fn($po) => $this->shapeListRow($po))->all(),
             'pagination' => [
                 'current_page' => $paginator->currentPage(),
                 'last_page' => $paginator->lastPage(),
@@ -240,96 +240,158 @@ class PurchaseOrderController extends Controller
         }
         try {
 
-        // Re-read under the lock so a request that loaded the row before a
-        // concurrent sync finished sees the freshly-written Zoho id — the
-        // idempotency check must not act on a stale in-memory copy.
-        $po->refresh();
-
-        if (!empty($po->zoho_purchaseorder_id)) {
-            return response()->json([
-                'status' => true,
-                'message' => 'This PO is already synced with Zoho Books.',
-                'data' => $this->shapeListRow($po),
-            ]);
-        }
-        if (!$po->vendor_id) {
-            return response()->json(['status' => false, 'message' => 'Attach a supplier to this PO before syncing to Zoho Books.'], 422);
-        }
-        if ($po->items->isEmpty()) {
-            return response()->json(['status' => false, 'message' => 'Add at least one product line before syncing to Zoho Books.'], 422);
-        }
-        // The full PO amount must be utilised (all payments recorded so the
-        // net-payable balance is cleared) before the PO is pushed to Zoho Books.
-        // Only CLEARED payments count — an uncleared/Pending cheque must never
-        // satisfy the gate (else Zoho would receive a payment for money not yet
-        // received).
-        $paid = (float) $po->payments()->where('status', 'Cleared')->sum('amount');
-        $netPayable = round((float) $po->grand_total - (float) $po->tds_amount, 2);
-        if (!($netPayable > 0.005 && round($netPayable - $paid, 2) <= 0.005)) {
-            return response()->json([
-                'status'  => false,
-                'message' => 'Utilise the full PO amount first — record payments until the outstanding balance is cleared before syncing to Zoho Books.',
-                'errors'  => ['amount' => ['The PO amount must be fully utilised before syncing.']],
-            ], 422);
-        }
-
-        try {
-            $vendor = Vendor::with('primaryAddress')->findOrFail($po->vendor_id);
-            $gstin = DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null;
-            $stateCode = optional($vendor->primaryAddress)->state_code;
-
-            // Intra- vs inter-state decides GST(CGST+SGST) vs IGST in Zoho.
-            // Prefer the Zoho org's own state; fall back to this tenant's home state.
-            $orgState = $books->orgStateCode() ?: $this->homeStateCode($po->branch_id);
-            // Normalise both sides ("7" vs "07", or a legacy "27 – Maharashtra"
-            // label) before comparing — a raw string compare mis-classifies
-            // single-digit / labelled state codes and Zoho then rejects the wrong
-            // tax type (IGST on an intra-state supply, or vice-versa).
-            $partyState = \App\Services\ZohoBooksService::normStateCode($stateCode);
-            $interState = $partyState !== null && $partyState !== \App\Services\ZohoBooksService::normStateCode($orgState);
-
-            $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
-            $created = $books->createPurchaseOrder($this->buildZohoPayload($po, $books, $zohoVendorId, (bool) $gstin, $interState));
-            $zohoId = (string) $created['purchaseorder_id'];
-
-            // Cache Zoho's own rendered PDF — best-effort; a PDF hiccup must not
-            // undo an otherwise-successful sync.
-            $pdfPath = null;
-            try {
-                $rel = 'zoho/po/' . $po->client_id . '/' . ($po->branch_id ?: 0) . '/PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($po->code ?: $po->id)) . '.pdf';
-                Storage::disk('public')->put($rel, $books->getPurchaseOrderPdf($zohoId));
-                $pdfPath = '/storage/' . $rel;
-            } catch (\Throwable $e) {
-                Log::warning('Zoho PO PDF cache failed', ['po' => $po->id, 'err' => $e->getMessage()]);
-            }
-
-            $po->update([
-                'zoho_status' => 'Sync',
-                'zoho_purchaseorder_id' => $zohoId,
-                'zoho_synced_at' => now(),
-                'zoho_error' => null,
-                'zoho_pdf_path' => $pdfPath,
-                'updated_by' => $user->id,
-            ]);
-
-            // Reconcile totals — log (don't fail) when Zoho's total drifts from ours.
-            $delta = abs((float) ($created['total'] ?? 0) - (float) $po->grand_total);
-            if ($delta > 1.0) {
-                Log::warning('Zoho PO total mismatch', [
-                    'po' => $po->code, 'local' => (float) $po->grand_total, 'zoho' => (float) ($created['total'] ?? 0),
+            // Fully synced (PO + bill) → top up any newly-recorded Cleared payments to
+            // the existing bill, then report. A PO that has a Zoho PO but no bill yet
+            // (a mid-flow failure) falls through to create the bill below.
+            if (!empty($po->zoho_purchaseorder_id) && !empty($po->zoho_bill_id)) {
+                try {
+                    $vendor = Vendor::with('primaryAddress')->find($po->vendor_id);
+                    if ($vendor) {
+                        $gstin = ($vendor->gst_number ?: null)
+                            ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
+                        $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, optional($vendor->primaryAddress)->state_code);
+                        $bill = $books->getBill((string) $po->zoho_bill_id);
+                        $r = $this->postPoPaymentsToBill($po, $books, $zohoVendorId, (string) $po->zoho_bill_id, (float) ($bill['balance'] ?? 0));
+                        if ($r['pushed'] > 0) {
+                            return response()->json([
+                                'status' => true,
+                                'message' => 'Posted ₹' . number_format($r['applied'], 2) . ' of newly-recorded payment(s) to bill ' . ($po->zoho_bill_number ?: $po->zoho_bill_id) . '.',
+                                'data' => $this->shapeListRow($po->fresh()),
+                            ]);
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Zoho PO bill payment top-up failed', ['po' => $po->id, 'err' => $e->getMessage()]);
+                }
+                return response()->json([
+                    'status' => true,
+                    'message' => 'This PO is already synced with Zoho Books (bill ' . ($po->zoho_bill_number ?: $po->zoho_bill_id) . ').',
+                    'data' => $this->shapeListRow($po),
                 ]);
             }
+            if (!$po->vendor_id) {
+                return response()->json(['status' => false, 'message' => 'Attach a supplier to this PO before syncing to Zoho Books.'], 422);
+            }
+            if ($po->items->isEmpty()) {
+                return response()->json(['status' => false, 'message' => 'Add at least one product line before syncing to Zoho Books.'], 422);
+            }
+            // The full PO amount must be utilised (all payments recorded so the
+            // net-payable balance is cleared) before the PO is pushed to Zoho Books.
+            // Only CLEARED payments count — an uncleared/Pending cheque must never
+            // satisfy the gate (else Zoho would receive a payment for money not yet
+            // received).
+            $paid = (float) $po->payments()->where('status', 'Cleared')->sum('amount');
+            $netPayable = round((float) $po->grand_total - (float) $po->tds_amount, 2);
+            if (!($netPayable > 0.005 && round($netPayable - $paid, 2) <= 0.005)) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Utilise the full PO amount first — record payments until the outstanding balance is cleared before syncing to Zoho Books.',
+                    'errors'  => ['amount' => ['The PO amount must be fully utilised before syncing.']],
+                ], 422);
+            }
 
-            return response()->json([
-                'status' => true,
-                'message' => 'Synced to Zoho Books (' . ($created['purchaseorder_number'] ?? $zohoId) . ').',
-                'data' => $this->shapeListRow($po->fresh()),
-            ]);
-        } catch (RuntimeException $e) {
-            $po->update(['zoho_status' => 'Not Sync', 'zoho_error' => $e->getMessage(), 'updated_by' => $user->id]);
-            return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
-        }
+            // Pre-flight (the "bridge"): a vendor payment can only post through a
+            // Zoho Bank/Cash account. If the PO has cleared payments to post but the
+            // org has none, ABORT now — before creating the PO/bill — so the sync is
+            // all-or-nothing and never leaves an unpaid bill that needs a manual
+            // re-sync. Add the account, then a single sync posts everything.
+            if ($po->payments()->where('status', 'Cleared')->exists() && !$books->resolvePaidThroughAccountId(null)) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Add a Bank / Cash account in Zoho Books before syncing — the PO’s payments cannot be posted without one.',
+                    'errors'  => ['account' => ['No Bank/Cash account exists in the Zoho organization.']],
+                ], 422);
+            }
 
+            // Track what THIS run creates in Zoho so a mid-flow failure can be
+            // fully reversed (all-or-nothing): PO created this run, the bill, and
+            // each vendor payment. Declared out here so they're visible in catch.
+            $createdPoId     = null;
+            $createdBillId   = null;
+            $createdPayments = [];
+            try {
+                $vendor = Vendor::with('primaryAddress')->findOrFail($po->vendor_id);
+                // GST source of truth is vendors.gst_number (Stage-1); vendor_gst_scrutiny
+                // is only a fallback. Reading scrutiny alone makes a Stage-1-registered
+                // supplier sync as UNREGISTERED → no tax → Zoho rejects the bill.
+                $gstin = ($vendor->gst_number ?: null)
+                    ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
+                $stateCode = optional($vendor->primaryAddress)->state_code;
+
+                // Intra- vs inter-state decides GST(CGST+SGST) vs IGST in Zoho.
+                // Prefer the Zoho org's own state; fall back to this tenant's home state.
+                $orgState = $books->orgStateCode() ?: $this->homeStateCode($po->branch_id);
+                // Normalise both sides ("7" vs "07", or a legacy "27 – Maharashtra"
+                // label) before comparing — a raw string compare mis-classifies
+                // single-digit / labelled state codes and Zoho then rejects the wrong
+                // tax type (IGST on an intra-state supply, or vice-versa).
+                $partyState = \App\Services\ZohoBooksService::normStateCode($stateCode);
+                $interState = $partyState !== null && $partyState !== \App\Services\ZohoBooksService::normStateCode($orgState);
+
+                $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, $stateCode);
+
+                // 1) Create the Zoho PURCHASE ORDER once (skip if a prior sync made it
+                //    and only the bill is missing — mid-flow recovery).
+                $zohoId  = (string) $po->zoho_purchaseorder_id;
+                $pdfPath = $po->zoho_pdf_path;
+                if ($zohoId === '') {
+                    $created = $books->createPurchaseOrder($this->buildZohoPayload($po, $books, $zohoVendorId, (bool) $gstin, $interState));
+                    $zohoId  = (string) $created['purchaseorder_id'];
+                    $createdPoId = $zohoId; // created THIS run → reversible on failure
+
+                    // Cache Zoho's own rendered PO PDF — best-effort.
+                    try {
+                        $rel = 'zoho/po/' . $po->client_id . '/PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', (string) ($po->code ?: $po->id)) . '.pdf';
+                        Storage::disk('public')->put($rel, $books->getPurchaseOrderPdf($zohoId));
+                        $pdfPath = '/storage/' . $rel;
+                    } catch (\Throwable $e) {
+                        Log::warning('Zoho PO PDF cache failed', ['po' => $po->id, 'err' => $e->getMessage()]);
+                    }
+
+                    $delta = abs((float) ($created['total'] ?? 0) - (float) $po->grand_total);
+                    if ($delta > 1.0) {
+                        Log::warning('Zoho PO total mismatch', ['po' => $po->code, 'local' => (float) $po->grand_total, 'zoho' => (float) ($created['total'] ?? 0)]);
+                    }
+                }
+
+                // 2) Create the BILL from the PO (the payable) and 3) post the PO's
+                //    Cleared payments against it. The bill is what holds the money in
+                //    Zoho — the PO alone can't. Payment posting is idempotent.
+                $bill          = $books->createBill($this->buildBillPayloadFromPo($po, $books, $zohoVendorId, (bool) $gstin, $interState));
+                $billId        = (string) $bill['bill_id'];
+                $createdBillId = $billId; // created THIS run → reversible on failure
+                $billNumber    = (string) ($bill['bill_number'] ?? $po->code);
+                $pay           = $this->postPoPaymentsToBill($po, $books, $zohoVendorId, $billId, (float) ($bill['balance'] ?? $bill['total'] ?? 0), $createdPayments);
+
+                $po->update([
+                    'zoho_status'           => 'Sync',
+                    'zoho_purchaseorder_id' => $zohoId,
+                    'zoho_bill_id'          => $billId,
+                    'zoho_bill_number'      => $billNumber,
+                    'zoho_synced_at'        => now(),
+                    'zoho_error'            => null,
+                    'zoho_pdf_path'         => $pdfPath,
+                    'updated_by'            => $user->id,
+                ]);
+
+                $note = '';
+                if ($pay['noAccount'])   $note = ' NOTE: payments were NOT posted — add a Bank/Cash account in Zoho, then re-sync to post them.';
+                elseif ($pay['pending']) $note = ' Some payments could not be posted yet — re-sync to retry.';
+
+                return response()->json([
+                    'status' => true,
+                    'message' => 'Synced to Zoho Books — PO + bill ' . $billNumber
+                        . ($pay['pushed'] ? (', posted ₹' . number_format($pay['applied'], 2) . ' payment(s)') : '') . '.' . $note,
+                    'data' => $this->shapeListRow($po->fresh()),
+                ]);
+            } catch (\Throwable $e) {
+                // All-or-nothing: reverse every Zoho entity created THIS run
+                // (payments → bill → PO) so a partial sync never leaves an orphan
+                // or a duplicate on the next attempt, then record the failure.
+                $this->reversePoSync($books, $createdPoId, $createdBillId, $createdPayments);
+                $po->update(['zoho_status' => 'Not Sync', 'zoho_error' => $e->getMessage(), 'updated_by' => $user->id]);
+                return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
+            }
         } finally {
             $lock->release();
         }
@@ -414,7 +476,9 @@ class PurchaseOrderController extends Controller
             $details         = $zoho->getRequest($zohoRequestId);
             $zohoActions     = data_get($details, 'requests.actions', []);
             $zohoDocumentIds = data_get($details, 'requests.document_ids', []);
-            foreach ($zohoActions as &$za) { $za['cbc_role'] = 'supplier'; } // harmless for the flat single-box shape
+            foreach ($zohoActions as &$za) {
+                $za['cbc_role'] = 'supplier';
+            } // harmless for the flat single-box shape
             unset($za);
 
             // Single doc → single coord entry. document_settings is keyed by the
@@ -431,7 +495,9 @@ class PurchaseOrderController extends Controller
                     sleep(1);
                     $after = $zoho->getRequest($zohoRequestId);
                     $finalStatus = strtolower((string) data_get($after, 'requests.request_status', 'inprogress'));
-                } catch (\Throwable $e) { $finalStatus = 'inprogress'; }
+                } catch (\Throwable $e) {
+                    $finalStatus = 'inprogress';
+                }
             }
 
             $sigReq = new \App\Models\ClmSignatureRequest();
@@ -441,7 +507,7 @@ class PurchaseOrderController extends Controller
             $sigReq->trade_doc_id      = $po->id;
             $sigReq->trade_doc_ids     = [$po->id];
             $sigReq->document_names    = [$requestName];
-            $sigReq->zoho_document_ids = array_values(array_filter(array_map(fn ($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
+            $sigReq->zoho_document_ids = array_values(array_filter(array_map(fn($d) => $d['document_id'] ?? null, $zohoDocumentIds)));
             $sigReq->model_name        = 'Vendor';
             $sigReq->party_id          = $po->vendor_id;
             $sigReq->zoho_request_id   = $zohoRequestId;
@@ -503,10 +569,48 @@ class PurchaseOrderController extends Controller
                     $direct->where('document_type', \App\Models\ClmSignatureRequest::DOC_PURCHASE_ORDER)
                         ->where('trade_doc_id', $po->id);
                 })
-                // JSON ->> yields text in Postgres, so bind the id as a string.
-                ->orWhere('metadata->purchase_order_id', (string) $po->id);
+                    // JSON ->> yields text in Postgres, so bind the id as a string.
+                    ->orWhere('metadata->purchase_order_id', (string) $po->id);
             })
             ->exists();
+    }
+
+    /**
+     * Resolve per-line Zoho metadata (real description, unit, HSN) for the given
+     * items' products in ONE query — products.description + master_uom.short_code
+     * + master_hsn_codes.hsn_code, keyed by product_id. Ad-hoc lines with no
+     * product_id simply get no meta and fall back to the product code.
+     */
+    private function zohoLineMeta($items): array
+    {
+        $ids = collect($items)->pluck('product_id')->filter()->unique()->values()->all();
+        if (empty($ids)) return [];
+        $rows = DB::table('products as p')
+            ->leftJoin('master_uom as u', 'u.id', '=', 'p.uom_id')
+            ->leftJoin('master_hsn_codes as h', 'h.id', '=', 'p.hsn_id')
+            ->whereIn('p.id', $ids)
+            ->get(['p.id', 'p.description', 'u.short_code', 'u.title', 'h.hsn_code']);
+        $map = [];
+        foreach ($rows as $r) {
+            $map[(int) $r->id] = [
+                'description' => trim((string) ($r->description ?? '')) ?: null,
+                'unit'        => $r->short_code ?: ($r->title ?: null),
+                'hsn'         => $r->hsn_code ?: null,
+            ];
+        }
+        return $map;
+    }
+
+    /**
+     * Compose a Zoho line description: the product code stays for traceability,
+     * the real product description is appended when present ("P-81 · Honey…").
+     */
+    private function lineDescription($code, ?string $description): string
+    {
+        $code = trim((string) $code);
+        $desc = trim((string) $description);
+        if ($code !== '' && $desc !== '') return $code . ' · ' . $desc;
+        return $desc !== '' ? $desc : $code;
     }
 
     /**
@@ -517,20 +621,24 @@ class PurchaseOrderController extends Controller
      */
     private function buildZohoPayload(PurchaseOrder $po, ZohoBooksService $books, string $zohoVendorId, bool $registered, bool $interState = false): array
     {
-        $lineItems = $po->items->map(function ($it) use ($books, $registered, $interState) {
+        $meta = $this->zohoLineMeta($po->items);
+        $lineItems = $po->items->map(function ($it) use ($books, $registered, $interState, $meta) {
             $name = (string) ($it->product_name ?: $it->product_code ?: 'Item');
             // Effective tax the app ACTUALLY applied (covers the Maharashtra
             // intra-state 9+9 override, not just the nominal gst_pct) so Zoho's
             // recomputed total reconciles with ours — registered vendors only.
             $taxId = $registered ? $books->resolveTaxId((float) $it->cgst_pct + (float) $it->sgst_pct, $interState) : null;
+            $m = $meta[(int) $it->product_id] ?? [];
             $line = [
                 // Zoho POs need a purchasable item id, not a free-text line.
                 'item_id' => $books->findOrCreateItemId($name, (float) $it->rate, $taxId, $it->product_id),
                 'name' => $name,
-                'description' => (string) $it->product_code,
+                'description' => $this->lineDescription($it->product_code, $m['description'] ?? null),
                 'rate' => (float) $it->rate,
                 'quantity' => (float) $it->quantity,
             ];
+            if (!empty($m['hsn']))  $line['hsn_or_sac'] = (string) $m['hsn'];
+            if (!empty($m['unit'])) $line['unit'] = (string) $m['unit'];
             if ($taxId) $line['tax_id'] = $taxId;
             return $line;
         })->values()->all();
@@ -560,6 +668,211 @@ class PurchaseOrderController extends Controller
         }
 
         return $payload;
+    }
+
+    /**
+     * Build the Zoho BILL payload from a fully-utilised PO. Mirrors the PO
+     * payload but as a bill (the payable), so the PO's payments can be posted
+     * against it. Tax uses the same cgst+sgst rate + interState flag the PO
+     * uses (Zoho picks CGST/SGST vs IGST by place of supply). Charges fold into
+     * a single adjustment line so the bill total reconciles with ours. The PO
+     * code is the reference so the bill is traceable to the PO.
+     */
+    private function buildBillPayloadFromPo(PurchaseOrder $po, ZohoBooksService $books, string $zohoVendorId, bool $registered, bool $interState): array
+    {
+        $meta = $this->zohoLineMeta($po->items);
+        $lineItems = $po->items->map(function ($it) use ($books, $registered, $interState, $meta) {
+            $name  = (string) ($it->product_name ?: $it->product_code ?: 'Item');
+            $taxId = $registered ? $books->resolveTaxId((float) $it->cgst_pct + (float) $it->sgst_pct, $interState) : null;
+            $m = $meta[(int) $it->product_id] ?? [];
+            $line  = [
+                'item_id'     => $books->findOrCreateItemId($name, (float) $it->rate, $taxId, $it->product_id),
+                'name'        => $name,
+                'description' => $this->lineDescription($it->product_code, $m['description'] ?? null),
+                'rate'        => (float) $it->rate,
+                'quantity'    => (float) $it->quantity,
+            ];
+            if (!empty($m['hsn']))  $line['hsn_or_sac'] = (string) $m['hsn'];
+            if (!empty($m['unit'])) $line['unit'] = (string) $m['unit'];
+            if ($taxId) $line['tax_id'] = $taxId;
+            return $line;
+        })->values()->all();
+
+        // bill_number is required + unique per vendor in Zoho — the PO code is
+        // unique and keeps the bill unambiguously traceable to the PO.
+        $billNumber = (string) $po->code;
+
+        $payload = [
+            'vendor_id'        => $zohoVendorId,
+            'bill_number'      => $billNumber,
+            'date'             => optional($po->po_date)->toDateString() ?: now()->toDateString(),
+            'reference_number' => (string) $po->code,
+            'line_items'       => $lineItems,
+        ];
+
+        // Charges + TDS fold into the single adjustment field. When TDS has been
+        // cut we DEDUCT it here so the bill total equals our net payable
+        // (grand_total − TDS) and the bill settles fully once the net is paid —
+        // matching the app's Payment Summary. (This records TDS as a bill
+        // deduction, not a formal Zoho TDS entry; proper TDS reporting would use
+        // Zoho's TDS feature.)
+        $adjustment = (float) $po->shipping_charges + (float) $po->packaging_charges + (float) $po->other_charges;
+        $descParts  = [];
+        if ($adjustment != 0.0) $descParts[] = 'Charges ₹' . number_format($adjustment, 2);
+        if ($po->tds_cut && (float) $po->tds_amount > 0) {
+            $adjustment -= (float) $po->tds_amount;
+            $descParts[] = 'less TDS ₹' . number_format((float) $po->tds_amount, 2) . ' (' . rtrim(rtrim(number_format((float) $po->tds_percentage, 2), '0'), '.') . '%)';
+        }
+        if ($adjustment != 0.0) {
+            $payload['adjustment']             = round($adjustment, 2);
+            $payload['adjustment_description'] = trim(implode(' ', $descParts)) ?: 'Adjustment';
+        }
+
+        if ($ccyId = $books->resolveCurrencyId($po->currency_code)) {
+            $payload['currency_id'] = $ccyId;
+            if ((float) $po->exchange_rate > 0) $payload['exchange_rate'] = (float) $po->exchange_rate;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Post the PO's Cleared payments to its Zoho bill as vendor payments.
+     * Mirrors SupplierPurchaseInvoiceController::pushPaymentsToZoho but reads
+     * po_payments directly. Idempotent: each row's cumulative posted amount is
+     * tracked in zoho_applied_amount, so only the un-posted portion is sent and
+     * nothing is ever double-posted (top-up on re-sync). Capped at the bill's
+     * open balance. Returns ['applied','pushed','pending','noAccount'].
+     */
+    private function postPoPaymentsToBill(PurchaseOrder $po, ZohoBooksService $books, string $zohoVendorId, string $billId, float $billBalance, array &$created = []): array
+    {
+        // $created accumulates the Zoho vendor payments made THIS run so a later
+        // failure can reverse them — BY REFERENCE, so the caller still has the
+        // list even if this method throws midway (a payment created before the
+        // throw must still be undone).
+        $result = ['applied' => 0.0, 'pushed' => 0, 'pending' => 0, 'noAccount' => false];
+
+        $payments = \App\Models\PoPayment::where('purchase_order_id', $po->id)
+            ->where('status', 'Cleared')
+            ->whereColumn('zoho_applied_amount', '<', 'amount')
+            ->orderBy('id')->get();
+        if ($payments->isEmpty()) return $result;
+
+        // SPI code per payment → the Zoho reference shows "UTR · SPI-code" so each
+        // payment surfaces which invoice it was for (the bill# is the constant PO).
+        $spiIds   = $payments->pluck('supplier_purchase_invoice_id')->filter()->unique()->values();
+        $spiCodes = $spiIds->isNotEmpty()
+            ? \App\Models\SupplierPurchaseInvoice::whereIn('id', $spiIds)->pluck('code', 'id')
+            : collect();
+
+        if (!$books->resolvePaidThroughAccountId(null)) {
+            $result['pending']   = $payments->count();
+            $result['noAccount'] = true;
+            Log::warning('Zoho PO vendor payment skipped — no Bank/Cash account in the org', ['po' => $po->id]);
+            return $result;
+        }
+
+        $exchangeRate = ((float) $po->exchange_rate > 0 && $books->resolveCurrencyId($po->currency_code)) ? (float) $po->exchange_rate : null;
+        $remaining = round($billBalance, 2);
+
+        foreach ($payments as $p) {
+            $available = round((float) $p->amount - (float) $p->zoho_applied_amount, 2);
+            if ($available <= 0.005) continue;
+            if ($remaining <= 0.005) {
+                $result['pending']++;
+                continue;
+            }
+            $amt = round(min($available, $remaining), 2);
+
+            $payload = [
+                'vendor_id'               => $zohoVendorId,
+                'payment_mode'            => 'banktransfer',
+                'amount'                  => $amt,
+                'date'                    => optional($p->utr_cheque_date)->toDateString() ?: now()->toDateString(),
+                'paid_through_account_id' => $books->resolvePaidThroughAccountId($p->bank_name),
+                'bills'                   => [['bill_id' => $billId, 'amount_applied' => $amt]],
+            ];
+            // Reference = "UTR · SPI-code" (Option A) so the Payments Made list shows
+            // the bank UTR AND which SPI this payment was for. Falls back to whichever
+            // part exists (UTR-only, or SPI-only).
+            $spiCode  = $p->supplier_purchase_invoice_id ? ($spiCodes[$p->supplier_purchase_invoice_id] ?? null) : null;
+            $refParts = array_values(array_filter([
+                !empty($p->utr_cheque_number) ? (string) $p->utr_cheque_number : null,
+                $spiCode,
+            ]));
+            if ($refParts) $payload['reference_number'] = implode(' · ', $refParts);
+            $descParts = ['PO ' . $po->code];
+            $descParts[] = 'Date: ' . (optional($p->utr_cheque_date)->toDateString() ?: now()->toDateString());
+            if (!empty($p->utr_cheque_number)) $descParts[] = 'Ref: ' . $p->utr_cheque_number;
+            if ($spiCode)                      $descParts[] = 'SPI: ' . $spiCode;
+            if (!empty($p->bank_name))         $descParts[] = 'Bank: ' . $p->bank_name;
+            $payload['description'] = implode(' · ', $descParts);
+            if ($exchangeRate)                 $payload['exchange_rate'] = $exchangeRate;
+
+            // Capture the pre-post ledger so a reverse can restore it exactly.
+            $prevApplied = (float) $p->zoho_applied_amount;
+            $prevPayId   = $p->zoho_payment_id;
+
+            $zpay = $books->recordVendorPayment($payload);
+
+            $newApplied = round($prevApplied + $amt, 2);
+            $p->forceFill(['zoho_applied_amount' => $newApplied, 'zoho_payment_id' => (string) ($zpay['payment_id'] ?? $p->zoho_payment_id)])->saveQuietly();
+
+            if (!empty($zpay['payment_id'])) {
+                $created[] = [
+                    'payment_id'   => (string) $zpay['payment_id'],
+                    'po_payment'   => $p,
+                    'prev_applied' => $prevApplied,
+                    'prev_pay_id'  => $prevPayId,
+                ];
+            }
+
+            $remaining         = round($remaining - $amt, 2);
+            $result['applied'] = round($result['applied'] + $amt, 2);
+            $result['pushed']++;
+            if ($newApplied + 0.005 < (float) $p->amount) $result['pending']++;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Compensating reverse for a PO sync that failed partway: delete the Zoho
+     * entities created THIS run (payments → bill → PO, in that order — a bill with
+     * applied payments can't be deleted) and restore the local payment ledger.
+     * Best-effort: a delete that itself fails is logged, never rethrown, so the
+     * original sync error still surfaces to the user.
+     *
+     * @param array $createdPayments list of ['payment_id','po_payment','prev_applied','prev_pay_id']
+     */
+    private function reversePoSync(ZohoBooksService $books, ?string $createdPoId, ?string $createdBillId, array $createdPayments): void
+    {
+        foreach (array_reverse($createdPayments) as $c) {
+            try {
+                if (!empty($c['payment_id'])) $books->deleteVendorPayment((string) $c['payment_id']);
+            } catch (\Throwable $e) {
+                Log::warning('Zoho reverse: vendor payment delete failed', ['payment' => $c['payment_id'] ?? null, 'err' => $e->getMessage()]);
+            }
+            // Restore the local ledger regardless of the remote delete outcome.
+            try {
+                if (!empty($c['po_payment'])) {
+                    $c['po_payment']->forceFill([
+                        'zoho_applied_amount' => $c['prev_applied'] ?? 0,
+                        'zoho_payment_id'     => $c['prev_pay_id'] ?? null,
+                    ])->saveQuietly();
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Zoho reverse: local payment restore failed', ['err' => $e->getMessage()]);
+            }
+        }
+        if ($createdBillId) {
+            try { $books->deleteBill($createdBillId); }
+            catch (\Throwable $e) { Log::warning('Zoho reverse: bill delete failed', ['bill' => $createdBillId, 'err' => $e->getMessage()]); }
+        }
+        if ($createdPoId) {
+            try { $books->deletePurchaseOrder($createdPoId); }
+            catch (\Throwable $e) { Log::warning('Zoho reverse: PO delete failed', ['po' => $createdPoId, 'err' => $e->getMessage()]); }
+        }
     }
 
     /* ══════════════════════════ ZOHO PDF ══════════════════════════ */
@@ -668,7 +981,7 @@ class PurchaseOrderController extends Controller
             ->forUser($user, $request->integer('branch_id') ?: null)
             ->orderBy('company_name')
             ->get(['id', 'vendor_code', 'company_name', 'legal_name'])
-            ->map(fn ($v) => [
+            ->map(fn($v) => [
                 'id' => $v->id,
                 'code' => $v->vendor_code,
                 'name' => $v->company_name ?: $v->legal_name,
@@ -682,7 +995,7 @@ class PurchaseOrderController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
-        $v = Vendor::with(['primaryAddress', 'vendorType', 'gstScrutiny' => fn ($g) => $g->latest('id')])
+        $v = Vendor::with(['primaryAddress', 'vendorType', 'gstScrutiny' => fn($g) => $g->latest('id')])
             ->forUser($user, $request->integer('branch_id') ?: null)
             ->findOrFail($id);
 
@@ -779,7 +1092,7 @@ class PurchaseOrderController extends Controller
             ->join('purchase_orders as po', 'po.id', '=', 'poi.purchase_order_id')
             ->where('po.shipment_order_id', $id)
             ->whereNull('po.deleted_at')
-            ->when($excludePo, fn ($q) => $q->where('po.id', '!=', $excludePo))
+            ->when($excludePo, fn($q) => $q->where('po.id', '!=', $excludePo))
             ->selectRaw('poi.product_id, poi.product_code, SUM(poi.quantity) as qty')
             ->groupBy('poi.product_id', 'poi.product_code')
             ->get();
@@ -821,10 +1134,10 @@ class PurchaseOrderController extends Controller
                 'gst' => (float) $it->tax_pct,
             ];
         })
-        // Fully-ordered PI products (nothing left) drop out — a new PO can only be
-        // built while at least one PI product still has remaining quantity.
-        ->filter(fn ($r) => $r['qty'] > 0)
-        ->values();
+            // Fully-ordered PI products (nothing left) drop out — a new PO can only be
+            // built while at least one PI product still has remaining quantity.
+            ->filter(fn($r) => $r['qty'] > 0)
+            ->values();
 
         /* An empty list has two very different causes and the caller must be
          * able to tell them apart: the PI genuinely has no products, or every
@@ -862,7 +1175,11 @@ class PurchaseOrderController extends Controller
         // if present — are fetched from the CLM masters like any other document.
         $out = [
             'trade' => [[
-                'id' => 'po', 'name' => 'Purchase Order', 'sub' => 'Purchase Order', 'required' => true, 'cat' => 'trade',
+                'id' => 'po',
+                'name' => 'Purchase Order',
+                'sub' => 'Purchase Order',
+                'required' => true,
+                'cat' => 'trade',
             ]],
             'agreements' => [],
         ];
@@ -883,15 +1200,15 @@ class PurchaseOrderController extends Controller
                 ->where('client_id', $cid)
                 ->whereIn('id', $productIds)
                 ->whereNotNull('segment_id')
-                ->pluck('segment_id')->map(fn ($x) => (int) $x)->unique()->values()->all();
+                ->pluck('segment_id')->map(fn($x) => (int) $x)->unique()->values()->all();
         } elseif ($poId && PurchaseOrder::where('id', $poId)->where('client_id', $cid)->exists()) {
             $segIds = DB::table('purchase_order_items as poi')
                 ->join('products as p', 'p.id', '=', 'poi.product_id')
                 ->where('poi.purchase_order_id', $poId)
                 ->whereNotNull('p.segment_id')
-                ->pluck('p.segment_id')->map(fn ($x) => (int) $x)->unique()->values()->all();
+                ->pluck('p.segment_id')->map(fn($x) => (int) $x)->unique()->values()->all();
         } else {
-            $segIds = DB::table('vendor_segments')->where('vendor_id', $vendor->id)->pluck('segment_id')->map(fn ($x) => (int) $x)->unique()->values()->all();
+            $segIds = DB::table('vendor_segments')->where('vendor_id', $vendor->id)->pluck('segment_id')->map(fn($x) => (int) $x)->unique()->values()->all();
             if (empty($segIds) && $vendor->segment_id) $segIds = [(int) $vendor->segment_id];
         }
         if (empty($segIds)) return response()->json(['status' => true, 'data' => $out]);
@@ -1014,7 +1331,8 @@ class PurchaseOrderController extends Controller
             $q = ShipmentOrder::with(['lead.customer', 'lead.consignee', 'proformaInvoice']);
             $this->applyScope($q, $user, null);
             $ship = $q->find($v['shipment_order_id']);
-            if ($ship) $v['_shipment'] = $ship; else $v['shipment_order_id'] = null;
+            if ($ship) $v['_shipment'] = $ship;
+            else $v['shipment_order_id'] = null;
         }
         // Intra- vs inter-state: compare the vendor's state against THIS tenant's
         // own registered home state (branch GST state code), not a hardcoded '27'.
@@ -1082,7 +1400,7 @@ class PurchaseOrderController extends Controller
             ->join('purchase_orders as po', 'po.id', '=', 'poi.purchase_order_id')
             ->where('po.shipment_order_id', $ship->id)
             ->whereNull('po.deleted_at')
-            ->when($excludePoId, fn ($q) => $q->where('po.id', '!=', $excludePoId))
+            ->when($excludePoId, fn($q) => $q->where('po.id', '!=', $excludePoId))
             ->selectRaw('poi.product_id, poi.product_code, SUM(poi.quantity) as qty')
             ->groupBy('poi.product_id', 'poi.product_code')
             ->get();
@@ -1118,11 +1436,17 @@ class PurchaseOrderController extends Controller
         if ($excludePoId === null) {
             $hasRemaining = false;
             foreach ($piById as $pid => $piQty) {
-                if ($piQty - ($ordById[$pid] ?? 0) > $eps) { $hasRemaining = true; break; }
+                if ($piQty - ($ordById[$pid] ?? 0) > $eps) {
+                    $hasRemaining = true;
+                    break;
+                }
             }
             if (!$hasRemaining) {
                 foreach ($piByCode as $code => $piQty) {
-                    if ($piQty - ($ordByCode[$code] ?? 0) > $eps) { $hasRemaining = true; break; }
+                    if ($piQty - ($ordByCode[$code] ?? 0) > $eps) {
+                        $hasRemaining = true;
+                        break;
+                    }
                 }
             }
             if (!$hasRemaining) {
@@ -1335,7 +1659,7 @@ class PurchaseOrderController extends Controller
             'total_sgst' => $po->total_sgst,
             'additional_charges' => $po->additional_charges,
             'grand_total' => $po->grand_total,
-            'items' => $po->items->map(fn ($it) => [
+            'items' => $po->items->map(fn($it) => [
                 'id' => $it->id,
                 'product_id' => $it->product_id,
                 'code' => $it->product_code,
@@ -1380,7 +1704,10 @@ class PurchaseOrderController extends Controller
             $taken[$c] = true;
         }
         $n = $max;
-        do { $n++; $code = "PO/{$fy}/" . str_pad((string) $n, 3, '0', STR_PAD_LEFT); } while (isset($taken[$code]));
+        do {
+            $n++;
+            $code = "PO/{$fy}/" . str_pad((string) $n, 3, '0', STR_PAD_LEFT);
+        } while (isset($taken[$code]));
         return $code;
     }
 
@@ -1413,7 +1740,10 @@ class PurchaseOrderController extends Controller
             if ($branchFilter !== null) $q->where('branch_id', $branchFilter);
             return;
         }
-        if (!$user->client_id) { $q->whereRaw('1 = 0'); return; }
+        if (!$user->client_id) {
+            $q->whereRaw('1 = 0');
+            return;
+        }
         $q->where('client_id', $user->client_id);
         if ($user->user_type !== 'branch_user' || !$user->branch_id) {
             if ($branchFilter !== null) {

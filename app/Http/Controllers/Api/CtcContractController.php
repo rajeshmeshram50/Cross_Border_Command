@@ -761,7 +761,7 @@ class CtcContractController extends Controller
 
         $data = $request->validate([
             'title'              => 'required|string|max:255',
-            'agreement_type'     => 'nullable|string|max:64',
+            'agreement_type'     => 'nullable|string|max:255',
             'org_name'           => 'nullable|string|max:255',
             'org_short_code'     => 'nullable|string|max:64',
             'org_state'          => 'nullable|string|max:128',
@@ -861,7 +861,7 @@ class CtcContractController extends Controller
 
         $data = $request->validate([
             'title'          => 'sometimes|string|max:255',
-            'agreement_type' => 'nullable|string|max:64',
+            'agreement_type' => 'nullable|string|max:255',
             'content'        => 'nullable|string',
             'header_config'  => 'nullable|array',
             'footer_config'  => 'nullable|array',
@@ -1036,7 +1036,7 @@ class CtcContractController extends Controller
         $data = $request->validate([
             'content'        => 'nullable|string',
             'title'          => 'sometimes|string|max:255',
-            'agreement_type' => 'nullable|string|max:64',
+            'agreement_type' => 'nullable|string|max:255',
             'header_config'  => 'nullable|array',
             'footer_config'  => 'nullable|array',
             // Full-edit fields — sent by the add/edit form's "Update & Send for
@@ -1245,6 +1245,12 @@ class CtcContractController extends Controller
      */
     public function downloadVersion(Request $request, int $id, int $v)
     {
+        // Large agreements (200-300+ pages) blow past PHP's default 128M memory
+        // and 30s execution cap while dompdf lays out every page, so the request
+        // 500s ("Could not generate this version PDF"). Lift both for this render.
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(300);
+
         $user = $request->user(); if (!$user) abort(401);
         $row  = CtcContract::where('client_id', $user->client_id)->findOrFail($id);
 

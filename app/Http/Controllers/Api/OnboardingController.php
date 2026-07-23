@@ -75,6 +75,7 @@ class OnboardingController extends Controller
 
         $expiryDays = (int) ($data['expiry_days'] ?? 15);
         $token      = $this->generateToken();
+        $slug       = $this->generateSlug();
         $invite = EmployeeOnboardingInvite::create([
             'client_id'          => $clientId,
             'branch_id'          => $branchId,
@@ -84,14 +85,17 @@ class OnboardingController extends Controller
             'department_id'      => $data['department_id'] ?? null,
             'expected_join_date' => $data['expected_join_date'] ?? null,
             'token'              => $token,
+            'slug'               => $slug,
             'expires_at'         => now()->addDays($expiryDays),
             'status'             => 'pending',
         ]);
 
-        // Prefer the SPA's own origin (sent by the frontend) so the link
-        // actually opens the React app the admin is using right now. Strip
-        // any trailing slash before composing the final URL.
-        $url = $this->buildOnboardingUrl($token, $data['app_origin'] ?? null);
+        // Share the SHORT link (/o/{slug}) — it redirects to the full
+        // /onboarding/{token} URL, so the emailed/copied link stays tidy while
+        // the 64-char token remains the real credential. Prefer the SPA's own
+        // origin (sent by the frontend) so the link opens on the host the admin
+        // is using right now; trailing slash is stripped when composing.
+        $url = $this->buildShortUrl($slug, $data['app_origin'] ?? null);
 
         // Onboarding invite mail — gated by Settings → Notifications → newUser
         if (Settings::shouldSendMail('newUser')) try {
@@ -343,17 +347,30 @@ class OnboardingController extends Controller
         return $token;
     }
 
-    private function buildOnboardingUrl(string $token, ?string $appOrigin = null): string
+    private function generateSlug(): string
     {
-        // Caller-supplied Origin wins (it knows where the SPA actually
-        // served the request from). Falls back to app.frontend_url for
-        // non-browser callers (cron, queue jobs) that have no Origin —
-        // and finally APP_URL as a last-resort floor inside frontend_url's
-        // env() chain. The candidate opens this in a browser, so it MUST
-        // resolve to the SPA host, not the Laravel API host.
-        // OB-21: only honour a caller-supplied origin if its host is one we
-        // trust (the configured frontend / app URL). Otherwise an attacker who
-        // can reach createInvite could plant a phishing host in the emailed link.
+        // 10-char URL-safe slug for the short /o/{slug} link. Loop on the
+        // (extremely improbable) collision — same pattern as generateToken.
+        do {
+            $slug = Str::random(10);
+        } while (EmployeeOnboardingInvite::where('slug', $slug)->exists());
+        return $slug;
+    }
+
+    /**
+     * Resolve the host the shared link should point at. Caller-supplied Origin
+     * wins (it knows where the SPA actually served the request from). Falls
+     * back to app.frontend_url for non-browser callers (cron, queue jobs) that
+     * have no Origin — and finally APP_URL as a last-resort floor inside
+     * frontend_url's env() chain. The candidate opens the link in a browser, so
+     * it MUST resolve to the SPA host, not the Laravel API host.
+     *
+     * OB-21: only honour a caller-supplied origin if its host is one we trust
+     * (the configured frontend / app URL). Otherwise an attacker who can reach
+     * createInvite could plant a phishing host in the emailed link.
+     */
+    private function resolveShareBase(?string $appOrigin = null): string
+    {
         $base = rtrim((string) config('app.frontend_url'), '/');
         if ($appOrigin) {
             // Loopback hosts are interchangeable in local dev — the SPA may be
@@ -375,7 +392,19 @@ class OnboardingController extends Controller
                 $base = rtrim($appOrigin, '/');
             }
         }
-        return "{$base}/onboarding/{$token}";
+        return $base;
+    }
+
+    /** Full onboarding URL — the real target the short link redirects to. */
+    private function buildOnboardingUrl(string $token, ?string $appOrigin = null): string
+    {
+        return $this->resolveShareBase($appOrigin) . "/onboarding/{$token}";
+    }
+
+    /** Short shareable link (/o/{slug}) → resolved by the web redirect route. */
+    private function buildShortUrl(string $slug, ?string $appOrigin = null): string
+    {
+        return $this->resolveShareBase($appOrigin) . "/o/{$slug}";
     }
 
     private function generatePassword(): string

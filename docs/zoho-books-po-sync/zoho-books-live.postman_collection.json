@@ -1,0 +1,645 @@
+{
+  "info": {
+    "name": "Zoho Books — Live (P2P Sync, real data)",
+    "description": "Every Zoho Books API used by the Procure-to-Pay sync, plus the matching app endpoints, filled with REAL data pulled from this environment (org 60078717676, vendor 'google' 27ABCDE1234F1ZP, PO/2026-27/008 and its bill + 6 payments, DN/2026-27/002). Only the OAuth secrets and Zoho tax_ids are variables you must fill: run '2. Zoho Books RAW API > Settings - Taxes' once and paste the group/IGST ids into the tax_* collection variables. GST logic: vendor GSTIN state 27 == org state 27 -> intra-state -> CGST+SGST group tax; if vendor state != 27 -> inter-state -> IGST.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "accounts_url", "value": "https://accounts.zoho.in" },
+    { "key": "zoho_base", "value": "https://www.zohoapis.in/books/v3" },
+    { "key": "org_id", "value": "60078717676" },
+    { "key": "org_gstin", "value": "27QAINH26123245" },
+    { "key": "org_state_code", "value": "27" },
+    { "key": "client_id", "value": "1000.xxxxxxxxxxxxxxxx" },
+    { "key": "client_secret", "value": "xxxxxxxxxxxxxxxx" },
+    { "key": "grant_code", "value": "1000.xxxxxxxxxxxxxxxx" },
+    { "key": "refresh_token", "value": "1000.xxxxxxxxxxxxxxxx" },
+    { "key": "access_token", "value": "" },
+    { "key": "app_base", "value": "http://127.0.0.1:8000/api" },
+    { "key": "sanctum_token", "value": "" },
+
+    { "key": "vendor_contact_id", "value": "3992947000000059011" },
+    { "key": "zoho_po_id", "value": "3992947000000064001" },
+    { "key": "zoho_bill_id", "value": "3992947000000065002" },
+
+    { "key": "tax_gst5_group", "value": "<paste GST5 group tax_id from Settings-Taxes>" },
+    { "key": "tax_gst40_group", "value": "<paste GST40 group tax_id from Settings-Taxes>" },
+    { "key": "tax_igst5", "value": "<paste IGST5 tax_id from Settings-Taxes>" },
+    { "key": "tax_igst18", "value": "<paste IGST18 tax_id from Settings-Taxes>" },
+    { "key": "item_id", "value": "" },
+    { "key": "vendor_credit_id", "value": "" },
+
+    { "key": "po_id", "value": "8" },
+    { "key": "spi_id", "value": "2" },
+    { "key": "debit_note_id", "value": "2" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth (Token Generation)",
+      "item": [
+        {
+          "name": "Exchange grant code -> refresh token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{accounts_url}}/oauth/v2/token",
+              "host": ["{{accounts_url}}"],
+              "path": ["oauth", "v2", "token"]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "authorization_code" },
+                { "key": "client_id", "value": "{{client_id}}" },
+                { "key": "client_secret", "value": "{{client_secret}}" },
+                { "key": "code", "value": "{{grant_code}}" }
+              ]
+            },
+            "description": "One-time. Exchange the Self Client grant code (scope ZohoBooks.fullaccess.all) for a refresh_token. Copy refresh_token into .env as ZOHO_BOOKS_REFRESH_TOKEN and into {{refresh_token}}."
+          }
+        },
+        {
+          "name": "Refresh -> access token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.access_token) { pm.collectionVariables.set('access_token', j.access_token); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{accounts_url}}/oauth/v2/token",
+              "host": ["{{accounts_url}}"],
+              "path": ["oauth", "v2", "token"]
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "grant_type", "value": "refresh_token" },
+                { "key": "client_id", "value": "{{client_id}}" },
+                { "key": "client_secret", "value": "{{client_secret}}" },
+                { "key": "refresh_token", "value": "{{refresh_token}}" }
+              ]
+            },
+            "description": "Mints an access token (~1h). Test script stores it in {{access_token}} for every call below."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Zoho Books RAW API",
+      "item": [
+        {
+          "name": "Organizations",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/organizations?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["organizations"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            },
+            "description": "Confirms the org state (Maharashtra, code 27). Vendor GSTIN state == 27 -> intra-state (CGST+SGST); != 27 -> inter-state (IGST)."
+          }
+        },
+        {
+          "name": "Settings - Taxes",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/settings/taxes?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["settings", "taxes"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            },
+            "description": "RUN THIS FIRST. Copy the tax_id of the GST5 group, GST40 group, IGST5 and IGST18 into the tax_* collection variables. tax_name starting with 'IGST' = inter-state; a 'tax_group' with CGST+SGST = intra-state."
+          }
+        },
+        {
+          "name": "Settings - Currencies",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/settings/currencies?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["settings", "currencies"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            }
+          }
+        },
+        {
+          "name": "Contacts - Find vendor (google)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/contacts?organization_id={{org_id}}&contact_name=google&contact_type=vendor",
+              "host": ["{{zoho_base}}"],
+              "path": ["contacts"],
+              "query": [
+                { "key": "organization_id", "value": "{{org_id}}" },
+                { "key": "contact_name", "value": "google" },
+                { "key": "contact_type", "value": "vendor" }
+              ]
+            },
+            "description": "The app caches contact_id into vendors.zoho_contact_id. Vendor 'google' = 3992947000000059011."
+          }
+        },
+        {
+          "name": "Contacts - Create vendor (registered)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.contact && j.contact.contact_id) pm.collectionVariables.set('vendor_contact_id', j.contact.contact_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{zoho_base}}/contacts?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["contacts"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contact_name\": \"google\",\n  \"company_name\": \"google\",\n  \"contact_type\": \"vendor\",\n  \"gst_treatment\": \"business_gst\",\n  \"gst_no\": \"27ABCDE1234F1ZP\",\n  \"place_of_contact\": \"MH\"\n}"
+            },
+            "description": "Registered vendor: gst_treatment=business_gst + gst_no + place_of_contact. GSTIN 27... = Maharashtra = intra-state. For an unregistered vendor use gst_treatment=business_none, drop gst_no, and the PO/Bill must carry NO tax_id lines. NOTE: Zoho never updates an existing contact's GSTIN on later syncs — if you change a vendor's GSTIN in the app, either edit it in Zoho or clear vendors.zoho_contact_id so it re-creates."
+          }
+        },
+        {
+          "name": "Contacts - Get vendor",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/contacts/{{vendor_contact_id}}?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["contacts", "{{vendor_contact_id}}"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            }
+          }
+        },
+        {
+          "name": "Contacts - List all vendors",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/contacts?organization_id={{org_id}}&contact_type=vendor&per_page=200&page=1",
+              "host": ["{{zoho_base}}"],
+              "path": ["contacts"],
+              "query": [
+                { "key": "organization_id", "value": "{{org_id}}" },
+                { "key": "contact_type", "value": "vendor" },
+                { "key": "per_page", "value": "200" },
+                { "key": "page", "value": "1" }
+              ]
+            },
+            "description": "All vendors. Response page_context.has_more_page tells you whether to bump page. Drop contact_type to list customers + vendors."
+          }
+        },
+        {
+          "name": "Items - Find (by name)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/items?organization_id={{org_id}}&name=Pickle Mango 10kg",
+              "host": ["{{zoho_base}}"],
+              "path": ["items"],
+              "query": [
+                { "key": "organization_id", "value": "{{org_id}}" },
+                { "key": "name", "value": "Pickle Mango 10kg" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Items - Create (purchasable)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.item && j.item.item_id) pm.collectionVariables.set('item_id', j.item.item_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{zoho_base}}/items?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["items"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Pickle Mango 10kg\",\n  \"product_type\": \"goods\",\n  \"item_type\": \"sales_and_purchases\",\n  \"rate\": 2065.00,\n  \"purchase_rate\": 2065.00\n}"
+            }
+          }
+        },
+        {
+          "name": "Items - List all",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/items?organization_id={{org_id}}&per_page=200&page=1",
+              "host": ["{{zoho_base}}"],
+              "path": ["items"],
+              "query": [
+                { "key": "organization_id", "value": "{{org_id}}" },
+                { "key": "per_page", "value": "200" },
+                { "key": "page", "value": "1" }
+              ]
+            },
+            "description": "All products/items. Max per_page is 200; use page_context.has_more_page to page through the rest. Add &filter_by=Status.Active to skip inactive items."
+          }
+        },
+        {
+          "name": "Purchase Order - Create (PO/2026-27/008)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.purchaseorder && j.purchaseorder.purchaseorder_id) pm.collectionVariables.set('zoho_po_id', j.purchaseorder.purchaseorder_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{zoho_base}}/purchaseorders?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["purchaseorders"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendor_id\": \"{{vendor_contact_id}}\",\n  \"date\": \"2026-07-11\",\n  \"reference_number\": \"PO/2026-27/008\",\n  \"line_items\": [\n    { \"name\": \"Pickle Mango 10kg\", \"description\": \"P-81\", \"rate\": 2065.00, \"quantity\": 12, \"tax_id\": \"{{tax_gst40_group}}\" },\n    { \"name\": \"Honey Natural 10kg\", \"description\": \"P-79\", \"rate\": 1496.25, \"quantity\": 12, \"tax_id\": \"{{tax_gst5_group}}\" },\n    { \"name\": \"Coconut Oil 15L\", \"description\": \"P-77\", \"rate\": 1443.75, \"quantity\": 12, \"tax_id\": \"{{tax_gst5_group}}\" },\n    { \"name\": \"Sorghum Jowar 30kg\", \"description\": \"P-75\", \"rate\": 1391.25, \"quantity\": 12, \"tax_id\": \"{{tax_gst5_group}}\" }\n  ]\n}"
+            },
+            "description": "Exact line items of PO/2026-27/008 (intra-state, vendor state 27). Pickle Mango is 40% GST (cgst20+sgst20), the rest 5%. For inter-state, swap tax_id to the IGST equivalent. Unregistered vendor -> omit every tax_id."
+          }
+        },
+        {
+          "name": "Purchase Order - Get",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/purchaseorders/{{zoho_po_id}}?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["purchaseorders", "{{zoho_po_id}}"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            }
+          }
+        },
+        {
+          "name": "Purchase Order - List all",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/purchaseorders?organization_id={{org_id}}&per_page=200&page=1",
+              "host": ["{{zoho_base}}"],
+              "path": ["purchaseorders"],
+              "query": [
+                { "key": "organization_id", "value": "{{org_id}}" },
+                { "key": "per_page", "value": "200" },
+                { "key": "page", "value": "1" }
+              ]
+            },
+            "description": "All purchase orders. Filter examples: &vendor_id={{vendor_contact_id}}, &reference_number=PO/2026-27/008, &status=open."
+          }
+        },
+        {
+          "name": "Bill - Create (from PO, TDS folded)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.bill && j.bill.bill_id) pm.collectionVariables.set('zoho_bill_id', j.bill.bill_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{zoho_base}}/bills?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["bills"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendor_id\": \"{{vendor_contact_id}}\",\n  \"bill_number\": \"PO/2026-27/008\",\n  \"reference_number\": \"PO/2026-27/008\",\n  \"date\": \"2026-07-11\",\n  \"line_items\": [\n    { \"name\": \"Pickle Mango 10kg\", \"description\": \"P-81\", \"rate\": 2065.00, \"quantity\": 12, \"tax_id\": \"{{tax_gst40_group}}\" },\n    { \"name\": \"Honey Natural 10kg\", \"description\": \"P-79\", \"rate\": 1496.25, \"quantity\": 12, \"tax_id\": \"{{tax_gst5_group}}\" },\n    { \"name\": \"Coconut Oil 15L\", \"description\": \"P-77\", \"rate\": 1443.75, \"quantity\": 12, \"tax_id\": \"{{tax_gst5_group}}\" },\n    { \"name\": \"Sorghum Jowar 30kg\", \"description\": \"P-75\", \"rate\": 1391.25, \"quantity\": 12, \"tax_id\": \"{{tax_gst5_group}}\" }\n  ],\n  \"adjustment\": -38377.49,\n  \"adjustment_description\": \"TDS deducted\"\n}"
+            },
+            "description": "PO/2026-27/008: grand 89265.75, TDS 38377.49 -> net payable 50888.26. bill_number = PO code. TDS is folded into the single 'adjustment' field as a negative (charges + TDS combine there). Zoho has only ONE adjustment field. Bill total then equals net payable so payments settle it fully."
+          }
+        },
+        {
+          "name": "Bill - Get",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/bills/{{zoho_bill_id}}?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["bills", "{{zoho_bill_id}}"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            }
+          }
+        },
+        {
+          "name": "Bill - List all",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/bills?organization_id={{org_id}}&per_page=200&page=1",
+              "host": ["{{zoho_base}}"],
+              "path": ["bills"],
+              "query": [
+                { "key": "organization_id", "value": "{{org_id}}" },
+                { "key": "per_page", "value": "200" },
+                { "key": "page", "value": "1" }
+              ]
+            },
+            "description": "All bills. Filter examples: &vendor_id={{vendor_contact_id}}, &reference_number=PO/2026-27/008, &status=unpaid/paid/overdue."
+          }
+        },
+        {
+          "name": "Vendor Payment - Create (applied to bill)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{zoho_base}}/vendorpayments?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["vendorpayments"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendor_id\": \"{{vendor_contact_id}}\",\n  \"payment_mode\": \"banktransfer\",\n  \"date\": \"2026-07-12\",\n  \"amount\": 888.00,\n  \"reference_number\": \"UTR123456 · SPI/2026-27/016\",\n  \"description\": \"SPI: SPI/2026-27/016\",\n  \"bills\": [\n    { \"bill_id\": \"{{zoho_bill_id}}\", \"amount_applied\": 888.00 }\n  ]\n}"
+            },
+            "description": "One of PO/2026-27/008's six payments (888, 5000, 5000, 10000, 30000, 0.26). Each is posted as its own Vendor Payment applied to the single PO bill, so the Bill shows one summarised line while 'Payments Made' lists each. reference_number = 'UTR · SPI-code'. Idempotency in the app is guarded by po_payments.zoho_applied_amount."
+          }
+        },
+        {
+          "name": "Vendor Payment - List all",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/vendorpayments?organization_id={{org_id}}&per_page=200&page=1",
+              "host": ["{{zoho_base}}"],
+              "path": ["vendorpayments"],
+              "query": [
+                { "key": "organization_id", "value": "{{org_id}}" },
+                { "key": "per_page", "value": "200" },
+                { "key": "page", "value": "1" }
+              ]
+            },
+            "description": "All 'Payments Made'. Filter with &vendor_id={{vendor_contact_id}} to see one vendor's payments (e.g. the six posted for PO/2026-27/008)."
+          }
+        },
+        {
+          "name": "Vendor Credit - Create (from Debit Note)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.vendor_credit && j.vendor_credit.vendor_credit_id) pm.collectionVariables.set('vendor_credit_id', j.vendor_credit.vendor_credit_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{zoho_base}}/vendorcredits?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["vendorcredits"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendor_id\": \"{{vendor_contact_id}}\",\n  \"vendor_credit_number\": \"DN/2026-27/002\",\n  \"reference_number\": \"DN/2026-27/002\",\n  \"date\": \"2026-07-12\",\n  \"line_items\": [\n    { \"name\": \"Debit note adjustment\", \"description\": \"DN/2026-27/002\", \"rate\": 12112.00, \"quantity\": 1 }\n  ]\n}"
+            },
+            "description": "A Debit Note maps to a Vendor Credit (opposite money direction from a bill/payment). DN/2026-27/002 is fully paid (12112 of 12112) so the app allows sync; DN/2026-27/001 (14902.09 of 14903) is NOT fully paid and the app returns 422 'Recover the full debit amount first'."
+          }
+        },
+        {
+          "name": "Vendor Credit - Apply to Bill",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{zoho_base}}/vendorcredits/{{vendor_credit_id}}/bills?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["vendorcredits", "{{vendor_credit_id}}", "bills"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bills\": [\n    { \"bill_id\": \"{{zoho_bill_id}}\", \"amount_applied\": 12112.00 }\n  ]\n}"
+            },
+            "description": "Vendor Credits settle either by applying to an open bill (this call) or by a refund. Never via 'Payment Made' — that is the opposite money direction."
+          }
+        },
+        {
+          "name": "Vendor Credit - List all",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" }],
+            "url": {
+              "raw": "{{zoho_base}}/vendorcredits?organization_id={{org_id}}&per_page=200&page=1",
+              "host": ["{{zoho_base}}"],
+              "path": ["vendorcredits"],
+              "query": [
+                { "key": "organization_id", "value": "{{org_id}}" },
+                { "key": "per_page", "value": "200" },
+                { "key": "page", "value": "1" }
+              ]
+            },
+            "description": "All vendor credits (debit notes synced to Zoho). Filter with &vendor_id={{vendor_contact_id}}."
+          }
+        },
+        {
+          "name": "Estimate - Create (Quotation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{zoho_base}}/estimates?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["estimates"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_id\": \"<zoho customer contact_id>\",\n  \"reference_number\": \"QT/25-26/0042\",\n  \"date\": \"2026-07-11\",\n  \"line_items\": [\n    { \"name\": \"Pickle Mango 10kg\", \"rate\": 2200.00, \"quantity\": 12, \"tax_id\": \"{{tax_gst40_group}}\" }\n  ]\n}"
+            },
+            "description": "Sales side: Quotation -> Estimate. customer_id is the buyer's Zoho contact (customer, not vendor)."
+          }
+        },
+        {
+          "name": "Invoice - Create (Proforma Invoice)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Zoho-oauthtoken {{access_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{zoho_base}}/invoices?organization_id={{org_id}}",
+              "host": ["{{zoho_base}}"],
+              "path": ["invoices"],
+              "query": [{ "key": "organization_id", "value": "{{org_id}}" }]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_id\": \"<zoho customer contact_id>\",\n  \"reference_number\": \"PI/25-26/0042\",\n  \"date\": \"2026-07-11\",\n  \"line_items\": [\n    { \"name\": \"Pickle Mango 10kg\", \"rate\": 2200.00, \"quantity\": 12, \"tax_id\": \"{{tax_gst40_group}}\" }\n  ]\n}"
+            },
+            "description": "Sales side: Proforma Invoice -> Invoice."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. App API (Cross_Border_Command)",
+      "item": [
+        {
+          "name": "PO - Payment summary (source key)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{sanctum_token}}" }],
+            "url": {
+              "raw": "{{app_base}}/p2p/purchase-orders/{{po_id}}/payment-summary",
+              "host": ["{{app_base}}"],
+              "path": ["p2p", "purchase-orders", "{{po_id}}", "payment-summary"]
+            },
+            "description": "Each payment now carries source = { type:'po', po:{id,code}, spi:{id,code}|null } so you can tell which PO/SPI a payment belongs to."
+          }
+        },
+        {
+          "name": "PO - Sync to Zoho (bill + all payments)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{sanctum_token}}" }],
+            "url": {
+              "raw": "{{app_base}}/p2p/purchase-orders/{{po_id}}/sync",
+              "host": ["{{app_base}}"],
+              "path": ["p2p", "purchase-orders", "{{po_id}}", "sync"]
+            },
+            "description": "Idempotent: creates the Zoho PO (if not already), then the Bill (TDS folded as negative adjustment), then posts every Cleared po_payment as its own Vendor Payment applied to the bill. Re-running only tops up unposted payments (zoho_applied_amount guard). PO/2026-27/008 is already fully synced."
+          }
+        },
+        {
+          "name": "SPI - Payment summary (source key)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{sanctum_token}}" }],
+            "url": {
+              "raw": "{{app_base}}/p2p/supplier-purchase-invoices/{{spi_id}}/payment-summary",
+              "host": ["{{app_base}}"],
+              "path": ["p2p", "supplier-purchase-invoices", "{{spi_id}}", "payment-summary"]
+            },
+            "description": "source = { type:'spi', po:null, spi:{id,code} }."
+          }
+        },
+        {
+          "name": "SPI - Sync to Zoho (Direct only)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{sanctum_token}}" }],
+            "url": {
+              "raw": "{{app_base}}/p2p/supplier-purchase-invoices/{{spi_id}}/sync",
+              "host": ["{{app_base}}"],
+              "path": ["p2p", "supplier-purchase-invoices", "{{spi_id}}", "sync"]
+            },
+            "description": "SPI/2026-27/002 is a Direct SPI (no PO) -> creates its own Bill, bill_number = SPI code, reference = SPI code, TDS folded as negative adjustment. A with-PO SPI returns 422 'This invoice is under a purchase order — sync the PO to Zoho Books instead'."
+          }
+        },
+        {
+          "name": "Debit Note - Sync to Zoho (fully paid only)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{sanctum_token}}" }],
+            "url": {
+              "raw": "{{app_base}}/p2p/debit-notes/{{debit_note_id}}/sync",
+              "host": ["{{app_base}}"],
+              "path": ["p2p", "debit-notes", "{{debit_note_id}}", "sync"]
+            },
+            "description": "Creates a Vendor Credit. Guarded: DN must be fully recovered. DN/2026-27/002 (id 2, 12112 of 12112) syncs; DN/2026-27/001 (id 1, 14902.09 of 14903) returns 422 'Recover the full debit amount first'."
+          }
+        }
+      ]
+    }
+  ]
+}

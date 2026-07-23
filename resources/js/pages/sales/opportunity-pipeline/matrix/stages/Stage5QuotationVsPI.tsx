@@ -364,6 +364,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       setConvertTarget(null);
     } catch (e: any) {
       toast.error('Conversion blocked', e?.response?.data?.message ?? 'Could not convert this quotation to a PI.');
+      // The server rejected because the state changed under us — e.g. another
+      // tab already converted this lead. Refresh so the row reflects reality
+      // immediately: the Convert-to-PI button disables and the PI count updates
+      // without needing a manual page refresh.
+      await fetchAll(true);
+      setConvertTarget(null);   // close the confirm modal
     } finally {
       setActingId(null);
     }
@@ -552,6 +558,20 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
     <>
       <style>{SHARED_STAGE_CSS}{STAGE5_CSS}</style>
 
+      {/* Full-page lock while a document is opening (view / download / email /
+          certificate). Portalled to <body> and fixed over the WHOLE viewport so
+          it also covers the step pills and action buttons OUTSIDE this stage —
+          no stage-switch or any other action can fire until the doc is ready. */}
+      {(anyActing || menuBusy) && createPortal(
+        <div className="s5-pagelock" role="status" aria-live="polite" aria-label="Opening document">
+          <div className="s5-pagelock-card">
+            <span className="s5-pagelock-spin" />
+            <span className="s5-pagelock-txt">Opening document…</span>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {/* ── Header (teal) with View-Summary button ── */}
       <div className="smd-stg-head">
         <div className="smd-stg-head-left">
@@ -572,7 +592,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         <div className="s5-head-right">
           <span className="smd-stg-head-badge">ACTIVE</span>
           <span className="s5-head-divider" />
-          <button type="button" className="s5-summary-btn" onClick={() => setSummaryOpen(true)}>
+          <button type="button" className="s5-summary-btn" onClick={() => setSummaryOpen(true)} disabled={anyActing} title={anyActing ? 'Please wait — an action is in progress…' : undefined}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
             </svg>
@@ -589,6 +609,8 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
               type="button"
               className={`s5-seg-btn ${docType === 'quotation' ? 'active' : ''}`}
               onClick={() => setDocType('quotation')}
+              disabled={anyActing}
+              title={anyActing ? 'Please wait — an action is in progress…' : undefined}
             >
               <span className="s5-seg-dot" />
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -602,6 +624,8 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
               type="button"
               className={`s5-seg-btn ${docType === 'pi' ? 'active' : ''}`}
               onClick={() => setDocType('pi')}
+              disabled={anyActing}
+              title={anyActing ? 'Please wait — an action is in progress…' : undefined}
             >
               <span className="s5-seg-dot" />
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -618,9 +642,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             <button
               type="button"
               className="s5-create-btn s5-create-q"
-              style={(loading || locked || livePisCount > 0) ? { opacity: 0.5, cursor: loading ? 'wait' : 'not-allowed' } : undefined}
-              title={loading ? 'Checking the latest quotation / PI status…' : locked ? 'Locked — the Proforma Invoice has been signed' : (livePisCount > 0 ? 'A Proforma Invoice already exists for this opportunity' : undefined)}
+              style={(loading || anyActing || locked || livePisCount > 0) ? { opacity: 0.5, cursor: (loading || anyActing) ? 'wait' : 'not-allowed' } : undefined}
+              title={anyActing ? 'Please wait — an action is in progress…' : loading ? 'Checking the latest quotation / PI status…' : locked ? 'Locked — the Proforma Invoice has been signed' : (livePisCount > 0 ? 'A Proforma Invoice already exists for this opportunity' : undefined)}
               onClick={() => {
+                // Block while a row action (PDF view/download/email) is in flight
+                // so a second action can't fire mid-load.
+                if (anyActing) { toast.info('Please wait', 'An action is already in progress.'); return; }
                 // Block until the first fetch resolves — acting on the empty
                 // initial state let a duplicate slip through on a slow API.
                 if (loading) { toast.info('Please wait', 'Still loading this opportunity’s latest status…'); return; }
@@ -638,9 +665,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             <button
               type="button"
               className="s5-create-btn s5-create-p"
-              style={(loading || locked || livePisCount > 0 || mandatoryIncomplete) ? { opacity: 0.5, cursor: loading ? 'wait' : 'not-allowed' } : undefined}
-              title={loading ? 'Checking the latest quotation / PI status…' : undefined}
+              style={(loading || anyActing || locked || livePisCount > 0 || mandatoryIncomplete) ? { opacity: 0.5, cursor: (loading || anyActing) ? 'wait' : 'not-allowed' } : undefined}
+              title={anyActing ? 'Please wait — an action is in progress…' : loading ? 'Checking the latest quotation / PI status…' : undefined}
               onClick={() => {
+                // Block while a row action (PDF view/download/email) is in flight.
+                if (anyActing) { toast.info('Please wait', 'An action is already in progress.'); return; }
                 // Block until the first fetch resolves — otherwise a second PI
                 // could be created on a won deal while the list was still loading.
                 if (loading) {
@@ -706,6 +735,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
 
                 {!loading && rows.map((r, idx) => {
                   const terminal = docType === 'quotation' && isTerminalQuote(r.status);
+                  // One PI per lead: once ANY quotation on this opportunity has been
+                  // converted (a PI exists), every OTHER quotation's Convert-to-PI
+                  // and Edit actions are locked too — not just blocked on click.
+                  const piLocked = docType === 'quotation' && livePisCount > 0;
                   return (
                     <tr key={r.id} className={anyActing && actingId === r.id ? 's5-row-acting' : undefined}>
                       <td className="ta-c"><span className="s5-sr2">{idx + 1}</span></td>
@@ -759,9 +792,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               <span className="s5-converted-chip">{titleCase(r.status)}</span>
                             ) : (
                               <button
-                                type="button" className="s5-convert2" title="Convert to PI"
-                                onClick={() => openConvert(r as QuotationRow)}
-                                disabled={anyActing}
+                                type="button" className="s5-convert2"
+                                title={piLocked ? 'A Proforma Invoice already exists — only one PI per lead' : 'Convert to PI'}
+                                onClick={() => { if (piLocked) return; openConvert(r as QuotationRow); }}
+                                disabled={anyActing || piLocked}
+                                style={piLocked ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
                               >
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                                   <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
@@ -878,9 +913,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             // Quotation converted to a PI (terminal) is locked too —
                             // the PI is the live doc now.
                             const convertedLock = docType === 'quotation' && terminal;
-                            const locked = st === 'completed' || (docType === 'pi' && st === 'inprogress') || convertedLock;
+                            const locked = st === 'completed' || (docType === 'pi' && st === 'inprogress') || convertedLock || piLocked;
                             const lockLabel = convertedLock
                               ? (String(r.status).toLowerCase().includes('cancel') ? 'Quotation cancelled — editing locked' : 'Quotation converted to PI — editing locked')
+                              : piLocked
+                              ? 'A Proforma Invoice already exists — quotations are locked'
                               : docType === 'pi'
                               ? (st === 'inprogress' ? 'PI sent for signature — editing locked' : 'PI signed — editing locked')
                               : 'Quotation signed — editing locked';
@@ -888,7 +925,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               <Tooltip label={locked ? lockLabel : 'Edit'}>
                                 <button
                                   type="button" className="s5-icn s5-icn-edit"
-                                  onClick={() => onEdit(docType, r.id)} disabled={anyActing}
+                                  // piLocked quotations can't be opened at all (a PI
+                                  // already exists); signed/converted still call onEdit
+                                  // so it can explain why via a toast.
+                                  onClick={() => { if (piLocked) return; onEdit(docType, r.id); }} disabled={anyActing || piLocked}
                                   style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
                                 >
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1639,6 +1679,18 @@ const STAGE5_CSS = `
   transition: all .15s;
 }
 .s5-icn:disabled { opacity: .5; cursor: not-allowed; }
+/* Full-viewport lock shown while a document is opening — blocks every click on
+   the page (step pills, action buttons, side panels) until the fetch resolves. */
+.s5-pagelock { position: fixed; inset: 0; z-index: 13000; background: rgba(30, 18, 60, .18); backdrop-filter: none; cursor: wait; display: flex; align-items: center; justify-content: center; animation: s5PagelockIn .12s ease; }
+@keyframes s5PagelockIn { from { opacity: 0; } to { opacity: 1; } }
+.s5-pagelock-card { display: inline-flex; align-items: center; gap: 12px; padding: 14px 22px; border-radius: 14px; background: #fff; box-shadow: 0 18px 44px rgba(30, 18, 60, .28); font-size: 13px; font-weight: 700; color: #4c1d95; }
+.s5-pagelock-spin { width: 18px; height: 18px; border-radius: 50%; border: 2.6px solid #ede9fe; border-top-color: #7c3aed; animation: s5PagelockSpin .7s linear infinite; }
+@keyframes s5PagelockSpin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .s5-pagelock-card { background: #1c1738; color: #ede9fe; box-shadow: 0 18px 44px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .s5-pagelock-spin { border-color: #2b2450; border-top-color: #a78bfa; }
+/* Lock the tab switcher + summary button while a row action (PDF view /
+   download / email) is in flight, so context can't change mid-load. */
+.s5-seg-btn:disabled, .s5-summary-btn:disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
 /* Default neutral hover — applies to the plain buttons (view / reminder) and
    any variant that doesn't define its own accent. */
 .s5-icn:hover:not(:disabled):not(.s5-icn-cooling) { background: #475569; color: #fff; border-color: transparent; transform: translateY(-1px); }

@@ -335,6 +335,10 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       }
       onSaved();
     } catch (e: any) {
+      // Surface field-level validation (e.g. the duplicate segment+category
+      // guard, CBC #18) inline as well as in the toast.
+      const fieldErrs = e?.response?.data?.errors as Record<string, string[]> | undefined;
+      if (fieldErrs) setErrors(Object.fromEntries(Object.entries(fieldErrs).map(([k, v]) => [k, v[0]])));
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
     } finally {
       setSaving(false);
@@ -669,45 +673,36 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".doc,.docx,.txt,.html"
+                accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 style={{ display: 'none' }}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (!file || !editor) return;
                   e.target.value = '';
                   const lower = file.name.toLowerCase();
+                  // "Upload Word" accepts Word documents ONLY. The accept filter
+                  // is a hint the user can bypass ("All files"), so reject any
+                  // non-Word file here (e.g. an .html renamed or picked directly).
+                  if (!lower.endsWith('.docx') && !lower.endsWith('.doc')) {
+                    toast.error('Unsupported file', 'Please upload a Word document (.doc or .docx).');
+                    return;
+                  }
                   // Word documents are ZIP-packed XML — reading them as text
                   // yields binary garbage. Convert server-side (PhpWord) via
                   // the shared /clm/docx-to-html endpoint, then insert the
-                  // returned HTML. Plain .txt / .html stay client-side.
-                  if (lower.endsWith('.docx') || lower.endsWith('.doc')) {
-                    const fd = new FormData();
-                    fd.append('docx', file);
-                    api.post<{ status: boolean; html: string }>('/clm/docx-to-html', fd, {
-                      headers: { 'Content-Type': 'multipart/form-data' },
-                    })
-                      .then(({ data }) => {
-                        const html = (data?.html ?? '').trim();
-                        if (!html) { toast.warning('Nothing to import', 'The document appears to be empty.'); return; }
-                        editor.chain().focus().insertContent(html).run();
-                        toast.success('Imported', `${file.name} loaded into the editor.`);
-                      })
-                      .catch((err: any) => toast.error('Import failed', err?.response?.data?.message ?? 'Could not read this Word document.'));
-                    return;
-                  }
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    const txt = String(reader.result ?? '');
-                    if (lower.endsWith('.html')) {
-                      editor.chain().focus().insertContent(txt).run();
-                    } else {
-                      const html = txt.split(/\r?\n/).map(line => `<p>${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`).join('');
+                  // returned HTML.
+                  const fd = new FormData();
+                  fd.append('docx', file);
+                  api.post<{ status: boolean; html: string }>('/clm/docx-to-html', fd, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                  })
+                    .then(({ data }) => {
+                      const html = (data?.html ?? '').trim();
+                      if (!html) { toast.warning('Nothing to import', 'The document appears to be empty.'); return; }
                       editor.chain().focus().insertContent(html).run();
-                    }
-                    toast.success('Imported', `${file.name} loaded into the editor.`);
-                  };
-                  reader.onerror = () => toast.error('Read failed', 'Could not read the selected file.');
-                  reader.readAsText(file);
+                      toast.success('Imported', `${file.name} loaded into the editor.`);
+                    })
+                    .catch((err: any) => toast.error('Import failed', err?.response?.data?.message ?? 'Could not read this Word document.'));
                 }}
               />
             </div>

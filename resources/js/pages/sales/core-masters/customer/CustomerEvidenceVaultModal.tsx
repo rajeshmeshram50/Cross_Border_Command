@@ -4,6 +4,8 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
+import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
+import { CLM_CSS } from '../../../clm/shared/clmShared';
 import { useToast } from '../../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../../../utils/vaultSignatureRows';
@@ -135,6 +137,10 @@ export interface VaultData {
   owner_kyc:              VaultDoc[];
   trade_licenses:         VaultDoc[];
   trade_documents:        VaultDoc[];
+  /** Top-level Agreements bucket — segment-applicable agreements for the entity
+   *  (customer/consignee) or vendor, overlaid with signature status. Used by the
+   *  single-bucket ClmDocsPopup 'agr' view (NOT the per-shipment vault tab). */
+  agreements?:            VaultDoc[];
   shipment_agreements:    VaultShipmentRow[];
   last_updated:           string;   // DD/MM/YYYY
 }
@@ -623,6 +629,9 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   return createPortal(
     <div className="cev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <style>{CEV_CSS}</style>
+      {/* CLM shared styles — powers the teal AuthorityBadges "+N" popover on the
+          issuing-authority column, matching the CLM masters / Supplier vault. */}
+      <style>{CLM_CSS}</style>
       <div className="cev-card" onMouseDown={(e) => e.stopPropagation()}>
         {/* ─── HEADER ─── */}
         <div className="cev-header">
@@ -1069,7 +1078,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               <td>{i + 1}</td>
               <td className="cev-mono">{d.reference || d.doc_code || '—'}</td>
               <td className="cev-doc-name">{d.name}</td>
-              <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
+              <td><AuthorityBadges value={d.authority} /></td>
               <td>
                 {d.requirement === 'M' ? (
                   <span className="cev-req cev-req-m" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
@@ -1079,9 +1088,9 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               </td>
               <td>
                 {d.attachment_url ? (
-                  <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cev-attach"><i className="ri-download-2-line" /> {d.attachment || 'View'}</a>
+                  <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cev-attach" title={d.attachment || 'View'}><i className="ri-download-2-line" /> <span className="cev-attach-name">{d.attachment || 'View'}</span></a>
                 ) : d.attachment ? (
-                  <span className="cev-attach cev-attach-muted"><i className="ri-file-line" /> {d.attachment}</span>
+                  <span className="cev-attach cev-attach-muted" title={d.attachment}><i className="ri-file-line" /> <span className="cev-attach-name">{d.attachment}</span></span>
                 ) : <span style={{ color: '#9ca3af' }}>—</span>}
               </td>
               <td>
@@ -2365,7 +2374,10 @@ export const CEV_CSS = `
 .cev-date { font-size: 12px; color: #475569; white-space: nowrap; }
 .cev-attach { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #0891b2; text-decoration: none; padding: 4px 10px; border: 1px solid #a5f3fc; border-radius: 8px; background: #f0fdff; white-space: nowrap; transition: all .15s; }
 .cev-attach:hover { background: #cffafe; border-color: #67e8f9; color: #0e7490; }
-.cev-attach i { font-size: 14px; }
+.cev-attach i { font-size: 14px; flex-shrink: 0; }
+/* Keep long filenames from stretching the Attachment column — cap the label
+ * and ellipsize; the full name stays available via the cell's title tooltip. */
+.cev-attach-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cev-attach-muted { color: #94a3b8; background: #f8fafc; border-color: #e2e8f0; cursor: default; }
 .cev-empty { padding: 30px !important; text-align: center; color: #94a3b8; font-style: italic; }
 [data-bs-theme="dark"] .cev-date { color: #94a3b8; }
