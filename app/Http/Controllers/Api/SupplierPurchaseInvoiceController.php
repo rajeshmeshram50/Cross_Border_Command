@@ -1052,9 +1052,13 @@ class SupplierPurchaseInvoiceController extends Controller
             'items.*.rate_po' => 'nullable|numeric|min:0',
             'items.*.product_name' => 'nullable|string|max:255',
             'items.*.quantity' => 'nullable|numeric|min:0',
-            'items.*.hsn_code' => 'nullable|string|max:32',
+            // HSN codes are 4–8 numeric digits (4 / 6 / 8 in practice) — reject
+            // any other length so an invalid code can't be persisted (QA #11).
+            'items.*.hsn_code' => ['nullable', 'string', 'regex:/^\d{4,8}$/'],
             'items.*.rate' => 'nullable|numeric|min:0',
             'items.*.gst_pct' => 'nullable|numeric|min:0|max:100',
+        ], [
+            'items.*.hsn_code.regex' => 'HSN Code must be 4 to 8 digits.',
         ]);
 
         $user = $request->user();
