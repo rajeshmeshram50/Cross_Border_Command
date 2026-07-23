@@ -197,9 +197,16 @@ class AttendanceController extends Controller
             ->where('status', 'Approved')
             ->whereDate('from_date', '<=', $end->toDateString())
             ->whereDate('to_date', '>=', $start->toDateString())
-            ->get(['from_date', 'to_date']);
+            ->get(['from_date', 'to_date', 'leave_type_id']);
+        // Paid vs Unpaid per leave type (master_leave_types.paid_unpaid) so the
+        // Attendance Log can label each leave day "Paid Leave" / "Unpaid Leave".
+        $paidByType = \App\Models\Masters\LeaveTypes::whereIn('id', $approvedLeaves->pluck('leave_type_id')->filter()->unique()->all())
+            ->pluck('paid_unpaid', 'id');
+        // $leaveDaySet[iso] = 'Paid' | 'Unpaid' — drives both the KPI count and
+        // the per-day leave overlay in buildHistoryLogs().
         $leaveDaySet = [];
         foreach ($approvedLeaves as $lv) {
+            $paid = strcasecmp((string) ($paidByType[$lv->leave_type_id] ?? 'Paid'), 'Unpaid') === 0 ? 'Unpaid' : 'Paid';
             $fromC = \Carbon\Carbon::parse($lv->from_date);
             $toC   = \Carbon\Carbon::parse($lv->to_date);
             $cursor = $fromC->lt($start) ? $start->copy() : $fromC->copy();
@@ -209,7 +216,7 @@ class AttendanceController extends Controller
                 if (isset($leaveDaySet[$iso])) continue;
                 if (isset($weeklyOffSet[$c->dayOfWeek])) continue; // weekend isn't a leave day
                 if (isset($empHolidaySet[$iso])) continue;         // holiday isn't a leave day
-                $leaveDaySet[$iso] = true;
+                $leaveDaySet[$iso] = $paid;
             }
         }
         $leaveDays = count($leaveDaySet);
@@ -248,7 +255,8 @@ class AttendanceController extends Controller
                 $this->parseWeeklyOff((string) ($emp->weekly_off ?? '')),
                 $start->toDateString(),
                 $end->toDateString(),
-                $empHolidaySet
+                $empHolidaySet,
+                $leaveDaySet
             ),
         ]);
     }
@@ -797,7 +805,7 @@ class AttendanceController extends Controller
     }
 
   
-    private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, array $weeklyOffSet, string $from, string $to, array $holidaySet = []): array
+    private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, array $weeklyOffSet, string $from, string $to, array $holidaySet = [], array $leaveDaySet = []): array
     {
         // Index real Attendance rows by ISO date for O(1) lookup as we
         // walk through the window day-by-day.
@@ -885,6 +893,15 @@ class AttendanceController extends Controller
                 $status = 'Holiday';
                 // holidaySet value is the holiday's name (see holidayDatesForGroups).
                 $holidayName = is_string($holidaySet[$iso] ?? null) ? $holidaySet[$iso] : null;
+            }
+
+            // Approved leave for THIS day → surface it as "Paid Leave" / "Unpaid
+            // Leave" instead of a blank "No Time Entries Logged" Absent day
+            // (QA #30). Only overrides a plain Absent reading: a day the employee
+            // actually punched keeps its real status, and Weekly-Off / Holiday
+            // days were already excluded when $leaveDaySet was built.
+            if (strcasecmp((string) $status, 'Absent') === 0 && isset($leaveDaySet[$iso])) {
+                $status = strcasecmp((string) $leaveDaySet[$iso], 'Unpaid') === 0 ? 'Unpaid Leave' : 'Paid Leave';
             }
 
             // Signed deviation (sub-hour shortfalls were printing "+0h 30m"
