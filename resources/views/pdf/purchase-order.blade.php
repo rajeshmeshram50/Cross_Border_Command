@@ -103,13 +103,33 @@
         }
 
         .prod_table tr {
-            page-break-inside: avoid;
+            /* Allow a very tall row (long description) to split across pages
+               instead of being pushed off the page whole — otherwise a single
+               big-description product leaves page 1 blank and starts on a later
+               page. Short rows fit anyway so they never split. */
+            page-break-inside: auto;
         }
 
-        .prod_table td.description-cell {
+        .prod_table td.description-cell,
+        .prod_table td.name-cell {
             word-wrap: break-word;
+            overflow-wrap: break-word;
             white-space: normal;
-            vertical-align: middle;
+            /* Top-align so a long description begins at the first line of the
+               row rather than being centred in a tall cell. */
+            vertical-align: top;
+        }
+
+        /* A long description is emitted as several rows (dompdf can page-break
+           BETWEEN rows but not inside one tall cell). These rules make the
+           slices read as one continuous block: the flowing slice drops its
+           bottom padding, and continuation rows drop their top padding. */
+        .prod_table td.description-flow {
+            padding-bottom: 0;
+        }
+
+        .prod_table tr.desc-cont td {
+            padding-top: 0;
         }
 
         .prod_table td {
@@ -441,13 +461,41 @@
                 </thead>
                 <tbody>
                     @foreach ($products as $i => $product)
+                        @php
+                            // DomPDF cannot split ONE tall cell across pages — a huge
+                            // description used to push the whole row off page 1 (blank
+                            // first page, content landing pages later). So a long
+                            // description is emitted as SEVERAL rows: the first carries
+                            // the data columns + the first slice; continuation rows carry
+                            // only the next slice. DomPDF breaks cleanly BETWEEN rows, so
+                            // the product starts on page 1 and the text flows page to page.
+                            // The .description-flow / tr.desc-cont CSS removes the inner
+                            // padding so the slices read as one continuous block.
+                            $__desc = !empty($product['product_description']) ? $pdfClean($product['product_description']) : '—';
+                            $__chunks = [];
+                            if (mb_strlen($__desc) > 120) {
+                                $__parts = preg_split('/(\s+)/u', $__desc, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [$__desc];
+                                $__buf = '';
+                                foreach ($__parts as $__pce) {
+                                    if (mb_strlen($__buf) + mb_strlen($__pce) > 120 && trim($__buf) !== '') {
+                                        $__chunks[] = $__buf;
+                                        $__buf = ltrim($__pce);
+                                    } else {
+                                        $__buf .= $__pce;
+                                    }
+                                }
+                                if (trim($__buf) !== '') $__chunks[] = $__buf;
+                            } else {
+                                $__chunks = [$__desc];
+                            }
+                            $__first   = array_shift($__chunks);
+                            $__hasMore = count($__chunks) > 0;
+                        @endphp
                         <tr>
                             <td style="width:6%;  text-align: center;">{{ $i + 1 }}</td>
-                            <td style="width:26%; text-align: left;">{{ $pdfClean($product['product_name']) }}</td>
+                            <td class="name-cell" style="width:26%; text-align: left;">{{ $pdfClean($product['product_name']) }}</td>
                             <td style="width:14%; text-align: left;">{{ $pdfClean($product['brand']) ?: '—' }}</td>
-                            <td class="description-cell" style="width:22%; text-align: left;">
-                                {{ !empty($product['product_description']) ? $pdfClean($product['product_description']) : '—' }}
-                            </td>
+                            <td class="description-cell {{ $__hasMore ? 'description-flow' : '' }}" style="width:22%; text-align: left;">{{ $__first }}</td>
                             <td style="width:7%;  text-align: center;">
                                 {{ rtrim(rtrim(number_format($product['quantity'], 3, '.', ','), '0'), '.') }}
                             </td>
@@ -455,6 +503,18 @@
                             <td style="width:6%;  text-align: center;">{{ rtrim(rtrim(number_format($product['gst_pct'], 2), '0'), '.') }}</td>
                             <td style="width:12%; text-align: right;">{{ number_format($product['amount'], 2) }}</td>
                         </tr>
+                        @foreach ($__chunks as $__ci => $__chunk)
+                            <tr class="desc-cont">
+                                <td style="width:6%;"></td>
+                                <td style="width:26%;"></td>
+                                <td style="width:14%;"></td>
+                                <td class="description-cell {{ $__ci < count($__chunks) - 1 ? 'description-flow' : '' }}" style="width:22%; text-align: left;">{{ $__chunk }}</td>
+                                <td style="width:7%;"></td>
+                                <td style="width:11%;"></td>
+                                <td style="width:6%;"></td>
+                                <td style="width:12%;"></td>
+                            </tr>
+                        @endforeach
                     @endforeach
                 </tbody>
             </table>

@@ -472,8 +472,12 @@ class SupplierPurchaseInvoiceController extends Controller
     {
         $code = trim((string) $code);
         $desc = trim((string) $description);
-        if ($code !== '' && $desc !== '') return $code . ' · ' . $desc;
-        return $desc !== '' ? $desc : $code;
+        $full = ($code !== '' && $desc !== '') ? $code . ' · ' . $desc : ($desc !== '' ? $desc : $code);
+        // Zoho hard-limits a line description (~6000). Cap below it — end the kept
+        // text with "..." then the pointer note on a NEW line (plain-text field,
+        // so upper-cased to stand out).
+        if (mb_strlen($full) <= 5500) return $full;
+        return rtrim(mb_substr($full, 0, 5500)) . "...\nNOTE: (REMAINING — REFER THE SYSTEM GENERATED DOCUMENT)";
     }
 
     private function buildZohoBillPayload(SupplierPurchaseInvoice $spi, ZohoBooksService $books, string $zohoVendorId, bool $registered, bool $interState): array
@@ -486,7 +490,7 @@ class SupplierPurchaseInvoiceController extends Controller
             $taxId = $registered ? $books->resolveTaxId($effRate, $interState) : null;
             $m = $meta[(int) $it->product_id] ?? [];
             $line = [
-                'item_id'     => $books->findOrCreateItemId($name, $rate, $taxId, $it->product_id),
+                'item_id'     => $books->findOrCreateItemId($name, $rate, $taxId, $it->product_id, $effRate),
                 'name'        => $name,
                 'description' => $this->lineDescription($it->product_code, $m['description'] ?? null),
                 'rate'        => $rate,

@@ -302,6 +302,32 @@ class VendorController extends Controller
             $data['gst_number'] = null;
         }
 
+        // India → GST is mandatory: an Indian supplier cannot be GST-Applicable = No
+        // (an unregistered Indian supplier would sync tax-free and mis-state the bill).
+        $countryId = $data['address']['country_id'] ?? null;
+        $isIndia = $countryId && DB::table('master_countries')
+            ->where('id', $countryId)->whereRaw('LOWER(name) = ?', ['india'])->exists();
+        if ($isIndia && ($data['gst_applicable'] ?? null) !== 'Yes') {
+            return response()->json([
+                'message' => 'GST is mandatory for an Indian supplier — set GST Applicable to Yes.',
+                'errors'  => ['gst_applicable' => ['GST is mandatory for an Indian supplier.']],
+            ], 422);
+        }
+
+        // GSTIN must begin with the state code (first 2 digits = GST state code).
+        if (($data['gst_applicable'] ?? null) === 'Yes' && !empty($data['gst_number'])) {
+            $stateCode = trim((string) ($data['address']['state_code'] ?? ''));
+            if ($stateCode !== '') {
+                $expected = str_pad($stateCode, 2, '0', STR_PAD_LEFT);
+                if (substr(strtoupper(trim((string) $data['gst_number'])), 0, 2) !== $expected) {
+                    return response()->json([
+                        'message' => "GST Number must start with the state code {$expected}.",
+                        'errors'  => ['gst_number' => ["GST Number must start with the state code {$expected}."]],
+                    ], 422);
+                }
+            }
+        }
+
         // Resolve + authorise the target row up-front so the 403 short-circuit
         // stays outside the write transaction.
         $isEdit = isset($data['id']);

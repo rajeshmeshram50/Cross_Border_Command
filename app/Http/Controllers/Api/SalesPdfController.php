@@ -865,6 +865,9 @@ class SalesPdfController extends Controller
      */
     public function streamPoPdf($po, bool $withSignature = true, $vendor = null)
     {
+        // NOTE: the view/download buttons always render FRESH (not cached) so the
+        // user never sees a stale document. The PDF cache is used ONLY by the Zoho
+        // attach job (renderPoPdfBytesCached) at sync time.
         $vendor = $vendor ?: ($po->vendor_id ? \App\Models\Vendor::with('primaryAddress')->find($po->vendor_id) : null);
         $viewData = $this->buildPurchaseOrderViewData($po, $withSignature, $vendor);
         @set_time_limit(180);
@@ -885,6 +888,37 @@ class SalesPdfController extends Controller
         $viewData = $this->buildPurchaseOrderViewData($po, $withSignature, $vendor);
         @set_time_limit(180);
         return Pdf::loadView('pdf.purchase-order', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true)->output();
+    }
+
+    /**
+     * Cached variant of renderPoPdfBytes — the expensive dompdf render (slow for a
+     * long T&C) runs ONCE per PO version and the bytes are stored on disk; later
+     * calls (the Zoho-attach job, a re-download) reuse the stored file instantly.
+     * The cache is keyed by the PO's updated_at, so it re-renders only after the
+     * PO changes. A transient (unsaved) PO has no id → always rendered fresh.
+     */
+    public function renderPoPdfBytesCached($po, bool $withSignature = false, $vendor = null): string
+    {
+        if (empty($po->id)) {
+            return $this->renderPoPdfBytes($po, $withSignature, $vendor);
+        }
+        $rel   = 'po-system-pdf/' . $po->id . '-' . ($withSignature ? 'signed' : 'unsigned') . '.pdf';
+        $key   = 'po_pdf_stamp:' . $po->id . ':' . ($withSignature ? 's' : 'u');
+        $stamp = (string) optional($po->updated_at)->timestamp;
+
+        if (\Illuminate\Support\Facades\Cache::get($key) === $stamp
+            && \Illuminate\Support\Facades\Storage::disk('local')->exists($rel)) {
+            return \Illuminate\Support\Facades\Storage::disk('local')->get($rel); // reuse the stored document
+        }
+
+        $bytes = $this->renderPoPdfBytes($po, $withSignature, $vendor);
+        try {
+            \Illuminate\Support\Facades\Storage::disk('local')->put($rel, $bytes);
+            \Illuminate\Support\Facades\Cache::forever($key, $stamp);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('PO PDF cache write failed', ['po' => $po->id, 'err' => $e->getMessage()]);
+        }
+        return $bytes;
     }
 
     /** Public signed PDF view for the PO email's "View" button. */

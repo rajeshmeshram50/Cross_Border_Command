@@ -143,6 +143,45 @@ class ZohoBooksService
         );
     }
 
+    /** Multipart file upload against the Books API. The file is sent as $field
+     *  (attachments use 'attachment', an item image uses 'image'); org id in the
+     *  query string. Returns decoded JSON. */
+    private function upload(string $endpoint, string $fileBytes, string $filename, string $field = 'attachment'): array
+    {
+        $url = "{$this->baseUrl}/" . ltrim($endpoint, '/') . '?organization_id=' . $this->orgId;
+        return $this->sendWithAuthRetry(
+            fn (string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])
+                ->attach($field, $fileBytes, $filename)
+                ->post($url),
+            'UPLOAD ' . $endpoint
+        );
+    }
+
+    /** PUT a JSON body against the Books API; org id in the query string. */
+    private function put(string $endpoint, array $body, array $query = []): array
+    {
+        $url = "{$this->baseUrl}/" . ltrim($endpoint, '/') . '?organization_id=' . $this->orgId;
+        foreach ($query as $k => $v) {
+            $url .= '&' . $k . '=' . rawurlencode((string) $v);
+        }
+        return $this->sendWithAuthRetry(
+            fn (string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])->put($url, $body),
+            'PUT ' . $endpoint
+        );
+    }
+
+    /** Attach a file (raw bytes) to a Zoho purchase order. */
+    public function attachToPurchaseOrder(string $zohoId, string $fileBytes, string $filename): void
+    {
+        $this->upload('purchaseorders/' . rawurlencode($zohoId) . '/attachment', $fileBytes, $filename);
+    }
+
+    /** Attach a file (raw bytes) to a Zoho bill. */
+    public function attachToBill(string $billId, string $fileBytes, string $filename): void
+    {
+        $this->upload('bills/' . rawurlencode($billId) . '/attachment', $fileBytes, $filename);
+    }
+
     /**
      * Run an authorized Books call and, if Zoho rejects the cached access token
      * with a 401, drop the cache, force a fresh token, and retry once. Zoho can
@@ -193,11 +232,27 @@ class ZohoBooksService
      */
     public function findOrCreateVendorId(Vendor $vendor, ?string $gstin = null, ?string $stateCode = null): string
     {
-        if (!empty($vendor->zoho_contact_id)) return (string) $vendor->zoho_contact_id;
-
         $name = trim((string) ($vendor->company_name ?: $vendor->legal_name));
         if ($name === '') {
             throw new RuntimeException('Supplier has no company/legal name to register in Zoho Books.');
+        }
+
+        $addr  = $vendor->relationLoaded('primaryAddress') ? $vendor->primaryAddress : $vendor->primaryAddress()->first();
+        $zaddr = $this->buildVendorAddress($addr);
+
+        // Already in Zoho — keep its billing/shipping address in sync with our
+        // registered address (best-effort, hash-gated so we don't PUT every sync).
+        if (!empty($vendor->zoho_contact_id)) {
+            $id = (string) $vendor->zoho_contact_id;
+            if ($zaddr) {
+                $upd = ['billing_address' => $zaddr, 'shipping_address' => $zaddr];
+                $vk = 'zoho_vendor_addr:' . $vendor->id;
+                if (Cache::get($vk) !== md5(json_encode($upd))) {
+                    try { $this->put('contacts/' . $id, $upd); Cache::forever($vk, md5(json_encode($upd))); }
+                    catch (\Throwable $e) { Log::warning('Zoho vendor address update failed', ['vendor' => $vendor->id, 'err' => $e->getMessage()]); }
+                }
+            }
+            return $id;
         }
 
         // Try to match an existing Zoho vendor by name before creating a duplicate.
@@ -219,7 +274,6 @@ class ZohoBooksService
             return (string) $existing;
         }
 
-        $addr  = $vendor->relationLoaded('primaryAddress') ? $vendor->primaryAddress : $vendor->primaryAddress()->first();
         $email = $vendor->primary_email ?: optional($addr)->email;
 
         // GST treatment: a vendor with a GSTIN is a registered business (forward
@@ -236,13 +290,13 @@ class ZohoBooksService
         if ($gstin) $body['gst_no'] = $gstin;
         $poc = self::placeOfContact($gstin ? substr($gstin, 0, 2) : $stateCode);
         if ($poc) $body['place_of_contact'] = $poc;
-        if ($email) {
-            $body['contact_persons'] = [[
-                'first_name'    => optional($addr)->contact_name ?: $name,
-                'email'         => $email,
-                'phone'         => (string) optional($addr)->contact_no,
-                'is_primary_contact' => true,
-            ]];
+        $persons = $this->buildVendorContactPersons($vendor, $name, $email);
+        if ($persons) $body['contact_persons'] = $persons;
+        // Our registered address → the vendor's BOTH billing and shipping address,
+        // so it shows on the Zoho Bill ("Bill From") and Purchase Order.
+        if ($zaddr) {
+            $body['billing_address']  = $zaddr;
+            $body['shipping_address'] = $zaddr;
         }
 
         $created = $this->post('contacts', $body);
@@ -251,6 +305,71 @@ class ZohoBooksService
 
         $vendor->forceFill(['zoho_contact_id' => (string) $id])->saveQuietly();
         return (string) $id;
+    }
+
+    /**
+     * Build the Zoho contact_persons list from ALL of the vendor's addresses —
+     * each address carries its own contact person (name / designation / phone /
+     * email), so a supplier with several locations shows several contacts in
+     * Zoho. Deduped by name+email; the first usable one is the primary contact.
+     * Falls back to a single contact (company name + primary email) when no
+     * address contact exists, so Zoho always has at least one point of contact.
+     */
+    private function buildVendorContactPersons(Vendor $vendor, string $name, ?string $email): array
+    {
+        $addrs = $vendor->relationLoaded('addresses') ? $vendor->addresses : $vendor->addresses()->get();
+
+        $persons = [];
+        $seen = [];
+        foreach ($addrs as $a) {
+            $cname = trim((string) $a->contact_name);
+            $cmail = trim((string) $a->email);
+            if ($cname === '' && $cmail === '') continue;      // nothing to show
+            $key = mb_strtolower($cname . '|' . $cmail);
+            if (isset($seen[$key])) continue;
+            $seen[$key] = true;
+            $persons[] = array_filter([
+                'first_name'  => $cname ?: $name,
+                'email'       => $cmail ?: null,
+                'phone'       => trim((string) $a->contact_no) ?: null,
+                'designation' => trim((string) $a->designation) ?: null,
+            ], fn ($v) => $v !== null && $v !== '');
+        }
+
+        // No address contacts at all → keep the old single-contact fallback.
+        if (!$persons && $email) {
+            $persons[] = array_filter([
+                'first_name' => $name,
+                'email'      => $email,
+            ], fn ($v) => $v !== null && $v !== '');
+        }
+
+        if ($persons) $persons[0]['is_primary_contact'] = true;   // first = primary
+        return $persons;
+    }
+
+    /**
+     * Build the Zoho address block from our vendor's primary address — state and
+     * country resolved to their names (Zoho stores names, not ids). Null when
+     * there's no usable street line.
+     */
+    private function buildVendorAddress($addr): ?array
+    {
+        if (!$addr) return null;
+        $line = trim((string) $addr->address_line);
+        if ($line === '') return null;
+        $state   = $addr->state_id ? \Illuminate\Support\Facades\DB::table('master_states')->where('id', $addr->state_id)->value('name') : null;
+        $country = $addr->country_id ? \Illuminate\Support\Facades\DB::table('master_countries')->where('id', $addr->country_id)->value('name') : null;
+        $out = array_filter([
+            'address'    => $line,
+            'city'       => trim((string) $addr->city),
+            'state'      => trim((string) $state),
+            'state_code' => trim((string) $addr->state_code),   // GST state code — Zoho prints it on the PO/Bill PDF
+            'zip'        => trim((string) $addr->pincode),
+            'country'    => trim((string) $country),
+            'phone'      => trim((string) $addr->contact_no),
+        ], fn ($v) => $v !== null && $v !== '');
+        return $out ?: null;
     }
 
     /**
@@ -311,53 +430,117 @@ class ZohoBooksService
      * items in Zoho. Ad-hoc lines (no product id, e.g. a Direct SPI) fall back to
      * name matching + a per-request memo.
      */
-    public function findOrCreateItemId(string $name, float $rate, ?string $taxId = null, ?int $productId = null): string
+    public function findOrCreateItemId(string $name, float $rate, ?string $taxId = null, ?int $productId = null, ?float $gstPct = null): string
     {
-        // Fast path: a product that already carries its Zoho item id never
-        // re-searches or re-creates.
-        if ($productId) {
-            $cached = \App\Models\Product::where('id', $productId)->value('zoho_item_id');
-            if (!empty($cached)) return (string) $cached;
-        }
-
         $name = trim($name) !== '' ? trim($name) : 'Item';
         // Zoho caps item names at 100 chars; a longer name hard-rejects item
         // creation and takes the whole PO/bill/estimate sync down with it. Cap it
         // (search + create use the same capped value so dedup stays consistent).
         $name = mb_substr($name, 0, 100);
         $key = mb_strtolower($name);
-        $resolved = $this->itemCache[$key] ?? null;
 
-        if (!$resolved) {
-            // Reuse an existing purchasable item with the same name before creating.
+        // Build the Zoho item from our product — name + rate/tax always, plus the
+        // product's description (sales + purchase), unit and HSN. A fingerprint of
+        // that data decides whether an existing item needs updating.
+        $product   = $productId ? \App\Models\Product::with(['uom', 'hsn'])->find($productId) : null;
+        $body      = $this->buildZohoItemBody($name, $rate, $taxId, $product, $gstPct);
+        $imagePath = $product ? (string) $product->primary_image : '';
+        $hash      = md5(json_encode([$body, $imagePath]));
+        $hashKey   = $productId ? ('zoho_item_hash:' . $productId) : null;
+
+        // Resolve the existing item id: product cache → per-request memo → name search.
+        $itemId = null;
+        if ($productId) {
+            $cached = \App\Models\Product::where('id', $productId)->value('zoho_item_id');
+            if (!empty($cached)) $itemId = (string) $cached;
+        }
+        if (!$itemId) $itemId = $this->itemCache[$key] ?? null;
+        if (!$itemId) {
             foreach (($this->get('items', ['name' => $name])['items'] ?? []) as $it) {
                 if (mb_strtolower(trim((string) ($it['name'] ?? ''))) === $key && ($it['can_be_purchased'] ?? true)) {
-                    $resolved = (string) $it['item_id'];
+                    $itemId = (string) $it['item_id'];
                     break;
                 }
             }
         }
 
-        if (!$resolved) {
-            $body = [
-                'name'          => $name,
-                'product_type'  => 'goods',
-                'item_type'     => 'sales_and_purchases', // purchasable → valid on a PO
-                'rate'          => $rate,
-                'purchase_rate' => $rate,
-            ];
-            if ($taxId) $body['tax_id'] = $taxId;
-
+        if ($itemId) {
+            // Update the existing item ONLY when the product data changed since the
+            // last sync (hash mismatch) — so we don't PUT + re-upload on every line.
+            if (!$hashKey || Cache::get($hashKey) !== $hash) {
+                try {
+                    $this->put('items/' . rawurlencode($itemId), $body);
+                    $this->uploadItemImageSafe($itemId, $imagePath);
+                } catch (\Throwable $e) {
+                    Log::warning('Zoho item update failed', ['item' => $itemId, 'err' => $e->getMessage()]);
+                }
+            }
+        } else {
             $created = $this->post('items', $body);
-            $id = $created['item']['item_id'] ?? null;
-            if (!$id) throw new RuntimeException('Zoho Books did not return an item id for "' . $name . '".');
-            $resolved = (string) $id;
+            $itemId = (string) ($created['item']['item_id'] ?? '');
+            if ($itemId === '') throw new RuntimeException('Zoho Books did not return an item id for "' . $name . '".');
+            $this->uploadItemImageSafe($itemId, $imagePath);
         }
 
-        $this->itemCache[$key] = $resolved;
-        // Remember it on the product so future syncs skip the search entirely.
-        if ($productId) \App\Models\Product::where('id', $productId)->update(['zoho_item_id' => $resolved]);
-        return $resolved;
+        if ($hashKey) Cache::forever($hashKey, $hash);
+        $this->itemCache[$key] = $itemId;
+        if ($productId) \App\Models\Product::where('id', $productId)->update(['zoho_item_id' => $itemId]);
+        return $itemId;
+    }
+
+    /**
+     * Build the Zoho Item payload from our product: name + rate/tax always; and,
+     * when a product is given, its description (sales + purchase), unit and HSN.
+     * Zoho caps an item description at ~2000 chars (much lower than a line's
+     * ~6000), so it's truncated at 1,900 with a pointer note.
+     */
+    private function buildZohoItemBody(string $name, float $rate, ?string $taxId, $product, ?float $gstPct = null): array
+    {
+        $body = [
+            'name'          => $name,
+            'product_type'  => 'goods',
+            'item_type'     => 'sales_and_purchases', // purchasable → valid on a PO
+            'rate'          => $rate,
+            'purchase_rate' => $rate,
+        ];
+        if ($taxId) $body['tax_id'] = $taxId;
+        // Item "Default Tax Rates": set BOTH the intra-state (CGST+SGST group) and
+        // inter-state (IGST) defaults from the product's GST %, so Zoho picks the
+        // right one by place of supply. Each is best-effort — a rate that isn't
+        // configured in Zoho (or 0%) is simply skipped, never fails the item.
+        if ($gstPct !== null && $gstPct > 0) {
+            try { $body['intra_state_tax_id'] = $this->resolveTaxId($gstPct, false); } catch (\Throwable $e) {}
+            try { $body['inter_state_tax_id'] = $this->resolveTaxId($gstPct, true); } catch (\Throwable $e) {}
+        }
+        if (!$product) return $body;
+
+        $desc = trim((string) $product->description);
+        if ($desc !== '') {
+            if (mb_strlen($desc) > 1900) {
+                $desc = rtrim(mb_substr($desc, 0, 1900)) . "...\nNOTE: (REMAINING — REFER THE SYSTEM GENERATED DOCUMENT)";
+            }
+            $body['description']          = $desc; // Description (sales)
+            $body['purchase_description'] = $desc; // Purchase Description
+        }
+        $unit = trim((string) (optional($product->uom)->short_code ?: optional($product->uom)->title));
+        if ($unit !== '') $body['unit'] = mb_substr($unit, 0, 100);
+        $hsn = trim((string) optional($product->hsn)->hsn_code);
+        if ($hsn !== '') $body['hsn_or_sac'] = $hsn;
+
+        return $body;
+    }
+
+    /** Upload the product's primary image to a Zoho item — best-effort. */
+    private function uploadItemImageSafe(string $itemId, string $imagePath): void
+    {
+        if ($imagePath === '') return;
+        try {
+            $disk = \Illuminate\Support\Facades\Storage::disk('public');
+            if (!$disk->exists($imagePath)) return;
+            $this->upload('items/' . rawurlencode($itemId) . '/image', $disk->get($imagePath), basename($imagePath), 'image');
+        } catch (\Throwable $e) {
+            Log::warning('Zoho item image upload failed', ['item' => $itemId, 'err' => $e->getMessage()]);
+        }
     }
 
     /** Map an ISO currency code (e.g. USD) to the org's Zoho currency id. */
@@ -459,6 +642,16 @@ class ZohoBooksService
     public function deletePurchaseOrder(string $zohoId): void
     {
         $this->delete('purchaseorders/' . rawurlencode($zohoId));
+    }
+
+    /**
+     * Mark a Zoho purchase order as Open (issued). A PO is created as Draft and a
+     * Draft PO can't be billed — opening it lets a bill link to it so the PO's
+     * billed status updates.
+     */
+    public function markPurchaseOrderOpen(string $zohoId): void
+    {
+        $this->post('purchaseorders/' . rawurlencode($zohoId) . '/status/open', []);
     }
 
     /** Raw PDF bytes of Zoho's own rendered PO — cached alongside the app PDF. */

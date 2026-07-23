@@ -334,10 +334,23 @@ class PurchaseOrderController extends Controller
                 //    and only the bill is missing — mid-flow recovery).
                 $zohoId  = (string) $po->zoho_purchaseorder_id;
                 $pdfPath = $po->zoho_pdf_path;
+                // Zoho PO line-item ids (in order) — used to link the bill lines to
+                // the PO so the PO's billed status updates.
+                $poLineItemIds = [];
                 if ($zohoId === '') {
                     $created = $books->createPurchaseOrder($this->buildZohoPayload($po, $books, $zohoVendorId, (bool) $gstin, $interState));
                     $zohoId  = (string) $created['purchaseorder_id'];
                     $createdPoId = $zohoId; // created THIS run → reversible on failure
+                    $poLineItemIds = collect($created['line_items'] ?? [])->pluck('line_item_id')->map(fn ($x) => (string) $x)->all();
+
+                    // A PO is created as Draft and a Draft PO can't be billed. Mark it
+                    // Open so the bill can link to it (best-effort — if it's already
+                    // open or the call hiccups, the bill still posts, just unlinked).
+                    try {
+                        $books->markPurchaseOrderOpen($zohoId);
+                    } catch (\Throwable $e) {
+                        Log::warning('Zoho PO mark-open failed', ['po' => $po->id, 'err' => $e->getMessage()]);
+                    }
 
                     // Cache Zoho's own rendered PO PDF — best-effort.
                     try {
@@ -355,24 +368,37 @@ class PurchaseOrderController extends Controller
                 }
 
                 // 2) Create the BILL from the PO (the payable) and 3) post the PO's
-                //    Cleared payments against it. The bill is what holds the money in
-                //    Zoho — the PO alone can't. Payment posting is idempotent.
-                $bill          = $books->createBill($this->buildBillPayloadFromPo($po, $books, $zohoVendorId, (bool) $gstin, $interState));
+                //    Cleared payments against it. Each bill line links to its PO line
+                //    (purchaseorder_item_id) so the PO flips to Billed. Payment
+                //    posting is idempotent.
+                $bill          = $books->createBill($this->buildBillPayloadFromPo($po, $books, $zohoVendorId, (bool) $gstin, $interState, $poLineItemIds));
                 $billId        = (string) $bill['bill_id'];
                 $createdBillId = $billId; // created THIS run → reversible on failure
                 $billNumber    = (string) ($bill['bill_number'] ?? $po->code);
                 $pay           = $this->postPoPaymentsToBill($po, $books, $zohoVendorId, $billId, (float) ($bill['balance'] ?? $bill['total'] ?? 0), $createdPayments);
 
-                $po->update([
-                    'zoho_status'           => 'Sync',
-                    'zoho_purchaseorder_id' => $zohoId,
-                    'zoho_bill_id'          => $billId,
-                    'zoho_bill_number'      => $billNumber,
-                    'zoho_synced_at'        => now(),
-                    'zoho_error'            => null,
-                    'zoho_pdf_path'         => $pdfPath,
-                    'updated_by'            => $user->id,
-                ]);
+                // Commit the local sync state + queue the attachment ATOMICALLY:
+                // the database queue writes the job row in the same DB, so if the
+                // PO update rolls back the queued attachment rolls back too — the
+                // two can never drift.
+                DB::transaction(function () use ($po, $zohoId, $billId, $billNumber, $pdfPath, $user) {
+                    $po->update([
+                        'zoho_status'             => 'Sync',
+                        'zoho_purchaseorder_id'   => $zohoId,
+                        'zoho_bill_id'            => $billId,
+                        'zoho_bill_number'        => $billNumber,
+                        'zoho_synced_at'          => now(),
+                        'zoho_error'              => null,
+                        'zoho_pdf_path'           => $pdfPath,
+                        'zoho_attachment_status'  => 'queued', // job dispatched below; loader waits on this
+                        'updated_by'              => $user->id,
+                    ]);
+
+                    // Attach the system-generated PO document to the Zoho PO + Bill
+                    // on the QUEUE — rendering it can be slow (long T&C), so it must
+                    // not block the sync response. Best-effort inside the job.
+                    \App\Jobs\AttachPoDocumentToZoho::dispatch($po->id);
+                });
 
                 $note = '';
                 if ($pay['noAccount'])   $note = ' NOTE: payments were NOT posted — add a Bank/Cash account in Zoho, then re-sync to post them.';
@@ -395,6 +421,56 @@ class PurchaseOrderController extends Controller
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Lightweight poll for the async "attach system PO document to Zoho" job so
+     * the sync loader can wait for it before finishing at 100%.
+     * Returns { status: 'queued'|'done'|'failed'|null }.
+     */
+    public function attachmentStatus(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $po = PurchaseOrder::findOrFail($id);
+        $this->assertScope($po, $user);
+        return response()->json(['status' => $po->zoho_attachment_status]);
+    }
+
+    /**
+     * Debug / manual re-attach: run the "attach system PO document to Zoho" job
+     * SYNCHRONOUSLY (no queue worker needed) and report the outcome + any error,
+     * so the whole flow can be exercised and diagnosed from Postman/curl.
+     */
+    public function reattach(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $po = PurchaseOrder::findOrFail($id);
+        $this->assertScope($po, $user, 'write');
+        if (empty($po->zoho_purchaseorder_id)) {
+            return response()->json(['status' => false, 'message' => 'This PO is not synced to Zoho Books yet — sync it first.'], 422);
+        }
+
+        $t0 = microtime(true);
+        try {
+            \App\Jobs\AttachPoDocumentToZoho::dispatchSync($po->id); // run NOW, in-request
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Attachment run threw: ' . $e->getMessage(),
+                'error'   => class_basename($e),
+                'took_ms' => round((microtime(true) - $t0) * 1000),
+            ], 500);
+        }
+
+        return response()->json([
+            'status'            => true,
+            'message'           => 'Attachment job ran.',
+            'attachment_status' => $po->fresh()->zoho_attachment_status, // done | failed
+            'took_ms'           => round((microtime(true) - $t0) * 1000),
+            'note'              => 'If attachment_status is "failed", check the Laravel log (storage/logs/laravel.log) for the exact render/upload error.',
+        ]);
     }
 
     /**
@@ -609,8 +685,25 @@ class PurchaseOrderController extends Controller
     {
         $code = trim((string) $code);
         $desc = trim((string) $description);
-        if ($code !== '' && $desc !== '') return $code . ' · ' . $desc;
-        return $desc !== '' ? $desc : $code;
+        $full = ($code !== '' && $desc !== '') ? $code . ' · ' . $desc : ($desc !== '' ? $desc : $code);
+        // Zoho hard-limits a line description (~6000). Cap below it.
+        return $this->capForZoho($full, 5500);
+    }
+
+    /**
+     * Cap a string bound for Zoho at $limit chars. Zoho hard-limits the product
+     * line description (~6000) and the PO terms (~15000); we cap safely below
+     * (5500 / 14500) and, when truncated, append a pointer to the full document
+     * so nothing silently disappears.
+     */
+    private function capForZoho(?string $text, int $limit): string
+    {
+        $text = (string) $text;
+        if (mb_strlen($text) <= $limit) return $text;
+        // Truncate, end the kept text with "..." then the pointer note on a NEW
+        // line. Zoho's terms field is plain text (no bold), so the note is upper-
+        // cased to stand out.
+        return rtrim(mb_substr($text, 0, $limit)) . "...\nNOTE: (REMAINING — REFER THE SYSTEM GENERATED DOCUMENT)";
     }
 
     /**
@@ -631,7 +724,7 @@ class PurchaseOrderController extends Controller
             $m = $meta[(int) $it->product_id] ?? [];
             $line = [
                 // Zoho POs need a purchasable item id, not a free-text line.
-                'item_id' => $books->findOrCreateItemId($name, (float) $it->rate, $taxId, $it->product_id),
+                'item_id' => $books->findOrCreateItemId($name, (float) $it->rate, $taxId, $it->product_id, (float) $it->cgst_pct + (float) $it->sgst_pct),
                 'name' => $name,
                 'description' => $this->lineDescription($it->product_code, $m['description'] ?? null),
                 'rate' => (float) $it->rate,
@@ -651,7 +744,16 @@ class PurchaseOrderController extends Controller
         ];
 
         if ($po->expected_delivery_date) $payload['delivery_date'] = optional($po->expected_delivery_date)->toDateString();
-        if (trim((string) $po->terms) !== '') $payload['terms'] = (string) $po->terms;
+        // Zoho PO terms = the PO's free-text `terms` PLUS the segment-matched
+        // master T&C that the PDF renders (HTML stripped) — so Zoho carries the
+        // same T&C, not just the (often empty) free-text field. Capped at 9,500
+        // (same as the bill) with a pointer note when the T&C is truncated.
+        $termsParts = [];
+        if (trim((string) $po->terms) !== '') $termsParts[] = trim((string) $po->terms);
+        $segTnc = app(\App\Services\PoTncResolver::class)->plainTextForPurchaseOrder($po);
+        if ($segTnc !== '') $termsParts[] = $segTnc;
+        $termsText = trim(implode("\n\n", $termsParts));
+        if ($termsText !== '') $payload['terms'] = $this->capForZoho($termsText, 9500);
 
         // Shipping is native; packaging + other have no native field → adjustment.
         if ((float) $po->shipping_charges != 0.0) $payload['shipping_charge'] = (float) $po->shipping_charges;
@@ -678,20 +780,24 @@ class PurchaseOrderController extends Controller
      * a single adjustment line so the bill total reconciles with ours. The PO
      * code is the reference so the bill is traceable to the PO.
      */
-    private function buildBillPayloadFromPo(PurchaseOrder $po, ZohoBooksService $books, string $zohoVendorId, bool $registered, bool $interState): array
+    private function buildBillPayloadFromPo(PurchaseOrder $po, ZohoBooksService $books, string $zohoVendorId, bool $registered, bool $interState, array $poLineItemIds = []): array
     {
         $meta = $this->zohoLineMeta($po->items);
-        $lineItems = $po->items->map(function ($it) use ($books, $registered, $interState, $meta) {
+        // $poLineItemIds maps by index to the Zoho PO's line-item ids (same order
+        // the PO was built in) — attaching purchaseorder_item_id links the bill to
+        // the PO so Zoho flips the PO's billed status to "Billed".
+        $lineItems = $po->items->values()->map(function ($it, $idx) use ($books, $registered, $interState, $meta, $poLineItemIds) {
             $name  = (string) ($it->product_name ?: $it->product_code ?: 'Item');
             $taxId = $registered ? $books->resolveTaxId((float) $it->cgst_pct + (float) $it->sgst_pct, $interState) : null;
             $m = $meta[(int) $it->product_id] ?? [];
             $line  = [
-                'item_id'     => $books->findOrCreateItemId($name, (float) $it->rate, $taxId, $it->product_id),
+                'item_id'     => $books->findOrCreateItemId($name, (float) $it->rate, $taxId, $it->product_id, (float) $it->cgst_pct + (float) $it->sgst_pct),
                 'name'        => $name,
                 'description' => $this->lineDescription($it->product_code, $m['description'] ?? null),
                 'rate'        => (float) $it->rate,
                 'quantity'    => (float) $it->quantity,
             ];
+            if (!empty($poLineItemIds[$idx])) $line['purchaseorder_item_id'] = (string) $poLineItemIds[$idx];
             if (!empty($m['hsn']))  $line['hsn_or_sac'] = (string) $m['hsn'];
             if (!empty($m['unit'])) $line['unit'] = (string) $m['unit'];
             if ($taxId) $line['tax_id'] = $taxId;
@@ -709,6 +815,16 @@ class PurchaseOrderController extends Controller
             'reference_number' => (string) $po->code,
             'line_items'       => $lineItems,
         ];
+
+        // T&C on the bill too — same source as the PO (free-text `terms` + the
+        // segment-matched master T&C, HTML stripped). Zoho caps a BILL's terms at
+        // 10,000 (lower than a PO's 15,000), so cap at 9,500 + the pointer note.
+        $termsParts = [];
+        if (trim((string) $po->terms) !== '') $termsParts[] = trim((string) $po->terms);
+        $segTnc = app(\App\Services\PoTncResolver::class)->plainTextForPurchaseOrder($po);
+        if ($segTnc !== '') $termsParts[] = $segTnc;
+        $termsText = trim(implode("\n\n", $termsParts));
+        if ($termsText !== '') $payload['terms'] = $this->capForZoho($termsText, 9500);
 
         // Charges + TDS fold into the single adjustment field. When TDS has been
         // cut we DEDUCT it here so the bill total equals our net payable

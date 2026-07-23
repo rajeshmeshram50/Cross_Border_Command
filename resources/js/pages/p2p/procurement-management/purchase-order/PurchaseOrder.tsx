@@ -176,7 +176,7 @@ const BREF_STEPS = [
 ];
 
 type MoreState = { po: string; supName?: string; left: number; top: number; open: boolean };
-type SyncState = { id: number; po: string; supName?: string; busy: boolean };
+type SyncState = { id: number; po: string; supName?: string; busy: boolean; progress: number; attempt: number; failed: boolean };
 
 export default function PurchaseOrder() {
   const toast = useToast();
@@ -323,7 +323,7 @@ export default function PurchaseOrder() {
       return;
     }
     setMore(null);
-    setSync({ id: r.id, po: r.po, supName: r.supName, busy: false });
+    setSync({ id: r.id, po: r.po, supName: r.supName, busy: false, progress: 0, attempt: 0, failed: false });
   };
 
   const doEmail = (r: PoRow) => {
@@ -406,19 +406,52 @@ export default function PurchaseOrder() {
     } catch { toast.error('Could not download PO PDF', 'Please try again.'); }
   };
 
+  // Zoho sync with a 0→100 speedometer and auto-retry. The API is a single call
+  // with no real progress, so the gauge is eased toward ~90 while in flight and
+  // snapped to 100 on success. A transient failure (network / 5xx) is retried up
+  // to MAX_ATTEMPTS; a business error (4xx — e.g. "add a bank account") is not
+  // retried and surfaces a "Try Again" button.
+  const SYNC_MAX_ATTEMPTS = 3;
   const doSync = () => {
     if (!sync) return;
     const { id, po } = sync;
-    setSync(s => (s ? { ...s, busy: true } : s));
+
+    const run = (attempt: number) => {
+      setSync(s => (s ? { ...s, busy: true, failed: false, attempt, progress: 6 } : s));
+      let p = 6;
+      const timer = window.setInterval(() => {
+        p = Math.min(90, p + Math.random() * 7 + 2);
+        setSync(s => (s && s.busy ? { ...s, progress: Math.round(p) } : s));
+      }, 380);
+
+      api.post(`/p2p/purchase-orders/${id}/sync`).then((res) => {
+        window.clearInterval(timer);
+        // Sync succeeded → finish the gauge at 100. The document-attachment JOB
+        // runs separately on the queue (with its own retries), so we don't wait
+        // for it here — the sync itself is done.
+        setSync(s => (s ? { ...s, progress: 100 } : s));
+        window.setTimeout(() => {
+          setSync(null);
+          toast.success(res?.data?.message || `${po} synced with Zohobook successfully`);
+          reload();
+        }, 550);
+      }).catch((e) => {
+        window.clearInterval(timer);
+        const status = e?.response?.status;
+        const retriable = !status || status >= 500; // network / server error only
+        if (retriable && attempt < SYNC_MAX_ATTEMPTS) {
+          toast.info(`Sync hiccup — retrying (${attempt}/${SYNC_MAX_ATTEMPTS})…`);
+          setSync(s => (s ? { ...s, progress: 0 } : s));
+          window.setTimeout(() => run(attempt + 1), 800);
+        } else {
+          setSync(s => (s ? { ...s, busy: false, failed: true, progress: 0 } : s));
+          toast.error('Sync failed', e?.response?.data?.message || 'Please try again.');
+        }
+      });
+    };
+
     toast.info(`Syncing ${po} with Zohobook…`);
-    api.post(`/p2p/purchase-orders/${id}/sync`).then((res) => {
-      setSync(null);
-      toast.success(res?.data?.message || `${po} synced with Zohobook successfully`);
-      reload();
-    }).catch((e) => {
-      setSync(null);
-      toast.error('Sync failed', e?.response?.data?.message || 'Please try again.');
-    });
+    run(1);
   };
 
   const heads = tab === 'with'
@@ -444,6 +477,24 @@ export default function PurchaseOrder() {
   const ZohoPill = ({ z }: { z: string }) => {
     const s = z.toLowerCase() === 'sync';
     return <span className={`polist-status polist-status--${s ? 'sync' : 'notsync'}`}><span className="d" />{s ? 'Sync' : 'Not Sync'}</span>;
+  };
+  // Semicircular 0→100 gauge shown while a PO syncs to Zohobook.
+  const Speedometer = ({ value }: { value: number }) => {
+    const v = Math.max(0, Math.min(100, value));
+    const R = 52, cx = 60, cy = 58;
+    const polar = (deg: number) => [cx + R * Math.cos((deg * Math.PI) / 180), cy + R * Math.sin((deg * Math.PI) / 180)] as const;
+    const [sx, sy] = polar(180);
+    const [ex, ey] = polar(180 + (v / 100) * 180);
+    const [tx, ty] = polar(360);
+    return (
+      <div className="posp">
+        <svg viewBox="0 0 120 64" className="posp-svg">
+          <path d={`M ${sx} ${sy} A ${R} ${R} 0 0 1 ${tx} ${ty}`} className="posp-track" />
+          {v > 0.5 && <path d={`M ${sx} ${sy} A ${R} ${R} 0 0 1 ${ex} ${ey}`} className="posp-fill" />}
+        </svg>
+        <div className="posp-num">{Math.round(v)}<span>%</span></div>
+      </div>
+    );
   };
 
   return (
@@ -664,21 +715,37 @@ export default function PurchaseOrder() {
         <div className="pocfm-overlay is-open" onClick={e => { if (e.target === e.currentTarget && !sync.busy) setSync(null); }}>
           <div className="pocfm-card" role="dialog" aria-modal="true">
             <div className="pocfm-bd">
-              <div className="pocfm-ico">{Ico.sync(26)}</div>
-              <div className="pocfm-t">Sync with Zohobook?</div>
-              <div className="pocfm-msg">This will push the latest purchase order data to your Zohobook account and update its sync status.</div>
+              {sync.busy ? (
+                <>
+                  <Speedometer value={sync.progress} />
+                  <div className="pocfm-t">Syncing with Zohobook…</div>
+                  <div className="pocfm-msg">{sync.attempt > 1
+                    ? `Retry attempt ${sync.attempt} of ${SYNC_MAX_ATTEMPTS} — hang tight.`
+                    : 'Pushing the purchase order, bill and payments to your Zohobook account.'}</div>
+                </>
+              ) : (
+                <>
+                  <div className={`pocfm-ico${sync.failed ? ' pocfm-ico--fail' : ''}`}>{Ico.sync(26)}</div>
+                  <div className="pocfm-t">{sync.failed ? 'Sync failed' : 'Sync with Zohobook?'}</div>
+                  <div className="pocfm-msg">{sync.failed
+                    ? 'Something went wrong pushing this PO to Zohobook. You can try again.'
+                    : 'This will push the latest purchase order data to your Zohobook account and update its sync status.'}</div>
+                </>
+              )}
               <div className="pocfm-chip"><span className="po">{sync.po}</span>{sync.supName && (
                 <Tooltip label={sync.supName} disabled={sync.supName.length <= 30} position="bottom" zIndex={2999999}>
                   <span className="sup">· {sync.supName.length > 30 ? `${sync.supName.slice(0, 30)}…` : sync.supName}</span>
                 </Tooltip>
               )}</div>
             </div>
-            <div className="pocfm-actions">
-              <button type="button" className="pocfm-btn pocfm-btn--ghost" disabled={sync.busy} onClick={() => setSync(null)}>Cancel</button>
-              <button type="button" className="pocfm-btn pocfm-btn--go" disabled={sync.busy} onClick={doSync}>
-                {sync.busy ? <>{Ico.spin(15)} Syncing…</> : 'Yes, Sync'}
-              </button>
-            </div>
+            {!sync.busy && (
+              <div className="pocfm-actions">
+                <button type="button" className="pocfm-btn pocfm-btn--ghost" onClick={() => setSync(null)}>{sync.failed ? 'Close' : 'Cancel'}</button>
+                <button type="button" className="pocfm-btn pocfm-btn--go" onClick={doSync}>
+                  {sync.failed ? 'Try Again' : 'Yes, Sync'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

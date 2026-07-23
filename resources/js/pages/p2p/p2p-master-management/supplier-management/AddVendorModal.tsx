@@ -733,6 +733,14 @@ export default function AddVendorModal(props: {
   useEffect(() => {
     if (gstApplicable !== 'Yes' && kycTab === 'gst') setKycTab('bank');
   }, [gstApplicable, kycTab]);
+  /* India → GST is mandatory: force GST Applicable to Yes when the supplier's
+   * country is India (the field also hides the No option). */
+  useEffect(() => {
+    if (supplierDocType === 'domestic' && gstApplicable !== 'Yes') {
+      setGstApplicable('Yes');
+      clearFieldError('gstApplicable');
+    }
+  }, [supplierDocType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [ddDraft,    setDdDraft]    = useState<DdDraft>(EMPTY_DD_DRAFT);
   const [ownerDraft, setOwnerDraft] = useState<OwnerDraft>(EMPTY_OWNER_DRAFT);
@@ -1565,7 +1573,7 @@ export default function AddVendorModal(props: {
      fold, or a Website that contains spaces). */
   const FIELD_LABELS: Record<string, string> = {
     companyName: 'Company Name', legalName: 'Legal Name', website: 'Company Website',
-    gstNumber: 'GST Number',
+    gstNumber: 'GST Number', gstApplicable: 'GST Applicable',
     vendorType: 'Supplier Type', riskLevel: 'Risk Level', vendorBehaviour: 'Supplier Behaviour',
     segment: 'Supplier Segment', complianceBehaviour: 'Compliance Behaviour',
     registeredOffice: 'Registered Office Address', country: 'Country', state: 'State',
@@ -1612,9 +1620,20 @@ export default function AddVendorModal(props: {
     // Only enforced when GST applies. The GST Scrutiny popup renders this number
     // read-only, so a bad value has to be caught HERE — there's no second chance
     // to fix it downstream.
+    // India → GST is mandatory: an Indian supplier cannot be GST-Applicable = No.
+    if (supplierDocType === 'domestic' && gstApplicable !== 'Yes') {
+      errs.gstApplicable = 'GST is mandatory for an Indian supplier — set it to Yes.';
+    }
     if (gstApplicable === 'Yes') {
       if (!gstNumber.trim()) errs.gstNumber = 'GST Number is required';
       else { const e = validateGstin(gstNumber); if (e) errs.gstNumber = e; }
+      // GSTIN must begin with the state code (first 2 digits = GST state code).
+      if (!errs.gstNumber && gstNumber.trim() && stateCode.trim()) {
+        const expected = stateCode.trim().padStart(2, '0');
+        if (gstNumber.trim().slice(0, 2) !== expected) {
+          errs.gstNumber = `GST Number must start with the state code ${expected}.`;
+        }
+      }
     }
     // The Supplier Address block lives on THIS same tab, so validate it here too
     // — before the API call. A missing/invalid State Code (or any address field)
@@ -3225,17 +3244,24 @@ export default function AddVendorModal(props: {
                       Scrutiny entry in Step 2 (mirrors the Customer master).
                       GST Number only appears when GST is applicable. */}
                   <div className="avm-grid-3">
-                    <Field label="GST Applicable" required>
+                    <Field label="GST Applicable" required error={fieldErrors.gstApplicable}>
                       <SelectInput
                         value={gstApplicable}
                         onChange={(v) => {
+                          // An Indian supplier must be GST-registered — block 'No'.
+                          if (v === 'No' && supplierDocType === 'domestic') {
+                            toast.error('GST is mandatory', 'An Indian supplier must have GST Applicable = Yes.');
+                            return;
+                          }
                           setGstApplicable(v as 'Yes' | 'No');
+                          clearFieldError('gstApplicable');
                           // Switching to No drops the number (backend does the same)
                           // so it can't resurface read-only in GST Scrutiny.
                           if (v === 'No') { setGstNumber(''); clearFieldError('gstNumber'); }
                         }}
                         placeholder="Select"
-                        options={['Yes', 'No']}
+                        // India → only 'Yes' is selectable (GST is mandatory).
+                        options={supplierDocType === 'domestic' ? ['Yes'] : ['Yes', 'No']}
                       />
                     </Field>
                     {gstApplicable === 'Yes' && (

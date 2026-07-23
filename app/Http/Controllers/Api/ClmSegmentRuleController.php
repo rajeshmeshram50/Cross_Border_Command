@@ -25,8 +25,9 @@ class ClmSegmentRuleController extends Controller
             return response()->json(['status' => true, 'data' => [], 'counts' => ['all' => 0, 'highly' => 0, 'less' => 0]]);
         }
         // Branch-scoped read: a branch sees globals + client-level rules + its
-        // own branch's rules; sibling branches stay hidden.
-        $query = ClmSegmentRule::query()->orderBy('id');
+        // own branch's rules; sibling branches stay hidden. Newest rule first
+        // (descending) so the Document Control Panel lists latest-added at the top.
+        $query = ClmSegmentRule::query()->orderByDesc('id');
         MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
         $rows = $query->get();
         return response()->json([
