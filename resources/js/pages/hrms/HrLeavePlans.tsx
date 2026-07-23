@@ -654,7 +654,12 @@ export default function HrLeavePlans() {
       <MasterFormStyles />
       <Row>
         <Col xs={12}>
-          <div className="lp-shell">
+          {/* Match the Leave Management layout: the shared header strip sits
+              flat on the page (like every other HR page), and only the tabs +
+              body content live inside the bordered .lp-shell card below it.
+              Nesting the header inside .lp-shell produced a card-in-card look
+              with inconsistent header/content spacing (bug #84). */}
+          <div className="rec-page">
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -670,6 +675,7 @@ export default function HrLeavePlans() {
               </button>
             </div>
 
+            <div className="lp-shell">
             <div className="lp-top-tabs">
               <div className="lp-tabs-row">
                 {([
@@ -837,6 +843,7 @@ export default function HrLeavePlans() {
             ) : (
               <LeaveBalancesTab />
             )}
+            </div>
           </div>
         </Col>
       </Row>

@@ -317,25 +317,32 @@ export default function Products() {
       if (uom.length)  setUomOpts(dedupe(uom));
       if (cond.length) setConditionOpts(dedupe(cond));
       if (haz.length)  setHazClassOpts(dedupe(haz));
-      if (gst.length)  setGstRateOpts(dedupe(gst));
+      // GST rates sort NUMERICALLY ascending (5% < 12% < 18%), so a newly
+      // added rate slots into place instead of landing at the bottom in
+      // insertion order (QA #47).
+      if (gst.length)  setGstRateOpts(dedupe(gst).sort((a, b) => parseFloat(a) - parseFloat(b)));
       if (ven.length)  setVendorOpts(dedupe(ven));
     };
 
     (async () => {
-      // Try cache first — the page-mount preload usually populates it.
+      // Stale-while-revalidate. Paint instantly from the client cache when it's
+      // warm, then ALWAYS refetch the fresh bundle from the server and re-apply.
+      //
+      // This is what fixes stale filter options after a master edit made on
+      // another page — e.g. a segment renamed in the CLM master (QA #42).
+      // Products resolve their segment name live via the FK, so the cards already
+      // show the new name; but the filter dropdown was served from the 5-min
+      // sessionStorage cache and kept the OLD name (and the new name wasn't
+      // offered, so filtering by it returned nothing). The server bundle cache is
+      // invalidated on those edits, so this refetch returns the renamed value; we
+      // then rewrite the client cache so the Add Product modal reuses it.
       const cached = readProductMasterBundle<Bundle>();
-      if (cached) {
-        applyBundle(cached);
-      } else {
-        // Cache miss → fetch and persist. The modal's own effect will
-        // hit the same cache, so even on first load the bundle fires
-        // at most once.
-        try {
-          const res = await api.get<Bundle>('/products/master-bundle');
-          applyBundle(res.data);
-          writeProductMasterBundle(res.data);
-        } catch { /* leave dropdowns on their hardcoded defaults */ }
-      }
+      if (cached) applyBundle(cached);
+      try {
+        const res = await api.get<Bundle>('/products/master-bundle');
+        applyBundle(res.data);
+        writeProductMasterBundle(res.data);
+      } catch { /* keep the cache / hardcoded defaults on error */ }
 
       // Product Owner dropdown — pulls the user list the backend says
       // is in scope (the caller's own branch users). Empty list means the

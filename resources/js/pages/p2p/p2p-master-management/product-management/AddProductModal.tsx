@@ -1891,7 +1891,11 @@ export default function AddProductModal(props: {
                         header "GST (%)" button (setGstMapOpen), which keeps the
                         supplier GST calculation driven by a single source. */}
                     <Field label="GST %" required error={fieldErrors.gstId}>
-                      <SelectInput value={gstId} onChange={() => {}} placeholder='Map from the "GST (%)" button above' options={optGst} disabled />
+                      {/* Only show the stored gst_id when it still resolves to a
+                          live GST option. If that GST rate was deleted from the
+                          master, the id is orphaned — show the placeholder (blank)
+                          instead of the raw numeric id (QA #44). */}
+                      <SelectInput value={optGst.some(o => o.value === gstId) ? gstId : ''} onChange={() => {}} placeholder='Map from the "GST (%)" button above' options={optGst} disabled />
                     </Field>
                   </div>
                   <div className="apm-grid-2">

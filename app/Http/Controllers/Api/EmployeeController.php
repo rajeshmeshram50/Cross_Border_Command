@@ -40,7 +40,10 @@ class EmployeeController extends Controller
         // designation.level === template.role_type, so it must be selected.
         'designation:id,name,level',
         'holidayGroup:id,name',
-        'primaryRole:id,name',
+        // role_category / role_type are needed so role-aware pickers (e.g. the
+        // Recruitment "Assigned HR" = HR-category only, "Hiring Manager" =
+        // exclude HR/Intern) can filter employees by their primary role.
+        'primaryRole:id,name,role_category,role_type',
         'ancillaryRole:id,name',
         'legalEntity:id,entity_name,city,state_id,country_id',
         'workCountry:id,name',

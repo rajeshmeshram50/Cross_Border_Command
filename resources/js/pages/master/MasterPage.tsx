@@ -1564,11 +1564,17 @@ function MasterPageInner({
         // up front so the user gets a clear tooltip instead of a
         // failed request toast.
         const isSystemRow = !!row?.is_system;
+        // Rows the backend reports as still referenced (e.g. a GST rate used by
+        // products / HSN codes) can't be deleted — the API 409s. Block the
+        // button up front with an explanatory tooltip instead of a failed
+        // request (QA #43).
+        const inUseRow = !!row?.in_use;
         const editTooltip   = isSystemRow ? 'System-managed — cannot be edited'
                             : blockedByRank ? `Cannot edit — created by ${whoLabel}`
                             : 'Edit';
         const deleteTooltip = isSystemRow ? 'System-managed — cannot be deleted'
                             : blockedByRank ? `Cannot delete — created by ${whoLabel}`
+                            : inUseRow ? 'In use — cannot be deleted while it is assigned to products or HSN codes'
                             : 'Delete';
         return (
           <div className="d-flex gap-1 justify-content-center">
@@ -1587,7 +1593,7 @@ function MasterPageInner({
               title={deleteTooltip}
               icon="ri-delete-bin-line"
               color="danger"
-              disabled={blockedByRank || isSystemRow}
+              disabled={blockedByRank || isSystemRow || inUseRow}
               onClick={() => handleDeleteClick(info.row.original)}
             />}
             {cfg.slug === 'legal_entities' && caps.edit && (

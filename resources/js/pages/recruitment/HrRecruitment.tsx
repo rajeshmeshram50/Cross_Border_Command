@@ -1823,6 +1823,8 @@ type RecMastersCache = {
   desigByDept: Record<string, { value: string; label: string }[]>;
   roleOptions: { value: string; label: string }[];
   employeeOptions: { value: string; label: string }[];
+  hrEmployeeOptions: { value: string; label: string }[];
+  hiringManagerOptions: { value: string; label: string }[];
 };
 let recMastersCache: RecMastersCache | null = null;
 
@@ -1854,22 +1856,51 @@ function buildRecMasters(deptData: any, desigData: any, roleData: any, empData: 
   Object.keys(desigByDept).forEach(k => desigByDept[k].sort((a, b) => a.label.localeCompare(b.label)));
   desigOptions.sort((a, b) => a.label.localeCompare(b.label));
 
+  // Primary Role picker must exclude roles marked "Ancillary" in Role Master —
+  // only Primary (or legacy/unclassified) roles are selectable (bug #37). Roles
+  // with no role_type set (legacy/seed data) stay visible so tenants that never
+  // classified their roles don't get an empty dropdown.
   const roleOptions = roleRows
     .filter(isActiveLower)
+    .filter(r => String(r.role_type ?? '').trim().toLowerCase() !== 'ancillary')
     .map(r => ({ value: String(r.id), label: r.name as string }))
     .sort((a, b) => a.label.localeCompare(b.label));
 
-  const employeeOptions = empRows
-    .map(e => {
-      const name = e.display_name
-        || [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')
-        || `Employee #${e.id}`;
-      const desig = e?.designation?.name ? ` — ${e.designation.name}` : '';
-      return { value: String(e.id), label: `${name}${desig}` };
-    })
-    .sort((a, b) => a.label.localeCompare(b.label));
+  const empToOpt = (e: any) => {
+    const name = e.display_name
+      || [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')
+      || `Employee #${e.id}`;
+    const desig = e?.designation?.name ? ` — ${e.designation.name}` : '';
+    return { value: String(e.id), label: `${name}${desig}` };
+  };
+  // An employee counts as "HR" when their PRIMARY role is HR — either the Role
+  // Master category is HR, or the role name itself reads HR / Human Resources.
+  const isHrEmp = (e: any) => {
+    const cat  = String(e?.primary_role?.role_category ?? '').trim().toLowerCase();
+    const name = String(e?.primary_role?.name ?? '');
+    return cat === 'hr' || /\bhr\b|human\s*resource/i.test(name);
+  };
+  // An employee counts as an "Intern" when their designation tier/name or their
+  // primary role reads Intern / Trainee. Word-boundaried so it does NOT falsely
+  // match "Internal Auditor" / "International Sales Manager" (which contain the
+  // substring "intern" but are not interns).
+  const INTERN_RE = /\bintern\b|\btrainee\b/i;
+  const isInternEmp = (e: any) => {
+    const desig = `${e?.designation?.name ?? ''} ${e?.designation?.level ?? ''}`;
+    const role  = String(e?.primary_role?.name ?? '');
+    return INTERN_RE.test(desig) || INTERN_RE.test(role);
+  };
 
-  return { deptOptions, desigOptions, desigByDept, roleOptions, employeeOptions };
+  const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
+  // Full list — kept so edit-mode can inject an already-assigned person who no
+  // longer matches the role filters (see employeeOptionsForEdit).
+  const employeeOptions = empRows.map(empToOpt).sort(byLabel);
+  // Assigned HR → HR employees only (bug #38).
+  const hrEmployeeOptions = empRows.filter(isHrEmp).map(empToOpt).sort(byLabel);
+  // Hiring Manager → everyone EXCEPT HR and Intern roles (bug #39).
+  const hiringManagerOptions = empRows.filter(e => !isHrEmp(e) && !isInternEmp(e)).map(empToOpt).sort(byLabel);
+
+  return { deptOptions, desigOptions, desigByDept, roleOptions, employeeOptions, hrEmployeeOptions, hiringManagerOptions };
 }
 
 function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefillFromHr, onSaved, onClose }: CreateRecruitmentModalProps) {
@@ -1901,6 +1932,10 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   const [desigByDept, setDesigByDept]   = useState<Record<string, { value: string; label: string }[]>>({});
   const [roleOptions, setRoleOptions]   = useState<{ value: string; label: string }[]>([]);
   const [employeeOptions, setEmployeeOptions] = useState<{ value: string; label: string }[]>([]);
+  // Role-scoped picker lists: HR-only for Assigned HR (#38), everyone-except-
+  // HR/Intern for Hiring Manager (#39).
+  const [hrEmployeeOptions, setHrEmployeeOptions] = useState<{ value: string; label: string }[]>([]);
+  const [hiringManagerOptions, setHiringManagerOptions] = useState<{ value: string; label: string }[]>([]);
   const [mastersLoading, setMastersLoading] = useState(false);
 
   // The Hiring Manager / Assigned HR pickers list only onboarded + active
@@ -1909,27 +1944,38 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   // would show a raw id (e.g. "4"). Inject the saved manager/HR (with their
   // resolved name) as options so the dropdown always shows a name, flagged
   // "(unavailable)" when they're no longer selectable.
-  const employeeOptionsForEdit = useMemo(() => {
-    const opts = [...employeeOptions];
-    const ensure = (id: number | null, name: string | undefined, state?: RecruitmentRow['hiringManagerState']) => {
-      if (id == null) return;
-      const v = String(id);
-      if (!opts.some(o => o.value === v)) {
-        const suffix = state === 'disabled' ? ' (disabled)'
-          : state === 'inactive' ? ' (inactive)'
-          : ' (unavailable)';
-        // Prefer the resolved name; only when it can't be resolved at all
-        // (e.g. the record was hard-removed) fall back to a labelled
-        // "unavailable employee" rather than a bare raw id.
-        opts.push({ value: v, label: name ? `${name}${suffix}` : `Unavailable employee${suffix}` });
-      }
-    };
-    if (editing) {
-      ensure(editing.hiringManagerId, editing.hiringManagerName, editing.hiringManagerState);
-      ensure(editing.assignedHrId, editing.assignedHrName, editing.assignedHrState);
-    }
-    return opts;
-  }, [employeeOptions, editing]);
+  const ensureInList = (
+    base: { value: string; label: string }[],
+    id: number | null,
+    name: string | undefined,
+    state?: RecruitmentRow['hiringManagerState'],
+  ) => {
+    if (id == null) return base;
+    const v = String(id);
+    if (base.some(o => o.value === v)) return base;
+    const suffix = state === 'disabled' ? ' (disabled)'
+      : state === 'inactive' ? ' (inactive)'
+      : ' (unavailable)';
+    // Prefer the resolved name; only when it can't be resolved at all
+    // (e.g. the record was hard-removed) fall back to a labelled
+    // "unavailable employee" rather than a bare raw id.
+    return [...base, { value: v, label: name ? `${name}${suffix}` : `Unavailable employee${suffix}` }];
+  };
+
+  // The role-scoped pickers list only employees that match the role rule (HR
+  // for Assigned HR; non-HR/non-Intern for Hiring Manager). A recruitment being
+  // edited may point at someone who no longer matches (role changed / resigned)
+  // — inject just that saved person so the dropdown still shows their name,
+  // flagged "(unavailable)" when relevant, without loosening the filter for new
+  // recruitments.
+  const hiringManagerOptionsForEdit = useMemo(
+    () => (editing ? ensureInList(hiringManagerOptions, editing.hiringManagerId, editing.hiringManagerName, editing.hiringManagerState) : hiringManagerOptions),
+    [hiringManagerOptions, editing],
+  );
+  const hrEmployeeOptionsForEdit = useMemo(
+    () => (editing ? ensureInList(hrEmployeeOptions, editing.assignedHrId, editing.assignedHrName, editing.assignedHrState) : hrEmployeeOptions),
+    [hrEmployeeOptions, editing],
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1941,6 +1987,8 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setDesigByDept(c.desigByDept);
       setRoleOptions(c.roleOptions);
       setEmployeeOptions(c.employeeOptions);
+      setHrEmployeeOptions(c.hrEmployeeOptions);
+      setHiringManagerOptions(c.hiringManagerOptions);
     };
 
     if (recMastersCache) {
@@ -2462,7 +2510,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                 <MasterSelect
                   value={hiringManagerId}
                   onChange={(v) => { setHiringManagerId(v); clear('hiringManager'); }}
-                  options={employeeOptionsForEdit}
+                  options={hiringManagerOptionsForEdit}
                   placeholder={employeeOptions.length === 0 ? 'Loading employees…' : '— Select —'}
                   invalid={!!errors.hiringManager}
                 />
@@ -2473,7 +2521,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                 <MasterSelect
                   value={assignedHrId}
                   onChange={(v) => { setAssignedHrId(v); clear('assignedHr'); }}
-                  options={employeeOptionsForEdit}
+                  options={hrEmployeeOptionsForEdit}
                   placeholder={employeeOptions.length === 0 ? 'Loading employees…' : '— Select —'}
                   invalid={!!errors.assignedHr}
                 />
