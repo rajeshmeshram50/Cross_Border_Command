@@ -460,22 +460,27 @@ export default function IdimsHeader() {
     go(path);
   };
 
+  // A leaf is visible when the user can_view its slug (super-admin sees all).
+  // Sign Document Tracker has no slug of its own — it's a read-only view of the
+  // same sign requests, so it rides on the Quotation Vs PI permission.
+  const leafCanView = (leaf: Leaf): boolean => {
+    if (isSuperAdmin) return true;
+    const slug = leaf.id === 'sales.sign_tracker' ? 'sales.quotation_vs_pi' : leaf.id;
+    return !!perms[slug]?.can_view;
+  };
+
   const renderLeaf = (leaf: Leaf, kind: DD, accent: string, bg: string, variant = '') => {
-    // Sign Document Tracker has no permission slug of its own — it's a
-    // read-only view of the same sign requests, so it rides on the
-    // Quotation Vs PI permission.
-    const leafVisible = leaf.id === 'sales.sign_tracker'
-      ? !!perms['sales.quotation_vs_pi']?.can_view
-      : !!perms[leaf.id]?.can_view;
-    // Every leaf — including P2P (p2p.product, p2p.supplier, …), which ARE real
-    // permission slugs — is filtered by its own can_view. Column headers stay
-    // (renderCol keeps them); only non-permitted leaves are hidden.
-    if (!(isSuperAdmin || leafVisible)) return null;
+    // Show EVERY module. The ones the user has no permission for render disabled
+    // (greyed + non-clickable) rather than being hidden (updated QA requirement).
+    const enabled = leafCanView(leaf);
     const path = leafPath(leaf.id, kind);
     const Icon = getLucide(leaf.icon);
     return (
-      <button key={leaf.id} type="button" className={`idims-dd-item ${variant}`} style={{ '--ac': accent } as React.CSSProperties}
-        onClick={() => go(path)}>
+      <button key={leaf.id} type="button" className={`idims-dd-item ${variant}${enabled ? '' : ' is-locked'}`}
+        style={{ '--ac': accent } as React.CSSProperties}
+        aria-disabled={!enabled}
+        title={enabled ? undefined : 'You don’t have permission for this module'}
+        onClick={() => { if (enabled) go(path); }}>
         <span className="idims-dd-item-ico" style={{ background: bg, color: accent }}>
           <Icon size={16} strokeWidth={2} />
         </span>
@@ -483,6 +488,7 @@ export default function IdimsHeader() {
           <span className="idims-dd-item-label">{leaf.label}</span>
           {LEAF_DESC[leaf.id] && <span className="idims-dd-item-desc">{LEAF_DESC[leaf.id]}</span>}
         </span>
+        {!enabled && <span className="idims-dd-lock">{IC.lockSm}</span>}
       </button>
     );
   };
@@ -507,15 +513,19 @@ export default function IdimsHeader() {
 
   // Smaller nested leaf (the Agreements children under "Without Shipment ID").
   const renderClmChild = (leaf: Leaf, accent: string, bg: string) => {
-    if (!(isSuperAdmin || perms[leaf.id]?.can_view)) return null;
+    const enabled = isSuperAdmin || !!perms[leaf.id]?.can_view;
     const Icon = getLucide(leaf.icon);
     return (
-      <button key={leaf.id} type="button" className="idims-clm-child" onClick={() => go(clmLeafPath(leaf.id))}>
+      <button key={leaf.id} type="button" className={`idims-clm-child${enabled ? '' : ' is-locked'}`}
+        aria-disabled={!enabled}
+        title={enabled ? undefined : 'You don’t have permission for this module'}
+        onClick={() => { if (enabled) go(clmLeafPath(leaf.id)); }}>
         <span className="idims-clm-child-ico" style={{ background: bg, color: accent }}><Icon size={12} strokeWidth={2} /></span>
         <span className="idims-dd-item-text">
           <span className="idims-clm-child-label">{leaf.label}</span>
           {LEAF_DESC[leaf.id] && <span className="idims-clm-child-desc">{LEAF_DESC[leaf.id]}</span>}
         </span>
+        {!enabled && <span className="idims-dd-lock">{IC.lockSm}</span>}
       </button>
     );
   };
@@ -529,7 +539,6 @@ export default function IdimsHeader() {
     const P = '#7C3AED', PB = '#F5F3FF';   // Command Center
     const S = '#0EA5E9', SB = '#F0F9FF';   // Operations
     const T = '#0D9488', TB = '#F0FDFA';   // Master Management
-    const visible = (grp?: Group) => !!grp && grp.children.some(l => isSuperAdmin || perms[l.id]?.can_view);
 
     const cmd = g('clm.command');
     const ow = g('clm.ops_with');
@@ -542,6 +551,8 @@ export default function IdimsHeader() {
     const subHead = (label: string, color: string) =>
       <div className="idims-clm-subhead" style={{ color, borderColor: color }}><span className="dd-sl-dot" style={{ background: color }} />{label}</div>;
 
+    // Every column + leaf always renders; permission-less leaves render disabled
+    // (renderLeaf / renderClmChild handle the greyed, non-clickable state).
     return (
       <div className="idims-clm-grid">
         {/* Command Center */}
@@ -554,11 +565,11 @@ export default function IdimsHeader() {
           <div className="idims-dd-section-label" style={{ color: S }}><span className="dd-sl-dot" style={{ background: S }} />CLM Operations</div>
           <div className="idims-clm-sub">
             <div className="idims-clm-subcol">
-              {visible(ow) && subHead('With Shipment ID', S)}
+              {subHead('With Shipment ID', S)}
               {ow?.children.map(l => renderLeaf(l, 'clm', S, SB, 'idims-dd-item-sm'))}
             </div>
             <div className="idims-clm-subcol">
-              {visible(won) && subHead('Without Shipment ID', S)}
+              {subHead('Without Shipment ID', S)}
               {wonParent && renderLeaf(wonParent, 'clm', S, SB, 'idims-dd-item-sm')}
               {wonKids.length > 0 && (
                 <div className="idims-clm-children">{wonKids.map(l => renderClmChild(l, S, SB))}</div>
@@ -571,11 +582,11 @@ export default function IdimsHeader() {
           <div className="idims-dd-section-label" style={{ color: T }}><span className="dd-sl-dot" style={{ background: T }} />CLM Master Management</div>
           <div className="idims-clm-sub">
             <div className="idims-clm-subcol">
-              {visible(comp) && subHead('Compliance & Regulatory', T)}
+              {subHead('Compliance & Regulatory', T)}
               {comp?.children.map(l => renderLeaf(l, 'clm', T, TB, 'idims-dd-item-sm'))}
             </div>
             <div className="idims-clm-subcol">
-              {visible(doc) && subHead('Contract & Document Masters', T)}
+              {subHead('Contract & Document Masters', T)}
               {doc?.children.map(l => renderLeaf(l, 'clm', T, TB, 'idims-dd-item-sm'))}
             </div>
           </div>
@@ -754,20 +765,31 @@ export default function IdimsHeader() {
                       <span className="dd-chev">{IC.chevSm}</span>
                     </button>
                     {openDD === item.dd && (
-                      <div className={`idims-dropdown ${item.dd === 'clm' || item.dd === 'hr' ? 'idims-dd-wide' : ''}${item.dd === 'p2p' ? 'idims-dd-p2p' : ''}`}>
+                      <div
+                        className={`idims-dropdown ${item.dd === 'clm' || item.dd === 'hr' ? 'idims-dd-wide' : ''}${item.dd === 'p2p' ? 'idims-dd-p2p' : ''}`}
+                      >
                         <div className="idims-dd-topbar" />
                         <div className="idims-dd-inner">
                           {item.dd === 'clm' ? renderClmMega() : (
-                            <div className="idims-dd-grid"
-                              style={{ gridTemplateColumns: `repeat(${colsFor(item.dd!).length}, 1fr)` }}>
-                              {colsFor(item.dd!).map((groups, i) => {
-                                // P2P carries its own Figma palette; other mega-menus
-                                // cycle the shared accent set.
-                                const acc = item.dd === 'p2p' ? P2P_ACCENT : COL_ACCENT;
-                                const bgs = item.dd === 'p2p' ? P2P_BG : COL_BG;
-                                return renderCol(groups, item.dd!, acc[i], bgs[i], i);
-                              })}
-                            </div>
+                            (() => {
+                              // P2P carries its own Figma palette; other mega-menus
+                              // cycle the shared accent set. Every column always renders;
+                              // permission-less leaves render disabled (renderLeaf).
+                              const acc = item.dd === 'p2p' ? P2P_ACCENT : COL_ACCENT;
+                              const bgs = item.dd === 'p2p' ? P2P_BG : COL_BG;
+                              const allCols = colsFor(item.dd!);
+                              // P2P's last column (Purchase Management) holds the longest
+                              // label — "Supplier Purchase Invoice (SPI)" — so give it a bit
+                              // more width than the others so it doesn't crowd/clip (QA).
+                              const gridTpl = item.dd === 'p2p' && allCols.length > 1
+                                ? `repeat(${allCols.length - 1}, 1fr) 1.22fr`
+                                : `repeat(${allCols.length || 1}, 1fr)`;
+                              return (
+                                <div className="idims-dd-grid" style={{ gridTemplateColumns: gridTpl }}>
+                                  {allCols.map((groups, i) => renderCol(groups, item.dd!, acc[i], bgs[i], i))}
+                                </div>
+                              );
+                            })()
                           )}
                         </div>
                       </div>
@@ -800,19 +822,21 @@ export default function IdimsHeader() {
                             </button>
                             {moreExpand === item.dd && (
                               <div className="idims-more-sub">
-                                {colsFor(item.dd).flat().map(g => {
-                                  const leaves = g.children.filter(l => isSuperAdmin || perms[l.id]?.can_view);
-                                  if (!leaves.length) return null;
-                                  return (
-                                    <div key={g.id} className="idims-more-subgroup">
-                                      <div className="idims-more-sub-label">{g.label}</div>
-                                      {leaves.map(l => (
-                                        <button type="button" key={l.id} className="idims-more-sub-item"
-                                          onClick={() => go(leafPath(l.id, item.dd!))}>{l.label}</button>
-                                      ))}
-                                    </div>
-                                  );
-                                })}
+                                {colsFor(item.dd).flat().map(g => (
+                                  <div key={g.id} className="idims-more-subgroup">
+                                    <div className="idims-more-sub-label">{g.label}</div>
+                                    {g.children.map(l => {
+                                      const enabled = leafCanView(l);
+                                      return (
+                                        <button type="button" key={l.id}
+                                          className={`idims-more-sub-item${enabled ? '' : ' is-locked'}`}
+                                          aria-disabled={!enabled}
+                                          title={enabled ? undefined : 'You don’t have permission for this module'}
+                                          onClick={() => { if (enabled) go(leafPath(l.id, item.dd!)); }}>{l.label}</button>
+                                      );
+                                    })}
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </div>
@@ -853,19 +877,21 @@ export default function IdimsHeader() {
                   </button>
                   {mobileExpand === item.dd && (
                     <div className="idims-mob-sub">
-                      {colsFor(item.dd).flat().map(g => {
-                        const leaves = g.children.filter(l => isSuperAdmin || perms[l.id]?.can_view);
-                        if (!leaves.length) return null;
-                        return (
-                          <div key={g.id} className="idims-mob-subgroup">
-                            <div className="idims-mob-sub-label">{g.label}</div>
-                            {leaves.map(l => (
-                              <button type="button" key={l.id} className="idims-mob-sub-item"
-                                onClick={() => go(leafPath(l.id, item.dd!))}>{l.label}</button>
-                            ))}
-                          </div>
-                        );
-                      })}
+                      {colsFor(item.dd).flat().map(g => (
+                        <div key={g.id} className="idims-mob-subgroup">
+                          <div className="idims-mob-sub-label">{g.label}</div>
+                          {g.children.map(l => {
+                            const enabled = leafCanView(l);
+                            return (
+                              <button type="button" key={l.id}
+                                className={`idims-mob-sub-item${enabled ? '' : ' is-locked'}`}
+                                aria-disabled={!enabled}
+                                title={enabled ? undefined : 'You don’t have permission for this module'}
+                                onClick={() => { if (enabled) go(leafPath(l.id, item.dd!)); }}>{l.label}</button>
+                            );
+                          })}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -912,6 +938,7 @@ const IC = {
   menu: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>,
   close: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
   lock: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6a5 5 0 0 0-10 0v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zm-9-2a3 3 0 0 1 6 0v2H9V6zm4 9.73V18h-2v-2.27a2 2 0 1 1 2 0z" /></svg>,
+  lockSm: <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6a5 5 0 0 0-10 0v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zm-9-2a3 3 0 0 1 6 0v2H9V6zm4 9.73V18h-2v-2.27a2 2 0 1 1 2 0z" /></svg>,
   compass: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path fillRule="evenodd" clipRule="evenodd" d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm4.24-14.24l-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z" /></svg>,
   users: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" /></svg>,
   trend: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6h-6z" /></svg>,
@@ -1169,7 +1196,7 @@ const IDIMS_CSS = `
 .idims-dd-wide { width: min(1480px, calc(100vw - 28px)); }
 /* P2P has 4 columns but compact content — narrower than the CLM/HR wide menu,
    yet roomy enough that the longer labels don't crowd. */
-.idims-dd-p2p { width: min(1260px, calc(100vw - 28px)); }
+.idims-dd-p2p { width: min(1320px, calc(100vw - 28px)); }
 .idims-dd-med { width: min(620px, calc(100vw - 28px)); }
 /* CLM mega layout — 3 sections; Operations + Master Management each split into
    two sub-columns with sub-headers; Without-Shipment nests its agreements. */
@@ -1206,7 +1233,7 @@ const IDIMS_CSS = `
   .idims-clm-subcol + .idims-clm-subcol { border-left: none; padding: 8px 0 0 0; margin-top: 6px; border-top: 1px solid #EFF2F8; }
   .idims-dark .idims-clm-subcol + .idims-clm-subcol { border-top-color: #262B38; }
 }
-@keyframes idimsDD { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+@keyframes idimsDD { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
 .idims-dd-topbar { height: 4px; flex-shrink: 0; background: linear-gradient(90deg,#7C3AED 0%,#A78BFA 28%,#0EA5E9 52%,#38BDF8 68%,#0D9488 84%,#2DD4BF 100%); }
 /* flex:1 + min-height:0 lets the content scroll within the height-capped panel
    so a tall mega-menu (CLM) never spills below the viewport and gets clipped. */
@@ -1245,6 +1272,19 @@ const IDIMS_CSS = `
 .idims-dd-item-sm .idims-dd-item-ico { width: 30px; height: 30px; border-radius: 8px; }
 .idims-dd-item-sm .idims-dd-item-label { font-size: 12.5px; }
 .idims-dd-item-sm .idims-dd-item-desc { font-size: 9.5px; }
+
+/* Locked (no-permission) modules: every module still shows, but the ones the
+   user can't access render greyed + non-clickable, with a small lock badge.
+   Neutralise the hover lift/tint so they read as inert (QA requirement). */
+.idims-dd-item.is-locked, .idims-clm-child.is-locked,
+.idims-more-sub-item.is-locked, .idims-mob-sub-item.is-locked { opacity: .48; cursor: not-allowed; filter: grayscale(1); }
+.idims-dd-item.is-locked:hover, .idims-clm-child.is-locked:hover { transform: none; background: none; }
+.idims-dd-item.is-locked:hover .idims-dd-item-label { color: #1E293B; }
+.idims-dd-item.is-locked:hover .idims-dd-item-ico { transform: none; }
+.idims-more-sub-item.is-locked:hover, .idims-mob-sub-item.is-locked:hover { background: none; color: #475569; }
+.idims-dd-lock { margin-left: auto; align-self: center; color: #94A3B8; display: flex; flex-shrink: 0; padding-left: 6px; }
+.idims-dd-lock svg { display: block; }
+.idims-dark .idims-dd-item.is-locked:hover .idims-dd-item-label { color: #E5E7EB; }
 
 /* Logout modal */
 .idims-logout-overlay { position: fixed; inset: 0; z-index: 1060; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(15,23,42,.42); backdrop-filter: blur(5px); animation: idimsFade .2s ease; }

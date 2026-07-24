@@ -264,9 +264,12 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   const [dlProgress, setDlProgress] = useState(0);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return rows;
-    const s = search.toLowerCase();
-    return rows.filter(r => r.title.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.agreement_type.toLowerCase().includes(s) || (r.segment ?? '').toLowerCase().includes(s));
+    const s = search.trim().toLowerCase();
+    const base = s
+      ? rows.filter(r => r.title.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.agreement_type.toLowerCase().includes(s) || (r.segment ?? '').toLowerCase().includes(s))
+      : rows;
+    // List shown in DESCENDING order — newest agreements (highest id) first.
+    return [...base].sort((a, b) => b.id - a.id);
   }, [rows, search]);
   const [rpp, setRpp]     = useState(PER_PAGE);
   const autoFitRef        = useRef(true);

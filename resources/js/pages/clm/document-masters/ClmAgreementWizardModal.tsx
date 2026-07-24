@@ -414,7 +414,14 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     // two are equal and we must NOT reassign innerHTML: doing so collapses the
     // caret to position 0, which made every keystroke land at the start
     // (text appearing right-to-left) and backspace jump to the first line.
-    if (step === 2 && editorRef.current && editorRef.current.innerHTML !== (content ?? '')) {
+    // Never re-seed while the editor is FOCUSED (actively being edited): the DOM
+    // is the source of truth during typing/formatting, and reassigning innerHTML
+    // rebuilds the whole subtree and collapses the caret — the cause of the slow /
+    // unresponsive "formatting not applied immediately" behaviour (QA #26). Only
+    // re-seed on step entry / portal remount / async load (editor not focused).
+    if (step === 2 && editorRef.current
+        && document.activeElement !== editorRef.current
+        && editorRef.current.innerHTML !== (content ?? '')) {
       editorRef.current.innerHTML = content ?? '';
     }
     // `fullPage` is a dep because toggling it portals the editor to/from
@@ -522,6 +529,9 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
 
   const insertPlaceholderToken = (token: string) => {
     insertAtCaret(token + ' ');
+    // Confirm the insertion — matches the "Placeholder added" toast the CTC
+    // draft editor fires (QA #24).
+    toast.success('Placeholder added', token);
   };
 
   const handleSave = async () => {
@@ -930,7 +940,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
         <ClmInsertPlaceholderModal
           open={placeholderOpen}
           onClose={() => setPlaceholderOpen(false)}
-          onInsert={(token) => { if (/^\s*</.test(token)) insertHtmlAtCaret(token); else insertPlaceholderToken(token); setPlaceholderOpen(false); }}
+          onInsert={(token) => { if (/^\s*</.test(token)) { toast.success('Inserted', 'Added to the agreement draft.'); insertHtmlAtCaret(token); } else insertPlaceholderToken(token); setPlaceholderOpen(false); }}
         />
 
         {/* Insert Table picker — same component the Trade Doc draft uses
