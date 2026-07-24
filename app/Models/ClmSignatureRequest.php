@@ -194,13 +194,29 @@ class ClmSignatureRequest extends Model
      */
     public static function hasSignedDraft(?int $clientId, int $docId, string $docType): bool
     {
+        return static::hasDraftByStatus($clientId, $docId, $docType, ['completed']);
+    }
+
+    /**
+     * True when a single draft has been SENT for signature at least once
+     * (in-progress OR completed) — the draft is "in use" and must not be
+     * edited/deleted. Single-row mirror of usedDraftIds(); superset of
+     * hasSignedDraft().
+     */
+    public static function hasUsedDraft(?int $clientId, int $docId, string $docType): bool
+    {
+        return static::hasDraftByStatus($clientId, $docId, $docType, ['inprogress', 'completed']);
+    }
+
+    private static function hasDraftByStatus(?int $clientId, int $docId, string $docType, array $statuses): bool
+    {
         if (!$clientId) return false;
 
-        // Guard against draft-id REUSE. A completed request only locks a draft
+        // Guard against draft-id REUSE. A matching request only locks a draft
         // if it was created at/after the draft's own creation. Otherwise an
         // orphaned request left behind by a since-DELETED draft — whose id was
         // later reused by a brand-new draft — would wrongly mark the new draft
-        // as signed. (Happens when the library is wiped and re-seeded: ids
+        // as locked. (Happens when the library is wiped and re-seeded: ids
         // restart and collide with stale signature requests.)
         $libModel = $docType === self::DOC_AGREEMENT ? ClmAgreementLibrary::class : ClmTradeDocLibrary::class;
         $docCreatedAt = $libModel::where('client_id', $clientId)->where('id', $docId)->value('created_at');
@@ -208,7 +224,7 @@ class ClmSignatureRequest extends Model
 
         return static::where('client_id', $clientId)
             ->where('document_type', $docType)
-            ->where('status', 'completed')
+            ->whereIn('status', $statuses)
             ->where('created_at', '>=', $docCreatedAt)
             ->where(function (Builder $q) use ($docId) {
                 $q->where('trade_doc_id', $docId)
@@ -226,16 +242,36 @@ class ClmSignatureRequest extends Model
      *
      * @return int[]
      */
+    /**
+     * Draft ids that have been SENT for signature at least once (still
+     * in-progress OR completed) — i.e. the draft is "in use" and must not be
+     * edited/deleted from the library. Superset of signedDraftIds().
+     */
+    public static function usedDraftIds(?int $clientId, string $docType): array
+    {
+        return static::draftIdsByStatus($clientId, $docType, ['inprogress', 'completed']);
+    }
+
     public static function signedDraftIds(?int $clientId, string $docType): array
+    {
+        return static::draftIdsByStatus($clientId, $docType, ['completed']);
+    }
+
+    /**
+     * Shared resolver behind signedDraftIds() / usedDraftIds(): draft ids
+     * referenced by a signature request whose status is in $statuses AND that
+     * was created at/after the draft's own creation (the id-reuse guard).
+     */
+    private static function draftIdsByStatus(?int $clientId, string $docType, array $statuses): array
     {
         if (!$clientId) return [];
 
         $rows = static::where('client_id', $clientId)
             ->where('document_type', $docType)
-            ->where('status', 'completed')
+            ->whereIn('status', $statuses)
             ->get(['trade_doc_id', 'trade_doc_ids', 'created_at']);
 
-        // Candidate draft id => the completed-request timestamps referencing it.
+        // Candidate draft id => the matching-request timestamps referencing it.
         $candidates = [];
         foreach ($rows as $r) {
             $refIds = is_array($r->trade_doc_ids) && !empty($r->trade_doc_ids)
@@ -250,8 +286,8 @@ class ClmSignatureRequest extends Model
 
         // Pull each candidate draft's creation time from the right library
         // table so we can apply the same id-reuse guard as hasSignedDraft():
-        // a draft is "signed" only when a completed request both references it
-        // AND was created at/after the draft's own creation.
+        // a draft counts only when a matching request both references it AND
+        // was created at/after the draft's own creation.
         $libModel = $docType === self::DOC_AGREEMENT ? ClmAgreementLibrary::class : ClmTradeDocLibrary::class;
         $docCreated = $libModel::where('client_id', $clientId)
             ->whereIn('id', array_keys($candidates))

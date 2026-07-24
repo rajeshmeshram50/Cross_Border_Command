@@ -6,7 +6,7 @@ import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
-import { ClmSkeletonRows, DeleteConf, LockedConf, SimpleDescModal } from '../shared/clmCommon';
+import { ClmSkeletonRows, DeleteConf, SimpleDescModal } from '../shared/clmCommon';
 import Tooltip from '../../../components/ui/Tooltip';
 import ClmAgreementWizardModal from './ClmAgreementWizardModal';
 
@@ -32,7 +32,7 @@ type AgrType = { id: number; code: string; name: string; description: string; in
 type AgrLib = {
   id: number; code: string; agreement_type: string; title: string; purpose?: string | null; party: string;
   regulatory: 'highly'|'less'; signing: boolean; segment: string | null;
-  agr_status: string; content: string | null; is_signed?: boolean;
+  agr_status: string; content: string | null; is_signed?: boolean; in_use?: boolean;
 };
 type Seg = { id: number; code: string; name: string; regulatory_status: 'highly' | 'less' };
 
@@ -254,9 +254,6 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
     window.addEventListener('resize', close);
     return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
   }, [segOpen, partyOpen]);
-  // Blocked-action popup state — set when the user clicks Edit/Delete on an
-  // agreement that has already been signed.
-  const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: AgrLib } | null>(null);
   // Row whose PDF is currently downloading — drives the per-row spinner.
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   // 0→100 progress for the "Generating PDF" popup. The server gives no real
@@ -485,14 +482,14 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
-                          <Tooltip label={r.is_signed ? 'Signed — cannot edit' : `Edit — ${r.title}`}>
-                            <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { if (r.is_signed) { setLocked({ mode: 'edit', row: r }); return; } setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                          <Tooltip label={r.in_use ? 'In-use — cannot edit' : `Edit — ${r.title}`}>
+                            <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { if (r.in_use) { toast.warning('Agreement in use', 'This agreement is In-use, you cannot edit it.'); return; } setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                           </Tooltip>
                           <Tooltip label={downloadingId === r.id ? 'Generating the PDF…' : `Download ${r.code} as PDF`}>
                             <button className="clm-act clm-act-dl" aria-label="Download" disabled={downloadingId === r.id} onClick={() => onDownload(r)}>{downloadingId === r.id ? (<svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>) : (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>)}</button>
                           </Tooltip>
-                          <Tooltip label={r.is_signed ? 'Signed — cannot delete' : `Delete — ${r.title}`}>
-                            <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => { if (r.is_signed) { setLocked({ mode: 'delete', row: r }); return; } setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                          <Tooltip label={r.in_use ? 'In-use — cannot delete' : `Delete — ${r.title}`}>
+                            <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => { if (r.in_use) { toast.warning('Agreement in use', 'This agreement is In-use, you cannot delete it.'); return; } setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                           </Tooltip>
                         </div>
                       </td>
@@ -540,14 +537,6 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
           </div>
         </>,
         document.body
-      )}
-
-      {locked && (
-        <LockedConf
-          title={locked.mode === 'edit' ? 'Cannot edit this agreement' : 'Cannot delete this agreement'}
-          sub={`${locked.row.title} (${locked.row.code}) has already been signed by the customer / consignee / supplier, so it can no longer be ${locked.mode === 'edit' ? 'edited' : 'deleted'}.`}
-          onClose={() => setLocked(null)}
-        />
       )}
 
       <ClmAgreementWizardModal

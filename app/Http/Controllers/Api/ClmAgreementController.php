@@ -246,11 +246,18 @@ class ClmAgreementController extends Controller
         MasterVisibility::applyReadScope($libQuery, $user, $branchFilter);
         $rows = $libQuery->get();
 
-        // Flag agreements that have a signed (completed) signature request so
-        // the frontend can lock Edit / Delete on them. Batch lookup avoids an
-        // N+1 of per-row existence checks.
+        // Flag agreements the frontend must lock Edit / Delete on:
+        //  · is_signed → a COMPLETED signature exists (fully signed).
+        //  · in_use    → SENT for signature at least once (in-progress OR
+        //                completed) — editing/deleting would desync what was
+        //                already sent, so it's blocked with a toaster.
+        // Batch lookups avoid an N+1 of per-row existence checks.
         $signedIds = ClmSignatureRequest::signedDraftIds($user->client_id, ClmSignatureRequest::DOC_AGREEMENT);
-        $rows->each(fn ($r) => $r->setAttribute('is_signed', in_array((int) $r->id, $signedIds, true)));
+        $usedIds   = ClmSignatureRequest::usedDraftIds($user->client_id, ClmSignatureRequest::DOC_AGREEMENT);
+        $rows->each(function ($r) use ($signedIds, $usedIds) {
+            $r->setAttribute('is_signed', in_array((int) $r->id, $signedIds, true));
+            $r->setAttribute('in_use', in_array((int) $r->id, $usedIds, true));
+        });
 
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
@@ -310,14 +317,14 @@ class ClmAgreementController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Lock once the agreement has been sent and signed. An agreement that
-        // has come back signed via Zoho (a `completed` signature request) is a
-        // legal record — editing it would silently diverge the master from the
-        // copy the customer/consignee actually signed.
-        if (ClmSignatureRequest::hasSignedDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_AGREEMENT)) {
+        // Lock once the agreement is IN USE — i.e. it has been sent for
+        // signature at least once (still in-progress or already signed).
+        // Editing it would silently diverge the master from the copy that was
+        // already sent to / signed by the customer/consignee.
+        if (ClmSignatureRequest::hasUsedDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_AGREEMENT)) {
             return response()->json([
                 'status'  => false,
-                'message' => 'This agreement has already been signed by the customer/consignee and can no longer be edited.',
+                'message' => 'This agreement is In-use, you cannot edit it.',
             ], 422);
         }
 
@@ -374,13 +381,13 @@ class ClmAgreementController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Same lock as libraryUpdate — a signed agreement must stay on record,
-        // so block the delete once a `completed` signature request references
-        // this draft.
-        if (ClmSignatureRequest::hasSignedDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_AGREEMENT)) {
+        // Same lock as libraryUpdate — an in-use agreement (sent for signature
+        // at least once) must stay on record, so block the delete once an
+        // in-progress or completed signature request references this draft.
+        if (ClmSignatureRequest::hasUsedDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_AGREEMENT)) {
             return response()->json([
                 'status'  => false,
-                'message' => 'This agreement has already been signed by the customer/consignee and can no longer be deleted.',
+                'message' => 'This agreement is In-use, you cannot delete it.',
             ], 422);
         }
 
