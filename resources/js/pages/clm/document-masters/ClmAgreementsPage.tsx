@@ -259,6 +259,9 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: AgrLib } | null>(null);
   // Row whose PDF is currently downloading — drives the per-row spinner.
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  // 0→100 progress for the "Generating PDF" popup. The server gives no real
+  // progress, so it eases toward ~90 while generating and snaps to 100 on done.
+  const [dlProgress, setDlProgress] = useState(0);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -332,8 +335,13 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   const onDownload = async (r: AgrLib) => {
     if (downloadingId) return;
     setDownloadingId(r.id);
+    setDlProgress(6);
+    let p = 6;
+    const timer = window.setInterval(() => { p = Math.min(90, p + Math.random() * 7 + 2); setDlProgress(Math.round(p)); }, 300);
     try {
       const resp = await api.get(`/clm/agreement-library/${r.id}/download-pdf`, { responseType: 'blob' });
+      window.clearInterval(timer);
+      setDlProgress(100);
       const url  = URL.createObjectURL(resp.data as Blob);
       const a    = document.createElement('a');
       a.href = url;
@@ -342,11 +350,22 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
+      await new Promise(res => setTimeout(res, 400)); // let the 100% show briefly
     } catch (e) {
-      const msg = (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
-      toast.error('Download failed', msg || 'Please try again.');
+      window.clearInterval(timer);
+      // The request is responseType:'blob', so an error body arrives as a Blob —
+      // read + parse it to surface the server's real message (e.g. "too large").
+      let msg = 'Please try again.';
+      const data = (e as { response?: { data?: unknown } })?.response?.data;
+      if (data instanceof Blob) {
+        try { msg = JSON.parse(await data.text())?.message || msg; } catch { /* keep default */ }
+      } else if (data && typeof data === 'object' && 'message' in data) {
+        msg = String((data as { message?: string }).message || msg);
+      }
+      toast.error('Download failed', msg);
     } finally {
       setDownloadingId(null);
+      setDlProgress(0);
     }
   };
 
@@ -540,6 +559,39 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}
       />
+
+      {/* Popup loader while a PDF is generated — a big/table-rich agreement can
+          take several seconds server-side. Shows a 0→100% ring so it's clearly
+          working (the tiny row spinner is easy to miss). */}
+      {downloadingId !== null && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3000000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,30,42,.45)', backdropFilter: 'blur(3px)' }}>
+          <div style={{ width: 300, background: '#fff', borderRadius: 18, padding: '26px 24px 22px', textAlign: 'center', boxShadow: '0 24px 60px rgba(8,40,60,.32)' }}>
+            <ProgressRing value={dlProgress} />
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#0c2c3a', marginTop: 14 }}>Generating PDF…</div>
+            <div style={{ fontSize: 12.5, fontWeight: 500, color: '#5e7888', marginTop: 6, lineHeight: 1.5 }}>Please wait — a large agreement can take a few seconds.</div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+/* Circular 0→100% progress ring for the generate/download popup. */
+function ProgressRing({ value }: { value: number }) {
+  const v = Math.max(0, Math.min(100, value));
+  const R = 34, C = 2 * Math.PI * R;
+  return (
+    <div style={{ position: 'relative', width: 92, height: 92, margin: '0 auto' }}>
+      <svg width="92" height="92" viewBox="0 0 92 92">
+        <circle cx="46" cy="46" r={R} fill="none" stroke="#e6edf2" strokeWidth="8" />
+        <circle cx="46" cy="46" r={R} fill="none" stroke="#0891b2" strokeWidth="8" strokeLinecap="round"
+          strokeDasharray={C} strokeDashoffset={C * (1 - v / 100)} transform="rotate(-90 46 46)"
+          style={{ transition: 'stroke-dashoffset .3s ease' }} />
+      </svg>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 800, color: '#0e7490' }}>
+        {Math.round(v)}<span style={{ fontSize: 12, fontWeight: 700, marginLeft: 1 }}>%</span>
+      </div>
     </div>
   );
 }

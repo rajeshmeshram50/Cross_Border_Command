@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
@@ -75,6 +75,9 @@ export default function PoPaymentModal({
 
   const load = () => {
     if (!entityId) return;
+    // Clear the previous row's summary first so the shimmer shows while the new
+    // row loads — otherwise the old PO/SPI amounts flash for a frame on reopen.
+    setData(null);
     setLoading(true);
     api.get<{ status: boolean; data: Summary }>(`${apiBase}/payment-summary`)
       .then(({ data: r }) => { setData(r.data); setTdsInput(String(r.data.amounts.tdsPct ?? 0)); })
@@ -83,7 +86,9 @@ export default function PoPaymentModal({
   };
 
   useEffect(() => {
-    if (!open || !entityId) return;
+    // On close (or no target) drop the summary so the next open starts on the
+    // shimmer instead of the previous row's amounts.
+    if (!open || !entityId) { setData(null); return; }
     setAddOpen(false);
     load();
   }, [open, poId, spiId]);
@@ -599,12 +604,34 @@ function SupCell({ label, value, strong }: { label: string; value?: string | nul
   );
 }
 function Kpi({ tone, label, value, sub, icon }: { tone: string; label: string; value: string; sub: string; icon: React.ReactNode }) {
+  // A big amount (e.g. ₹1,52,78,999.00) would overflow the narrow 1/5-width
+  // card and get clipped or wrap it taller. Instead, shrink the amount's font
+  // just enough to fit on one line — keeps every digit visible and the card
+  // height uniform. Re-fits when the value or the card width changes.
+  const valRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = valRef.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.fontSize = '';                                   // reset to the CSS default
+      let size = parseFloat(getComputedStyle(el).fontSize) || 18;
+      let guard = 0;
+      while (el.scrollWidth > el.clientWidth + 0.5 && size > 11 && guard++ < 40) {
+        size -= 0.5;
+        el.style.fontSize = `${size}px`;
+      }
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    if (el.parentElement) ro.observe(el.parentElement);         // observe container width, not self (avoids loop)
+    return () => ro.disconnect();
+  }, [value]);
   return (
     <div className={`pop-kpi pop-kpi-${tone}`}>
       <span className="pop-kpi-ico">{icon}</span>
       <div className="pop-kpi-txt">
         <div className="pop-kpi-lab">{label}</div>
-        <div className="pop-kpi-val">{value}</div>
+        <div className="pop-kpi-val" ref={valRef}>{value}</div>
         <div className="pop-kpi-sub">{sub}</div>
       </div>
     </div>
@@ -753,7 +780,7 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 .master-datepicker-popup.pop-cal .master-datepicker-cell.is-selected{background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;box-shadow:0 3px 8px rgba(8,145,178,.3);}
 .master-datepicker-popup.pop-cal .master-datepicker-footer .today-btn{color:#0891b2;}
 .pop-backdrop{position:fixed;inset:0;z-index:2900000;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto;font-family:var(--font-sans,'Inter',sans-serif);}
-.pop-modal{width:100%;max-width:1120px;margin:auto;background:#f8fafc;border:1.5px solid rgba(255,255,255,.5);border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);display:flex;flex-direction:column;}
+.pop-modal{width:100%;max-width:1320px;margin:auto;background:#f8fafc;border:1.5px solid rgba(255,255,255,.5);border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);display:flex;flex-direction:column;}
 .pop-hero{background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);}
 .pop-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 22px 4px;background:transparent;color:#fff;}
 .pop-head-l{display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap;}
@@ -772,7 +799,8 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 .pop-sup-val{font-size:13px;font-weight:700;color:#fff;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .pop-sup-val.is-strong{font-size:14px;}
 .pop-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
-.pop-kpi{background:#fff;border:1px solid #eef2f7;border-radius:14px;padding:7px 14px;display:flex;gap:10px;align-items:center;border-left:4px solid #94a3b8;box-shadow:0 4px 13px rgba(15,23,42,.06);}
+.pop-kpi{background:#fff;border:1px solid #eef2f7;border-radius:14px;padding:6px 13px;display:flex;gap:10px;align-items:center;border-left:4px solid #94a3b8;box-shadow:0 4px 13px rgba(15,23,42,.06);}
+.pop-kpi-txt{min-width:0;flex:1;}
 .pop-kpi-ico{width:38px;height:38px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;}
 .pop-kpi-ico svg{width:18px;height:18px;}
 .pop-kpi-teal{border-left-color:#06b6d4;} .pop-kpi-teal .pop-kpi-ico{background:linear-gradient(135deg,#22d3ee,#0891b2);box-shadow:0 7px 16px rgba(8,145,178,.38);}
@@ -781,7 +809,7 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 .pop-kpi-blue{border-left-color:#6366f1;} .pop-kpi-blue .pop-kpi-ico{background:linear-gradient(135deg,#818cf8,#4f46e5);box-shadow:0 7px 16px rgba(79,70,229,.34);}
 .pop-kpi-rose{border-left-color:#f43f5e;} .pop-kpi-rose .pop-kpi-ico{background:linear-gradient(135deg,#fb7185,#e11d48);box-shadow:0 7px 16px rgba(225,29,72,.32);}
 .pop-kpi-lab{font-size:9.5px;font-weight:700;letter-spacing:.05em;color:#5c7d9e;}
-.pop-kpi-val{font-size:18px;font-weight:800;color:#123a5e;margin:1px 0;}
+.pop-kpi-val{font-size:18px;font-weight:800;color:#123a5e;margin:1px 0;white-space:nowrap;overflow:hidden;}
 .pop-kpi-sub{font-size:10.5px;color:#7b96ad;font-weight:500;}
 .pop-prog{background:linear-gradient(180deg,#f3fafd,#ecf6fa);border:1px solid #cdeef5;border-radius:12px;padding:14px 18px;}
 .pop-prog-top{display:flex;justify-content:space-between;font-size:12px;font-weight:600;color:#475569;margin-bottom:8px;}

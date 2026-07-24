@@ -334,20 +334,32 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   // DOCX import can be slow for large (50+ page) files, so surface a loader on
   // the "Upload Word Doc" button and block repeat clicks until it resolves.
   const [docxUploading, setDocxUploading] = useState(false);
+  // 0→100 progress for the "Generating…" overlay (null = idle). The server gives
+  // no real progress, so it eases toward ~90 while rendering, snaps to 100 on done.
+  const [dl, setDl] = useState<{ kind: 'pdf' | 'docx'; progress: number } | null>(null);
+  const runDlProgress = (kind: 'pdf' | 'docx') => {
+    setDl({ kind, progress: 6 });
+    let p = 6;
+    return window.setInterval(() => { p = Math.min(90, p + Math.random() * 7 + 2); setDl(d => (d ? { ...d, progress: Math.round(p) } : d)); }, 300);
+  };
   const downloadDocx = async () => {
     if (!editingId) {
       toast.error('Save first', 'Save the trade document before downloading as DOCX.');
       return;
     }
+    const timer = runDlProgress('docx');
     try {
       const resp = await api.get(`/clm/trade-doc-library/${editingId}/download`, { responseType: 'blob' });
+      window.clearInterval(timer); setDl(d => (d ? { ...d, progress: 100 } : d));
       const url  = URL.createObjectURL(new Blob([resp.data]));
       const a    = document.createElement('a');
       a.href = url;
       a.download = `${existing?.code || 'trade-document'}.docx`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
+      await new Promise(res => setTimeout(res, 400)); // let 100% show briefly
     } catch (e: any) {
+      window.clearInterval(timer);
       // The response is a Blob (responseType: 'blob'), so a server error body
       // arrives as a Blob too — read it back to surface the real message.
       let raw = '';
@@ -367,6 +379,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
         ? raw
         : 'The document file could not be found. Please re-save the trade document, then try downloading again.';
       toast.error('Download failed', msg);
+    } finally {
+      setDl(null);
     }
   };
 
@@ -377,15 +391,19 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       toast.error('Save first', 'Save the trade document before downloading as PDF.');
       return;
     }
+    const timer = runDlProgress('pdf');
     try {
       const resp = await api.get(`/clm/trade-doc-library/${editingId}/download-pdf`, { responseType: 'blob' });
+      window.clearInterval(timer); setDl(d => (d ? { ...d, progress: 100 } : d));
       const url  = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
       const a    = document.createElement('a');
       a.href = url;
       a.download = `${existing?.code || 'trade-document'}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
+      await new Promise(res => setTimeout(res, 400)); // let 100% show briefly
     } catch (e: any) {
+      window.clearInterval(timer);
       let msg = 'Please try again.';
       try {
         const blob = e?.response?.data;
@@ -393,6 +411,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
         else if (typeof e?.response?.data?.message === 'string') msg = e.response.data.message;
       } catch { /* keep default */ }
       toast.error('Download failed', msg);
+    } finally {
+      setDl(null);
     }
   };
   const uploadDocx = async (file: File) => {
@@ -632,6 +652,27 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       aria-modal="true"
     >
       <style>{TDW_CSS}</style>
+
+      {/* Full overlay while a Word file is uploaded/converted or a PDF/DOCX is
+          generated — all are slow for a big/table-rich document, so a clear
+          page loader (with a 0→100% ring for downloads) beats a button spinner. */}
+      {(docxUploading || dl) && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,30,42,.5)', backdropFilter: 'blur(2px)' }}>
+          <div style={{ width: 300, background: '#fff', borderRadius: 18, padding: '26px 24px 22px', textAlign: 'center', boxShadow: '0 24px 60px rgba(8,40,60,.32)' }}>
+            {dl ? (
+              <TdwProgressRing value={dl.progress} />
+            ) : (
+              <svg className="tdw-spin" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round" style={{ margin: '0 auto', display: 'block' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+            )}
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#0c2c3a', marginTop: 14 }}>
+              {dl ? (dl.kind === 'pdf' ? 'Generating PDF…' : 'Generating Word file…') : 'Uploading & converting…'}
+            </div>
+            <div style={{ fontSize: 12.5, fontWeight: 500, color: '#5e7888', marginTop: 6, lineHeight: 1.5 }}>Please wait — a large file can take a few seconds.</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#0e7490', marginTop: 8 }}>Max 1,000,000 characters (~1 MB)</div>
+          </div>
+        </div>
+      )}
+
       <div className="tdw-shell">
         {/* ── Header strip ── */}
         <div className="tdw-head">
@@ -1037,8 +1078,9 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     />
                   </HeaderFooterPanel>
                 </div>
-                <div className="tdw-editor-foot">
+                <div className="tdw-editor-foot" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span className="tdw-editor-foot-hint">ℹ Placeholders auto-fill on document generation</span>
+                  <TdwCharCounter length={(content ?? '').length} />
                 </div>
               </div>
               ); return fullPage ? createPortal(editorShell, document.body) : editorShell; })()}
@@ -1603,3 +1645,38 @@ const TDW_CSS = `
   .tdw-btn { flex: 1; justify-content: center; }
 }
 `;
+
+/* Circular 0→100% progress ring for the generate/download overlay. */
+function TdwProgressRing({ value }: { value: number }) {
+  const v = Math.max(0, Math.min(100, value));
+  const R = 34, C = 2 * Math.PI * R;
+  return (
+    <div style={{ position: 'relative', width: 92, height: 92, margin: '0 auto' }}>
+      <svg width="92" height="92" viewBox="0 0 92 92">
+        <circle cx="46" cy="46" r={R} fill="none" stroke="#e6edf2" strokeWidth="8" />
+        <circle cx="46" cy="46" r={R} fill="none" stroke="#0891b2" strokeWidth="8" strokeLinecap="round"
+          strokeDasharray={C} strokeDashoffset={C * (1 - v / 100)} transform="rotate(-90 46 46)"
+          style={{ transition: 'stroke-dashoffset .3s ease' }} />
+      </svg>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 800, color: '#0e7490' }}>
+        {Math.round(v)}<span style={{ fontSize: 12, fontWeight: 700, marginLeft: 1 }}>%</span>
+      </div>
+    </div>
+  );
+}
+
+/* Live character counter vs the 1,000,000-char (~1 MB) render limit. Amber near
+   the cap, red once over — so users know before a download/upload fails. */
+const TDW_RENDER_MAX_CHARS = 1000000;
+function TdwCharCounter({ length }: { length: number }) {
+  const pct = length / TDW_RENDER_MAX_CHARS;
+  const over = length > TDW_RENDER_MAX_CHARS;
+  const color = over ? '#e11d48' : pct > 0.8 ? '#d97706' : '#5e7888';
+  return (
+    <span
+      title={over ? 'Over the 1,000,000-character limit — the PDF/Word download will be blocked until you shorten it.' : `${TDW_RENDER_MAX_CHARS.toLocaleString()} character limit (~1 MB) for PDF/Word export`}
+      style={{ fontSize: 11, fontWeight: 700, color, whiteSpace: 'nowrap' }}>
+      {length.toLocaleString()} / {TDW_RENDER_MAX_CHARS.toLocaleString()}{over ? ' ⚠' : ''}
+    </span>
+  );
+}

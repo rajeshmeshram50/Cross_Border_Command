@@ -155,6 +155,8 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   // DOCX button spinner (a table-rich agreement can take a few seconds to
   // render server-side).
   const [downloadingDocx, setDownloadingDocx] = useState(false);
+  // 0→100 progress for the DOCX-download ring in the overlay popup.
+  const [docxProgress, setDocxProgress] = useState(0);
 
   /* Stage 2 page-shell — same UX as Trade Document modal. Defaults pre-
    * fill the header with the user's branch (or client) logo + name so
@@ -281,15 +283,21 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     }
     if (downloadingDocx) return;
     setDownloadingDocx(true);
+    setDocxProgress(6);
+    let p = 6;
+    const timer = window.setInterval(() => { p = Math.min(90, p + Math.random() * 7 + 2); setDocxProgress(Math.round(p)); }, 300);
     try {
       const resp = await api.get(`/clm/agreement-library/${editingId}/download`, { responseType: 'blob' });
+      window.clearInterval(timer); setDocxProgress(100);
       const url  = URL.createObjectURL(new Blob([resp.data]));
       const a    = document.createElement('a');
       a.href = url;
       a.download = `${existing?.code ?? `A-${String(editingId).padStart(3, '0')}`}.docx`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
+      await new Promise(res => setTimeout(res, 400)); // let 100% show briefly
     } catch (e: any) {
+      window.clearInterval(timer);
       // The response is a Blob (responseType: 'blob'), so a server error body
       // arrives as a Blob too — read it back to surface the real message
       // instead of a generic "Please try again". Mirrors the Trade Doc flow.
@@ -306,6 +314,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       toast.error('Download failed', msg);
     } finally {
       setDownloadingDocx(false);
+      setDocxProgress(0);
     }
   };
   const uploadDocx = async (file: File) => {
@@ -599,6 +608,25 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       aria-modal="true"
     >
       <style>{AGW_CSS}</style>
+
+      {/* Full overlay while a Word file is uploaded/converted or a DOCX is
+          generated — both are slow for a big/table-rich document, so a clear
+          page loader beats the small button spinner alone. */}
+      {(uploadingDocx || downloadingDocx) && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,30,42,.5)', backdropFilter: 'blur(2px)' }}>
+          <div style={{ width: 300, background: '#fff', borderRadius: 18, padding: '26px 24px 22px', textAlign: 'center', boxShadow: '0 24px 60px rgba(8,40,60,.32)' }}>
+            {downloadingDocx ? (
+              <AgwProgressRing value={docxProgress} />
+            ) : (
+              <svg className="agw-spin" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round" style={{ margin: '0 auto', display: 'block' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+            )}
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#0c2c3a', marginTop: 14 }}>{downloadingDocx ? 'Generating DOCX…' : 'Uploading & converting…'}</div>
+            <div style={{ fontSize: 12.5, fontWeight: 500, color: '#5e7888', marginTop: 6, lineHeight: 1.5 }}>Please wait — a large file can take a few seconds.</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#0e7490', marginTop: 8 }}>Max 1,000,000 characters (~1 MB)</div>
+          </div>
+        </div>
+      )}
+
       <div className="agw-shell">
         {/* Header */}
         <div className="agw-head">
@@ -824,6 +852,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
             <div className="agw-step-body">
               <AgrEditor
                 editorRef={editorRef}
+                contentLength={(content ?? '').length}
                 fontSize={fontSize}
                 setFontSizeState={setFontSizeState}
                 applyFontSize={applyFontSize}
@@ -944,6 +973,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
 
 function AgrEditor({
   editorRef,
+  contentLength,
   fontSize,
   setFontSizeState,
   applyFontSize,
@@ -975,6 +1005,7 @@ function AgrEditor({
   setFullPage,
 }: {
   editorRef: React.MutableRefObject<HTMLDivElement | null>;
+  contentLength: number;
   fontSize: string;
   setFontSizeState: (v: string) => void;
   applyFontSize: (px: string) => void;
@@ -1195,9 +1226,12 @@ function AgrEditor({
 
       <div className="agw-editor-foot">
         <span className="agw-editor-foot-hint">ⓘ Placeholders auto-fill on agreement generation</span>
-        <Tooltip label="Open the placeholder picker">
-          <button type="button" className="agw-editor-foot-tag" onMouseDown={e => { e.preventDefault(); stashSelection(); }} onClick={onOpenPlaceholder}>{'{{PLACEHOLDER}}'}</button>
-        </Tooltip>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <CharCounter length={contentLength} />
+          <Tooltip label="Open the placeholder picker">
+            <button type="button" className="agw-editor-foot-tag" onMouseDown={e => { e.preventDefault(); stashSelection(); }} onClick={onOpenPlaceholder}>{'{{PLACEHOLDER}}'}</button>
+          </Tooltip>
+        </div>
       </div>
     </div>
   );
@@ -2028,3 +2062,38 @@ const AGW_CSS = `
   .agw-btn { flex: 1; justify-content: center; }
 }
 `;
+
+/* Circular 0→100% progress ring for the generate/download overlay. */
+function AgwProgressRing({ value }: { value: number }) {
+  const v = Math.max(0, Math.min(100, value));
+  const R = 34, C = 2 * Math.PI * R;
+  return (
+    <div style={{ position: 'relative', width: 92, height: 92, margin: '0 auto' }}>
+      <svg width="92" height="92" viewBox="0 0 92 92">
+        <circle cx="46" cy="46" r={R} fill="none" stroke="#e6edf2" strokeWidth="8" />
+        <circle cx="46" cy="46" r={R} fill="none" stroke="#0891b2" strokeWidth="8" strokeLinecap="round"
+          strokeDasharray={C} strokeDashoffset={C * (1 - v / 100)} transform="rotate(-90 46 46)"
+          style={{ transition: 'stroke-dashoffset .3s ease' }} />
+      </svg>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 800, color: '#0e7490' }}>
+        {Math.round(v)}<span style={{ fontSize: 12, fontWeight: 700, marginLeft: 1 }}>%</span>
+      </div>
+    </div>
+  );
+}
+
+/* Live character counter vs the 1,000,000-char (~1 MB) render limit. Turns amber
+   near the cap and red once over — so users know before a download/upload fails. */
+const RENDER_MAX_CHARS = 1000000;
+function CharCounter({ length }: { length: number }) {
+  const pct = length / RENDER_MAX_CHARS;
+  const color = length > RENDER_MAX_CHARS ? '#e11d48' : pct > 0.8 ? '#d97706' : '#5e7888';
+  const over = length > RENDER_MAX_CHARS;
+  return (
+    <Tooltip label={over ? 'Over the 1,000,000-character limit — the PDF/Word download will be blocked until you shorten it.' : `${RENDER_MAX_CHARS.toLocaleString()} character limit (~1 MB) for PDF/Word export`}>
+      <span style={{ fontSize: 11, fontWeight: 700, color, whiteSpace: 'nowrap' }}>
+        {length.toLocaleString()} / {RENDER_MAX_CHARS.toLocaleString()}{over ? ' ⚠' : ''}
+      </span>
+    </Tooltip>
+  );
+}

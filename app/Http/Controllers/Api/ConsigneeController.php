@@ -142,11 +142,20 @@ class ConsigneeController extends Controller
         // Per-segment lock: the segment NAMES whose product appears on a PI (or a
         // PI with a Shipment) for this consignee.
         $data = $this->shape($row);
-        $data['locked_segments'] = SegmentGuard::lockedSegmentNames(
-            \App\Models\Consignee::class,
-            (int) $row->id,
-            (int) $row->client_id,
-        );
+        $data['locked_segments'] = array_values(array_unique(array_merge(
+            SegmentGuard::lockedSegmentNames(
+                \App\Models\Consignee::class,
+                (int) $row->id,
+                (int) $row->client_id,
+            ),
+            // Also lock segments referenced by the consignee's leads via a product
+            // (Product Directory dependency — retained before any PI/Shipment).
+            SegmentGuard::productMappingSegmentNames(
+                \App\Models\Consignee::class,
+                (int) $row->id,
+                (int) $row->client_id,
+            ),
+        )));
 
         return response()->json([
             'data'            => $data,
@@ -285,6 +294,11 @@ class ConsigneeController extends Controller
          * this screen) when it is either (1) used by a PI/Shipment product, or
          * (2) has an uploaded document not shared with a remaining segment. */
         $keep = array_values(array_unique(array_merge(
+            // Product Directory dependency — a product of the segment is on one of
+            // the consignee's leads (in use before any PI/Shipment).
+            SegmentGuard::blockedByProductMapping(
+                \App\Models\Consignee::class, (int) $consignee->id, (int) $consignee->client_id, $removed,
+            ),
             SegmentGuard::blockedByCompletedDocs(
                 \App\Models\Consignee::class, (int) $consignee->id, (int) $consignee->client_id, $removed,
             ),

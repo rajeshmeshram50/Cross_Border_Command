@@ -32,6 +32,9 @@ interface SpiRow {
   po_fully_utilized?: boolean;   // linked PO fully paid — gates the Zoho sync
 }
 
+// State for the Zoho-sync confirm + speedometer modal (mirrors the PO screen).
+type SyncState = { id: number; spiNo: string; supplier?: string; busy: boolean; progress: number; attempt: number; failed: boolean };
+
 const STEPS = [
   { n: 'STEP 01', title: 'PO Link Supplier Details', desc: 'Link the purchase order and confirm supplier details.', ico: <IcoLink /> },
   { n: 'STEP 02', title: 'Supplier Purchase Invoice Details', desc: 'Enter the invoice number, date, and details.', ico: <IcoDoc /> },
@@ -171,29 +174,91 @@ export default function SupplierPurchaseInvoice() {
   const switchShip = (t: ShipTab) => { setShipTab(t); setPage(1); };
   const onSearch = (v: string) => setQ(v);
 
-  // Which invoice id is mid-sync — guards against a double-click firing two
-  // POST /sync calls (the second would hit the backend lock and 409).
-  const [syncingId, setSyncingId] = useState<number | null>(null);
+  // The invoice whose Zoho-sync confirm + speedometer modal is open.
+  const [sync, setSync] = useState<SyncState | null>(null);
 
-  // Zoho-sync one invoice. Blocked until the linked PO's amount is fully
+  // Open the sync confirm dialog. Blocked until the linked PO's amount is fully
   // utilised (the backend enforces the same rule; this surfaces it up-front).
-  const syncRow = async (r: SpiRow) => {
+  const syncRow = (r: SpiRow) => {
     setMenu(null);
-    if (syncingId === r.id) return; // already in flight — ignore the re-click
     if (!r.po_fully_utilized) {
       const where = r.poId ? 'the linked purchase order' : 'this invoice';
       toast.warning('Utilise the full amount first', `Record payments against ${where} until its balance is cleared before syncing to Zohobook.`);
       return;
     }
-    setSyncingId(r.id);
-    try { const resp = await api.post(`/p2p/supplier-purchase-invoices/${r.id}/sync`); toast.success(`${r.spiNo} synced with Zohobook`, resp?.data?.message); reload(); }
-    catch (e: any) {
-      // A 409 means a sync for this same invoice is already running — not a real
-      // failure; the row will reflect the result on the next refresh.
-      if (e?.response?.status === 409) { toast.warning('Sync already in progress', e?.response?.data?.message ?? 'This invoice is already being synced — try again in a moment.'); reload(); }
-      else toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this invoice.');
-    }
-    finally { setSyncingId(null); }
+    setSync({ id: r.id, spiNo: r.spiNo, supplier: r.supplier, busy: false, progress: 0, attempt: 0, failed: false });
+  };
+
+  // Run the Zoho sync with a live speedometer. Zoho gives no real progress, so
+  // the gauge eases toward ~90 while in flight and snaps to 100 on success. A
+  // transient failure (network / 5xx) is retried up to MAX_ATTEMPTS; a business
+  // error (4xx — e.g. "utilise the full amount") is not retried and surfaces a
+  // "Try Again" button. A 409 (already syncing) is treated as success-ish.
+  const SYNC_MAX_ATTEMPTS = 3;
+  const doSync = () => {
+    if (!sync) return;
+    const { id, spiNo } = sync;
+
+    const run = (attempt: number) => {
+      setSync(s => (s ? { ...s, busy: true, failed: false, attempt, progress: 6 } : s));
+      let p = 6;
+      const timer = window.setInterval(() => {
+        p = Math.min(90, p + Math.random() * 7 + 2);
+        setSync(s => (s && s.busy ? { ...s, progress: Math.round(p) } : s));
+      }, 380);
+
+      api.post(`/p2p/supplier-purchase-invoices/${id}/sync`).then((res) => {
+        window.clearInterval(timer);
+        setSync(s => (s ? { ...s, progress: 100 } : s));
+        window.setTimeout(() => {
+          setSync(null);
+          toast.success(`${spiNo} synced with Zohobook`, res?.data?.message);
+          reload();
+        }, 550);
+      }).catch((e: any) => {
+        window.clearInterval(timer);
+        const status = e?.response?.status;
+        // 409 = a sync for this invoice is already running — not a real failure.
+        if (status === 409) {
+          window.clearInterval(timer);
+          setSync(null);
+          toast.warning('Sync already in progress', e?.response?.data?.message ?? 'This invoice is already being synced — try again in a moment.');
+          reload();
+          return;
+        }
+        const retriable = !status || status >= 500; // network / server error only
+        if (retriable && attempt < SYNC_MAX_ATTEMPTS) {
+          toast.info(`Sync hiccup — retrying (${attempt}/${SYNC_MAX_ATTEMPTS})…`);
+          setSync(s => (s ? { ...s, progress: 0 } : s));
+          window.setTimeout(() => run(attempt + 1), 800);
+        } else {
+          setSync(s => (s ? { ...s, busy: false, failed: true, progress: 0 } : s));
+          toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this invoice.');
+        }
+      });
+    };
+
+    toast.info(`Syncing ${spiNo} with Zohobook…`);
+    run(1);
+  };
+
+  // Semicircular 0→100 gauge shown while an SPI syncs to Zohobook.
+  const Speedometer = ({ value }: { value: number }) => {
+    const v = Math.max(0, Math.min(100, value));
+    const R = 52, cx = 60, cy = 58;
+    const polar = (deg: number) => [cx + R * Math.cos((deg * Math.PI) / 180), cy + R * Math.sin((deg * Math.PI) / 180)] as const;
+    const [sx, sy] = polar(180);
+    const [ex, ey] = polar(180 + (v / 100) * 180);
+    const [tx, ty] = polar(360);
+    return (
+      <div className="spisp">
+        <svg viewBox="0 0 120 64" className="spisp-svg">
+          <path d={`M ${sx} ${sy} A ${R} ${R} 0 0 1 ${tx} ${ty}`} className="spisp-track" />
+          {v > 0.5 && <path d={`M ${sx} ${sy} A ${R} ${R} 0 0 1 ${ex} ${ey}`} className="spisp-fill" />}
+        </svg>
+        <div className="spisp-num">{Math.round(v)}<span>%</span></div>
+      </div>
+    );
   };
 
   // View / download the attachment by STREAMING it through the backend
@@ -376,7 +441,7 @@ export default function SupplierPurchaseInvoice() {
                     <span className="spi-acts">
                       {r.zoho === 'sync'
                         ? <Tooltip label="Already synced to Zohobook"><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
-                        : <Tooltip label={withPo ? 'Sync the linked PO — creates its bill and posts all payments' : 'Sync this invoice to Zohobook'}><button type="button" className="spi-zohobtn" disabled={syncingId === r.id} onClick={() => syncRow(r)}><IcoSync size={13} /> {syncingId === r.id ? 'Syncing…' : 'Zoho Sync'}</button></Tooltip>}
+                        : <Tooltip label={withPo ? 'Sync the linked PO — creates its bill and posts all payments' : 'Sync this invoice to Zohobook'}><button type="button" className="spi-zohobtn" onClick={() => syncRow(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
                       <Tooltip label="View invoice"><button type="button" className="spi-iconbtn" onClick={() => { setEditId(r.id); setMapCtx(null); setDetailOpen(true); }}><IcoEye /></button></Tooltip>
                       <Tooltip label="Record payment"><button type="button" className="spi-iconbtn" onClick={() => openPoPayment(r)}><IcoRupee /></button></Tooltip>
                       <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => openMenu(e, r)}><IcoMore /></button></Tooltip>
@@ -425,13 +490,53 @@ export default function SupplierPurchaseInvoice() {
               <div className="spi-menu-sup">Supplier: <Tooltip label={menu.row.supplier} disabled={!menu.row.supplier || menu.row.supplier.length <= 25} position="bottom" zIndex={2999999}><span>{menu.row.supplier}</span></Tooltip></div>
             </div>
             <div className="spi-menu-items">
-              <button type="button" className="spi-menu-item is-teal" disabled={syncingId === menu.row.id} onClick={() => syncRow(menu.row)}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> {syncingId === menu.row.id ? 'Syncing…' : 'Sync with Zohobook'}</button>
+              <button type="button" className="spi-menu-item is-teal" onClick={() => syncRow(menu.row)}><span className="spi-menu-item-ico"><IcoSync size={15} /></span> Sync with Zohobook</button>
               <button type="button" className="spi-menu-item" onClick={() => void downloadRow(menu.row)}><span className="spi-menu-item-ico spi-menu-item-ico-dl"><IcoDownload /></span> Download SPI</button>
               <button type="button" className="spi-menu-item" onClick={() => { const row = menu.row; setMenu(null); openPoPayment(row); }}><span className="spi-menu-item-ico spi-menu-item-ico-pay"><IcoCard /></span> SPI Payment</button>
             </div>
           </div>
         </div>,
         document.body,
+      )}
+
+      {/* ── ZOHO SYNC CONFIRM + SPEEDOMETER ──────────────────────────── */}
+      {sync && (
+        <div className="spicfm-overlay is-open" onClick={e => { if (e.target === e.currentTarget && !sync.busy) setSync(null); }}>
+          <div className="spicfm-card" role="dialog" aria-modal="true">
+            <div className="spicfm-bd">
+              {sync.busy ? (
+                <>
+                  <Speedometer value={sync.progress} />
+                  <div className="spicfm-t">Syncing with Zohobook…</div>
+                  <div className="spicfm-msg">{sync.attempt > 1
+                    ? `Retry attempt ${sync.attempt} of ${SYNC_MAX_ATTEMPTS} — hang tight.`
+                    : 'Posting the supplier invoice, bill and payments to your Zohobook account.'}</div>
+                </>
+              ) : (
+                <>
+                  <div className={`spicfm-ico${sync.failed ? ' spicfm-ico--fail' : ''}`}><IcoSync size={26} /></div>
+                  <div className="spicfm-t">{sync.failed ? 'Sync failed' : 'Sync with Zohobook?'}</div>
+                  <div className="spicfm-msg">{sync.failed
+                    ? 'Something went wrong pushing this invoice to Zohobook. You can try again.'
+                    : 'This will post the approved invoice, its bill and payments to your Zohobook account and update its sync status.'}</div>
+                </>
+              )}
+              <div className="spicfm-chip"><span className="spi">{sync.spiNo}</span>{sync.supplier && (
+                <Tooltip label={sync.supplier} disabled={sync.supplier.length <= 30} position="bottom" zIndex={2999999}>
+                  <span className="sup">· {sync.supplier.length > 30 ? `${sync.supplier.slice(0, 30)}…` : sync.supplier}</span>
+                </Tooltip>
+              )}</div>
+            </div>
+            {!sync.busy && (
+              <div className="spicfm-actions">
+                <button type="button" className="spicfm-btn spicfm-btn--ghost" onClick={() => setSync(null)}>{sync.failed ? 'Close' : 'Cancel'}</button>
+                <button type="button" className="spicfm-btn spicfm-btn--go" onClick={doSync}>
+                  {sync.failed ? 'Try Again' : 'Yes, Sync'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

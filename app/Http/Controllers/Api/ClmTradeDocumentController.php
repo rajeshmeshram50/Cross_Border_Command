@@ -361,6 +361,14 @@ class ClmTradeDocumentController extends Controller
 
     private const DOCX_MAX_KB = 20 * 1024;
 
+    /**
+     * Max editor-HTML size we'll render synchronously to PDF/Word. dompdf and
+     * PhpWord are near-quadratic on long content, so past this a single web
+     * request exhausts memory/time and crashes with a 500. Above it we return a
+     * clean "too large" message instead of letting the process die.
+     */
+    private const RENDER_MAX_CHARS = 1000000;   // 1,000,000 chars (~1 MB of HTML)
+
     public function downloadDocx(Request $request, $id)
     {
         $user = $request->user(); if (!$user) abort(401);
@@ -373,8 +381,8 @@ class ClmTradeDocumentController extends Controller
         // limits can be lower than CLI, producing intermittent OOM 500s that
         // surface to the user as a generic "Download failed". Raise both
         // defensively for this request only.
-        @ini_set('memory_limit', '512M');
-        @set_time_limit(120);
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(300);
 
         // Prefer the user-uploaded DOCX (it's the source of truth after a
         // Word round-trip — preserves header/footer/styling we can't fully
@@ -391,6 +399,17 @@ class ClmTradeDocumentController extends Controller
             } catch (\Throwable $e) {
                 // fall through to regeneration
             }
+        }
+
+        // Guard oversized content: past this, PhpWord crashes the request (500).
+        // Return a clean message the UI can show instead.
+        if (($len = mb_strlen((string) $row->content)) > self::RENDER_MAX_CHARS) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This trade document is too large to generate as a Word file — '
+                    . number_format(round($len / 1024 / 1024, 2), 2) . ' MB (' . number_format($len) . ' characters). '
+                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB). Please shorten or split it.',
+            ], 422);
         }
 
         // Generate a fresh DOCX from the row's HTML content. Title goes on
@@ -471,8 +490,18 @@ class ClmTradeDocumentController extends Controller
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
 
-        @ini_set('memory_limit', '512M');
-        @set_time_limit(120);
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(300);
+
+        // Guard oversized content: past this, dompdf crashes the request (500).
+        if (($len = mb_strlen((string) $row->content)) > self::RENDER_MAX_CHARS) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This trade document is too large to generate as a PDF — '
+                    . number_format(round($len / 1024 / 1024, 2), 2) . ' MB (' . number_format($len) . ' characters). '
+                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB). Please shorten or split it.',
+            ], 422);
+        }
 
         $client       = Client::find($row->client_id);
         $headerConfig = is_array($row->header_config) ? $row->header_config : [];
@@ -546,6 +575,12 @@ class ClmTradeDocumentController extends Controller
 
         $this->validateDocxUpload($request);
 
+        // Converting a Word file to editor HTML is memory/time-heavy for a big
+        // file; without this the web SAPI runs out and the conversion silently
+        // fails, leaving the editor blank. Raise both for this request only.
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(300);
+
         $file       = $request->file('docx');
         $clientSlug = $user->client_id ? 'c' . $user->client_id : 'public';
         $folder     = "trade_doc_library/{$clientSlug}/t{$row->id}";
@@ -554,11 +589,31 @@ class ClmTradeDocumentController extends Controller
         $path       = $file->storeAs($folder, $filename, 'public');
 
         // Best-effort DOCX → HTML so the web editor reflects the upload.
+        // Read the stored BYTES into a temp LOCAL file before converting: on a
+        // cloud disk (Azure Blob, used on the server) Storage::path() returns an
+        // unreadable path, so ZipArchive/PhpWord silently fail and the editor
+        // goes blank. ->get() works on both local and cloud disks.
         $html = $row->content;
+        $tmpDocx = tempnam(sys_get_temp_dir(), 'docxconv_') . '.docx';
         try {
-            $html = $this->docxToHtml(Storage::disk('public')->path($path)) ?: $row->content;
+            file_put_contents($tmpDocx, Storage::disk('public')->get($path));
+            $html = $this->docxToHtml($tmpDocx) ?: $row->content;
         } catch (\Throwable $e) {
             // ignore — keep the previous HTML if parsing failed
+        } finally {
+            @unlink($tmpDocx);
+        }
+
+        // Reject a document whose text is over the render cap: it could never be
+        // downloaded as PDF/Word afterwards. Drop the stored file and tell the user.
+        if (($len = mb_strlen((string) $html)) > self::RENDER_MAX_CHARS) {
+            Storage::disk('public')->delete($path);
+            return response()->json([
+                'status'  => false,
+                'message' => 'This document is too large — '
+                    . number_format(round($len / 1024 / 1024, 2), 2) . ' MB (' . number_format($len) . ' characters). '
+                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB). Please upload a smaller file or split it.',
+            ], 422);
         }
 
         $row->update([

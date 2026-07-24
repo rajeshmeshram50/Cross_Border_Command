@@ -277,21 +277,33 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
   // Row id currently generating a download, so its button can show a spinner
   // and disable to prevent duplicate clicks while the PDF/DOCX renders.
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  // 0→100 progress + label for the "Generating…" popup. The server gives no real
+  // progress, so it eases toward ~90 while rendering and snaps to 100 on done.
+  const [dlProgress, setDlProgress] = useState(0);
+  const [dlKind, setDlKind] = useState<'pdf' | 'docx'>('pdf');
   const download = async (row: TdLib, fmt: 'pdf' | 'docx') => {
     if (downloadingId) return;
     setDownloadingId(row.id);
+    setDlKind(fmt);
+    setDlProgress(6);
+    let p = 6;
+    const timer = window.setInterval(() => { p = Math.min(90, p + Math.random() * 7 + 2); setDlProgress(Math.round(p)); }, 300);
     try {
       const url = fmt === 'pdf'
         ? `/clm/trade-doc-library/${row.id}/download-pdf`
         : `/clm/trade-doc-library/${row.id}/download`;
       const resp = await api.get(url, { responseType: 'blob' });
+      window.clearInterval(timer);
+      setDlProgress(100);
       const blobUrl = URL.createObjectURL(new Blob([resp.data], { type: fmt === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
       const a = document.createElement('a');
       a.href = blobUrl;
       a.download = `${row.code || 'trade-document'}.${fmt}`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(blobUrl);
+      await new Promise(res => setTimeout(res, 400)); // let 100% show briefly
     } catch (e: any) {
+      window.clearInterval(timer);
       let msg = 'Please try again.';
       try {
         const blob = e?.response?.data;
@@ -301,6 +313,7 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
       toast.error('Download failed', msg);
     } finally {
       setDownloadingId(null);
+      setDlProgress(0);
     }
   };
 
@@ -556,6 +569,38 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}
       />
+
+      {/* Popup loader while a PDF/DOCX is generated — a big/table-rich trade doc
+          can take several seconds server-side. Shows a 0→100% ring. */}
+      {downloadingId !== null && createPortal(
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3000000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,30,42,.45)', backdropFilter: 'blur(3px)' }}>
+          <div style={{ width: 300, background: '#fff', borderRadius: 18, padding: '26px 24px 22px', textAlign: 'center', boxShadow: '0 24px 60px rgba(8,40,60,.32)' }}>
+            <TdProgressRing value={dlProgress} />
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#0c2c3a', marginTop: 14 }}>{dlKind === 'pdf' ? 'Generating PDF…' : 'Generating Word file…'}</div>
+            <div style={{ fontSize: 12.5, fontWeight: 500, color: '#5e7888', marginTop: 6, lineHeight: 1.5 }}>Please wait — a large document can take a few seconds.</div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+/* Circular 0→100% progress ring for the generate/download popup. */
+function TdProgressRing({ value }: { value: number }) {
+  const v = Math.max(0, Math.min(100, value));
+  const R = 34, C = 2 * Math.PI * R;
+  return (
+    <div style={{ position: 'relative', width: 92, height: 92, margin: '0 auto' }}>
+      <svg width="92" height="92" viewBox="0 0 92 92">
+        <circle cx="46" cy="46" r={R} fill="none" stroke="#e6edf2" strokeWidth="8" />
+        <circle cx="46" cy="46" r={R} fill="none" stroke="#0891b2" strokeWidth="8" strokeLinecap="round"
+          strokeDasharray={C} strokeDashoffset={C * (1 - v / 100)} transform="rotate(-90 46 46)"
+          style={{ transition: 'stroke-dashoffset .3s ease' }} />
+      </svg>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, fontWeight: 800, color: '#0e7490' }}>
+        {Math.round(v)}<span style={{ fontSize: 12, fontWeight: 700, marginLeft: 1 }}>%</span>
+      </div>
     </div>
   );
 }

@@ -156,11 +156,20 @@ class VendorController extends Controller
         // Purchase Order. The vendor form keys segments by ID, so resolve the
         // locked NAMES to IDS here so the UI can disable only those chips' ×.
         $data = $this->shape($vendor);
-        $lockedNames = \App\Support\SegmentGuard::lockedSegmentNames(
-            \App\Models\Vendor::class,
-            (int) $vendor->id,
-            (int) $vendor->client_id,
-        );
+        $lockedNames = array_values(array_unique(array_merge(
+            \App\Support\SegmentGuard::lockedSegmentNames(
+                \App\Models\Vendor::class,
+                (int) $vendor->id,
+                (int) $vendor->client_id,
+            ),
+            // Also lock segments the supplier is mapped to via a product (blocks
+            // removal before any PO/SPI exists).
+            \App\Support\SegmentGuard::productMappingSegmentNames(
+                \App\Models\Vendor::class,
+                (int) $vendor->id,
+                (int) $vendor->client_id,
+            ),
+        )));
         $data['locked_segments'] = empty($lockedNames) ? [] : DB::table('clm_segments')
             ->whereIn('name', $lockedNames)
             ->where(fn ($q) => $q->where('client_id', $vendor->client_id)->orWhereNull('client_id'))
@@ -369,6 +378,15 @@ class VendorController extends Controller
             if (!empty($removedIds)) {
                 $removedNames   = DB::table('clm_segments')->whereIn('id', $removedIds)->pluck('name')->all();
                 $remainingNames = DB::table('clm_segments')->whereIn('id', array_map('intval', $segIds))->pluck('name')->all();
+                // (0) Product-mapping lock — the supplier is mapped to a product
+                // that belongs to the segment (in use before any PO/SPI exists).
+                $mapBlocked = \App\Support\SegmentGuard::blockedByProductMapping(\App\Models\Vendor::class, (int) $vendor->id, (int) $vendor->client_id, $removedNames);
+                if (!empty($mapBlocked)) {
+                    return response()->json([
+                        'message' => 'This Segment cannot be removed because the Supplier is currently associated with one or more Products under this Segment. Please remove the Product dependency before removing this Segment.',
+                        'errors'  => ['segment_ids' => ['Segment(s) mapped to a supplier product cannot be removed: ' . implode(', ', $mapBlocked) . '.']],
+                    ], 422);
+                }
                 // (1) Product lock — a product on a PO / SPI belongs to it.
                 $blocked = \App\Support\SegmentGuard::blockedByCompletedDocs(\App\Models\Vendor::class, (int) $vendor->id, (int) $vendor->client_id, $removedNames);
                 if (!empty($blocked)) {

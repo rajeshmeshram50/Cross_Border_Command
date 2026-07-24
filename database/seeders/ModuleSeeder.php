@@ -451,9 +451,10 @@ class ModuleSeeder extends Seeder
         }
 
         // ── Shipment 360 (level 2 category + level 3 leaves) ──
-        // Marked is_default so client_admins receive it on plan (re)activation
-        // (SubscriptionController grants is_default modules); branch users /
-        // employees still need an explicit grant from the Permissions screen.
+        // OPT-IN module — NOT default. Like every other business module it must
+        // be granted per user from the Permissions screen; without that grant the
+        // Shipment 360 tab stays hidden. (Previously is_default=true force-locked
+        // its checkbox ON in the Permissions matrix, so everyone saw it.)
         $developers = Module::where('slug', 'developers')->first();
         $devCat = Module::updateOrCreate(
             ['slug' => 'developers.ops'],
@@ -461,7 +462,7 @@ class ModuleSeeder extends Seeder
                 'name' => 'Operations', 'icon' => 'Truck',
                 'description' => 'Business Task (Shipment) operations',
                 'parent_id' => $developers->id, 'sort_order' => 1,
-                'is_active' => true, 'is_default' => true,
+                'is_active' => true, 'is_default' => false,
             ]
         );
         $devShip = Module::updateOrCreate(
@@ -470,11 +471,11 @@ class ModuleSeeder extends Seeder
                 'name' => 'Shipment', 'icon' => 'Truck',
                 'description' => 'Business Task list — all shipment orders',
                 'parent_id' => $devCat->id, 'sort_order' => 1,
-                'is_active' => true, 'is_default' => true,
+                'is_active' => true, 'is_default' => false,
             ]
         );
-        // Also mark the top-level Developers parent as default.
-        $developers->update(['is_default' => true]);
+        // Top-level Developers parent is opt-in too.
+        $developers->update(['is_default' => false]);
 
         // Back-fill: grant the Developers modules to every existing CLIENT_ADMIN
         // so they can immediately pass it down to branch users / employees from
