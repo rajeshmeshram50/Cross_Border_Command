@@ -589,11 +589,19 @@ class ClmTradeDocumentController extends Controller
         $path       = $file->storeAs($folder, $filename, 'public');
 
         // Best-effort DOCX → HTML so the web editor reflects the upload.
+        // Read the stored BYTES into a temp LOCAL file before converting: on a
+        // cloud disk (Azure Blob, used on the server) Storage::path() returns an
+        // unreadable path, so ZipArchive/PhpWord silently fail and the editor
+        // goes blank. ->get() works on both local and cloud disks.
         $html = $row->content;
+        $tmpDocx = tempnam(sys_get_temp_dir(), 'docxconv_') . '.docx';
         try {
-            $html = $this->docxToHtml(Storage::disk('public')->path($path)) ?: $row->content;
+            file_put_contents($tmpDocx, Storage::disk('public')->get($path));
+            $html = $this->docxToHtml($tmpDocx) ?: $row->content;
         } catch (\Throwable $e) {
             // ignore — keep the previous HTML if parsing failed
+        } finally {
+            @unlink($tmpDocx);
         }
 
         // Reject a document whose text is over the render cap: it could never be

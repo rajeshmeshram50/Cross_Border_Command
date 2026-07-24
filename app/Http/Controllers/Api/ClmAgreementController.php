@@ -840,9 +840,16 @@ class ClmAgreementController extends Controller
         // Word round-trip — preserves header/footer/styling we can't fully
         // reproduce from HTML alone).
         if ($row->docx_path && Storage::disk('public')->exists($row->docx_path)) {
-            $abs  = Storage::disk('public')->path($row->docx_path);
             $name = $row->docx_original_name ?: ($row->code ?: 'agreement') . '.docx';
-            return response()->download($abs, $name);
+            try {
+                // Stream via the Storage disk — works for both local and cloud
+                // disks (Azure Blob). response()->download() needs a real local
+                // path and 500s on a cloud disk; on any read failure we fall
+                // through and regenerate the DOCX from the row's content below.
+                return Storage::disk('public')->download($row->docx_path, $name);
+            } catch (\Throwable $e) {
+                // fall through to regeneration
+            }
         }
 
         $phpWord = new PhpWord();
@@ -1002,11 +1009,19 @@ class ClmAgreementController extends Controller
         $path       = $file->storeAs($folder, $filename, 'public');
 
         // Best-effort DOCX → HTML so the web editor reflects the upload.
+        // Read the stored BYTES into a temp LOCAL file before converting: on a
+        // cloud disk (Azure Blob, used on the server) Storage::path() returns an
+        // unreadable path, so ZipArchive/PhpWord silently fail and the editor
+        // goes blank. ->get() works on both local and cloud disks.
         $html = $row->content;
+        $tmpDocx = tempnam(sys_get_temp_dir(), 'docxconv_') . '.docx';
         try {
-            $html = $this->docxToHtml(Storage::disk('public')->path($path)) ?: $row->content;
+            file_put_contents($tmpDocx, Storage::disk('public')->get($path));
+            $html = $this->docxToHtml($tmpDocx) ?: $row->content;
         } catch (\Throwable $e) {
             // ignore — keep the previous HTML if parsing failed
+        } finally {
+            @unlink($tmpDocx);
         }
 
         // Reject a document whose text is over the render cap: it could never be
