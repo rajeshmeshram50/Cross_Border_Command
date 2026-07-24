@@ -409,13 +409,73 @@ class ZohoBooksService
         return $map[$key];
     }
 
-    /** Org's own GST state code ("27" for Maharashtra), from the org GSTIN. */
+    /**
+     * Indian GST state codes: alpha code (as Zoho's org API returns, e.g. "MH")
+     * AND lowercase state name → the numeric code used on GSTINs / our addresses.
+     * Used to resolve the org's own state when Zoho doesn't fill `gst_no`.
+     */
+    private const GST_STATE_CODES = [
+        'JK' => '01', 'jammu and kashmir' => '01', 'jammu & kashmir' => '01',
+        'HP' => '02', 'himachal pradesh' => '02',
+        'PB' => '03', 'punjab' => '03',
+        'CH' => '04', 'chandigarh' => '04',
+        'UT' => '05', 'UK' => '05', 'uttarakhand' => '05',
+        'HR' => '06', 'haryana' => '06',
+        'DL' => '07', 'delhi' => '07',
+        'RJ' => '08', 'rajasthan' => '08',
+        'UP' => '09', 'uttar pradesh' => '09',
+        'BR' => '10', 'bihar' => '10',
+        'SK' => '11', 'sikkim' => '11',
+        'AR' => '12', 'arunachal pradesh' => '12',
+        'NL' => '13', 'nagaland' => '13',
+        'MN' => '14', 'manipur' => '14',
+        'MZ' => '15', 'mizoram' => '15',
+        'TR' => '16', 'tripura' => '16',
+        'ML' => '17', 'meghalaya' => '17',
+        'AS' => '18', 'assam' => '18',
+        'WB' => '19', 'west bengal' => '19',
+        'JH' => '20', 'jharkhand' => '20',
+        'OD' => '21', 'OR' => '21', 'odisha' => '21', 'orissa' => '21',
+        'CG' => '22', 'CT' => '22', 'chhattisgarh' => '22',
+        'MP' => '23', 'madhya pradesh' => '23',
+        'GJ' => '24', 'gujarat' => '24',
+        'DD' => '26', 'DN' => '26', 'daman and diu' => '26', 'dadra and nagar haveli' => '26', 'dadra and nagar haveli and daman and diu' => '26',
+        'MH' => '27', 'maharashtra' => '27',
+        'KA' => '29', 'karnataka' => '29',
+        'GA' => '30', 'goa' => '30',
+        'LD' => '31', 'lakshadweep' => '31',
+        'KL' => '32', 'kerala' => '32',
+        'TN' => '33', 'tamil nadu' => '33',
+        'PY' => '34', 'puducherry' => '34', 'pondicherry' => '34',
+        'AN' => '35', 'andaman and nicobar islands' => '35',
+        'TS' => '36', 'TG' => '36', 'telangana' => '36',
+        'AP' => '37', 'andhra pradesh' => '37',
+        'LA' => '38', 'ladakh' => '38',
+    ];
+
+    /** Org's own GST state code ("27" for Maharashtra). Prefers the GSTIN prefix
+     *  but Zoho's org API often leaves `gst_no` empty and returns the state as
+     *  an alpha code ("MH") / name ("Maharashtra") instead — map those so the
+     *  intra/inter-state tax decision is correct even without a GSTIN. */
     public function orgStateCode(): ?string
     {
         return Cache::remember('zoho_books_org_state:' . $this->orgId, now()->addHours(6), function () {
             $org = $this->get('organizations')['organizations'][0] ?? [];
+
+            // 1) GSTIN prefix — most reliable when present.
             $gst = (string) ($org['gst_no'] ?? '');
-            return strlen($gst) >= 2 ? substr($gst, 0, 2) : null;
+            if (strlen($gst) >= 2 && ctype_digit(substr($gst, 0, 2))) return substr($gst, 0, 2);
+
+            // 2) Alpha state code ("MH") — what the org API actually returns.
+            $sc = strtoupper(trim((string) ($org['state_code'] ?? '')));
+            if ($sc !== '' && ctype_digit($sc)) return self::normStateCode($sc);   // already numeric
+            if ($sc !== '' && isset(self::GST_STATE_CODES[$sc])) return self::GST_STATE_CODES[$sc];
+
+            // 3) State name ("Maharashtra").
+            $name = mb_strtolower(trim((string) ($org['state'] ?? '')));
+            if ($name !== '' && isset(self::GST_STATE_CODES[$name])) return self::GST_STATE_CODES[$name];
+
+            return null;
         });
     }
 
