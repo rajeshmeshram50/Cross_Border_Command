@@ -335,6 +335,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [signedDocs, setSignedDocs] = useState<SignedDoc[]>([]);
   const [signedLoading, setSignedLoading] = useState(false);
   const [signedPreview, setSignedPreview] = useState<SignedDoc | null>(null);
+  // Tracks which signed doc is currently being fetched so the Download PDF
+  // button (both in the vault table and the preview modal) can show a loader.
+  const [downloadingDocId, setDownloadingDocId] = useState<number | null>(null);
 
   // ── Uploaded employee documents — the rows the employee actually
   // uploaded through onboarding (Aadhaar/PAN/photo/etc.) plus anything HR
@@ -403,6 +406,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   };
 
   const downloadSignedPdf = async (docId: number, code: string | null) => {
+    setDownloadingDocId(docId);
     try {
       const resp = await api.get(`/hr-document-signatures/${docId}/download-pdf`, { responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
@@ -416,6 +420,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       toast.success('Downloaded', 'Your signed PDF has been saved.');
     } catch (err: any) {
       toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setDownloadingDocId(null);
     }
   };
 
@@ -2016,7 +2022,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     profilePhotoInputRef, setFaceRegOpen, setPwOpen,
     // Vault tab
     vaultTab, setVaultTab, signedDocs, uploadedDocs, signedLoading, uploadedLoading,
-    vaultCounts, prettyDocKey, formatBytes, setSignedPreview, downloadSignedPdf,
+    vaultCounts, prettyDocKey, formatBytes, setSignedPreview, downloadSignedPdf, downloadingDocId,
     // Payroll tab
     payrollTab, setPayrollTab, salaryStruct, realMonthlyGross, realAnnualCtc, realTimeline,
     openLatestPayslip, setSalaryModalOpen, setBreakdownOpen, setBreakdownRowId,
@@ -3533,8 +3539,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 Close
               </button>
               <button type="button" onClick={() => downloadSignedPdf(signedPreview.id, signedPreview.code)}
-                className="ep-signed-download-btn">
-                <i className="ri-file-pdf-2-line me-1" />Download PDF
+                className="ep-signed-download-btn" disabled={downloadingDocId === signedPreview.id}>
+                {downloadingDocId === signedPreview.id
+                  ? (<><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>)
+                  : (<><i className="ri-file-pdf-2-line me-1" />Download PDF</>)}
               </button>
             </div>
           </div>

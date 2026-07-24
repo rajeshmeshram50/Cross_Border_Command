@@ -560,23 +560,33 @@ class HrDocumentSignatureController extends Controller
         $headerCfg = is_array($row->header_config) ? $row->header_config : [];
         $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
         $logoUrl = null;
-        if (!empty($headerCfg['logo_path'])) {
-            $abs = storage_path('app/public/' . ltrim((string) $headerCfg['logo_path'], '/'));
-            if (is_file($abs)) {
+        // Prefer the path saved in header_config; if the frontend never
+        // persisted it, fall back to the most recently uploaded logo for this
+        // client — the same fallback the DOCX renderer uses — so the PDF
+        // header still carries a logo instead of just the company text.
+        $logoPath = !empty($headerCfg['logo_path'])
+            ? (string) $headerCfg['logo_path']
+            : (new HrDocumentTemplateController())->latestClientLogo($row->client_id);
+        if (!empty($logoPath)) {
+            $disk = Storage::disk('public');
+            $logoPath = ltrim($logoPath, '/');
+            if ($disk->exists($logoPath)) {
                 // Inline as data URI — DomPDF can't reach the storage URL
-                // because of relative-path resolution in headless renders.
+                // because of relative-path resolution in headless renders, and
+                // reading through the disk (not storage_path) keeps this
+                // working when the public disk is Azure Blob on the server.
                 // Normalise the extension to a valid MIME — "jpg" is the
                 // common file extension but "image/jpg" is not a valid type;
                 // it must be "image/jpeg" or some PDF readers refuse to
                 // decode the embedded image.
-                $ext = strtolower((string) pathinfo($abs, PATHINFO_EXTENSION));
+                $ext = strtolower((string) pathinfo($logoPath, PATHINFO_EXTENSION));
                 $mime = match ($ext) {
                     'jpg', 'jpeg' => 'image/jpeg',
                     'svg'         => 'image/svg+xml',
                     ''            => 'image/png',
                     default       => 'image/' . $ext,
                 };
-                $logoUrl = 'data:' . $mime . ';base64,' . base64_encode(file_get_contents($abs));
+                $logoUrl = 'data:' . $mime . ';base64,' . base64_encode((string) $disk->get($logoPath));
             }
         }
 
