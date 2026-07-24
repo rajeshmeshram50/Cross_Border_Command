@@ -460,17 +460,17 @@ export default function IdimsHeader() {
     go(path);
   };
 
+  // A leaf is visible when the user can_view its slug (super-admin sees all).
+  // Sign Document Tracker has no slug of its own — it's a read-only view of the
+  // same sign requests, so it rides on the Quotation Vs PI permission.
+  const leafCanView = (leaf: Leaf): boolean => {
+    if (isSuperAdmin) return true;
+    const slug = leaf.id === 'sales.sign_tracker' ? 'sales.quotation_vs_pi' : leaf.id;
+    return !!perms[slug]?.can_view;
+  };
+
   const renderLeaf = (leaf: Leaf, kind: DD, accent: string, bg: string, variant = '') => {
-    // Sign Document Tracker has no permission slug of its own — it's a
-    // read-only view of the same sign requests, so it rides on the
-    // Quotation Vs PI permission.
-    const leafVisible = leaf.id === 'sales.sign_tracker'
-      ? !!perms['sales.quotation_vs_pi']?.can_view
-      : !!perms[leaf.id]?.can_view;
-    // Every leaf — including P2P (p2p.product, p2p.supplier, …), which ARE real
-    // permission slugs — is filtered by its own can_view. Column headers stay
-    // (renderCol keeps them); only non-permitted leaves are hidden.
-    if (!(isSuperAdmin || leafVisible)) return null;
+    if (!leafCanView(leaf)) return null;
     const path = leafPath(leaf.id, kind);
     const Icon = getLucide(leaf.icon);
     return (
@@ -491,9 +491,13 @@ export default function IdimsHeader() {
     // First column items render large (like the prototype's Command Center);
     // the remaining columns render compact.
     const variant = key === 0 ? 'idims-dd-item-lg' : 'idims-dd-item-sm';
+    // Drop groups whose leaves are all permission-filtered, and drop the whole
+    // column when nothing in it is visible — never render a blank column (QA).
+    const visGroups = groups.filter(g => g.children.some(leafCanView));
+    if (visGroups.length === 0) return null;
     return (
       <div key={key} className="idims-dd-col" style={{ borderTop: `3px solid ${accent}` }}>
-        {groups.map(g => (
+        {visGroups.map(g => (
           <div key={g.id} className="idims-dd-group">
             <div className="idims-dd-section-label" style={{ color: accent }}>
               <span className="dd-sl-dot" style={{ background: accent }} />{g.label}
@@ -520,6 +524,21 @@ export default function IdimsHeader() {
     );
   };
 
+  // Fit the CLM mega-menu panel to the columns the user can actually see, so a
+  // hidden column doesn't leave the panel over-wide with empty space on the right
+  // (the fr grid inside then fills the narrowed panel). Returns undefined when all
+  // three columns show → the default responsive CSS width applies (QA follow-up).
+  const clmPanelWidth = (): string | undefined => {
+    const grp = (id: string) => clmGroups.find(x => x.id === id);
+    const vis = (g?: Group) => !!g && g.children.some(leafCanView);
+    const cmd = vis(grp('clm.command'));
+    const ops = vis(grp('clm.ops_with')) || vis(grp('clm.ops_without'));
+    const master = vis(grp('clm.compliance')) || vis(grp('clm.documents'));
+    if (cmd && ops && master) return undefined;
+    const px = (cmd ? 300 : 0) + (ops ? 590 : 0) + (master ? 590 : 0) + 40;
+    return px > 40 ? `min(${px}px, calc(100vw - 28px))` : undefined;
+  };
+
   // CLM mega-menu — matches the prototype: 3 sections (Command Center,
   // Operations, Master Management); Operations + Master Management each split
   // into two sub-columns with sub-headers, and Without-Shipment-ID nests the
@@ -529,7 +548,7 @@ export default function IdimsHeader() {
     const P = '#7C3AED', PB = '#F5F3FF';   // Command Center
     const S = '#0EA5E9', SB = '#F0F9FF';   // Operations
     const T = '#0D9488', TB = '#F0FDFA';   // Master Management
-    const visible = (grp?: Group) => !!grp && grp.children.some(l => isSuperAdmin || perms[l.id]?.can_view);
+    const visible = (grp?: Group) => !!grp && grp.children.some(leafCanView);
 
     const cmd = g('clm.command');
     const ow = g('clm.ops_with');
@@ -539,17 +558,32 @@ export default function IdimsHeader() {
     const wonParent = won?.children.find(l => l.id === 'clm.case_to_case');
     const wonKids = (won?.children || []).filter(l => l.id === 'clm.agreements_sent' || l.id === 'clm.agreements_to_approve');
 
+    // Rebuild the grid track list from only the columns the user can see, so a
+    // hidden column (e.g. Command Center) doesn't leave a blank track or push its
+    // neighbours into the wrong (narrow) track (QA follow-up). When all three are
+    // shown, fall back to the responsive CSS template.
+    const showCmd = visible(cmd);
+    const showOps = visible(ow) || visible(won);
+    const showMaster = visible(comp) || visible(doc);
+    const allShown = showCmd && showOps && showMaster;
+    const gridCols = [showCmd ? '290px' : null, showOps ? '1.1fr' : null, showMaster ? '1.35fr' : null]
+      .filter(Boolean).join(' ');
+
     const subHead = (label: string, color: string) =>
       <div className="idims-clm-subhead" style={{ color, borderColor: color }}><span className="dd-sl-dot" style={{ background: color }} />{label}</div>;
 
     return (
-      <div className="idims-clm-grid">
-        {/* Command Center */}
+      <div className="idims-clm-grid" style={allShown ? undefined : { gridTemplateColumns: gridCols }}>
+        {/* Command Center — hidden entirely when the user can't view any of its
+            leaves, so the column isn't left blank (QA request). */}
+        {visible(cmd) && (
         <div className="idims-dd-col" style={{ borderTop: `3px solid ${P}` }}>
           <div className="idims-dd-section-label" style={{ color: P }}><span className="dd-sl-dot" style={{ background: P }} />CLM Command Center</div>
           {cmd?.children.map(l => renderLeaf(l, 'clm', P, PB, 'idims-dd-item-lg'))}
         </div>
+        )}
         {/* Operations */}
+        {(visible(ow) || visible(won)) && (
         <div className="idims-dd-col" style={{ borderTop: `3px solid ${S}` }}>
           <div className="idims-dd-section-label" style={{ color: S }}><span className="dd-sl-dot" style={{ background: S }} />CLM Operations</div>
           <div className="idims-clm-sub">
@@ -566,7 +600,9 @@ export default function IdimsHeader() {
             </div>
           </div>
         </div>
+        )}
         {/* Master Management */}
+        {(visible(comp) || visible(doc)) && (
         <div className="idims-dd-col" style={{ borderTop: `3px solid ${T}` }}>
           <div className="idims-dd-section-label" style={{ color: T }}><span className="dd-sl-dot" style={{ background: T }} />CLM Master Management</div>
           <div className="idims-clm-sub">
@@ -580,6 +616,7 @@ export default function IdimsHeader() {
             </div>
           </div>
         </div>
+        )}
       </div>
     );
   };
@@ -754,20 +791,32 @@ export default function IdimsHeader() {
                       <span className="dd-chev">{IC.chevSm}</span>
                     </button>
                     {openDD === item.dd && (
-                      <div className={`idims-dropdown ${item.dd === 'clm' || item.dd === 'hr' ? 'idims-dd-wide' : ''}${item.dd === 'p2p' ? 'idims-dd-p2p' : ''}`}>
+                      <div
+                        className={`idims-dropdown ${item.dd === 'clm' || item.dd === 'hr' ? 'idims-dd-wide' : ''}${item.dd === 'p2p' ? 'idims-dd-p2p' : ''}`}
+                        style={item.dd === 'clm' && clmPanelWidth() ? { width: clmPanelWidth() } : undefined}
+                      >
                         <div className="idims-dd-topbar" />
                         <div className="idims-dd-inner">
                           {item.dd === 'clm' ? renderClmMega() : (
-                            <div className="idims-dd-grid"
-                              style={{ gridTemplateColumns: `repeat(${colsFor(item.dd!).length}, 1fr)` }}>
-                              {colsFor(item.dd!).map((groups, i) => {
-                                // P2P carries its own Figma palette; other mega-menus
-                                // cycle the shared accent set.
-                                const acc = item.dd === 'p2p' ? P2P_ACCENT : COL_ACCENT;
-                                const bgs = item.dd === 'p2p' ? P2P_BG : COL_BG;
-                                return renderCol(groups, item.dd!, acc[i], bgs[i], i);
-                              })}
-                            </div>
+                            (() => {
+                              // P2P carries its own Figma palette; other mega-menus
+                              // cycle the shared accent set.
+                              const acc = item.dd === 'p2p' ? P2P_ACCENT : COL_ACCENT;
+                              const bgs = item.dd === 'p2p' ? P2P_BG : COL_BG;
+                              // Keep only columns with a visible leaf, preserving each
+                              // column's ORIGINAL index so its accent stays stable, and
+                              // size the grid to the visible count — a hidden column then
+                              // leaves no blank track and the rest keep full width (QA).
+                              const visCols = colsFor(item.dd!)
+                                .map((groups, i) => ({ groups, i }))
+                                .filter(c => c.groups.some(g => g.children.some(leafCanView)));
+                              return (
+                                <div className="idims-dd-grid"
+                                  style={{ gridTemplateColumns: `repeat(${visCols.length || 1}, 1fr)` }}>
+                                  {visCols.map(({ groups, i }) => renderCol(groups, item.dd!, acc[i], bgs[i], i))}
+                                </div>
+                              );
+                            })()
                           )}
                         </div>
                       </div>
