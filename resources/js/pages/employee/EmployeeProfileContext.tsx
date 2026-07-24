@@ -45,6 +45,7 @@ export interface EmployeeProfileCtx {
   formatBytes: (b: number | null) => string;
   setSignedPreview: (d: any) => void;
   downloadSignedPdf: (docId: number, code: string | null) => Promise<void>;
+  downloadingDocId: number | null;
 
   // ── Payroll tab ──
   payrollTab: 'summary' | 'details';

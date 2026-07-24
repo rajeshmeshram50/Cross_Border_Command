@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
@@ -207,9 +207,16 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
    * simplest path for contentEditable without pulling in an editor framework.
    * preventDefault on mouseDown keeps the editor's selection intact when a
    * toolbar button is clicked. */
-  const syncContent = () => {
-    if (editorRef.current) setContent(editorRef.current.innerHTML);
-  };
+  /* The body editor is UNCONTROLLED — its HTML is read straight from the DOM
+   * at save time (see handleSave) and the char counter tracks length via its
+   * own `input` listener. We deliberately do NOT mirror every keystroke /
+   * formatting command into React state: doing so re-rendered this whole
+   * ~1000-line modal on each action, which was the editor lag / "changes not
+   * applied immediately" report (QA #40). `content` state is flushed from the
+   * DOM only when the editor is about to remount (full-page toggle / step
+   * change) so the body survives. syncContent() is kept as a no-op so the
+   * historical call sites still read intent-fully. */
+  const syncContent = () => { /* intentionally no-op — see note above */ };
   const exec = (cmd: string, value?: string) => {
     editorRef.current?.focus();
     document.execCommand(cmd, false, value);
@@ -590,7 +597,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   const goNext = () => {
     if (validateStep1()) setStep(2);
   };
-  const goBack = () => setStep(1);
+  // Flush the live editor HTML into state before unmounting the step-2 editor,
+  // so returning to step 2 re-hydrates with the user's latest edits rather than
+  // the last loaded snapshot (the editor is otherwise uncontrolled — QA #40).
+  const goBack = () => { if (editorRef.current) setContent(editorRef.current.innerHTML); setStep(1); };
 
   const handleSave = async () => {
     if (!validateStep1()) {
@@ -966,7 +976,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     {/* Full Page — expands the drafting area to fill the screen
                         (and collapses back). Lets the user draft long content
                         without the modal frame cramping the editor. */}
-                    <button type="button" className={`tdw-editor-btn ${fullPage ? 'is-on' : ''}`} onClick={() => setFullPage(v => !v)} title={fullPage ? 'Exit full page' : 'Edit in full page'}>
+                    <button type="button" className={`tdw-editor-btn ${fullPage ? 'is-on' : ''}`} onClick={() => { if (editorRef.current) setContent(editorRef.current.innerHTML); setFullPage(v => !v); }} title={fullPage ? 'Exit full page' : 'Edit in full page'}>
                       {fullPage ? (
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14h6v6" /><path d="M20 10h-6V4" /><path d="M14 10l7-7" /><path d="M3 21l7-7" /></svg>
                       ) : (
@@ -1071,7 +1081,6 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                       className="tdw-editor"
                       contentEditable
                       suppressContentEditableWarning
-                      onInput={(e) => setContent((e.target as HTMLElement).innerHTML)}
                       role="textbox"
                       aria-multiline="true"
                       aria-label="Document content"
@@ -1080,7 +1089,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                 </div>
                 <div className="tdw-editor-foot" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span className="tdw-editor-foot-hint">ℹ Placeholders auto-fill on document generation</span>
-                  <TdwCharCounter length={(content ?? '').length} />
+                  <TdwCharCounter editorRef={editorRef} baseLength={(content ?? '').length} remountKey={fullPage} />
                 </div>
               </div>
               ); return fullPage ? createPortal(editorShell, document.body) : editorShell; })()}
@@ -1132,7 +1141,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
         <ClmInsertPlaceholderModal
           open={pickerOpen}
           onClose={() => setPickerOpen(false)}
-          onInsert={(token) => { if (/^\s*</.test(token)) insertHtmlAtCaret(token); else insertAtCaret(token); setPickerOpen(false); }}
+          onInsert={(token) => { const isHtml = /^\s*</.test(token); if (isHtml) insertHtmlAtCaret(token); else insertAtCaret(token); toast.success('Placeholder added', isHtml ? undefined : token); setPickerOpen(false); }}
         />
 
         <ClmInsertTableModal
@@ -1668,7 +1677,30 @@ function TdwProgressRing({ value }: { value: number }) {
 /* Live character counter vs the 1,000,000-char (~1 MB) render limit. Amber near
    the cap, red once over — so users know before a download/upload fails. */
 const TDW_RENDER_MAX_CHARS = 1000000;
-function TdwCharCounter({ length }: { length: number }) {
+/* Self-updating character counter. It subscribes to the editor's own `input`
+ * events (fired on typing, execCommand formatting, and HTML inserts) and tracks
+ * length in its OWN state, so the parent modal doesn't re-render on each edit —
+ * that whole-tree re-render was the editor lag (QA #40). `baseLength` seeds the
+ * count from freshly-loaded content; `remountKey` (the full-page flag) makes the
+ * listener re-attach when the editor element is re-created by the portal. */
+function TdwCharCounter({ editorRef, baseLength, remountKey }: {
+  editorRef: RefObject<HTMLDivElement | null>;
+  baseLength: number;
+  remountKey: unknown;
+}) {
+  const [length, setLength] = useState(baseLength);
+  // Reflect a programmatic content load / flush (edit-mode open, full-page toggle).
+  useEffect(() => { setLength(baseLength); }, [baseLength, remountKey]);
+  // Live-track edits straight from the DOM without touching parent state.
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const update = () => setLength(el.innerHTML.length);
+    update();
+    el.addEventListener('input', update);
+    return () => el.removeEventListener('input', update);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remountKey]);
   const pct = length / TDW_RENDER_MAX_CHARS;
   const over = length > TDW_RENDER_MAX_CHARS;
   const color = over ? '#e11d48' : pct > 0.8 ? '#d97706' : '#5e7888';

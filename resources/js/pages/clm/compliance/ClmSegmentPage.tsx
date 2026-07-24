@@ -138,16 +138,32 @@ export default function ClmSegmentPage() {
       const el = scrollRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;     // viewport-relative top of table
-      const THEAD = 40, ROW = 46, FOOTER = 96;         // header row + pagination/footer reserve
-      const avail = window.innerHeight - top - THEAD - FOOTER;
-      const fit = Math.max(4, Math.floor(avail / ROW));
-      if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
-      // Stretch the table card down to cover the page even when rows are few.
-      const fh = Math.max(0, window.innerHeight - top - 64);
+      // Mirror the Customers list EXACTLY: set a FIXED height on the table card
+      // so it always covers the page down to just above the footer. `minHeight`
+      // alone was not stretching here; a hard height forces the box. Small
+      // reserve (≈ footer height) so it fills nearly to the bottom.
+      const fh = Math.max(240, window.innerHeight - top - 50);
+      el.style.height = `${fh}px`;
+      el.style.maxHeight = `${fh}px`;
       setFillH(prev => (prev === fh ? prev : fh));
+      // Auto-fit the row count to THIS card height so the rows fill it exactly
+      // (self-consistent, like Customers) — measured off the same `fh`.
+      if (autoFitRef.current) {
+        const THEAD = 44, PAGER = 52, ROW = 46;   // header + pager band inside the card
+        const fit = Math.max(4, Math.floor((fh - THEAD - PAGER) / ROW));
+        setRpp(prev => (prev === fit ? prev : fit));
+      }
     };
     recompute();
     const raf = requestAnimationFrame(recompute);
+    // Re-measure once the layout has fully settled. The first pass can run before
+    // the header strip / "What We Are Doing Here" box have taken their final
+    // height, which measured the table too low (large `top`) and under-counted
+    // the rows — so the table stopped short and didn't fill the screen. Two
+    // delayed re-measures lock onto the settled position without observing the
+    // root (which caused animation jank).
+    const settle1 = setTimeout(recompute, 220);
+    const settle2 = setTimeout(recompute, 520);
     // Deliberately NOT observing the page root here. The "What We Are Doing
     // Here" box collapses/expands (with a height animation), and observing the
     // root made rows-per-page recompute as the box moved the table — which
@@ -165,6 +181,8 @@ export default function ClmSegmentPage() {
       if (settleTimer) clearTimeout(settleTimer);
       window.removeEventListener('resize', recomputeDebounced);
       cancelAnimationFrame(raf);
+      clearTimeout(settle1);
+      clearTimeout(settle2);
     };
   }, [filtered.length, tab]);
 
@@ -405,6 +423,11 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
   // upgrade), since compliance structures (DCP rules, required docs) are built
   // against whatever it was set to. Editing only allows it to stay as-is.
   const regLocked = isEdit;
+  // Once a segment is referenced (Customers / Consignees / Suppliers / Products /
+  // Segment Rules etc.) its NAME is frozen — renaming it would break every
+  // record that stores the segment by name. Only Customer ≠ Consignee stays
+  // editable in that case. Regulatory status is already frozen on any edit.
+  const nameLocked = isEdit && !!existing?.in_use;
 
   const handleSave = async () => {
     // Guard at the TOP, not just `disabled` on the button — the button attribute
@@ -486,8 +509,10 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
 
           <div className="clm-field">
             <label className="clm-field-label">Segment Name <span className="clm-req">*</span></label>
-            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. Tobacco, Rice, Food Grade Ethanol" maxLength={255} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} autoFocus />
-            <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{name.length}/255</div>
+            <input className={`clm-input ${errors.name ? 'clm-input-err' : ''}`} placeholder="e.g. Tobacco, Rice, Food Grade Ethanol" maxLength={255} value={name} onChange={e => { setName(e.target.value); setErrors(p => ({ ...p, name: '' })); }} readOnly={nameLocked} tabIndex={nameLocked ? -1 : undefined} style={nameLocked ? { background: 'var(--vz-secondary-bg)', color: 'var(--vz-secondary-color)', cursor: 'not-allowed' } : undefined} autoFocus={!nameLocked} />
+            {nameLocked
+              ? <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', marginTop: 4 }}>Segment name is locked because this segment is in use{(existing?.used_in?.length) ? ` by ${existing.used_in.join(', ')}` : ''} — renaming would break those records.</div>
+              : <div style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 2, textAlign: 'right' }}>{name.length}/255</div>}
             {errors.name && (
               /already exists/i.test(errors.name) ? (
                 <div role="alert" style={{

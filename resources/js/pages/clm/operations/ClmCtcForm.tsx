@@ -606,16 +606,26 @@ function Stage1(p: {
   // Effective Date *forwards* afterwards, which is how an inverted pair still
   // reached the server.
   const endBeforeEff = !!p.effDate && !!p.endDate && p.endDate < p.effDate;
+  // Today as an ISO (YYYY-MM-DD) LOCAL date so it string-compares against the
+  // picker values exactly like endBeforeEff (no Date parsing / timezone drift).
+  const todayISO = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  // End date must not be in the past — a new agreement that already expired makes
+  // no sense. Only flagged when it isn't already caught by the end<eff rule.
+  const endBeforeToday = !!p.endDate && p.endDate < todayISO;
   const validateStep2 = (): boolean => {
     // Mark every invalid required field so all of them highlight inline at once…
-    const e = { title: !p.agTitle.trim(), type: !p.agType, effDate: !p.effDate, endDate: !p.endDate || endBeforeEff };
+    const e = { title: !p.agTitle.trim(), type: !p.agType, effDate: !p.effDate, endDate: !p.endDate || endBeforeEff || endBeforeToday };
     setErrors(e);
     // …while the toaster still calls out the first one (unchanged behaviour).
-    if (e.title)      { toast.error('Agreement name required', 'Enter the agreement title.'); setMidStep(2); return false; }
-    if (e.type)       { toast.error('Agreement type required', 'Select the agreement type.'); setMidStep(2); return false; }
-    if (e.effDate)    { toast.error('Effective date required', 'Select the effective date.'); setMidStep(2); return false; }
-    if (!p.endDate)   { toast.error('End date required', 'Select the end date.'); setMidStep(2); return false; }
-    if (endBeforeEff) { toast.error('Invalid end date', 'End date cannot be earlier than the effective date.'); setMidStep(2); return false; }
+    if (e.title)        { toast.error('Agreement name required', 'Enter the agreement title.'); setMidStep(2); return false; }
+    if (e.type)         { toast.error('Agreement type required', 'Select the agreement type.'); setMidStep(2); return false; }
+    if (e.effDate)      { toast.error('Effective date required', 'Select the effective date.'); setMidStep(2); return false; }
+    if (!p.endDate)     { toast.error('End date required', 'Select the end date.'); setMidStep(2); return false; }
+    if (endBeforeEff)   { toast.error('Invalid end date', 'End date cannot be earlier than the effective date.'); setMidStep(2); return false; }
+    if (endBeforeToday) { toast.error('Invalid end date', 'End date cannot be earlier than today.'); setMidStep(2); return false; }
     return true;
   };
   const validateAll = (): boolean => validateStep1() && validateStep2();
@@ -891,7 +901,7 @@ function Stage1(p: {
                           invariant, so it surfaces the instant the user creates the bad
                           combination (typically by moving Effective Date past End Date)
                           rather than waiting for them to press Next. It self-clears too. */}
-                      <Field t={t} label="End Date *" green error={errors.endDate && !p.endDate ? 'End date is required' : endBeforeEff ? 'End date cannot be earlier than the effective date' : undefined}><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={p.effDate || undefined} placeholder="Select date" /></Field>
+                      <Field t={t} label="End Date *" green error={errors.endDate && !p.endDate ? 'End date is required' : endBeforeEff ? 'End date cannot be earlier than the effective date' : endBeforeToday ? 'End date cannot be earlier than today' : undefined}><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={(p.effDate && p.effDate > todayISO) ? p.effDate : todayISO} placeholder="Select date" /></Field>
                     </div>
                   </div>
                 </div>

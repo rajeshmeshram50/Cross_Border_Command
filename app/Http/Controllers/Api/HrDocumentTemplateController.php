@@ -642,7 +642,7 @@ class HrDocumentTemplateController extends Controller
      * happens we fetch the MOST RECENTLY uploaded logo for this client straight
      * from that folder so the download still carries a logo.
      */
-    private function latestClientLogo($clientId): ?string
+    public function latestClientLogo($clientId): ?string
     {
         $folder = 'doc_templates/c' . ($clientId ?: 'public') . '/logos';
         if (!Storage::disk('public')->exists($folder)) return null;

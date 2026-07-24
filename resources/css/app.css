@@ -118,10 +118,31 @@ body { overflow-x: hidden; }
 .page-content > .container-fluid { padding-left: 6px !important; padding-right: 6px !important; }
 
 /* Footer flows with the page instead of being pinned to the bottom of
- * .main-content (Velzon sets .footer { position: absolute }). Pinned, it
+ * .main-content (Velzon ships it as `position:absolute; bottom:0`). Pinned, it
  * overlapped tall page content — e.g. the Products card grid's last row. As a
- * normal in-flow block it always sits BELOW the content and scrolls with it. */
-.footer { position: static !important; }
+ * normal in-flow block it always sits BELOW the content and scrolls with it.
+ * We only trim its bulk a touch — drop Velzon's fixed 60px height and shave the
+ * 20px padding to 12px — so there's a little less space around the footer text.
+ * Nothing else about the footer changes. */
+.footer { position: static !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 12px .75rem !important; }
+
+/* WorklistPager pins to the BOTTOM of its card. The list pages size their card
+ * to fill the screen (`minHeight: fillH`); when the rows don't fill it, the
+ * pager used to sit right under the last row with a big empty gap BELOW it
+ * (between the pager and the footer). `margin-top:auto` on the pager pushes it
+ * to the card's bottom edge instead, so the slack moves ABOVE the pager (a
+ * normal partly-empty table) and the pager+footer sit together — no gap. It's a
+ * pure flexbox no-op in any card that isn't a flex column with spare height, so
+ * natural-height lists and wrapped pagers are unaffected. */
+.wl-pager { margin-top: auto; }
+
+/* Footer must present a CONSISTENT surface on every module. Left transparent it
+ * inherited each page's background — so the P2P / CLM teal page tints (and the
+ * bulk-sourcing cyan gradient) bled through and the SAME footer looked teal on
+ * one module and white on another. Pin it to the theme's footer surface so it
+ * reads identically everywhere, and drive it off the Velzon vars so it still
+ * flips correctly in dark mode. */
+.footer { background: var(--vz-footer-bg, #fff) !important; background-image: none !important; color: var(--vz-footer-color, #878a99) !important; }
 
 /* Responsive tenant logo — a wide uploaded logo must scale DOWN to fit the
  * brand box instead of overflowing the bar. Applies to all three layouts:

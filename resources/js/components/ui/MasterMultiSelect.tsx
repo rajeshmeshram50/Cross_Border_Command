@@ -33,7 +33,9 @@ export function MasterMultiSelect({
   onChange,
 }: {
   values: string[];
-  options: { value: string; label: string }[];
+  /* `fullLabel` — the complete text when `label` is deliberately shortened
+     (e.g. truncated to N chars); shown as a native tooltip on hover. */
+  options: { value: string; label: string; fullLabel?: string }[];
   placeholder?: string;
   /** @deprecated kept for caller compatibility; no longer rendered separately. */
   addMorePlaceholder?: string;
@@ -229,7 +231,7 @@ export function MasterMultiSelect({
                       </svg>
                     )}
                   </span>
-                  <span className="mms-item-label">{opt.label}</span>
+                  <span className="mms-item-label" title={opt.fullLabel ?? opt.label}>{opt.label}</span>
                 </div>
               );
             })}
