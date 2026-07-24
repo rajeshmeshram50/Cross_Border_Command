@@ -506,15 +506,61 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
         zIndex={2100}
         modalClassName="ep-leave-modal"
         backdropClassName="ep-leave-backdrop"
+        contentClassName="lrd-modal"
       >
-        <ModalBody className="p-4">
-          <div className="d-flex justify-content-between align-items-center mb-3">
-            <h5 className="fw-bold mb-0">Leave details</h5>
-            <button type="button" className="btn-close" onClick={() => setDetailsType(null)} aria-label="Close" />
+        {/* Standard app modal chrome — same gradient header, rounded corners
+            and white close button used by the master Audit / Employee-Tree
+            modals, so this ledger popup matches the rest of the app (QA #90). */}
+        <style>{`
+          .lrd-modal {
+            border-radius: 16px !important;
+            overflow: hidden;
+            border: 0;
+            box-shadow: 0 25px 60px rgba(15,23,42,0.25);
+          }
+          .lrd-modal-header {
+            padding: 18px 22px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
+            border-bottom: 0;
+          }
+          .lrd-modal-title { color: #fff !important; letter-spacing: 0.01em; font-size: 16px; }
+          .lrd-modal-sub   { color: rgba(255,255,255,0.85) !important; font-size: 12px; }
+          .lrd-modal-icon {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+            background: rgba(255,255,255,0.20); color: #fff;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+          }
+          .lrd-modal-icon i { font-size: 18px; line-height: 1; }
+          .lrd-modal-close {
+            width: 30px; height: 30px; border-radius: 8px; border: 0;
+            background: rgba(255,255,255,0.18); color: #fff; cursor: pointer;
+            flex-shrink: 0; display: inline-flex; align-items: center;
+            justify-content: center; transition: background 0.15s ease;
+          }
+          .lrd-modal-close:hover { background: rgba(255,255,255,0.30); }
+          .lrd-modal-close i { font-size: 16px; line-height: 1; }
+          .lrd-modal-body { background: var(--vz-card-bg); }
+        `}</style>
+        <div className="lrd-modal-header">
+          <div className="d-flex align-items-center justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-3 min-w-0">
+              <span className="lrd-modal-icon"><i className="ri-calendar-line" /></span>
+              <div className="min-w-0">
+                <h5 className="mb-0 fw-bold lrd-modal-title">Leave details</h5>
+                <small className="lrd-modal-sub">
+                  {detailsType ? `Transaction ledger for ${detailsType.name}` : 'Transaction ledger'}
+                </small>
+              </div>
+            </div>
+            <button type="button" className="lrd-modal-close" onClick={() => setDetailsType(null)} aria-label="Close">
+              <i className="ri-close-line" />
+            </button>
           </div>
+        </div>
+        <ModalBody className="p-4 lrd-modal-body">
           {detailsType && (
             <>
-              <h6 className="mb-3" style={{ fontSize: 14 }}>{detailsType.name}</h6>
               <div style={{ border: '1px solid var(--vz-border-color)', borderRadius: 10, overflow: 'hidden' }}>
                 <table className="table mb-0" style={{ fontSize: 13 }}>
                   <thead style={{ background: 'var(--vz-secondary-bg)' }}>

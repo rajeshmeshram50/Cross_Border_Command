@@ -1,9 +1,24 @@
+import { useEffect, useState } from 'react';
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
+import WorklistPager from '../../../components/ui/WorklistPager';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 
 export default function HiringTab() {
   const { hiringRequests, hiringLoading, setRaiseHiringOpen, setHiringEditing, setHiringViewing, authUser, teamSize } = useEmployeeProfile();
+
+  // Pagination — mirrors the Employee Onboarding footer (WorklistPager with a
+  // rows-per-page dropdown, default 10). Keeps the table consistent with the
+  // other modules that already show a standard footer.
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const pageCount = Math.max(1, Math.ceil(hiringRequests.length / rowsPerPage));
+  const safePage  = Math.min(Math.max(1, page), pageCount);
+  const sliceFrom = (safePage - 1) * rowsPerPage;
+  const visibleRequests = hiringRequests.slice(sliceFrom, sliceFrom + rowsPerPage);
+  // Snap back to page 1 when the page size changes or the list shrinks below
+  // the current page so the footer never points at an empty slice.
+  useEffect(() => { setPage(1); }, [rowsPerPage, hiringRequests.length]);
 
         const stats = {
           total:     hiringRequests.length,
@@ -138,7 +153,7 @@ export default function HiringTab() {
                           You haven't raised any hiring requests yet.
                         </td>
                       </tr>
-                    ) : hiringRequests.map((r: any) => {
+                    ) : visibleRequests.map((r: any) => {
                       const uTone = urgencyTone(r.urgency);
                     
                       const displayStatus = r._hasRecruitment ? 'Recruitment Created' : (r.status || '—');
@@ -199,11 +214,15 @@ export default function HiringTab() {
               </div>
 
               {!hiringLoading && hiringRequests.length > 0 && (
-                <div className="d-flex justify-content-between align-items-center mt-2 pt-2 border-top">
-                  <small className="text-muted ep-fs-115">
-                    Showing <strong>{hiringRequests.length}</strong> request{hiringRequests.length === 1 ? '' : 's'}
-                  </small>
-                </div>
+                <WorklistPager
+                  className="mt-2"
+                  total={hiringRequests.length}
+                  page={safePage}
+                  pageSize={rowsPerPage}
+                  onPage={p => setPage(Math.min(Math.max(1, p), pageCount))}
+                  onPageSize={setRowsPerPage}
+                  pageSizeOptions={[5, 10, 25, 50, 100]}
+                />
               )}
             </CardBody>
           </Card>

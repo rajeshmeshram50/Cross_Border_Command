@@ -827,8 +827,8 @@ export default function HrExpenseManagement() {
             {/* One toolbar row: status tabs (left) + search + All Dates + Export. */}
             <Row className="g-2 align-items-center mb-3">
               <Col xs={12}>
-                <div className="d-flex align-items-center gap-2 flex-wrap">
-                  <div className="rec-tab-track mb-0 me-auto">
+                <div className="d-flex align-items-center gap-2 flex-wrap hrexp-toolbar">
+                  <div className="rec-tab-track mb-0">
                     {(() => {
                       const c = module === 'advance' ? advanceCounts : counts;
                       const allLabel = module === 'advance' ? 'All Advances' : 'All Claims';
@@ -851,36 +851,43 @@ export default function HrExpenseManagement() {
                       </button>
                     ))}
                   </div>
-                  <div className="rec-req-search search-box" style={{ flex: '1 1 420px', minWidth: 280 }}>
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="Search employee, claim no, category, vendor…"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                    <i className="ri-search-line search-icon" />
+                  {/* Search + All-Dates + Export travel together as one cluster
+                      that flex-grows to fill the row. It never wraps internally,
+                      so Export can't drop onto its own line below the search —
+                      instead the search input (min-width:0) shrinks/grows with
+                      the viewport. On phones the cluster stacks (see expense.css). */}
+                  <div className="d-flex align-items-center gap-2 hrexp-controls">
+                    <div className="rec-req-search search-box" style={{ flex: '1 1 auto', minWidth: 0 }}>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Search employee, claim no, category, vendor…"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                      />
+                      <i className="ri-search-line search-icon" />
+                    </div>
+                    <div className="hrexp-hero-select" style={{ minWidth: 150 }}>
+                      <MasterSelect
+                        value={dateFilter}
+                        onChange={(v) => setDateFilter((v as DateFilter) || 'all')}
+                        options={(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(k => ({ value: k, label: DATE_FILTER_LABELS[k] }))}
+                        placeholder="All Dates"
+                      />
+                    </div>
+                    <button
+                      ref={exportBtnRef}
+                      type="button"
+                      className="hrexp-cta rounded-pill"
+                      onClick={toggleExport}
+                      aria-haspopup="true"
+                      aria-expanded={exportOpen}
+                    >
+                      <i className="ri-download-2-line me-2" style={{ fontSize: 16 }} />
+                      Export
+                      <i className="ri-arrow-down-s-line ms-1" style={{ fontSize: 16 }} />
+                    </button>
                   </div>
-                  <div className="hrexp-hero-select" style={{ minWidth: 150 }}>
-                    <MasterSelect
-                      value={dateFilter}
-                      onChange={(v) => setDateFilter((v as DateFilter) || 'all')}
-                      options={(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(k => ({ value: k, label: DATE_FILTER_LABELS[k] }))}
-                      placeholder="All Dates"
-                    />
-                  </div>
-                  <button
-                    ref={exportBtnRef}
-                    type="button"
-                    className="hrexp-cta rounded-pill"
-                    onClick={toggleExport}
-                    aria-haspopup="true"
-                    aria-expanded={exportOpen}
-                  >
-                    <i className="ri-download-2-line me-2" style={{ fontSize: 16 }} />
-                    Export
-                    <i className="ri-arrow-down-s-line ms-1" style={{ fontSize: 16 }} />
-                  </button>
                 </div>
               </Col>
             </Row>
