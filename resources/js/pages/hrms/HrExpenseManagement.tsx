@@ -255,6 +255,17 @@ export default function HrExpenseManagement() {
   const approvedAmount = dateFilteredRows
     .filter(r => r.status === 'approved')
     .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const advanceTotalAmount = dateFilteredAdvances.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+  const advanceApprovedAmount = dateFilteredAdvances
+    .filter(a => a.status === 'approved')
+    .reduce((sum, a) => sum + Number(a.amount || 0), 0);
+
+  // The KPI cards + analytics follow the header toggle: Expense Claims vs Advance
+  // Requests. Pick the matching counts / amounts up front.
+  const isAdvanceModule = module === 'advance';
+  const kpiCounts        = isAdvanceModule ? advanceCounts : counts;
+  const kpiTotalAmount   = isAdvanceModule ? advanceTotalAmount : totalAmount;
+  const kpiApprovedAmount = isAdvanceModule ? advanceApprovedAmount : approvedAmount;
 
   const fmtCompact = (n: number): string => {
     if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(1).replace(/\.0$/, '')}Cr`;
@@ -299,13 +310,30 @@ export default function HrExpenseManagement() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFilteredRows, categories]);
 
+  // Advance Requests analytics — grouped by Advance Type (only APPROVED advances
+  // count toward the disbursed total), mirroring the expense category rollup.
+  const advanceTypeRollup = useMemo(() => {
+    const byKey = new Map<string, { id: number | null; name: string; spent: number }>();
+    for (const a of dateFilteredAdvances) {
+      if (a.status !== 'approved') continue;
+      const name = (a.advance_type === 'Other' ? (a.advance_type_other || 'Other') : a.advance_type) || '—';
+      const key = `nm:${name.toLowerCase()}`;
+      const cur = byKey.get(key) || { id: null, name, spent: 0 };
+      cur.spent += Number(a.amount || 0);
+      byKey.set(key, cur);
+    }
+    return Array.from(byKey.values()).map(row => ({ ...row, color: colorForCat(`:${row.name}`) }));
+  }, [dateFilteredAdvances]);
+
+  // Follows the header toggle: category breakdown for claims, advance-type
+  // breakdown for advances.
   const spendByCategory = useMemo(
-    () => [...categoryRollup].sort((a, b) => {
+    () => [...(isAdvanceModule ? advanceTypeRollup : categoryRollup)].sort((a, b) => {
       if ((b.spent > 0) !== (a.spent > 0)) return b.spent > 0 ? 1 : -1;
       if (b.spent !== a.spent) return b.spent - a.spent;
       return a.name.localeCompare(b.name);
     }),
-    [categoryRollup],
+    [categoryRollup, advanceTypeRollup, isAdvanceModule],
   );
   const dateSubLabel = useMemo(() => {
     const d = new Date();
@@ -523,29 +551,58 @@ export default function HrExpenseManagement() {
             </div>
           </div>
           <div className="d-flex align-items-center gap-2 flex-wrap">
-            <div className="hrexp-hero-select" style={{ minWidth: 160 }}>
-              <MasterSelect
-                value={dateFilter}
-                onChange={(v) => setDateFilter((v as DateFilter) || 'all')}
-                options={(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(k => ({
-                  value: k,
-                  label: DATE_FILTER_LABELS[k],
-                }))}
-                placeholder="All Dates"
-              />
-            </div>
-            <button
-              ref={exportBtnRef}
-              type="button"
-              className="hrexp-cta rounded-pill"
-              onClick={toggleExport}
-              aria-haspopup="true"
-              aria-expanded={exportOpen}
+            {/* Module toggle (Expense Claims / Advance Requests) in the header's
+                top-right corner — mirrors the Customer Profile CLM toggle. */}
+            <div
+              className="d-inline-flex"
+              style={{
+                background: 'var(--vz-secondary-bg)',
+                border: '1px solid var(--vz-border-color)',
+                borderRadius: 10,
+                padding: 4,
+                gap: 4,
+              }}
             >
-              <i className="ri-download-2-line me-2" style={{ fontSize: 16 }} />
-              Export
-              <i className="ri-arrow-down-s-line ms-1" style={{ fontSize: 16 }} />
-            </button>
+              {[
+                { key: 'expense' as const, label: 'Expense Claims',   total: counts.all,         icon: 'ri-file-list-3-line',        accent: '#7c5cfc', shadow: 'rgba(124,92,252,0.25)' },
+                { key: 'advance' as const, label: 'Advance Requests', total: advanceCounts.all,  icon: 'ri-money-dollar-circle-line', accent: '#4338ca', shadow: 'rgba(67,56,202,0.25)'  },
+              ].map(m => {
+                const on = module === m.key;
+                return (
+                  <button
+                    key={m.key}
+                    type="button"
+                    onClick={() => {
+                      setModule(m.key);
+                      setFilter('all');
+                    }}
+                    className="btn d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
+                    style={{
+                      borderRadius: 8,
+                      padding: '8px 16px',
+                      fontSize: 13,
+                      background: on ? `linear-gradient(135deg,${m.accent},#a78bfa)` : 'transparent',
+                      color: on ? '#fff' : 'var(--vz-secondary-color)',
+                      border: 'none',
+                      boxShadow: on ? `0 4px 12px ${m.shadow}` : 'none',
+                    }}
+                  >
+                    <i className={m.icon} style={{ fontSize: 14 }} />
+                    {m.label}
+                    <span
+                      className="badge rounded-pill"
+                      style={{
+                        fontSize: 11,
+                        background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
+                        color: on ? '#fff' : 'var(--vz-secondary-color)',
+                      }}
+                    >
+                      {m.total}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
             {exportOpen && exportPos && createPortal(
               <div
                 id="hrexp-export-menu"
@@ -572,9 +629,9 @@ export default function HrExpenseManagement() {
         <Row className="g-3 mb-3 align-items-stretch">
           <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
-              label="Total Claims"
+              label={isAdvanceModule ? 'Total Advances' : 'Total Claims'}
               sub={dateSubLabel}
-              value={counts.all}
+              value={kpiCounts.all}
               iconClass="ri-file-list-3-line"
               strip="#7c5cfc"
               tint="#ece6ff"
@@ -585,7 +642,7 @@ export default function HrExpenseManagement() {
             <KpiTile
               label="Total Amount"
               sub={dateSubLabel}
-              value={fmtCompact(totalAmount)}
+              value={fmtCompact(kpiTotalAmount)}
               iconClass="ri-cash-line"
               strip="#f97316"
               tint="#fdf3d6"
@@ -596,7 +653,7 @@ export default function HrExpenseManagement() {
             <KpiTile
               label="Approved"
               sub="Disbursable"
-              value={fmtCompact(approvedAmount)}
+              value={fmtCompact(kpiApprovedAmount)}
               iconClass="ri-checkbox-circle-line"
               strip="#10b981"
               tint="#d6f4e3"
@@ -607,7 +664,7 @@ export default function HrExpenseManagement() {
             <KpiTile
               label="Pending Review"
               sub="Awaiting approval"
-              value={counts.pending}
+              value={kpiCounts.pending}
               iconClass="ri-time-line"
               strip="#3b82f6"
               tint="#dceefe"
@@ -618,7 +675,7 @@ export default function HrExpenseManagement() {
             <KpiTile
               label="Rejected"
               sub="This cycle"
-              value={counts.rejected}
+              value={kpiCounts.rejected}
               iconClass="ri-close-circle-line"
               strip="#f06548"
               tint="#fdd9d6"
@@ -679,7 +736,7 @@ export default function HrExpenseManagement() {
                   >
                     <i className="ri-bar-chart-2-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Spend by Category</h6>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>{isAdvanceModule ? 'Advances by Type' : 'Spend by Category'}</h6>
                 </div>
                 <small className="text-muted" style={{ fontSize: 11 }}>{dateSubLabel}</small>
               </div>
@@ -767,96 +824,63 @@ export default function HrExpenseManagement() {
             Onboarding layout instead of a detached toolbar card. */}
         <Card className="border-0" style={{ borderRadius: 14 }}>
           <CardBody>
-            <Row className="g-2 align-items-center">
+            {/* One toolbar row: status tabs (left) + search + All Dates + Export. */}
+            <Row className="g-2 align-items-center mb-3">
               <Col xs={12}>
-                <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
-                <div
-                  className="d-inline-flex"
-                  style={{
-                    background: 'var(--vz-secondary-bg)',
-                    border: '1px solid var(--vz-border-color)',
-                    borderRadius: 10,
-                    padding: 4,
-                    gap: 4,
-                  }}
-                >
-                  {[
-                    { key: 'expense' as const, label: 'Expense Claims',   total: counts.all,         icon: 'ri-file-list-3-line',        accent: '#7c5cfc', shadow: 'rgba(124,92,252,0.25)' },
-                    { key: 'advance' as const, label: 'Advance Requests', total: advanceCounts.all,  icon: 'ri-money-dollar-circle-line', accent: '#4338ca', shadow: 'rgba(67,56,202,0.25)'  },
-                  ].map(m => {
-                    const on = module === m.key;
-                    return (
+                <div className="d-flex align-items-center gap-2 flex-wrap">
+                  <div className="rec-tab-track mb-0 me-auto">
+                    {(() => {
+                      const c = module === 'advance' ? advanceCounts : counts;
+                      const allLabel = module === 'advance' ? 'All Advances' : 'All Claims';
+                      return [
+                        { key: 'all'      as StatusFilter, label: allLabel,         count: c.all,      icon: 'ri-stack-line',           variant: 'in-progress' },
+                        { key: 'pending'  as StatusFilter, label: 'Pending Review', count: c.pending,  icon: 'ri-time-line',            variant: 'in-progress' },
+                        { key: 'approved' as StatusFilter, label: 'Approved',       count: c.approved, icon: 'ri-checkbox-circle-line', variant: 'completed' },
+                        { key: 'rejected' as StatusFilter, label: 'Rejected',       count: c.rejected, icon: 'ri-close-circle-line',    variant: 'cancelled' },
+                      ];
+                    })().map(t => (
                       <button
-                        key={m.key}
+                        key={t.key}
                         type="button"
-                        onClick={() => {
-                          setModule(m.key);
-                          setFilter('all');
-                        }}
-                        className="btn d-inline-flex align-items-center justify-content-center gap-2 fw-semibold"
-                        style={{
-                          borderRadius: 8,
-                          padding: '8px 18px',
-                          fontSize: 13,
-                          background: on ? `linear-gradient(135deg,${m.accent},#a78bfa)` : 'transparent',
-                          color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          border: 'none',
-                          boxShadow: on ? `0 4px 12px ${m.shadow}` : 'none',
-                        }}
+                        onClick={() => setFilter(t.key)}
+                        className={`rec-tab ${filter === t.key ? `is-active ${t.variant}` : ''}`}
                       >
-                        <i className={m.icon} style={{ fontSize: 14 }} />
-                        {m.label}
-                        <span
-                          className="badge rounded-pill"
-                          style={{
-                            fontSize: 11,
-                            background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                            color: on ? '#fff' : 'var(--vz-secondary-color)',
-                          }}
-                        >
-                          {m.total}
-                        </span>
+                        <i className={t.icon} />
+                        {t.label}
+                        <span className="badge">{t.count}</span>
                       </button>
-                    );
-                  })}
-                </div>
-                <div className="rec-req-search search-box" style={{ flex: '1 1 0', minWidth: 240 }}>
-                  <input
-                    type="text"
-                    className="form-control"
-                    placeholder="Search employee, claim no, category, vendor…"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                  <i className="ri-search-line search-icon" />
-                </div>
-                </div>
-              </Col>
-            </Row>
-            <Row className="g-2 align-items-center mb-3 mt-2">
-              <Col xs={12}>
-                <div className="rec-tab-track">
-                  {(() => {
-                    const c = module === 'advance' ? advanceCounts : counts;
-                    const allLabel = module === 'advance' ? 'All Advances' : 'All Claims';
-                    return [
-                      { key: 'all'      as StatusFilter, label: allLabel,         count: c.all,      icon: 'ri-stack-line',           variant: 'in-progress' },
-                      { key: 'pending'  as StatusFilter, label: 'Pending Review', count: c.pending,  icon: 'ri-time-line',            variant: 'in-progress' },
-                      { key: 'approved' as StatusFilter, label: 'Approved',       count: c.approved, icon: 'ri-checkbox-circle-line', variant: 'completed' },
-                      { key: 'rejected' as StatusFilter, label: 'Rejected',       count: c.rejected, icon: 'ri-close-circle-line',    variant: 'cancelled' },
-                    ];
-                  })().map(t => (
-                    <button
-                      key={t.key}
-                      type="button"
-                      onClick={() => setFilter(t.key)}
-                      className={`rec-tab ${filter === t.key ? `is-active ${t.variant}` : ''}`}
-                    >
-                      <i className={t.icon} />
-                      {t.label}
-                      <span className="badge">{t.count}</span>
-                    </button>
-                  ))}
+                    ))}
+                  </div>
+                  <div className="rec-req-search search-box" style={{ flex: '1 1 420px', minWidth: 280 }}>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Search employee, claim no, category, vendor…"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                    <i className="ri-search-line search-icon" />
+                  </div>
+                  <div className="hrexp-hero-select" style={{ minWidth: 150 }}>
+                    <MasterSelect
+                      value={dateFilter}
+                      onChange={(v) => setDateFilter((v as DateFilter) || 'all')}
+                      options={(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(k => ({ value: k, label: DATE_FILTER_LABELS[k] }))}
+                      placeholder="All Dates"
+                    />
+                  </div>
+                  <button
+                    ref={exportBtnRef}
+                    type="button"
+                    className="hrexp-cta rounded-pill"
+                    onClick={toggleExport}
+                    aria-haspopup="true"
+                    aria-expanded={exportOpen}
+                  >
+                    <i className="ri-download-2-line me-2" style={{ fontSize: 16 }} />
+                    Export
+                    <i className="ri-arrow-down-s-line ms-1" style={{ fontSize: 16 }} />
+                  </button>
                 </div>
               </Col>
             </Row>
