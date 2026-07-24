@@ -733,14 +733,25 @@ export default function AddVendorModal(props: {
   useEffect(() => {
     if (gstApplicable !== 'Yes' && kycTab === 'gst') setKycTab('bank');
   }, [gstApplicable, kycTab]);
-  /* India → GST is mandatory: force GST Applicable to Yes when the supplier's
-   * country is India (the field also hides the No option). */
+  /* GST applicability is DERIVED purely from the supplier's country — there is
+   * no user-facing "GST Applicable" toggle anymore (mirrors the Customer
+   * master): India (domestic) → 'Yes', any other country → 'No'. Leaving India
+   * drops the GSTIN so a stale number can't linger read-only in GST Scrutiny.
+   * (The first mount pass runs with an empty country → 'No', which only clears
+   * an already-empty GSTIN; the hydrated number is set afterwards by the load
+   * effect and then re-derived to 'Yes' once the saved India country lands.) */
   useEffect(() => {
-    if (supplierDocType === 'domestic' && gstApplicable !== 'Yes') {
-      setGstApplicable('Yes');
-      clearFieldError('gstApplicable');
-    }
-  }, [supplierDocType]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Wait for the country master list before deriving. On a cold masters cache
+    // the vendor hydration can set `country` BEFORE `countryOpts` is populated,
+    // which would transiently resolve as "international" and WIPE a saved GSTIN.
+    // Skipping until the options land lets the effect re-run and settle on the
+    // real country (deps include countryOpts, so it fires again once loaded).
+    if (country && countryOpts.length === 0) return;
+    const derived = supplierDocType === 'domestic' ? 'Yes' : 'No';
+    setGstApplicable(derived);
+    clearFieldError('gstApplicable');
+    if (derived === 'No') { setGstNumber(''); clearFieldError('gstNumber'); }
+  }, [supplierDocType, country, countryOpts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [ddDraft,    setDdDraft]    = useState<DdDraft>(EMPTY_DD_DRAFT);
   const [ownerDraft, setOwnerDraft] = useState<OwnerDraft>(EMPTY_OWNER_DRAFT);
@@ -1620,10 +1631,8 @@ export default function AddVendorModal(props: {
     // Only enforced when GST applies. The GST Scrutiny popup renders this number
     // read-only, so a bad value has to be caught HERE — there's no second chance
     // to fix it downstream.
-    // India → GST is mandatory: an Indian supplier cannot be GST-Applicable = No.
-    if (supplierDocType === 'domestic' && gstApplicable !== 'Yes') {
-      errs.gstApplicable = 'GST is mandatory for an Indian supplier — set it to Yes.';
-    }
+    // GST applicability is derived from the country (India → Yes), so there is
+    // no toggle to validate — an Indian supplier is always GST-applicable.
     if (gstApplicable === 'Yes') {
       if (!gstNumber.trim()) errs.gstNumber = 'GST Number is required';
       else { const e = validateGstin(gstNumber); if (e) errs.gstNumber = e; }
@@ -3240,45 +3249,6 @@ export default function AddVendorModal(props: {
                       <SelectInput value={complianceBehaviour} onChange={(v) => { setComplianceBehaviour(v); clearFieldError('complianceBehaviour'); }} placeholder="Select" options={complianceOpts} />
                     </Field>
                   </div>
-                  {/* GST — captured once here and reused read-only by every GST
-                      Scrutiny entry in Step 2 (mirrors the Customer master).
-                      GST Number only appears when GST is applicable. */}
-                  <div className="avm-grid-3">
-                    <Field label="GST Applicable" required error={fieldErrors.gstApplicable}>
-                      <SelectInput
-                        value={gstApplicable}
-                        onChange={(v) => {
-                          // An Indian supplier must be GST-registered — block 'No'.
-                          if (v === 'No' && supplierDocType === 'domestic') {
-                            toast.error('GST is mandatory', 'An Indian supplier must have GST Applicable = Yes.');
-                            return;
-                          }
-                          setGstApplicable(v as 'Yes' | 'No');
-                          clearFieldError('gstApplicable');
-                          // Switching to No drops the number (backend does the same)
-                          // so it can't resurface read-only in GST Scrutiny.
-                          if (v === 'No') { setGstNumber(''); clearFieldError('gstNumber'); }
-                        }}
-                        placeholder="Select"
-                        // India → only 'Yes' is selectable (GST is mandatory).
-                        options={supplierDocType === 'domestic' ? ['Yes'] : ['Yes', 'No']}
-                      />
-                    </Field>
-                    {gstApplicable === 'Yes' && (
-                      <Field label="GST Number" required error={fieldErrors.gstNumber}>
-                        <input
-                          className="avm-input"
-                          placeholder="e.g. 27AADCI6120M1ZH"
-                          value={gstNumber}
-                          maxLength={15}
-                          onChange={e => {
-                            setGstNumber(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15));
-                            clearFieldError('gstNumber');
-                          }}
-                        />
-                      </Field>
-                    )}
-                  </div>
                 </SectionCard>
               )}
 
@@ -3347,6 +3317,27 @@ export default function AddVendorModal(props: {
                       />
                     </Field>
                   </div>
+                  {/* GST Number lives with the address because its first 2 digits
+                      ARE the state code — derived purely from the country (India →
+                      applies), so it only appears for a domestic (Indian) supplier
+                      and stays hidden for an international one. No separate "GST
+                      Applicable" toggle (mirrors the Customer master). */}
+                  {gstApplicable === 'Yes' && (
+                    <div className="avm-grid-4">
+                      <Field label="GST Number" required error={fieldErrors.gstNumber}>
+                        <input
+                          className="avm-input"
+                          placeholder="e.g. 27AADCI6120M1ZH"
+                          value={gstNumber}
+                          maxLength={15}
+                          onChange={e => {
+                            setGstNumber(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15));
+                            clearFieldError('gstNumber');
+                          }}
+                        />
+                      </Field>
+                    </div>
+                  )}
                 </SectionCard>
               )}
 

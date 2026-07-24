@@ -538,10 +538,17 @@ class SourcingController extends Controller
     public function suppliers(Request $request)
     {
         $user = $request->user();
+        // Branch-isolated, exactly like the Supplier master list
+        // (VendorController@index) and the Customer/Consignee books: an
+        // employee/branch user sees only their own branch's suppliers, a
+        // client admin sees the BranchSwitcher's active branch. This keeps
+        // the picker in lock-step with the master EDIT scope — you can only
+        // map a supplier you can also open in the edit form, so the deep-link
+        // "Edit" from Mapped Suppliers never 404s on a cross-branch row.
         // Pull the vendor's primary contact person from its primary address
         // (contact_name / contact_no / email) — `addresses` is ordered
         // is_primary-first, so first() is the primary (or the only) one.
-        $rows = Vendor::where('client_id', $user->client_id)
+        $rows = Vendor::query()->forUser($user, $request->integer('branch_id') ?: null)
             ->with(['segment:id,name', 'addresses', 'addresses.country:id,name'])
             ->orderBy('company_name')
             ->get()
