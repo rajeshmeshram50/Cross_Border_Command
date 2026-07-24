@@ -255,6 +255,17 @@ export default function HrExpenseManagement() {
   const approvedAmount = dateFilteredRows
     .filter(r => r.status === 'approved')
     .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  const advanceTotalAmount = dateFilteredAdvances.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+  const advanceApprovedAmount = dateFilteredAdvances
+    .filter(a => a.status === 'approved')
+    .reduce((sum, a) => sum + Number(a.amount || 0), 0);
+
+  // The KPI cards + analytics follow the header toggle: Expense Claims vs Advance
+  // Requests. Pick the matching counts / amounts up front.
+  const isAdvanceModule = module === 'advance';
+  const kpiCounts        = isAdvanceModule ? advanceCounts : counts;
+  const kpiTotalAmount   = isAdvanceModule ? advanceTotalAmount : totalAmount;
+  const kpiApprovedAmount = isAdvanceModule ? advanceApprovedAmount : approvedAmount;
 
   const fmtCompact = (n: number): string => {
     if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(1).replace(/\.0$/, '')}Cr`;
@@ -299,13 +310,30 @@ export default function HrExpenseManagement() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFilteredRows, categories]);
 
+  // Advance Requests analytics — grouped by Advance Type (only APPROVED advances
+  // count toward the disbursed total), mirroring the expense category rollup.
+  const advanceTypeRollup = useMemo(() => {
+    const byKey = new Map<string, { id: number | null; name: string; spent: number }>();
+    for (const a of dateFilteredAdvances) {
+      if (a.status !== 'approved') continue;
+      const name = (a.advance_type === 'Other' ? (a.advance_type_other || 'Other') : a.advance_type) || '—';
+      const key = `nm:${name.toLowerCase()}`;
+      const cur = byKey.get(key) || { id: null, name, spent: 0 };
+      cur.spent += Number(a.amount || 0);
+      byKey.set(key, cur);
+    }
+    return Array.from(byKey.values()).map(row => ({ ...row, color: colorForCat(`:${row.name}`) }));
+  }, [dateFilteredAdvances]);
+
+  // Follows the header toggle: category breakdown for claims, advance-type
+  // breakdown for advances.
   const spendByCategory = useMemo(
-    () => [...categoryRollup].sort((a, b) => {
+    () => [...(isAdvanceModule ? advanceTypeRollup : categoryRollup)].sort((a, b) => {
       if ((b.spent > 0) !== (a.spent > 0)) return b.spent > 0 ? 1 : -1;
       if (b.spent !== a.spent) return b.spent - a.spent;
       return a.name.localeCompare(b.name);
     }),
-    [categoryRollup],
+    [categoryRollup, advanceTypeRollup, isAdvanceModule],
   );
   const dateSubLabel = useMemo(() => {
     const d = new Date();
@@ -601,9 +629,9 @@ export default function HrExpenseManagement() {
         <Row className="g-3 mb-3 align-items-stretch">
           <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
-              label="Total Claims"
+              label={isAdvanceModule ? 'Total Advances' : 'Total Claims'}
               sub={dateSubLabel}
-              value={counts.all}
+              value={kpiCounts.all}
               iconClass="ri-file-list-3-line"
               strip="#7c5cfc"
               tint="#ece6ff"
@@ -614,7 +642,7 @@ export default function HrExpenseManagement() {
             <KpiTile
               label="Total Amount"
               sub={dateSubLabel}
-              value={fmtCompact(totalAmount)}
+              value={fmtCompact(kpiTotalAmount)}
               iconClass="ri-cash-line"
               strip="#f97316"
               tint="#fdf3d6"
@@ -625,7 +653,7 @@ export default function HrExpenseManagement() {
             <KpiTile
               label="Approved"
               sub="Disbursable"
-              value={fmtCompact(approvedAmount)}
+              value={fmtCompact(kpiApprovedAmount)}
               iconClass="ri-checkbox-circle-line"
               strip="#10b981"
               tint="#d6f4e3"
@@ -636,7 +664,7 @@ export default function HrExpenseManagement() {
             <KpiTile
               label="Pending Review"
               sub="Awaiting approval"
-              value={counts.pending}
+              value={kpiCounts.pending}
               iconClass="ri-time-line"
               strip="#3b82f6"
               tint="#dceefe"
@@ -647,7 +675,7 @@ export default function HrExpenseManagement() {
             <KpiTile
               label="Rejected"
               sub="This cycle"
-              value={counts.rejected}
+              value={kpiCounts.rejected}
               iconClass="ri-close-circle-line"
               strip="#f06548"
               tint="#fdd9d6"
@@ -708,7 +736,7 @@ export default function HrExpenseManagement() {
                   >
                     <i className="ri-bar-chart-2-line" />
                   </span>
-                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>Spend by Category</h6>
+                  <h6 className="mb-0 fw-bold" style={{ fontSize: 14 }}>{isAdvanceModule ? 'Advances by Type' : 'Spend by Category'}</h6>
                 </div>
                 <small className="text-muted" style={{ fontSize: 11 }}>{dateSubLabel}</small>
               </div>
@@ -823,7 +851,7 @@ export default function HrExpenseManagement() {
                       </button>
                     ))}
                   </div>
-                  <div className="rec-req-search search-box" style={{ flex: '1 1 220px', minWidth: 200, maxWidth: 360 }}>
+                  <div className="rec-req-search search-box" style={{ flex: '1 1 420px', minWidth: 280 }}>
                     <input
                       type="text"
                       className="form-control"
