@@ -930,10 +930,11 @@ function SegmentRuleModal(props: {
                         <MasterMultiSelect
                           value={segCodes}
                           placeholder="— Select Segments —"
-                          options={segments.map(s => ({
-                            value: s.code,
-                            label: `${s.name} (${s.code})`,
-                          }))}
+                          options={segments.map(s => {
+                            // Truncate long names to 40 chars; full name in the hover tooltip.
+                            const nm = s.name.length > 40 ? `${s.name.slice(0, 40)}…` : s.name;
+                            return { value: s.code, label: `${nm} (${s.code})`, fullLabel: `${s.name} (${s.code})` };
+                          })}
                           onChange={(vs) => setSegCodes(vs)}
                         />
                       )
@@ -943,7 +944,12 @@ function SegmentRuleModal(props: {
                         onChange={(v) => setSegCodes(v ? [v] : [])}
                         disabled={!!existing}
                         placeholder={`— Choose a ${reg === 'highly' ? 'Highly' : 'Less'} Regulated Segment —`}
-                        options={segments.map(s => ({ value: s.code, label: `${s.name} (${s.code})` }))}
+                        options={segments.map(s => {
+                          // Truncate the (free-text, up-to-255-char) segment name to 40
+                          // chars in the list; the full name shows in the option tooltip.
+                          const nm = s.name.length > 40 ? `${s.name.slice(0, 40)}…` : s.name;
+                          return { value: s.code, label: `${nm} (${s.code})`, fullLabel: `${s.name} (${s.code})` };
+                        })}
                       />
                     )}
 

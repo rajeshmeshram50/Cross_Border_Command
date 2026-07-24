@@ -21,18 +21,10 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 export const CLM_CSS = `
-/* App footer — CLM cyan gradient. Gated on body.clm-active (set only while a
-   CLM master page is mounted, see ClmPageHeader) so it can NEVER leak onto
-   HR / Sales / etc. The footer lives outside .clm-root, so the body class is
-   the reliable scope. !important beats Velzon's own footer styles. */
-body.clm-active footer.footer { background: linear-gradient(110deg, #e0f9fd 0%, #cef8ff 18%, #d0f4f9 45%, #baeef7 75%, #a0e8f2 100%) !important; border-top: 1px solid #a5e8f5 !important; }
-body.clm-active footer.footer, body.clm-active footer.footer * { color: #0c4a6e !important; font-weight: 600; }
-/* Dark mode — deep slate footer with cyan accents so it matches the dark UI
-   instead of staying a glaring light-cyan band. */
-body.clm-active[data-bs-theme="dark"] footer.footer,
-[data-bs-theme="dark"] body.clm-active footer.footer { background: linear-gradient(110deg, #0b1220 0%, #0e1726 45%, #0b1a24 100%) !important; border-top: 1px solid rgba(6,182,212,.30) !important; }
-body.clm-active[data-bs-theme="dark"] footer.footer, body.clm-active[data-bs-theme="dark"] footer.footer *,
-[data-bs-theme="dark"] body.clm-active footer.footer, [data-bs-theme="dark"] body.clm-active footer.footer * { color: #67e8f9 !important; }
+/* NOTE: the app footer is intentionally left UNSTYLED here so it matches every
+   other module (a neutral surface, see resources/css/app.css). The old
+   body.clm-active teal-gradient footer override was removed so CLM no longer
+   stands out with a cyan footer band. */
 /* WorklistPager is violet app-wide; recolour to CLM cyan, scoped to .clm-root
    (the pager renders inside it) so other modules keep the violet pager. */
 .clm-root .wl-pager, .clm-root .tc-wl-pag { border-top-color: #a5e8f5; background: linear-gradient(90deg, #f0fdff 0%, #e6fafe 40%, #f0fdff 100%); }

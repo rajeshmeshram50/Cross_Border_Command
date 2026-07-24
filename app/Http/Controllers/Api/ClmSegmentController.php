@@ -201,6 +201,25 @@ class ClmSegmentController extends Controller
 
         if (isset($data['name'])) $data['name'] = trim($data['name']);
 
+        // Segment NAME is frozen once the segment is referenced anywhere
+        // (Customers / Consignees / Suppliers / Products / rules / libraries) —
+        // renaming would break every record that stores the segment by name.
+        // Only a genuine rename is blocked (same value re-submitted is fine), so
+        // Customer ≠ Consignee edits still go through. Uses the SAME usage map as
+        // the index so the locked field and this guard stay in sync; enforced
+        // server-side because the read-only input can be bypassed.
+        if (isset($data['name']) && $data['name'] !== (string) $row->name) {
+            $usedIn = $this->usageLabels(collect([$row]))[$row->id] ?? [];
+            if (!empty($usedIn)) {
+                $msg = 'This segment is in use by ' . implode(', ', $usedIn) . " — its name can't be changed.";
+                return response()->json([
+                    'status'  => false,
+                    'message' => $msg,
+                    'errors'  => ['name' => [$msg]],
+                ], 409);
+            }
+        }
+
         // Regulatory classification is fixed once a segment is created — it
         // can be changed neither way on edit, since compliance structures
         // (DCP rules, required docs) get built against it. Guarded here too
