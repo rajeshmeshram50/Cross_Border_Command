@@ -34,6 +34,14 @@ class ClmAgreementController extends Controller
 
     private const DOCX_MAX_KB = 20 * 1024;
 
+    /**
+     * Max editor-HTML size we'll render synchronously to PDF/Word. dompdf and
+     * PhpWord are near-quadratic on long content, so past this a single web
+     * request exhausts memory/time and crashes with a 500. Above it we return a
+     * clean "too large" message instead of letting the process die.
+     */
+    private const RENDER_MAX_CHARS = 1000000;   // 1,000,000 chars (~1 MB of HTML)
+
     /* ── TYPES ── */
 
     public function typesIndex(Request $request)
@@ -825,8 +833,8 @@ class ClmAgreementController extends Controller
         // limits can be lower than CLI, producing intermittent OOM 500s that
         // surface to the user as a generic "Download failed". Raise both
         // defensively for this request only. Mirrors the Trade Doc flow.
-        @ini_set('memory_limit', '512M');
-        @set_time_limit(120);
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(300);
 
         // Prefer the user-uploaded DOCX (it's the source of truth after a
         // Word round-trip — preserves header/footer/styling we can't fully
@@ -857,6 +865,17 @@ class ClmAgreementController extends Controller
             } catch (\Throwable $e) { /* try next candidate */ }
         }
         $this->applyDocxHeaderFooter($section, $headerCfg, $footerCfg, $logoAbs);
+
+        // Guard oversized content: past this, PhpWord crashes the request (500).
+        // Return a clean message the UI can show instead.
+        if (($len = mb_strlen((string) $row->content)) > self::RENDER_MAX_CHARS) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This agreement is too large to generate as a Word file — '
+                    . number_format(round($len / 1024 / 1024, 2), 2) . ' MB (' . number_format($len) . ' characters). '
+                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB). Please shorten or split it into smaller agreements.',
+            ], 422);
+        }
 
         // Body = the draft content ONLY. The agreement title used to be printed
         // as a top heading here, but it duplicated the title the draft body
@@ -904,6 +923,24 @@ class ClmAgreementController extends Controller
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
 
+        // dompdf is memory- and time-heavy for long / table-rich agreements. The
+        // web SAPI's default limits are lower than CLI, so a big document crashes
+        // the PHP process mid-render → an empty 500 (no Laravel error body). Raise
+        // both generously so content up to the ~1 MB cap can render.
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(300);
+
+        // Guard oversized content: past this, dompdf crashes the request (500).
+        // Return a clean message the UI can show instead.
+        if (($len = mb_strlen((string) $row->content)) > self::RENDER_MAX_CHARS) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This agreement is too large to generate as a PDF — '
+                    . number_format(round($len / 1024 / 1024, 2), 2) . ' MB (' . number_format($len) . ' characters). '
+                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB). Please shorten or split it into smaller agreements.',
+            ], 422);
+        }
+
         $html = trim((string) $row->content);
         if ($html === '') $html = '<p><em>No content saved for this agreement yet.</em></p>';
         $processedHtml = $this->normaliseEditorHtml($html);
@@ -950,6 +987,13 @@ class ClmAgreementController extends Controller
 
         $request->validate(['docx' => 'required|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB]);
 
+        // Converting a Word file to editor HTML (docxToHtml) loads the whole
+        // document.xml into memory + DOMDocument — heavy for a big file. Without
+        // this the web SAPI runs out of memory/time and the conversion silently
+        // fails, leaving the editor blank. Raise both for this request only.
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(300);
+
         $file       = $request->file('docx');
         $clientSlug = $user->client_id ? 'c' . $user->client_id : 'public';
         $folder     = "agreement_library/{$clientSlug}/a{$row->id}";
@@ -963,6 +1007,19 @@ class ClmAgreementController extends Controller
             $html = $this->docxToHtml(Storage::disk('public')->path($path)) ?: $row->content;
         } catch (\Throwable $e) {
             // ignore — keep the previous HTML if parsing failed
+        }
+
+        // Reject a document whose text is over the render cap: it could never be
+        // downloaded as PDF/Word afterwards. Drop the stored file and tell the
+        // user, instead of leaving un-exportable content in the editor.
+        if (($len = mb_strlen((string) $html)) > self::RENDER_MAX_CHARS) {
+            Storage::disk('public')->delete($path);
+            return response()->json([
+                'status'  => false,
+                'message' => 'This document is too large — '
+                    . number_format(round($len / 1024 / 1024, 2), 2) . ' MB (' . number_format($len) . ' characters). '
+                    . 'The limit is ' . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB). Please upload a smaller file or split it.',
+            ], 422);
         }
 
         $row->update([
