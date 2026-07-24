@@ -35,6 +35,8 @@ type DayStatus =
   | 'Work From Home'
   | 'Absent'
   | 'Leave'
+  | 'Paid Leave'
+  | 'Unpaid Leave'
   | 'Corrected';
 
 type CorrStatus = 'Pending' | 'Approved' | 'Rejected';
@@ -129,6 +131,8 @@ const STATUS_TONE: Record<DayStatus, { fg: string; bg: string; dot: string; labe
   'Work From Home':  { fg: '#0d9488', bg: '#ccfbf1', dot: '#14b8a6', label: 'WFH' },
   'Absent':          { fg: '#b91c1c', bg: '#fee2e2', dot: '#ef4444', label: 'Absent' },
   'Leave':           { fg: '#5b3fd1', bg: '#ede9fe', dot: '#7c5cfc', label: 'Leave' },
+  'Paid Leave':      { fg: '#0a716a', bg: '#d3f0ee', dot: '#0ab39c', label: 'Paid Leave' },
+  'Unpaid Leave':    { fg: '#a4661c', bg: '#fde8c4', dot: '#f59e0b', label: 'Unpaid Leave' },
   'Corrected':       { fg: '#5b3fd1', bg: '#ede9fe', dot: '#7c5cfc', label: 'Corrected' },
 };
 
@@ -768,6 +772,8 @@ function PunchTimelineCard({ employee }: { employee: AttendanceEmployee }) {
  *  segments (e.g. Leave / On Duty / WFH) — otherwise the graph looked empty. */
 const VBAR_BANDS: Partial<Record<DayStatus, { label: string; fg: string; bg: string }>> = {
   'Leave':          { label: 'On Leave', fg: '#5a3fd1', bg: '#ede9fe' },
+  'Paid Leave':     { label: 'Paid Leave', fg: '#0a716a', bg: '#d3f0ee' },
+  'Unpaid Leave':   { label: 'Unpaid Leave', fg: '#a4661c', bg: '#fde8c4' },
   'On Duty':        { label: 'On Duty',  fg: '#0d9488', bg: '#ccfbf1' },
   'Work From Home': { label: 'WFH',      fg: '#0d9488', bg: '#ccfbf1' },
 };
@@ -1241,7 +1247,7 @@ function CalendarMonthGrid({
     if (!c.inMonth || !c.status || c.future) return acc;
     acc[c.status] = (acc[c.status] || 0) + 1;
     return acc;
-  }, { Present: 0, Late: 0, 'Half Day': 0, 'Missing In': 0, 'Missing Out': 0, 'Weekly Off': 0, Holiday: 0, 'On Duty': 0, 'Work From Home': 0, Absent: 0, Leave: 0, Corrected: 0 });
+  }, { Present: 0, Late: 0, 'Half Day': 0, 'Missing In': 0, 'Missing Out': 0, 'Weekly Off': 0, Holiday: 0, 'On Duty': 0, 'Work From Home': 0, Absent: 0, Leave: 0, 'Paid Leave': 0, 'Unpaid Leave': 0, Corrected: 0 });
 
   return (
     <div className="att-cal">

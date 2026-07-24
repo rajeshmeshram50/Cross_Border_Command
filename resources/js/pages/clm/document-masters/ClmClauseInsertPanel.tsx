@@ -47,6 +47,7 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
   const [loading, setLoading]   = useState(true);
   const [typeName, setTypeName] = useState('');                 // selected clause type name
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [inserting, setInserting] = useState(false);   // brief spinner on the Insert button (QA #25)
 
   // Inline clause-type dropdown state.
   const [ddOpen, setDdOpen]     = useState(false);
@@ -100,7 +101,8 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
   });
 
   const insert = () => {
-    if (selected.size === 0) return;
+    if (selected.size === 0 || inserting) return;
+    setInserting(true);
     // Preserve library order; each clause = name heading + its body.
     const chosen = clauses.filter(c => selected.has(c.id));
     const html = chosen.map(c => {
@@ -108,9 +110,13 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
       return `<h3>${escapeHtml(c.name)}</h3>${body}`;
     }).join('');
     const count = chosen.length;
-    onInsert(html);
-    toast.success('Inserted', `${count} clause${count === 1 ? '' : 's'} inserted successfully`);
-    onClose();   // always dismiss the picker after a successful insert (some hosts don't close it themselves)
+    // Brief spinner so the blue Insert button shows visible progress before the
+    // picker closes (QA #25) — the HTML build itself is instant.
+    window.setTimeout(() => {
+      onInsert(html);
+      toast.success('Inserted', `${count} clause${count === 1 ? '' : 's'} inserted successfully`);
+      onClose();   // always dismiss the picker after a successful insert (some hosts don't close it themselves)
+    }, 450);
   };
 
   return createPortal(
@@ -222,9 +228,11 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
           <span className="clp-selcount">{selected.size} selected</span>
           <div className="clp-foot-btns">
             <button type="button" className="clp-btn clp-btn-cancel" onClick={onClose}>Cancel</button>
-            <button type="button" className="clp-btn clp-btn-primary" disabled={selected.size === 0} onClick={insert}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Insert {selected.size > 0 ? selected.size + ' ' : ''}clause{selected.size === 1 ? '' : 's'}
+            <button type="button" className="clp-btn clp-btn-primary" disabled={selected.size === 0 || inserting} onClick={insert}>
+              {inserting
+                ? <svg className="clp-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>
+                : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>}
+              {inserting ? 'Inserting…' : <>Insert {selected.size > 0 ? selected.size + ' ' : ''}clause{selected.size === 1 ? '' : 's'}</>}
             </button>
           </div>
         </div>
@@ -292,6 +300,7 @@ const CLP_CSS = `
 .clp-list { display: flex; flex-direction: column; gap: 8px; min-height: 120px; max-height: 300px; overflow-y: auto; padding: 2px; }
 .clp-empty { padding: 28px 12px; text-align: center; font-size: 12.5px; color: #64748b; }
 @keyframes clpSpin { to { transform: rotate(360deg); } }
+.clp-spin { animation: clpSpin .7s linear infinite; }
 .clp-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 30px 12px; }
 .clp-loading svg { animation: clpSpin .7s linear infinite; color: #0891b2; }
 .clp-loading span { font-size: 12px; font-weight: 700; color: #0891b2; letter-spacing: .01em; }

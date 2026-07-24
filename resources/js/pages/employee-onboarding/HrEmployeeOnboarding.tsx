@@ -752,9 +752,11 @@ export default function HrEmployeeOnboarding() {
           </div>
         </div>
 
-        {/* Body fills to the viewport bottom so the pager pins to the card
-            footer; the table grows to take the slack above it. */}
-        <div className="p-3 d-flex flex-column" ref={scrollRef} style={{ minHeight: fillH }}>
+        {/* Body sizes to its content so the pager sits directly below the table
+            with no blank gap above the page footer (QA #41). (Previously it was
+            force-filled to the viewport bottom to pin the pager down, which left
+            a large empty space on short / empty result sets.) */}
+        <div className="p-3 d-flex flex-column" ref={scrollRef}>
           <div className="table-responsive onb-list-table flex-grow-1">
                   <table className="table align-middle table-nowrap mb-0">
                     <thead className="table-light">

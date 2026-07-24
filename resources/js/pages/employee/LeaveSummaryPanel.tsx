@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
 import Swal from 'sweetalert2';
+import WorklistPager from '../../components/ui/WorklistPager';
 import {
   employeeBalancesApi,
   leaveRequestsApi,
@@ -100,7 +101,17 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
   useEffect(() => { refetch(); }, [refetch]);
 
   const pending = useMemo(() => requests.filter(r => r.status === 'Pending'), [requests]);
-  const history = useMemo(() => requests.filter(r => r.status !== 'Pending').slice(0, 10), [requests]);
+  const history = useMemo(() => requests.filter(r => r.status !== 'Pending'), [requests]);
+  // Client-side pagination for the Leave History table so it carries the same
+  // WorklistPager footer as the Employee Onboarding list.
+  const [histPage, setHistPage] = useState(1);
+  const [histPageSize, setHistPageSize] = useState(5);
+  const histTotalPages = Math.max(1, Math.ceil(history.length / histPageSize));
+  const histSafePage = Math.min(histPage, histTotalPages);
+  const visibleHistory = useMemo(
+    () => history.slice((histSafePage - 1) * histPageSize, (histSafePage - 1) * histPageSize + histPageSize),
+    [history, histSafePage, histPageSize],
+  );
 
   const openApprovers = async (requestId: number) => {
     setApproversFor(requestId);
@@ -136,7 +147,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
   };
 
   return (
-    <div className="leave-summary-panel mb-4">
+    <div className="leave-summary-panel mb-4" style={{ background: '#ffffff', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18, boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 4px 14px rgba(15,23,42,0.05)' }}>
       {/* Status pill tints. Light mode keeps the original pastel chips; the
           dark-mode overrides (which out-rank the inline-free class colours via
           !important) swap to deep tints so the badges don't wash out to bright
@@ -174,7 +185,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
               <div
                 key={i}
                 className="d-flex align-items-center gap-3 p-3"
-                style={{ background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 12 }}
+                style={{ background: '#ffffff', border: '1px solid var(--vz-border-color)', borderRadius: 12 }}
               >
                 <Shimmer width={44} height={44} radius={999} />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, flex: 1, minWidth: 0 }}>
@@ -197,7 +208,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
           <div
             key={r.id}
             className="lsp-request-card d-flex align-items-center gap-3 p-3 mb-2"
-            style={{ background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 12, cursor: 'pointer' }}
+            style={{ background: '#ffffff', border: '1px solid var(--vz-border-color)', borderRadius: 12, cursor: 'pointer' }}
             onClick={() => setDetailsRequestId(r.id)}
           >
             <span className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style={{ width: 44, height: 44, background: '#ece6ff' }}>
@@ -255,7 +266,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
         {loading ? (
           <div className="d-flex gap-3 flex-wrap">
             {[0, 1, 2].map(i => (
-              <div key={i} className="flex-grow-1" style={{ minWidth: 240, background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18 }}>
+              <div key={i} className="flex-grow-1" style={{ minWidth: 240, background: '#ffffff', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18, boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.08)' }}>
                 <div className="d-flex justify-content-between align-items-start mb-2">
                   <Shimmer height={14} width={90} />
                   <Shimmer height={10} width={60} />
@@ -291,7 +302,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
               const totalAllowance = t.unlimited ? null : roundDays(t.quota + (t.extra ?? 0));
               const pct = !t.unlimited && t.quota > 0 ? Math.min(100, ((t.used / t.quota) * 100)) : 0;
               return (
-                <div key={t.leave_type_id} className="lsp-balance-card flex-grow-1" style={{ minWidth: 240, background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18 }}>
+                <div key={t.leave_type_id} className="lsp-balance-card flex-grow-1" style={{ minWidth: 240, background: '#ffffff', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18, boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.08)' }}>
                   <div className="d-flex justify-content-between align-items-start mb-2">
                     <h6 className="fw-bold mb-0" style={{ fontSize: 14 }}>{t.name}</h6>
                     <button
@@ -369,7 +380,7 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
       <div>
         <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Leave History</h6>
         {loading ? (
-          <div style={{ background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ background: '#ffffff', border: '1px solid var(--vz-border-color)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.08)' }}>
             <div style={{ background: 'var(--vz-secondary-bg)', padding: '12px 14px', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
               {[0, 1, 2, 3, 4].map(i => <Shimmer key={i} height={10} width="60%" />)}
             </div>
@@ -384,19 +395,17 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
             No Leave history to show.
           </div>
         ) : (
-          <div style={{ background: 'var(--vz-card-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ background: '#ffffff', border: '1px solid var(--vz-border-color)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.08)' }}>
             <table className="table mb-0" style={{ fontSize: 13 }}>
-              <thead style={{ background: 'var(--vz-secondary-bg)' }}>
+              <thead style={{ background: '#f3f4f6', borderBottom: '2px solid var(--vz-border-color)' }}>
                 <tr>
-                  <th style={{ padding: '10px 14px' }}>DATES</th>
-                  <th style={{ padding: '10px 14px' }}>LEAVE TYPE</th>
-                  <th style={{ padding: '10px 14px' }}>DAYS</th>
-                  <th style={{ padding: '10px 14px' }}>STATUS</th>
-                  <th style={{ padding: '10px 14px' }}>APPROVED BY</th>
+                  {['DATES', 'LEAVE TYPE', 'DAYS', 'STATUS', 'APPROVED BY'].map(h => (
+                    <th key={h} style={{ padding: '11px 14px', fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', color: 'var(--vz-secondary-color)', textTransform: 'uppercase' }}>{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {history.map(r => (
+                {visibleHistory.map(r => (
                   <tr
                     key={r.id}
                     style={{ cursor: 'pointer' }}
@@ -420,6 +429,14 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
                 ))}
               </tbody>
             </table>
+            <WorklistPager
+              total={history.length}
+              page={histSafePage}
+              pageSize={histPageSize}
+              onPage={setHistPage}
+              onPageSize={(n) => { setHistPageSize(n); setHistPage(1); }}
+              pageSizeOptions={[5, 10, 25, 50]}
+            />
           </div>
         )}
       </div>
