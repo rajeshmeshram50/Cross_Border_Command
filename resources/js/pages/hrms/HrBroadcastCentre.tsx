@@ -503,13 +503,16 @@ function CreateAnnouncementModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // For a brand-new announcement the Live Preview meta box starts blank ("—")
-  // and each line only fills once the user actively touches that control, so
-  // the preview reflects real choices rather than silent defaults. When
+  // for lines whose default is a silent guess (Priority), and each fills once
+  // the user actively touches that control. Audience and Notify are exceptions:
+  // they carry a concrete, meaningful default (All Employees + Email on) that
+  // also drives the recipient banner/count, so they show from the start rather
+  // than lying "—" until the user re-toggles them (QA #25 / #26). When
   // editing/viewing an existing row every value is already real, so treat all
   // as touched. `reachedReview` reveals the fixed Status/Publish lines once the
   // user pages to the final Review & Publish step.
   const [touched, setTouched] = useState<{ priority: boolean; audience: boolean; notify: boolean }>(
-    { priority: false, audience: false, notify: false }
+    { priority: false, audience: true, notify: true }
   );
   const [reachedReview, setReachedReview] = useState(false);
   useEffect(() => { if (step === 4) setReachedReview(true); }, [step]);
@@ -527,8 +530,9 @@ function CreateAnnouncementModal({
     setSaving(null);
     setAttachment(null);
     setSavedId(editing?.id ?? null);
-    // Existing row → all values are real, show them. New → start blank.
-    setTouched({ priority: !!editing, audience: !!editing, notify: !!editing });
+    // Existing row → all values are real, show them. New → only Priority starts
+    // blank; Audience + Notify reflect their real defaults immediately (#25/#26).
+    setTouched({ priority: !!editing, audience: true, notify: true });
     setReachedReview(!!editing);
 
     if (editing) {
