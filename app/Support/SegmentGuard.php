@@ -271,6 +271,73 @@ class SegmentGuard
     }
 
     /**
+     * Segments the party is linked to through the PRODUCT layer, BEFORE any
+     * completed transaction exists — the "Product Directory" (customer/consignee)
+     * or "Product mapping" (supplier) dependency:
+     *   - Customer  → a product on one of the customer's leads  (lead_products).
+     *   - Consignee → a product on one of the consignee's leads (lead_products).
+     *   - Vendor    → a product mapped to the supplier          (vendor_product_mappings).
+     *
+     * A product carries a segment (products.segment_id); the party is "using" a
+     * segment as soon as a product of that segment is attached here, even with no
+     * PI/Shipment/PO/SPI yet.
+     *
+     * @param  string $partyType  App\Models\Customer|Consignee|Vendor ::class
+     * @return string[] segment names the party is linked to via products
+     */
+    public static function productMappingSegmentNames(string $partyType, int $partyId, int $clientId): array
+    {
+        // Supplier: products mapped directly to the vendor.
+        if ($partyType === \App\Models\Vendor::class) {
+            return \Illuminate\Support\Facades\DB::table('vendor_product_mappings as vpm')
+                ->join('products as p', 'p.id', '=', 'vpm.product_id')
+                ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
+                ->where('vpm.vendor_id', $partyId)
+                ->whereNull('vpm.deleted_at')
+                ->whereNull('p.deleted_at')
+                ->distinct()
+                ->pluck('cs.name')
+                ->all();
+        }
+
+        // Customer / Consignee: products selected on the party's leads.
+        $leadCol = $partyType === \App\Models\Consignee::class ? 'consignee_id'
+            : ($partyType === \App\Models\Customer::class ? 'customer_id' : null);
+        if ($leadCol === null) return [];
+
+        return \Illuminate\Support\Facades\DB::table('lead_products as lp')
+            ->join('leads as l', 'l.id', '=', 'lp.lead_id')
+            ->join('products as p', 'p.id', '=', 'lp.product_id')
+            ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
+            ->where('l.client_id', $clientId)
+            ->where('l.' . $leadCol, $partyId)
+            ->whereNull('l.deleted_at')
+            ->whereNull('p.deleted_at')
+            ->distinct()
+            ->pluck('cs.name')
+            ->all();
+    }
+
+    /**
+     * Of the segments being removed, return those blocked because a product of
+     * that segment is attached to the party via the Product Directory (a lead,
+     * for customer/consignee) or Product mapping (for supplier) — independent of
+     * any completed PI/Shipment/PO/SPI. Per-segment: only the segments actually
+     * used are blocked.
+     *
+     * @param  string[] $removedNames
+     * @return string[] blocked segment names ([] = safe to proceed)
+     */
+    public static function blockedByProductMapping(string $partyType, int $partyId, int $clientId, array $removedNames): array
+    {
+        $removed = array_values(array_filter(array_map('trim', $removedNames), fn ($s) => $s !== ''));
+        if (empty($removed)) return [];
+        $used = array_map('mb_strtolower', self::productMappingSegmentNames($partyType, $partyId, $clientId));
+        if (empty($used)) return [];
+        return array_values(array_filter($removed, fn ($s) => in_array(mb_strtolower($s), $used, true)));
+    }
+
+    /**
      * Of the segments being removed, return those blocked because they have an
      * uploaded document UNIQUE to them — a (category, doc_code) the segment
      * requires, that is uploaded, and that NO remaining segment also requires

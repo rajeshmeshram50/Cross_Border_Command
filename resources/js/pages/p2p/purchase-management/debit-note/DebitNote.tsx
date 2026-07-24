@@ -53,6 +53,9 @@ type DnRow = {
   zoho: 'sync' | 'not';
 };
 
+// State for the Zoho-sync confirm + speedometer modal (mirrors the PO/SPI screens).
+type SyncState = { id: number; no: string; supplier?: string; busy: boolean; progress: number; attempt: number; failed: boolean };
+
 const STEPS = [
   { n: '01', ico: <StepIco1 />, title: 'Link Supplier & Invoice',   desc: 'Select the supplier and the reference invoice or PO.' },
   { n: '02', ico: <StepIco2 />, title: 'Debit Note Details',        desc: 'Enter the debit note number, date, and reason.' },
@@ -76,8 +79,7 @@ export default function DebitNote() {
   const [rpp, setRpp] = useState(10);
   const [menu, setMenu] = useState<{ row: DnRow; x: number; top: number; bottom: number } | null>(null);
   const [payRow, setPayRow] = useState<DnRow | null>(null);   // Payment Recovery popup
-  const [syncConfirm, setSyncConfirm] = useState<DnRow | null>(null);   // "Sync with Zohobook?" confirm
-  const [syncingId, setSyncingId] = useState<number | null>(null);      // row currently syncing to Zoho
+  const [sync, setSync] = useState<SyncState | null>(null);   // Zoho-sync confirm + speedometer modal
   const [detailOpen, setDetailOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [viewOnly, setViewOnly] = useState(false);   // opened for a locked (paid) debit note
@@ -172,13 +174,13 @@ export default function DebitNote() {
   // <html> and <body> — a body-only overflow:hidden doesn't stop the page from
   // scrolling behind the modal.
   useEffect(() => {
-    if (!(payRow || syncConfirm || menu || detailOpen)) return;
+    if (!(payRow || sync || menu || detailOpen)) return;
     const html = document.documentElement, body = document.body;
     const ph = html.style.overflow, pb = body.style.overflow;
     html.style.overflow = 'hidden';
     body.style.overflow = 'hidden';
     return () => { html.style.overflow = ph; body.style.overflow = pb; };
-  }, [payRow, syncConfirm, menu, detailOpen]);
+  }, [payRow, sync, menu, detailOpen]);
 
   const openCreate = () => { setEditId(null); setViewOnly(false); setDetailOpen(true); };
   const openEdit = (r: DnRow) => { setEditId(r.id); setViewOnly(!!r.locked); setDetailOpen(true); };
@@ -226,12 +228,74 @@ export default function DebitNote() {
     } finally { setPaySaving(false); }
   };
 
-  const syncRow = async (r: DnRow) => {
+  // Open the Zoho-sync confirm dialog for a debit note.
+  const syncRow = (r: DnRow) => {
     if (r.id == null) return;
-    setSyncingId(r.id);
-    try { const resp = await api.post(`/p2p/debit-notes/${r.id}/sync`); toast.success(`${r.no} synced with Zohobook`, resp?.data?.message); reload(); }
-    catch (e: any) { toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this debit note.'); }
-    finally { setSyncingId(null); }
+    setMenu(null);
+    setSync({ id: r.id, no: r.no, supplier: r.supplier, busy: false, progress: 0, attempt: 0, failed: false });
+  };
+
+  // Run the sync with a live speedometer. Zoho gives no real progress, so the
+  // gauge eases toward ~90 while in flight and snaps to 100 on success. A
+  // transient failure (network / 5xx) is retried up to MAX_ATTEMPTS; a business
+  // error (4xx) is not retried and surfaces a "Try Again" button.
+  const SYNC_MAX_ATTEMPTS = 3;
+  const doSync = () => {
+    if (!sync) return;
+    const { id, no } = sync;
+
+    const run = (attempt: number) => {
+      setSync(s => (s ? { ...s, busy: true, failed: false, attempt, progress: 6 } : s));
+      let p = 6;
+      const timer = window.setInterval(() => {
+        p = Math.min(90, p + Math.random() * 7 + 2);
+        setSync(s => (s && s.busy ? { ...s, progress: Math.round(p) } : s));
+      }, 380);
+
+      api.post(`/p2p/debit-notes/${id}/sync`).then((res) => {
+        window.clearInterval(timer);
+        setSync(s => (s ? { ...s, progress: 100 } : s));
+        window.setTimeout(() => {
+          setSync(null);
+          toast.success(`${no} synced with Zohobook`, res?.data?.message);
+          reload();
+        }, 550);
+      }).catch((e: any) => {
+        window.clearInterval(timer);
+        const status = e?.response?.status;
+        const retriable = !status || status >= 500; // network / server error only
+        if (retriable && attempt < SYNC_MAX_ATTEMPTS) {
+          toast.info(`Sync hiccup — retrying (${attempt}/${SYNC_MAX_ATTEMPTS})…`);
+          setSync(s => (s ? { ...s, progress: 0 } : s));
+          window.setTimeout(() => run(attempt + 1), 800);
+        } else {
+          setSync(s => (s ? { ...s, busy: false, failed: true, progress: 0 } : s));
+          toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this debit note.');
+        }
+      });
+    };
+
+    toast.info(`Syncing ${no} with Zohobook…`);
+    run(1);
+  };
+
+  // Semicircular 0→100 gauge shown while a debit note syncs to Zohobook.
+  const Speedometer = ({ value }: { value: number }) => {
+    const v = Math.max(0, Math.min(100, value));
+    const R = 52, cx = 60, cy = 58;
+    const polar = (deg: number) => [cx + R * Math.cos((deg * Math.PI) / 180), cy + R * Math.sin((deg * Math.PI) / 180)] as const;
+    const [sx, sy] = polar(180);
+    const [ex, ey] = polar(180 + (v / 100) * 180);
+    const [tx, ty] = polar(360);
+    return (
+      <div className="spisp">
+        <svg viewBox="0 0 120 64" className="spisp-svg">
+          <path d={`M ${sx} ${sy} A ${R} ${R} 0 0 1 ${tx} ${ty}`} className="spisp-track" />
+          {v > 0.5 && <path d={`M ${sx} ${sy} A ${R} ${R} 0 0 1 ${ex} ${ey}`} className="spisp-fill" />}
+        </svg>
+        <div className="spisp-num">{Math.round(v)}<span>%</span></div>
+      </div>
+    );
   };
 
   const delRow = async (r: DnRow) => {
@@ -419,7 +483,7 @@ export default function DebitNote() {
                       {r.zoho === 'sync'
                         ? <Tooltip label="Already synced to Zohobook" themed><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
                         : r.status === 'Fully Paid'
-                          ? <Tooltip label="Sync this debit note to Zohobook (vendor credit)" themed><button type="button" className="spi-zohobtn" disabled={syncingId === r.id} onClick={() => setSyncConfirm(r)}>{syncingId === r.id ? <><IcoSpinner size={13} /> Syncing…</> : <><IcoSync size={13} /> Zoho Sync</>}</button></Tooltip>
+                          ? <Tooltip label="Sync this debit note to Zohobook (vendor credit)" themed><button type="button" className="spi-zohobtn" onClick={() => syncRow(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>
                           : <button type="button" className="spi-zohobtn" style={{ opacity: .6 }} onClick={() => toast.warning('Payment incomplete', 'Recover the full debit amount first — the debit note must be fully paid before syncing to Zohobook.')}><IcoSync size={13} /> Zoho Sync</button>}
                       <Tooltip label={r.locked ? 'View debit note (locked — payment recorded)' : 'Edit debit note'} themed><button type="button" className="spi-iconbtn" onClick={() => openEdit(r)}>{r.locked ? <IcoEye /> : <IcoEdit />}</button></Tooltip>
                       <Tooltip label={r.id && emailing[r.id] ? 'Sending…' : 'Email debit note to supplier'} themed><button type="button" className="spi-iconbtn" disabled={!!(r.id && emailing[r.id])} onClick={() => emailDn(r)}>{r.id && emailing[r.id] ? <IcoSpinner /> : <IcoMail />}</button></Tooltip>
@@ -450,7 +514,7 @@ export default function DebitNote() {
               </span>
               <Tooltip label="Close" themed><button type="button" className="pomore-x" onClick={() => setMenu(null)} aria-label="Close">✕</button></Tooltip>
             </div>
-            <button type="button" className="pomore-item pomore-item--sync" onClick={() => { const r = menu.row; setMenu(null); setSyncConfirm(r); }}><span className="pomore-item__ico pomore-item__ico--sync"><IcoSync size={15} /></span> Sync with Zohobook</button>
+            <button type="button" className="pomore-item pomore-item--sync" onClick={() => syncRow(menu.row)}><span className="pomore-item__ico pomore-item__ico--sync"><IcoSync size={15} /></span> Sync with Zohobook</button>
             <div className="pomore-divider" />
             <div className="pomore-sec pomore-sec--view"><IcoEye size={13} /> View</div>
             <button type="button" className="pomore-item" disabled={!!menuBusy} onClick={() => runMenuPdf('view-sig', () => viewDnPdf(menu.row, true))}><span className="pomore-item__ico pomore-item__ico--view">{menuBusy === 'view-sig' ? <IcoSpinner size={15} /> : <IcoEye size={15} />}</span> With Signature</button>
@@ -462,17 +526,41 @@ export default function DebitNote() {
         </div>
       )}
 
-      {syncConfirm && (
-        <div className="dn-modal-backdrop">
-          <div className="dn-sync" onMouseDown={e => e.stopPropagation()}>
-            <span className="dn-sync-ico"><IcoSync size={24} /></span>
-            <div className="dn-sync-title">Sync with Zohobook?</div>
-            <div className="dn-sync-sub">This will push the latest debit note data to your Zohobook account and update its sync status.</div>
-            <div className="dn-sync-dn"><span className="po">{syncConfirm.no}</span> <span className="sup">· {syncConfirm.supplier ?? '—'}</span></div>
-            <div className="dn-sync-foot">
-              <button type="button" className="dn-pay-cancel" disabled={syncingId != null} onClick={() => setSyncConfirm(null)}>Cancel</button>
-              <button type="button" className="dn-pay-record" disabled={syncingId != null} onClick={async () => { const r = syncConfirm; if (!r) return; await syncRow(r); setSyncConfirm(null); }}>{syncingId != null ? <><IcoSpinner size={14} /> Syncing…</> : 'Yes, Sync'}</button>
+      {sync && (
+        <div className="spicfm-overlay is-open" onClick={e => { if (e.target === e.currentTarget && !sync.busy) setSync(null); }}>
+          <div className="spicfm-card" role="dialog" aria-modal="true">
+            <div className="spicfm-bd">
+              {sync.busy ? (
+                <>
+                  <Speedometer value={sync.progress} />
+                  <div className="spicfm-t">Syncing with Zohobook…</div>
+                  <div className="spicfm-msg">{sync.attempt > 1
+                    ? `Retry attempt ${sync.attempt} of ${SYNC_MAX_ATTEMPTS} — hang tight.`
+                    : 'Posting the debit note to your Zohobook account as a vendor credit.'}</div>
+                </>
+              ) : (
+                <>
+                  <div className={`spicfm-ico${sync.failed ? ' spicfm-ico--fail' : ''}`}><IcoSync size={26} /></div>
+                  <div className="spicfm-t">{sync.failed ? 'Sync failed' : 'Sync with Zohobook?'}</div>
+                  <div className="spicfm-msg">{sync.failed
+                    ? 'Something went wrong pushing this debit note to Zohobook. You can try again.'
+                    : 'This will push the latest debit note data to your Zohobook account and update its sync status.'}</div>
+                </>
+              )}
+              <div className="spicfm-chip"><span className="spi">{sync.no}</span>{sync.supplier && (
+                <Tooltip label={sync.supplier} disabled={sync.supplier.length <= 30} position="bottom" zIndex={2999999}>
+                  <span className="sup">· {sync.supplier.length > 30 ? `${sync.supplier.slice(0, 30)}…` : sync.supplier}</span>
+                </Tooltip>
+              )}</div>
             </div>
+            {!sync.busy && (
+              <div className="spicfm-actions">
+                <button type="button" className="spicfm-btn spicfm-btn--ghost" onClick={() => setSync(null)}>{sync.failed ? 'Close' : 'Cancel'}</button>
+                <button type="button" className="spicfm-btn spicfm-btn--go" onClick={doSync}>
+                  {sync.failed ? 'Try Again' : 'Yes, Sync'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

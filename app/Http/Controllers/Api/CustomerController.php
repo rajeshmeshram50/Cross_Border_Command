@@ -218,11 +218,20 @@ class CustomerController extends Controller
         // form disables only those chips' × up-front instead of only failing at
         // save. A segment with no such PI product removes freely.
         $data = $this->shape($row);
-        $data['locked_segments'] = \App\Support\SegmentGuard::lockedSegmentNames(
-            \App\Models\Customer::class,
-            (int) $row->id,
-            (int) $row->client_id,
-        );
+        $data['locked_segments'] = array_values(array_unique(array_merge(
+            \App\Support\SegmentGuard::lockedSegmentNames(
+                \App\Models\Customer::class,
+                (int) $row->id,
+                (int) $row->client_id,
+            ),
+            // Also lock segments referenced by the customer's leads via a product
+            // (Product Directory dependency — blocks before any PI/Shipment).
+            \App\Support\SegmentGuard::productMappingSegmentNames(
+                \App\Models\Customer::class,
+                (int) $row->id,
+                (int) $row->client_id,
+            ),
+        )));
         // Data for the removal guard's unique-document check (condition 2), so the
         // UI blocks exactly what the server does: each segment's required doc keys
         // (category|code) + the keys actually uploaded. Keyed by segment NAME.
@@ -347,6 +356,22 @@ class CustomerController extends Controller
         $data = $this->validatePayload($request, (int) $customer->id, $customer->client_id, $customer->branch_id);
 
         $removedSegs = \App\Support\SegmentGuard::removedNames($customer->segment, $data['segment'] ?? null);
+
+        // (0) Product Directory lock: a product of the segment is referenced by
+        // one of the customer's leads (selected from the Product Directory during
+        // lead processing) — in use before any PI/Shipment exists.
+        $pdBlocked = \App\Support\SegmentGuard::blockedByProductMapping(
+            \App\Models\Customer::class,
+            (int) $customer->id,
+            (int) $customer->client_id,
+            $removedSegs,
+        );
+        if (!empty($pdBlocked)) {
+            return response()->json([
+                'message' => 'This Segment cannot be removed because it is currently associated with one or more Product Directory records. Please remove the Product Directory dependency before removing this Segment.',
+                'errors'  => ['segment' => ['Segment(s) referenced in the Product Directory cannot be removed: ' . implode(', ', $pdBlocked) . '.']],
+            ], 422);
+        }
 
         // (1) Product lock: a segment whose product is on a Proforma Invoice or
         // Shipment can't be removed.
