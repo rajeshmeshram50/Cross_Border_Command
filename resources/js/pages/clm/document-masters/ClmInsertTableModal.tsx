@@ -38,6 +38,7 @@ export default function ClmInsertTableModal({ open, onClose, onInsert }: Props) 
    * `background-color` on every other row. Off by default since most
    * trade docs prefer a plain look. */
   const [striped, setStriped]     = useState(false);
+  const [inserting, setInserting] = useState(false);   // brief spinner on Insert (QA #27)
   /* Caret-restore: parent stashes the editor selection BEFORE opening
    * this modal so insertHTML targets the right spot. Nothing to do
    * here — the parent owns that bookkeeping. */
@@ -112,8 +113,11 @@ export default function ClmInsertTableModal({ open, onClose, onInsert }: Props) 
   };
 
   const handleInsert = () => {
-    onInsert(buildHtml());
-    onClose();
+    if (inserting) return;
+    setInserting(true);
+    const html = buildHtml();
+    // Brief spinner so the blue Insert button shows visible progress (QA #27).
+    window.setTimeout(() => { onInsert(html); onClose(); }, 450);
   };
 
   return createPortal(
@@ -207,11 +211,11 @@ export default function ClmInsertTableModal({ open, onClose, onInsert }: Props) 
         {/* ── Foot ── */}
         <div className="itm-foot">
           <button type="button" className="itm-btn itm-btn-cancel" onClick={onClose}>Cancel</button>
-          <button type="button" className="itm-btn itm-btn-primary" onClick={handleInsert}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            Insert Table
+          <button type="button" className="itm-btn itm-btn-primary" disabled={inserting} onClick={handleInsert}>
+            {inserting
+              ? <svg className="itm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-6.2-8.5" /></svg>
+              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}
+            {inserting ? 'Inserting…' : 'Insert Table'}
           </button>
         </div>
       </div>
@@ -313,6 +317,9 @@ const ITM_CSS = `
   color: #fff; border-color: transparent;
 }
 .itm-btn-primary:hover { filter: brightness(1.05); }
+.itm-btn-primary:disabled { opacity: .75; cursor: default; }
+@keyframes itmSpin { to { transform: rotate(360deg); } }
+.itm-spin { animation: itmSpin .7s linear infinite; }
 
 /* Use explicit slate tones (not just var(--vz-card-bg) which renders too
  * close to the page behind) so the modal shell visibly lifts off the
