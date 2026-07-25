@@ -531,8 +531,13 @@ export default function SalesMatrixDetail() {
     let cancelled = false;
     setConsTally({ total: 0, verified: 0, loading: true });
 
+    // Scope the consignee's checklist to the LEAD's customer segment (a
+    // consignee can be mapped to several customers with different segments;
+    // here we only want this lead's customer's segment). See the vault
+    // endpoint's scope_customer_id handling.
     const loadVault = (consigneeDbId: number) =>
-      api.get<VaultResponse>(`/segment-uploads/consignee/${consigneeDbId}/vault`)
+      api.get<VaultResponse>(`/segment-uploads/consignee/${consigneeDbId}/vault`,
+        custId ? { params: { scope_customer_id: custId } } : undefined)
         .then(res => {
           if (cancelled) return;
           const d = res.data?.data;
@@ -1687,6 +1692,7 @@ export default function SalesMatrixDetail() {
         target={leadVaultTarget}
         consignees={leadVaultConsignees}
         mappedConsigneeId={serverHeader.consigneeId}
+        scopeCustomerId={serverHeader.customerId}
         onClose={() => {
           /* Refresh BOTH party tallies, not just the one whose vault was
            * open. A "Same as Customer" consignee mirrors the customer's

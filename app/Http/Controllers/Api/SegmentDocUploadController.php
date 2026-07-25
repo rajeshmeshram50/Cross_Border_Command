@@ -277,7 +277,19 @@ class SegmentDocUploadController extends Controller
         // 1. Resolve the entity's segment ids. Customer/Consignee
         // store segment as a comma-joined name string; Vendor uses an
         // FK column.
-        $segmentIds = $this->resolveSegmentIds($owner, $type, $cid);
+        //
+        // Lead-scoped consignee vault: a consignee can be mapped to several
+        // customers, so its own `segment` string is the UNION of every mapped
+        // customer's segments. When the Sales Matrix opens a consignee's vault
+        // in a lead context it passes ?scope_customer_id=<lead's customer> so
+        // the checklist narrows to ONLY that customer's segment (the segment
+        // driving that lead) — not the consignee's full cross-customer union.
+        // Falls back to the union when the id is absent, not tenant-owned, or
+        // not actually mapped to this consignee.
+        $scopeCustomer = $this->resolveScopeCustomer($request, $type, $id, $cid);
+        $segmentIds = $scopeCustomer
+            ? $this->resolveSegmentIds($scopeCustomer, 'customer', $cid)
+            : $this->resolveSegmentIds($owner, $type, $cid);
 
         // 2. Load each rule's doc_selections. A segment can now carry a Domestic
         // AND an International rule, so pick the one matching the entity's trade
@@ -1487,6 +1499,35 @@ class SegmentDocUploadController extends Controller
             ? optional($addr->country)->name          // VendorAddress.country_id → Countries
             : $addr->country;                          // Customer/Consignee: name string
         return trim((string) $name) === 'India' ? 'domestic' : 'international';
+    }
+
+    /**
+     * Lead-scoped consignee vault helper. Returns the customer whose segment
+     * should drive a consignee's document checklist, or null to fall back to
+     * the consignee's own (cross-customer union) segment.
+     *
+     * Only honoured for `consignee` vaults that carry a `scope_customer_id`
+     * query param. The customer must be tenant-owned AND actually mapped to
+     * this consignee (via the consignee_customer pivot) — otherwise the scope
+     * is ignored, so a stray/foreign id can never narrow or leak a vault.
+     * $id is the ORIGINAL route consignee id (resolveOwner may have swapped
+     * $owner to the linked customer for a "same as customer" consignee).
+     */
+    private function resolveScopeCustomer(Request $request, string $type, int $id, int $cid): ?Customer
+    {
+        if ($type !== 'consignee' || !$cid) return null;
+        $scopeId = (int) $request->query('scope_customer_id', 0);
+        if ($scopeId <= 0) return null;
+
+        $customer = Customer::where('client_id', $cid)->find($scopeId);
+        if (!$customer) return null;
+
+        $mapped = Consignee::where('client_id', $cid)
+            ->whereKey($id)
+            ->whereHas('customers', fn ($q) => $q->whereKey($scopeId))
+            ->exists();
+
+        return $mapped ? $customer : null;
     }
 
     private function resolveSegmentIds(Model $owner, string $type, int $cid): array
