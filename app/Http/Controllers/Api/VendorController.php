@@ -370,6 +370,9 @@ class VendorController extends Controller
         $oldSegIds = ($isEdit && $vendor)
             ? DB::table('vendor_segments')->where('vendor_id', $vendor->id)->pluck('segment_id')->all()
             : [];
+        // Orphan docs to delete on a CONFIRMED segment removal (see condition 2).
+        $orphanUploads     = collect();
+        $confirmDocRemoval = $request->boolean('confirm_segment_doc_removal');
         if ($isEdit && $vendor) {
             $removedIds = array_values(array_diff(
                 array_map('intval', $oldSegIds),
@@ -395,18 +398,26 @@ class VendorController extends Controller
                         'errors'  => ['segment_ids' => ['Segment(s) used by a PO / Supplier Invoice product cannot be removed: ' . implode(', ', $blocked) . '.']],
                     ], 422);
                 }
-                // (2) Unique-document lock — an uploaded doc no remaining segment needs.
-                $docBlocked = \App\Support\SegmentGuard::blockedByOrphanDocs(\App\Models\Vendor::class, (int) $vendor->id, (int) $vendor->client_id, $removedNames, $remainingNames);
-                if (!empty($docBlocked)) {
+                // (2) Unique-document handling (spec Scenarios 1-3): don't hard-block.
+                // Shared docs are kept; docs unique to the removed segment are
+                // deleted only after the user CONFIRMS (frontend re-submits with
+                // confirm_segment_doc_removal=1).
+                $orphanUploads = \App\Support\SegmentGuard::orphanUploads(\App\Models\Vendor::class, (int) $vendor->id, (int) $vendor->client_id, $removedNames, $remainingNames);
+                if ($orphanUploads->isNotEmpty() && !$confirmDocRemoval) {
                     return response()->json([
-                        'message' => 'Cannot remove ' . implode(', ', $docBlocked) . ' — it has an uploaded document not shared with any remaining segment. Delete that document first.',
-                        'errors'  => ['segment_ids' => ['Segment(s) with an unshared uploaded document cannot be removed: ' . implode(', ', $docBlocked) . '.']],
-                    ], 422);
+                        'requires_doc_confirmation' => true,
+                        'message' => 'Removing this segment will delete ' . $orphanUploads->count() . ' document(s) used only by it. Shared documents are kept. Confirm to proceed.',
+                        'orphan_documents' => $orphanUploads->map(fn ($d) => [
+                            'id'       => $d->id,
+                            'name'     => $d->attachment_name ?: ($d->doc_name ?: ('Document #' . $d->id)),
+                            'category' => $d->category,
+                        ])->values(),
+                    ], 409);
                 }
             }
         }
 
-        DB::transaction(function () use (&$vendor, $isEdit, $user, $data, $segIds, $address, $oldSegIds) {
+        DB::transaction(function () use (&$vendor, $isEdit, $user, $data, $segIds, $address, $oldSegIds, $orphanUploads, $confirmDocRemoval) {
             if ($isEdit) {
                 $vendor->fill($data);
                 $vendor->step_completed = max((int) $vendor->step_completed, 1);
@@ -434,10 +445,20 @@ class VendorController extends Controller
                 $vendor->save();
             }
 
-            // Replace the segment pivot rows with the new selection. Removals that
-            // would strand a PO/SPI product or an unshared document are already
-            // rejected above, so nothing needs cleaning up here.
+            // Replace the segment pivot rows with the new selection. Product/PO/SPI
+            // dependencies are already rejected above; orphan docs are handled next.
             $vendor->segments()->sync($segIds);
+
+            // Confirmed removal: delete the docs unique to the removed segment(s).
+            // Shared docs are left alone. Runs in the same transaction as the sync.
+            if ($confirmDocRemoval && $orphanUploads->isNotEmpty()) {
+                foreach ($orphanUploads as $u) {
+                    if ($u->attachment_path) {
+                        try { \Illuminate\Support\Facades\Storage::disk('public')->delete($u->attachment_path); } catch (\Throwable $e) { /* best-effort */ }
+                    }
+                    $u->delete();
+                }
+            }
 
             // Persist the registered-office address onto the primary VendorAddress
             // WITHOUT touching the contact fields — so the address survives saving

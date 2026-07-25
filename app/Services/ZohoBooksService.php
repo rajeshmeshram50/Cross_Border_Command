@@ -150,9 +150,14 @@ class ZohoBooksService
     {
         $url = "{$this->baseUrl}/" . ltrim($endpoint, '/') . '?organization_id=' . $this->orgId;
         return $this->sendWithAuthRetry(
+            // organization_id is passed BOTH in the query string AND as a multipart
+            // form field: Zoho's file-upload endpoints don't reliably read the org
+            // from the query on a multipart/form-data request, so without the form
+            // field the upload fails with "This user is not associated with the
+            // CompanyID/CompanyName" — even though the (JSON) create calls work.
             fn (string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])
                 ->attach($field, $fileBytes, $filename)
-                ->post($url),
+                ->post($url, ['organization_id' => $this->orgId]),
             'UPLOAD ' . $endpoint
         );
     }
@@ -246,19 +251,37 @@ class ZohoBooksService
         $addr  = $vendor->relationLoaded('primaryAddress') ? $vendor->primaryAddress : $vendor->primaryAddress()->first();
         $zaddr = $this->buildVendorAddress($addr);
 
-        // Already in Zoho — keep its billing/shipping address in sync with our
-        // registered address (best-effort, hash-gated so we don't PUT every sync).
+        // Already in Zoho — but the cached contact may have been DELETED or marked
+        // INACTIVE in Zoho, which makes the PO/Bill create fail with "The Contact
+        // is not accessible…". Verify it first: reactivate if inactive, reuse if
+        // active, and drop the stale id + recreate below if it's gone (self-heal).
         if (!empty($vendor->zoho_contact_id)) {
             $id = (string) $vendor->zoho_contact_id;
-            if ($zaddr) {
-                $upd = ['billing_address' => $zaddr, 'shipping_address' => $zaddr];
-                $vk = 'zoho_vendor_addr:' . $vendor->id;
-                if (Cache::get($vk) !== md5(json_encode($upd))) {
-                    try { $this->put('contacts/' . $id, $upd); Cache::forever($vk, md5(json_encode($upd))); }
-                    catch (\Throwable $e) { Log::warning('Zoho vendor address update failed', ['vendor' => $vendor->id, 'err' => $e->getMessage()]); }
+            $contact = null;
+            try { $contact = $this->get('contacts/' . $id)['contact'] ?? null; }
+            catch (\Throwable $e) { $contact = null; /* deleted / not accessible */ }
+
+            if ($contact) {
+                // Reactivate a contact that was marked inactive in Zoho.
+                if (mb_strtolower((string) ($contact['status'] ?? 'active')) === 'inactive') {
+                    try { $this->post('contacts/' . $id . '/active', []); }
+                    catch (\Throwable $e) { Log::warning('Zoho vendor contact reactivate failed', ['vendor' => $vendor->id, 'err' => $e->getMessage()]); }
                 }
+                // Keep its billing/shipping address in sync (best-effort, hash-gated).
+                if ($zaddr) {
+                    $upd = ['billing_address' => $zaddr, 'shipping_address' => $zaddr];
+                    $vk = 'zoho_vendor_addr:' . $vendor->id;
+                    if (Cache::get($vk) !== md5(json_encode($upd))) {
+                        try { $this->put('contacts/' . $id, $upd); Cache::forever($vk, md5(json_encode($upd))); }
+                        catch (\Throwable $e) { Log::warning('Zoho vendor address update failed', ['vendor' => $vendor->id, 'err' => $e->getMessage()]); }
+                    }
+                }
+                return $id;
             }
-            return $id;
+
+            // Stale / deleted contact in Zoho → forget it and recreate below.
+            Log::warning('Zoho vendor contact not accessible — recreating', ['vendor' => $vendor->id, 'stale_contact_id' => $id]);
+            $vendor->forceFill(['zoho_contact_id' => null])->saveQuietly();
         }
 
         // Try to match an existing Zoho vendor by name before creating a duplicate.
@@ -518,7 +541,27 @@ class ZohoBooksService
         $itemId = null;
         if ($productId) {
             $cached = \App\Models\Product::where('id', $productId)->value('zoho_item_id');
-            if (!empty($cached)) $itemId = (string) $cached;
+            if (!empty($cached)) {
+                // The cached item may have been DELETED or marked INACTIVE in Zoho,
+                // which makes the PO/bill create fail with "items that have been
+                // deleted or marked as inactive". Verify it: reactivate if inactive,
+                // reuse if active, or drop the stale id + recreate below (self-heal).
+                try {
+                    $it = $this->get('items/' . rawurlencode((string) $cached))['item'] ?? null;
+                    if ($it) {
+                        if (mb_strtolower((string) ($it['status'] ?? 'active')) === 'inactive') {
+                            try { $this->post('items/' . rawurlencode((string) $cached) . '/active', []); }
+                            catch (\Throwable $e) { Log::warning('Zoho item reactivate failed', ['item' => $cached, 'err' => $e->getMessage()]); }
+                        }
+                        $itemId = (string) $cached;
+                    } else {
+                        \App\Models\Product::where('id', $productId)->update(['zoho_item_id' => null]);
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Zoho item not accessible — recreating', ['item' => $cached, 'err' => $e->getMessage()]);
+                    \App\Models\Product::where('id', $productId)->update(['zoho_item_id' => null]);
+                }
+            }
         }
         if (!$itemId) $itemId = $this->itemCache[$key] ?? null;
         if (!$itemId) {

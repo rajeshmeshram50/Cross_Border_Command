@@ -11,6 +11,7 @@ import { Shimmer, ShimmerTableRows } from '../../../../components/ui/Shimmer';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { useToast } from '../../../../contexts/ToastContext';
+import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
 import SalesCustomerSendForSignatureModal from './SalesCustomerSendForSignatureModal';
 import {
@@ -399,6 +400,35 @@ interface Props {
 export default function AddCustomerModal({ open, onClose, customer, onSaved, initialStage, leadCurrency }: Props) {
   const isEdit = !!customer;
   const toast = useToast();
+  const confirm = useConfirm();
+
+  /**
+   * Segment-removal document confirmation. When the save is refused with a 409
+   * `requires_doc_confirmation` (the removed segment has documents unique to it),
+   * show the orphan docs and ask the user to confirm deletion. Returns true if
+   * the caller should retry the save with `confirm_segment_doc_removal: true`.
+   */
+  const confirmOrphanDocs = async (err: any): Promise<boolean> => {
+    const data = err?.response?.data;
+    if (err?.response?.status !== 409 || !data?.requires_doc_confirmation) return false;
+    const docs = (data.orphan_documents ?? []) as Array<{ name: string; category?: string }>;
+    return confirm({
+      title: 'Remove segment & delete its documents?',
+      tone: 'danger',
+      confirmLabel: 'Delete & Remove',
+      cancelLabel: 'Keep Segment',
+      message: (
+        <div>
+          <div>{data.message}</div>
+          {docs.length > 0 && (
+            <ul style={{ margin: '10px 0 0 18px', padding: 0 }}>
+              {docs.map((d, i) => <li key={i}>{d.name}{d.category ? ` (${d.category})` : ''}</li>)}
+            </ul>
+          )}
+        </div>
+      ),
+    });
+  };
   const [stage, setStage] = useState<Stage>(1);
   const [maxStage, setMaxStage] = useState<Stage>(1);
   const [tab, setTab] = useState<StageTab>('identification');
@@ -1806,7 +1836,6 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     inFlightRef.current = true;
     setSaving(true);
     try {
-      const payload = buildPayload();
       // Prefer customer.db_id (edit mode) BUT fall back to savedDbId
       // (the id persistStage1 just created in this session). Without
       // that fallback, the final Submit click after a Stage 1→2 auto-
@@ -1814,14 +1843,25 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       // duplicate. Mirrors persistStage1's idempotent check.
       const persistedDbId = (isEdit && customer?.db_id) || savedDbId;
       let finalDbId: number | null = persistedDbId || null;
-      if (persistedDbId) {
-        await api.put(`/customers/${persistedDbId}`, payload);
-      } else {
-        const r = await api.post('/customers', payload);
-        const newId = r.data?.data?.db_id ?? null;
+      // Inner attempt so a segment-removal 409 can prompt + retry with the
+      // confirm flag (see persistStage1).
+      const attempt = async (confirmDocRemoval: boolean): Promise<void> => {
+        const payload = { ...buildPayload(), ...(confirmDocRemoval ? { confirm_segment_doc_removal: true } : {}) };
+        try {
+          if (persistedDbId) {
+            await api.put(`/customers/${persistedDbId}`, payload);
+          } else {
+            const r = await api.post('/customers', payload);
+            const newId = r.data?.data?.db_id ?? null;
         finalDbId = newId;
-        if (newId) { setSavedDbId(newId); await flushLocalGst(newId); }
-      }
+            if (newId) { setSavedDbId(newId); await flushLocalGst(newId); }
+          }
+        } catch (e: any) {
+          if (!confirmDocRemoval && await confirmOrphanDocs(e)) return attempt(true);
+          throw e;
+        }
+      };
+      await attempt(false);
       // Final submit succeeded → drop the remembered stage so a future
       // re-open of this customer starts fresh on Stage 1 instead of
       // bouncing back to Stage 3 (which is where this submit fired from).
@@ -1895,21 +1935,33 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     // clear "something happened" feedback before the stage advances.
     const _saveStart = Date.now();
     try {
-      const payload = buildPayload();
-      // Prefer the existing customer.db_id (edit mode) over savedDbId
-      // (in-session POST result). Either way, if we already have a
-      // row id we PUT — never re-POST.
-      const persistedDbId = (isEdit && customer?.db_id) || savedDbId;
-      if (persistedDbId) {
-        await api.put(`/customers/${persistedDbId}`, payload);
-        dirtySavedRef.current = true;
-        return persistedDbId;
-      }
-      const r = await api.post('/customers', payload);
-      const newId = r.data?.data?.db_id ?? null;
-      if (newId) { setSavedDbId(newId); await flushLocalGst(newId); }
-      dirtySavedRef.current = true;
-      return newId;
+      // Inner attempt so a segment-removal 409 can prompt for document
+      // confirmation and RETRY with confirm_segment_doc_removal=1, all inside
+      // the outer re-entry lock (a recursive persistStage1() call would be
+      // blocked by inFlightRef).
+      const attempt = async (confirmDocRemoval: boolean): Promise<number | null> => {
+        const payload = { ...buildPayload(), ...(confirmDocRemoval ? { confirm_segment_doc_removal: true } : {}) };
+        // Prefer the existing customer.db_id (edit mode) over savedDbId
+        // (in-session POST result). Either way, if we already have a
+        // row id we PUT — never re-POST.
+        const persistedDbId = (isEdit && customer?.db_id) || savedDbId;
+        try {
+          if (persistedDbId) {
+            await api.put(`/customers/${persistedDbId}`, payload);
+            dirtySavedRef.current = true;
+            return persistedDbId;
+          }
+          const r = await api.post('/customers', payload);
+          const newId = r.data?.data?.db_id ?? null;
+          if (newId) { setSavedDbId(newId); await flushLocalGst(newId); }
+          dirtySavedRef.current = true;
+          return newId;
+        } catch (e: any) {
+          if (!confirmDocRemoval && await confirmOrphanDocs(e)) return attempt(true);
+          throw e;   // fall through to the outer 422 handler
+        }
+      };
+      return await attempt(false);
     } catch (err: any) {
       // Replay the same 422 → inline-error mapping that submitCustomer uses.
       const apiErrors = err?.response?.data?.errors ?? null;
