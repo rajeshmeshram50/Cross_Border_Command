@@ -116,6 +116,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   // contentEditable after the portal re-parents it (mirrors Trade Doc).
   const [fullPage, setFullPage] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [nexting, setNexting] = useState(false);   // brief loader on Save & Next
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const [types, setTypes] = useState<AgrType[]>(initialTypes);
@@ -529,7 +530,13 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     return Object.keys(next).length === 0;
   };
 
-  const goNext = () => { if (validateStep1()) setStep(2); };
+  const goNext = () => {
+    if (!validateStep1()) return;
+    // Step 1 doesn't hit the server (the whole agreement is saved at final
+    // Submit), so show a brief loader for click feedback, then advance.
+    setNexting(true);
+    window.setTimeout(() => { setNexting(false); setStep(2); }, 350);
+  };
   const goBack = () => setStep(1);
 
   const insertPlaceholderToken = (token: string) => {
@@ -542,6 +549,10 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   const handleSave = async () => {
     if (!validateStep1()) { setStep(1); return; }
     setSaving(true);
+    // Min-display window — on a fast save the spinner would flash and vanish as
+    // the modal closes (onSaved), so the user never sees it. Hold "Saving…" for
+    // at least 500ms before finishing.
+    const _saveStart = Date.now();
     // Strip any previous meta comment from the editor's content so we don't
     // accumulate duplicates on every edit, then prepend a fresh one.
     // The Signing Workflow / Expiry Conditions section was removed from
@@ -575,11 +586,12 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     try {
       if (editingId) {
         await api.put(`/clm/agreement-library/${editingId}`, payload);
-        toast.success('Updated', payload.title);
       } else {
         await api.post('/clm/agreement-library', payload);
-        toast.success('Added', payload.title);
       }
+      const elapsed = Date.now() - _saveStart;
+      if (elapsed < 500) await new Promise(res => setTimeout(res, 500 - elapsed));
+      toast.success(editingId ? 'Updated' : 'Added', payload.title);
       onSaved();
     } catch (e: any) {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
@@ -905,9 +917,10 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
           <div className="agw-foot-right">
             <button type="button" className="agw-btn agw-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
             {step === 1 ? (
-              <button type="button" className="agw-btn agw-btn-primary" onClick={goNext} disabled={saving}>
-                Save &amp; Next
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+              <button type="button" className="agw-btn agw-btn-primary" onClick={goNext} disabled={saving || nexting}>
+                {nexting && <svg className="agw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>}
+                {nexting ? 'Saving…' : 'Save & Next'}
+                {!nexting && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>}
               </button>
             ) : (
               <button type="button" className="agw-btn agw-btn-save" onClick={() => void handleSave()} disabled={saving}>

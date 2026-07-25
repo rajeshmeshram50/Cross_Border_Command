@@ -274,6 +274,11 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   const conditionName  = (product.condition?.title as string) ?? '—';
   const packagingName  = (product.packaging_material?.title as string) ?? '—';
   const gstPct         = Number(product.gst_percentage?.percentage ?? 0);
+  // Preserve decimal GST rates (QA #49): show 1.2% / 0.25% as-is instead of
+  // rounding to a whole number. toFixed(2) then Number() trims trailing zeros
+  // (18.00 → 18, 1.20 → 1.2). The amount/total below already come from the
+  // stored server values, so only this label needed fixing.
+  const gstPctStr      = String(Number(gstPct.toFixed(2)));
 
   const fmtMoney = (v: string | number | null | undefined) =>
     v == null || v === '' ? '—' : `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -389,7 +394,7 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
                   <div className="pv2pd-pc-uom">per {uomName}</div>
                 </div>
                 <div className="pv2pd-pc-break">
-                  Base {baseStr}<br />GST {gstPct.toFixed(0)}% &nbsp;{gstAmtStr}
+                  Base {baseStr}<br />GST {gstPctStr}% &nbsp;{gstAmtStr}
                 </div>
               </div>
               <div className="pv2pd-pc-total">

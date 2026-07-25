@@ -501,7 +501,11 @@ function ReadingPane({ detail, loading, onBack, onTrash, onUnread, onStar, inTra
         </div>
 
         {detail.body_html ? (
-          <iframe title="email-body" sandbox="" srcDoc={detail.body_html} className="gm-reading-iframe" />
+          // Sandboxed so the email's HTML can't run scripts or touch our origin,
+          // but allow-popups (+ escape-sandbox) lets its links — e.g. the
+          // attachment download link — open in a new tab instead of being
+          // blocked ("sandboxed frame whose 'allow-popups' permission is not set").
+          <iframe title="email-body" sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={detail.body_html} className="gm-reading-iframe" />
         ) : (
           <pre className="gm-reading-text">{detail.body_text || '(no content captured)'}</pre>
         )}

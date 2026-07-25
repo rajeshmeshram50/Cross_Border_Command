@@ -265,7 +265,7 @@ export default function Documentation() {
         const { data } = await api.get<DocIndex>('/docs-guide');
         if (!alive) return;
         setIndex(data);
-        const first = data.groups[0]?.items[0];
+        const first = data.groups?.[0]?.items?.[0];
         if (first) {
           setActivePath(first.path);
           setActiveType(orderedTypes(first.types)[0] ?? null);
@@ -307,7 +307,7 @@ export default function Documentation() {
   }, [activePath, activeType]);
 
   const allItems = useMemo(
-    () => index?.groups.flatMap(g => g.items) ?? [],
+    () => index?.groups?.flatMap(g => g.items) ?? [],
     [index],
   );
   const activeItem = useMemo(
@@ -317,7 +317,7 @@ export default function Documentation() {
 
   // Filter groups/items by search; when searching, force groups open.
   const visibleGroups = useMemo(() => {
-    if (!index) return [];
+    if (!index?.groups) return [];
     const q = search.trim().toLowerCase();
     if (!q) return index.groups;
     return index.groups
@@ -432,7 +432,7 @@ export default function Documentation() {
 
           {index && (
             <div className="doc-side-footer">
-              {allItems.length} document{allItems.length === 1 ? '' : 's'} across {index.groups.length} modules
+              {allItems.length} document{allItems.length === 1 ? '' : 's'} across {index.groups?.length ?? 0} modules
             </div>
           )}
         </aside>

@@ -388,21 +388,30 @@ class CustomerController extends Controller
             ], 422);
         }
 
-        // (2) Unique-document lock: a segment with an uploaded document that no
-        // remaining segment needs can't be removed (it would orphan the file).
-        // A document shared with a segment that stays does NOT block.
-        $docBlocked = \App\Support\SegmentGuard::blockedByOrphanDocs(
+        // (2) Unique-document handling (spec Scenarios 1-3). Docs unique to a
+        // removed segment — a (category, doc_code) no remaining segment needs —
+        // would be orphaned. We do NOT hard-block: shared docs are always kept,
+        // and for the orphan ones we ask the user to CONFIRM, then delete them on
+        // removal. The frontend re-submits with confirm_segment_doc_removal=1.
+        $orphanUploads = \App\Support\SegmentGuard::orphanUploads(
             \App\Models\Customer::class,
             (int) $customer->id,
             (int) $customer->client_id,
             $removedSegs,
             \App\Support\SegmentGuard::names($data['segment'] ?? null),
         );
-        if (!empty($docBlocked)) {
+        $confirmDocRemoval = $request->boolean('confirm_segment_doc_removal');
+        if ($orphanUploads->isNotEmpty() && !$confirmDocRemoval) {
+            // 409 = needs confirmation (distinct from a 422 hard validation error).
             return response()->json([
-                'message' => 'Cannot remove ' . implode(', ', $docBlocked) . ' — it has an uploaded document not shared with any remaining segment. Delete that document first.',
-                'errors'  => ['segment' => ['Segment(s) with an unshared uploaded document cannot be removed: ' . implode(', ', $docBlocked) . '.']],
-            ], 422);
+                'requires_doc_confirmation' => true,
+                'message' => 'Removing this segment will delete ' . $orphanUploads->count() . ' document(s) used only by it. Shared documents are kept. Confirm to proceed.',
+                'orphan_documents' => $orphanUploads->map(fn ($d) => [
+                    'id'       => $d->id,
+                    'name'     => $d->attachment_name ?: ($d->doc_name ?: ('Document #' . $d->id)),
+                    'category' => $d->category,
+                ])->values(),
+            ], 409);
         }
 
         /* Country/consignee compatibility — the mirror of the guard
@@ -421,8 +430,20 @@ class CustomerController extends Controller
             return $denial;
         }
 
-        $row = DB::transaction(function () use ($customer, $data) {
+        $row = DB::transaction(function () use ($customer, $data, $orphanUploads, $confirmDocRemoval) {
             $primary = $data['primary_address'];
+
+            // Confirmed removal: delete the orphan docs (unique to the removed
+            // segment). Shared docs are untouched. Runs in the same transaction
+            // as the segment change so they commit together.
+            if ($confirmDocRemoval && $orphanUploads->isNotEmpty()) {
+                foreach ($orphanUploads as $u) {
+                    if ($u->attachment_path) {
+                        try { \Illuminate\Support\Facades\Storage::disk('public')->delete($u->attachment_path); } catch (\Throwable $e) { /* best-effort file cleanup */ }
+                    }
+                    $u->delete();
+                }
+            }
 
             $customer->update([
                 'company_name'   => $data['company_name'],

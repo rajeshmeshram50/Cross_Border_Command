@@ -268,7 +268,10 @@ export default function SalesMatrixDetail() {
    * `verified_signed` (how many of those have an actual upload on file).
    * `error` distinguishes a failed fetch from a legitimate empty catalog —
    * without it the UI conflates "server failed" with "no segments yet". */
-  type ClmTally = { total: number; verified: number; error?: boolean; loading?: boolean } | null;
+  // total/verified = MANDATORY core docs (drives % + the mandatory gate).
+  // catalog/catalogVerified = ALL core docs incl. optional (so an optional-only
+  // rule still shows a count instead of "No segment rules set").
+  type ClmTally = { total: number; verified: number; catalog?: number; catalogVerified?: number; error?: boolean; loading?: boolean } | null;
   const [custTally, setCustTally] = useState<ClmTally>(null);
   const [consTally, setConsTally] = useState<ClmTally>(null);
   /* Refetch triggers — bumped after a modal SAVE (not just close) so the
@@ -493,6 +496,11 @@ export default function SalesMatrixDetail() {
        * total_documents/verified_signed for older API responses. */
       core_total_documents?: number;
       core_verified_signed?: number;
+      /* Core catalog = all core docs incl. OPTIONAL (mandatory subset is
+       * core_total_documents). Lets the card show a count for an optional-only
+       * segment rule rather than "No segment rules set". */
+      core_catalog_documents?: number;
+      core_catalog_verified?: number;
     };
   };
 
@@ -517,6 +525,8 @@ export default function SalesMatrixDetail() {
         setCustTally({
           total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
           verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
+          catalog:         Number(d?.core_catalog_documents ?? d?.total_documents ?? 0),
+          catalogVerified: Number(d?.core_catalog_verified ?? d?.verified_signed ?? 0),
         });
       })
       .catch(() => { if (!cancelled) setCustTally({ total: 0, verified: 0, error: true }); });
@@ -544,6 +554,8 @@ export default function SalesMatrixDetail() {
           setConsTally({
             total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
             verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
+            catalog:         Number(d?.core_catalog_documents ?? d?.total_documents ?? 0),
+            catalogVerified: Number(d?.core_catalog_verified ?? d?.verified_signed ?? 0),
           });
         });
 
@@ -1444,12 +1456,15 @@ export default function SalesMatrixDetail() {
         open={customerAddOpen}
         customer={customerEditing}
         initialStage={clmInitialStage}
+        /* Currency-locked opportunity → the new customer's country must match the
+         * trade type (INR ⇒ India, export ⇒ non-India), blocked at save time. */
+        leadCurrency={serverHeader.lockedCurrency}
         /* onClose intentionally does NOT bump the refresh tick — closing
          * without saving can't have changed any uploads, so a refetch
          * would just be a wasted round-trip. The tick only fires on
          * onSaved below. */
         onClose={() => { setCustomerAddOpen(false); setCustomerEditing(null); setClmInitialStage(undefined); }}
-        onSaved={() => {
+        onSaved={(savedId) => {
           // Clearing the cache is enough — customerOpts derives from it.
           setCustomerRows({});
           setCustomerAddOpen(false); setCustomerEditing(null); setClmInitialStage(undefined);
@@ -1458,7 +1473,21 @@ export default function SalesMatrixDetail() {
            * customer). Consignee-side refetch is harmless when not mirrored. */
           setCustRefreshTick(t => t + 1);
           setConsRefreshTick(t => t + 1);
-          void reloadLead();
+          // A "+ add new customer" from THIS lead must also MAP the new customer
+          // to the opportunity (parity with picking an existing one) — otherwise
+          // it only lands in the dropdown and the lead stays unassigned. Skip
+          // when it's the already-mapped customer (an in-place edit).
+          void (async () => {
+            if (savedId && resolvedLeadId && savedId !== serverHeader.customerId) {
+              try {
+                await api.put(`/sales/leads/${resolvedLeadId}`, { customer_id: savedId });
+                toast.success('Customer mapped', 'Linked to this opportunity');
+              } catch (e: any) {
+                toast.error('Mapping failed', e?.response?.data?.message ?? 'Could not link this customer to the lead');
+              }
+            }
+            await reloadLead();
+          })();
         }}
       />
 
@@ -1756,16 +1785,22 @@ function ActionBtn({ icon, label, trailing, className, onClick, locked, onLocked
  * the JSX above stays readable. `tally === null` = no party mapped
  * (row shouldn't render at all); `error` = fetch failed; `loading` =
  * fetch in flight; otherwise the catalog tally. */
-type ClmTallyState = { total: number; verified: number; error?: boolean; loading?: boolean } | null;
+type ClmTallyState = { total: number; verified: number; catalog?: number; catalogVerified?: number; error?: boolean; loading?: boolean } | null;
 function renderClmSub(t: ClmTallyState): string {
   if (t == null || t.loading) return 'Loading documents…';
   if (t.error)                return 'Couldn’t load — tap to retry';
-  if (t.total === 0)          return 'No segment rules set';
-  return `${t.verified} of ${t.total} documents`;
+  // Mandatory docs → track their completion.
+  if (t.total > 0)            return `${t.verified} of ${t.total} documents`;
+  // No mandatory, but the rule carries OPTIONAL core docs → still show a count
+  // instead of implying nothing is configured.
+  if (t.catalog && t.catalog > 0) return `${t.catalogVerified ?? 0} of ${t.catalog} documents`;
+  return 'No segment rules set';
 }
 function renderClmProgress(t: ClmTallyState): number {
-  if (t == null || t.loading || t.error || t.total === 0) return 0;
-  return Math.min(100, Math.round((t.verified / t.total) * 100));
+  if (t == null || t.loading || t.error) return 0;
+  if (t.total > 0) return Math.min(100, Math.round((t.verified / t.total) * 100));
+  if (t.catalog && t.catalog > 0) return Math.min(100, Math.round(((t.catalogVerified ?? 0) / t.catalog) * 100));
+  return 0;
 }
 
 function ClmRow({ icon, tone, title, sub, progress, state, onClick, onRetry, disabled }: {

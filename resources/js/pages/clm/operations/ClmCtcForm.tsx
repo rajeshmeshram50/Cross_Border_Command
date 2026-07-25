@@ -524,7 +524,11 @@ function Stage1(p: {
   const [midCpPage, setMidCpPage] = useState(0);                  // middle Step-1 CP carousel (2 at a time)
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
-  const [midStep, setMidStep] = useState<1 | 2 | 3>(1);          // inner Step 01 / 02 / 03
+  // Inner Step 01 / 02 / 03. When editing a REJECTED / declined draft (Edit &
+  // Resubmit lands here from Stage 2), jump straight to Step 3 (Draft Agreement
+  // Content) — that's what the approver returned for revision, so the user
+  // shouldn't have to click through Counter Party + Basic Details first.
+  const [midStep, setMidStep] = useState<1 | 2 | 3>(p.resubmitMode ? 3 : 1);
   const [editorFs, setEditorFs] = useState(false);              // draft editor full-screen
   const [docxBusy, setDocxBusy] = useState(false);              // DOCX → HTML conversion in flight
   // Page-shell header/footer config (logo, header name, footer text, pagination) —
@@ -694,11 +698,14 @@ function Stage1(p: {
                   )}
                   {visible.map((cp, vi) => {
                     const idx = safe * 2 + vi;
-                    return <CpCard key={idx} t={t} slot={idx + 1} cp={cp} onRemove={() => p.onRemoveCp(idx)} />;
+                    return <CpCard key={idx} t={t} slot={idx + 1} cp={cp} onRemove={() => p.onRemoveCp(idx)} readOnly={p.editLock} />;
                   })}
                   {/* Max one of each (Customer / Consignee / Supplier) ⇒ at most 3.
                       Hide the add button once all three slots are filled. */}
                   {(() => {
+                    // Locked (sent for approval / signing / signed): the previous-
+                    // stage counter-party list is read-only, so no "Add" affordance.
+                    if (p.editLock) return null;
                     const usedTypes = new Set(p.cps.map(c => (c.sourceType || c.badge || '').toLowerCase()));
                     const allFilled = ['buyer', 'consignee', 'supplier'].every(tp => usedTypes.has(tp));
                     if (allFilled) {
@@ -743,7 +750,7 @@ function Stage1(p: {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px 6px' }}>
                     <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${p.org.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 8px rgba(109,40,217,.3)' }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{p.org.initials}</span></div>
                     <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, lineHeight: 1.3 }}>{p.org.name}</div><div style={{ fontSize: 8.5, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500, marginTop: 2 }}>{p.org.sub}</div></div>
-                    <button onClick={p.onResetOrg} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+                    {!p.editLock && <button onClick={p.onResetOrg} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
                   </div>
                   <div style={{ borderTop: `1px solid ${t.dark ? 'rgba(148,163,184,.12)' : '#F1EEFF'}`, padding: '5px 10px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
                     <OrgDetail t={t} label="Country" text={p.org.country} /><OrgDetail t={t} label="State" text={p.org.state} /><OrgDetail t={t} label="Short Code" text={p.org.shortCode} />
@@ -881,9 +888,9 @@ function Stage1(p: {
                         maxLength hard-stops entry and the inline message shows the
                         moment the cap is hit, instead of only failing at Submit for
                         Approval (backend title max:255). */}
-                    <Field t={t} label="Agreement Title *" error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : (p.agTitle.length >= 255 ? 'Agreement title cannot exceed 255 characters.' : undefined)}><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, 255))} maxLength={255} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={ipt} /></Field>
+                    <Field t={t} label="Agreement Title *" error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : (p.agTitle.length >= 255 ? 'Agreement title cannot exceed 255 characters.' : undefined)}><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, 255))} maxLength={255} readOnly={p.editLock} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={{ ...ipt, ...(p.editLock ? { background: t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC', cursor: 'default' } : null) }} /></Field>
                     <Field t={t} label="Agreement Type *" error={errors.type && !p.agType ? 'Agreement type is required' : undefined}>
-                      <MasterSelect value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} />
+                      <MasterSelect value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} disabled={p.editLock} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} />
                     </Field>
                   </div>
                 </div>
@@ -896,12 +903,12 @@ function Stage1(p: {
                   </div>
                   <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, alignItems: 'end' }}>
-                      <Field t={t} label="Effective Date *" green error={errors.effDate && !p.effDate ? 'Effective date is required' : undefined}><MasterDatePicker value={p.effDate} onChange={p.setEffDate} placeholder="Select date" /></Field>
+                      <Field t={t} label="Effective Date *" green error={errors.effDate && !p.effDate ? 'Effective date is required' : undefined}><MasterDatePicker value={p.effDate} onChange={p.setEffDate} disabled={p.editLock} placeholder="Select date" /></Field>
                       {/* The inverted-range error is NOT gated on `errors` — it is a live
                           invariant, so it surfaces the instant the user creates the bad
                           combination (typically by moving Effective Date past End Date)
                           rather than waiting for them to press Next. It self-clears too. */}
-                      <Field t={t} label="End Date *" green error={errors.endDate && !p.endDate ? 'End date is required' : endBeforeEff ? 'End date cannot be earlier than the effective date' : endBeforeToday ? 'End date cannot be earlier than today' : undefined}><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={(p.effDate && p.effDate > todayISO) ? p.effDate : todayISO} placeholder="Select date" /></Field>
+                      <Field t={t} label="End Date *" green error={errors.endDate && !p.endDate ? 'End date is required' : endBeforeEff ? 'End date cannot be earlier than the effective date' : endBeforeToday ? 'End date cannot be earlier than today' : undefined}><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={(p.effDate && p.effDate > todayISO) ? p.effDate : todayISO} disabled={p.editLock} placeholder="Select date" /></Field>
                     </div>
                   </div>
                 </div>
@@ -2466,8 +2473,11 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, onClose, onPick }: { t:
       ? { label: 'Supplier', bg: t.dark ? 'rgba(16,185,129,.16)' : '#ECFDF5', bd: t.dark ? 'rgba(16,185,129,.4)' : '#A7F3D0', fg: t.dark ? '#6ee7b7' : '#059669' }
       : { label: 'Consignee', bg: t.dark ? 'rgba(124,58,237,.18)' : '#EDE9FE', bd: t.dark ? 'rgba(124,58,237,.4)' : '#C4B5FD', fg: t.dark ? '#c4b5fd' : '#7C3AED' };
 
+  // No backdrop-click-to-close: this modal dismisses ONLY via the ✕ / Back /
+  // Confirm & Add buttons, so a stray click outside never loses the picked
+  // counter-party or a typed "referred as" name.
   return (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(15,5,40,.42)', backdropFilter: 'blur(6px)' }} />
       <div style={{ position: 'relative', zIndex: 1, width: pending ? 440 : 460, maxWidth: 'calc(100vw - 32px)', background: t.surface, borderRadius: 16, boxShadow: '0 10px 48px rgba(109,40,217,.32)', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
         <div style={{ background: 'linear-gradient(118deg,#4C1D95,#6D28D9,#8B5CF6)', padding: '12px 14px 11px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -2526,7 +2536,7 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, onClose, onPick }: { t:
               <div style={{ minWidth: 0, flex: 1 }}><div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}><span style={{ flexShrink: 0, fontFamily: "'Geist Mono', monospace", fontSize: 7, fontWeight: 800, color: tabBadge.fg, background: tabBadge.bg, border: `1px solid ${tabBadge.bd}`, padding: '1px 5px', borderRadius: 5 }}>{pending.id}</span><Tooltip label={pending.name} position="top" zIndex={10000001} disabled={!pending.name}><span style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.name}</span></Tooltip></div><Tooltip label={pending.email} position="bottom" zIndex={10000001} disabled={!pending.email || pending.email === '—'}><div style={{ fontSize: 8, color: t.textMuted, marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.email}</div></Tooltip></div>
             </div>
             <label style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#A78BFA' }}>Referred As In Agreement</label>
-            <input value={referred} onChange={e => setReferred(e.target.value)} style={{ width: '100%', padding: '7px 10px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 8, fontSize: 10.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box', marginTop: 4 }} />
+            <input value={referred} onChange={e => setReferred(e.target.value)} style={{ width: '100%', padding: '7px 10px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 8, fontSize: 10.5, lineHeight: 1.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box', marginTop: 4 }} />
             <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
               <button onClick={() => onPick({ name: pending.name, initials: pending.initials, country: pending.country, phone: pending.phone, email: pending.email, grad: pending.grad, badge: tab.toUpperCase(), referred: referred || pending.name, sourceType: tab, sourceId: pending.id })} style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, color: '#fff', boxShadow: '0 3px 12px rgba(109,40,217,.38)' }}>Confirm &amp; Add</button>
               <button onClick={() => setPending(null)} style={{ padding: '8px 13px', borderRadius: 8, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F6FF', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 600, color: t.textSub }}>Back</button>

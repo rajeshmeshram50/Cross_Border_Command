@@ -398,7 +398,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                 <th style={{ minWidth: 130 }}>AGREEMENT TYPE</th>
                 <th style={{ width: 130, textAlign: 'center' }}>REGULATORY</th>
                 <th style={{ width: 120, textAlign: 'left' }}>SEGMENT</th>
-                <th style={{ width: 150, textAlign: 'center' }}>APPLICABLE PARTY</th>
+                <th style={{ width: 150, textAlign: 'left' }}>APPLICABLE PARTY</th>
                 <th style={{ width: 128, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
@@ -455,14 +455,14 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                           );
                         })()}
                       </td>
-                      <td style={{ textAlign: 'center' }}>
-                        
+                      <td style={{ textAlign: 'left' }}>
+
                         {(() => {
                           const partyList = r.party ? r.party.split(',').map(s => s.trim()).filter(Boolean).map(partyLabel) : [];
                           if (partyList.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All parties</span>;
                           const extra = partyList.length - 1;
                           return (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center', verticalAlign: 'middle', lineHeight: 1 }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, verticalAlign: 'middle', lineHeight: 1 }}>
                               <Tooltip label={`Applicable party · ${partyList[0]}`}>
                                 <span className="clm-badge clm-badge-teal">{partyList[0]}</span>
                               </Tooltip>
