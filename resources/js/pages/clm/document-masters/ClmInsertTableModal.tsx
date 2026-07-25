@@ -73,6 +73,9 @@ export default function ClmInsertTableModal({ open, onClose, onInsert }: Props) 
   const buildHtml = (): string => {
     const r = clampRows(rows);
     const c = clampCols(cols);
+    // overflow-wrap + word-break keep long/unbreakable text INSIDE its cell so a
+    // fixed-layout column never grows to fit it (which was resizing every other
+    // column and shoving the table sideways).
     const headerCellStyle = [
       `background:${headerBg}`,
       `color:${headerFg}`,
@@ -80,11 +83,15 @@ export default function ClmInsertTableModal({ open, onClose, onInsert }: Props) 
       'border:1px solid #cbd5e1',
       'text-align:left',
       'font-weight:700',
+      'overflow-wrap:break-word',
+      'word-break:break-word',
     ].join(';');
     const bodyCellStyle = [
       'padding:6px 8px',
       'border:1px solid #cbd5e1',
       'vertical-align:top',
+      'overflow-wrap:break-word',
+      'word-break:break-word',
     ].join(';');
     const stripeBg = '#f8fafc';
 
@@ -105,7 +112,7 @@ export default function ClmInsertTableModal({ open, onClose, onInsert }: Props) 
     // the editor width) gets a horizontal scrollbar instead of overflowing.
     return (
       `<div style="overflow-x:auto;max-width:100%;margin:8px 0">`
-      + `<table style="width:100%;border-collapse:collapse;font-size:13px">`
+      + `<table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px">`
       + headerRow
       + `<tbody>${bodyRows}</tbody>`
       + `</table></div><p><br></p>`

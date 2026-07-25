@@ -113,7 +113,10 @@ interface Props {
 export default function ClmTradeDocumentDraftModal({ open, existing, names: initialNames, nextCode, knownSegments = [], onClose, onSaved }: Props) {
   const toast = useToast();
   useScrollLock(open);   // lock the background scroll + selection while open
-  const editingId = existing?.id ?? null;
+  // State (not a plain derived const) so "Save & Next" can persist a NEW draft
+  // on step 1 and capture its id — the final step-2 save then UPDATEs the same
+  // row instead of creating a duplicate. Re-synced from `existing` on open.
+  const [editingId, setEditingId] = useState<number | null>(existing?.id ?? null);
 
   const [step, setStep] = useState<1 | 2>(1);
   const [saving, setSaving] = useState(false);
@@ -469,6 +472,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     setFullPage(false);
     setErrors({});
     setSaving(false);
+    setEditingId(existing?.id ?? null);
     if (existing) {
       setName(existing.name ?? '');
       setTitle(existing.title ?? '');
@@ -594,20 +598,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     return Object.keys(next).length === 0;
   };
 
-  const goNext = () => {
-    if (validateStep1()) setStep(2);
-  };
-  // Flush the live editor HTML into state before unmounting the step-2 editor,
-  // so returning to step 2 re-hydrates with the user's latest edits rather than
-  // the last loaded snapshot (the editor is otherwise uncontrolled — QA #40).
-  const goBack = () => { if (editorRef.current) setContent(editorRef.current.innerHTML); setStep(1); };
-
-  const handleSave = async () => {
-    if (!validateStep1()) {
-      setStep(1);
-      return;
-    }
-    setSaving(true);
+  // Persist the current form as a draft. On a NEW doc it POSTs and captures the
+  // returned id (so the next save UPDATEs, not duplicates); on an existing doc
+  // it PUTs. Returns false (and toasts) on failure so callers can stay put.
+  const persistDraft = async (): Promise<boolean> => {
     const payload: Omit<TdLib, 'id' | 'code'> = {
       name: name.trim(),
       title: title.trim(),
@@ -624,16 +618,47 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     try {
       if (editingId) {
         await api.put(`/clm/trade-doc-library/${editingId}`, payload);
-        toast.success('Updated', payload.title);
       } else {
-        await api.post('/clm/trade-doc-library', payload);
-        toast.success('Added', payload.title);
+        const r = await api.post<{ data?: { id?: number } }>('/clm/trade-doc-library', payload);
+        const newId = r.data?.data?.id;
+        if (newId) setEditingId(newId);
       }
-      onSaved();
+      return true;
     } catch (e: any) {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
-    } finally {
-      setSaving(false);
+      return false;
+    }
+  };
+
+  // Step 1 → 2 now genuinely SAVES the draft (so the button shows the loader
+  // during a real save), then advances. The id captured here makes step 2 an
+  // update of the same row.
+  const goNext = async () => {
+    if (!validateStep1()) return;
+    setSaving(true);
+    const ok = await persistDraft();
+    setSaving(false);
+    if (ok) setStep(2);
+  };
+  // Flush the live editor HTML into state before unmounting the step-2 editor,
+  // so returning to step 2 re-hydrates with the user's latest edits rather than
+  // the last loaded snapshot (the editor is otherwise uncontrolled — QA #40).
+  const goBack = () => { if (editorRef.current) setContent(editorRef.current.innerHTML); setStep(1); };
+
+  const handleSave = async () => {
+    if (!validateStep1()) {
+      setStep(1);
+      return;
+    }
+    // "Added" vs "Updated" is decided by whether this was originally a NEW draft
+    // (existing prop) — not `editingId`, which "Save & Next" may already have set.
+    const wasNew = !existing?.id;
+    setSaving(true);
+    const ok = await persistDraft();
+    setSaving(false);
+    if (ok) {
+      toast.success(wasNew ? 'Added' : 'Updated', title.trim());
+      onSaved();
     }
   };
 
@@ -1112,13 +1137,16 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
               Cancel
             </button>
             {step === 1 ? (
-              <button type="button" className="tdw-btn tdw-btn-primary" onClick={goNext} disabled={saving}>
-                Save &amp; Next
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+              <button type="button" className="tdw-btn tdw-btn-primary" onClick={() => void goNext()} disabled={saving}>
+                {saving && <svg className="tdw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>}
+                {saving ? 'Saving…' : 'Save & Next'}
+                {!saving && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>}
               </button>
             ) : (
               <button type="button" className="tdw-btn tdw-btn-primary" onClick={() => void handleSave()} disabled={saving}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+                {saving
+                  ? <svg className="tdw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                  : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>}
                 {saving ? 'Saving…' : 'Save Trade Document'}
               </button>
             )}
@@ -1529,6 +1557,12 @@ const TDW_CSS = `
   outline: none;
   font-size: 13.5px; line-height: 1.6; color: #0c4a6e;
 }
+/* Tables hold a FIXED column layout so typing a long / unbreakable string in
+   one cell can't widen that column and shove the rest of the table sideways —
+   the text wraps inside its cell instead. Covers pasted / Word-uploaded tables
+   too, not only the Insert-Table ones (which also carry these inline). */
+.tdw-editor table { table-layout: fixed; width: 100%; }
+.tdw-editor td, .tdw-editor th { overflow-wrap: break-word; word-break: break-word; }
 /* Restore list markers inside the editor — the app's global CSS reset strips
    list-style/padding off ul/ol, so insertUnorderedList / insertOrderedList
    produced lists with no bullets or numbers. */
