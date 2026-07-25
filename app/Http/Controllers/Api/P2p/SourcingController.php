@@ -149,6 +149,10 @@ class SourcingController extends Controller
             // Only ACTIVE employees are assignable — Inactive and Exited staff
             // (the exit flow flips employees.status to those) must not appear.
             ->whereRaw('LOWER(status) = ?', ['active'])
+            // Only FULLY-ONBOARDED employees (all 6 HR onboarding stages done)
+            // may be assigned — half-onboarded staff must not appear (QA #48).
+            // Same gate as EmployeeController's `onboarded_only` filter.
+            ->where('onboarding_stage_completed', '>=', 6)
             ->whereNotNull('user_id')
             ->pluck('user_id');
 

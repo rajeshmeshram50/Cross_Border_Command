@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ClmSegment;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\Vendor;
@@ -1124,9 +1125,19 @@ class PurchaseOrderController extends Controller
         $country = $a && $a->country_id ? DB::table('master_countries')->where('id', $a->country_id)->value('name') : null;
         $state = $a && $a->state_id ? DB::table('master_states')->where('id', $a->state_id)->value('name') : null;
 
+        // Vendor's onboarded segment NAMES — drives the Stage-2 product picker so
+        // only products in a segment this supplier deals in can be selected
+        // (QA #16). Vendors carry multiple segments via the pivot; fall back to
+        // the legacy scalar segment_id.
+        $segNames = $v->segments()->pluck('clm_segments.name')->filter()->unique()->values()->all();
+        if (empty($segNames) && $v->segment_id) {
+            $segNames = ClmSegment::where('id', $v->segment_id)->pluck('name')->all();
+        }
+
         return response()->json(['status' => true, 'data' => [
             'id' => $v->id,
             'code' => $v->vendor_code,
+            'segments' => $segNames,
             'name' => $v->company_name ?: $v->legal_name,
             'type' => optional($v->vendorType)->name,
             'addr' => optional($a)->address_line,

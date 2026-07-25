@@ -42,6 +42,9 @@ type SupplierRec = {
   country: string; state: string; stateCode: string; city: string; contact: string;
   desig: string; phone: string; email: string; scrutiny: string; gstNo: string;
   gstStatus: string; filing: string; remarks: string; web: string;
+  // Onboarded segment names — restricts which products can be picked in Stage 2.
+  // Optional: demo records and emptySup() omit it (treated as "no restriction").
+  segments?: string[];
 };
 
 
@@ -54,20 +57,9 @@ const CPO_SUPPLIERS: Record<string, SupplierRec> = {
   'Larsen & Toubro Ltd': { code: 'S-005', type: 'Manufacturer', web: 'https://www.larsentoubro.com', name: 'Larsen & Toubro', legal: 'Larsen & Toubro Limited', addr: 'L&T House, Ballard Estate, Mumbai 400001', country: 'India', state: 'Maharashtra', stateCode: '27', city: 'Mumbai', contact: 'Sunil Kulkarni', desig: 'Procurement Manager', phone: '+91 98202 55667', email: 'sunil.kulkarni@lnt.com', scrutiny: '2026-03-15', gstNo: '27AAACL0140P1ZL', gstStatus: 'Active', filing: '2026-05-10', remarks: 'Preferred supplier. All historical invoices cleared.' },
 };
 
-const SUP_LEGAL_PARAMS = [
-  { name: 'Company Due Diligence', docs: ['Certificate of Incorporation', 'MOA & AOA', 'GST Registration Certificate', 'PAN Card'] },
-  { name: 'Owner KYC Documents', docs: ['Director / Owner PAN', 'Aadhaar / ID Proof', 'Address Proof', 'Passport-size Photograph'] },
-  { name: 'Trade Licenses', docs: ['Import-Export Code (IEC)', 'Factory / Trade License', 'Udyam (MSME) Certificate'] },
-  { name: 'Trade Documents', docs: ['Product Catalogue', 'ISO / Quality Certificate', 'Test Report / COA', 'Cancelled Cheque / Bank Proof'] },
-  { name: 'Agreements', docs: ['Non-Disclosure Agreement', 'Supply Agreement (MSA)', 'Rate / Price Contract'] },
-];
-const SUP_LEGAL: Record<string, number[]> = {
-  'Reliance Industries Ltd': [4, 4, 3, 4, 3],
-  'Tata Steel Ltd': [4, 4, 3, 4, 3],
-  'Adani Enterprises Ltd': [4, 4, 3, 2, 3],
-  'Mahindra Logistics Ltd': [4, 4, 3, 4, 3],
-  'Larsen & Toubro Ltd': [4, 3, 1, 4, 2],
-};
+// (Removed the hardcoded SUP_LEGAL_PARAMS / SUP_LEGAL demo tables — the legal
+// status card is now driven solely by the supplier's real Evidence Vault, so it
+// never shows dummy rows before a real supplier is selected. See Create-PO QA #1.)
 
 /* Real Supplier Legal Status — the 5 parameters shown in the card are derived
  * from the vendor's Evidence Vault (/segment-uploads/supplier/{id}/vault):
@@ -110,12 +102,12 @@ const PO_PRODUCTS = [
  * PI "expected" list (for the Missing Product Details check) and the product
  * dropdown fallback when the product master fetch fails. */
 type PoLine = { id: number; productId: number | null; code: string; piName: string; piQty: string; name: string; qty: string; rate: string; gst: number };
-type ProdOpt = { id: number | null; code: string; name: string; price: number; gst: number };
+type ProdOpt = { id: number | null; code: string; name: string; price: number; gst: number; segment: string };
 /* With-Shipment only: the canonical PI product set for the PO. PO rows may drop
  * below it (user removes a product); those removed PI products can be re-added
  * via the "Product Name (PO)" dropdown on a new Add-Product row. */
 type PiRow = { productId: number | null; code: string; piName: string; piQty: string; rate: string; gst: number };
-const PRODUCT_FALLBACK: ProdOpt[] = PO_PRODUCTS.map(p => ({ id: null, code: p.code, name: p.name, price: p.price, gst: p.gst }));
+const PRODUCT_FALLBACK: ProdOpt[] = PO_PRODUCTS.map(p => ({ id: null, code: p.code, name: p.name, price: p.price, gst: p.gst, segment: '' }));
 const PRODUCT_PLACEHOLDER = '— Select Product —';
 const PI_REPICK_PLACEHOLDER = '— Select PI Product —';
 // Stable identity for matching a PO row against a PI product: prefer product id,
@@ -395,6 +387,7 @@ const mapDetailToSup = (s: Record<string, unknown>): SupplierRec => ({
   city: String(s.city ?? ''), contact: String(s.contact ?? ''), desig: String(s.desig ?? ''), phone: String(s.phone ?? ''),
   email: String(s.email ?? ''), scrutiny: String(s.scrutiny ?? ''), gstNo: String(s.gstNo ?? ''), gstStatus: String(s.gstStatus ?? ''),
   filing: String(s.filing ?? ''), remarks: String(s.remarks ?? ''), web: '',
+  segments: Array.isArray(s.segments) ? (s.segments as unknown[]).map(String).filter(Boolean) : [],
 });
 
 export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onSaved }: { editRow: PoRow | null; viewOnly?: boolean; onClose: () => void; onSaved: () => void }) {
@@ -488,6 +481,9 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
           code: String(p.product_code ?? p.code ?? p.sku ?? ''),
           price: num(p.total_price ?? p.base_price ?? p.price ?? p.rate ?? 0),
           gst: relPct > 0 ? relPct : (scalarPct > 0 ? scalarPct : derivedPct),
+          // Segment NAME (from /products eager-loaded `segment`) — drives the
+          // Stage-2 supplier-segment product filter + the dropdown badge.
+          segment: String((p.segment as { name?: unknown } | undefined)?.name ?? p.segment_name ?? ''),
         };
       }).filter((o: ProdOpt) => o.name);
       if (!cancelled && opts.length) setProdOpts(opts);
@@ -650,6 +646,11 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
       setCurrencyId(d.currency_id ?? null);
       setVendorId(d.vendor_id ?? null);
       setShipmentDbId(d.shipment_order_id ?? null);
+      // Existing PO (edit OR read-only view): reveal the Missing Product Details
+      // straight away — the buyer shouldn't have to click "Save Details" to see
+      // shortfalls on a saved PO (and in view mode the button is disabled). The
+      // `missing` list is a reactive memo, so it fills in as the rows settle.
+      setShowMissing(true);
       // With-Shipment PO: load the shipment's full PI product set (with the
       // quantity REMAINING for this PO = PI total − what other POs consumed;
       // this PO's own lines are excluded). Used to (a) re-add removed PI
@@ -765,23 +766,60 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   };
   const backToChoice = () => { setPhase('choice'); setChoiceOpen(true); };
 
-  const legal = SUP_LEGAL[supName];
-  const legalCalc = useMemo(() => {
-    if (!legal) return null;
-    let tot = 0, done = 0;
-    const cards = SUP_LEGAL_PARAMS.map((pm, i) => {
-      const t = pm.docs.length, d = Math.max(0, Math.min(legal[i] || 0, t));
-      tot += t; done += d;
-      const st = d >= t ? 'full' : (d > 0 ? 'part' : 'none');
-      return { name: pm.name, t, d, st, pc: t ? Math.round(d / t * 100) : 0 };
-    });
-    const p = tot ? Math.round(done / tot * 100) : 0;
-    return { cards, p, done, tot };
-  }, [legal]);
+  // Supplier Legal Status is driven ONLY by the selected supplier's real
+  // Evidence Vault (loadSupplierLegal → supLegal). No demo/hardcoded fallback:
+  // with no supplier selected — or a supplier with no vault — the card shows
+  // its empty "Select a supplier" state instead of dummy rows (Create-PO QA #1).
+  const legalView = supLegal;
 
-  // Prefer the real vault-derived breakdown for actual vendors; fall back to the
-  // demo SUP_LEGAL calc for the built-in demo supplier names.
-  const legalView = supLegal ?? legalCalc;
+  // The "Supplier Legal Status" button is enabled once a supplier is present —
+  // a real vendor id (create-flow pick or edit-load) OR a loaded supplier name
+  // (edit / view mode). Only the create flow with NO supplier chosen keeps it
+  // disabled (Create-PO QA #1). Broader than `vendorId` alone so an edit/view
+  // PO whose vendor detail is still resolving never wrongly greys the button.
+  const supplierChosen = vendorId != null || supName !== SUPPLIER_PLACEHOLDER;
+
+  // Stage-2 product picker is restricted to products whose segment matches one
+  // of the SELECTED supplier's onboarded segments (QA #16) — the rest are frozen
+  // out of the dropdown. When the supplier has no known segments, don't
+  // over-filter (show all) so the flow is never blocked.
+  const supplierSegs = useMemo(
+    () => new Set((sup.segments ?? []).map(s => s.trim().toLowerCase()).filter(Boolean)),
+    [sup.segments],
+  );
+  const segProdOpts = useMemo(
+    () => (supplierSegs.size === 0
+      ? prodOpts
+      : prodOpts.filter(o => o.segment && supplierSegs.has(o.segment.trim().toLowerCase()))),
+    [prodOpts, supplierSegs],
+  );
+  // Product dropdown meta — code prefix + segment badge on the right (QA #17).
+  const prodMeta = useMemo(() => {
+    const m: Record<string, DdOptMeta> = {};
+    segProdOpts.forEach(o => { m[o.name] = { code: o.code || undefined, badge: o.segment || undefined }; });
+    return m;
+  }, [segProdOpts]);
+
+  // Segment cross-check: a PI/PO product whose segment isn't one the SELECTED
+  // supplier deals in is flagged red + surfaced in a warning note, so the buyer
+  // either removes it or maps the supplier to that segment. Resolved from the
+  // product master (prodOpts already carries each product's segment). Skipped
+  // when the supplier has no known segments (nothing to compare) or a product's
+  // segment can't be resolved.
+  const segMismatchIds = useMemo(() => {
+    const ids = new Set<number>();
+    if (supplierSegs.size === 0) return ids;
+    rows.forEach(r => {
+      const opt = prodOpts.find(o => (r.productId != null && o.id === r.productId) || (!!o.code && !!r.code && o.code === r.code));
+      const seg = (opt?.segment ?? '').trim().toLowerCase();
+      if (seg && !supplierSegs.has(seg)) ids.add(r.id);
+    });
+    return ids;
+  }, [rows, prodOpts, supplierSegs]);
+  const mismatchNames = useMemo(
+    () => rows.filter(r => segMismatchIds.has(r.id)).map(r => formatProductCode(r.code) || r.name || '—'),
+    [rows, segMismatchIds],
+  );
 
   // Supplier GST scrutiny is "old" when its last scrutiny date is more than 3
   // months ago — surfaced as a warning so the buyer re-runs scrutiny before
@@ -866,6 +904,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
 
   const generate = () => {
     if (saving) return;
+    if (!validateSegments()) return;
     // Expected Delivery Date can't be earlier than today — but only for a NEW
     // PO. An existing PO being edited may legitimately have a past delivery
     // date, so we don't block the edit on it.
@@ -904,6 +943,19 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     return true;
   };
 
+  // A PO can't be saved/submitted while any product's segment differs from the
+  // supplier's segment — the buyer must remove the product or map the supplier
+  // to that segment first. Gates Save Details, Save & Next, and the final
+  // Generate/Submit so the red-flagged rows can never slip through.
+  const validateSegments = (): boolean => {
+    if (segMismatchIds.size === 0) return true;
+    toast.error(
+      'Segment mismatch',
+      `${mismatchNames.join(', ')} ${mismatchNames.length > 1 ? 'do not' : 'does not'} match the supplier’s segment${(sup.segments ?? []).length ? ` (${(sup.segments ?? []).join(', ')})` : ''}. Remove the highlighted product${mismatchNames.length > 1 ? 's' : ''}, or map the supplier to that segment before continuing.`,
+    );
+    return false;
+  };
+
   // After a validation fail, scroll the first highlighted field into view so
   // the user lands on what needs fixing (mirrors SpiDetail). The 60ms delay
   // lets React paint the is-error / .invalid classes before we query the DOM.
@@ -918,6 +970,16 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     // View-only: navigate through the stages to review, never persist/generate.
     if (viewOnly) { if (stage < 4) setStage(s => s + 1); return; }
     if (stage === 1 && !validateStage1()) return;
+    // Block leaving the product stage (and any later persist) while a product's
+    // segment doesn't match the supplier's.
+    if (stage >= 2 && !validateSegments()) return;
+    // Stage 2 must be "saved" (Save Details) before advancing so the buyer has
+    // reviewed the missing-quantity check. Edit/view auto-reveals it, so only a
+    // fresh create is actually gated here (QA #11).
+    if (stage === 2 && !showMissing) {
+      toast.warning('Review product details', 'Click “Save Details” to check missing product quantities before continuing to the next stage.');
+      return;
+    }
     // Persist the PO when leaving stage 3 (before entering stage 4) so the
     // documents / e-sign stage has a real PO id — its preview, individual
     // "Send for Sign", and bundling the PO into a trade-doc signature request
@@ -1147,7 +1209,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                       </div>
 
                       <div className="pof-sub">
-                        <div className="pof-sub__hd"><div className="pof-sub__ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" /></svg></div><div className="pof-sub__t">Supplier Legal Status</div><span className={`splegal-badge ${legalView ? (legalView.p === 100 ? 'ok' : 'warn') : ''}`}>{legalView ? (legalView.p === 100 ? '100% Compliant' : `${legalView.p}% · Needs Review`) : '—'}</span><button type="button" className="cptd-vault-btn" style={{ marginLeft: 'auto' }} onClick={() => setVaultOpen(true)}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg><span>Supplier Legal Status</span></button></div>
+                        <div className="pof-sub__hd"><div className="pof-sub__ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="M9 12l2 2 4-4" /></svg></div><div className="pof-sub__t">Supplier Legal Status</div><span className={`splegal-badge ${legalView ? (legalView.p === 100 ? 'ok' : 'warn') : ''}`}>{legalView ? (legalView.p === 100 ? '100% Compliant' : `${legalView.p}% · Needs Review`) : '—'}</span><button type="button" className="cptd-vault-btn" disabled={!supplierChosen} title={supplierChosen ? 'View supplier legal status' : 'Select a supplier first'} style={{ marginLeft: 'auto', ...(!supplierChosen ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }} onClick={() => { if (!supplierChosen) return; setVaultOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg><span>Supplier Legal Status</span></button></div>
                         <div className="pof-sub__bd">
                           <div className="splegal"><div className="splegal-bar"><div className="splegal-fill" style={{ width: `${legalView?.p || 0}%`, background: legalView ? (legalView.p === 100 ? 'linear-gradient(90deg,#0e7490,#0891b2 55%,#06b6d4)' : legalView.p >= 60 ? 'linear-gradient(90deg,#d97706,#f59e0b)' : 'linear-gradient(90deg,#dc2626,#ef4444)') : undefined }} /></div><div className="splegal-pct">{legalView?.p || 0}%</div></div>
                           {legalView ? (<>
@@ -1218,6 +1280,15 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                     ))}
                     </div>
                   }>
+                  {mismatchNames.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 15px', margin: '0 0 12px', borderRadius: 12, background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', fontSize: 12.5, lineHeight: 1.45 }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                      <span>
+                        <strong>Segment mismatch — {mismatchNames.join(', ')}</strong>{' '}
+                        {mismatchNames.length > 1 ? 'do not' : 'does not'} match this supplier’s segment{(sup.segments ?? []).length ? ` (${(sup.segments ?? []).join(', ')})` : ''}. Remove the highlighted product{mismatchNames.length > 1 ? 's' : ''}, or map the supplier to that segment.
+                      </span>
+                    </div>
+                  )}
                   <div className={`cpd-scroll ${poView ? 'cpd-scroll--ro' : ''}`}>
                     <table className={`cpd-tbl ${withShip ? '' : 'cpd-tbl--po'}`}>
                       {/* Fixed column widths keep the table STABLE while editing
@@ -1256,10 +1327,12 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                           <tr><td colSpan={colCount} style={{ padding: '24px', textAlign: 'center', color: '#9fb2c0', fontWeight: 600 }}>No products added — click “Add Product” below to start.</td></tr>
                         ) : rows.map((r, i) => {
                           const c = compute(r);
+                          const mismatch = segMismatchIds.has(r.id);
+                          const mismatchRowStyle = mismatch ? { background: 'rgba(239,68,68,.07)', boxShadow: 'inset 3px 0 0 #dc2626' } : undefined;
                           return withShip ? (
-                            <tr key={r.id}>
+                            <tr key={r.id} style={mismatchRowStyle} title={mismatch ? 'Product segment does not match the supplier segment' : undefined}>
                               <td className="cpd-c">{i + 1}</td>
-                              <td className="cpd-c"><span className="cpd-code">{formatProductCode(r.code) || '—'}</span></td>
+                              <td className="cpd-c"><span className="cpd-code" style={mismatch ? { color: '#dc2626' } : undefined}>{formatProductCode(r.code) || '—'}</span></td>
                               <td className="cpd-name">{(r.productId == null && !r.code && !r.piName)
                                 ? <div className="cpd-prodcell"><Dd value={PI_REPICK_PLACEHOLDER} options={[PI_REPICK_PLACEHOLDER, ...removedPi.map(piLabel)]} onChange={label => { if (label !== PI_REPICK_PLACEHOLDER) reAddPi(r.id, label); }} /></div>
                                 : <Tooltip label={r.piName} disabled={!r.piName} zIndex={2999999}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
@@ -1273,10 +1346,10 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                               <td className="cpd-c">{!poView && <Tooltip label="Remove product" themed zIndex={2999999}><button type="button" className="cpd-del" onClick={() => removeLine(r.id)}>✕</button></Tooltip>}</td>
                             </tr>
                           ) : (
-                            <tr key={r.id}>
+                            <tr key={r.id} style={mismatchRowStyle} title={mismatch ? 'Product segment does not match the supplier segment' : undefined}>
                               <td className="cpd-c">{i + 1}</td>
-                              <td className="cpd-c"><span className="cpd-code">{formatProductCode(r.code) || '—'}</span></td>
-                              <td className="cpd-prodcell"><Dd tooltip value={r.name || PRODUCT_PLACEHOLDER} options={[PRODUCT_PLACEHOLDER, ...prodOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} /></td>
+                              <td className="cpd-c"><span className="cpd-code" style={mismatch ? { color: '#dc2626' } : undefined}>{formatProductCode(r.code) || '—'}</span></td>
+                              <td className="cpd-prodcell"><Dd tooltip value={r.name || PRODUCT_PLACEHOLDER} optMeta={prodMeta} options={[PRODUCT_PLACEHOLDER, ...segProdOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: numOnly(e.target.value) })} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
@@ -1326,6 +1399,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         Product Details. */}
                     <button type="button" className="cpd-save-btn" disabled={savingDetails || poView} onClick={async () => {
                       if (savingDetails || poView) return;
+                      if (!validateSegments()) return;
                       setSavingDetails(true);
                       try {
                         // Only an existing PO can be written to — a new one is
@@ -1370,7 +1444,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                 <Box label="Terms" title="PO Terms & Conditions" sub="Define the terms & conditions for this purchase order" ico={fileIco}>
                   <div className="cpd-terms">
                     <label className="cpd-terms__lbl" htmlFor="cpoTermsTA">Terms &amp; Condition</label>
-                    <textarea id="cpoTermsTA" className="cpd-terms__ta" placeholder="Enter purchase order terms & conditions…" value={terms} onChange={e => setTerms(e.target.value)} />
+                    <textarea id="cpoTermsTA" className="cpd-terms__ta" disabled={poView} placeholder="Enter purchase order terms & conditions…" value={terms} onChange={e => setTerms(e.target.value)} />
                   </div>
                 </Box>
                 </div>

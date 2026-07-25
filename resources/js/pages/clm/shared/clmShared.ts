@@ -1049,6 +1049,16 @@ body > .dropdown-menu.master-select-menu,
 .clm-editor-foot-hint { display: flex; align-items: center; gap: 5px; font-size: 9.5px; color: #94a3b8; font-style: italic; }
 .clm-editor-foot-ph { font-size: 9.5px; color: rgba(8,145,178,.45); font-weight: 700; font-family: 'Geist Mono', monospace; }
 
+/* Clause modal (the ONLY modal using .clm-modal-xwide) — make the editor FILL
+ * the remaining modal height so ONLY the clause CONTENT scrolls internally. The
+ * head + toolbar + footer stay pinned and never scroll out of view on short
+ * laptops when a long clause is pasted (the fixed 220–360px editor used to push
+ * the whole modal-body into a scroll, dragging the toolbar off-screen). Scoped
+ * to .clm-modal-xwide so no other CLM modal is affected. */
+.clm-modal-xwide .clm-modal-body { flex: 1 1 auto; min-height: 0; }
+.clm-modal-xwide .clm-editor-card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.clm-modal-xwide .clm-editor-body { flex: 1 1 auto; min-height: 120px; max-height: none; }
+
 /* Back button — left-side in stage 2 footer */
 .clm-btn-back { display: inline-flex; align-items: center; gap: 5px; padding: 9px 18px; border: 1.5px solid rgba(6,182,212,.25); border-radius: 10px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #0891b2; cursor: pointer; background: #fff; transition: all .15s; }
 .clm-btn-back:hover { background: rgba(240,253,255,.9); border-color: #0891b2; }

@@ -305,6 +305,18 @@ export default function AddProductModal(props: {
     const row = optGst.find(o => o.value === gstId);
     return parseFloat(String(row?.extra?.percentage ?? '0')) || 0;
   }, [optGst, gstId]);
+  /* GST rates sorted ascending by percentage for every DISPLAY surface (the
+     Map GST dropdown, the read-only Sales select, and the GST Master table).
+     The raw `optGst` appends newly-added rates at the end (QA #48 — a new rate
+     showed at the bottom instead of in order); sorting here fixes all three at
+     once. `find`/`some` lookups keep using `optGst` since order is irrelevant. */
+  const optGstSorted = useMemo(() => {
+    const pct = (o: MasterOpt) => {
+      const n = parseFloat(String(o.extra?.percentage ?? o.label));
+      return Number.isFinite(n) ? n : 0;
+    };
+    return [...optGst].sort((a, b) => pct(a) - pct(b));
+  }, [optGst]);
   const gstPctStr = gstPctNum ? `${gstPctNum.toFixed(2)}%` : '';
   const canMapSupplier = gstPctNum > 0;
   const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
@@ -1213,6 +1225,25 @@ export default function AddProductModal(props: {
       return;
     }
     setFieldErrors({});
+    // New product (non-Purchase): the GST % must be mapped BEFORE the product
+    // is created. Hold the validated Core data in state and open the Map GST
+    // popup; the product is only inserted (and shows in the list) once GST is
+    // saved there — see the "Map GST" handler, which calls commitCore(gst).
+    // Editing an existing product, or the Purchase dept (no Sales step),
+    // commits straight away as before.
+    if (!productId && !isPurchaseDept) {
+      setGstMapValue(gstId);
+      setGstMasterOpen(false);
+      setGstMapOpen(true);
+      return;
+    }
+    await commitCore();
+  };
+
+  // The real Core insert/update, split out of saveCore so the deferred
+  // "map GST first" flow can trigger it from the Map GST popup, passing the
+  // chosen gst so a brand-new product is created together WITH its GST %.
+  const commitCore = async (gstToCommit?: string): Promise<boolean> => {
     setSaving(true);
     try {
       // Always send multipart so file uploads work; Laravel handles either
@@ -1235,6 +1266,10 @@ export default function AddProductModal(props: {
       put('condition_id', conditionId ? Number(conditionId) : null);
       put('packaging_material_id', packagingMaterialId ? Number(packagingMaterialId) : null);
       put('confidential_info', confidential);
+      // Deferred-create path passes the just-mapped GST so the product is
+      // committed together with its GST %. Omitted on edit-mode core re-saves,
+      // leaving the existing gst_id untouched (the Sales step owns it there).
+      if (gstToCommit) put('gst_id', Number(gstToCommit));
 
       // Primary image: send the kept-path if any, plus the new file if one
       // was just picked. Backend prefers the file when both are present.
@@ -1287,17 +1322,32 @@ export default function AddProductModal(props: {
       if (isPurchaseDept) {
         onSaved(res.data.id, true);
         toast.success('Product saved', 'Product created successfully');
-        return;
+        return true;
       }
       onSaved(res.data.id, false);
-      toast.success('Core saved', 'Product Core Information saved');
+      // Deferred-create path shows its own "Product added" toast (with the GST);
+      // don't double-toast here.
+      if (!gstToCommit) toast.success('Core saved', 'Product Core Information saved');
       markTabReached('sales');
       setTab('sales');
+      return true;
     } catch (e: unknown) {
       const msg = extractError(e, 'Failed to save Core information.');
       toast.error('Save failed', msg);
+      return false;
     } finally {
       setSaving(false);
+    }
+  };
+
+  /* Close the Map GST popup. In the deferred-create flow (no productId yet)
+     closing WITHOUT mapping means the product isn't created — return to Stage 1
+     with the Core data intact and a hint that GST is required to add it. For an
+     existing product (remap) it's just a plain close. */
+  const closeGstMap = () => {
+    setGstMapOpen(false);
+    if (!productId) {
+      toast.info('GST % required', 'Map a GST % to add this product. Your details are kept — nothing is saved until GST is mapped.');
     }
   };
 
@@ -1895,7 +1945,7 @@ export default function AddProductModal(props: {
                           live GST option. If that GST rate was deleted from the
                           master, the id is orphaned — show the placeholder (blank)
                           instead of the raw numeric id (QA #44). */}
-                      <SelectInput value={optGst.some(o => o.value === gstId) ? gstId : ''} onChange={() => {}} placeholder='Map from the "GST (%)" button above' options={optGst} disabled />
+                      <SelectInput value={optGst.some(o => o.value === gstId) ? gstId : ''} onChange={() => {}} placeholder='Map from the "GST (%)" button above' options={optGstSorted} disabled />
                     </Field>
                   </div>
                   <div className="apm-grid-2">
@@ -2251,7 +2301,7 @@ export default function AddProductModal(props: {
                           <td>{opt?.state || '—'}</td>
                           <td className="apm-sup-cperson">{v.contactPerson || '—'}</td>
                           <td>₹{v.purchasePrice.toLocaleString()}</td>
-                          <td>{v.gstPct.toFixed(0)}%</td>
+                          <td>{String(Number(v.gstPct.toFixed(2)))}%</td>
                           <td>₹{v.gstAmt.toFixed(2)}</td>
                           <td className="apm-sup-ctotal">₹{v.totalAmt.toLocaleString()}</td>
                           <td>
@@ -2374,7 +2424,7 @@ export default function AddProductModal(props: {
 
       {/* ── Map GST (%) popup — pick a rate from the master ── */}
       {gstMapOpen && createPortal((
-        <div className="apm-gst-overlay" onClick={() => setGstMapOpen(false)}>
+        <div className="apm-gst-overlay" onClick={closeGstMap}>
           <div className="apm-gst-modal" onClick={(e) => e.stopPropagation()}>
             <div className="apm-gst-head">
               <div className="apm-gst-head-ico">
@@ -2384,7 +2434,7 @@ export default function AddProductModal(props: {
                 <div className="apm-gst-title">Map GST (%)</div>
                 <div className="apm-gst-sub">Select the GST percentage you want to map for this product</div>
               </div>
-              <button className="apm-gst-close" onClick={() => setGstMapOpen(false)} aria-label="Close">
+              <button className="apm-gst-close" onClick={closeGstMap} aria-label="Close">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
               </button>
             </div>
@@ -2395,14 +2445,29 @@ export default function AddProductModal(props: {
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 </button>
               </div>
-              <SelectInput value={gstMapValue} onChange={setGstMapValue} placeholder="Select GST %" options={optGst} />
+              <SelectInput value={gstMapValue} onChange={setGstMapValue} placeholder="Select GST %" options={optGstSorted} />
               <div className="apm-gst-hint">Need a different rate? Use the <b>+</b> button above to add it to the GST % master.</div>
             </div>
             <div className="apm-gst-foot">
-              <button className="apm-btn-ghost" onClick={() => setGstMapOpen(false)}>Cancel</button>
-              <button className="apm-btn-primary" disabled={!gstMapValue} onClick={() => {
-                setGstId(gstMapValue); clearFieldError('gstId'); setGstMapOpen(false);
-                const rate = optGst.find(o => o.value === gstMapValue)?.label;
+              <button className="apm-btn-ghost" onClick={closeGstMap}>Cancel</button>
+              <button className="apm-btn-primary" disabled={!gstMapValue || saving} onClick={async () => {
+                const chosen = gstMapValue;
+                setGstId(chosen); clearFieldError('gstId');
+                const rate = optGst.find(o => o.value === chosen)?.label;
+                if (!productId) {
+                  // Deferred create: THIS is where the brand-new product is
+                  // actually saved — the held Core data + the mapped GST are
+                  // committed together, so it never lands in the list without a
+                  // GST. Keep the popup open on failure so the user can retry.
+                  const ok = await commitCore(chosen);
+                  if (ok) {
+                    setGstMapOpen(false);
+                    toast.success('Product added', rate ? `GST ${rate} mapped — product created.` : 'Product created.');
+                  }
+                  return;
+                }
+                // Existing product: just remap locally; the Sales step persists it.
+                setGstMapOpen(false);
                 toast.success('GST mapped', rate ? `GST ${rate} is mapped to this product.` : 'GST is mapped to this product.');
               }}>Map GST</button>
             </div>
@@ -2444,7 +2509,7 @@ export default function AddProductModal(props: {
                   <table className="apm-gst-table">
                     <thead><tr><th>Sr No</th><th>GST Rate</th><th aria-label="Remove" /></tr></thead>
                     <tbody>
-                      {optGst.map((o, i) => (
+                      {optGstSorted.map((o, i) => (
                         <tr key={o.value}>
                           <td><span className="apm-sup-sr">{String(i + 1).padStart(2, '0')}</span></td>
                           <td className="apm-gst-rate">{o.label}</td>
