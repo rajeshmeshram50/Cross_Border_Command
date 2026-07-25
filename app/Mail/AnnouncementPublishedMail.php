@@ -10,6 +10,8 @@ use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 
 
 class AnnouncementPublishedMail extends Mailable
@@ -89,37 +91,41 @@ class AnnouncementPublishedMail extends Mailable
      * open/download link — the in-app /gmail viewer renders only the HTML
      * body, so the MIME attachment isn't reachable there without this URL.
      */
-    private function resolveAttachmentUrl(): ?string
+    /** Normalise the stored path to a key relative to the 'public' disk root. */
+    private function normalisedPath(): ?string
     {
         $rel = $this->announcement->attachment_path;
         if (!$rel) return null;
+        $norm = ltrim(str_replace('\\', '/', $rel), '/');
+        if (str_starts_with($norm, 'storage/')) $norm = substr($norm, 8);
+        if (str_starts_with($norm, 'public/'))  $norm = substr($norm, 7);
+        return $norm !== '' ? $norm : null;
+    }
 
-        $abs = storage_path('app/public/' . ltrim($rel, '/'));
-        if (!is_file($abs)) return null;
+    private function resolveAttachmentUrl(): ?string
+    {
+        $norm = $this->normalisedPath();
+        // Confirm the file exists on the 'public' DISK (local folder OR Azure).
+        if (!$norm || !Storage::disk('public')->exists($norm)) return null;
 
-        // Build a fully-qualified URL via asset() so it includes the app's
-        // base path (e.g. /Cross_Border_Command/public). file_url() leans on
-        // the public disk's `url` config which is the root-relative "/storage",
-        // and that 404s under a subdirectory install + in email clients.
-        $normalized = ltrim(str_replace('\\', '/', $rel), '/');
-        if (str_starts_with($normalized, 'storage/')) $normalized = substr($normalized, 8);
-        if (str_starts_with($normalized, 'public/'))  $normalized = substr($normalized, 7);
-
-        return asset('storage/' . $normalized);
+        // Link to our own signed, streaming route — NOT a raw /storage or Azure
+        // blob URL. That route reads the bytes off the disk, so the link opens on
+        // local AND Azure (public or private container) and works even when the
+        // recipient isn't logged in. `signed` makes the id tamper-proof.
+        return URL::signedRoute('announcements.attachment', ['id' => $this->announcement->id]);
     }
 
     public function attachments(): array
     {
-        $rel = $this->announcement->attachment_path;
-        if (!$rel) return [];
+        $norm = $this->normalisedPath();
+        // Attach by reading the BYTES from the disk (works on local AND Azure);
+        // fromPath()/is_file() only worked on a local disk, so on the server the
+        // file silently dropped off the email.
+        if (!$norm || !Storage::disk('public')->exists($norm)) return [];
 
-        $abs = storage_path('app/public/' . ltrim($rel, '/'));
-        if (!is_file($abs)) return [];
-
-        $att = Attachment::fromPath($abs);
-        if ($this->announcement->attachment_original_name) {
-            $att = $att->as($this->announcement->attachment_original_name);
-        }
-        return [$att];
+        $name = $this->announcement->attachment_original_name ?: basename($norm);
+        return [
+            Attachment::fromData(fn () => Storage::disk('public')->get($norm), $name),
+        ];
     }
 }

@@ -111,6 +111,14 @@ Route::get('/p2p/debit-notes/{id}/view',         [SalesPdfController::class, 'pu
     ->whereNumber('id')
     ->name('p2p.dn.view');
 
+// Broadcast (announcement) email attachment — streamed through the app so the
+// link in the emailed announcement works on BOTH local and Azure (public or
+// private container) without the recipient being logged in. Signed = tamper-proof.
+Route::get('/announcements/{id}/attachment',     [AnnouncementController::class, 'attachment'])
+    ->middleware('signed')
+    ->whereNumber('id')
+    ->name('announcements.attachment');
+
 // Protected
 Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
