@@ -904,6 +904,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
 
   const generate = () => {
     if (saving) return;
+    if (!validateHasProducts()) return;
     if (!validateSegments()) return;
     // Expected Delivery Date can't be earlier than today — but only for a NEW
     // PO. An existing PO being edited may legitimately have a past delivery
@@ -943,6 +944,19 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     return true;
   };
 
+  // At least one real product must be on the list before Stage 2 can be saved
+  // or advanced — an empty product list can't become a PO (QA #18). A row
+  // counts once it has a product (name / PI name / product id); a blank starter
+  // row or a qty typed with no product doesn't.
+  const validateHasProducts = (): boolean => {
+    const has = rows.some(r => !!(r.name || r.piName || r.productId != null));
+    if (!has) {
+      toast.error('No products added', 'Add at least one product to the list before saving.');
+      return false;
+    }
+    return true;
+  };
+
   // A PO can't be saved/submitted while any product's segment differs from the
   // supplier's segment — the buyer must remove the product or map the supplier
   // to that segment first. Gates Save Details, Save & Next, and the final
@@ -970,8 +984,9 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     // View-only: navigate through the stages to review, never persist/generate.
     if (viewOnly) { if (stage < 4) setStage(s => s + 1); return; }
     if (stage === 1 && !validateStage1()) return;
-    // Block leaving the product stage (and any later persist) while a product's
-    // segment doesn't match the supplier's.
+    // Product stage (and any later persist) needs at least one product AND no
+    // segment mismatch before it can be left.
+    if (stage >= 2 && !validateHasProducts()) return;
     if (stage >= 2 && !validateSegments()) return;
     // Stage 2 must be "saved" (Save Details) before advancing so the buyer has
     // reviewed the missing-quantity check. Edit/view auto-reveals it, so only a
@@ -1399,6 +1414,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         Product Details. */}
                     <button type="button" className="cpd-save-btn" disabled={savingDetails || poView} onClick={async () => {
                       if (savingDetails || poView) return;
+                      if (!validateHasProducts()) return;
                       if (!validateSegments()) return;
                       setSavingDetails(true);
                       try {
