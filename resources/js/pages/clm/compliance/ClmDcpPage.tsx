@@ -1074,7 +1074,18 @@ function SegmentRuleModal(props: {
                             </td>
                             <td className="clm-td-num">{String(i + 1).padStart(2, '0')}</td>
                             <td style={{ width: 100 }}><span className="clm-code-pill">{d.code}</span></td>
-                            <td className="clm-td-name">{d.title || d.name}</td>
+                            {(() => {
+                              // Truncate the document name at 25 chars; the full
+                              // name shows on hover so a long title never wraps
+                              // the row across multiple lines.
+                              const full = String(d.title || d.name || '');
+                              const shown = full.length > 25 ? `${full.slice(0, 25)}…` : full;
+                              return (
+                                <Tooltip label={full} disabled={full === shown}>
+                                  <td className="clm-td-name">{shown}</td>
+                                </Tooltip>
+                              );
+                            })()}
                             <td className="clm-td-desc">{d.authority || d.issued_by || '—'}</td>
                             <td style={{ width: 200, textAlign: 'right' }}>
                               <div className={`dcp-req-group ${isM ? 'dcp-req-group-mand' : isO ? 'dcp-req-group-opt' : ''}`} style={{ display: 'inline-flex', borderRadius: 9, overflow: 'hidden', border: `1.5px solid ${isM ? 'rgba(6,182,212,.35)' : isO ? 'rgba(245,158,11,.35)' : 'rgba(203,213,225,.4)'}` }}>

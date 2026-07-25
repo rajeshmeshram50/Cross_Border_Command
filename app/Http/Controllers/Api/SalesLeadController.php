@@ -2174,6 +2174,26 @@ class SalesLeadController extends Controller
             $q->whereIn('id', $salesUserIds ?: [-1]);
         }
 
+        // Onboarding gate — a half-onboarded / resigned / archived EMPLOYEE must
+        // not appear as an assignable lead owner. Mirrors the 'onboarded_only'
+        // gate EmployeeController::managers() uses (Active + onboarding_stage_
+        // completed >= 6 + not soft-deleted). We EXCLUDE the failing employee
+        // user-ids rather than requiring an employee record, so non-employee
+        // users (e.g. client/branch admins) are unaffected.
+        $blockedUserIds = \App\Models\Employee::withTrashed()
+            ->whereNotNull('user_id')
+            ->where(function ($w) {
+                $w->whereNotNull('deleted_at')
+                  ->orWhere('status', '!=', 'Active')
+                  ->orWhereNull('onboarding_stage_completed')
+                  ->orWhere('onboarding_stage_completed', '<', 6);
+            })
+            ->pluck('user_id')
+            ->all();
+        if ($blockedUserIds) {
+            $q->whereNotIn('id', $blockedUserIds);
+        }
+
         $rows = $q->select(['id', 'name', 'user_type', 'email'])
                   ->orderBy('name')
                   ->get();

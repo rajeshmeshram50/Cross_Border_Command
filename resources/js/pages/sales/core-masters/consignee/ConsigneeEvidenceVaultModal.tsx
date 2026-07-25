@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { ShipmentDocPanel, ShipmentDocSendForSignature, type VaultShipmentDoc } from '../customer/CustomerEvidenceVaultModal';
+import SalesDocSendForSignatureModal from '../../opportunity-pipeline/matrix/stages/SalesDocSendForSignatureModal';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import api from '../../../../api';
@@ -219,6 +220,13 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   }, [open]);
 
   const [tab, setTab] = useState<TabKey>('company-dd');
+  // Upload in flight → block tab switches + closing the vault (ref-counted).
+  const uploadingRef = useRef(0);
+  const [uploading, setUploading] = useState(false);
+  const onRowBusyChange = useCallback((busy: boolean) => {
+    uploadingRef.current = Math.max(0, uploadingRef.current + (busy ? 1 : -1));
+    setUploading(uploadingRef.current > 0);
+  }, []);
   const [group, setGroup] = useState<GroupKey>('standard');
   /* "+N more" segment overflow popover — a titled list (matches the CLM pages'
    * authority/segment popovers), opened on click from the header chip. */
@@ -257,10 +265,12 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   /* Shipment Send-for-Signature — launches the preview + signature-box wizard
    * for one not-yet-sent shipment document. */
   const [shipSend, setShipSend] = useState<{ leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null>(null);
+  // PI row → Sales-Matrix Q/PI Send-for-Signature modal (routed by doc.pi_id).
+  const [piSend, setPiSend] = useState<{ leadId: number; doc: VaultShipmentDoc } | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && uploadingRef.current === 0) onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
@@ -536,7 +546,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   const showSkeleton = loading && !vaultLive && !data;
 
   return createPortal(
-    <div className="cnev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="cnev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget && !uploading) onClose(); }}>
       <style>{CNEV_CSS}</style>
       <div className="cnev-card" onMouseDown={(e) => e.stopPropagation()}>
         {/* ─── HEADER ─── */}
@@ -604,7 +614,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                 })()}
                 {consignee.country && <span>· {consignee.country}</span>}
               </div>
-              <button type="button" className="cnev-close" onClick={onClose} aria-label="Close vault">
+              <button type="button" className="cnev-close" onClick={() => { if (!uploading) onClose(); }} disabled={uploading} title={uploading ? 'Please wait — an upload is in progress' : 'Close vault'} style={uploading ? { opacity: .5, cursor: 'not-allowed' } : undefined} aria-label="Close vault">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
@@ -665,7 +675,10 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                 key={t.key}
                 type="button"
                 className={`cnev-tab ${tab === t.key ? 'is-active' : ''}`}
-                onClick={() => setTab(t.key)}
+                onClick={() => { if (!uploading) setTab(t.key); }}
+                disabled={uploading}
+                title={uploading ? 'Please wait — an upload is in progress' : undefined}
+                style={uploading && tab !== t.key ? { opacity: .5, cursor: 'not-allowed' } : undefined}
               >
                 <span className="cnev-tab-icon"><i className={t.icon} aria-hidden /></span>
                 <span className="cnev-tab-label">{t.label}</span>
@@ -701,10 +714,10 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
             ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'}
-                             onSend={(leadId, doc, party) => setShipSend({ leadId, doc, party })} />
+                             onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
-                         onRemindTradeDoc={handleRemind} />}
+                         onRemindTradeDoc={handleRemind} onRowBusyChange={onRowBusyChange} />}
         </div>
         </>)}
 
@@ -724,8 +737,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                 {exporting ? 'Exporting…' : 'Export All'}
               </button>
             </Tooltip>
-            <button type="button" className="cnev-btn cnev-btn-dark" onClick={onClose}>
-              Close Vault
+            <button type="button" className="cnev-btn cnev-btn-dark" onClick={() => { if (!uploading) onClose(); }} disabled={uploading} title={uploading ? 'Please wait — an upload is in progress' : undefined} style={uploading ? { opacity: .6, cursor: 'not-allowed' } : undefined}>
+              {uploading ? 'Uploading…' : 'Close Vault'}
             </button>
           </div>
         </div>
@@ -755,6 +768,21 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         onClose={() => setShipSend(null)}
         onSent={() => { setShipSend(null); void reloadVault(); void reloadSignatures(); }}
       />
+
+      {/* Proforma Invoice Send-for-Signature — same Zoho-sign flow as the
+          Sales-Matrix Q/PI stage (kind='pi'), launched from the PI row. */}
+      {piSend && piSend.doc.pi_id && (
+        <SalesDocSendForSignatureModal
+          open={!!piSend}
+          kind="pi"
+          docId={piSend.doc.pi_id}
+          docCode={piSend.doc.pi_code ?? null}
+          leadId={piSend.leadId}
+          customerName={consignee?.company ?? null}
+          onClose={() => setPiSend(null)}
+          onSent={() => { setPiSend(null); void reloadVault(); void reloadSignatures(); }}
+        />
+      )}
 
       {/* Document Overview popup — all documents for the chosen group in one
           flat list (name + status + download). */}
@@ -819,7 +847,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                       return (
                         <tr key={`${activeShip?.id ?? 'std'}-${absIdx}`}>
                           <td className="cnev-ov-num">{absIdx + 1}</td>
-                          <td className="cnev-ov-name">{d.name}</td>
+                          <Tooltip label={d.name} disabled={(d.name || '').length <= 25}>
+                            <td className="cnev-ov-name">{(d.name || '').length > 25 ? (d.name || '').slice(0, 25) + '…' : d.name}</td>
+                          </Tooltip>
                           <td><StatusPill s={d.status as VaultStatus} /></td>
                           <td>
                             {(() => {
@@ -912,9 +942,10 @@ function VaultSkeleton() {
   );
 }
 
-function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc }: {
+function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc, onRowBusyChange }: {
   rows: VaultDoc[];
   tab: TabKey;
+  onRowBusyChange?: (busy: boolean) => void;
   ownerType: 'customer' | 'consignee' | 'supplier';
   ownerId: number | null;
   onReload: () => Promise<void> | void;
@@ -944,7 +975,9 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
           ) : rows.map((d, i) => (
             <tr key={d.id}>
               <td>{i + 1}</td>
-              <td className="cnev-doc-name">{d.name}</td>
+              <Tooltip label={d.name} disabled={(d.name || '').length <= 25}>
+                <td className="cnev-doc-name">{(d.name || '').length > 25 ? (d.name || '').slice(0, 25) + '…' : d.name}</td>
+              </Tooltip>
               <td className="cnev-mono">{d.reference || '—'}</td>
               <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
               <td>
@@ -967,7 +1000,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                 ) : <span className="cnev-muted">Not uploaded</span>}
               </td>
               <td>
-                <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} />
+                <VaultRowActions doc={d} ownerType={ownerType} ownerId={ownerId} category={category} onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc} onBusyChange={onRowBusyChange} />
               </td>
             </tr>
           ))}
@@ -978,8 +1011,9 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   );
 }
 
-function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTradeDoc, onRemindTradeDoc }: {
+function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTradeDoc, onRemindTradeDoc, onBusyChange }: {
   doc: VaultDoc;
+  onBusyChange?: (busy: boolean) => void;
   ownerType: 'customer' | 'consignee' | 'supplier';
   ownerId: number | null;
   category: 'kyc' | 'dd' | 'tl' | 'td';
@@ -1040,6 +1074,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
       return;
     }
     setBusy(true);
+    onBusyChange?.(true);   // lock the vault (no tab switch / close) while uploading
     try {
       const fd = new FormData();
       fd.append('category', category);
@@ -1055,6 +1090,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
       toast.error('Upload failed', e?.response?.data?.message || 'The file could not be uploaded. Please try again.');
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
 

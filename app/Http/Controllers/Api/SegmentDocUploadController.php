@@ -393,6 +393,12 @@ class SegmentDocUploadController extends Controller
         $coreMandatory = collect(array_merge($company_dd, $owner_kyc, $trade_licenses))
             ->where('requirement', 'M');
         $coreVerified  = $coreMandatory->where('status', 'Verified')->count();
+        // ALL core docs (mandatory + OPTIONAL) — a segment rule that carries only
+        // OPTIONAL core docs still has a catalog, so the CLM card can show "X of Y
+        // documents" instead of the misleading "No segment rules set". This does
+        // NOT feed the mandatory-completion gate (which keeps using core_total).
+        $coreCatalog         = collect(array_merge($company_dd, $owner_kyc, $trade_licenses));
+        $coreCatalogVerified = $coreCatalog->where('status', 'Verified')->count();
 
         // Per-shipment matrix — each of the party's shipments with its buyer +
         // consignee Trade Documents and Agreements (split by signature party).
@@ -484,6 +490,8 @@ class SegmentDocUploadController extends Controller
                 'verified_signed'        => $verifiedSigned,
                 'core_total_documents'   => $coreMandatory->count(),
                 'core_verified_signed'   => $coreVerified,
+                'core_catalog_documents' => $coreCatalog->count(),
+                'core_catalog_verified'  => $coreCatalogVerified,
                 'pending'                => $pending,
                 'company_dd_count'       => count($company_dd),
                 'owner_kyc_count'        => count($owner_kyc),
@@ -728,17 +736,24 @@ class SegmentDocUploadController extends Controller
         // e-signature, so keying off it made an e-signed PI show "Pending" here.
         // Map: pi_id ⇒ its completed signature request (carries completion date
         // + the signed-document path so the vault can offer a "View" link).
-        $piSigReq = [];
+        // Also track an IN-PROGRESS (already-sent, not-yet-signed) PI signature
+        // so the vault can hide "Send" and offer "Remind" instead — otherwise the
+        // Send button stayed visible after sending and a re-click created a
+        // duplicate signature request.
+        $piSigReq    = [];   // pi_id ⇒ latest COMPLETED sig (Signed + View link)
+        $piActiveReq = [];   // pi_id ⇒ latest IN-PROGRESS sig (sent, remind-able)
         $piIds = $piByLead->flatten()->pluck('id')->all();
         if ($piIds) {
             ClmSignatureRequest::where('client_id', $cid)
                 ->where('document_type', ClmSignatureRequest::DOC_PROFORMA_INVOICE)
                 ->whereIn('trade_doc_id', $piIds)
-                ->where('status', 'completed')
+                ->whereIn('status', ['completed', 'inprogress'])
                 ->orderBy('id')
                 ->get()
-                ->each(function ($r) use (&$piSigReq) {
-                    $piSigReq[(int) $r->trade_doc_id] = $r;   // latest completed wins
+                ->each(function ($r) use (&$piSigReq, &$piActiveReq) {
+                    $pid = (int) $r->trade_doc_id;
+                    if ($r->status === 'completed') $piSigReq[$pid]    = $r;   // latest completed wins
+                    else                            $piActiveReq[$pid] = $r;   // latest in-progress wins
                 });
         }
 
@@ -780,9 +795,10 @@ class SegmentDocUploadController extends Controller
             // consignee side for the consignee vault (which uses forceParty). A
             // finalised PI reads Signed; a draft Pending. sig_req_id 0 → no Remind.
             foreach (($piByLead->get($lid) ?? collect()) as $pi) {
-                $sigReq   = $piSigReq[(int) $pi->id] ?? null;
-                $piSigned = (bool) $sigReq;
-                $piDate   = $sigReq?->completed_at;
+                $sigReq    = $piSigReq[(int) $pi->id] ?? null;
+                $activeReq = $piActiveReq[(int) $pi->id] ?? null;   // sent-but-unsigned
+                $piSigned  = (bool) $sigReq;
+                $piDate    = $sigReq?->completed_at;
                 // Resolve the signed-document URL the same way trade docs do, so
                 // the vault can offer a "View" link on the signed PI.
                 $signedUrl = null;
@@ -794,7 +810,10 @@ class SegmentDocUploadController extends Controller
                     }
                 }
                 $piRow = [
-                    'sig_req_id'  => $sigReq ? (int) $sigReq->id : 0,
+                    // Non-zero once a signature request exists (completed OR still
+                    // in-progress) → the vault hides "Send" and shows "Remind",
+                    // so a sent PI can't be re-sent into a duplicate request.
+                    'sig_req_id'  => $sigReq ? (int) $sigReq->id : ($activeReq ? (int) $activeReq->id : 0),
                     'name'        => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
                     'required'    => 'REQ',
                     'status'      => $piSigned ? 'Signed' : 'Pending',
@@ -802,6 +821,12 @@ class SegmentDocUploadController extends Controller
                     'uploaded_on' => $piSigned && $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d/m/Y') : '—',
                     'valid_upto'  => '—',
                     'signed_url'  => $signedUrl,
+                    // The PI's own id/code so the vault can offer the SAME
+                    // "Send for Signature" flow the Sales-Matrix Q/PI stage uses
+                    // (the /sales/proforma-invoices Zoho-sign path). Presence of
+                    // pi_id is what tells the frontend this row is the PI.
+                    'pi_id'       => (int) $pi->id,
+                    'pi_code'     => (string) ($pi->code ?: ('PI-' . $pi->id)),
                 ];
                 if ($type === 'consignee') array_unshift($tradeCons, $piRow);
                 else                       array_unshift($tradeBuyer, $piRow);
