@@ -24,7 +24,7 @@ class AttendanceController extends Controller
     {
         return now(self::DISPLAY_TZ)->toDateString();
     }
-
+ 
     
     private const KNOWN_LABELS = [
         'Check In', 'Step Out', 'Step In', 'Lunch Out', 'Lunch In',
