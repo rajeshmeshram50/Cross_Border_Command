@@ -182,6 +182,12 @@ class ZohoBooksService
         $this->upload('bills/' . rawurlencode($billId) . '/attachment', $fileBytes, $filename);
     }
 
+    /** Attach a file (raw bytes) to a Zoho vendor credit (the debit note). */
+    public function attachToVendorCredit(string $vendorCreditId, string $fileBytes, string $filename): void
+    {
+        $this->upload('vendorcredits/' . rawurlencode($vendorCreditId) . '/attachment', $fileBytes, $filename);
+    }
+
     /**
      * Run an authorized Books call and, if Zoho rejects the cached access token
      * with a 401, drop the cache, force a fresh token, and retry once. Zoho can

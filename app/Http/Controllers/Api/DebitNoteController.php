@@ -283,16 +283,31 @@ class DebitNoteController extends Controller
                 Log::warning('Zoho vendor-credit PDF cache failed', ['dn' => $dn->id, 'err' => $e->getMessage()]);
             }
 
-            $dn->update([
-                'zoho_status'              => 'Sync',
-                'zoho_vendorcredit_id'     => $vcId,
-                'zoho_vendorcredit_number' => $vc['vendor_credit_number'] ?? null,
-                'zoho_applied_amount'      => round($applied, 2),
-                'zoho_synced_at'           => now(),
-                'zoho_error'               => null,
-                'zoho_pdf_path'            => $pdfPath,
-                'updated_by'               => $user->id,
-            ]);
+            // Commit the local sync state + queue the attachment ATOMICALLY: the
+            // database queue writes the job row in the same DB, so the job becomes
+            // visible to workers only when this transaction commits — i.e. after
+            // the debit_notes row lock is released. That prevents the attach job
+            // from ever contending on (and deadlocking against) the very row this
+            // request is still updating. The job itself never holds a row lock
+            // across its slow PDF render / Zoho upload.
+            DB::transaction(function () use ($dn, $vcId, $vc, $applied, $pdfPath, $user) {
+                $dn->update([
+                    'zoho_status'              => 'Sync',
+                    'zoho_vendorcredit_id'     => $vcId,
+                    'zoho_vendorcredit_number' => $vc['vendor_credit_number'] ?? null,
+                    'zoho_applied_amount'      => round($applied, 2),
+                    'zoho_synced_at'           => now(),
+                    'zoho_error'               => null,
+                    'zoho_pdf_path'            => $pdfPath,
+                    'zoho_attachment_status'   => 'queued', // job dispatched below
+                    'updated_by'               => $user->id,
+                ]);
+
+                // Attach the system-generated Debit Note document to the Zoho
+                // vendor credit on the QUEUE — rendering it can be slow, so it must
+                // not block the sync response. Best-effort inside the job.
+                \App\Jobs\AttachDebitNoteDocumentToZoho::dispatch($dn->id);
+            });
 
             $note = $applied > 0.005
                 ? ' ₹' . number_format($applied, 2) . ' applied to the linked bill.'
@@ -317,6 +332,55 @@ class DebitNoteController extends Controller
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Lightweight poll for the async "attach system debit-note document to Zoho"
+     * job. Returns { status: 'queued'|'done'|'failed'|null }.
+     */
+    public function attachmentStatus(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $dn = DebitNote::findOrFail($id);
+        $this->assertScope($dn, $user);
+        return response()->json(['status' => $dn->zoho_attachment_status]);
+    }
+
+    /**
+     * Debug / manual re-attach: run the "attach system debit-note document to
+     * Zoho" job SYNCHRONOUSLY (no queue worker needed) and report the outcome, so
+     * the whole flow can be exercised from Postman/curl.
+     */
+    public function reattach(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $dn = DebitNote::findOrFail($id);
+        $this->assertScope($dn, $user, 'write');
+        if (empty($dn->zoho_vendorcredit_id)) {
+            return response()->json(['status' => false, 'message' => 'This debit note is not synced to Zoho Books yet — sync it first.'], 422);
+        }
+
+        $t0 = microtime(true);
+        try {
+            \App\Jobs\AttachDebitNoteDocumentToZoho::dispatchSync($dn->id); // run NOW, in-request
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Attachment run threw: ' . $e->getMessage(),
+                'error'   => class_basename($e),
+                'took_ms' => round((microtime(true) - $t0) * 1000),
+            ], 500);
+        }
+
+        return response()->json([
+            'status'            => true,
+            'message'           => 'Attachment job ran.',
+            'attachment_status' => $dn->fresh()->zoho_attachment_status, // done | failed
+            'took_ms'           => round((microtime(true) - $t0) * 1000),
+            'note'              => 'If attachment_status is "failed", check storage/logs/laravel.log for the exact render/upload error.',
+        ]);
     }
 
     /**

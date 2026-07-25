@@ -599,6 +599,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/p2p/debit-notes/{id}',                              [DebitNoteController::class, 'update'])->whereNumber('id');
     Route::delete('/p2p/debit-notes/{id}',                             [DebitNoteController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/debit-notes/{id}/sync',                         [DebitNoteController::class, 'sync'])->whereNumber('id');
+    Route::get   ('/p2p/debit-notes/{id}/attachment-status',            [DebitNoteController::class, 'attachmentStatus'])->whereNumber('id');
+    Route::post  ('/p2p/debit-notes/{id}/reattach',                     [DebitNoteController::class, 'reattach'])->whereNumber('id');
     Route::get   ('/p2p/debit-notes/{id}/zoho-pdf',                     [DebitNoteController::class, 'zohoPdf'])->whereNumber('id');
     // Payment Recovery against a debit note — recovered amounts subtract from the
     // DN balance and drive its Unpaid → Partially/Fully Paid / Overdue status.

@@ -708,6 +708,18 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
         </div>
       )}
 
+      {/* While a Save is in flight, lock the WHOLE modal — the button spinner
+          alone didn't stop the user from editing fields or switching steps
+          mid-save. This overlay captures every pointer event until it resolves. */}
+      {saving && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,30,42,.32)', backdropFilter: 'blur(1.5px)', cursor: 'wait' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12, background: '#fff', borderRadius: 14, padding: '14px 22px', boxShadow: '0 18px 44px rgba(8,40,60,.28)' }}>
+            <svg className="tdw-spin" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#0c2c3a' }}>Saving…</span>
+          </div>
+        </div>
+      )}
+
       <div className="tdw-shell">
         {/* ── Header strip ── */}
         <div className="tdw-head">

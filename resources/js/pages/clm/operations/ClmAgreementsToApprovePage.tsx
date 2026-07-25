@@ -138,6 +138,38 @@ export default function ClmAgreementsToApprovePage() {
   const actionContract = ata.find(c => c.id === actionId) || null;
   const reviewContract = ata.find(c => c.id === reviewId) || null;
 
+  // Download the approved (or any) agreement's PDF straight from the list —
+  // reuses the same fetch path as the Review modal (signature-style preview,
+  // falling back to the latest drafted version rendered to PDF).
+  const [dlId, setDlId] = useState<string | null>(null);
+  const downloadCtcPdf = async (id: string) => {
+    const row = ata.find(c => c.id === id); if (!row?.dbId || dlId) return;
+    setDlId(id);
+    try {
+      let blob: Blob;
+      try {
+        const res = await api.post('/clm/signature-requests/ctc-preview', { contract_id: row.dbId }, { responseType: 'blob' });
+        blob = res.data as Blob;
+      } catch {
+        const meta = await api.get(`/clm/ctc-contracts/${row.dbId}`);
+        const r = (meta.data?.data ?? meta.data ?? {}) as Record<string, unknown>;
+        const versions = (Array.isArray(r.versions) ? r.versions : []) as { v?: number }[];
+        const latestV = versions.length ? Math.max(...versions.map(v => Number(v.v) || 0)) : 1;
+        const res2 = await api.get(`/clm/ctc-contracts/${row.dbId}/versions/${latestV}/download`, { responseType: 'blob' });
+        blob = res2.data as Blob;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${row.id || 'agreement'}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (e: any) {
+      toast.error('Download failed', e?.response?.data?.message ?? 'Could not download the agreement.');
+    } finally {
+      setDlId(null);
+    }
+  };
+
   const doApprove = async (id: string) => {
     const row = ata.find(c => c.id === id); if (!row?.dbId || submitting) return;
     // Keep the Review modal open with a spinner while the request is in flight;
@@ -261,7 +293,7 @@ export default function ClmAgreementsToApprovePage() {
             ? <ShimmerTable rows={6} cols={9} />
             : tab === 'clarification'
             ? <ClarificationTable rows={list} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} onReview={setReviewId} onChat={(id) => { setActionChoice('clarify'); setActionId(id); }} t={t} />
-            : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} onReview={setReviewId} t={t} />}
+            : <StandardTable rows={list} tab={tab} page={page} setPage={setPage} pageSize={pageSize} onPageSize={onPageSize} onReview={setReviewId} onDownload={downloadCtcPdf} dlId={dlId} t={t} />}
         </div>
       </div>
 
@@ -382,7 +414,7 @@ function ApproverList({ c, t }: { c: AtaContract; t: OpsTokens }) {
   );
 }
 
-function StandardTable({ rows, tab, page, setPage, pageSize, onPageSize, onReview, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; onReview: (id: string) => void; t: OpsTokens }) {
+function StandardTable({ rows, tab, page, setPage, pageSize, onPageSize, onReview, onDownload, dlId, t }: { rows: AtaContract[]; tab: AtaTab; page: number; setPage: (n: number) => void; pageSize: number; onPageSize: (n: number) => void; onReview: (id: string) => void; onDownload: (id: string) => void; dlId: string | null; t: OpsTokens }) {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safe = Math.min(page, totalPages);
   const start = (safe - 1) * pageSize;
@@ -443,7 +475,16 @@ function StandardTable({ rows, tab, page, setPage, pageSize, onPageSize, onRevie
                         <ReviewBtn active onClick={() => onReview(c.id)} />
                       </div>
                     ) : (
-                      <span style={{ fontSize: 9.5, fontWeight: 600, color: c.status === 'approved' ? '#059669' : '#DC2626' }}>{c.status === 'approved' ? '✓ Approved' : '✕ Rejected'}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 9.5, fontWeight: 600, color: c.status === 'approved' ? '#059669' : '#DC2626' }}>{c.status === 'approved' ? '✓ Approved' : '✕ Rejected'}</span>
+                        <Tooltip label={dlId === c.id ? 'Preparing PDF…' : 'Download agreement PDF'}>
+                          <button type="button" onClick={() => onDownload(c.id)} disabled={dlId === c.id} aria-label="Download agreement PDF" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 27, height: 27, borderRadius: 8, border: `1px solid ${c.status === 'approved' ? '#A7F3D0' : '#FECACA'}`, background: c.status === 'approved' ? '#ECFDF5' : '#FEF2F2', color: c.status === 'approved' ? '#059669' : '#DC2626', cursor: dlId === c.id ? 'wait' : 'pointer', flexShrink: 0 }}>
+                            {dlId === c.id
+                              ? <svg className="ata-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>}
+                          </button>
+                        </Tooltip>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -668,6 +709,11 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
   const stageRef = useRef<HTMLDivElement | null>(null);
 
   const reachedEnd = numPages > 0 && maxSeen >= numPages;
+  // A long agreement (100s of pages) shouldn't force clicking through every page
+  // to unlock actions — the reviewer can self-attest with a checkbox instead.
+  // Actions unlock on EITHER reaching the last page OR ticking "I have read".
+  const [confirmedRead, setConfirmedRead] = useState(false);
+  const unlocked = reachedEnd || confirmedRead;
 
   // Download the agreement PDF (the same blob we're previewing).
   const downloadPdf = () => {
@@ -682,7 +728,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
   // Action buttons stay tappable even when locked — tapping before the full
   // agreement is read shows a toaster instead of doing nothing.
   const guard = (fn: (id: string) => void) => {
-    if (!reachedEnd) { toast.warning('Read the full agreement', 'Please read all pages before taking an action.'); return; }
+    if (!unlocked) { toast.warning('Read the full agreement', 'Read all pages, or tick "I have read the agreement", before taking an action.'); return; }
     fn(contract.id);
   };
   const progressPct = numPages > 0 ? Math.round((maxSeen / numPages) * 100) : 0;
@@ -781,9 +827,9 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
 
   const actBtn = (c1: string, c2: string): React.CSSProperties => ({
     padding: '10px 16px', borderRadius: 10, border: 'none', fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
-    color: '#fff', cursor: 'pointer', opacity: reachedEnd ? 1 : 0.45,
+    color: '#fff', cursor: 'pointer', opacity: unlocked ? 1 : 0.45,
     background: `linear-gradient(135deg,${c1},${c2})`, whiteSpace: 'nowrap',
-    boxShadow: reachedEnd ? `0 4px 14px ${c1}55` : 'none', transition: 'all .18s',
+    boxShadow: unlocked ? `0 4px 14px ${c1}55` : 'none', transition: 'all .18s',
   });
 
   return (
@@ -854,11 +900,22 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
         {/* Footer: page indicator (left) + gated actions (right) */}
         <div style={{ flexShrink: 0, borderTop: `1px solid ${t.dark ? t.border : '#e2e8f0'}`, background: t.surface, padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 30, background: t.dark ? 'rgba(6,182,212,.14)' : '#ecfeff', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.3)' : '#a5f3fc'}`, fontSize: 11.5, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0e7490' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 32, boxSizing: 'border-box', padding: '0 13px', borderRadius: 30, background: t.dark ? 'rgba(6,182,212,.14)' : '#ecfeff', border: `1.5px solid ${t.dark ? 'rgba(6,182,212,.3)' : '#a5f3fc'}`, fontSize: 11.5, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0e7490' }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
               Page {activePage} / {numPages || '…'}
             </span>
-            {!reachedEnd && <span style={{ fontSize: 10, fontWeight: 600, color: t.dark ? '#fcd34d' : '#b45309' }}>Read all pages to unlock actions</span>}
+            {!reachedEnd && (
+              <label style={{
+                display: 'inline-flex', alignItems: 'center', gap: 7, cursor: 'pointer',
+                height: 32, boxSizing: 'border-box', padding: '0 13px', borderRadius: 30, fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', lineHeight: 1, transition: 'all .15s',
+                color: confirmedRead ? (t.dark ? '#34d399' : '#047857') : (t.dark ? '#fcd34d' : '#b45309'),
+                background: confirmedRead ? (t.dark ? 'rgba(16,185,129,.14)' : '#ecfdf5') : (t.dark ? 'rgba(245,158,11,.14)' : '#fffbeb'),
+                border: `1.5px solid ${confirmedRead ? (t.dark ? 'rgba(16,185,129,.4)' : '#a7f3d0') : (t.dark ? 'rgba(245,158,11,.34)' : '#fde68a')}`,
+              }}>
+                <input type="checkbox" checked={confirmedRead} onChange={e => setConfirmedRead(e.target.checked)} style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#0891b2', flexShrink: 0, margin: 0, verticalAlign: 'middle' }} />
+                I have read the agreement
+              </label>
+            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button onClick={() => guard(onClarify)} disabled={submitting} style={{ ...actBtn('#8B5CF6', '#6D28D9'), opacity: submitting ? .55 : 1, cursor: submitting ? 'not-allowed' : 'pointer' }}>Raise Clarification</button>

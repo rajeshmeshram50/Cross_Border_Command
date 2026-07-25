@@ -27,7 +27,7 @@ class DebitNote extends Model
         'additions_total', 'deductions_total', 'grand_total', 'total_paid', 'balance',
         'attachment_path', 'zoho_status', 'status', 'created_by', 'updated_by',
         'zoho_vendorcredit_id', 'zoho_vendorcredit_number', 'zoho_applied_amount',
-        'zoho_synced_at', 'zoho_error', 'zoho_pdf_path',
+        'zoho_synced_at', 'zoho_error', 'zoho_pdf_path', 'zoho_attachment_status',
     ];
 
     protected $casts = [

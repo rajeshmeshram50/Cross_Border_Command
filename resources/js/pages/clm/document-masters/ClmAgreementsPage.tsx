@@ -437,7 +437,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                           if (segList.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All segments</span>;
                           const extra = segList.length - 1;
                           return (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center', verticalAlign: 'middle', lineHeight: 1 }}>
                               <Tooltip label={`Segment scope · ${segList[0]}`}>
                                 <span className="clm-badge clm-badge-teal">{segList[0]}</span>
                               </Tooltip>
@@ -462,7 +462,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                           if (partyList.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All parties</span>;
                           const extra = partyList.length - 1;
                           return (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center', verticalAlign: 'middle', lineHeight: 1 }}>
                               <Tooltip label={`Applicable party · ${partyList[0]}`}>
                                 <span className="clm-badge clm-badge-teal">{partyList[0]}</span>
                               </Tooltip>

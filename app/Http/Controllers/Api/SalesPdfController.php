@@ -1304,6 +1304,47 @@ class SalesPdfController extends Controller
         return $pdf->stream($name);
     }
 
+    /** Raw PDF bytes of the system-generated Debit Note document (for the Zoho
+     *  attach job / email). Mirrors renderPoPdfBytes. */
+    public function renderDebitNotePdfBytes($dn, bool $withSignature = false): string
+    {
+        $viewData = $this->buildDebitNoteViewData($dn, $withSignature);
+        @set_time_limit(180);
+        return Pdf::loadView('pdf.debit-note', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true)->output();
+    }
+
+    /**
+     * Cached variant of renderDebitNotePdfBytes — the dompdf render runs ONCE per
+     * debit-note version and the bytes are stored on disk; later calls (the
+     * Zoho-attach job, a re-download) reuse the stored file instantly. Keyed by
+     * updated_at so it re-renders only after the debit note changes. A transient
+     * (unsaved) debit note has no id → always rendered fresh. Mirrors
+     * renderPoPdfBytesCached.
+     */
+    public function renderDebitNotePdfBytesCached($dn, bool $withSignature = false): string
+    {
+        if (empty($dn->id)) {
+            return $this->renderDebitNotePdfBytes($dn, $withSignature);
+        }
+        $rel   = 'dn-system-pdf/' . $dn->id . '-' . ($withSignature ? 'signed' : 'unsigned') . '.pdf';
+        $key   = 'dn_pdf_stamp:' . $dn->id . ':' . ($withSignature ? 's' : 'u');
+        $stamp = (string) optional($dn->updated_at)->timestamp;
+
+        if (\Illuminate\Support\Facades\Cache::get($key) === $stamp
+            && \Illuminate\Support\Facades\Storage::disk('local')->exists($rel)) {
+            return \Illuminate\Support\Facades\Storage::disk('local')->get($rel); // reuse the stored document
+        }
+
+        $bytes = $this->renderDebitNotePdfBytes($dn, $withSignature);
+        try {
+            \Illuminate\Support\Facades\Storage::disk('local')->put($rel, $bytes);
+            \Illuminate\Support\Facades\Cache::forever($key, $stamp);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('DN PDF cache write failed', ['dn' => $dn->id, 'err' => $e->getMessage()]);
+        }
+        return $bytes;
+    }
+
     /**
      * Tenant + branch isolation for Debit Note PDF actions. Mirrors
      * DebitNoteController::assertScope so a branch user can't reach another
