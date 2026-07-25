@@ -213,7 +213,14 @@
                 if ($n < 20) return $ones[$n];
                 return trim($tens[intdiv($n, 10)] . ' ' . ($n % 10 ? $ones[$n % 10] : ''));
             };
-            $threeDigit = function (int $n) use ($ones, $twoDigit): string {
+            $threeDigit = function (int $n) use (&$threeDigit, $ones, $twoDigit): string {
+                // A crore count can itself run into thousands/lakhs (e.g. an amount
+                // over ₹1000 crore), so recurse on thousands instead of assuming
+                // n < 1000 — otherwise $ones[intdiv($n,100)] hits an undefined key.
+                if ($n >= 1000) {
+                    $th = intdiv($n, 1000); $r = $n % 1000;
+                    return trim($threeDigit($th) . ' Thousand' . ($r ? ' ' . $threeDigit($r) : ''));
+                }
                 $h = intdiv($n, 100); $r = $n % 100; $out = '';
                 if ($h) $out .= $ones[$h] . ' Hundred';
                 if ($r) $out .= ($h ? ' ' : '') . $twoDigit($r);

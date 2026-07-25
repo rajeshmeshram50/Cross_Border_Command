@@ -2,7 +2,7 @@
 // access. Extracted from EmployeeProfile.tsx; shared state via useEmployeeProfile().
 import { useState } from 'react';
 import {
-  Button, Card, Col, FormGroup, Input, Label, Modal, ModalBody, ModalFooter, ModalHeader, Row,
+  Card, Col, FormGroup, Input, Label, Modal, ModalBody, ModalFooter, Row,
 } from 'reactstrap';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 import { useToast } from '../../../contexts/ToastContext';
@@ -475,10 +475,91 @@ export default function PayrollTab() {
 
           {/* Bank / payment-details editor — fixes #35 (details were write-once
               at onboarding). Saves via PUT /employees/{id}/bank-details. */}
-          <Modal isOpen={bankOpen} toggle={() => !savingBank && setBankOpen(false)} centered size="lg">
-            <ModalHeader toggle={() => !savingBank && setBankOpen(false)}>
-              Edit Bank &amp; Payment Details
-            </ModalHeader>
+          <Modal
+            isOpen={bankOpen}
+            toggle={() => !savingBank && setBankOpen(false)}
+            centered
+            size="lg"
+            zIndex={2100}
+            modalClassName="ep-bd-modal"
+            backdropClassName="ep-bd-backdrop"
+            contentClassName="ep-bd-content"
+          >
+            {/* Standard app modal chrome — same gradient header (indigo →
+                violet → purple), rounded corners, white close button and
+                gradient primary action used by the Leave modals, so this form
+                matches the rest of the app. */}
+            <style>{`
+              .ep-bd-content {
+                border-radius: 16px !important;
+                overflow: hidden;
+                border: 0;
+                box-shadow: 0 25px 60px rgba(15,23,42,0.25);
+              }
+              .ep-bd-head {
+                padding: 18px 22px;
+                background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
+              }
+              .ep-bd-head-title { color: #fff !important; letter-spacing: 0.01em; font-size: 16px; }
+              .ep-bd-head-sub   { color: rgba(255,255,255,0.85) !important; font-size: 12px; }
+              .ep-bd-head-icon {
+                display: inline-flex; align-items: center; justify-content: center;
+                width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+                background: rgba(255,255,255,0.20); color: #fff;
+                box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+              }
+              .ep-bd-head-icon i { font-size: 18px; line-height: 1; }
+              .ep-bd-head-close {
+                width: 30px; height: 30px; border-radius: 8px; border: 0;
+                background: rgba(255,255,255,0.18); color: #fff; cursor: pointer;
+                flex-shrink: 0; display: inline-flex; align-items: center;
+                justify-content: center; transition: background 0.15s ease;
+              }
+              .ep-bd-head-close:hover:not(:disabled) { background: rgba(255,255,255,0.30); }
+              .ep-bd-head-close:disabled { opacity: 0.6; cursor: default; }
+              .ep-bd-head-close i { font-size: 16px; line-height: 1; }
+              .ep-bd-foot { border-top: 1px solid var(--vz-border-color); }
+              /* Footer buttons — ghost Cancel + gradient primary, matching the
+                 header so the action colour reads as one system. */
+              .ep-bd-btn-cancel {
+                border: 1px solid var(--vz-border-color);
+                background: transparent; color: var(--vz-secondary-color);
+                font-weight: 600; font-size: 13px;
+                padding: 8px 18px; border-radius: 8px; cursor: pointer;
+                transition: background 0.15s ease, border-color 0.15s ease;
+              }
+              .ep-bd-btn-cancel:hover:not(:disabled) { background: var(--vz-light); }
+              .ep-bd-btn-save {
+                border: 0; color: #fff; font-weight: 700; font-size: 13px;
+                padding: 8px 20px; border-radius: 8px; cursor: pointer;
+                display: inline-flex; align-items: center; gap: 6px;
+                background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
+                box-shadow: 0 8px 18px rgba(124,92,252,0.30);
+                transition: transform 0.15s ease, box-shadow 0.15s ease;
+              }
+              .ep-bd-btn-save:hover:not(:disabled) { transform: translateY(-1px); }
+              .ep-bd-btn-cancel:disabled, .ep-bd-btn-save:disabled { opacity: 0.65; cursor: default; }
+            `}</style>
+            <div className="ep-bd-head">
+              <div className="d-flex align-items-center justify-content-between gap-3">
+                <div className="d-flex align-items-center gap-3 min-w-0">
+                  <span className="ep-bd-head-icon"><i className="ri-bank-card-line" /></span>
+                  <div className="min-w-0">
+                    <h5 className="mb-0 fw-bold ep-bd-head-title">Edit Bank &amp; Payment Details</h5>
+                    <small className="ep-bd-head-sub">Update your salary payout account</small>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="ep-bd-head-close"
+                  onClick={() => !savingBank && setBankOpen(false)}
+                  disabled={savingBank}
+                  aria-label="Close"
+                >
+                  <i className="ri-close-line" />
+                </button>
+              </div>
+            </div>
             <ModalBody>
               <Row className="g-3">
                 <Col md={6}>
@@ -567,13 +648,20 @@ export default function PayrollTab() {
                 </Col>
               </Row>
             </ModalBody>
-            <ModalFooter>
-              <Button color="light" onClick={() => setBankOpen(false)} disabled={savingBank}>
+            <ModalFooter className="ep-bd-foot">
+              <button type="button" className="ep-bd-btn-cancel" onClick={() => setBankOpen(false)} disabled={savingBank}>
                 Cancel
-              </Button>
-              <Button color="primary" onClick={saveBank} disabled={savingBank}>
-                {savingBank ? 'Saving…' : 'Save Changes'}
-              </Button>
+              </button>
+              <button type="button" className="ep-bd-btn-save" onClick={saveBank} disabled={savingBank}>
+                {savingBank ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                    Saving…
+                  </>
+                ) : (
+                  <><i className="ri-save-3-line" /> Save Changes</>
+                )}
+              </button>
             </ModalFooter>
           </Modal>
         </div>

@@ -19,7 +19,7 @@ export default function VaultTab() {
   const {
     employee, employeeId, vaultTab, setVaultTab,
     signedDocs, uploadedDocs, signedLoading, uploadedLoading, vaultCounts,
-    prettyDocKey, formatBytes, setSignedPreview, downloadSignedPdf,
+    prettyDocKey, formatBytes, setSignedPreview, downloadSignedPdf, downloadingDocId,
     employeeDocCount, organizationalDocCount,
   } = useEmployeeProfile();
 
@@ -48,7 +48,7 @@ export default function VaultTab() {
                   <div className="d-flex gap-1 flex-wrap justify-content-lg-end">
                     {[
                       { label: 'Total Docs', value: vaultCounts.total,    color: '#fff' },
-                      { label: 'Pending',    value: vaultCounts.pending,  color: '#fcd34d' },
+                      { label: 'Uploaded',   value: vaultCounts.pending,  color: '#fcd34d' },
                       { label: 'Signed',     value: vaultCounts.signed,   color: '#c4b5fd' },
                     ].map(c => (
                       <div
@@ -299,8 +299,10 @@ export default function VaultTab() {
                                   <i className="ri-eye-line me-1" />View
                                 </button>
                                 <button type="button" onClick={() => downloadSignedPdf(doc.id, doc.code)}
-                                  className="vt-download-btn">
-                                  <i className="ri-file-pdf-2-line me-1" />Download PDF
+                                  className="vt-download-btn" disabled={downloadingDocId === doc.id}>
+                                  {downloadingDocId === doc.id
+                                    ? (<><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>)
+                                    : (<><i className="ri-file-pdf-2-line me-1" />Download PDF</>)}
                                 </button>
                               </div>
                             </td>

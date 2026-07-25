@@ -714,10 +714,10 @@ export default function HrLeave() {
                     </span>
                     <div className="fw-bold mt-2" style={{ fontSize: 13 }}>
                       {onLeaveDate === new Date().toISOString().slice(0, 10)
-                        ? 'Everyone is in today'
+                        ? 'No one is on leave today'
                         : onLeaveDate < new Date().toISOString().slice(0, 10)
-                          ? `Everyone was in on ${formatDate(onLeaveDate)}`
-                          : `Everyone is in on ${formatDate(onLeaveDate)}`}
+                          ? `No one was on leave on ${formatDate(onLeaveDate)}`
+                          : `No one is on leave on ${formatDate(onLeaveDate)}`}
                     </div>
                     <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>
                       No approved leaves overlap {formatDate(onLeaveDate)}.
