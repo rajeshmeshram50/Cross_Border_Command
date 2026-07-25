@@ -416,9 +416,9 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                 <th style={{ width: 52, textAlign: 'center' }}>SR. NO</th>
                 <th style={{ width: 110, textAlign: 'center' }}>TRADE DOC ID</th>
                 <th>TRADE DOCUMENT TITLE</th>
-                <th style={{ width: 150, textAlign: 'center' }}>TRADE DOCUMENT TYPE</th>
+                <th style={{ width: 150 }}>TRADE DOCUMENT TYPE</th>
                 <th style={{ width: 110, textAlign: 'center' }}>REGULATORY</th>
-                <th style={{ width: 130, textAlign: 'center' }}>SEGMENT</th>
+                <th style={{ width: 130, textAlign: 'left' }}>SEGMENT</th>
                 <th>PURPOSE</th>
                 <th>APPLICABLE PARTY</th>
                 <th style={{ width: 110, textAlign: 'center' }}>DOWNLOAD</th>
@@ -431,11 +431,9 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                     <td className="clm-td-num">{start + i + 1}</td>
                     <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.code}</span></td>
                     <Tooltip label={r.title}><td className="clm-td-name clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.title}</div></td></Tooltip>
-                    <td style={{ textAlign: 'center' }}>
-                      {r.name
-                        ? <Tooltip label={r.name}><span className="clm-badge clm-badge-violet" style={{ verticalAlign: 'middle' }}>{r.name.length > 20 ? `${r.name.slice(0, 20)}…` : r.name}</span></Tooltip>
-                        : <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>—</span>}
-                    </td>
+                    {r.name
+                      ? <Tooltip label={r.name}><td className="clm-td-desc clm-td-trunc-cell"><div className="clm-td-name-trunc">{r.name}</div></td></Tooltip>
+                      : <td><span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>—</span></td>}
                     <td style={{ textAlign: 'center' }}>
                       {(() => {
                         const isHigh = r.regulatory === 'highly';
@@ -448,13 +446,13 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                         );
                       })()}
                     </td>
-                    <td style={{ textAlign: 'center' }}>
+                    <td style={{ textAlign: 'left' }}>
                       {(() => {
                         const segList = r.segment ? r.segment.split(',').map(s => s.trim()).filter(Boolean) : [];
                         if (segList.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All segments</span>;
                         const extra = segList.length - 1;
                         return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                             <Tooltip label={`Segment scope · ${segList[0]}`}><span className="clm-badge clm-badge-teal" style={{ verticalAlign: 'middle' }}>{segList[0].length > 15 ? `${segList[0].slice(0, 15)}…` : segList[0]}</span></Tooltip>
                             {extra > 0 && (
                               <Tooltip label="View all segments">

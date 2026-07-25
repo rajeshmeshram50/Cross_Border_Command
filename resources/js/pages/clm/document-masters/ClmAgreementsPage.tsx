@@ -397,7 +397,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                 <th style={{ minWidth: 160 }}>AGREEMENT TITLE</th>
                 <th style={{ minWidth: 130 }}>AGREEMENT TYPE</th>
                 <th style={{ width: 130, textAlign: 'center' }}>REGULATORY</th>
-                <th style={{ width: 120, textAlign: 'center' }}>SEGMENT</th>
+                <th style={{ width: 120, textAlign: 'left' }}>SEGMENT</th>
                 <th style={{ width: 150, textAlign: 'center' }}>APPLICABLE PARTY</th>
                 <th style={{ width: 128, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
@@ -426,7 +426,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                           </span>
                         </Tooltip>
                       </td>
-                      <td style={{ textAlign: 'center' }}>
+                      <td style={{ textAlign: 'left' }}>
                         {/* Show only the first mapped segment as a badge; if the
                             agreement maps to more (r.segment is a CSV like
                             "Tobacco, Rice"), surface the rest behind a +N badge
@@ -437,7 +437,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                           if (segList.length === 0) return <span style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: 11 }}>All segments</span>;
                           const extra = segList.length - 1;
                           return (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'center', verticalAlign: 'middle', lineHeight: 1 }}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, verticalAlign: 'middle', lineHeight: 1 }}>
                               <Tooltip label={`Segment scope · ${segList[0]}`}>
                                 <span className="clm-badge clm-badge-teal">{segList[0]}</span>
                               </Tooltip>

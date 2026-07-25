@@ -234,7 +234,12 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   const restoreCaretForInsert = () => {
     const editor = editorRef.current;
     if (!editor) return;
-    editor.focus();
+    // preventScroll: focusing a contentEditable makes the browser scroll its
+    // container to the element's TOP before the caret is restored — which
+    // yanked a long draft back to the start of the page whenever a placeholder
+    // was inserted at the end. Restore focus without that scroll, then re-apply
+    // the stashed caret, so the view stays where the user was.
+    editor.focus({ preventScroll: true });
     const stash = lastRangeRef.current;
     const sel   = window.getSelection();
     if (!sel) return;
