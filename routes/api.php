@@ -57,6 +57,7 @@ use App\Http\Controllers\Api\SalesPdfController;
 use App\Http\Controllers\Api\SalesTodoController;
 use App\Http\Controllers\Api\LeavePlanController;
 use App\Http\Controllers\Api\LeaveRequestController;
+use App\Http\Controllers\Api\DocsGuideController;
 use App\Http\Controllers\Api\MasterController;
 use App\Http\Controllers\Api\MyTeamController;
 use App\Http\Controllers\Api\NotificationController;
@@ -110,6 +111,14 @@ Route::get('/p2p/debit-notes/{id}/view',         [SalesPdfController::class, 'pu
     ->middleware('signed')
     ->whereNumber('id')
     ->name('p2p.dn.view');
+
+// Broadcast (announcement) email attachment — streamed through the app so the
+// link in the emailed announcement works on BOTH local and Azure (public or
+// private container) without the recipient being logged in. Signed = tamper-proof.
+Route::get('/announcements/{id}/attachment',     [AnnouncementController::class, 'attachment'])
+    ->middleware('signed')
+    ->whereNumber('id')
+    ->name('announcements.attachment');
 
 // Protected
 Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
@@ -804,6 +813,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get ('/hr-generated-documents/{id}/download', [HrGeneratedDocumentController::class, 'downloadDocx']);
     Route::post('/hr-generated-documents',               [HrGeneratedDocumentController::class, 'store']);
     Route::get ('/hr-generated-documents/{id}',          [HrGeneratedDocumentController::class, 'show']);
+
+    // Documentation guide (docs/*). Same for every role, so no permission gate —
+    // any signed-in user can read and edit the sheets.
+    Route::get ('/docs-guide',         [DocsGuideController::class, 'index']);
+    Route::get ('/docs-guide/content', [DocsGuideController::class, 'show']);
+    Route::put ('/docs-guide/content', [DocsGuideController::class, 'update']);
 
     Route::get   ('/master-counts',           [MasterController::class, 'counts']);
     Route::get   ('/master/{slug}',           [MasterController::class, 'list']);

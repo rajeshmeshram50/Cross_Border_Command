@@ -74,6 +74,32 @@ class AnnouncementController extends Controller
         return response()->json($row);
     }
 
+    /**
+     * PUBLIC (signed) — stream a broadcast announcement's attachment.
+     *
+     * The emailed announcement links here instead of a raw /storage or Azure
+     * blob URL, so the link opens on BOTH local and Azure (public or private
+     * container) and works even when the recipient isn't logged in. The route
+     * carries a `signed` signature so the id can't be tampered with. Streamed
+     * inline so PDFs/images open in the browser (still downloadable from there).
+     */
+    public function attachment(Request $request, $id)
+    {
+        $row = Announcement::findOrFail((int) $id);
+        $rel = $row->attachment_path;
+        if (!$rel) abort(404);
+
+        $norm = ltrim(str_replace('\\', '/', $rel), '/');
+        if (str_starts_with($norm, 'storage/')) $norm = substr($norm, 8);
+        if (str_starts_with($norm, 'public/'))  $norm = substr($norm, 7);
+        if ($norm === '' || !Storage::disk('public')->exists($norm)) abort(404);
+
+        // Storage::response() streams via the DISK, so it reads the bytes from
+        // local OR Azure identically — no dependency on a real local file path.
+        $name = $row->attachment_original_name ?: basename($norm);
+        return Storage::disk('public')->response($norm, $name);
+    }
+
     public function nextCode(Request $request)
     {
         $this->authorize($request, 'can_view');

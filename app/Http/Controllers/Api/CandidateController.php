@@ -1206,7 +1206,7 @@ class CandidateController extends Controller
             'status_notes'        => 'nullable|string',
         ]);
     }
-    
+
 
     /**
      * Save the uploaded CV on the public disk and return [path, originalName].
@@ -1240,4 +1240,5 @@ class CandidateController extends Controller
         $arr['experience_years'] = $row->experience_years !== null ? (float) $row->experience_years : 0;
         return $arr;
     } 
+    
 }

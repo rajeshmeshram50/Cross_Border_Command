@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use App\Mail\PasswordChangedMail;
-use App\Mail\WelcomeCredentialsMail;
+use App\Mail\WelcomeCredentialsMail; 
 use App\Support\BrandingResolver;
 use App\Support\Settings;
 

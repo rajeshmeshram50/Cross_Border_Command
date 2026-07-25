@@ -48,6 +48,11 @@ interface Props {
    * in the strip gets a "Mapped" badge so the user can tell it apart from the
    * customer's other consignees. */
   mappedConsigneeId?: number | null;
+  /* The lead's mapped customer id. A consignee can be mapped to several
+   * customers with different segments, so its vault is scoped to THIS
+   * customer's segment (the one driving the lead) via the vault endpoint's
+   * scope_customer_id param. Ignored for a customer target. */
+  scopeCustomerId?: number | null;
 }
 
 /* Trade Documents are no longer shown here — they now live segment-wise in
@@ -76,7 +81,7 @@ function TabSvg({ name }: { name: TabIcon }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>;
 }
 
-export default function LeadEvidenceVaultModal({ open, target, onClose, consignees, mappedConsigneeId }: Props) {
+export default function LeadEvidenceVaultModal({ open, target, onClose, consignees, mappedConsigneeId, scopeCustomerId }: Props) {
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
@@ -105,6 +110,16 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
 
   const ownerType = view?.ownerType ?? 'customer';
   const modelName = ownerType === 'consignee' ? 'Consignee' : 'Customer';
+
+  /* A consignee's checklist is scoped to the lead's customer segment (a
+   * consignee can be mapped to multiple customers with different segments).
+   * Only applies to a consignee view; a customer view uses its own segment. */
+  const vaultParams = useMemo(
+    () => (ownerType === 'consignee' && scopeCustomerId
+      ? { params: { scope_customer_id: scopeCustomerId } }
+      : undefined),
+    [ownerType, scopeCustomerId],
+  );
 
   /* Escape-to-close. Kept separate from the tab-reset effect below so a
    * changing `onClose` identity (the parent passes a fresh closure on
@@ -148,22 +163,22 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
   const reloadVault = useCallback(() => {
     if (!view?.db_id) return Promise.resolve();
     setLoading(true);
-    return api.get(`/segment-uploads/${ownerType}/${view.db_id}/vault`)
+    return api.get(`/segment-uploads/${ownerType}/${view.db_id}/vault`, vaultParams)
       .then(r => { setVaultLive((r.data?.data ?? null) as VaultData | null); })
       .catch(() => { /* keep previous state on transient failures */ })
       .finally(() => setLoading(false));
-  }, [view?.db_id, ownerType]);
+  }, [view?.db_id, ownerType, vaultParams]);
 
   useEffect(() => {
     if (!open || !view?.db_id) { setVaultLive(null); return; }
     let cancelled = false;
     setLoading(true);
-    api.get(`/segment-uploads/${ownerType}/${view.db_id}/vault`)
+    api.get(`/segment-uploads/${ownerType}/${view.db_id}/vault`, vaultParams)
       .then(r => { if (!cancelled) setVaultLive((r.data?.data ?? null) as VaultData | null); })
       .catch(() => { if (!cancelled) setVaultLive(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, view?.db_id, ownerType]);
+  }, [open, view?.db_id, ownerType, vaultParams]);
 
   useEffect(() => {
     if (!open || !view?.db_id) { setSignatureRows([]); return; }
