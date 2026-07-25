@@ -1456,12 +1456,15 @@ export default function SalesMatrixDetail() {
         open={customerAddOpen}
         customer={customerEditing}
         initialStage={clmInitialStage}
+        /* Currency-locked opportunity → the new customer's country must match the
+         * trade type (INR ⇒ India, export ⇒ non-India), blocked at save time. */
+        leadCurrency={serverHeader.lockedCurrency}
         /* onClose intentionally does NOT bump the refresh tick — closing
          * without saving can't have changed any uploads, so a refetch
          * would just be a wasted round-trip. The tick only fires on
          * onSaved below. */
         onClose={() => { setCustomerAddOpen(false); setCustomerEditing(null); setClmInitialStage(undefined); }}
-        onSaved={() => {
+        onSaved={(savedId) => {
           // Clearing the cache is enough — customerOpts derives from it.
           setCustomerRows({});
           setCustomerAddOpen(false); setCustomerEditing(null); setClmInitialStage(undefined);
@@ -1470,7 +1473,21 @@ export default function SalesMatrixDetail() {
            * customer). Consignee-side refetch is harmless when not mirrored. */
           setCustRefreshTick(t => t + 1);
           setConsRefreshTick(t => t + 1);
-          void reloadLead();
+          // A "+ add new customer" from THIS lead must also MAP the new customer
+          // to the opportunity (parity with picking an existing one) — otherwise
+          // it only lands in the dropdown and the lead stays unassigned. Skip
+          // when it's the already-mapped customer (an in-place edit).
+          void (async () => {
+            if (savedId && resolvedLeadId && savedId !== serverHeader.customerId) {
+              try {
+                await api.put(`/sales/leads/${resolvedLeadId}`, { customer_id: savedId });
+                toast.success('Customer mapped', 'Linked to this opportunity');
+              } catch (e: any) {
+                toast.error('Mapping failed', e?.response?.data?.message ?? 'Could not link this customer to the lead');
+              }
+            }
+            await reloadLead();
+          })();
         }}
       />
 

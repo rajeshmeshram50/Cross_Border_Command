@@ -381,7 +381,14 @@ interface Props {
   /** When set, modal opens in Edit mode with form pre-filled from this row. */
   customer?: EditCustomer | null;
   /** Fired after a successful POST or PUT so the parent list can refetch. */
-  onSaved?: () => void;
+  /** Fires after a successful save. Receives the saved customer's db id so the
+   *  caller can, e.g., map the newly-created customer to a lead. */
+  onSaved?: (savedId?: number | null) => void;
+  /** When opened from a currency-locked opportunity, the customer's country must
+   *  match the trade type (INR ⇒ India, any export currency ⇒ non-India). Blocks
+   *  creating a mismatched customer at the source. Omit for the standalone
+   *  Customer master (no restriction). */
+  leadCurrency?: string | null;
   /** Optional landing stage. When set (typically 2 for KYC or 3 for Trade
    * Docs), the modal opens on that stage instead of Stage 1 — used by the
    * CLM panel deep-link from the opportunity detail page. Only respected
@@ -389,7 +396,7 @@ interface Props {
   initialStage?: Stage;
 }
 
-export default function AddCustomerModal({ open, onClose, customer, onSaved, initialStage }: Props) {
+export default function AddCustomerModal({ open, onClose, customer, onSaved, initialStage, leadCurrency }: Props) {
   const isEdit = !!customer;
   const toast = useToast();
   const [stage, setStage] = useState<Stage>(1);
@@ -1458,7 +1465,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     if (inFlightRef.current || saving) return;   // don't allow closing mid-save
     if (dirtySavedRef.current) {
       dirtySavedRef.current = false;
-      onSaved?.();
+      onSaved?.(savedDbId ?? customer?.db_id ?? null);
     }
     onClose();
   };
@@ -1767,7 +1774,27 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
     setStage(1); setTab('identification'); setGstPopupOpen(true);
   };
 
+  /* When this modal is opened from a currency-locked opportunity, the customer's
+   * country must match the trade type: INR ⇒ India (domestic), any export
+   * currency ⇒ non-India. Returns a message to block the save, or null when fine.
+   * This is the first line of defence; the backend lead-mapping guard is the
+   * second. Empty country is left to the required-field validation. */
+  const currencyCountryBlock = (): string | null => {
+    const lc = (leadCurrency ?? '').trim().toUpperCase();
+    const country = (form.country ?? '').trim();
+    if (!lc || !country) return null;
+    const isIndia = isDomesticCountry(country);
+    if (lc === 'INR' && !isIndia)
+      return 'This opportunity is priced in INR (a domestic sale) — the customer must be based in India. Set the country to India, or map this customer to an export-currency opportunity.';
+    if (lc !== 'INR' && isIndia)
+      return `This opportunity is priced in ${lc} (an export sale) — the customer must be based outside India. Pick a non-Indian country.`;
+    return null;
+  };
+
   const submitCustomer = async () => {
+    // Country must match the opportunity currency (domestic vs export).
+    const ccBlock = currencyCountryBlock();
+    if (ccBlock) { setStage(1); setTab('identification'); toast.error('Country doesn’t match the opportunity', ccBlock); return; }
     /* Final-submit gate. The Stage 1 → 2 gate in goNext() is the primary one;
      * this stays as a backstop for edit-mode sessions that open straight on a
      * later stage and never pass through that boundary. */
@@ -1786,11 +1813,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       // save would POST a *second* row for the same customer — silent
       // duplicate. Mirrors persistStage1's idempotent check.
       const persistedDbId = (isEdit && customer?.db_id) || savedDbId;
+      let finalDbId: number | null = persistedDbId || null;
       if (persistedDbId) {
         await api.put(`/customers/${persistedDbId}`, payload);
       } else {
         const r = await api.post('/customers', payload);
         const newId = r.data?.data?.db_id ?? null;
+        finalDbId = newId;
         if (newId) { setSavedDbId(newId); await flushLocalGst(newId); }
       }
       // Final submit succeeded → drop the remembered stage so a future
@@ -1800,7 +1829,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       // Stage-3 submit fires onSaved itself, so clear the dirty flag
       // to stop handleClose from firing onSaved a second time.
       dirtySavedRef.current = false;
-      onSaved?.();
+      onSaved?.(finalDbId);
       onClose();
     } catch (err: any) {
       // Surface Laravel validation errors back to the matching field.
@@ -1849,6 +1878,10 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
    * list, and re-open as edit. Same auto-save pattern is used by
    * AddConsigneeModal. */
   const persistStage1 = async (): Promise<number | null> => {
+    // Country must match the opportunity currency (domestic vs export) — block
+    // the create/save of a mismatched customer at the source.
+    const ccBlock = currencyCountryBlock();
+    if (ccBlock) { toast.error('Country doesn’t match the opportunity', ccBlock); return null; }
     // Synchronous re-entry lock — see inFlightRef declaration.
     // Without it, two rapid Save & Next clicks both read savedDbId
     // before the first POST's response had set it, and both end up
