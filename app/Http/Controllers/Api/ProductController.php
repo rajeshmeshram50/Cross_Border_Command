@@ -370,6 +370,12 @@ class ProductController extends Controller
             'condition_id'          => 'nullable|integer',
             'packaging_material_id' => 'nullable|integer',
             'confidential_info'     => 'nullable|string|max:2000',
+            // GST is mapped at creation time now: a new product is only committed
+            // once its GST % is chosen (the "Map GST" popup that opens on Save &
+            // Next). Persisted here so the product is never listed without a GST.
+            // Still nullable so an edit-mode core re-save (which omits it) leaves
+            // the existing gst_id untouched. The Sales step recomputes gst_amount.
+            'gst_id'                => 'nullable|integer',
 
             // Image inputs — see the doc block above for the upload contract:
             //   primary_image          existing path the client wants to keep

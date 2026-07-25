@@ -142,6 +142,9 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
   // In edit mode the existing product rows load async — shimmer until they arrive.
   const [listLoading, setListLoading] = useState(!!editRow);
   const [picks, setPicks] = useState<string[]>([]);
+  // Collapse the selected-product chips to a few + "+N" so a large selection
+  // doesn't crowd the layout (QA #46). Toggled by the +N / Show less pill.
+  const [picksExpanded, setPicksExpanded] = useState(false);
   const [pickQuery, setPickQuery] = useState('');
   const [pickOpen, setPickOpen] = useState(false);
   const [listTab, setListTab] = useState<'master' | 'manual'>(editRow?.source === 'Manual Entry' ? 'manual' : 'master');
@@ -178,12 +181,19 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
 
   // Freeze the background page while the wizard is open (same lock the other
   // Bulk Sourcing modals use). Without it the underlying list stays scrollable
-  // and jumps back to the top during the assignment flow; locking body overflow
-  // pins the scroll position and restores it on close.
+  // and jumps back to the top during the assignment flow; locking overflow
+  // pins the scroll position and restores it on close. Lock BOTH <html> and
+  // <body> — body-only isn't enough here (the page scrolls on documentElement),
+  // so the background still scrolled behind the popup (QA #47).
   useEffect(() => {
-    const prev = document.body.style.overflow;
+    const prevBody = document.body.style.overflow;
+    const prevHtml = document.documentElement.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevBody;
+      document.documentElement.style.overflow = prevHtml;
+    };
   }, []);
 
   // Reference data + edit pre-fill from the backend (see API.md).
@@ -221,9 +231,18 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
     // Block saving while the PDF is still uploading — otherwise clVal is empty
     // and the clarity silently saves as "none".
     if (clUploading) { toast.warning('Upload in progress', 'Please wait for the file to finish uploading.'); return; }
-    if (clType === 'link' && clVal.trim() && !/^https?:\/\/.+/i.test(clVal.trim())) {
-      toast.warning('Invalid link', 'Links must start with http:// or https://');
-      return;
+    const linkVal = clVal.trim();
+    if (clType === 'link' && linkVal) {
+      // Reject spaces explicitly — a URL can't contain them, and `.+` used to
+      // let them through so "http://exa mple.com" saved (QA #49).
+      if (/\s/.test(linkVal)) {
+        toast.warning('Invalid link', 'The link cannot contain spaces.');
+        return;
+      }
+      if (!/^https?:\/\/\S+$/i.test(linkVal)) {
+        toast.warning('Invalid link', 'Links must start with http:// or https://');
+        return;
+      }
     }
     const has = clType === 'pdf' ? !!clVal : !!clVal.trim();
     const c: Clarity = has ? { type: clType, val: clVal } : null;
@@ -491,10 +510,25 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                       <label>Select Products <span className="ast-hint">(choose one or more, then click Add)</span></label>
                       <div className="asrc-picker">
                         <div className="asrc-pick-chips">
-                          {picks.length === 0 ? <span className="asrc-pick-ph">No products chosen yet</span> : picks.map(code => {
-                            const p = products.find(x => x.code === code); if (!p) return null;
-                            return <span className="ast-ms-chip" key={code}>{p.code} — {p.name}<button type="button" onClick={() => togglePick(code)}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button></span>;
-                          })}
+                          {picks.length === 0 ? <span className="asrc-pick-ph">No products chosen yet</span> : (() => {
+                            // Show the first few chips; collapse the rest into a
+                            // clickable "+N more" pill so a big selection stays tidy.
+                            const CHIP_CAP = 6;
+                            const shown = picksExpanded ? picks : picks.slice(0, CHIP_CAP);
+                            const extra = picks.length - shown.length;
+                            return <>
+                              {shown.map(code => {
+                                const p = products.find(x => x.code === code); if (!p) return null;
+                                return <span className="ast-ms-chip" key={code}>{p.code} — {p.name}<button type="button" onClick={() => togglePick(code)}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button></span>;
+                              })}
+                              {extra > 0 && (
+                                <button type="button" className="ast-ms-chip" style={{ cursor: 'pointer', fontWeight: 700 }} title={`Show all ${picks.length} selected products`} onClick={() => setPicksExpanded(true)}>+{extra} more</button>
+                              )}
+                              {picksExpanded && picks.length > CHIP_CAP && (
+                                <button type="button" className="ast-ms-chip" style={{ cursor: 'pointer', fontWeight: 700 }} onClick={() => setPicksExpanded(false)}>Show less</button>
+                              )}
+                            </>;
+                          })()}
                         </div>
                         <div className="asrc-pick-search">
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
@@ -553,7 +587,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                             <span className="asrc-hsn" data-label="HSN Code"><span className="srpt-hsn">{r.hsn}</span></span>
                             <span data-label="Target Price (₹)"><input id={`ast-price-master-${i}`} type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="e.g. 10000" inputMode="decimal" onChange={e => setMasterRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: numOnly(e.target.value) } : x))} /></span>
                             <span data-label="Clarity"><ClarityCell clarity={r.clarity} onEdit={() => openClarity('master', i)} onRemovePdf={(path) => removeRowClarityPdf('master', i, path)} onUpdate={isEdit && r.id ? () => persistRowClarity('master', i) : undefined} /></span>
-                            <span data-label=""><Tooltip label={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'}><button type="button" className="ast-pl-del" style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => r.mapped ? toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`) : setMasterRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></Tooltip></span>
+                            <span data-label=""><Tooltip label={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'}><button type="button" className="ast-pl-del" style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => { if (r.mapped) { toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`); return; } setMasterRows(rows => rows.filter((_, xi) => xi !== i)); toast.success('Product removed', `“${r.name || 'Product'}” has been removed from the list.`); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></Tooltip></span>
                           </div>
                         ))}
                       </div>
@@ -568,7 +602,7 @@ export default function AssignSourcingTargetModal({ editRow = null, onClose, onS
                             <span data-label="Product Name"><input type="text" className="ast-pl-price" style={{ fontWeight: 600 }} value={r.name} onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x))} /></span>
                             <span data-label="Target Price (₹)"><input id={`ast-price-manual-${i}`} type="text" className="ast-pl-price" style={priceTried && isBadPrice(r.price) ? { borderColor: '#ef4444', background: 'rgba(239,68,68,.06)' } : undefined} value={r.price} placeholder="e.g. 10000" inputMode="decimal" onChange={e => setManualRows(rows => rows.map((x, xi) => xi === i ? { ...x, price: numOnly(e.target.value) } : x))} /></span>
                             <span data-label="Clarity"><ClarityCell clarity={r.clarity} onEdit={() => openClarity('manual', i)} onRemovePdf={(path) => removeRowClarityPdf('manual', i, path)} onUpdate={isEdit && r.id ? () => persistRowClarity('manual', i) : undefined} /></span>
-                            <span data-label=""><Tooltip label={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'}><button type="button" className="ast-pl-del" style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => r.mapped ? toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`) : setManualRows(rows => rows.filter((_, xi) => xi !== i))}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></Tooltip></span>
+                            <span data-label=""><Tooltip label={r.mapped ? 'Mapped to a supplier — can’t be removed' : 'Delete'}><button type="button" className="ast-pl-del" style={r.mapped ? { opacity: 0.4, cursor: 'not-allowed' } : undefined} onClick={() => { if (r.mapped) { toast.info('Can’t remove product', `“${r.name}” is mapped to a supplier in the Sourcing Report. Unmap its suppliers there first.`); return; } setManualRows(rows => rows.filter((_, xi) => xi !== i)); toast.success('Product removed', `“${r.name || 'Product'}” has been removed from the list.`); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg></button></Tooltip></span>
                           </div>
                         ))}
                       </div>
