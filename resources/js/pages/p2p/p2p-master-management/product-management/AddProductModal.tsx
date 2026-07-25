@@ -305,6 +305,18 @@ export default function AddProductModal(props: {
     const row = optGst.find(o => o.value === gstId);
     return parseFloat(String(row?.extra?.percentage ?? '0')) || 0;
   }, [optGst, gstId]);
+  /* GST rates sorted ascending by percentage for every DISPLAY surface (the
+     Map GST dropdown, the read-only Sales select, and the GST Master table).
+     The raw `optGst` appends newly-added rates at the end (QA #48 — a new rate
+     showed at the bottom instead of in order); sorting here fixes all three at
+     once. `find`/`some` lookups keep using `optGst` since order is irrelevant. */
+  const optGstSorted = useMemo(() => {
+    const pct = (o: MasterOpt) => {
+      const n = parseFloat(String(o.extra?.percentage ?? o.label));
+      return Number.isFinite(n) ? n : 0;
+    };
+    return [...optGst].sort((a, b) => pct(a) - pct(b));
+  }, [optGst]);
   const gstPctStr = gstPctNum ? `${gstPctNum.toFixed(2)}%` : '';
   const canMapSupplier = gstPctNum > 0;
   const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
@@ -1933,7 +1945,7 @@ export default function AddProductModal(props: {
                           live GST option. If that GST rate was deleted from the
                           master, the id is orphaned — show the placeholder (blank)
                           instead of the raw numeric id (QA #44). */}
-                      <SelectInput value={optGst.some(o => o.value === gstId) ? gstId : ''} onChange={() => {}} placeholder='Map from the "GST (%)" button above' options={optGst} disabled />
+                      <SelectInput value={optGst.some(o => o.value === gstId) ? gstId : ''} onChange={() => {}} placeholder='Map from the "GST (%)" button above' options={optGstSorted} disabled />
                     </Field>
                   </div>
                   <div className="apm-grid-2">
@@ -2289,7 +2301,7 @@ export default function AddProductModal(props: {
                           <td>{opt?.state || '—'}</td>
                           <td className="apm-sup-cperson">{v.contactPerson || '—'}</td>
                           <td>₹{v.purchasePrice.toLocaleString()}</td>
-                          <td>{v.gstPct.toFixed(0)}%</td>
+                          <td>{String(Number(v.gstPct.toFixed(2)))}%</td>
                           <td>₹{v.gstAmt.toFixed(2)}</td>
                           <td className="apm-sup-ctotal">₹{v.totalAmt.toLocaleString()}</td>
                           <td>
@@ -2433,7 +2445,7 @@ export default function AddProductModal(props: {
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 </button>
               </div>
-              <SelectInput value={gstMapValue} onChange={setGstMapValue} placeholder="Select GST %" options={optGst} />
+              <SelectInput value={gstMapValue} onChange={setGstMapValue} placeholder="Select GST %" options={optGstSorted} />
               <div className="apm-gst-hint">Need a different rate? Use the <b>+</b> button above to add it to the GST % master.</div>
             </div>
             <div className="apm-gst-foot">
@@ -2497,7 +2509,7 @@ export default function AddProductModal(props: {
                   <table className="apm-gst-table">
                     <thead><tr><th>Sr No</th><th>GST Rate</th><th aria-label="Remove" /></tr></thead>
                     <tbody>
-                      {optGst.map((o, i) => (
+                      {optGstSorted.map((o, i) => (
                         <tr key={o.value}>
                           <td><span className="apm-sup-sr">{String(i + 1).padStart(2, '0')}</span></td>
                           <td className="apm-gst-rate">{o.label}</td>
