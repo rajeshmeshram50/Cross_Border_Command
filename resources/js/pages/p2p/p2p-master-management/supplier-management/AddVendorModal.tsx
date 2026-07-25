@@ -1657,7 +1657,7 @@ export default function AddVendorModal(props: {
 
     setSaving(true);
     try {
-      const res = await api.post<{ data: { id: number } }>('/vendors/step/identity', {
+      const identityPayload = {
         id: vendorId,
         company_name: companyName,
         legal_name: legalName || null,
@@ -1689,17 +1689,52 @@ export default function AddVendorModal(props: {
           city: city || null,
           pincode: pincode || null,
         },
-      });
-      setVendorId(res.data?.data?.id ?? vendorId);
-      // Capture the server-assigned vendor_code so the header on
-      // later steps can render it without another roundtrip.
-      const returnedCode = (res.data?.data as Record<string, unknown> | undefined)?.vendor_code;
-      if (typeof returnedCode === 'string' && returnedCode) {
-        setVendorCode(returnedCode);
+      };
+
+      // Inner attempt so a segment-removal 409 (a removed segment has documents
+      // unique to it) can prompt the user, then retry with the confirm flag.
+      const attempt = async (confirmDocRemoval: boolean): Promise<boolean> => {
+        const res = await api.post<{ data: { id: number } }>(
+          '/vendors/step/identity',
+          confirmDocRemoval ? { ...identityPayload, confirm_segment_doc_removal: true } : identityPayload,
+        );
+        setVendorId(res.data?.data?.id ?? vendorId);
+        // Capture the server-assigned vendor_code so the header on later steps
+        // can render it without another roundtrip.
+        const returnedCode = (res.data?.data as Record<string, unknown> | undefined)?.vendor_code;
+        if (typeof returnedCode === 'string' && returnedCode) setVendorCode(returnedCode);
+        setFieldErrors({});
+        toast.success('Identity saved', 'Vendor identity details captured');
+        return true;
+      };
+
+      try {
+        return await attempt(false);
+      } catch (e: any) {
+        const d = e?.response?.data;
+        if (e?.response?.status === 409 && d?.requires_doc_confirmation) {
+          const docs = (d.orphan_documents ?? []) as Array<{ name: string; category?: string }>;
+          const ok = await confirm({
+            title: 'Remove segment & delete its documents?',
+            tone: 'danger',
+            confirmLabel: 'Delete & Remove',
+            cancelLabel: 'Keep Segment',
+            message: (
+              <div>
+                <div>{d.message}</div>
+                {docs.length > 0 && (
+                  <ul style={{ margin: '10px 0 0 18px', padding: 0 }}>
+                    {docs.map((x, i) => <li key={i}>{x.name}{x.category ? ` (${x.category})` : ''}</li>)}
+                  </ul>
+                )}
+              </div>
+            ),
+          });
+          if (ok) return await attempt(true);
+          return false;   // user kept the segment
+        }
+        throw e;   // fall through to the outer handler
       }
-      setFieldErrors({});
-      toast.success('Identity saved', 'Vendor identity details captured');
-      return true;
     } catch (err: unknown) {
       const res = (err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } })?.response?.data;
       const msg = res?.message || 'Could not save vendor identity';

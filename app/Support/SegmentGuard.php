@@ -383,6 +383,52 @@ class SegmentGuard
     }
 
     /**
+     * The actual uploaded document records that would be ORPHANED by removing
+     * these segments — i.e. docs unique to a removed segment (a (category,
+     * doc_code) that no remaining segment requires) that are actually uploaded.
+     * Returned so the caller can list them in a confirmation dialog and delete
+     * them on confirm, instead of hard-blocking the removal. Empty = nothing to
+     * confirm; the segment can be removed cleanly (all docs shared / none).
+     *
+     * @param  string[] $removedNames
+     * @param  string[] $remainingNames
+     * @return \Illuminate\Support\Collection<int,\App\Models\SegmentDocUpload>
+     */
+    public static function orphanUploads(string $uploadableType, int $uploadableId, int $clientId, array $removedNames, array $remainingNames)
+    {
+        $removed = array_values(array_filter(array_map('trim', $removedNames), fn ($s) => $s !== ''));
+        if (empty($removed)) return collect();
+
+        // Doc keys still required by a remaining segment survive (never orphaned).
+        $keepKeys = [];
+        foreach ($remainingNames as $name) {
+            $keepKeys = array_merge($keepKeys, self::docKeys($clientId, trim((string) $name)));
+        }
+        $keepKeys = array_flip($keepKeys);
+
+        // Collect every orphan (category, doc_code) across all removed segments.
+        $orphanKeys = [];
+        foreach ($removed as $name) {
+            foreach (self::docKeys($clientId, $name) as $k) {
+                if (!isset($keepKeys[$k])) $orphanKeys[$k] = true;
+            }
+        }
+        if (empty($orphanKeys)) return collect();
+
+        return SegmentDocUpload::query()
+            ->where('uploadable_type', $uploadableType)
+            ->where('uploadable_id', $uploadableId)
+            ->where('client_id', $clientId)
+            ->where(function ($q) use ($orphanKeys) {
+                foreach (array_keys($orphanKeys) as $key) {
+                    [$cat, $code] = explode('|', $key, 2);
+                    $q->orWhere(fn ($w) => $w->where('category', $cat)->where('doc_code', $code));
+                }
+            })
+            ->get();
+    }
+
+    /**
      * Merge names that must be RETAINED back into a derived segment string
      * (case-insensitive union), keeping the derived order first. Used where a
      * consignee's segment is derived from its customers: a segment locked by a
