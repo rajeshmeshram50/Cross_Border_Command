@@ -10,6 +10,7 @@ use App\Models\ClmQcDocument;
 use App\Models\ClmSegment;
 use App\Models\ClmSegmentRule;
 use App\Models\ClmTradeLicense;
+use App\Support\MasterBundleCache;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -156,6 +157,13 @@ class ClmSegmentRuleController extends Controller
             ]);
         });
 
+        // A rule going from 0 → ≥1 document makes its segment appear in the
+        // Customer/Consignee/Vendor segment pickers (masterBundle only offers
+        // segments whose rule has documents). Those bundles are cached per-user
+        // server-side, so bump the version or the new segment won't show for up
+        // to 5 minutes. Mirrors every other master controller's write path.
+        MasterBundleCache::bump();
+
         return response()->json(['status' => true, 'data' => $row], 201);
     }
 
@@ -197,6 +205,10 @@ class ClmSegmentRuleController extends Controller
             'updated_by'        => $user->id,
         ]);
 
+        // Editing the doc selections can add OR remove the segment from the
+        // pickers (0 ↔ ≥1 documents), so invalidate the cached bundles.
+        MasterBundleCache::bump();
+
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
 
@@ -210,6 +222,11 @@ class ClmSegmentRuleController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
         $row->delete();
+
+        // Removing a rule can drop its segment from the pickers — refresh the
+        // cached bundles.
+        MasterBundleCache::bump();
+
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
