@@ -123,6 +123,7 @@ import PurchaseOrder from '../pages/p2p/procurement-management/purchase-order/Pu
 import SupplierPurchaseInvoice from '../pages/p2p/purchase-management/supplier-purchase-invoice/SupplierPurchaseInvoice';
 import DebitNote from '../pages/p2p/purchase-management/debit-note/DebitNote';
 import MyTeam from '../pages/MyTeam';
+import Documentation from '../pages/Documentation';
 import Inbox from '../pages/Inbox';
 import Gmail from '../pages/Gmail';
 
@@ -752,6 +753,8 @@ function DashboardRoutes({ user }: { user: any }) {
                   hitting this URL get a friendly 404 toast from the page. */}
               <Route path="/clock-in" element={<ClockIn />} />
               <Route path="/my-team"  element={<MyTeam />} />
+              {/* Master documentation — reference material, open to every role. */}
+              <Route path="/documentation" element={<Documentation />} />
               <Route path="/inbox"    element={<Inbox />} />
               <Route path="/gmail"    element={<Gmail />} />
               <Route path="/master" element={<MasterDashboard />} />
