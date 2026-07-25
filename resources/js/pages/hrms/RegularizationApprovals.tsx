@@ -53,24 +53,37 @@ export default function RegularizationApprovals() {
   const [page, setPage]       = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
+  // Always fetch the FULL set (every status) once, then filter client-side.
+  // Fetching only the active tab meant we couldn't show accurate per-tab
+  // counts — the Rejected tab could hold rows the header never counted (#44).
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    regularizationApi.approvals({ status })
+    regularizationApi.approvals({ status: 'All' })
       .then(setRows)
       .catch((err: any) => setError(err?.response?.data?.message || 'Failed to load regularization requests.'))
       .finally(() => setLoading(false));
-  }, [status]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
   // Reset to the first page whenever the status filter changes.
   useEffect(() => { setPage(1); }, [status]);
 
+  // Per-tab counts derived from the full set, so every tab shows how many
+  // requests it holds (the badge lives on the tabs, not the section title).
+  const counts: Record<string, number> = {
+    Pending:  rows.filter(r => r.status === 'Pending').length,
+    Approved: rows.filter(r => r.status === 'Approved').length,
+    Rejected: rows.filter(r => r.status === 'Rejected').length,
+    All:      rows.length,
+  };
+  const filtered = status === 'All' ? rows : rows.filter(r => r.status === status);
+
   // Client-side pagination so the table gets the standard footer (record count
   // + pager) like the rest of the app (CBC #37).
-  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage  = Math.min(page, pageCount);
-  const paged     = rows.slice((safePage - 1) * pageSize, (safePage - 1) * pageSize + pageSize);
+  const paged     = filtered.slice((safePage - 1) * pageSize, (safePage - 1) * pageSize + pageSize);
 
   const act = async (row: ApiRegularization, decision: 'approve' | 'reject') => {
     let comment: string | undefined;
@@ -100,9 +113,6 @@ export default function RegularizationApprovals() {
   };
 
   return (
-    // Mirror LogsRequestsCard's shell (transparent .att-logs-card → padded
-    // CardBody → inset bordered box) so this table's box lines up edge-to-edge
-    // with the Logs & Requests table above it instead of sitting wider (bug #26).
     <Card className="att-logs-card mt-2 mb-0">
       <CardBody>
       <div className="border rounded overflow-hidden">
@@ -110,7 +120,6 @@ export default function RegularizationApprovals() {
         <div className="d-flex align-items-center gap-2">
           <i className="ri-checkbox-multiple-line fs-5 text-primary" />
           <h6 className="mb-0 fw-bold">Regularization Requests</h6>
-          {!loading && <span className="badge bg-light text-dark">{(rows ?? []).length}</span>}
         </div>
         <div className="d-flex align-items-center gap-2">
           <div className="att-logs-ranges att-seg-toggle" role="group">
@@ -122,6 +131,21 @@ export default function RegularizationApprovals() {
                 onClick={() => setStatus(f.key)}
               >
                 {f.label}
+                {/* Count lives on each tab so it always matches what that tab
+                    actually shows (e.g. Rejected reflects rejected rows). */}
+                {!loading && (
+                  <span
+                    className="ms-1 d-inline-flex align-items-center justify-content-center fw-semibold"
+                    style={{
+                      minWidth: 18, height: 18, padding: '0 5px', borderRadius: 999,
+                      fontSize: 10.5, lineHeight: 1,
+                      background: status === f.key ? 'rgba(255,255,255,0.28)' : 'var(--vz-light, #eef2f6)',
+                      color: status === f.key ? '#fff' : 'var(--vz-secondary-color, #6b7280)',
+                    }}
+                  >
+                    {counts[f.key]}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -230,8 +254,8 @@ export default function RegularizationApprovals() {
               </table>
             </div>
             <WorklistPager
-              total={rows.length}
-              page={page}
+              total={filtered.length}
+              page={safePage}
               pageSize={pageSize}
               onPage={setPage}
               onPageSize={(n) => { setPageSize(n); setPage(1); }}
