@@ -692,7 +692,14 @@ export default function PurchaseOrder() {
               <span className="pomore-hd__txt">
                 <span className="pomore-hd__t">More Actions</span>
                 <span className="pomore-hd__chip">{Ico.fileSm(11)}<b>{more.po}</b></span>
-                {more.supName && <span className="pomore-hd__sup">Supplier: <b>{more.supName}</b></span>}
+                {more.supName && (
+                  // Truncate long supplier names after 25 chars so they can't
+                  // overflow past the popup's right border (QA #15); full name
+                  // on hover. Mirrors the sync-chip truncation below.
+                  <Tooltip label={more.supName} disabled={more.supName.length <= 25} position="bottom" zIndex={2999999}>
+                    <span className="pomore-hd__sup">Supplier: <b>{more.supName.length > 25 ? `${more.supName.slice(0, 25)}…` : more.supName}</b></span>
+                  </Tooltip>
+                )}
               </span>
               <button type="button" className="pomore-x" onClick={() => setMore(null)} aria-label="Close">✕</button>
             </div>
