@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\EnforcesSegmentBuyerConsignee;
 use App\Http\Controllers\Controller;
 use App\Models\Consignee;
 use App\Models\Customer;
+use App\Models\Lead;
 use App\Models\ProformaInvoice;
 use App\Models\ProformaInvoiceItem;
 use App\Models\Quotation;
@@ -283,6 +284,13 @@ class ProformaInvoiceController extends Controller
                     ]);
             }
 
+            // FREEZE the consignee onto the lead. Quotations on one opportunity
+            // may each quote a DIFFERENT consignee (nothing is written back to
+            // the lead at quotation time) — the PI is what settles which one the
+            // deal actually ships to. Writing it here is what makes the field
+            // read-only in every later form.
+            $this->freezeLeadConsignee($user, $data['opp_id'] ?? null, $data['consignee_id'] ?? null);
+
             return $pi->fresh(['items']);
         });
 
@@ -290,14 +298,83 @@ class ProformaInvoiceController extends Controller
     }
 
     /**
+     * Write the deal's FINAL consignee onto the lead. Called only from the two
+     * paths that mint a Proforma Invoice (direct create + convert-from-
+     * quotation) — quotations deliberately do NOT do this, so one opportunity
+     * can carry several quotations each addressed to a different consignee.
+     * Once set, the frontend renders the Consignee field read-only everywhere.
+     */
+    private function freezeLeadConsignee($user, $leadId, $consigneeId): void
+    {
+        if (empty($leadId) || empty($consigneeId)) return;
+        Lead::where('id', $leadId)
+            ->where('client_id', $user->client_id)
+            ->update(['consignee_id' => $consigneeId]);
+    }
+
+    /**
+     * Pre-flight version of the PI document gate, for the Create-PI wizard:
+     * before it lets the user leave Step 1 (party details) for Step 2 it asks
+     * whether the picked customer + consignee are document-complete, so a deal
+     * isn't priced out only to be rejected on submit. Same rule set as
+     * partyDocsBlockResponse — this is a read-only probe, never a mutation.
+     *
+     * GET /sales/proforma-invoices/party-docs-check?customer_id=&consignee_id=
+     */
+    public function partyDocsCheck(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (!$user->client_id) {
+            return response()->json(['status' => false, 'message' => 'No tenant context'], 403);
+        }
+
+        $customerId  = (int) $request->query('customer_id')  ?: null;
+        $consigneeId = (int) $request->query('consignee_id') ?: null;
+
+        $blocks = $this->missingPartyDocs($user, $customerId, $consigneeId);
+
+        return response()->json([
+            'status' => true,
+            'data'   => [
+                'ok'      => empty($blocks),
+                'message' => empty($blocks) ? null : $this->partyDocsMessage($blocks),
+                'pending' => array_map(
+                    fn($party, $miss) => [
+                        'party'     => $party,
+                        'documents' => array_values(array_map(fn($d) => $d['name'], $miss)),
+                    ],
+                    array_keys($blocks),
+                    array_values($blocks),
+                ),
+            ],
+        ]);
+    }
+
+    /**
      * Block PI creation until the customer — and the consignee, when one is
      * mapped and not flagged Same-as-Customer — have uploaded every
      * DCP-mandatory document for their segment. Returns a 422 JsonResponse
      * to short-circuit the caller, or null when both parties are complete.
-     * Reuses SegmentDocUploadController::missingMandatoryDocs so it stays in
-     * lock-step with the Evidence Vault the user uploads from.
      */
     private function partyDocsBlockResponse($user, ?int $customerId, ?int $consigneeId): ?JsonResponse
+    {
+        $blocks = $this->missingPartyDocs($user, $customerId, $consigneeId);
+        if (empty($blocks)) return null;
+
+        return response()->json([
+            'status'  => false,
+            'message' => $this->partyDocsMessage($blocks),
+        ], 422);
+    }
+
+    /**
+     * The shared rule behind both the pre-flight check and the hard gate:
+     * ['Customer' => [...missing docs], 'Consignee' => [...]] — empty when both
+     * parties are complete. Reuses SegmentDocUploadController::missingMandatoryDocs
+     * so it stays in lock-step with the Evidence Vault the user uploads from.
+     */
+    private function missingPartyDocs($user, ?int $customerId, ?int $consigneeId): array
     {
         $checker = app(SegmentDocUploadController::class);
         $blocks  = [];
@@ -316,25 +393,34 @@ class ProformaInvoiceController extends Controller
             fn($d) => in_array($d['category'] ?? null, $gatedCategories, true)
         ));
 
-        if ($customerId) {
-            $customer = Customer::where('client_id', $user->client_id)->find($customerId);
-            if ($customer) {
-                $miss = $onlyGated($checker->missingMandatoryDocs($customer, 'customer'));
-                if (!empty($miss)) $blocks['Customer'] = $miss;
-            }
+        $customer = $customerId
+            ? Customer::where('client_id', $user->client_id)->find($customerId)
+            : null;
+
+        if ($customer) {
+            $miss = $onlyGated($checker->missingMandatoryDocs($customer, 'customer'));
+            if (!empty($miss)) $blocks['Customer'] = $miss;
         }
         if ($consigneeId) {
             $consignee = Consignee::where('client_id', $user->client_id)->find($consigneeId);
             // Same-as-Customer consignees mirror the customer's docs (already
             // checked above), so don't double-block on them.
             if ($consignee && !$consignee->same_as_customer) {
-                $miss = $onlyGated($checker->missingMandatoryDocs($consignee, 'consignee'));
+                // Scope the consignee's checklist to THIS deal's customer, so
+                // the gate asks for exactly the documents the lead's Evidence
+                // Vault listed — not the union across every other customer the
+                // consignee happens to be mapped to.
+                $miss = $onlyGated($checker->missingMandatoryDocs($consignee, 'consignee', $customer));
                 if (!empty($miss)) $blocks['Consignee'] = $miss;
             }
         }
 
-        if (empty($blocks)) return null;
+        return $blocks;
+    }
 
+    /** Human-readable "Pending: Customer → A, B | Consignee → C" summary. */
+    private function partyDocsMessage(array $blocks): string
+    {
         $parts = [];
         foreach ($blocks as $party => $miss) {
             $names = array_slice(array_map(fn($d) => $d['name'], $miss), 0, 4);
@@ -342,12 +428,9 @@ class ProformaInvoiceController extends Controller
             $parts[] = "{$party} → " . implode(', ', $names) . $extra;
         }
 
-        return response()->json([
-            'status'  => false,
-            'message' => 'This Proforma Invoice can’t be created yet — some required documents are still pending. '
-                . 'Please upload them from the Customer / Consignee documents panel first. Pending: '
-                . implode('  |  ', $parts),
-        ], 422);
+        return 'This Proforma Invoice can’t be created yet — some required documents are still pending. '
+            . 'Please upload them from the Customer / Consignee documents panel first. Pending: '
+            . implode('  |  ', $parts);
     }
 
     /* ── UPDATE ─────────────────────────────────────────────── */
@@ -695,6 +778,11 @@ class ProformaInvoiceController extends Controller
                 'status'     => Quotation::STATUS_CONVERTED_TO_PI,
                 'updated_by' => $user->id,
             ]);
+
+            // FREEZE the consignee onto the lead — the converted quotation's
+            // consignee (already document-verified above) becomes the deal's
+            // final consignee. See store() for the full rationale.
+            $this->freezeLeadConsignee($user, $qt->opp_id, $qt->consignee_id);
 
             return $pi->fresh(['items']);
         });
