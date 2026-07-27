@@ -1351,11 +1351,29 @@ class SegmentDocUploadController extends Controller
      *
      * @param  Model  $owner  a Customer or Consignee model
      * @param  string $type   'customer' | 'consignee'
+     * @param  Customer|null $scopeCustomer  the customer driving the deal —
+     *         narrows a CONSIGNEE's checklist to that customer's segment.
      */
-    public function missingMandatoryDocs(Model $owner, string $type): array
+    public function missingMandatoryDocs(Model $owner, string $type, ?Customer $scopeCustomer = null): array
     {
         $cid = (int) ($owner->client_id ?? 0);
-        $segmentIds = $this->resolveSegmentIds($owner, $type, $cid);
+
+        /* Lead-scoped consignee checklist — the SAME narrowing vault() does
+         * with ?scope_customer_id. A consignee's own `segment` string is the
+         * UNION of every customer it's mapped to, so without this the PI gate
+         * demanded documents for segments belonging to OTHER customers —
+         * documents the Evidence Vault never listed and the user had no way to
+         * satisfy from this lead. The vault showed "complete" while the PI was
+         * blocked. Scoping to the deal's customer puts the gate and the vault
+         * back in lock-step. Falls back to the union when no customer is given
+         * or the consignee isn't actually mapped to it. */
+        $useScope = $type === 'consignee'
+            && $scopeCustomer
+            && $this->consigneeMappedToCustomer($cid, (int) $owner->id, (int) $scopeCustomer->id);
+
+        $segmentIds = $useScope
+            ? $this->resolveSegmentIds($scopeCustomer, 'customer', $cid)
+            : $this->resolveSegmentIds($owner, $type, $cid);
         if (empty($segmentIds)) return [];
 
         // Match the entity's trade type (with a fallback to any rule) exactly
@@ -1547,12 +1565,23 @@ class SegmentDocUploadController extends Controller
         $customer = Customer::where('client_id', $cid)->find($scopeId);
         if (!$customer) return null;
 
-        $mapped = Consignee::where('client_id', $cid)
-            ->whereKey($id)
-            ->whereHas('customers', fn ($q) => $q->whereKey($scopeId))
-            ->exists();
+        return $this->consigneeMappedToCustomer($cid, $id, $scopeId) ? $customer : null;
+    }
 
-        return $mapped ? $customer : null;
+    /**
+     * Is this consignee actually mapped to this customer (consignee_customer
+     * pivot), within the tenant? Guards both the vault's ?scope_customer_id
+     * and missingMandatoryDocs' $scopeCustomer, so a stray or foreign id can
+     * never narrow a checklist to a segment the party isn't entitled to.
+     */
+    private function consigneeMappedToCustomer(int $cid, int $consigneeId, int $customerId): bool
+    {
+        if (!$cid || !$consigneeId || !$customerId) return false;
+
+        return Consignee::where('client_id', $cid)
+            ->whereKey($consigneeId)
+            ->whereHas('customers', fn ($q) => $q->whereKey($customerId))
+            ->exists();
     }
 
     private function resolveSegmentIds(Model $owner, string $type, int $cid): array

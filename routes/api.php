@@ -472,6 +472,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     
     Route::get   ('/sales/proforma-invoices',                                   [ProformaInvoiceController::class, 'index']);
     Route::get   ('/sales/proforma-invoices/preview-code',                      [ProformaInvoiceController::class, 'previewCode']);
+    // Pre-flight DCP check for the Create-PI wizard's Step 1 → Step 2 gate.
+    Route::get   ('/sales/proforma-invoices/party-docs-check',                  [ProformaInvoiceController::class, 'partyDocsCheck']);
     Route::post  ('/sales/proforma-invoices',                                   [ProformaInvoiceController::class, 'store']);
    
     Route::post  ('/sales/proforma-invoices/from-quotation/{quotationId}',      [ProformaInvoiceController::class, 'fromQuotation'])->whereNumber('quotationId');

@@ -545,36 +545,73 @@ export default function SalesMatrixDetail() {
     // consignee can be mapped to several customers with different segments;
     // here we only want this lead's customer's segment). See the vault
     // endpoint's scope_customer_id handling.
-    const loadVault = (consigneeDbId: number) =>
+    type VaultTally = {
+      total: number; verified: number; catalog: number; catalogVerified: number;
+    };
+    const fetchVault = (consigneeDbId: number): Promise<VaultTally> =>
       api.get<VaultResponse>(`/segment-uploads/consignee/${consigneeDbId}/vault`,
         custId ? { params: { scope_customer_id: custId } } : undefined)
         .then(res => {
-          if (cancelled) return;
           const d = res.data?.data;
-          setConsTally({
+          return {
             total:    Number(d?.core_total_documents ?? d?.total_documents ?? 0),
             verified: Number(d?.core_verified_signed ?? d?.verified_signed ?? 0),
             catalog:         Number(d?.core_catalog_documents ?? d?.total_documents ?? 0),
             catalogVerified: Number(d?.core_catalog_verified ?? d?.verified_signed ?? 0),
-          });
+          };
         });
 
     if (directId) {
-      loadVault(directId)
+      // The lead's consignee is FROZEN (a PI exists) — that one party is the
+      // whole story, so the card mirrors its vault exactly.
+      fetchVault(directId)
+        .then(t => { if (!cancelled) setConsTally({ total: t.total, verified: t.verified, catalog: t.catalog, catalogVerified: t.catalogVerified }); })
         .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
     } else {
-      // No consignee mapped to the lead — resolve one from the customer's
-      // consignees (the SAME one the card's click opens). This is what fixes
-      // the stuck "Loading documents…": a Same-as-Customer consignee now
-      // mirrors the customer's tally instead of hanging. No consignees at all
-      // → an empty (0-doc) tally, not a perpetual spinner.
+      /* No consignee frozen on the lead yet. Before a PI there ISN'T a single
+       * consignee — quotations may each name a different one — so this card
+       * has to speak for EVERY candidate under the customer, which is exactly
+       * the set the vault modal shows as its tab strip.
+       *
+       * It used to tally only rows[0]. When that happened to be the
+       * Same-as-Customer consignee (which mirrors the customer's already-
+       * complete docs) the card read "2 of 2 · 100%" while the customer's
+       * other consignees still had every mandatory KYC doc outstanding —
+       * reported as a false "completed". Now we sum all of them, so the card
+       * only reaches 100% once every candidate consignee is complete.
+       *
+       * EVERY consignee counts, Same-as-Customer ones included. The card reads
+       * as "N consignees × their mandatory docs" — one row per consignee the
+       * deal could ship to. A Same-as-Customer consignee contributes its
+       * mirrored (already-satisfied) customer docs, so it lands in the tally
+       * as complete rather than vanishing from the denominator. That keeps the
+       * count matching what the user sees in the vault's consignee tab strip.
+       *
+       * Note this DOES double-count the customer's docs against the Customer
+       * card — deliberately. The two cards answer different questions and the
+       * PI gate is enforced server-side per party, not from these numbers. */
       api.get('/consignees', { params: { customer_id: custId } })
-        .then(r => {
-          if (cancelled) return undefined;
+        .then(async r => {
+          if (cancelled) return;
           const rows: Array<{ db_id?: number }> = Array.isArray(r.data?.data) ? r.data.data : [];
-          const firstId = rows.find(x => typeof x.db_id === 'number')?.db_id;
-          if (!firstId) { setConsTally({ total: 0, verified: 0 }); return undefined; }
-          return loadVault(firstId);
+          const ids = rows
+            .map(x => x.db_id)
+            .filter((x): x is number => typeof x === 'number');
+          if (ids.length === 0) { setConsTally({ total: 0, verified: 0 }); return; }
+
+          // One vault call per consignee. A single failure must not sink the
+          // whole card, so failures drop out and the rest still tally.
+          const settled = await Promise.all(ids.map(id => fetchVault(id).catch(() => null)));
+          if (cancelled) return;
+          const loaded = settled.filter((t): t is VaultTally => t !== null);
+          if (loaded.length === 0) { setConsTally({ total: 0, verified: 0, error: true }); return; }
+
+          setConsTally({
+            total:           loaded.reduce((s, t) => s + t.total, 0),
+            verified:        loaded.reduce((s, t) => s + t.verified, 0),
+            catalog:         loaded.reduce((s, t) => s + t.catalog, 0),
+            catalogVerified: loaded.reduce((s, t) => s + t.catalogVerified, 0),
+          });
         })
         .catch(() => { if (!cancelled) setConsTally({ total: 0, verified: 0, error: true }); });
     }
@@ -1316,13 +1353,22 @@ export default function SalesMatrixDetail() {
             /* Stage 5 keeps its in-stage create/edit lock; Stage 6 stays fully
                editable so the user can work there after the PI is signed. */
             locked={isSigned && stage <= 5}
-            /* Create-PI gate for Stage 5, derived from the vault tallies this
-               parent already fetches (custTally / consTally) — saves Stage 5
-               from re-calling /segment-uploads/{party}/vault. A party with
-               total>0 and verified<total still has Standard Documents pending. */
+            /* Create-PI gate for Stage 5, derived from the vault tally this
+               parent already fetches (custTally) — saves Stage 5 from
+               re-calling /segment-uploads/customer/{id}/vault. total>0 with
+               verified<total means Standard Documents are still pending.
+
+               CUSTOMER ONLY, deliberately. The consignee is no longer fixed
+               before the PI — quotations may each name a different one, and
+               the deal's consignee is only chosen (and frozen) on the PI form
+               itself. consTally here reflects the lead's frozen consignee, or
+               else an arbitrary first consignee of the customer, so gating the
+               button on it would block a user who is about to pick a DIFFERENT,
+               document-complete consignee. The consignee's documents are
+               instead verified inside the Create-PI wizard once it's picked
+               (Step 1 → Step 2 gate), and again by the server on save. */
             mandatoryIncomplete={
-              (!!custTally && custTally.total > 0 && custTally.verified < custTally.total) ||
-              (!!consTally && consTally.total > 0 && consTally.verified < consTally.total)
+              !!custTally && custTally.total > 0 && custTally.verified < custTally.total
             }
             // Stage 5 calls this after a PI is created or edited so
             // the Segment Details card unlocks immediately instead of

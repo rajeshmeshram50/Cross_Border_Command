@@ -646,16 +646,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
       setCurrencyId(d.currency_id ?? null);
       setVendorId(d.vendor_id ?? null);
       setShipmentDbId(d.shipment_order_id ?? null);
-      // Existing PO (edit OR read-only view): reveal the Missing Product Details
-      // straight away — the buyer shouldn't have to click "Save Details" to see
-      // shortfalls on a saved PO (and in view mode the button is disabled). The
-      // `missing` list is a reactive memo, so it fills in as the rows settle.
-      setShowMissing(true);
-      // With-Shipment PO: load the shipment's full PI product set (with the
-      // quantity REMAINING for this PO = PI total − what other POs consumed;
-      // this PO's own lines are excluded). Used to (a) re-add removed PI
-      // products and (b) refresh each loaded row's PI quantity so Missing Qty
-      // reflects how much more this PO can still take.
+    
       if (d.shipment_order_id) {
         api.get(`/p2p/purchase-orders/shipments/${d.shipment_order_id}/pi-products`, { params: { exclude_po: editId } })
           .then(pr => {
