@@ -980,8 +980,12 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
           ) : rows.map((d, i) => (
             <tr key={d.id}>
               <td>{i + 1}</td>
-              <Tooltip label={d.name} disabled={(d.name || '').length <= 25}>
-                <td className="cnev-doc-name">{(d.name || '').length > 25 ? (d.name || '').slice(0, 25) + '…' : d.name}</td>
+              {/* Single-line with a CSS ellipsis. A long name used to wrap over
+                  several lines and blow the row height out; the previous
+                  slice(0, 25) cut mid-word at a fixed character count regardless
+                  of the column's actual width. Full text stays on hover. */}
+              <Tooltip label={d.name}>
+                <td className="cnev-doc-name"><span className="cnev-trunc">{d.name}</span></td>
               </Tooltip>
               <td className="cnev-mono">{d.reference || '—'}</td>
               <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
@@ -991,14 +995,18 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                     <Tooltip label={`Open ${d.attachment}`}>
                       <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cnev-attach" style={{ textDecoration: 'none' }}>
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                        {d.attachment}
+                        {/* Uploaded file names can be very long (browser
+                            screen-capture names, exported ticket names…). The
+                            chip caps its width and ellipsises the text so the
+                            row stays one line; hover shows the full name. */}
+                        <span className="cnev-trunc">{d.attachment}</span>
                       </a>
                     </Tooltip>
                   ) : (
                   <Tooltip label={d.attachment}>
                     <span className="cnev-attach">
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                      {d.attachment}
+                      <span className="cnev-trunc">{d.attachment}</span>
                     </span>
                   </Tooltip>
                   )
@@ -1905,7 +1913,15 @@ const CNEV_CSS = `
 .cnev-table tbody tr:nth-child(even) td { background: #fafbff; }
 .cnev-table tbody tr:last-child td { border-bottom: none; }
 .cnev-table tbody tr:hover td { background: #f0fdff; }
-.cnev-doc-name { font-weight: 700; color: #083344; }
+.cnev-doc-name { font-weight: 700; color: #083344; max-width: 300px; }
+/* Single-line ellipsis. Applied to an inner span (not the td / chip itself)
+   because text-overflow needs a block-ish box with a resolved width — a table
+   cell in the default auto layout just grows to fit its content instead.
+   min-width:0 lets it shrink inside the flex attachment chip. */
+.cnev-trunc {
+  display: block; min-width: 0; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .cnev-mono { font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace; font-size: 12px; color: #1f2937; }
 .cnev-empty { padding: 30px !important; text-align: center; color: #94a3b8; font-style: italic; }
 /* ─── Loading skeleton (shimmer) — emerald-tinted to match the consignee theme. */
@@ -1942,7 +1958,13 @@ const CNEV_CSS = `
   background: #cffafe; color: #0e7490;
   font-size: 11.5px; font-weight: 600;
   border: 1px solid rgba(8,145,178,.30);
+  /* Cap the chip so a long file name ellipsises instead of stretching the
+     column (and wrapping the row onto several lines). */
+  max-width: 240px;
 }
+/* Keep the paper-clip icon at full size while the file name absorbs the
+   truncation — without this the flex item would shrink the icon first. */
+.cnev-attach > svg { flex: 0 0 auto; }
 
 /* Row Actions — View / Download / Re-upload icons. */
 .cnev-row-actions { display: inline-flex; align-items: center; gap: 6px; }
