@@ -69,6 +69,15 @@ class SourcingController extends Controller
         if ($present->contains('manual')) $sources[] = 'Manual Entry';
         if (empty($sources)) $sources[] = $this->sourceLabel($t->source);
 
+        // Overdue = past the due date AND not yet fully sourced. A completed
+        // target is never overdue (all products mapped). Drives the "Overdue"
+        // badge so an assignee sees a late task clearly — completion stays
+        // allowed (QA #51: mark Overdue, still completable).
+        $isComplete = $total > 0 && $done >= $total;
+        $overdue = !$isComplete
+            && $t->due_date
+            && \Illuminate\Support\Carbon::parse($t->due_date)->endOfDay()->isPast();
+
         return [
             'id'        => $t->code,
             'source'    => $this->sourceLabel($t->source),
@@ -79,6 +88,7 @@ class SourcingController extends Controller
             'assignee'  => $t->assignee_name ?: '—',
             'products'  => $total,
             'completed' => $done,
+            'overdue'   => $overdue,
         ];
     }
 
@@ -144,7 +154,11 @@ class SourcingController extends Controller
             ->whereRaw('LOWER(name) LIKE ? OR LOWER(name) LIKE ?', ['%sales%', '%purchase%'])
             ->pluck('id');
 
-        $eligibleUserIds = \App\Models\Employee::where('client_id', $user->client_id)
+        // Resolve the DESIGNATION from the same employee record (designation lives
+        // on employees.designation_id → master_designations, NOT on the user —
+        // users.designation is empty, so the list was falling back to the raw
+        // user_type "Employee" for everyone, QA #50). Keep a user_id ⇒ title map.
+        $eligibleEmployees = \App\Models\Employee::where('client_id', $user->client_id)
             ->whereIn('department_id', $deptIds)
             // Only ACTIVE employees are assignable — Inactive and Exited staff
             // (the exit flow flips employees.status to those) must not appear.
@@ -154,7 +168,12 @@ class SourcingController extends Controller
             // Same gate as EmployeeController's `onboarded_only` filter.
             ->where('onboarding_stage_completed', '>=', 6)
             ->whereNotNull('user_id')
-            ->pluck('user_id');
+            ->with('designation:id,name')
+            ->get(['id', 'user_id', 'designation_id']);
+
+        $eligibleUserIds   = $eligibleEmployees->pluck('user_id');
+        $designationByUser = $eligibleEmployees
+            ->mapWithKeys(fn($e) => [(int) $e->user_id => ($e->designation->name ?? null)]);
 
         $rows = User::where('client_id', $user->client_id)
             ->whereIn('id', $eligibleUserIds)
@@ -168,7 +187,10 @@ class SourcingController extends Controller
             ->map(fn($u) => [
                 'id'   => (string) $u->id,
                 'name' => $u->name,
-                'role' => $u->designation ?: ucwords(str_replace('_', ' ', (string) $u->user_type)),
+                // Prefer the employee's real designation; fall back to any
+                // user-level designation, then to a humanised user_type.
+                'role' => ($designationByUser[(int) $u->id] ?? null)
+                    ?: ($u->designation ?: ucwords(str_replace('_', ' ', (string) $u->user_type))),
             ]);
 
         return $this->ok($rows);
@@ -725,7 +747,13 @@ class SourcingController extends Controller
         ]);
 
         if ($request->filled('supplier_id')) {
-            $v = Vendor::where('client_id', $user->client_id)
+            // Scope with forUser() (NOT client_id only) so a vendor can only be
+            // mapped if it's also visible/editable in the same branch catalog the
+            // Supplier edit form uses (VendorController::show). client_id-only let
+            // a sibling-branch vendor be mapped that the edit form then 404s on
+            // ("No query results for model Vendor <id>") — fine on a single-branch
+            // local DB, broken on a multi-branch server.
+            $v = Vendor::query()->forUser($user)
                 ->with(['segment:id,name', 'addresses'])
                 ->findOrFail($request->input('supplier_id'));
 

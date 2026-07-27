@@ -156,17 +156,38 @@ export default function Vendors() {
     const editParam = searchParams.get('edit');
     if (!editParam) return;
     const id = Number(editParam);
-    if (Number.isFinite(id) && id > 0) {
-      setEditingId(id);
-      setEditingStep(null);
-      setAddOpen(true);
-      const ret = searchParams.get('return');
-      returnToRef.current = ret && ret.startsWith('/') ? ret : null;
-    }
+    const ret = searchParams.get('return');
+    const returnPath = ret && ret.startsWith('/') ? ret : null;
+    // Strip the params up-front so a refresh / back never reopens this.
     const next = new URLSearchParams(searchParams);
     next.delete('edit');
     next.delete('return');
     setSearchParams(next, { replace: true });
+
+    if (!Number.isFinite(id) || id <= 0) return;
+    // Validate the supplier is visible/editable in THIS branch catalog before
+    // opening the wizard. A mapped supplier from a sibling branch (or a deleted
+    // vendor) 404s on GET /vendors/{id} — without this guard the user lands on
+    // the supplier list with a raw "No query results for model Vendor" error
+    // instead of the edit form (Bulk Sourcing → Mapped Suppliers → Edit bug).
+    let cancelled = false;
+    api.get(`/vendors/${id}`)
+      .then(() => {
+        if (cancelled) return;
+        returnToRef.current = returnPath;
+        setEditingId(id);
+        setEditingStep(null);
+        setAddOpen(true);
+      })
+      .catch((e: any) => {
+        if (cancelled) return;
+        const msg = e?.response?.status === 404
+          ? 'This supplier isn’t available to edit from here — it may belong to another branch or has been removed from the Supplier master.'
+          : (e?.response?.data?.message || 'Could not open this supplier for editing.');
+        toast.error('Supplier not available', msg);
+        if (returnPath) navigate(returnPath);
+      });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   /* Standalone Evidence Vault modal target — clicking the Vault action

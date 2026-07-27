@@ -1852,10 +1852,27 @@ export default function SalesQPI() {
             toolbar). Label follows the active tab so it reads correctly on
             both the Quotation and Proforma Invoice views. */}
         <div className="qpi-tablebar">
-          <div className="qpi-listpill">
-            <span className="qpi-listpill-ico"><IconFile /></span>
-            {tab === 'quotation' ? 'Quotation List' : 'Proforma Invoice List'}
-          </div>
+          {/* On the PI view the list-pill label is replaced by the shipment
+              sub-tabs (With / Without Shipment), styled like the Customer list
+              view tabs with a live count on each. Quotation has no split, so it
+              keeps the plain "Quotation List" label. */}
+          {tab === 'pi' ? (
+            <div className="qpi-pill-group">
+              <button className={`qpi-pi-subtab ${piSub === 'with' ? 'on' : 'off'}`} onClick={() => switchPiSub('with')}>
+                <IconShip /> With Shipment
+                <span className="qpi-pi-subtab-count">{piWithShipment.length}</span>
+              </button>
+              <button className={`qpi-pi-subtab ${piSub === 'without' ? 'on' : 'off'}`} onClick={() => switchPiSub('without')}>
+                <IconFileSm /> Without Shipment
+                <span className="qpi-pi-subtab-count">{piWithoutShipment.length}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="qpi-listpill">
+              <span className="qpi-listpill-ico"><IconFile /></span>
+              Quotation List
+            </div>
+          )}
           <div className="qpi-search">
             <IconSearch />
             <input
@@ -1894,22 +1911,6 @@ export default function SalesQPI() {
             </button>
           )}
         </div>
-
-        {/* Row 2 — PI sub-tabs (mirrors .smc-tabs-bar). Rendered only
-            on the PI tab; Quotation has no sub-views so this row is
-            omitted entirely there. */}
-        {tab === 'pi' && (
-          <div className="qpi-tabs-bar">
-            <div className="qpi-pill-group">
-              <button className={`qpi-pi-subtab ${piSub === 'with' ? 'on' : ''}`} onClick={() => switchPiSub('with')}>
-                <IconShip /> With Shipment
-              </button>
-              <button className={`qpi-pi-subtab ${piSub === 'without' ? 'on' : ''}`} onClick={() => switchPiSub('without')}>
-                <IconFileSm /> Without Shipment
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Table — uses the project-standard TableContainer (TanStack)
             so chrome + pagination match the Customer / Recruitment /
@@ -5497,32 +5498,53 @@ const SCOPED_CSS = `
 }
 
 /* Pill group (segmented control) — mirrors .smc-pill-group. */
+/* Shipment sub-tabs — styled to match the Customer list-view pills
+   (.smc-pill): translucent rail, light-violet inactive tabs, a deep-violet
+   gradient active tab, and a count badge on each. */
 .qpi-pill-group {
-  display: inline-flex; align-items: center; gap: 2px;
-  background: var(--vz-secondary-bg, #f3f3f9);
-  border: 1px solid var(--vz-border-color, #e9ecef);
-  border-radius: 10px;
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(255, 255, 255, .55);
+  border: 1px solid rgba(139, 92, 246, .22);
+  border-radius: 11px;
   padding: 4px;
   flex-shrink: 0;
 }
 .qpi-pi-subtab {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 16px; height: 32px;
-  border: 0; border-radius: 8px;
-  background: transparent;
-  color: var(--vz-secondary-color, #878a99);
-  font-family: inherit; font-size: 12.5px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 0 14px; height: 34px;
+  border-radius: 8px;
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
   cursor: pointer;
   letter-spacing: 0; white-space: nowrap;
-  transition: all .18s ease;
+  transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
 }
-.qpi-pi-subtab:hover { background: rgba(124,58,237,.06); color: #6d28d9; }
+.qpi-pi-subtab.off {
+  background: linear-gradient(135deg, #f5f1fe, #ede9fe);
+  border: 1px solid rgba(139,92,246,.2);
+  color: #6d28d9;
+}
+.qpi-pi-subtab.off:hover {
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  border-color: rgba(139,92,246,.35);
+  color: #5b21b6;
+}
 .qpi-pi-subtab.on {
-  background: linear-gradient(135deg, #7c3aed, #6d28d9);
+  position: relative; overflow: hidden; border: 0;
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 35%, #7c3aed 68%, #5b21b6 100%);
   color: #fff;
-  box-shadow: 0 3px 10px rgba(124,58,237,.30);
+  box-shadow: 0 5px 14px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(91,33,182,.3) inset;
+  text-shadow: 0 1px 2px rgba(76,29,149,.4);
 }
 .qpi-pi-subtab svg { width: 14px; height: 14px; }
+/* Count badge — white on inactive tabs, translucent-white on the active one. */
+.qpi-pi-subtab-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 18px; padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10px; font-weight: 800; line-height: 1;
+}
+.qpi-pi-subtab.off .qpi-pi-subtab-count { color: #7c3aed; background: #fff; border: 1px solid #ddd0f7; }
+.qpi-pi-subtab.on  .qpi-pi-subtab-count { color: #fff; background: rgba(255,255,255,.24); border: 1px solid rgba(255,255,255,.4); }
 
 /* Legacy .qpi-pi-subtabs left as alias so the responsive rules below
    that still reference it don't break. */
@@ -6906,10 +6928,16 @@ const SCOPED_CSS = `
   background: rgba(255,255,255,.05);
   border-color: rgba(167,139,250,.22);
 }
-[data-bs-theme="dark"] .qpi-pi-subtab,
-[data-layout-mode="dark"] .qpi-pi-subtab { color: #cbd5e1; }
-[data-bs-theme="dark"] .qpi-pi-subtab:hover,
-[data-layout-mode="dark"] .qpi-pi-subtab:hover { background: rgba(167,139,250,.12); color: #ede9fe; }
+[data-bs-theme="dark"] .qpi-pi-subtab.off,
+[data-layout-mode="dark"] .qpi-pi-subtab.off {
+  background: rgba(124,58,237,.14); border-color: rgba(167,139,250,.28); color: #c4b5fd;
+}
+[data-bs-theme="dark"] .qpi-pi-subtab.off:hover,
+[data-layout-mode="dark"] .qpi-pi-subtab.off:hover { background: rgba(167,139,250,.22); color: #ede9fe; }
+[data-bs-theme="dark"] .qpi-pi-subtab.off .qpi-pi-subtab-count,
+[data-layout-mode="dark"] .qpi-pi-subtab.off .qpi-pi-subtab-count {
+  color: #c4b5fd; background: rgba(124,58,237,.18); border-color: rgba(167,139,250,.30);
+}
 [data-bs-theme="dark"] .qpi-search {
   background: rgba(255,255,255,.03);
   border-color: rgba(167,139,250,.30);

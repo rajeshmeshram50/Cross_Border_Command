@@ -24,6 +24,9 @@ type SourcingRow = {
   assignee: string;
   products: number;
   completed: number;
+  // Past the due date AND not fully sourced (backend-computed). Drives the
+  // red "Overdue" status — completion stays allowed (QA #51).
+  overdue?: boolean;
 };
 
 const PER_PAGE = 10;
@@ -40,16 +43,21 @@ function Person({ name }: { name: string }) {
   );
 }
 
-function Progress({ products, completed }: { products: number; completed: number }) {
+function Progress({ products, completed, overdue }: { products: number; completed: number; overdue?: boolean }) {
   const total = products || 0;
   const done = Math.min(completed || 0, total);
   const pending = total - done;
   const pct = total ? Math.round((done / total) * 100) : 0;
   const isDone = total > 0 && done === total;
+  // Overdue only matters while still unfinished — a completed target is never
+  // overdue. Sourcing stays possible; the badge just flags the late task.
+  const isOverdue = !!overdue && !isDone;
+  const stCls = isDone ? 'bst-st--done' : isOverdue ? 'bst-st--overdue' : 'bst-st--prog';
+  const stLabel = isDone ? 'Completed' : isOverdue ? 'Overdue' : 'In Progress';
   return (
     <div className="bst-prog3">
       <div className="bst-prog3-head">
-        <span className={`bst-st2 ${isDone ? 'bst-st--done' : 'bst-st--prog'}`}><span className="bst-st-dot" />{isDone ? 'Completed' : 'In Progress'}</span>
+        <span className={`bst-st2 ${stCls}`}><span className="bst-st-dot" />{stLabel}</span>
         <span className={`bst-prog3-pct ${isDone ? 'is-done' : ''}`}>{pct}%</span>
       </div>
       <div className={`bst-bar ${isDone ? 'all-done' : ''}`}><span className="bst-bar-fill" style={{ width: `${pct}%` }} /></div>
@@ -94,7 +102,8 @@ export default function P2pBulkSourcing() {
     const q = query.trim().toLowerCase();
     if (!q) return allRows;
     return allRows.filter(r => {
-      const status = (r.completed >= r.products && r.products > 0) ? 'completed' : 'in progress';
+      const isComplete = r.completed >= r.products && r.products > 0;
+      const status = isComplete ? 'completed' : (r.overdue ? 'overdue' : 'in progress');
       const src = (r.sources?.length ? r.sources : [r.source]).join(' ');
       return [r.id, src, r.createdBy, r.assignee, status].join(' ').toLowerCase().includes(q);
     });
@@ -277,7 +286,7 @@ export default function P2pBulkSourcing() {
                         <span><Person name={r.createdBy} /></span>
                         <span><Person name={r.assignee} /></span>
                         <span className="bst-c-center"><Tooltip label="View Products"><span className="bst-pcount" style={{ cursor: 'pointer' }} onClick={() => setProductsRow(r)}>{r.products}</span></Tooltip></span>
-                        <span className="bst-c-center"><Progress products={r.products} completed={r.completed} /></span>
+                        <span className="bst-c-center"><Progress products={r.products} completed={r.completed} overdue={r.overdue} /></span>
                         <span className="bst-c-center">
                           <span className="bst-actions">
                             {/* Edit is owner-only: shown on the "Created by Me" tab.

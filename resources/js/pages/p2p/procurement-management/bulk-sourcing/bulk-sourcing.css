@@ -1025,6 +1025,18 @@
   background: #cffafe;
   border: 1px solid #a5f3fc;
 }
+/* Overdue — past the due date and still unfinished (sourcing stays allowed). */
+.bst-st--overdue,
+.bst-st2.bst-st--overdue {
+  color: #b91c1c;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+}
+[data-bs-theme="dark"] .bst-st--overdue {
+  background: rgba(239,68,68,.18);
+  border-color: rgba(248,113,113,.35);
+  color: #fca5a5;
+}
 .bst-actions {
   display: inline-flex;
   gap: 6px;

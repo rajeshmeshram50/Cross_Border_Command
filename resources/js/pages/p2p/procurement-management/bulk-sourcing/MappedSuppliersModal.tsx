@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
 import api from '../../../../api';
 import { SegmentTags } from './SegmentTags';
 import { useModalGuard } from './useModalGuard';
@@ -43,22 +42,19 @@ const fmtPrice = (p: string) => {
   return isNaN(n) ? p : `₹${n.toLocaleString('en-IN')}`;
 };
 
-export default function MappedSuppliersModal({ product, recordId, recordSource, targetId, productId, onClose, onAddSupplier, onEditManual, canAdd = true }: {
-  product: MappedProduct; recordId: string; recordSource: string; targetId?: string; productId?: string | number; onClose: () => void; onAddSupplier: () => void; onEditManual?: (s: ManualSupplierEdit) => void; canAdd?: boolean;
+export default function MappedSuppliersModal({ product, recordId, recordSource, targetId, productId, onClose, onAddSupplier, onEditManual, onEditMaster, canAdd = true }: {
+  product: MappedProduct; recordId: string; recordSource: string; targetId?: string; productId?: string | number; onClose: () => void; onAddSupplier: () => void; onEditManual?: (s: ManualSupplierEdit) => void; onEditMaster?: (vendorId: number) => void; canAdd?: boolean;
 }) {
   const [suppliers, setSuppliers] = useState<Sup[]>([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
   const { pulse, guardOverlay } = useModalGuard();
 
-  /* Master supplier → jump to the Supplier master page with its edit wizard
-     open (Vendors.tsx consumes ?edit=<id>). Leaving this page unmounts the
-     modal, so no explicit close is needed. */
+  /* Master supplier → open the Supplier edit wizard IN PLACE (over Bulk
+     Sourcing), not by redirecting to the Suppliers module. The parent renders
+     AddVendorModal with this vendor id. */
   const editMaster = (sup: Sup) => {
     if (sup.supplier_id == null) return;
-    // Pass a return path so the Suppliers page brings the user back to Bulk
-    // Sourcing once the edit is saved.
-    navigate(`/suppliers?edit=${sup.supplier_id}&return=${encodeURIComponent('/p2p/bulk-sourcing')}`);
+    onEditMaster?.(Number(sup.supplier_id));
   };
 
   /* New Supplier → hand the row up to the parent, which reopens the Map
@@ -162,7 +158,7 @@ export default function MappedSuppliersModal({ product, recordId, recordSource, 
                         </button>
                       </Tooltip>
                     )
-                  ) : sup.supplier_id != null && (
+                  ) : (onEditMaster && sup.supplier_id != null) && (
                     <Tooltip label="Edit supplier details">
                       <button type="button" className="sv-card-edit" onClick={() => editMaster(sup)}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
