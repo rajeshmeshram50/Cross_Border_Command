@@ -25,7 +25,7 @@ class CandidateController extends Controller
      */
     private const WITH = [
         'recruitment:id,code,job_title',
-    ];
+    ]; 
 
   
     private const MODULE_SLUG = 'hr.recruitment';

@@ -34,7 +34,7 @@ class ClmSegmentController extends Controller
             $r->in_use  = !empty($labels);
             $r->used_in = array_values($labels);
         });
-
+ 
         return response()->json([
             'status' => true,
             'data'   => $rows,
