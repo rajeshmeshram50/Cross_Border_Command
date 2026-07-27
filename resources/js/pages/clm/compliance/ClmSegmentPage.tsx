@@ -420,14 +420,15 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
 
   // Regulatory classification is fixed once a segment is created — it can be
   // changed neither way on edit (no Highly→Less downgrade, no Less→Highly
-  // upgrade), since compliance structures (DCP rules, required docs) are built
-  // against whatever it was set to. Editing only allows it to stay as-is.
-  const regLocked = isEdit;
-  // Once a segment is referenced (Customers / Consignees / Suppliers / Products /
-  // Segment Rules etc.) its NAME is frozen — renaming it would break every
-  // record that stores the segment by name. Only Customer ≠ Consignee stays
-  // editable in that case. Regulatory status is already frozen on any edit.
-  const nameLocked = isEdit && !!existing?.in_use;
+  // A segment's NAME and REGULATORY STATUS are frozen ONLY once it's referenced
+  // somewhere (Customers / Consignees / Suppliers / Products / Segment Rules /
+  // libraries) — renaming or re-classifying would break the compliance
+  // structures (DCP rules, required docs) built against it. A brand-new / unused
+  // segment stays fully editable; only Customer ≠ Consignee stays editable when
+  // in use. Mirrors the server-side guards in ClmSegmentController::update.
+  const inUse = isEdit && !!existing?.in_use;
+  const regLocked = inUse;
+  const nameLocked = inUse;
 
   const handleSave = async () => {
     // Guard at the TOP, not just `disabled` on the button — the button attribute
@@ -458,7 +459,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
       }
     }
     if (!reg) next.reg = 'Regulatory status is required';
-    else if (regLocked && reg !== existing?.regulatory_status) next.reg = 'Regulatory status cannot be changed after the segment is created.';
+    else if (regLocked && reg !== existing?.regulatory_status) next.reg = "This segment is in use — its regulatory status can't be changed.";
     if (!bc)  next.bc  = 'Customer / Consignee rule is required';
     setErrors(next);
     if (Object.keys(next).length) return;
@@ -554,7 +555,7 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
               ]}
               onChange={(v) => { setReg(v as Reg); setErrors(p => ({ ...p, reg: '' })); }}
             />
-            {regLocked && <div className="clm-field-hint">Regulatory status is fixed once the segment is created and can't be changed.</div>}
+            {regLocked && <div className="clm-field-hint">Regulatory status is locked because this segment is in use{(existing?.used_in?.length) ? ` by ${existing.used_in.join(', ')}` : ''} — re-classifying would break those records.</div>}
             {errors.reg && <div className="clm-err">{errors.reg}</div>}
           </div>
 

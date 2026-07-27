@@ -20,7 +20,8 @@ class ClmSegmentController extends Controller
         if (!$user) abort(401);
 
         // Branch-scoped read: own rows + client-level (shared); siblings hidden (CBC-430).
-        $q = ClmSegment::query()->orderBy('id');
+        // Newest segments first so a freshly-added entry appears at the top.
+        $q = ClmSegment::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
         $rows = $q->get();
 
@@ -201,35 +202,38 @@ class ClmSegmentController extends Controller
 
         if (isset($data['name'])) $data['name'] = trim($data['name']);
 
-        // Segment NAME is frozen once the segment is referenced anywhere
-        // (Customers / Consignees / Suppliers / Products / rules / libraries) —
-        // renaming would break every record that stores the segment by name.
-        // Only a genuine rename is blocked (same value re-submitted is fine), so
-        // Customer ≠ Consignee edits still go through. Uses the SAME usage map as
-        // the index so the locked field and this guard stay in sync; enforced
-        // server-side because the read-only input can be bypassed.
-        if (isset($data['name']) && $data['name'] !== (string) $row->name) {
-            $usedIn = $this->usageLabels(collect([$row]))[$row->id] ?? [];
-            if (!empty($usedIn)) {
-                $msg = 'This segment is in use by ' . implode(', ', $usedIn) . " — its name can't be changed.";
-                return response()->json([
-                    'status'  => false,
-                    'message' => $msg,
-                    'errors'  => ['name' => [$msg]],
-                ], 409);
-            }
-        }
+        // Both the NAME and REGULATORY-STATUS locks apply ONLY when the segment
+        // is actually referenced somewhere. A brand-new / unused segment stays
+        // fully editable. Compute usage once (same map the index uses) so the
+        // locked fields and these guards stay in sync; enforced server-side
+        // because the read-only inputs can be bypassed.
+        $usedIn = $this->usageLabels(collect([$row]))[$row->id] ?? [];
 
-        // Regulatory classification is fixed once a segment is created — it
-        // can be changed neither way on edit, since compliance structures
-        // (DCP rules, required docs) get built against it. Guarded here too
-        // because frontend validation can be bypassed.
-        if (isset($data['regulatory_status'])
-            && $data['regulatory_status'] !== $row->regulatory_status) {
+        // Segment NAME is frozen once referenced (Customers / Consignees /
+        // Suppliers / Products / rules / libraries) — renaming would break every
+        // record that stores the segment by name. Only a genuine rename is
+        // blocked (same value re-submitted is fine), so Customer ≠ Consignee
+        // edits still go through.
+        if (isset($data['name']) && $data['name'] !== (string) $row->name && !empty($usedIn)) {
+            $msg = 'This segment is in use by ' . implode(', ', $usedIn) . " — its name can't be changed.";
             return response()->json([
                 'status'  => false,
-                'message' => 'Regulatory status cannot be changed after the segment is created.',
-                'errors'  => ['regulatory_status' => ['Regulatory status cannot be changed after the segment is created.']],
+                'message' => $msg,
+                'errors'  => ['name' => [$msg]],
+            ], 409);
+        }
+
+        // Regulatory classification is frozen once the segment is referenced,
+        // since compliance structures (DCP rules, required docs) get built
+        // against it. An unused segment can still be re-classified.
+        if (isset($data['regulatory_status'])
+            && $data['regulatory_status'] !== $row->regulatory_status
+            && !empty($usedIn)) {
+            $msg = 'This segment is in use by ' . implode(', ', $usedIn) . " — its regulatory status can't be changed.";
+            return response()->json([
+                'status'  => false,
+                'message' => $msg,
+                'errors'  => ['regulatory_status' => [$msg]],
             ], 422);
         }
 

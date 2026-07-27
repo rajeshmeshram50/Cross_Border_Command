@@ -517,12 +517,11 @@ export default function ClmDcpPage() {
                         <td className="clm-td-num">{start + i + 1}</td>
                         <td style={{ textAlign: 'center' }}><span className="clm-code-pill">{r.segment_code}</span></td>
                         <td className="clm-td-name">
-                          <span
-                            title={seg?.name ?? r.segment_code}
-                            style={{ display: 'block', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                          >
-                            {seg?.name ?? r.segment_code}
-                          </span>
+                          <Tooltip label={seg?.name ?? r.segment_code} position="top">
+                            <span style={{ display: 'block', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {seg?.name ?? r.segment_code}
+                            </span>
+                          </Tooltip>
                         </td>
                         <td style={{ textAlign: 'center' }}>
                           <span className={`clm-badge ${isHigh ? 'clm-badge-red' : 'clm-badge-green'}`}><span className="clm-badge-dot" />{isHigh ? 'High' : 'Less'}</span>

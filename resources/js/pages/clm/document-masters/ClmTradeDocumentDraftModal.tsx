@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
@@ -14,6 +14,7 @@ import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
 } from '../../hrms/doc-templates/HeaderFooterPanel';
+import { useCtcEditor, CtcEditorContent, CTC_EDITOR_CSS, type CtcEditor } from '../operations/CtcRichEditor';
 
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → Trade Documents Master → Draft New Trade Document (modal)
@@ -154,7 +155,11 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
 
   // Step 2 fields
   const [content, setContent] = useState('');
-  const editorRef = useRef<HTMLDivElement | null>(null);
+  // Rich-text engine — TipTap (same as the CTC / Agreement editors), replacing
+  // the old contentEditable + document.execCommand that froze the tab when
+  // formatting large (200-300 page) trade documents. HTML in / HTML out, so the
+  // backend contract (content = HTML string) is unchanged.
+  const ted: CtcEditor = useCtcEditor({ value: content, onChange: setContent });
   const [fontSize, setFontSizeState] = useState('14');
   const [block, setBlockState]       = useState('p');
   const [pickerOpen, setPickerOpen]  = useState(false);
@@ -172,7 +177,6 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   // Full-page drafting — expands the editor shell to fill the viewport so the
   // user can draft long documents without the modal chrome cramping them.
   const [fullPage, setFullPage] = useState(false);
-  const lastRangeRef                 = useRef<Range | null>(null);
 
   const [quickAddOpen, setQuickAddOpen] = useState(false);
 
@@ -206,140 +210,99 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   const [headerConfig, setHeaderConfig] = useState<HeaderConfig>(brandedDefaults.header);
   const [footerConfig, setFooterConfig] = useState<FooterConfig>(brandedDefaults.footer);
 
-  /* Rich-text helpers (step 2). execCommand is deprecated but still the
-   * simplest path for contentEditable without pulling in an editor framework.
-   * preventDefault on mouseDown keeps the editor's selection intact when a
-   * toolbar button is clicked. */
-  /* The body editor is UNCONTROLLED — its HTML is read straight from the DOM
-   * at save time (see handleSave) and the char counter tracks length via its
-   * own `input` listener. We deliberately do NOT mirror every keystroke /
-   * formatting command into React state: doing so re-rendered this whole
-   * ~1000-line modal on each action, which was the editor lag / "changes not
-   * applied immediately" report (QA #40). `content` state is flushed from the
-   * DOM only when the editor is about to remount (full-page toggle / step
-   * change) so the body survives. syncContent() is kept as a no-op so the
-   * historical call sites still read intent-fully. */
-  const syncContent = () => { /* intentionally no-op — see note above */ };
-  const exec = (cmd: string, value?: string) => {
-    editorRef.current?.focus();
-    document.execCommand(cmd, false, value);
-    syncContent();
+  /* Rich-text helpers (step 2) — now backed by the TipTap editor (ted.editor)
+   * instead of document.execCommand. TipTap owns a real document model +
+   * selection, so formatting a 200-300 page trade document is fast and never
+   * freezes the tab. The toolbar's execCommand-style command names are mapped to
+   * TipTap chains below so the existing toolbar JSX is unchanged. */
+  // On a very LARGE document a formatting command can still take a beat (huge
+  // selection + re-render). Show a brief loader for those, painted a frame BEFORE
+  // the command runs so the user sees "Applying formatting…"; small docs run
+  // inline (instant — no flash).
+  const [editorBusy, setEditorBusy] = useState(false);
+  const runFmt = (fn: () => void) => {
+    const big = (content?.length ?? 0) > 40000;
+    if (!big) { fn(); return; }
+    setEditorBusy(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      try { fn(); } finally { setEditorBusy(false); }
+    }));
   };
-  /* "Clear formatting" needs more than execCommand('removeFormat'): that only
-   * strips INLINE marks (bold/italic/underline/colour/font/size) and no-ops on
-   * a collapsed caret, so headings, block formats and alignment survived and it
-   * read as "not working". Expand a bare caret to the whole document, strip the
-   * inline marks, then reset the block(s) to a normal paragraph and drop any
-   * alignment so the selection returns to truly plain text. */
-  const clearFormatting = () => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.focus();
-    const sel = window.getSelection();
-    if (sel && sel.isCollapsed) {
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      sel.removeAllRanges();
-      sel.addRange(range);
+  // Indent / outdent: nudge list nesting inside a list, else the ParagraphIndent
+  // margin-left attribute across the selection (mirrors the CTC editor).
+  const changeIndent = (delta: number) => {
+    const e = ted.editor; if (!e) return;
+    if (e.isActive('listItem')) {
+      const c = e.chain().focus();
+      (delta > 0 ? c.sinkListItem('listItem') : c.liftListItem('listItem')).run();
+      return;
     }
-    document.execCommand('removeFormat');            // inline marks
-    document.execCommand('formatBlock', false, '<div>'); // headings/quotes → normal
-    document.execCommand('justifyLeft');             // clear centre/right/justify
-    syncContent();
-  };
-  const applyFontSize = (px: string) => {
-    // Restore the selection stashed before the <select> stole focus, so the
-    // size applies to the text the user had highlighted (a bare focus() would
-    // leave the caret collapsed and the command would no-op).
-    restoreCaretForInsert();
-    // execCommand fontSize accepts 1-7; we tag with size="7" then rewrite
-    // the resulting <font> elements into <span style="font-size:Npx">.
-    document.execCommand('fontSize', false, '7');
-    editorRef.current?.querySelectorAll('font[size="7"]').forEach((f) => {
-      const span = document.createElement('span');
-      span.style.fontSize = `${px}px`;
-      span.innerHTML = (f as HTMLElement).innerHTML;
-      f.replaceWith(span);
+    const { state, view } = e;
+    const { from, to } = state.selection;
+    const tr = state.tr;
+    let changed = false;
+    state.doc.nodesBetween(from, to, (node, pos) => {
+      if (node.type.name !== 'paragraph' && node.type.name !== 'heading') return;
+      const cur = (node.attrs.indent as number) || 0;
+      const next = Math.max(0, Math.min(10, cur + delta));
+      if (next !== cur) { tr.setNodeMarkup(pos, undefined, { ...node.attrs, indent: next }); changed = true; }
     });
-    syncContent();
+    if (changed) { view.dispatch(tr); e.commands.focus(); }
   };
+  const exec = (cmd: string, value?: string) => {
+    const e = ted.editor; if (!e) return;
+    runFmt(() => {
+      const c = e.chain().focus();
+      switch (cmd) {
+        case 'bold':          c.toggleBold().run(); break;
+        case 'italic':        c.toggleItalic().run(); break;
+        case 'underline':     c.toggleUnderline().run(); break;
+        case 'strikeThrough': c.toggleStrike().run(); break;
+        case 'superscript':   c.toggleSuperscript().run(); break;
+        case 'subscript':     c.toggleSubscript().run(); break;
+        case 'foreColor':     c.setColor(value || '#000000').run(); break;
+        case 'hiliteColor':   c.setBackgroundColor(value || '#ffffff').run(); break;
+        case 'justifyLeft':   c.setTextAlign('left').run(); break;
+        case 'justifyCenter': c.setTextAlign('center').run(); break;
+        case 'justifyRight':  c.setTextAlign('right').run(); break;
+        case 'justifyFull':   c.setTextAlign('justify').run(); break;
+        case 'insertUnorderedList': c.toggleBulletList().run(); break;
+        case 'insertOrderedList':   c.toggleOrderedList().run(); break;
+        case 'indent':        changeIndent(1); break;
+        case 'outdent':       changeIndent(-1); break;
+        case 'undo':          c.undo().run(); break;
+        case 'redo':          c.redo().run(); break;
+        case 'removeFormat':  c.unsetAllMarks().run(); break;
+        default: break;
+      }
+    });
+  };
+  // Clear formatting — strip inline marks, reset blocks to paragraph and drop
+  // alignment so the selection returns to truly plain text.
+  const clearFormatting = () => {
+    runFmt(() => { ted.editor?.chain().focus().unsetAllMarks().clearNodes().setTextAlign('left').run(); });
+  };
+  const applyFontSize = (px: string) => { runFmt(() => { ted.editor?.chain().focus().setFontSize(`${px}px`).run(); }); };
   const applyBlock = (tag: string) => {
-    // Restore the stashed selection (the <select> took focus) before applying
-    // the block format, so it targets the block the caret was actually in.
-    restoreCaretForInsert();
-    document.execCommand('formatBlock', false, `<${tag}>`);
-    syncContent();
+    const e = ted.editor; if (!e) return;
+    runFmt(() => {
+      const c = e.chain().focus();
+      if (tag === 'p') c.setParagraph().run();
+      else if (tag === 'h1' || tag === 'h2' || tag === 'h3') c.toggleHeading({ level: Number(tag[1]) as 1 | 2 | 3 }).run();
+      else if (tag === 'blockquote') c.toggleBlockquote().run();
+      else if (tag === 'pre') c.toggleCodeBlock().run();
+    });
   };
   const insertLink = () => {
     const url = window.prompt('Enter URL', 'https://');
-    if (url) exec('createLink', url);
+    if (url) ted.editor?.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
   };
-  const stashSelection = () => {
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
-      lastRangeRef.current = sel.getRangeAt(0).cloneRange();
-    }
-    // Don't clobber the previous stash if the new selection is OUTSIDE
-    // the editor — that happens while a modal (Placeholder / Table /
-    // HR) is open. We want to remember the LAST in-editor caret.
-  };
-  /* Restore the stashed caret BEFORE executing the insertion command.
-   * Falls back to the END of the editor (collapsed range) when no
-   * stash exists yet — happens when the user opens a Placeholder / HR /
-   * Table modal without first clicking inside the body. End-of-editor
-   * is closer to user intent than the top-default `editor.focus()`
-   * would otherwise produce. */
-  const restoreCaretForInsert = () => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    // preventScroll: focusing a contentEditable makes the browser scroll its
-    // container to the element's TOP before the caret is restored — which
-    // yanked a long draft back to the start of the page whenever a placeholder
-    // was inserted at the end. Restore focus without that scroll, then re-apply
-    // the stashed caret, so the view stays where the user was.
-    editor.focus({ preventScroll: true });
-    const stash = lastRangeRef.current;
-    const sel = window.getSelection();
-    if (!sel) return;
-    if (stash && editor.contains(stash.startContainer)) {
-      sel.removeAllRanges();
-      sel.addRange(stash);
-    } else {
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      range.collapse(false);   // collapse to end
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-  };
-  const rememberCaretAfterInsert = () => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
-      lastRangeRef.current = sel.getRangeAt(0).cloneRange();
-    }
-  };
-
-  const insertAtCaret = (text: string) => {
-    restoreCaretForInsert();
-    document.execCommand('insertText', false, text);
-    rememberCaretAfterInsert();
-    syncContent();
-  };
-
-  /* Drop generated HTML at the stashed caret position. Used by the
-   * Insert Table + Insert HR modals — the rich-HTML insertion path
-   * execCommand's `insertHTML` is more reliable than splicing nodes
-   * by hand, and it cleanly handles the case where the user's
-   * selection spans multiple existing nodes (insertHTML replaces
-   * the selection). */
-  const insertHtmlAtCaret = (html: string) => {
-    restoreCaretForInsert();
-    document.execCommand('insertHTML', false, html);
-    rememberCaretAfterInsert();
-    syncContent();
-  };
+  // TipTap keeps its own selection; `.focus()` on insert restores the last caret,
+  // so the old manual range stash/restore is no longer needed (no-op keeps the
+  // toolbar's onMouseDown handlers valid).
+  const stashSelection = () => {};
+  const insertAtCaret     = (text: string) => { ted.insertText(text); };
+  const insertHtmlAtCaret = (html: string) => { ted.insertHTML(html); };
 
   /* DOCX round-trip — mirrors the HRMS template flow. Download streams
    * the saved Word file (or one generated from `content` HTML on the
@@ -449,8 +412,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
           toast.warning('Nothing to import', 'The document appears to be empty.');
           return;
         }
-        setContent(html);
-        if (editorRef.current) editorRef.current.innerHTML = html;
+        ted.setHTML(html);   // re-seeds the TipTap document AND updates `content`
         toast.success('Imported', `${file.name} loaded into the editor.`);
         return;
       }
@@ -459,8 +421,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       });
       const row = data?.data;
       if (row?.content) {
-        setContent(row.content);
-        if (editorRef.current) editorRef.current.innerHTML = row.content;
+        ted.setHTML(row.content);
       }
       toast.success('Uploaded', file.name);
     } catch (e: any) {
@@ -486,8 +447,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setParties(new Set((existing.party ?? '').split(',').map(s => normalizeParty(s.trim())).filter(Boolean)));
       setRegulatory(existing.regulatory ?? 'less');
       setSegments((existing.segment ?? '').split(',').map(s => s.trim()).filter(Boolean));
-      setContent(existing.content ?? '');
-      if (editorRef.current) editorRef.current.innerHTML = existing.content ?? '';
+      setContent(existing.content ?? '');   // useCtcEditor seeds the editor from this
       // Layer the saved zone config over the branded defaults. Rows that
       // pre-date these columns hit the spread with null and keep the
       // logged-in user's branch branding as their starting point.
@@ -502,7 +462,6 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setRegulatory('less');
       setSegments([]);
       setContent('');
-      if (editorRef.current) editorRef.current.innerHTML = '';
       setHeaderConfig(brandedDefaults.header);
       setFooterConfig(brandedDefaults.footer);
     }
@@ -513,37 +472,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   // is open in the background.
   useEffect(() => { setNames(initialNames); }, [initialNames]);
 
-  /* Editor element only mounts when step === 2. When the user crosses
-   * the step boundary, push the persisted content into the freshly-
-   * mounted contentEditable div so edit mode shows the saved body. */
-  useEffect(() => {
-    if (step === 2 && editorRef.current) {
-      editorRef.current.innerHTML = content ?? '';
-    }
-    // `fullPage` is in the deps because toggling it portals the editor to /
-    // from <body>, which remounts the contentEditable div — re-push the
-    // latest content so the draft body survives the switch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, fullPage]);
-
-  /* Track the last caret position inside the body editor on every
-   * selectionchange. Without this, clicking a toolbar button that opens
-   * a modal (Placeholder / Table / HR) wouldn't capture the caret
-   * reliably — modal focus would clobber the in-editor selection
-   * before insertHtmlAtCaret could read it. The listener only updates
-   * when the new selection is INSIDE the editor, so modal openings
-   * leave the stash untouched. */
-  useEffect(() => {
-    if (step !== 2) return;
-    const onSel = () => {
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
-        lastRangeRef.current = sel.getRangeAt(0).cloneRange();
-      }
-    };
-    document.addEventListener('selectionchange', onSel);
-    return () => document.removeEventListener('selectionchange', onSel);
-  }, [step]);
+  // Editor hydration + selection tracking are handled by TipTap / useCtcEditor
+  // now (it seeds the document from `content` and re-seeds on external changes),
+  // so the old manual innerHTML re-seed + selectionchange caret-stash effects are
+  // gone — inserts (`.focus().insertContent()`) land at the editor's last caret.
 
   // Close on Escape
   useEffect(() => {
@@ -616,7 +548,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       regulatory,
       segment: segments.length ? segments.join(', ') : null,
       file_path: null,
-      content: editorRef.current?.innerHTML ?? content ?? null,
+      content: ted.editor?.getHTML() ?? content ?? null,
       header_config: headerConfig,
       footer_config: footerConfig,
     };
@@ -648,7 +580,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   // Flush the live editor HTML into state before unmounting the step-2 editor,
   // so returning to step 2 re-hydrates with the user's latest edits rather than
   // the last loaded snapshot (the editor is otherwise uncontrolled — QA #40).
-  const goBack = () => { if (editorRef.current) setContent(editorRef.current.innerHTML); setStep(1); };
+  const goBack = () => { if (ted.editor) setContent(ted.editor.getHTML()); setStep(1); };
 
   const handleSave = async () => {
     if (!validateStep1()) {
@@ -955,6 +887,18 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                   modal's CSS transform traps it inside the modal box. */}
               {(() => { const editorShell = (
               <div className={`tdw-editor-shell ${fullPage ? 'tdw-editor-shell-full' : ''}`}>
+                {/* ProseMirror + toolbar base styles for the TipTap editor content. */}
+                <style>{CTC_EDITOR_CSS}</style>
+                {/* Formatting loader — shown only for LARGE documents while a
+                    format command applies (painted a frame before the op runs),
+                    so the user sees it's working. Small docs are instant. */}
+                {editorBusy && (
+                  <div style={{ position: 'absolute', inset: 0, zIndex: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, background: 'rgba(236,253,255,.74)', backdropFilter: 'blur(2px)' }}>
+                    <svg className="tdw-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.6" strokeLinecap="round" style={{ display: 'block' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                    <div style={{ fontSize: 13.5, fontWeight: 800, color: '#0e7490', letterSpacing: '.02em' }}>Applying formatting…</div>
+                    <div style={{ fontSize: 11, fontWeight: 500, color: '#5e7888' }}>Large document — this can take a moment.</div>
+                  </div>
+                )}
                 <div className="tdw-editor-head">
                   <div className="tdw-editor-title">
                     <span className="tdw-editor-title-ico">
@@ -1018,7 +962,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     {/* Full Page — expands the drafting area to fill the screen
                         (and collapses back). Lets the user draft long content
                         without the modal frame cramping the editor. */}
-                    <button type="button" className={`tdw-editor-btn ${fullPage ? 'is-on' : ''}`} onClick={() => { if (editorRef.current) setContent(editorRef.current.innerHTML); setFullPage(v => !v); }} title={fullPage ? 'Exit full page' : 'Edit in full page'}>
+                    <button type="button" className={`tdw-editor-btn ${fullPage ? 'is-on' : ''}`} onClick={() => { if (ted.editor) setContent(ted.editor.getHTML()); setFullPage(v => !v); }} title={fullPage ? 'Exit full page' : 'Edit in full page'}>
                       {fullPage ? (
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 14h6v6" /><path d="M20 10h-6V4" /><path d="M14 10l7-7" /><path d="M3 21l7-7" /></svg>
                       ) : (
@@ -1118,25 +1062,23 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     footer={footerConfig} setFooter={setFooterConfig}
                     uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo"
                   >
-                    <div
-                      ref={editorRef}
-                      className="tdw-editor"
-                      contentEditable
-                      suppressContentEditableWarning
-                      // Browser spell-check re-scans the whole editable region on
-                      // every DOM mutation — on a large draft (tens of thousands of
-                      // chars) that made bold/italic on a big selection crawl. Off
-                      // here keeps formatting instant on big documents.
-                      spellCheck={false}
-                      role="textbox"
-                      aria-multiline="true"
-                      aria-label="Document content"
-                    />
+                    <div className="tdw-editor" style={{ position: 'relative' }}>
+                      {/* Until TipTap has booted + parsed the (possibly large)
+                          document, show a loader so the editor never looks blank
+                          while it prepares — matters most on a slower server. */}
+                      {!ted.editor && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '48px 20px', color: '#0e7490' }}>
+                          <svg className="tdw-spin" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                          <div style={{ fontSize: 12.5, fontWeight: 700 }}>Preparing editor…</div>
+                        </div>
+                      )}
+                      <CtcEditorContent editor={ted.editor} />
+                    </div>
                   </HeaderFooterPanel>
                 </div>
                 <div className="tdw-editor-foot" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span className="tdw-editor-foot-hint">ℹ Placeholders auto-fill on document generation</span>
-                  <TdwCharCounter editorRef={editorRef} baseLength={(content ?? '').length} remountKey={fullPage} />
+                  <TdwCharCounter length={(content ?? '').length} />
                 </div>
               </div>
               ); return fullPage ? createPortal(editorShell, document.body) : editorShell; })()}
@@ -1470,12 +1412,15 @@ const TDW_CSS = `
 
 /* ── Editor (step 2) ── */
 .tdw-editor-shell {
+  position: relative;
   border: 1px solid rgba(6,182,212,.20);
   border-radius: 14px;
   overflow: hidden;
   background: #fff;
   display: flex; flex-direction: column;
 }
+.tdw-spin { animation: tdwSpin .7s linear infinite; will-change: transform; transform: translateZ(0); }
+@keyframes tdwSpin { from { transform: translateZ(0) rotate(0deg); } to { transform: translateZ(0) rotate(360deg); } }
 /* Full-page drafting — pops the editor out to fill the viewport. Sits above
    the modal overlay (200000) but below the Placeholder/Table/Clause pickers
    (260000+) so those still open on top while in full page. */
@@ -1739,29 +1684,9 @@ const TDW_RENDER_MAX_CHARS = 1000000;
  * that whole-tree re-render was the editor lag (QA #40). `baseLength` seeds the
  * count from freshly-loaded content; `remountKey` (the full-page flag) makes the
  * listener re-attach when the editor element is re-created by the portal. */
-function TdwCharCounter({ editorRef, baseLength, remountKey }: {
-  editorRef: RefObject<HTMLDivElement | null>;
-  baseLength: number;
-  remountKey: unknown;
-}) {
-  const [length, setLength] = useState(baseLength);
-  // Reflect a programmatic content load / flush (edit-mode open, full-page toggle).
-  useEffect(() => { setLength(baseLength); }, [baseLength, remountKey]);
-  // Live-track edits straight from the DOM without touching parent state.
-  // DEBOUNCED: reading el.innerHTML serializes the ENTIRE editor DOM, so doing it
-  // on every keystroke/format made a large draft lag. We now recompute ~300ms
-  // after the last edit, keeping typing and bold/italic on big selections snappy.
-  useEffect(() => {
-    const el = editorRef.current;
-    if (!el) return;
-    let t: ReturnType<typeof setTimeout> | null = null;
-    const update = () => setLength(el.innerHTML.length);
-    const schedule = () => { if (t) clearTimeout(t); t = setTimeout(update, 300); };
-    update();
-    el.addEventListener('input', schedule);
-    return () => { if (t) clearTimeout(t); el.removeEventListener('input', schedule); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remountKey]);
+function TdwCharCounter({ length }: { length: number }) {
+  // `length` = the current HTML length, fed from the parent's `content` state
+  // (TipTap's onChange keeps it debounced/current). No DOM reads here anymore.
   const pct = length / TDW_RENDER_MAX_CHARS;
   const over = length > TDW_RENDER_MAX_CHARS;
   const color = over ? '#e11d48' : pct > 0.8 ? '#d97706' : '#5e7888';
