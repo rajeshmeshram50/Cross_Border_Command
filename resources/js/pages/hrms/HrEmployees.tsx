@@ -2222,6 +2222,10 @@ export default function HrEmployees() {
                     style={{
                       borderRadius: 14,
                       border: '1px solid var(--vz-border-color)',
+                      // No top border: the accent strip below is positioned at
+                      // top:0 of the padding box, so a 1px top border renders
+                      // as a white gap above the coloured line.
+                      borderTopWidth: 0,
                       padding: '11px 15px',
                       position: 'relative',
                       overflow: 'hidden',

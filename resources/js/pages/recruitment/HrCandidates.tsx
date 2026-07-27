@@ -324,14 +324,14 @@ export default function HrCandidates() {
               </div>
             )}
 
-            <Row className="g-2 mb-2 align-items-stretch rec-page-kpis">
+            <Row className="g-3 mb-3 align-items-stretch rec-page-kpis">
               {KPI_CARDS.map(k => (
                 <Col key={k.key} xl={3} md={6} sm={6} xs={12}>
                   <div className="rec-kpi-card h-100">
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>
-                      <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value}</span>
+                      <span className="rec-kpi-num">{k.value}</span>
                     </div>
                     <span className="rec-kpi-icon" style={{ background: k.gradient }}>
                       <i className={k.icon} />

@@ -262,14 +262,14 @@ export default function HrBroadcastCentre() {
             {/* KPI strip — 4 even columns at md+ so the cards stretch the
                 full width (Total / Draft / Published / High Priority). Drops
                 to 2 at sm, 1 at xs. */}
-            <Row className="g-2 mb-3 align-items-stretch rec-page-kpis row-cols-1 row-cols-sm-2 row-cols-md-4">
+            <Row className="g-3 mb-3 align-items-stretch rec-page-kpis row-cols-1 row-cols-sm-2 row-cols-md-4">
               {KPI_CARDS.map(k => (
                 <Col key={k.label}>
                   <div className="rec-kpi-card h-100">
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>
-                      <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value}</span>
+                      <span className="rec-kpi-num">{k.value}</span>
                     </div>
                     <span className="rec-kpi-icon" style={{ background: k.gradient }}>
                       <i className={k.icon} />

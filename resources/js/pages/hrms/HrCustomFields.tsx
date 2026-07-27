@@ -185,15 +185,9 @@ export default function HrCustomFields() {
     <Row>
       <Col xs={12} className="cf-page">
         <style>{`
-          /* KPI hover — lift + indigo glow, smooth transitions */
-          .cf-page .cf-kpi-tile {
-            transition: transform 180ms ease, box-shadow 200ms ease, border-color 180ms ease;
-          }
-          .cf-page .cf-kpi-tile:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 12px 26px rgba(99, 102, 241, 0.20), 0 4px 10px rgba(15, 23, 42, 0.06);
-            border-color: rgba(99, 102, 241, 0.45) !important;
-          }
+          /* KPI tiles are the shared .rec-kpi-card component now — their
+             surface, hover lift and dark-mode treatment all live in
+             recruitment.css, so no page-local overrides here. */
           .cf-page .cf-back-btn { transition: background 150ms ease, color 150ms ease, border-color 150ms ease; }
           .cf-page .cf-back-btn:hover { background: #eef2ff !important; border-color: #c7d2fe !important; }
 
@@ -203,21 +197,10 @@ export default function HrCustomFields() {
           [data-bs-theme="dark"] .cf-page .cf-filter-card,
           [data-layout-mode="dark"] .cf-page .cf-filter-card,
           [data-bs-theme="dark"] .cf-page .cf-table-card,
-          [data-layout-mode="dark"] .cf-page .cf-table-card,
-          [data-bs-theme="dark"] .cf-page .cf-kpi-tile,
-          [data-layout-mode="dark"] .cf-page .cf-kpi-tile {
+          [data-layout-mode="dark"] .cf-page .cf-table-card {
             background: #1f2937 !important;
             border-color: rgba(255, 255, 255, 0.08) !important;
           }
-          [data-bs-theme="dark"] .cf-page .cf-kpi-tile:hover,
-          [data-layout-mode="dark"] .cf-page .cf-kpi-tile:hover {
-            box-shadow: 0 12px 28px rgba(99, 102, 241, 0.45), 0 4px 10px rgba(0, 0, 0, 0.3);
-            border-color: rgba(139, 92, 246, 0.55) !important;
-          }
-          [data-bs-theme="dark"] .cf-page .cf-kpi-value,
-          [data-layout-mode="dark"] .cf-page .cf-kpi-value { color: #f8fafc !important; }
-          [data-bs-theme="dark"] .cf-page .cf-kpi-label,
-          [data-layout-mode="dark"] .cf-page .cf-kpi-label { color: rgba(255, 255, 255, 0.65) !important; }
 
           [data-bs-theme="dark"] .cf-page .cf-back-btn,
           [data-layout-mode="dark"] .cf-page .cf-back-btn {
@@ -363,21 +346,23 @@ export default function HrCustomFields() {
             </button>
           </div>
 
-          {/* KPI strip */}
-          <div className="row g-2 mb-3">
+          {/* KPI strip — uses the shared .rec-page-kpis / .rec-kpi-card
+              component from recruitment.css so the tiles are identical to the
+              Employee master: label top-left, value directly under it, and the
+              gradient icon tile on the RIGHT. The old layout mirrored this
+              (icon left, right-aligned value) which broke module consistency. */}
+          <div className="row g-3 mb-3 align-items-stretch rec-page-kpis">
             {KPI.map(k => (
               <div key={k.label} className="col-xl col-md-4 col-sm-6">
-                <div className="cf-kpi-tile" style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden', cursor: 'default' }}>
-                  <div style={{ height: 4, background: k.gradient }} />
-                  <div className="d-flex align-items-center justify-content-between" style={{ padding: '12px 14px' }}>
-                    <span style={{ width: 42, height: 42, borderRadius: 10, background: k.gradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
-                    </span>
-                    <div style={{ textAlign: 'right' }}>
-                      <div className="cf-kpi-value" style={{ fontSize: 26, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
-                      <div className="cf-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 4 }}>{k.label}</div>
-                    </div>
+                <div className="rec-kpi-card h-100">
+                  <span className="rec-kpi-strip" style={{ background: k.gradient }} />
+                  <div className="rec-kpi-text">
+                    <span className="rec-kpi-label">{k.label}</span>
+                    <span className="rec-kpi-num">{k.value}</span>
                   </div>
+                  <span className="rec-kpi-icon" style={{ background: k.gradient }}>
+                    <i className={k.icon} />
+                  </span>
                 </div>
               </div>
             ))}

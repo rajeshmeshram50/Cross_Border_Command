@@ -192,7 +192,7 @@ export default function HrExitManagement() {
                       <span className="rec-kpi-label">{k.label}</span>
                       {listLoading
                         ? <Shimmer height={28} width={56} style={{ marginTop: 4 }} />
-                        : <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value}</span>}
+                        : <span className="rec-kpi-num">{k.value}</span>}
                     </div>
                     <span className="rec-kpi-icon" style={{ background: k.gradient }}>
                       <i className={k.icon} />
