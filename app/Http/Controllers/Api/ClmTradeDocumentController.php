@@ -42,7 +42,8 @@ class ClmTradeDocumentController extends Controller
         // Branch-scoped read: branch users see globals + client-level rows +
         // their own branch's rows; sibling branches stay hidden.
         $branchFilter = $request->integer('branch_id') ?: null;
-        $nameQuery = ClmTradeDocName::query()->orderBy('id');
+        // Newest first — the latest-added type surfaces at the top of the list.
+        $nameQuery = ClmTradeDocName::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($nameQuery, $user, $branchFilter);
         $rows = $nameQuery->get();
 
@@ -191,7 +192,8 @@ class ClmTradeDocumentController extends Controller
         }
         // Branch-scoped read (globals + client-level + own branch; siblings hidden).
         $branchFilter = $request->integer('branch_id') ?: null;
-        $libQuery = ClmTradeDocLibrary::query()->orderBy('id');
+        // Newest first — the latest-drafted document surfaces at the top.
+        $libQuery = ClmTradeDocLibrary::query()->orderBy('id', 'desc');
         MasterVisibility::applyReadScope($libQuery, $user, $branchFilter);
         $rows = $libQuery->get();
 

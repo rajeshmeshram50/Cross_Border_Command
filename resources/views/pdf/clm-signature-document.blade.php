@@ -150,10 +150,26 @@
 
       .document-content p  { margin: 0 0 8px 0; line-height: 1.5; }
       .document-content li { line-height: 1.5; }
-      .document-content h1, .document-content h2, .document-content h3 { margin: 14px 0 8px; color: #0f172a; }
-      .document-content table { width: 100%; border-collapse: collapse; }
+      /* Inserted Clause-Library / rich content uses <div>-per-line and <br>
+         (contentEditable output). dompdf gives those NO spacing/line-height of
+         their own, so lines ran together and overlapped in the PDF (CBC-438).
+         Give every block the same proportional line box + paragraph gap as <p>. */
+      .document-content div { margin: 0 0 8px 0; line-height: 1.5; }
+      .document-content span, .document-content font { line-height: 1.5; }
+      /* Headings need an explicit line-height + capped size — without it dompdf's
+         default (tight) box overlaps a wrapped clause name / heading. */
+      .document-content h1, .document-content h2, .document-content h3 { margin: 14px 0 8px; color: #0f172a; line-height: 1.3; }
+      .document-content h1 { font-size: 20px; }
+      .document-content h2 { font-size: 17px; }
+      .document-content h3 { font-size: 15px; }
+      /* table-layout:fixed keeps columns at an even width so a long/unbreakable
+         string in one cell can't blow the column out past the page (dompdf has
+         no auto-wrap for such tokens). word-wrap is the legacy property name
+         dompdf actually honours — overflow-wrap/word-break are kept for parity
+         with the on-screen editor. */
+      .document-content table { width: 100%; border-collapse: collapse; table-layout: fixed; }
       .document-content table td,
-      .document-content table th { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: top; }
+      .document-content table th { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; }
       .document-content img { max-width: 100%; }
       .document-content ul, .document-content ol { margin: 0 0 8px 24px; }
 
