@@ -363,7 +363,11 @@ export default function ClmCaseToCasePage() {
               <div style={{ fontSize: 11, color: t.textMuted, maxWidth: 300, lineHeight: 1.6 }}>Click <b>+ Create CTC Agreement</b> to add one.</div>
             </div>
           ) : (
-            <div style={{ overflowX: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <>
+            {/* Only the table scrolls horizontally; the pager lives OUTSIDE this
+                container so it never inherits the table's 1380px min-width and
+                stays pinned to the visible card width when the table scrolls. */}
+            <div style={{ overflowX: 'auto', flex: 1 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1380 }}>
                 <thead><tr>
                   {['SR NO', 'CTC ID', 'CTC DATE', 'AGREEMENT TITLE', 'OUR ORGANISATION', 'COUNTERPARTIES', 'CREATED BY', 'INTERNAL APPROVAL', 'EFF. DATE', 'EXPIRY DATE', 'CP SIGNED DATE', 'ACTION'].map((h, i) => (
@@ -434,7 +438,8 @@ export default function ClmCaseToCasePage() {
                   })}
                 </tbody>
               </table>
-              <div className="tc-wl-pag" style={{ margin: 0, marginTop: 'auto' }}>
+              </div>
+              <div className="tc-wl-pag" style={{ margin: 0 }}>
                 <span className="tc-wl-info">
                   {list.length === 0
                     ? 'No records'
@@ -458,7 +463,7 @@ export default function ClmCaseToCasePage() {
                   </div>
                 </div>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
