@@ -7189,20 +7189,49 @@
 /* Regularization Requests header — match the Logs & Requests table header
    (CBC #37): a subtle light band + uppercase muted labels in light mode, and a
    subtle dark band in dark mode. */
+/* Regularization Requests table — header AND body rhythm copied from the
+   Recruitment list table (.rec-list-table) so it matches the Logs & Requests
+   table and every other HRMS list. The markup dropped .table-sm / .table-light
+   for this; see RegularizationApprovals.tsx. */
 .reg-req-table thead th {
-  background: #f9fafb;
+  padding: 13px 12px;
+  background: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
   color: var(--vz-secondary-color);
   text-transform: uppercase;
-  font-weight: 800;
+  font-weight: 700;
   font-size: 10.5px;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid #f1f2f4;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid #ececf2;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 [data-bs-theme="dark"] .reg-req-table thead th,
 [data-layout-mode="dark"] .reg-req-table thead th {
-  background: rgba(255,255,255,0.02);
-  border-bottom-color: var(--vz-border-color);
-  color: rgba(255,255,255,0.60);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
+    var(--vz-card-bg, #1a1d29) 100%);
+  border-bottom-color: var(--vz-border-color, #2c3242);
+  color: rgba(255,255,255,0.70);
+}
+.reg-req-table tbody td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+.reg-req-table tbody tr:last-child td { border-bottom: 0; }
+[data-bs-theme="dark"] .reg-req-table tbody td,
+[data-layout-mode="dark"] .reg-req-table tbody td {
+  border-bottom-color: color-mix(in srgb, #ffffff 6%, transparent);
+}
+.reg-req-table tbody tr { transition: background .14s ease; }
+.reg-req-table tbody tr:hover td {
+  background: linear-gradient(180deg,
+    rgba(134,92,226,0.04) 0%,
+    rgba(134,92,226,0.02) 100%);
+}
+[data-bs-theme="dark"] .reg-req-table tbody tr:hover td,
+[data-layout-mode="dark"] .reg-req-table tbody tr:hover td {
+  background: rgba(134,92,226,0.08);
 }
 
 /* WorklistPager footer — retheme from the shared violet to this page's teal

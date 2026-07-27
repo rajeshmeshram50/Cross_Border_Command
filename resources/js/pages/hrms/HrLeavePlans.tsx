@@ -2588,40 +2588,10 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
             </div>
           </div>
         )}
-        <RadioRow
-          selected={cfg.mode === 'attendance'}
-          onSelect={() => update({ mode: 'attendance' })}
-          label="Leave accrues based on attendance"
-        />
-        {cfg.mode === 'attendance' && (
-          <div className="lts-nested-block">
-            <div className="d-flex align-items-center gap-2 flex-wrap">
-              <span className="text-muted" style={{ fontSize: 12.5 }}>For every</span>
-              <input
-                type="number"
-                className="lts-input"
-                style={{ width: 80 }}
-                placeholder="Ex: 8"
-                min={1}
-                max={31}
-                value={cfg.attendanceDaysWorked || ''}
-                onChange={e => update({ attendanceDaysWorked: Number(e.target.value) || 0 })}
-              />
-              <span className="text-muted" style={{ fontSize: 12.5 }}>
-                days worked in a month, accrue <strong>{Number((cfg.yearlyQuota / 12).toFixed(2))}</strong> day(s) of leave for that month
-              </span>
-            </div>
-            {(cfg.attendanceDaysWorked < 0 || cfg.attendanceDaysWorked > 31) && (
-              <div className="text-danger mt-2 d-flex align-items-center gap-1" style={{ fontSize: 12 }}>
-                <i className="ri-error-warning-line" /> Days worked in a month must be between 1 and 31.
-              </div>
-            )}
-            <div className="text-muted" style={{ fontSize: 11.5, marginTop: 4 }}>
-              <i className="ri-information-line me-1" />
-              The monthly credit is the yearly quota ÷ 12 ({cfg.yearlyQuota} ÷ 12), applied when the worked-days target is met that month.
-            </div>
-          </div>
-        )}
+        {/* The "Leave accrues based on attendance" mode was removed from the UI
+            on request. The 'attendance' value still exists in the config type
+            and on the server, so plans already saved with it keep working —
+            it simply can no longer be picked for new or edited plans. */}
         <RadioRow
           selected={cfg.mode === 'immediate'}
           onSelect={() => update({ mode: 'immediate', attendanceDaysWorked: 0 })}

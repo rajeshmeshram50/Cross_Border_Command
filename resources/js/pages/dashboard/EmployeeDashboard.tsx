@@ -71,7 +71,11 @@ function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
         padding: '16px 18px 14px',
         boxShadow: '0 1px 2px rgba(16,24,40,0.05), 0 14px 34px -18px rgba(64,81,137,0.26)',
         border: '1px solid var(--vz-border-color)',
-        background: 'var(--vz-card-bg)',
+        // Surface colour is NOT set here on purpose — see the `.emp-kpi` rule in
+        // the style block below. An inline background would beat the class, and
+        // var(--vz-card-bg) does not resolve to white on a plain div (only
+        // inside a .card), which is what left these tiles looking grey next to
+        // the white Compensation card.
         position: 'relative',
         overflow: 'hidden',
         height: '100%',
@@ -492,12 +496,16 @@ export default function EmployeeDashboard() {
         [data-layout-mode="dark"] .emp-list-body > div:hover { background: rgba(255,255,255,0.04); box-shadow: inset 3px 0 0 0 rgba(102,145,231,0.9); }
 
         /* ── KPI tiles ─────────────────────────────────────────────────────
-           The tiles deliberately carry NO surface overlay: their background is
-           the plain var(--vz-card-bg) set inline, exactly like every other card
-           on this dashboard. A diagonal white-to-transparent "glass" wash used
-           to sit on top of them, which made the tiles read as a grey gradient
-           next to the flat white Compensation / list cards.
+           Flat white surface, matching every other card on this dashboard.
+           Two things used to make these read as grey: a diagonal
+           white-to-transparent "glass" wash layered on top (removed), and an
+           inline background of var(--vz-card-bg), which only resolves to white
+           inside a .card — on a plain div it falls through to the page tint.
+           Hence the literal #ffffff here with the themed surface under [dark].
            ::after is the light streak that sweeps across on hover only. */
+        .emp-kpi { background: #ffffff; }
+        [data-bs-theme="dark"] .emp-kpi,
+        [data-layout-mode="dark"] .emp-kpi { background: var(--vz-card-bg, #1a1d29); }
         .emp-kpi::after {
           content: '';
           position: absolute;
