@@ -334,6 +334,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
    * page so the action behaves identically inside and outside the matrix). */
   const openConvert = (q: QuotationRow) => {
     if (!q.id) return;
+    // Block until the PI list has loaded — during the post-refresh load window
+    // `pis` is empty, so the "already has a PI" blocker below would falsely pass
+    // and let a second PI be created. Guard here too (button is also disabled).
+    if (loading) { toast.info('Please wait', 'Still loading this opportunity’s latest status…'); return; }
     // One PI per lead — if a live PI already exists, block conversion and
     // point the user at editing the existing PI (not deleting it).
     const blocker = pis.find(p => (p.status ?? '').toLowerCase() !== 'cancelled');
@@ -642,6 +646,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             <button
               type="button"
               className="s5-create-btn s5-create-q"
+              // HARD-disable while the opportunity's latest quotation/PI status is
+              // still loading (or an action is mid-flight). The onClick guard alone
+              // left the button clickable during the ~2-3s post-refresh load window,
+              // so a user could fire Create before livePisCount hydrated → duplicate.
+              disabled={loading || anyActing}
               style={(loading || anyActing || locked || livePisCount > 0) ? { opacity: 0.5, cursor: (loading || anyActing) ? 'wait' : 'not-allowed' } : undefined}
               title={anyActing ? 'Please wait — an action is in progress…' : loading ? 'Checking the latest quotation / PI status…' : locked ? 'Locked — the Proforma Invoice has been signed' : (livePisCount > 0 ? 'A Proforma Invoice already exists for this opportunity' : undefined)}
               onClick={() => {
@@ -655,8 +664,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                 if (livePisCount > 0) { toast.warning('PI already created', 'A Proforma Invoice already exists for this opportunity — you cannot create a new quotation against it.'); return; }
                 onCreate('quotation');
               }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Create Quotation
+              {loading
+                ? <span className="s5-icn-spin" role="status" aria-label="Loading latest status…" />
+                : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>}
+              {loading ? 'Loading…' : 'Create Quotation'}
             </button>
             <span className="s5-create-div" />
             {/* One PI per opportunity: once a (non-cancelled) PI exists the
@@ -665,6 +676,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
             <button
               type="button"
               className="s5-create-btn s5-create-p"
+              // HARD-disable during the load window (and while acting) so a fast
+              // click right after refresh can't create a second PI before the
+              // existing-PI status has hydrated. Business-rule cases (already has
+              // PI / locked / docs pending) stay soft so their "why" toast shows.
+              disabled={loading || anyActing}
               style={(loading || anyActing || locked || livePisCount > 0 || mandatoryIncomplete) ? { opacity: 0.5, cursor: (loading || anyActing) ? 'wait' : 'not-allowed' } : undefined}
               title={anyActing ? 'Please wait — an action is in progress…' : loading ? 'Checking the latest quotation / PI status…' : undefined}
               onClick={() => {
@@ -691,8 +707,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                 onCreate('pi');
               }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Create PI
+              {loading
+                ? <span className="s5-icn-spin" role="status" aria-label="Loading latest status…" />
+                : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>}
+              {loading ? 'Loading…' : 'Create PI'}
             </button>
           </div>
         </div>
@@ -794,8 +812,8 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               <button
                                 type="button" className="s5-convert2"
                                 title={piLocked ? 'A Proforma Invoice already exists — only one PI per lead' : 'Convert to PI'}
-                                onClick={() => { if (piLocked) return; openConvert(r as QuotationRow); }}
-                                disabled={anyActing || piLocked}
+                                onClick={() => { if (loading || piLocked) return; openConvert(r as QuotationRow); }}
+                                disabled={anyActing || piLocked || loading}
                                 style={piLocked ? { opacity: 0.45, cursor: 'not-allowed' } : undefined}
                               >
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
