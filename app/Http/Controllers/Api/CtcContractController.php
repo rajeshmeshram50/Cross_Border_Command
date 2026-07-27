@@ -11,6 +11,7 @@ use App\Support\CtcAuditTime;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 
 /**
  * CLM Operations · Without Shipment ID → Case-to-Case (CTC) Contracts.
@@ -234,6 +235,45 @@ class CtcContractController extends Controller
         if (str_contains($type, 'supplier') || str_contains($type, 'vendor')) return 'Supplier';
         if (str_contains($type, 'customer') || str_contains($type, 'buyer')) return 'Customer';
         return '';
+    }
+
+    /** True when a counterparty's country is India (Domestic). */
+    private function cpIsDomestic(array $cp): bool
+    {
+        return strtolower(trim((string) ($cp['country'] ?? ''))) === 'india';
+    }
+
+    /**
+     * Enforce the CTC counterparty category rule server-side (client filter is a
+     * convenience only): the Customer and the Consignee on one agreement must
+     * share ONE category — both Domestic (India) or both International. Supplier
+     * is exempt (may be either), and "Our Organisation" is not a counterparty.
+     * Throws a 422 ValidationException on mismatch.
+     */
+    private function assertCounterpartyCategories(?array $cps): void
+    {
+        $rows     = is_array($cps) ? $cps : [];
+        $customer = null; $consignee = null;
+        foreach ($rows as $cp) {
+            if (!is_array($cp)) continue;
+            $label = $this->cpRoleLabel($cp);
+            // Fall back to the display badge when source_type/role is blank.
+            if ($label === '') {
+                $badge = strtolower((string) ($cp['badge'] ?? ''));
+                if (str_contains($badge, 'consignee')) $label = 'Consignee';
+                elseif (str_contains($badge, 'buyer') || str_contains($badge, 'customer')) $label = 'Customer';
+            }
+            if ($label === 'Customer')  $customer  = $cp;
+            if ($label === 'Consignee') $consignee = $cp;
+        }
+        if ($customer === null || $consignee === null) return; // rule needs both
+        if ($this->cpIsDomestic($customer) !== $this->cpIsDomestic($consignee)) {
+            $custCat = $this->cpIsDomestic($customer) ? 'Domestic (India)' : 'International';
+            $consCat = $this->cpIsDomestic($consignee) ? 'Domestic (India)' : 'International';
+            throw ValidationException::withMessages([
+                'counterparties' => "Customer and Consignee must be in the same category. Customer is {$custCat} but Consignee is {$consCat}.",
+            ]);
+        }
     }
 
     /**
@@ -779,6 +819,8 @@ class CtcContractController extends Controller
             'reminder_days'      => 'nullable|integer',
         ]);
 
+        $this->assertCounterpartyCategories($data['counterparties'] ?? []);
+
         // Each approver carries its own decision so the contract only counts
         // as approved once EVERY selected approver has approved (see approve()).
         // `status` starts 'pending'; `acted_at` stamps when they decide.
@@ -869,6 +911,9 @@ class CtcContractController extends Controller
             'eff_date'       => 'nullable|date',
             'end_date'       => 'nullable|date',
         ]);
+        if (array_key_exists('counterparties', $data)) {
+            $this->assertCounterpartyCategories($data['counterparties'] ?? []);
+        }
         $row->update($data);
         return response()->json(['status' => true, 'data' => $this->shapeList($row->fresh())]);
     }
@@ -1052,6 +1097,10 @@ class CtcContractController extends Controller
             'days_to_approve'   => 'nullable|integer',
             'reminder_days'     => 'nullable|integer',
         ]);
+
+        if (array_key_exists('counterparties', $data)) {
+            $this->assertCounterpartyCategories($data['counterparties'] ?? []);
+        }
 
         if (array_key_exists('content', $data))         $row->content = $data['content'];
         if (array_key_exists('title', $data))           $row->title = $data['title'];
