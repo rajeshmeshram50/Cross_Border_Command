@@ -999,7 +999,20 @@ class ClmAgreementController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        $request->validate(['docx' => 'required|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB]);
+        // Do NOT use `mimes:doc,docx`: a .docx is a ZIP container, and
+        // php-fileinfo on many servers reports it as `application/zip` (or
+        // `application/octet-stream`), so `mimes:docx` rejects perfectly valid
+        // Word files with a 422 ("The docx field must be a file of type: doc,
+        // docx."). Validate file + size + the client extension instead; a
+        // genuinely broken file still fails safely later when PhpWord reads it.
+        // (Same fix as ClmTradeDocumentController::validateDocxUpload.)
+        $request->validate(['docx' => ['required', 'file', 'max:' . self::DOCX_MAX_KB]]);
+        $uploadExt = strtolower((string) $request->file('docx')->getClientOriginalExtension());
+        if (!in_array($uploadExt, ['doc', 'docx'], true)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'docx' => 'The file must be a Word document (.doc or .docx).',
+            ]);
+        }
 
         // Converting a Word file to editor HTML (docxToHtml) loads the whole
         // document.xml into memory + DOMDocument — heavy for a big file. Without

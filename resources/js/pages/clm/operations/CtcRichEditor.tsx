@@ -4,7 +4,13 @@ import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
 import Link from '@tiptap/extension-link';
-import { TextStyle, FontSize } from '@tiptap/extension-text-style';
+import { TextStyle, FontSize, Color, BackgroundColor } from '@tiptap/extension-text-style';
+import Subscript from '@tiptap/extension-subscript';
+import Superscript from '@tiptap/extension-superscript';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TableHeader } from '@tiptap/extension-table-header';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -80,6 +86,17 @@ export function useCtcEditor(opts: { value: string; onChange: (html: string) => 
       Link.configure({ openOnClick: false, autolink: true }),
       TextStyle,
       FontSize,
+      Color,
+      BackgroundColor,
+      Subscript,
+      Superscript,
+      // Tables — required by the Agreement / Trade Doc editors (Insert Table +
+      // tables carried in from an uploaded DOCX). Harmless for CTC (no table
+      // button in its toolbar). resizable off keeps the serialized HTML clean.
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
       ParagraphIndent,
     ],
     content: value || '<p></p>',

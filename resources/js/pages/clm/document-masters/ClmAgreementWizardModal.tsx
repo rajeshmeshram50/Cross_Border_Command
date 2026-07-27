@@ -17,6 +17,8 @@ import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
 } from '../../hrms/doc-templates/HeaderFooterPanel';
+import { useCtcEditor, CtcEditorContent, CTC_EDITOR_CSS, type CtcEditor } from '../operations/CtcRichEditor';
+import type { Editor } from '@tiptap/react';
 
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → Agreements Master → Library → "Add New Agreement" wizard
@@ -135,6 +137,11 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
 
   // Step 2 fields
   const [content, setContent]                 = useState('');
+  // Rich-text editor engine — TipTap (same as the CTC Draft Agreement editor),
+  // replacing the old contentEditable + document.execCommand which froze the tab
+  // when formatting large (200-300 page) agreements. HTML in / HTML out, so the
+  // backend contract (content = HTML string) is unchanged.
+  const agr: CtcEditor = useCtcEditor({ value: content, onChange: setContent });
   const [placeholderOpen, setPlaceholderOpen] = useState(false);
   const [clauseOpen, setClauseOpen]           = useState(false);
   /* Insert Table / Insert HR — same pattern Trade Doc uses. Caret is
@@ -143,11 +150,10 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
   const [hrPickerOpen, setHrPickerOpen]       = useState(false);
 
-  // Editor state — contentEditable + execCommand, mirrors Trade Doc modal.
-  const editorRef        = useRef<HTMLDivElement | null>(null);
+  // Editor state — the TipTap engine lives in `agr` (above); these drive the
+  // font-size / block-format dropdowns only.
   const [fontSize, setFontSizeState] = useState('14');
   const [block, setBlockState]       = useState('p');
-  const lastRangeRef                  = useRef<Range | null>(null);
   const docxRef                       = useRef<HTMLInputElement | null>(null);
   // True while a Word doc is being uploaded/converted — drives the button
   // spinner so a slow (large-file) conversion shows progress.
@@ -185,100 +191,94 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
 
   const [quickAddTypeOpen, setQuickAddTypeOpen] = useState(false);
 
-  /* Rich-text helpers — execCommand is deprecated but the lightest path
-   * for a contentEditable div. preventDefault on the toolbar's mousedown
-   * keeps the editor's selection alive while a button is being clicked. */
-  const syncContent = () => {
-    if (editorRef.current) setContent(editorRef.current.innerHTML);
+  /* Rich-text helpers — now backed by the TipTap editor (agr.editor) instead of
+   * document.execCommand. TipTap owns a real document model + selection, so
+   * formatting a 200-300 page agreement is fast and never freezes the tab. The
+   * toolbar's execCommand-style command names are mapped to TipTap chains below
+   * so the existing toolbar JSX is unchanged. */
+  // Indent / outdent: nudge list nesting inside a list, else the ParagraphIndent
+  // margin-left attribute across the selection (mirrors the CTC editor).
+  const changeIndent = (delta: number) => {
+    const e = agr.editor; if (!e) return;
+    if (e.isActive('listItem')) {
+      const c = e.chain().focus();
+      (delta > 0 ? c.sinkListItem('listItem') : c.liftListItem('listItem')).run();
+      return;
+    }
+    const { state, view } = e;
+    const { from, to } = state.selection;
+    const tr = state.tr;
+    let changed = false;
+    state.doc.nodesBetween(from, to, (node, pos) => {
+      if (node.type.name !== 'paragraph' && node.type.name !== 'heading') return;
+      const cur = (node.attrs.indent as number) || 0;
+      const next = Math.max(0, Math.min(10, cur + delta));
+      if (next !== cur) { tr.setNodeMarkup(pos, undefined, { ...node.attrs, indent: next }); changed = true; }
+    });
+    if (changed) { view.dispatch(tr); e.commands.focus(); }
+  };
+  // On a very LARGE document a formatting command (touching a huge selection +
+  // the re-render) can still take a beat even in TipTap. Show a brief editor
+  // loader for those, painting it a frame BEFORE the command runs so the user
+  // sees "Applying formatting…". Small documents run inline (instant, no flash).
+  const [editorBusy, setEditorBusy] = useState(false);
+  const runFmt = (fn: () => void) => {
+    const big = (content?.length ?? 0) > 40000;
+    if (!big) { fn(); return; }
+    setEditorBusy(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      try { fn(); } finally { setEditorBusy(false); }
+    }));
   };
   const exec = (cmd: string, value?: string) => {
-    editorRef.current?.focus();
-    // indent/outdent otherwise wrap the block in a <blockquote>, which the
-    // editor styles as an italic quote. Force styleWithCSS so the browser
-    // applies a plain margin-left instead, keeping the text's own styling.
-    const needsCss = cmd === 'indent' || cmd === 'outdent';
-    if (needsCss) { try { document.execCommand('styleWithCSS', false, 'true'); } catch { /* not supported */ } }
-    document.execCommand(cmd, false, value);
-    if (needsCss) { try { document.execCommand('styleWithCSS', false, 'false'); } catch { /* not supported */ } }
-    syncContent();
-  };
-  const applyFontSize = (px: string) => {
-    editorRef.current?.focus();
-    document.execCommand('fontSize', false, '7');
-    editorRef.current?.querySelectorAll('font[size="7"]').forEach((f) => {
-      const span = document.createElement('span');
-      span.style.fontSize = `${px}px`;
-      span.innerHTML = (f as HTMLElement).innerHTML;
-      f.replaceWith(span);
+    const e = agr.editor; if (!e) return;
+    runFmt(() => {
+      const c = e.chain().focus();
+      switch (cmd) {
+        case 'bold':          c.toggleBold().run(); break;
+        case 'italic':        c.toggleItalic().run(); break;
+        case 'underline':     c.toggleUnderline().run(); break;
+        case 'strikeThrough': c.toggleStrike().run(); break;
+        case 'superscript':   c.toggleSuperscript().run(); break;
+        case 'subscript':     c.toggleSubscript().run(); break;
+        case 'foreColor':     c.setColor(value || '#000000').run(); break;
+        case 'hiliteColor':   c.setBackgroundColor(value || '#ffffff').run(); break;
+        case 'justifyLeft':   c.setTextAlign('left').run(); break;
+        case 'justifyCenter': c.setTextAlign('center').run(); break;
+        case 'justifyRight':  c.setTextAlign('right').run(); break;
+        case 'justifyFull':   c.setTextAlign('justify').run(); break;
+        case 'insertUnorderedList': c.toggleBulletList().run(); break;
+        case 'insertOrderedList':   c.toggleOrderedList().run(); break;
+        case 'indent':        changeIndent(1); break;
+        case 'outdent':       changeIndent(-1); break;
+        case 'undo':          c.undo().run(); break;
+        case 'redo':          c.redo().run(); break;
+        case 'removeFormat':  c.unsetAllMarks().run(); break;
+        default: break;
+      }
     });
-    syncContent();
   };
-  const applyBlock = (tag: string) => exec('formatBlock', `<${tag}>`);
+  const applyFontSize = (px: string) => { runFmt(() => { agr.editor?.chain().focus().setFontSize(`${px}px`).run(); }); };
+  const applyBlock = (tag: string) => {
+    const e = agr.editor; if (!e) return;
+    runFmt(() => {
+      const c = e.chain().focus();
+      if (tag === 'p') c.setParagraph().run();
+      else if (tag === 'h1' || tag === 'h2' || tag === 'h3') c.toggleHeading({ level: Number(tag[1]) as 1 | 2 | 3 }).run();
+      else if (tag === 'blockquote') c.toggleBlockquote().run();
+      else if (tag === 'pre') c.toggleCodeBlock().run();
+    });
+  };
   const insertLink = () => {
     const url = window.prompt('Enter URL', 'https://');
-    if (url) exec('createLink', url);
+    if (url) agr.editor?.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
   };
-  const stashSelection = () => {
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
-      lastRangeRef.current = sel.getRangeAt(0).cloneRange();
-    }
-    // Don't clobber the previous stash if the new selection is OUTSIDE
-    // the editor — that happens while a modal (Placeholder / Table /
-    // HR) is open. We want to remember the LAST in-editor caret.
-  };
-  /* Restore the stashed caret BEFORE executing the insertion command.
-   * Falls back to the END of the editor (collapsed range) when no
-   * stash exists yet — happens when the user opens a Placeholder / HR /
-   * Table modal without first clicking inside the body. End-of-editor
-   * is closer to user intent than the top-default `editor.focus()`. */
-  const restoreCaretForInsert = () => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    // preventScroll: focusing a contentEditable makes the browser scroll its
-    // container to the element's TOP before the caret is restored — which
-    // yanked a long draft back to the start of the page whenever a placeholder
-    // was inserted at the end. Restore focus without that scroll, then re-apply
-    // the stashed caret, so the view stays where the user was.
-    editor.focus({ preventScroll: true });
-    const stash = lastRangeRef.current;
-    const sel   = window.getSelection();
-    if (!sel) return;
-    if (stash && editor.contains(stash.startContainer)) {
-      sel.removeAllRanges();
-      sel.addRange(stash);
-    } else {
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      range.collapse(false);   // collapse to end
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
-  };
-  const rememberCaretAfterInsert = () => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const sel = window.getSelection();
-    if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
-      lastRangeRef.current = sel.getRangeAt(0).cloneRange();
-    }
-  };
-  const insertAtCaret = (text: string) => {
-    restoreCaretForInsert();
-    document.execCommand('insertText', false, text);
-    rememberCaretAfterInsert();
-    syncContent();
-  };
-  /* Drop generated HTML at the stashed caret position. Used by the
-   * Insert Table + Insert HR modals — execCommand('insertHTML') is
-   * more reliable than splicing nodes by hand and handles the case
-   * where the user's selection spans multiple existing nodes. */
-  const insertHtmlAtCaret = (html: string) => {
-    restoreCaretForInsert();
-    document.execCommand('insertHTML', false, html);
-    rememberCaretAfterInsert();
-    syncContent();
-  };
+  // TipTap keeps its own selection; `.focus()` on insert restores the last caret,
+  // so the old manual range stash/restore is no longer needed (kept as a no-op so
+  // the toolbar's onMouseDown handlers stay valid).
+  const stashSelection = () => {};
+  const insertAtCaret     = (text: string) => { agr.insertText(text); };
+  const insertHtmlAtCaret = (html: string) => { agr.insertHTML(html); };
 
   /* DOCX round-trip — mirrors the Trade Doc draft flow. Requires an
    * existing row so we have an id to scope the upload/download to. */
@@ -345,8 +345,8 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
         html = data?.html;
       }
       if (html) {
-        setContent(html);
-        if (editorRef.current) editorRef.current.innerHTML = html;
+        // setHTML re-seeds the TipTap document AND updates `content`.
+        agr.setHTML(html);
       }
       toast.success('Uploaded', file.name);
     } catch (e: any) {
@@ -392,49 +392,12 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     }
   }, [open, existing, brandedDefaults]);
 
-  /* Track the last caret position inside the body editor on every
-   * selectionchange so opening a child modal (Placeholder / Table /
-   * HR) doesn't clobber the in-editor caret. The listener only updates
-   * when the new selection is INSIDE the editor, so modal openings
-   * leave the stash untouched. */
-  useEffect(() => {
-    if (step !== 2) return;
-    const onSel = () => {
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount > 0 && editorRef.current?.contains(sel.anchorNode)) {
-        lastRangeRef.current = sel.getRangeAt(0).cloneRange();
-      }
-    };
-    document.addEventListener('selectionchange', onSel);
-    return () => document.removeEventListener('selectionchange', onSel);
-  }, [step]);
+  // TipTap owns its own selection, so the old manual caret-tracking listener is
+  // gone — inserts (`.focus().insertContent()`) land at the editor's last caret.
 
-  // When the user enters step 2, hydrate the contentEditable DOM from
-  // the `content` state. Mirrors the Trade Doc draft page — the editor
-  // node only exists in the tree on step 2 so this is the right place
-  // to seed its innerHTML.
-  useEffect(() => {
-    // Only re-seed the DOM when it actually differs from `content` — i.e. on
-    // step entry, fullPage toggle (portal remount) or an async load. During
-    // typing, onInput→syncContent already set `content` FROM the DOM, so the
-    // two are equal and we must NOT reassign innerHTML: doing so collapses the
-    // caret to position 0, which made every keystroke land at the start
-    // (text appearing right-to-left) and backspace jump to the first line.
-    // Never re-seed while the editor is FOCUSED (actively being edited): the DOM
-    // is the source of truth during typing/formatting, and reassigning innerHTML
-    // rebuilds the whole subtree and collapses the caret — the cause of the slow /
-    // unresponsive "formatting not applied immediately" behaviour (QA #26). Only
-    // re-seed on step entry / portal remount / async load (editor not focused).
-    if (step === 2 && editorRef.current
-        && document.activeElement !== editorRef.current
-        && editorRef.current.innerHTML !== (content ?? '')) {
-      editorRef.current.innerHTML = content ?? '';
-    }
-    // `fullPage` is a dep because toggling it portals the editor to/from
-    // <body>, remounting the contentEditable — re-push content so the draft
-    // body survives the switch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, content, fullPage]);
+  // Hydration is handled inside useCtcEditor (it seeds the TipTap document from
+  // `content` and re-seeds on external changes like DOCX upload / edit-load), so
+  // the old manual innerHTML re-seed effect is no longer needed.
 
   useEffect(() => { setTypes(initialTypes); }, [initialTypes]);
 
@@ -560,7 +523,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     // content blob. stripMetaFromContent still runs so legacy rows
     // (drafted before the cut) load cleanly without the embedded
     // <!-- AGW-META --> comment leaking back into the editor.
-    const raw = (editorRef.current?.innerHTML ?? content ?? '').trim();
+    const raw = (agr.editor?.getHTML() ?? content ?? '').trim();
     // Purpose is now its own persisted column (no longer baked into the
     // content HTML), so the editor body stays clean — just strip legacy meta.
     const finalContent = stripMetaFromContent(raw) || null;
@@ -645,6 +608,16 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       )}
 
       <div className="agw-shell">
+        {/* Loader scoped to the FORM card (not the whole page) — covers the
+            modal so no field, tab-switch or button stays interactive during the
+            request. Shown for BOTH "Save & Next" (step 1) and the final
+            "Submit & Save Agreement" (step 2). */}
+        {(saving || nexting) && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 60, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, background: 'rgba(236,253,255,.72)', backdropFilter: 'blur(3px)' }}>
+            <svg className="agw-spin" width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round" style={{ display: 'block' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+            <div style={{ fontSize: 14, fontWeight: 800, color: '#0e7490', letterSpacing: '.02em' }}>{saving ? 'Saving Agreement…' : 'Saving…'}</div>
+          </div>
+        )}
         {/* Header */}
         <div className="agw-head">
           <div className="agw-head-left">
@@ -868,7 +841,8 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
           ) : (
             <div className="agw-step-body">
               <AgrEditor
-                editorRef={editorRef}
+                editor={agr.editor}
+                busy={editorBusy}
                 contentLength={(content ?? '').length}
                 fontSize={fontSize}
                 setFontSizeState={setFontSizeState}
@@ -879,7 +853,6 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                 exec={exec}
                 insertLink={insertLink}
                 stashSelection={stashSelection}
-                syncContent={syncContent}
                 docxRef={docxRef}
                 uploadingDocx={uploadingDocx}
                 downloadingDocx={downloadingDocx}
@@ -990,7 +963,8 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
  * editors are visually and functionally identical. */
 
 function AgrEditor({
-  editorRef,
+  editor,
+  busy,
   contentLength,
   fontSize,
   setFontSizeState,
@@ -1001,7 +975,6 @@ function AgrEditor({
   exec,
   insertLink,
   stashSelection,
-  syncContent,
   docxRef,
   uploadingDocx,
   downloadingDocx,
@@ -1022,7 +995,8 @@ function AgrEditor({
   fullPage,
   setFullPage,
 }: {
-  editorRef: React.MutableRefObject<HTMLDivElement | null>;
+  editor: Editor | null;
+  busy: boolean;
   contentLength: number;
   fontSize: string;
   setFontSizeState: (v: string) => void;
@@ -1033,7 +1007,6 @@ function AgrEditor({
   exec: (cmd: string, value?: string) => void;
   insertLink: () => void;
   stashSelection: () => void;
-  syncContent: () => void;
   docxRef: React.MutableRefObject<HTMLInputElement | null>;
   uploadingDocx: boolean;
   downloadingDocx: boolean;
@@ -1056,6 +1029,18 @@ function AgrEditor({
 }) {
   const shell = (
     <div className={`agw-editor-shell ${fullPage ? 'agw-editor-shell-full' : ''}`}>
+      {/* ProseMirror + toolbar base styles for the TipTap editor content. */}
+      <style>{CTC_EDITOR_CSS}</style>
+      {/* Formatting loader — shown only for LARGE documents while a format
+          command applies (painted a frame before the op runs), so the user sees
+          it's working instead of wondering. Small docs are instant (no flash). */}
+      {busy && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, background: 'rgba(236,253,255,.74)', backdropFilter: 'blur(2px)' }}>
+          <svg className="agw-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.6" strokeLinecap="round" style={{ display: 'block' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: '#0e7490', letterSpacing: '.02em' }}>Applying formatting…</div>
+          <div style={{ fontSize: 11, fontWeight: 500, color: '#5e7888' }}>Large document — this can take a moment.</div>
+        </div>
+      )}
       <div className="agw-editor-head">
         <div className="agw-editor-title">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
@@ -1221,17 +1206,18 @@ function AgrEditor({
           footer={footerConfig} setFooter={setFooterConfig}
           uploadLogoEndpoint="/clm/agreement-library/upload-header-logo"
         >
-          <div
-            ref={editorRef}
-            className="agw-editor"
-            contentEditable
-            suppressContentEditableWarning
-            dir="ltr"
-            onInput={syncContent}
-            role="textbox"
-            aria-multiline="true"
-            aria-label="Agreement content"
-          />
+          <div className="agw-editor" style={{ position: 'relative' }}>
+            {/* Until TipTap has booted + parsed the (possibly large) document,
+                show a loader so the editor never looks blank while it prepares —
+                matters most on a slower server loading a 200-300 page agreement. */}
+            {!editor && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '48px 20px', color: '#0e7490' }}>
+                <svg className="agw-spin" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                <div style={{ fontSize: 12.5, fontWeight: 700 }}>Preparing editor…</div>
+              </div>
+            )}
+            <CtcEditorContent editor={editor} />
+          </div>
         </HeaderFooterPanel>
 
         {/* Clause-library host (the picker itself portals to <body>). */}
@@ -1589,12 +1575,17 @@ const AGW_CSS = `
   font-family: var(--font-sans);
 }
 @keyframes agwFade { from { opacity: 0; } to { opacity: 1; } }
-.agw-spin { animation: agwSpin .8s linear infinite; }
-@keyframes agwSpin { to { transform: rotate(360deg); } }
+/* will-change + translateZ promote the spinner to its own compositor layer so
+   the rotate animation runs on the GPU/compositor thread and keeps spinning even
+   while the main thread is blocked by a heavy formatting command (execCommand on
+   a large document). Without this the animation is main-thread-bound and freezes
+   mid-spin during the block. */
+.agw-spin { animation: agwSpin .7s linear infinite; will-change: transform; transform: translateZ(0); }
+@keyframes agwSpin { from { transform: translateZ(0) rotate(0deg); } to { transform: translateZ(0) rotate(360deg); } }
 .agw-editor-btn:disabled { opacity: .6; cursor: not-allowed; }
 .agw-shell {
   width: 100%; max-width: 1100px; max-height: calc(100vh - 48px);
-  display: flex; flex-direction: column;
+  display: flex; flex-direction: column; position: relative;
   border-radius: 18px; overflow: hidden;
   background: #fff; margin: auto;
   box-shadow: 0 28px 70px rgba(15,23,42,.45), 0 12px 32px rgba(6,182,212,.22), 0 0 0 1px rgba(255,255,255,.06);
@@ -1739,7 +1730,7 @@ const AGW_CSS = `
 }
 
 /* Editor */
-.agw-editor-shell { border: 1px solid rgba(6,182,212,.20); border-radius: 14px; overflow: hidden; background: #fff; display: flex; flex-direction: column; }
+.agw-editor-shell { position: relative; border: 1px solid rgba(6,182,212,.20); border-radius: 14px; overflow: hidden; background: #fff; display: flex; flex-direction: column; }
 /* Full-page drafting — pops the editor out to fill the viewport. Sits above
    the modal overlay but below the Placeholder/Table/Clause pickers so those
    still open on top while in full page. */
