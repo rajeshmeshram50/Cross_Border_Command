@@ -551,7 +551,10 @@ function StandardTable({ rows, page, setPage, pageSize, onPageSize, tab, dlOpen,
                       <td style={TD_L}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                           <Avatar name={c.cp[0]} grad="#0891b2,#0e7490" />
-                          <Tooltip label={c.cp.join(', ')}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.cp[0]}</span></Tooltip>
+                          {/* Tooltip carries the role-labelled name(s) ("TEST (Supplier)")
+                              so a single-counterparty row still reveals whether it's a
+                              Customer / Consignee / Supplier on hover. */}
+                          <Tooltip label={(c.cpLabeled ?? c.cp).join(', ')}><span style={{ fontSize: 11.5, fontWeight: 600, color: t.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 100 }}>{c.cp[0]}</span></Tooltip>
                           {extra > 0 && <Tooltip label="View all counterparties"><button onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setCpOpen(cpOpen?.id === c.id ? null : { id: c.id, names: c.cpLabeled ?? c.cp, x: r.left, y: r.bottom + 4 }); }} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 5px', borderRadius: 20, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', fontSize: 9, fontWeight: 800, flexShrink: 0, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>+{extra}</button></Tooltip>}
                         </div>
                       </td>

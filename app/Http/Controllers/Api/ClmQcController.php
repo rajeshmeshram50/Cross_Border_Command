@@ -45,7 +45,7 @@ class ClmQcController extends Controller
                 'comp' => $rows->where('doc_type', ClmQcDocument::TYPE_COMP)->count(),
             ],
         ]);
-    }
+    } 
 
     public function store(Request $request)
     {

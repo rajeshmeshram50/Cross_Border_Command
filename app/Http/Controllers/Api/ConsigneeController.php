@@ -53,7 +53,7 @@ class ConsigneeController extends Controller
             'count' => count($rows),
             'data'  => $rows,
         ]);
-    }
+    } 
 
     public function show(Request $request, $id): JsonResponse
     {

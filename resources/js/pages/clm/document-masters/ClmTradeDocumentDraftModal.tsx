@@ -1123,6 +1123,11 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                       className="tdw-editor"
                       contentEditable
                       suppressContentEditableWarning
+                      // Browser spell-check re-scans the whole editable region on
+                      // every DOM mutation — on a large draft (tens of thousands of
+                      // chars) that made bold/italic on a big selection crawl. Off
+                      // here keeps formatting instant on big documents.
+                      spellCheck={false}
                       role="textbox"
                       aria-multiline="true"
                       aria-label="Document content"
@@ -1743,13 +1748,18 @@ function TdwCharCounter({ editorRef, baseLength, remountKey }: {
   // Reflect a programmatic content load / flush (edit-mode open, full-page toggle).
   useEffect(() => { setLength(baseLength); }, [baseLength, remountKey]);
   // Live-track edits straight from the DOM without touching parent state.
+  // DEBOUNCED: reading el.innerHTML serializes the ENTIRE editor DOM, so doing it
+  // on every keystroke/format made a large draft lag. We now recompute ~300ms
+  // after the last edit, keeping typing and bold/italic on big selections snappy.
   useEffect(() => {
     const el = editorRef.current;
     if (!el) return;
+    let t: ReturnType<typeof setTimeout> | null = null;
     const update = () => setLength(el.innerHTML.length);
+    const schedule = () => { if (t) clearTimeout(t); t = setTimeout(update, 300); };
     update();
-    el.addEventListener('input', update);
-    return () => el.removeEventListener('input', update);
+    el.addEventListener('input', schedule);
+    return () => { if (t) clearTimeout(t); el.removeEventListener('input', schedule); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remountKey]);
   const pct = length / TDW_RENDER_MAX_CHARS;

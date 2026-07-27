@@ -2807,13 +2807,50 @@ export type QpiInitialOpp = {
   consigneeId?:     number | null;
 };
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * Consignee freeze — shared by the Quotation and PI wizards.
+ *
+ * BUSINESS RULE: an opportunity can carry SEVERAL quotations, each addressed
+ * to a different consignee, so nothing writes the consignee back onto the
+ * lead at quotation time. The Proforma Invoice is what settles the deal's
+ * final consignee: ProformaInvoiceController freezes it onto the lead on both
+ * PI paths (direct create + convert-from-quotation). From then on the field
+ * is read-only in every form on the opportunity.
+ *
+ * Resolution order — first non-null wins:
+ *   1. `leadConsigneeId`  — the parent's live lead header (freshest; survives
+ *                           edit mode, where `initialOpp` isn't passed).
+ *   2. `initialOpp.consigneeId` — the lead context the modal was opened with.
+ *   3. the leads master row for the picked opportunity — the only source the
+ *      standalone /sales/qpi workspace has (may be a cached snapshot).
+ * ───────────────────────────────────────────────────────────────────────── */
+function useFrozenConsigneeId(
+  leadConsigneeId: number | null | undefined,
+  initialOpp: QpiInitialOpp | undefined,
+  oppId: number | null,
+  masters: LoadedMasters,
+): number | null {
+  return useMemo(() => {
+    if (leadConsigneeId)          return leadConsigneeId;
+    if (initialOpp?.consigneeId)  return initialOpp.consigneeId;
+    if (!oppId)                   return null;
+    return masters.opportunitiesRaw.find(o => o.leadId === oppId)?.consigneeDbId ?? null;
+  }, [leadConsigneeId, initialOpp?.consigneeId, oppId, masters.opportunitiesRaw]);
+}
+
 export function CreateQuotationModal(props: {
   editId: number | null;
   initialOpp?: QpiInitialOpp;
+  /* The lead's FROZEN consignee, if it has one. A lead only gets one once a
+   * Proforma Invoice is made against it (see freezeLeadConsignee server-side),
+   * so before that this is null and every quotation on the opportunity may
+   * pick its own consignee. Passed separately from `initialOpp` because the
+   * parent doesn't send `initialOpp` in edit mode. */
+  leadConsigneeId?: number | null;
   onClose: () => void;
   onSubmit: () => void;
 }) {
-  const { editId, initialOpp, onClose, onSubmit } = props;
+  const { editId, initialOpp, leadConsigneeId, onClose, onSubmit } = props;
   const isEdit = editId != null;
   const toast = useToast();
   useScrollLock();      // freeze background scroll while the modal is open
@@ -2880,6 +2917,12 @@ export function CreateQuotationModal(props: {
     setStep(2);
   };
   const masters = useQpiMasters(true);
+  /* Is this opportunity's consignee already FROZEN? Only a PI freezes it, so
+   * until one exists this is null and the Consignee dropdown stays open —
+   * that's what lets quotation #1 go to consignee A and #2 to consignee B on
+   * the same lead. Prefer the parent's freshly-reloaded value; fall back to
+   * the (possibly cached) leads master for the standalone QPI workspace. */
+  const frozenConsigneeId = useFrozenConsigneeId(leadConsigneeId, initialOpp, form.oppId, masters);
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [terms, setTerms] = useState('');
   const [shipping, setShipping] = useState<number>(0);
@@ -3026,12 +3069,11 @@ export function CreateQuotationModal(props: {
         await api.post('/sales/quotations', payload);
         toast.success('Quotation Created', 'Saved as draft for review');
       }
-      // If the lead had no consignee and one was picked here, map it back onto
-      // the lead (same as the toolbar's consignee mapping) so it sticks.
-      if (form.oppId && form.consigneeId && !initialOpp?.consigneeId) {
-        try { await api.put(`/sales/leads/${form.oppId}`, { consignee_id: form.consigneeId }); }
-        catch { /* non-fatal — the quotation already carries the consignee */ }
-      }
+      /* NO consignee write-back to the lead here — deliberately. A quotation
+       * is an offer, not a commitment, so the same opportunity can quote
+       * consignee A on one quotation and consignee B on the next. The lead's
+       * consignee is frozen only when a Proforma Invoice is raised (done
+       * server-side in ProformaInvoiceController). */
       onSubmit();   // Parent closes modal + reloads list.
     } catch (e: any) {
       // Use ?? + explicit parens to avoid the (|| ? :) precedence trap —
@@ -3086,7 +3128,13 @@ export function CreateQuotationModal(props: {
   const subTotal = products.reduce((s, p) => s + calcRow(p).amount, 0);
   const grandTotal = subTotal + (Number(shipping) || 0);
 
-  return (
+  /* PORTALLED TO <body> — same as the Add Customer / Add Product wizards.
+   * Rendered inline, the backdrop stayed trapped inside the Sales Matrix
+   * page's stacking context, so the app topbar/nav sat ON TOP of it and the
+   * form only dimmed the page body. Portalling lifts it to the document root
+   * where its fixed/inset-0 backdrop covers the whole viewport, chrome
+   * included. */
+  return createPortal((
     /* Backdrop is purely visual — closing only via the X / Cancel button
      * so accidental outside-clicks don't wipe an in-progress quote. */
     <div className="qpi-modal-backdrop">
@@ -3144,11 +3192,11 @@ export function CreateQuotationModal(props: {
                * party is fixed once the quotation exists; changing it would
                * detach the saved doc from its customer/consignee/opportunity. */
               lockParty={!!initialOpp || isEdit}
-              /* Lock the consignee whenever the lead already has one mapped
-               * (initialOpp carries it) OR we're editing an existing
-               * quotation — the lead's FINAL consignee is fixed by the
-               * first quotation and must not drift on later create/edit. */
-              lockConsignee={isEdit || !!initialOpp?.consigneeId}
+              /* Consignee stays OPEN on quotations — each quotation on an
+               * opportunity may be addressed to a different consignee. It
+               * turns read-only only once the deal's consignee is FROZEN,
+               * which happens when a PI is raised (see useFrozenConsigneeId). */
+              lockConsignee={!!frozenConsigneeId}
               /* Same edit lock as the PI wizard: flipping International/
                * Domestic on a saved quotation would break its tax/costing
                * structure. (On create, the type follows the customer's
@@ -3213,7 +3261,7 @@ export function CreateQuotationModal(props: {
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -3226,10 +3274,13 @@ export function CreatePIModal(props: {
   /* Lead-scoped opening (from Sales Matrix Stage 5). Same shape as the
    * Quotation modal — pre-fills the Opportunity dropdown. */
   initialOpp?: QpiInitialOpp;
+  /* The lead's already-FROZEN consignee, when it has one. See the Quotation
+   * modal's prop doc + useFrozenConsigneeId. */
+  leadConsigneeId?: number | null;
   onClose: () => void;
   onSubmit: () => void;
 }) {
-  const { editId, source, initialOpp, onClose, onSubmit } = props;
+  const { editId, source, initialOpp, leadConsigneeId, onClose, onSubmit } = props;
   const isEdit = editId != null;
   const toast = useToast();
   useScrollLock();      // freeze background scroll while the modal is open
@@ -3265,6 +3316,9 @@ export function CreatePIModal(props: {
   } : { ...EMPTY_BASIC };
   const [form, setForm] = useState<BasicFormState>(seeded);
   const masters = useQpiMasters(true);
+  /* Frozen consignee, if this lead already has one. On a PI it's also frozen
+   * by definition in edit mode — the saved PI IS what fixed it. */
+  const frozenConsigneeId = useFrozenConsigneeId(leadConsigneeId, initialOpp, form.oppId, masters);
 
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [terms, setTerms] = useState('');
@@ -3278,7 +3332,12 @@ export function CreatePIModal(props: {
   /* Step-1 validation gate — same rules as the Quotation modal since
    * ProformaInvoiceController::validatePayload mirrors the Quotation one. */
   const [step1Errors, setStep1Errors] = useState<Set<string>>(new Set());
-  const onSaveNext = () => {
+  /* True while the Step-2 document gate is round-tripping — the Save & Next
+   * button shows a spinner so the (brief) pause is visible and can't be
+   * double-fired. */
+  const [docChecking, setDocChecking] = useState(false);
+  const onSaveNext = async () => {
+    if (docChecking) return;
     const errs = new Set<string>();
     const labels: Record<string, string> = {
       customer: 'Customer', consignee: 'Consignee', bankName: 'Bank Name',
@@ -3321,6 +3380,42 @@ export function CreatePIModal(props: {
       toast.error('Missing required fields', `Please fill: ${fillable.map(k => labels[k]).join(', ')}`);
       return;
     }
+
+    /* ── Step-2 document gate ────────────────────────────────────────────
+     * A PI can only be raised for parties that are DCP-document-complete.
+     * The consignee is picked right here on Step 1 (it isn't inherited from
+     * the lead any more — quotations may each name a different one), so this
+     * is the first moment we know WHICH consignee to verify. Check it before
+     * letting the user into the product step rather than after they've
+     * priced the whole deal.
+     *
+     * Skipped on edit: an existing PI already passed this gate at creation,
+     * and ProformaInvoiceController::update doesn't re-run it — so blocking
+     * here would strand the user on a doc that expired after the fact.
+     * The server re-checks on create either way; this is UX, not the gate. */
+    if (!isEdit) {
+      setDocChecking(true);
+      try {
+        const { data } = await api.get<{ data?: { ok?: boolean; message?: string | null } }>(
+          '/sales/proforma-invoices/party-docs-check',
+          { params: { customer_id: form.customerId, consignee_id: form.consigneeId } },
+        );
+        if (data?.data?.ok === false) {
+          toast.error(
+            'Documents pending',
+            data.data.message
+              ?? 'Upload the mandatory KYC / Due Diligence / Trade Licence documents for this customer and consignee before creating a PI.',
+          );
+          return;
+        }
+      } catch {
+        /* Non-fatal — the probe is a convenience. If it fails (offline, 500)
+         * let the user proceed; the server still blocks the actual save. */
+      } finally {
+        setDocChecking(false);
+      }
+    }
+
     setStep(2);
   };
 
@@ -3443,11 +3538,11 @@ export function CreatePIModal(props: {
           ? `Converted ${source.qtNo} → new draft PI`
           : 'Saved as draft for review');
       }
-      // Map a newly-picked consignee back onto the lead (it had none).
-      if (form.oppId && form.consigneeId && !initialOpp?.consigneeId) {
-        try { await api.put(`/sales/leads/${form.oppId}`, { consignee_id: form.consigneeId }); }
-        catch { /* non-fatal — the PI already carries the consignee */ }
-      }
+      /* The consignee freeze (writing it onto the lead) is done SERVER-side
+       * inside the same transaction that creates the PI — see
+       * ProformaInvoiceController::freezeLeadConsignee. Doing it here as a
+       * second request could leave the lead unfrozen if that request failed.
+       * The parent reloads the lead header after onSubmit to pick it up. */
       onSubmit();
     } catch (e: any) {
       const data = e?.response?.data;
@@ -3499,7 +3594,9 @@ export function CreatePIModal(props: {
   const subTotal = products.reduce((s, p) => s + calcRow(p).amount, 0);
   const grandTotal = subTotal + (Number(shipping) || 0);
 
-  return (
+  /* Portalled to <body> for the same reason as the Quotation wizard above —
+   * otherwise the app topbar renders over the backdrop. */
+  return createPortal((
     /* Backdrop is purely visual — closing only via the X / Cancel button
      * so accidental outside-clicks don't wipe an in-progress quote. */
     <div className="qpi-modal-backdrop">
@@ -3555,7 +3652,10 @@ export function CreatePIModal(props: {
                  (the post-Step-2 core lock was removed). Lead-opened (initialOpp)
                  and edit-mode locks still apply. */
               lockParty={!!initialOpp || isEdit}
-              lockConsignee={isEdit || !!initialOpp?.consigneeId}
+              /* On a NEW PI the consignee is pickable (this form is where the
+                 deal's final consignee is chosen) unless the lead is already
+                 frozen. On edit it's always fixed — this PI is what froze it. */
+              lockConsignee={isEdit || !!frozenConsigneeId}
               lockDocType={isEdit}
               errors={step1Errors}
               clearError={(k) => setStep1Errors(prev => {
@@ -3601,8 +3701,13 @@ export function CreatePIModal(props: {
               </button>
             )}
             {step === 1 ? (
-              <button className="qpi-btn-next qpi-btn-next-purple" onClick={onSaveNext} disabled={hydrating}>
-                Save &amp; Next →
+              <button
+                className="qpi-btn-next qpi-btn-next-purple"
+                onClick={() => void onSaveNext()}
+                disabled={hydrating || docChecking}
+              >
+                {docChecking && <span className="qpi-send-spin" />}
+                {docChecking ? 'Checking documents…' : 'Save & Next →'}
               </button>
             ) : (
               <button className="qpi-btn-submit qpi-btn-submit-purple" onClick={submitPi} disabled={products.length === 0 || saving || hydrating}>
@@ -3616,7 +3721,7 @@ export function CreatePIModal(props: {
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }
 
 /* ─── Step badge (1 or 2) ─── */

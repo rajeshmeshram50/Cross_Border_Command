@@ -476,7 +476,6 @@ function StandardTable({ rows, tab, page, setPage, pageSize, onPageSize, onRevie
                       </div>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 9.5, fontWeight: 600, color: c.status === 'approved' ? '#059669' : '#DC2626' }}>{c.status === 'approved' ? '✓ Approved' : '✕ Rejected'}</span>
                         <Tooltip label={dlId === c.id ? 'Preparing PDF…' : 'Download agreement PDF'}>
                           <button type="button" onClick={() => onDownload(c.id)} disabled={dlId === c.id} aria-label="Download agreement PDF" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 27, height: 27, borderRadius: 8, border: `1px solid ${c.status === 'approved' ? '#A7F3D0' : '#FECACA'}`, background: c.status === 'approved' ? '#ECFDF5' : '#FEF2F2', color: c.status === 'approved' ? '#059669' : '#DC2626', cursor: dlId === c.id ? 'wait' : 'pointer', flexShrink: 0 }}>
                             {dlId === c.id
@@ -731,7 +730,9 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
     if (!unlocked) { toast.warning('Read the full agreement', 'Read all pages, or tick "I have read the agreement", before taking an action.'); return; }
     fn(contract.id);
   };
-  const progressPct = numPages > 0 ? Math.round((maxSeen / numPages) * 100) : 0;
+  // Ticking "I have read" self-attests the whole document, so the bar fills to
+  // 100% just as if every page had been scrolled through.
+  const progressPct = confirmedRead ? 100 : (numPages > 0 ? Math.round((maxSeen / numPages) * 100) : 0);
 
   // Load the PDF document once.
   useEffect(() => {
@@ -861,10 +862,10 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
           </div>
           {/* Reading-progress bar */}
           <div style={{ position: 'relative', zIndex: 1, marginTop: 14, height: 4, borderRadius: 4, background: 'rgba(255,255,255,.22)', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${progressPct}%`, background: reachedEnd ? 'linear-gradient(90deg,#34d399,#10b981)' : 'linear-gradient(90deg,#a5f3fc,#fff)', borderRadius: 4, transition: 'width .3s ease' }} />
+            <div style={{ height: '100%', width: `${progressPct}%`, background: unlocked ? 'linear-gradient(90deg,#34d399,#10b981)' : 'linear-gradient(90deg,#a5f3fc,#fff)', borderRadius: 4, transition: 'width .3s ease' }} />
           </div>
           <div style={{ position: 'relative', zIndex: 1, padding: '5px 0 8px', fontSize: 8.5, fontWeight: 700, letterSpacing: '.06em', color: 'rgba(255,255,255,.8)', textTransform: 'uppercase' }}>
-            {reachedEnd ? '✓ Fully reviewed' : `Reviewed ${maxSeen} of ${numPages || '…'} pages`}
+            {unlocked ? '✓ Fully reviewed' : `Reviewed ${maxSeen} of ${numPages || '…'} pages`}
           </div>
         </div>
 
@@ -895,6 +896,34 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
               </Tooltip>
             </>
           )}
+
+          {/* Consent pill — FLOATS over the document (no white strip), pinned to
+              the bottom-centre of the viewer. Only appears once the PDF has
+              actually loaded (not during the loading/error state) and stays until
+              every page has been scrolled through; ticking it unlocks the actions. */}
+          {!loading && !error && numPages > 0 && !reachedEnd && (
+            <label style={{
+              position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', zIndex: 6,
+              display: 'inline-flex', alignItems: 'center', gap: 11, cursor: 'pointer', margin: 0,
+              padding: '10px 20px', borderRadius: 10, transition: 'all .2s',
+              boxShadow: confirmedRead ? '0 8px 24px rgba(5,150,105,.28)' : '0 8px 24px rgba(8,145,178,.22)',
+              background: confirmedRead ? (t.dark ? 'rgba(16,185,129,.16)' : '#ecfdf5') : (t.dark ? 'rgba(6,182,212,.14)' : '#ecfeff'),
+              border: `1.5px solid ${confirmedRead ? (t.dark ? 'rgba(16,185,129,.4)' : '#a7f3d0') : (t.dark ? 'rgba(6,182,212,.3)' : '#a5f3fc')}`,
+            }}>
+              <input type="checkbox" checked={confirmedRead} onChange={e => setConfirmedRead(e.target.checked)}
+                style={{
+                  appearance: 'none', WebkitAppearance: 'none', width: 18, height: 18, borderRadius: 3,
+                  cursor: 'pointer', flexShrink: 0, margin: 0, transition: 'all .15s',
+                  border: '2px solid #10b981',
+                  background: confirmedRead ? '#059669' : (t.dark ? 'transparent' : '#fff'),
+                  backgroundImage: confirmedRead ? "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E\")" : 'none',
+                  backgroundSize: '12px 12px', backgroundPosition: 'center', backgroundRepeat: 'no-repeat',
+                }} />
+              <span style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.3, whiteSpace: 'nowrap', color: t.dark ? '#f1f5f9' : '#0f172a' }}>
+                I confirm that I have <strong style={{ fontWeight: 800 }}>read and understood the entire agreement</strong>.
+              </span>
+            </label>
+          )}
         </div>
 
         {/* Footer: page indicator (left) + gated actions (right) */}
@@ -904,18 +933,6 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
               Page {activePage} / {numPages || '…'}
             </span>
-            {!reachedEnd && (
-              <label style={{
-                display: 'inline-flex', alignItems: 'center', gap: 7, cursor: 'pointer',
-                height: 32, boxSizing: 'border-box', padding: '0 13px', borderRadius: 30, fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', lineHeight: 1, transition: 'all .15s',
-                color: confirmedRead ? (t.dark ? '#34d399' : '#047857') : (t.dark ? '#fcd34d' : '#b45309'),
-                background: confirmedRead ? (t.dark ? 'rgba(16,185,129,.14)' : '#ecfdf5') : (t.dark ? 'rgba(245,158,11,.14)' : '#fffbeb'),
-                border: `1.5px solid ${confirmedRead ? (t.dark ? 'rgba(16,185,129,.4)' : '#a7f3d0') : (t.dark ? 'rgba(245,158,11,.34)' : '#fde68a')}`,
-              }}>
-                <input type="checkbox" checked={confirmedRead} onChange={e => setConfirmedRead(e.target.checked)} style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#0891b2', flexShrink: 0, margin: 0, verticalAlign: 'middle' }} />
-                I have read the agreement
-              </label>
-            )}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <button onClick={() => guard(onClarify)} disabled={submitting} style={{ ...actBtn('#8B5CF6', '#6D28D9'), opacity: submitting ? .55 : 1, cursor: submitting ? 'not-allowed' : 'pointer' }}>Raise Clarification</button>

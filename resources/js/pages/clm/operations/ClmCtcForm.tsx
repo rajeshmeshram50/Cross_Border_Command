@@ -54,6 +54,14 @@ const STAGES = [
 
 type CP = { name: string; initials: string; country: string; phone: string; email: string; grad: string; badge: string; referred: string; sourceType?: string; sourceId?: string | number };
 
+/* Domestic = country is India; anything else (or blank-but-non-India) is
+ * International. Mirrors the app-wide Gst::isDomestic rule so the CTC category
+ * check stays consistent with Customer/Consignee validation elsewhere. */
+const isDomesticCountry = (country?: string | null): boolean =>
+  (country ?? '').trim().toLowerCase() === 'india';
+const cpRole = (c: { sourceType?: string; badge?: string }): string =>
+  (c.sourceType || c.badge || '').toLowerCase();
+
 export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: CtcContract | null; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
   const t = useOpsTheme('violet');
@@ -61,6 +69,13 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   const [cps, setCps] = useState<CP[]>([]);
   const cp1 = cps[0] ?? null;
   const cp2 = cps[1] ?? null;
+  // Category anchor for Customer↔Consignee: once EITHER a Customer or Consignee
+  // is added, its Domestic/International category is locked for the other one.
+  // null = neither added yet (both categories still open). Supplier ignores this.
+  const ctcRequiredDomestic = (() => {
+    const anchor = cps.find(c => cpRole(c) === 'buyer' || cpRole(c) === 'consignee');
+    return anchor ? isDomesticCountry(anchor.country) : null;
+  })();
   const [org, setOrg] = useState<Org | null>(null);
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [agTypes, setAgTypes] = useState<{ value: string; label: string }[]>([]);
@@ -445,6 +460,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
             consignee: cps.find(c => (c.sourceType || c.badge || '').toLowerCase() === 'consignee')?.name,
           }}
           onClose={() => setPicker(false)}
+          requiredDomestic={ctcRequiredDomestic}
           onPick={(cp) => {
             // One of each only: at most a single Customer (buyer), Consignee and
             // Supplier per agreement — fewer is fine, more is blocked.
@@ -453,6 +469,23 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
             if (cps.some(c => (c.sourceType || c.badge || '').toLowerCase() === type)) {
               toast.error('Already added', `Only one ${labelOf[type] ?? type} is allowed. Remove the existing one to change it.`);
               return;
+            }
+            // Customer ↔ Consignee must share ONE category (both Domestic/India or
+            // both International); Supplier is exempt (can be either). Symmetric —
+            // whichever of the pair is already added anchors the other's category.
+            if (type === 'buyer' || type === 'consignee') {
+              const otherType = type === 'buyer' ? 'consignee' : 'buyer';
+              const other = cps.find(c => (c.sourceType || c.badge || '').toLowerCase() === otherType);
+              if (other && isDomesticCountry(other.country) !== isDomesticCountry(cp.country)) {
+                const anchorLabel = otherType === 'buyer' ? 'Customer' : 'Consignee';
+                const anchorCat   = isDomesticCountry(other.country) ? 'Domestic' : 'International';
+                const need        = isDomesticCountry(other.country) ? 'Domestic (India)' : 'International';
+                toast.error(
+                  'Domestic / International mismatch',
+                  `Customer and Consignee must be in the same category. The ${anchorLabel} is ${anchorCat}, so this ${type === 'buyer' ? 'Customer' : 'Consignee'} must also be ${need}.`,
+                );
+                return;
+              }
             }
             setCps([...cps, cp]);
             setPicker(false);
@@ -901,8 +934,8 @@ function Stage1(p: {
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#059669,#047857)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg></div>
                     <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#064E3B' }}>Agreement Details</div><div style={{ fontSize: 8, color: t.dark ? '#34d399' : '#059669', fontWeight: 500 }}>Effective &amp; end dates</div></div>
                   </div>
-                  <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, alignItems: 'end' }}>
+                  <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
                       <Field t={t} label="Effective Date *" green error={errors.effDate && !p.effDate ? 'Effective date is required' : undefined}><MasterDatePicker value={p.effDate} onChange={p.setEffDate} disabled={p.editLock} placeholder="Select date" /></Field>
                       {/* The inverted-range error is NOT gated on `errors` — it is a live
                           invariant, so it surfaces the instant the user creates the bad
@@ -2425,7 +2458,7 @@ const toEntry = (name: unknown, country: unknown, phone: unknown, email: unknown
   id: String(id ?? i), name: String(name || '—'), initials: orgInitials(String(name || '')), country: String(country || '—'), phone: String(phone || '—'), email: String(email || '—'), grad: ORG_GRADS[i % ORG_GRADS.length],
 });
 
-function CpPicker({ t, slot, usedTypes = [], taken = {}, onClose, onPick }: { t: OpsTokens; slot: number; usedTypes?: string[]; taken?: { buyer?: string; consignee?: string }; onClose: () => void; onPick: (cp: CP) => void }) {
+function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null, onClose, onPick }: { t: OpsTokens; slot: number; usedTypes?: string[]; taken?: { buyer?: string; consignee?: string }; requiredDomestic?: boolean | null; onClose: () => void; onPick: (cp: CP) => void }) {
   // Types already added to this agreement — their tabs are disabled so only one
   // Customer (buyer) / Consignee / Supplier can ever be selected.
   const used = new Set(usedTypes.map(s => s.toLowerCase()));
@@ -2444,7 +2477,16 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, onClose, onPick }: { t:
       if (!alive) return;
       const buyer = cu.status === 'fulfilled' ? rowsOf(cu.value.data).map((r, i) => toEntry(r.company ?? r.company_name, r.country, r.phone, r.email, r.id, i)) : [];
       const consignee = co.status === 'fulfilled' ? rowsOf(co.value.data).map((r, i) => toEntry(r.company ?? r.company_name, r.country, r.phone, r.email, r.id, i)) : [];
-      const supplier = ve.status === 'fulfilled' ? rowsOf(ve.value.data).map((r, i) => { const a = (r.primaryAddress ?? r.primary_address) as Record<string, unknown> | undefined; return toEntry(r.company_name ?? r.vendor_name, a?.city ?? r.country, a?.contact_no ?? r.mobile, r.primary_email ?? a?.email, r.vendor_code ?? r.id, i); }) : [];
+      const supplier = ve.status === 'fulfilled' ? rowsOf(ve.value.data).map((r, i) => {
+        const a = (r.primaryAddress ?? r.primary_address) as Record<string, unknown> | undefined;
+        // Show the supplier's COUNTRY (Domestic/India vs International), not the
+        // city — same basis as Customer/Consignee. The vendor index eager-loads
+        // primaryAddress.country { name }; fall back to any flat country field.
+        const ac = a?.country as { name?: string } | string | null | undefined;
+        const country = (typeof ac === 'object' && ac ? ac.name : (typeof ac === 'string' ? ac : undefined))
+          ?? (r.country as string | undefined);
+        return toEntry(r.company_name ?? r.vendor_name, country ?? a?.city, a?.contact_no ?? r.mobile, r.primary_email ?? a?.email, r.vendor_code ?? r.id, i);
+      }) : [];
       setDir({ buyer, consignee, supplier });
       setLoading(false);
     });
@@ -2465,6 +2507,11 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, onClose, onPick }: { t:
     if (!(p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase())) return false;
     if (tab === 'consignee' && customerNames.has(norm(p.name))) return false;
     if (excludedName && norm(p.name) === norm(excludedName)) return false;
+    // Customer ↔ Consignee must share a category. Once one of the pair is added,
+    // the other's list is restricted to the same category (Domestic/India or
+    // International). Supplier is exempt, and no anchor means no restriction.
+    if ((tab === 'buyer' || tab === 'consignee') && requiredDomestic !== null
+        && isDomesticCountry(p.country) !== requiredDomestic) return false;
     return true;
   });
   const tabBadge = tab === 'buyer'

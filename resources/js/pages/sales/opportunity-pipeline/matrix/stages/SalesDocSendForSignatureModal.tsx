@@ -271,6 +271,17 @@ export default function SalesDocSendForSignatureModal({
     updateActiveSettings({ page: clampPage((activeSettings?.page ?? 0) + delta) });
   const clampPage = (p: number) => Math.max(0, Math.min(pageCount - 1, p));
 
+  /* Circular page-nav arrows pinned to the preview's left/right edges — the same
+   * look as the CTC Review & Approve viewer. */
+  const ssfNavBtn = (disabled: boolean): React.CSSProperties => ({
+    position: 'absolute', top: '50%', transform: 'translateY(-50%)', zIndex: 6,
+    width: 44, height: 44, borderRadius: '50%', border: 'none',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.3 : 1,
+    color: '#fff', background: 'linear-gradient(135deg,#7c3aed,#5b21b6)',
+    boxShadow: '0 4px 14px rgba(124,58,237,.4)',
+  });
+
   /* ── Drag math — identical to the agreement picker (A4 aspect, top-left
    * origin matching Zoho's signature-field coords). */
   const wrapperPtPerPx = () => {
@@ -386,18 +397,28 @@ export default function SalesDocSendForSignatureModal({
         {/* ── Body ── */}
         <div className="ssf-body">
           <div className="ssf-step2 sds-step2">
-            <div className="ssf-preview-pane">
+            <div className="ssf-preview-pane" style={{ position: 'relative' }}>
               {previewLoading && <div className="ssf-preview-state">Rendering preview…</div>}
               {!previewLoading && !pdfReady && <div className="ssf-preview-state">Preview unavailable.</div>}
+              {/* Circular page arrows pinned to the preview's left/right edges
+                  (CTC Review-&-Approve look). Hidden on a single-page document. */}
+              {pdfReady && pageCount > 1 && (
+                <>
+                  <button type="button" onClick={() => goPage(-1)} disabled={(activeSettings?.page ?? 0) <= 0} aria-label="Previous page" style={{ ...ssfNavBtn((activeSettings?.page ?? 0) <= 0), left: 12 }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                  </button>
+                  <button type="button" onClick={() => goPage(1)} disabled={(activeSettings?.page ?? 0) >= pageCount - 1} aria-label="Next page" style={{ ...ssfNavBtn((activeSettings?.page ?? 0) >= pageCount - 1), right: 12 }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                  </button>
+                </>
+              )}
               {pdfReady && (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
-                  {/* Page navigator — flip through the document pages and
-                      drop the signature box on whichever page you want. */}
-                  <div className="sds-pagenav">
-                    <button type="button" className="sds-pagenav-btn" onClick={() => goPage(-1)} disabled={(activeSettings?.page ?? 0) <= 0} aria-label="Previous page">‹ Prev</button>
-                    <span className="sds-pagenav-label">Page {(activeSettings?.page ?? 0) + 1} of {pageCount}</span>
-                    <button type="button" className="sds-pagenav-btn" onClick={() => goPage(1)} disabled={(activeSettings?.page ?? 0) >= pageCount - 1} aria-label="Next page">Next ›</button>
-                  </div>
+                  {pageCount > 1 && (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 30, background: 'rgba(124,58,237,.1)', border: '1.5px solid rgba(124,58,237,.28)', fontSize: 11, fontWeight: 800, color: '#6d28d9', marginBottom: 10, flexShrink: 0 }}>
+                      Page {(activeSettings?.page ?? 0) + 1} / {pageCount}
+                    </div>
+                  )}
 
                   <div className="ssf-preview-wrap" ref={previewWrapRef}>
                     <canvas ref={canvasRef} className="ssf-preview-frame" />

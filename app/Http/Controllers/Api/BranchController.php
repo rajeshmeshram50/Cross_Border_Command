@@ -43,7 +43,7 @@ class BranchController extends Controller
         } elseif ($request->query('client_id')) {
             $query->where('client_id', $request->query('client_id'));
         }
-
+ 
         
         if (!$request->boolean('include_head_office')) {
             $query->where(function ($q) {
