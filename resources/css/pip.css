@@ -178,6 +178,9 @@
   background: linear-gradient(180deg, #fff 0%, #fafbff 100%);
   border-radius: 14px;
   border: 1px solid var(--vz-border-color, #e5e7eb);
+  /* No top border — .rec-kpi-strip sits at top:0 of the padding box, so a
+     top border shows as a white gap above the coloured accent line. */
+  border-top: 0;
   box-shadow: 0 2px 6px rgba(15, 23, 42, 0.04);
   transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
 }

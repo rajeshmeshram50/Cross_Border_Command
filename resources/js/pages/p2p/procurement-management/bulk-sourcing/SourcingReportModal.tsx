@@ -4,6 +4,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import api from '../../../../api';
 import MapSupplierModal from './MapSupplierModal';
 import MappedSuppliersModal, { type ManualSupplierEdit } from './MappedSuppliersModal';
+import AddVendorModal from '../../p2p-master-management/supplier-management/AddVendorModal';
 import { useModalGuard } from './useModalGuard';
 import { resolveFileUrl, downloadClarityFile } from '../../../../utils/resolveFileUrl';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -134,6 +135,9 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
   const [viewIdx, setViewIdx] = useState<number | null>(null);
   // A manual (New Supplier) row being edited: which product (gi) + its data.
   const [editManual, setEditManual] = useState<{ gi: number; sup: ManualSupplierEdit } | null>(null);
+  // Master supplier edit — opens the Supplier edit wizard IN PLACE (no redirect
+  // to the Suppliers module). `gi` remembers which product to reopen afterwards.
+  const [editMaster, setEditMaster] = useState<{ gi: number; vendorId: number } | null>(null);
   const { pulse, guardOverlay } = useModalGuard();
 
   // Lock background page scroll while the report modal is open.
@@ -324,6 +328,7 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
           canAdd={canMap}
           onAddSupplier={() => { const gi = viewIdx!; setViewIdx(null); setMapIdx(gi); }}
           onEditManual={canMap ? (sup) => { const gi = viewIdx!; setViewIdx(null); setEditManual({ gi, sup }); } : undefined}
+          onEditMaster={canMap ? (vendorId) => { const gi = viewIdx!; setViewIdx(null); setEditMaster({ gi, vendorId }); } : undefined}
         />
       )}
       {editManual !== null && (
@@ -336,6 +341,14 @@ export default function SourcingReportModal({ row, onClose, canMap = true }: { r
           onClose={() => setEditManual(null)}
           onMapped={() => setEditManual(null)}
           onUpdated={(name) => { setEditManual(null); toast.success('Supplier updated', name); }}
+        />
+      )}
+      {editMaster !== null && (
+        <AddVendorModal
+          key={`master-edit-${editMaster.vendorId}`}
+          vendorId={editMaster.vendorId}
+          onClose={() => { const gi = editMaster.gi; setEditMaster(null); setViewIdx(gi); }}
+          onSubmit={() => { const gi = editMaster.gi; setEditMaster(null); setViewIdx(gi); toast.success('Supplier updated', 'Changes saved to the supplier master.'); }}
         />
       )}
     </div>,

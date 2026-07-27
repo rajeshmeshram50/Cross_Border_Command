@@ -869,8 +869,19 @@ export default function HrLeave() {
                           return next;
                         });
                       };
+                      // table-layout: fixed → the <th> widths below are
+                      // authoritative. With the browser default (auto) the
+                      // columns are sized from cell CONTENT, so the narrow
+                      // shimmer placeholders produced one set of widths and the
+                      // real rows another — the table visibly reflowed the
+                      // moment data landed (QA #96). min-width is the sum of
+                      // the column widths; .rec-list-scroll scrolls sideways
+                      // below that instead of squeezing the columns.
                       return (
-                    <table className="rec-list-table align-middle table-nowrap mb-0">
+                    <table
+                      className="rec-list-table align-middle table-nowrap mb-0 lv-req-table"
+                      style={{ tableLayout: 'fixed', minWidth: 1320 }}
+                    >
                       <thead>
                         <tr>
                           <th scope="col" className="ps-3 text-center" style={{ width: 50 }}>SR.</th>

@@ -26,6 +26,7 @@ type SpiSupplier = {
   country: string | null; state: string | null; stateCode: string | null; city: string | null;
   contact: string | null; desig: string | null; phone: string | null; email: string | null;
   scrutiny: string | null; gstNo: string | null; gstStatus: string | null; filing: string | null; remarks: string | null;
+  segments?: number[];   // supplier's segment ids — gate the SPI product picker
 };
 type SpiPoItem = {
   product_id: number | null; code: string | null;
@@ -84,11 +85,14 @@ const INCO = ['FOB', 'CIF', 'EXW', 'C&F'];
 const todayDisp = formatDmy(new Date());
 const todayIso = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD (local) — min for future-dated pickers
 
-/* Optional per-option meta for EditSelect (warehouse code + own/third badge). */
-type DdMeta = { code?: string; badge?: string; tone?: 'own' | 'third' };
+/* Optional per-option meta for EditSelect (warehouse code + own/third badge).
+   `segment` shows the product's segment; `disabled` freezes an option whose
+   segment doesn't match the supplier (SPI product picker). */
+type DdMeta = { code?: string; badge?: string; tone?: 'own' | 'third'; segment?: string; disabled?: boolean };
 
-/* A product-master option for the standalone (Direct) product picker. */
-type ProdOpt = { id: number | null; code: string; name: string; price: number; gst: number; hsn: string };
+/* A product-master option for the standalone (Direct) product picker.
+   `segId`/`segment` gate the picker to the supplier's segment(s). */
+type ProdOpt = { id: number | null; code: string; name: string; price: number; gst: number; hsn: string; segId: number | null; segment: string };
 
 /* Supplier Legal Status — the 5-parameter compliance breakdown is derived from
  * the vendor's Evidence Vault (/segment-uploads/supplier/{id}/vault). Mirrors
@@ -226,6 +230,11 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         // hsn may be the eager-loaded relation object ({ hsn_code }) or a plain value.
         const h = p.hsn;
         const hsn = (h && typeof h === 'object') ? String((h as { hsn_code?: string }).hsn_code ?? '') : String(p.hsn_code ?? h ?? '');
+        // Segment may be an eager-loaded relation ({ id, name }) or a plain id/name.
+        const seg = p.segment;
+        const segId = p.segment_id != null ? Number(p.segment_id)
+          : (seg && typeof seg === 'object' && (seg as { id?: number }).id != null ? Number((seg as { id?: number }).id) : null);
+        const segment = (seg && typeof seg === 'object') ? String((seg as { name?: string }).name ?? '') : String(seg ?? '');
         return {
           id: p.id != null ? Number(p.id) : null,
           name: String(p.name ?? p.product_name ?? p.title ?? ''),
@@ -233,6 +242,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
           price: n(p.total_price ?? p.base_price ?? p.price ?? p.rate ?? 0),
           gst: base > 0 && gstAmt > 0 ? Math.round((gstAmt / base) * 100) : n(p.gst ?? p.gst_rate ?? 0),
           hsn,
+          segId,
+          segment,
         };
       }).filter((o: ProdOpt) => o.name);
       if (alive && opts.length) setProdOpts(opts);
@@ -245,7 +256,15 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   warehouses.forEach(w => { const third = /third/i.test(w.type || ''); whMeta[w.name] = { code: w.code || undefined, badge: third ? 'Third Party' : 'Own', tone: third ? 'third' : 'own' }; });
   // Product picker meta: show the product code alongside the name.
   const prodMeta: Record<string, DdMeta> = {};
-  prodOpts.forEach(p => { prodMeta[p.name] = { code: p.code || undefined }; });
+  // Supplier's segment ids — only products in these segments are selectable;
+  // the rest are shown frozen with their segment. If the supplier has no
+  // segments on record, don't gate (enable all).
+  const supSegIds: number[] = (po?.supplier?.segments ?? stdSup?.segments ?? []);
+  const gateBySegment = supSegIds.length > 0;
+  prodOpts.forEach(p => {
+    const mismatch = gateBySegment && p.segId != null && !supSegIds.includes(p.segId);
+    prodMeta[p.name] = { code: p.code || undefined, segment: p.segment || undefined, disabled: mismatch };
+  });
 
   // Standalone: prefill the supplier chosen back in the Map modal + its legal status.
   useEffect(() => {
@@ -377,6 +396,12 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
     // the defensive backstop).
     if (rows.some((r, idx) => idx !== i && r.productId === p.id)) {
       toast.warning('Already added', `"${p.name}" is already on this invoice. Each product can be added only once.`);
+      return;
+    }
+    // Segment gate (defensive backstop — the dropdown already freezes these):
+    // the supplier can only be invoiced for products in its own segment(s).
+    if (gateBySegment && p.segId != null && !supSegIds.includes(p.segId)) {
+      toast.error('Segment not mapped to the SPI', `"${p.name}"${p.segment ? ` (${p.segment})` : ''} isn't in this supplier's segment${supSegIds.length > 1 ? 's' : ''} — it can't be added to this invoice.`);
       return;
     }
     setRow(i, { productId: p.id, code: p.code, spiName: p.name, hsn: p.hsn, spiRate: String(p.price || ''), gst: p.gst });
@@ -1085,7 +1110,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                       <td><span className="spi-dt-mcode">{r.code ? formatProductCode(r.code) : '—'}</span></td>
                       <td>{r.productId != null
                         ? <input className="spi-dt-minp spi-dt-minp-name" value={r.spiName} placeholder="Product name" onChange={e => setRow(i, { spiName: e.target.value })} />
-                        : <EditSelect value={r.spiName} options={prodOpts.filter(o => o.id === r.productId || !rows.some((x, idx) => idx !== i && x.productId === o.id)).map(p => p.name)} placeholder="— Select Product —" onChange={v => pickProduct(i, v)} />}</td>
+                        : <EditSelect value={r.spiName} options={prodOpts.filter(o => o.id === r.productId || !rows.some((x, idx) => idx !== i && x.productId === o.id)).map(p => p.name)} meta={prodMeta} placeholder="— Select Product —" onChange={v => pickProduct(i, v)} onDisabledSelect={(v) => { const p = prodOpts.find(x => x.name === v); toast.error('Segment not mapped to the SPI', `"${v}"${p?.segment ? ` (${p.segment})` : ''} isn't in this supplier's segment — it can't be added to this invoice.`); }} />}</td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value.replace(/[^0-9.]/g, '') })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" inputMode="numeric" maxLength={8} value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value.replace(/\D/g, '').slice(0, 8) })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiRate} onChange={e => setRow(i, { spiRate: e.target.value })} /></td>
@@ -1298,14 +1323,16 @@ function eselLabel(o: string, m?: DdMeta) {
   return (
     <span className="spi-dt-esel-lbl">
       {m.code && <span className="spi-dt-esel-code">{formatProductCode(m.code)}:</span>}
-      <span className="spi-dt-esel-name">{o}</span>
+      <span className="spi-dt-esel-name" title={o}>{o}</span>
+      {m.segment && <span className="spi-dt-esel-seg">{m.segment}</span>}
       {m.badge && <span className={`spi-dt-esel-badge spi-dt-esel-badge--${m.tone || 'own'}`}>{m.badge}</span>}
+      {m.disabled && <span className="spi-dt-esel-lock">Segment not mapped</span>}
     </span>
   );
 }
 /* Editable styled dropdown (standalone Step-1 basic details). The popup is
    portalled to <body> so the section card's overflow:hidden can't clip it. */
-function EditSelect({ value, options, onChange, placeholder, meta, invalid }: { value: string; options: string[]; onChange: (v: string) => void; placeholder?: string; meta?: Record<string, DdMeta>; invalid?: boolean }) {
+function EditSelect({ value, options, onChange, placeholder, meta, invalid, onDisabledSelect }: { value: string; options: string[]; onChange: (v: string) => void; placeholder?: string; meta?: Record<string, DdMeta>; invalid?: boolean; onDisabledSelect?: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const [pos, setPos] = useState({ left: 0, top: 0, width: 0 });
@@ -1356,9 +1383,17 @@ function EditSelect({ value, options, onChange, placeholder, meta, invalid }: { 
       </Tooltip>
       {open && createPortal(
         <div className="spi-dt-esel-pop" style={{ left: pos.left, top: pos.top, width: pos.width }}>
-          {options.map(o => (
-            <div key={o} className={`spi-dt-esel-opt ${o === value ? 'is-active' : ''}`} onClick={() => { onChange(o); setOpen(false); }}>{eselLabel(o, meta?.[o])}</div>
-          ))}
+          {options.map(o => {
+            const dis = !!meta?.[o]?.disabled;
+            return (
+              <div
+                key={o}
+                className={`spi-dt-esel-opt ${o === value ? 'is-active' : ''} ${dis ? 'is-disabled' : ''}`}
+                aria-disabled={dis}
+                onClick={() => { if (dis) { onDisabledSelect?.(o); return; } onChange(o); setOpen(false); }}
+              >{eselLabel(o, meta?.[o])}</div>
+            );
+          })}
         </div>,
         document.body,
       )}

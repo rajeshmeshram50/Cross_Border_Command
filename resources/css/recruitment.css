@@ -38,75 +38,99 @@
     inset 0 -1px 0 rgba(0,0,0,0.20);
 }
 
-/* Page-level KPI strip — compact white tiles with colored icons,
-   matching the Employee master page for fresh / HD feel. */
+/* Page-level KPI strip — an exact clone of the Employee master KPI card
+   (.hr-emp-kpi-card): 14px radius, 82px tile, 11px/15px padding, violet
+   wash, 38px gradient icon tile, 4px hover lift. Recruitment, Candidate
+   Management and Exit Management all use this so the whole HRMS reads
+   as one component.
+
+   border-top is deliberately dropped. The accent strip is positioned at
+   top:0, which is the top of the PADDING box — so any top border sits
+   above it and renders as the white gap/break QA reported. Removing the
+   top border makes the coloured strip itself the card's top edge. */
 .rec-page-kpis .rec-kpi-card {
-  padding: 12px 14px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 15px;
+  min-height: 82px;
   background: #ffffff;
-  border: 1px solid transparent;
-  border-radius: 12px;
+  background-image: linear-gradient(180deg, rgba(124,92,252,0.04) 0%, rgba(124,92,252,0) 60%);
+  border: 1px solid var(--vz-border-color);
+  border-top: 0;
+  border-radius: 14px;
   box-shadow:
-    0 1px 0 rgba(15,23,42,0.04),
-    0 3px 10px rgba(15,23,42,0.05),
-    0 0 0 1px rgba(15,23,42,0.04);
-  transition: transform .22s cubic-bezier(.4,0,.2,1), box-shadow .22s cubic-bezier(.4,0,.2,1);
-  min-height: 72px;
+    0 6px 16px -4px rgba(15, 23, 42, 0.10),
+    0 2px 4px rgba(15, 23, 42, 0.06);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
   overflow: hidden;
 }
 .rec-page-kpis .rec-kpi-card:hover {
-  transform: translateY(-3px);
+  transform: translateY(-4px);
   box-shadow:
-    0 1px 0 rgba(15,23,42,0.04),
-    0 16px 32px rgba(15,23,42,0.08),
-    0 0 0 1px rgba(15,23,42,0.05);
+    0 16px 32px -8px rgba(15, 23, 42, 0.18),
+    0 4px 10px rgba(124, 92, 252, 0.10);
+  border-color: rgba(124, 92, 252, 0.45);
 }
+/* Flush, square, shadowless — a rounded strip left white wedges in the
+   card corners, and the drop shadow read as a second broken line. */
 .rec-page-kpis .rec-kpi-strip {
-  height: 4px;
-  border-radius: 12px 12px 0 0;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  height: 3px;
+  border-radius: 0;
+  box-shadow: none;
 }
+/* Reserve two lines on every label so the value sits at the same
+   vertical position on every card, long label or short. */
 .rec-page-kpis .rec-kpi-label {
   font-size: 10.5px;
-  letter-spacing: 0.06em;
+  font-weight: 700;
+  letter-spacing: 0.05em;
   color: var(--vz-secondary-color);
+  min-height: 24px;
+  line-height: 1.2;
+  margin-bottom: 6px;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: clip;
 }
 .rec-page-kpis .rec-kpi-num {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.02em;
-  margin-top: 2px;
-  color: #0f1729;
-  line-height: 1.1;
+  margin-top: 0;
+  color: var(--vz-heading-color, var(--vz-body-color));
+  line-height: 1;
 }
 .rec-page-kpis .rec-kpi-icon {
-  width: 36px; height: 36px; border-radius: 10px;
+  width: 38px; height: 38px; border-radius: 10px;
   position: relative; overflow: hidden;
-  box-shadow:
-    0 4px 10px rgba(0,0,0,0.15),
-    0 1px 3px rgba(0,0,0,0.08),
-    inset 0 1px 0 rgba(255,255,255,0.30),
-    inset 0 -1px 0 rgba(0,0,0,0.10);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+  transition: transform .18s ease, box-shadow .18s ease;
 }
-.rec-page-kpis .rec-kpi-icon::after {
-  content: '';
-  position: absolute; inset: 0;
-  background: linear-gradient(135deg, rgba(255,255,255,0.25) 0%, transparent 55%);
-  pointer-events: none;
+.rec-page-kpis .rec-kpi-card:hover .rec-kpi-icon {
+  transform: scale(1.06);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.18);
 }
-.rec-page-kpis .rec-kpi-icon i { font-size: 17px; position: relative; z-index: 1; }
+.rec-page-kpis .rec-kpi-icon i { font-size: 18px; position: relative; z-index: 1; }
 [data-bs-theme="dark"] .rec-page-kpis .rec-kpi-card {
   background: var(--vz-card-bg);
+  background-image: linear-gradient(180deg, rgba(124,92,252,0.10) 0%, rgba(124,92,252,0) 70%);
   border-color: var(--vz-border-color);
   box-shadow: 0 4px 14px rgba(0,0,0,0.30);
 }
 [data-bs-theme="dark"] .rec-page-kpis .rec-kpi-card:hover {
-  border-color: color-mix(in srgb, #7c5cfc 35%, var(--vz-border-color));
+  border-color: color-mix(in srgb, #7c5cfc 55%, var(--vz-border-color));
   box-shadow:
-    0 12px 28px rgba(0,0,0,0.50),
-    0 0 0 1px rgba(124,92,252,0.18);
+    0 18px 36px -8px rgba(0,0,0,0.65),
+    0 4px 12px rgba(124,92,252,0.25);
 }
-[data-bs-theme="dark"] .rec-page-kpis .rec-kpi-label { color: rgba(255,255,255,0.65); }
-[data-bs-theme="dark"] .rec-page-kpis .rec-kpi-num { color: #ffffff !important; }
+/* Matches the Employee card — the ribbon reads as a clean lit edge
+   against the deep surface at 4px. */
+[data-bs-theme="dark"] .rec-page-kpis .rec-kpi-strip { height: 4px; }
+[data-bs-theme="dark"] .rec-page-kpis .rec-kpi-label { color: #c4c8d0; }
+[data-bs-theme="dark"] .rec-page-kpis .rec-kpi-num { color: #f4f5f7 !important; }
 
 /* Header recruitment-count chip — soft purple pill with green pulse dot,
    matches the reference Employee header */
@@ -1376,7 +1400,9 @@
 .rec-req-stats .rec-kpi-card {
   background: linear-gradient(180deg, #ffffff 0%, #fbfaff 100%);
   border: 1px solid #ede9fe;
+  border-top: 0;
   border-radius: 12px;
+  overflow: hidden;
   padding: 16px 18px;
   box-shadow:
     0 3px 10px rgba(91,63,209,0.06),
@@ -1419,6 +1445,9 @@
   padding: 14px 16px;
   background: #ffffff;
   border: 1px solid #eef0f4;
+  /* No top border — .rec-kpi-strip sits at top:0 of the padding box, so a
+     top border would show as a white gap above the coloured line. */
+  border-top: 0;
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 2px 10px rgba(0,0,0,0.04);
@@ -1698,16 +1727,28 @@
 /* ---------------------------------------------------------------------
    11. Candidate Management page — recruitment context card + form steps
    --------------------------------------------------------------------- */
+/* Read-only recruitment summary above the Candidates list. The surface is the
+   plain card background — it used to be a lavender wash, which made this
+   panel read as a different kind of surface from every other card on the
+   page. Violet identity is carried by the left rail (::before) and the icon
+   tile instead of by tinting the whole block. */
 .cand-rec-card {
   position: relative;
   padding: 10px 14px;
-  background: linear-gradient(180deg, #ede9fe 0%, #f5f3ff 100%);
+  /* Literal white, not var(--vz-card-bg) — that variable resolves to the grey
+     secondary background outside a .card, which left this panel looking dirty
+     next to the white .frm-cstrip header. Same recipe the strip and the KPI
+     tiles use: #ffffff for light, the themed surface only under [dark]. */
+  background: #ffffff;
   border: 1px solid #ddd6fe;
   border-radius: 12px;
   box-shadow: 0 2px 6px rgba(91,63,209,0.08), inset 0 1px 0 rgba(255,255,255,0.7);
 }
-[data-bs-theme="dark"] .cand-rec-card {
-  background: linear-gradient(180deg, color-mix(in srgb, #7c5cfc 14%, var(--vz-card-bg)) 0%, color-mix(in srgb, #7c5cfc 8%, var(--vz-card-bg)) 100%);
+/* Higher specificity than the plain .cand-rec-card rules, so this wins in
+   dark mode regardless of which of the two light blocks comes last. */
+[data-bs-theme="dark"] .cand-rec-card,
+[data-layout-mode="dark"] .cand-rec-card {
+  background: var(--vz-card-bg, #1a1d29);
   border-color: color-mix(in srgb, #7c5cfc 28%, var(--vz-border-color));
 }
 .cand-rec-icon {
@@ -2779,13 +2820,14 @@
    12. Candidate Management page — refined header, recruitment context
        card layout, result chip, and dark-mode polish
    --------------------------------------------------------------------- */
+/* Later override of the block above — keeps the roomier padding but must
+   repeat the flat surface, otherwise the violet radial wash it used to carry
+   would win over the background set there. */
 .cand-rec-card {
   position: relative;
   overflow: hidden;
   padding: 16px 18px 18px;
-  background:
-    radial-gradient(600px 160px at 0% 0%, rgba(124,92,252,0.12) 0%, transparent 60%),
-    linear-gradient(180deg, #f5f3ff 0%, #faf8ff 100%);
+  background: #ffffff;
 }
 .cand-rec-card::before {
   content: '';
@@ -3826,18 +3868,15 @@
    glance like the Figma reference. Every cell stays vertically centred
    on the same horizontal line via fixed line-height + middle vertical
    alignment. */
-/* Align with the canonical table rhythm used on HR Employees / My Team /
-   Branches — 11px x 12px header padding, 10.5px / 800-weight micro-caps,
-   12px x 12px body padding, 12.75px body font. The earlier 6px/10px +
-   forced 46px row height made the Candidates table look tighter and
-   smaller than every other list in the product. */
-.cand-page-table.rec-list-table thead th {
-  padding: 11px 12px;
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  line-height: 1.2;
-}
+/* Header: NO overrides on purpose. The header is inherited wholesale from
+   .rec-list-table thead th (13px x 12px padding, 10.5px / 700 micro-caps at
+   0.08em, gradient bar, 1px divider) so Candidates, Recruitment and the HR
+   Employees list all present an identical header. This block used to nudge
+   the padding / weight / tracking, which left the Candidates header subtly
+   heavier and tighter than every other list.
+
+   Body cells keep their own rhythm below — 12px x 12px padding and a 12.75px
+   font — because the Candidates table carries far more columns. */
 .cand-page-table.rec-list-table tbody td {
   padding: 12px 12px;
   font-size: 12.75px;
@@ -7150,20 +7189,49 @@
 /* Regularization Requests header — match the Logs & Requests table header
    (CBC #37): a subtle light band + uppercase muted labels in light mode, and a
    subtle dark band in dark mode. */
+/* Regularization Requests table — header AND body rhythm copied from the
+   Recruitment list table (.rec-list-table) so it matches the Logs & Requests
+   table and every other HRMS list. The markup dropped .table-sm / .table-light
+   for this; see RegularizationApprovals.tsx. */
 .reg-req-table thead th {
-  background: #f9fafb;
+  padding: 13px 12px;
+  background: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
   color: var(--vz-secondary-color);
   text-transform: uppercase;
-  font-weight: 800;
+  font-weight: 700;
   font-size: 10.5px;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid #f1f2f4;
+  letter-spacing: 0.08em;
+  border-bottom: 1px solid #ececf2;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 [data-bs-theme="dark"] .reg-req-table thead th,
 [data-layout-mode="dark"] .reg-req-table thead th {
-  background: rgba(255,255,255,0.02);
-  border-bottom-color: var(--vz-border-color);
-  color: rgba(255,255,255,0.60);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
+    var(--vz-card-bg, #1a1d29) 100%);
+  border-bottom-color: var(--vz-border-color, #2c3242);
+  color: rgba(255,255,255,0.70);
+}
+.reg-req-table tbody td {
+  padding: 14px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+.reg-req-table tbody tr:last-child td { border-bottom: 0; }
+[data-bs-theme="dark"] .reg-req-table tbody td,
+[data-layout-mode="dark"] .reg-req-table tbody td {
+  border-bottom-color: color-mix(in srgb, #ffffff 6%, transparent);
+}
+.reg-req-table tbody tr { transition: background .14s ease; }
+.reg-req-table tbody tr:hover td {
+  background: linear-gradient(180deg,
+    rgba(134,92,226,0.04) 0%,
+    rgba(134,92,226,0.02) 100%);
+}
+[data-bs-theme="dark"] .reg-req-table tbody tr:hover td,
+[data-layout-mode="dark"] .reg-req-table tbody tr:hover td {
+  background: rgba(134,92,226,0.08);
 }
 
 /* WorklistPager footer — retheme from the shared violet to this page's teal
@@ -11400,24 +11468,43 @@
         .mschips-check { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--vz-border-color); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .mschips-item.is-on .mschips-check { background: #6366f1; border-color: #6366f1; color: #fff; }
 
-/* Active/Disabled Employee table — sticky header (bug #65).
+/* Active/Disabled Employee table — header is an exact copy of the Recruitment
+   list header (.rec-list-table thead th): same micro-caps type, 10.5px/700 at
+   0.08em, same soft vertical gradient bar, same 13px/12px padding and 1px
+   divider, so both modules read as one table system.
+
    Sticky lives on the th cells (not just thead) so the background paints over
-   scrolled rows in every browser, with an opaque theme-aware fill so dark mode
-   doesn't let rows bleed through the translucent .table-light. */
+   scrolled rows in every browser (bug #65). The fill must stay OPAQUE for that
+   to work — .table-light was dropped from the markup because Bootstrap paints
+   its fill via an inset box-shadow that covers any background set here. */
 .hr-emp-table thead.hr-emp-sticky-head th {
   position: sticky;
   top: 0;
   z-index: 3;
-  background-color: var(--vz-light);
   background-clip: padding-box;
+  padding: 13px 12px;
+  background-color: #f4f5f8;
+  background-image: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
+  color: var(--vz-secondary-color);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #ececf2;
+  white-space: nowrap;
+  vertical-align: middle;
 }
+.hr-emp-table thead.hr-emp-sticky-head th:first-child { border-top-left-radius: 14px; }
+.hr-emp-table thead.hr-emp-sticky-head th:last-child  { border-top-right-radius: 14px; }
 [data-bs-theme="dark"] .hr-emp-table thead.hr-emp-sticky-head th,
 [data-layout-mode="dark"] .hr-emp-table thead.hr-emp-sticky-head th {
-  /* Vertical gradient so it reads seamless across the per-cell sticky headers
-     (a horizontal gradient would restart in every column). Matches the active
-     "Active Employees" tab's blurple. */
-  background-color: #6355e0;
-  background-image: linear-gradient(180deg, #7a6ef0 0%, #5a4ce2 100%);
-  color: #ffffff;
-  border-bottom-color: rgba(255,255,255,0.12);
+  /* Same dark recipe as the Recruitment header. The fallback colour in the
+     var() is required: an opaque fill is what stops scrolled rows bleeding
+     through the sticky header. */
+  background-color: var(--vz-card-bg, #1a1d29);
+  background-image: linear-gradient(180deg,
+    color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
+    var(--vz-card-bg, #1a1d29) 100%);
+  color: rgba(255,255,255,0.70);
+  border-bottom-color: var(--vz-border-color, #2c3242);
 }

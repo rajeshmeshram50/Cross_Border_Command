@@ -683,6 +683,10 @@ export default function HrEmployeeOnboarding() {
               style={{
                 borderRadius: 14,
                 border: '1px solid var(--vz-border-color)',
+                // No top border: the accent strip below is positioned at top:0
+                // of the padding box, so a 1px top border renders as a white
+                // gap above the coloured line.
+                borderTopWidth: 0,
                 boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
                 padding: '16px 18px',
                 position: 'relative',

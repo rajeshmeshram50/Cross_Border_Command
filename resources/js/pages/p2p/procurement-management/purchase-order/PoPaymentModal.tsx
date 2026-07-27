@@ -779,9 +779,11 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 .master-datepicker-popup.pop-cal .master-datepicker-day.is-selected,
 .master-datepicker-popup.pop-cal .master-datepicker-cell.is-selected{background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;box-shadow:0 3px 8px rgba(8,145,178,.3);}
 .master-datepicker-popup.pop-cal .master-datepicker-footer .today-btn{color:#0891b2;}
-.pop-backdrop{position:fixed;inset:0;z-index:2900000;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);display:flex;align-items:flex-start;justify-content:center;padding:28px 16px;overflow-y:auto;font-family:var(--font-sans,'Inter',sans-serif);}
-.pop-modal{width:100%;max-width:1320px;margin:auto;background:#f8fafc;border:1.5px solid rgba(255,255,255,.5);border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);display:flex;flex-direction:column;}
-.pop-hero{background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);}
+.pop-backdrop{position:fixed;inset:0;z-index:2900000;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:28px 16px;overflow-y:auto;font-family:var(--font-sans,'Inter',sans-serif);}
+/* Cap the modal to the viewport so the CONTENT scrolls INTERNALLY (pop-body),
+   not the whole popup within the backdrop (QA: scroll the content, not the page). */
+.pop-modal{width:100%;max-width:1320px;height:calc(100vh - 56px);max-height:calc(100vh - 56px);margin:auto;background:#f8fafc;border:1.5px solid rgba(255,255,255,.5);border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);display:flex;flex-direction:column;}
+.pop-hero{background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);flex-shrink:0;}
 .pop-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 22px 4px;background:transparent;color:#fff;}
 .pop-head-l{display:flex;align-items:center;gap:10px;min-width:0;flex-wrap:wrap;}
 .pop-head-ico{width:34px;height:34px;border-radius:9px;background:rgba(255,255,255,.18);display:inline-flex;align-items:center;justify-content:center;}
@@ -789,7 +791,11 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 .pop-chip{font-size:11px;font-weight:700;font-family:monospace;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);padding:3px 10px;border-radius:20px;}
 .pop-x{width:30px;height:30px;border-radius:8px;border:none;background:rgba(255,255,255,.16);color:#fff;cursor:pointer;font-size:15px;}
 .pop-x:hover{background:rgba(255,255,255,.3);}
-.pop-body{padding:13px 18px;display:flex;flex-direction:column;gap:10px;}
+.pop-body{padding:13px 18px;display:flex;flex-direction:column;gap:10px;flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;}
+/* In a flex-column scroll area the children shrink to fit by default, which
+   compresses/clips the content instead of scrolling. Lock their size so the
+   body overflows and scrolls properly. */
+.pop-body > *{flex-shrink:0;}
 /* Inner supplier card aligns to the header's TEXT column: left edge starts at
    the "Payment Summary" heading (just past the 34px icon + 10px gap + 22px pad
    = 66px), right edge ends at the close (✕) button (22px pad + 30px btn = 52px). */
@@ -875,7 +881,7 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 .pop-attach svg{flex-shrink:0;}
 .pop-attach-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .pop-del{width:24px;height:24px;border-radius:6px;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;cursor:pointer;font-size:11px;}
-.pop-foot{display:flex;align-items:center;justify-content:center;gap:12px;padding:14px 22px;background:#fff;border-top:1px solid #e2e8f0;}
+.pop-foot{display:flex;align-items:center;justify-content:center;gap:12px;padding:14px 22px;background:#fff;border-top:1px solid #e2e8f0;flex-shrink:0;}
 
 /* ── Update Payment popup ── */
 .upm-backdrop{position:fixed;inset:0;z-index:2900010;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:24px 16px;font-family:var(--font-sans,'Inter',sans-serif);}
@@ -936,7 +942,7 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 /* ── Mobile / small screens ── */
 @media (max-width:640px){
   .pop-backdrop{padding:10px 8px;align-items:flex-start;}
-  .pop-modal{border-radius:14px;}
+  .pop-modal{border-radius:14px;height:calc(100vh - 20px);max-height:calc(100vh - 20px);}
   .pop-head{padding:12px 14px 4px;flex-wrap:wrap;gap:8px;}
   .pop-head-title{font-size:14px;}
   .pop-head-l{gap:7px;}
@@ -996,8 +1002,9 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 /* ~5 rows visible, the rest scroll; header + totals stay pinned. */
 .gst-tbl-wrap{max-height:340px;overflow-y:auto;}
 .gst-tbl-wrap .pop-tbl thead th{position:sticky;top:0;z-index:3;background:#0891b2;}
-/* Payment History: show ~3 rows, the rest scroll (header stays pinned). */
-.pay-hist-wrap{max-height:172px;overflow-y:auto;}
+/* Payment History flows into the single body scroll (no nested vertical
+   scrollbar) — only horizontal scroll remains from .pop-tbl-wrap. */
+.pay-hist-wrap{overflow-y:visible;}
 .pay-hist-wrap .pop-tbl thead th{position:sticky;top:0;z-index:3;background:#0891b2;}
 .gst-name{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;line-height:1.35;max-width:260px;}
 /* Totals summary bar (below the scrollable table). */
