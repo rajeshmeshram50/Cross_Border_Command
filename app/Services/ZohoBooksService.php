@@ -100,7 +100,10 @@ class ZohoBooksService
         $ttl = max(60, ((int) ($data['expires_in'] ?? 3600)) - 600);
         Cache::put(self::TOKEN_CACHE_KEY, $token, now()->addSeconds($ttl));
 
-        return $token;
+        return $token; work place 6 
+        trade doc 5 
+        T&C 1 
+        
     }
 
     /* ─────────────────────── Low-level HTTP ─────────────────────── */
