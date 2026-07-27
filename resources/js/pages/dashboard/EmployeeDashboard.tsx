@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Card, CardBody, Col, Row, Modal, ModalBody, ModalHeader } from 'reactstrap';
+import { Card, CardBody, Col, Row, Modal, ModalBody, ModalFooter } from 'reactstrap';
 import { PieChart, Pie, Cell, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -7,6 +7,9 @@ import { ShimmerDashboard } from '../../components/ui/Shimmer';
 import { formatCurrencyCompact as formatINRCompact } from '../../utils/formatNumber';
 import { useChartTheme } from '../../hooks/useChartTheme';
 import { ChartTooltip } from './DashboardSections';
+// Announcement detail popup reuses the master form-modal shell (20px radius,
+// gradient header, tinted body, pill Close) so it matches the master popups.
+import { MasterFormStyles } from '../master/masterFormKit';
 
 /* ───────────────────────────────────────────────────────────────────────────
  *  Employee Dashboard — personal landing page for `user_type === 'employee'`.
@@ -61,10 +64,12 @@ function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
     <div
       className="emp-kpi"
       style={{
-        borderRadius: 16,
+        // Radius + shadow are kept identical to `cardStyle` (the shared surface
+        // used by every other card on this dashboard) so the tiles sit in the
+        // same visual system rather than looking like a separate component.
+        borderRadius: 18,
         padding: '16px 18px 14px',
-        // Same layered "floating glass" shadow as the Branch/Client KPI tiles.
-        boxShadow: '0 1px 2px rgba(16,24,40,0.05), 0 14px 30px -16px rgba(64,81,137,0.28)',
+        boxShadow: '0 1px 2px rgba(16,24,40,0.05), 0 14px 34px -18px rgba(64,81,137,0.26)',
         border: '1px solid var(--vz-border-color)',
         background: 'var(--vz-card-bg)',
         position: 'relative',
@@ -85,9 +90,9 @@ function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
         el.style.borderColor = 'var(--vz-border-color)';
       }}
     >
-      {/* Accent glow — small + faint, tucked into the corner so the tile
-          reads clean rather than "smoky". */}
-      <div style={{ position: 'absolute', top: -48, right: -42, width: 96, height: 96, borderRadius: '50%', background: gradient, opacity: 0.06, filter: 'blur(6px)', pointerEvents: 'none' }} />
+      {/* Colour identity comes from the left rail and the icon tile only — the
+          card surface itself stays flat var(--vz-card-bg) so it matches the
+          other dashboard cards. A faint corner glow used to tint it here. */}
       {/* Glossy accent rail down the left edge (replaces the flat top border). */}
       <div style={{ position: 'absolute', top: 12, bottom: 12, left: 0, width: 3, borderRadius: '0 4px 4px 0', background: gradient }} />
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, position: 'relative', zIndex: 1 }}>
@@ -486,25 +491,13 @@ export default function EmployeeDashboard() {
         [data-bs-theme="dark"] .emp-list-body > div:hover,
         [data-layout-mode="dark"] .emp-list-body > div:hover { background: rgba(255,255,255,0.04); box-shadow: inset 3px 0 0 0 rgba(102,145,231,0.9); }
 
-        /* ── Glossy glass effect on the KPI tiles ──────────────────────────
-           ::before = a soft diagonal highlight across the top-left + a thin
-           top edge highlight, so each tile reads as a polished glass surface.
-           ::after  = a light streak that sweeps across the tile on hover. */
-        .emp-kpi::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          border-radius: inherit;
-          background: linear-gradient(155deg, rgba(255,255,255,0.62) 0%, rgba(255,255,255,0.16) 26%, rgba(255,255,255,0) 52%);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
-          pointer-events: none;
-          z-index: 0;
-        }
-        [data-bs-theme="dark"] .emp-kpi::before,
-        [data-layout-mode="dark"] .emp-kpi::before {
-          background: linear-gradient(155deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 30%, rgba(255,255,255,0) 58%);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
-        }
+        /* ── KPI tiles ─────────────────────────────────────────────────────
+           The tiles deliberately carry NO surface overlay: their background is
+           the plain var(--vz-card-bg) set inline, exactly like every other card
+           on this dashboard. A diagonal white-to-transparent "glass" wash used
+           to sit on top of them, which made the tiles read as a grey gradient
+           next to the flat white Compensation / list cards.
+           ::after is the light streak that sweeps across on hover only. */
         .emp-kpi::after {
           content: '';
           position: absolute;
@@ -1072,17 +1065,96 @@ export default function EmployeeDashboard() {
         );
       })()}
 
-      {/* Announcement detail — opened by clicking a card in the list above. */}
-      <Modal isOpen={!!openAnn} toggle={() => setOpenAnn(null)} centered scrollable size="lg">
-        <ModalHeader toggle={() => setOpenAnn(null)}>{openAnn?.title}</ModalHeader>
-        <ModalBody>
-          {openAnn?.created_at && (
-            <div className="text-muted mb-2" style={{ fontSize: 12 }}>{fmtDateShort(openAnn.created_at)}</div>
-          )}
+      {/* Announcement detail — opened by clicking a card in the list above.
+          Built on the shared `.master-modal` shell (see masterFormKit) rather
+          than a bare reactstrap ModalHeader, so it carries the same gradient
+          header, 20px radius, tinted body and pill footer button as every
+          master popup form. */}
+      <MasterFormStyles />
+      <Modal
+        isOpen={!!openAnn}
+        toggle={() => setOpenAnn(null)}
+        centered
+        scrollable
+        size="lg"
+        modalClassName="master-modal"
+      >
+        <div
+          className="position-relative overflow-hidden"
+          style={{
+            background:
+              'linear-gradient(135deg, #2b3a85 0%, #405189 28%, #5562c4 55%, #6e7eee 78%, #8b6fe8 100%)',
+            padding: '22px 24px',
+          }}
+        >
+          {/* Decorative glows + diagonal sheen — same recipe as the master header. */}
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute', top: -50, right: -30, width: 200, height: 200, borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(255,255,255,0.28) 0%, rgba(167,139,250,0.18) 35%, transparent 70%)',
+              pointerEvents: 'none',
+            }}
+          />
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute', bottom: -60, right: 80, width: 180, height: 180, borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(102,145,231,0.45) 0%, transparent 70%)',
+              pointerEvents: 'none',
+            }}
+          />
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute', bottom: -50, left: -30, width: 160, height: 160, borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(139,111,232,0.32) 0%, transparent 70%)',
+              pointerEvents: 'none',
+            }}
+          />
+          <span
+            aria-hidden
+            style={{
+              position: 'absolute', inset: 0,
+              background: 'linear-gradient(115deg, rgba(255,255,255,0.10) 0%, transparent 35%, transparent 65%, rgba(0,0,0,0.08) 100%)',
+              pointerEvents: 'none',
+            }}
+          />
+          <div className="d-flex align-items-center gap-3 position-relative">
+            <span
+              className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+              style={{
+                width: 44, height: 44,
+                background: 'rgba(255,255,255,0.18)',
+                border: '1px solid rgba(255,255,255,0.25)',
+                backdropFilter: 'blur(6px)',
+              }}
+            >
+              <i className="ri-megaphone-line" style={{ color: '#fff', fontSize: 20 }} />
+            </span>
+            <div className="flex-grow-1 min-w-0">
+              <h4 className="mb-0 fw-bold text-truncate" style={{ color: '#fff', fontWeight: 800, letterSpacing: '0.01em' }}>
+                {openAnn?.title}
+              </h4>
+              <small style={{ color: 'rgba(255,255,255,0.82)', fontSize: 12 }}>
+                {openAnn?.created_at ? `Announced on ${fmtDateShort(openAnn.created_at)}` : 'Announcement details'}
+              </small>
+            </div>
+          </div>
+        </div>
+        <ModalBody className="px-4 py-3">
           <div style={{ whiteSpace: 'pre-wrap', fontSize: 13.5, lineHeight: 1.6, color: 'var(--vz-body-color)' }}>
             {(openAnn?.body || openAnn?.snippet || '').trim() || 'No further details.'}
           </div>
         </ModalBody>
+        <ModalFooter
+          className="px-4 py-3 d-flex align-items-center justify-content-end flex-wrap gap-2"
+          style={{ borderTop: '1px solid var(--vz-border-color)' }}
+        >
+          <button type="button" className="master-modal-cancel" onClick={() => setOpenAnn(null)}>
+            Close
+          </button>
+        </ModalFooter>
       </Modal>
     </div>
   );

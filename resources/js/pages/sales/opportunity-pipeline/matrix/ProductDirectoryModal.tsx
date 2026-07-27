@@ -36,9 +36,13 @@ type DirectoryRow = {
   quantity:         string | number | null;
   target_price:     string | number | null;
   notes:            string | null;
-  /* Stage 3 sourcing decision: null = not decided yet (still unmappable),
-     'required' / 'not_required' = a status has been set (unmap now locked). */
+  /* Stage 3 sourcing decision — 'required' / 'not_required', null until set.
+     No longer gates unmapping (see used_in_documents). */
   sourcing_status:  string | null;
+  /* Codes of the live Quotations / PIs on this opportunity that still quote
+     this product. Non-empty ⇒ unmap is locked until the product is removed
+     from those documents. Absent on older API responses ⇒ treated as free. */
+  used_in_documents?: string[] | null;
 };
 
 type ProductOpt = {
@@ -474,8 +478,9 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
           quantity:         draft.quantity     ? Number(draft.quantity)     : null,
           target_price:     draft.target_price ? Number(draft.target_price) : null,
           notes:            draft.notes || null,
-          // A freshly mapped product has no sourcing decision yet → unmappable.
           sourcing_status:  null,
+          // Freshly mapped — not on any quotation / PI yet, so unmappable.
+          used_in_documents: [],
         }, ...prev]);
         toast.success('Product mapped', 'Added to the directory');
       }
@@ -680,12 +685,17 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                             </svg>
                           </button>
                         </Tooltip>
-                        {/* Unmap is allowed ONLY while the product has no sourcing
-                            decision yet (Stage 3 "— Select —"). Once it's marked
-                            Sourcing Required / Not Required, it's locked here. */}
+                        {/* Unmap is locked while the product is still quoted on a
+                            live Quotation / PI for this opportunity. Removing the
+                            line from those documents unlocks it again — the server
+                            enforces the same rule in destroyLeadProduct. */}
+                        {(() => {
+                          const usedIn = r.used_in_documents ?? [];
+                          const locked = usedIn.length > 0;
+                          return (
                         <Tooltip
-                          label={r.sourcing_status != null
-                            ? "Can't unmap — a sourcing status is already set for this product"
+                          label={locked
+                            ? `Can't unmap — still on ${usedIn.join(', ')}. Remove it there first.`
                             : 'Unmap'}
                           themed
                         >
@@ -693,9 +703,9 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                               shows on the locked button — a disabled element
                               swallows the hover events the Tooltip needs. */}
                           <button
-                            className={`pdm-icon-btn pdm-icon-btn-del ${r.sourcing_status != null ? 'pdm-icon-btn-locked' : ''}`}
-                            onClick={() => { if (r.sourcing_status == null) setPendingDelete(r); }}
-                            aria-disabled={r.sourcing_status != null}
+                            className={`pdm-icon-btn pdm-icon-btn-del ${locked ? 'pdm-icon-btn-locked' : ''}`}
+                            onClick={() => { if (!locked) setPendingDelete(r); }}
+                            aria-disabled={locked}
                             aria-label="Unmap"
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -704,6 +714,8 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                             </svg>
                           </button>
                         </Tooltip>
+                          );
+                        })()}
                         </div>
                       </td>
                     </tr>

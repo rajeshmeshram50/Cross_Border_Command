@@ -185,15 +185,9 @@ export default function HrCustomFields() {
     <Row>
       <Col xs={12} className="cf-page">
         <style>{`
-          /* KPI hover — lift + indigo glow, smooth transitions */
-          .cf-page .cf-kpi-tile {
-            transition: transform 180ms ease, box-shadow 200ms ease, border-color 180ms ease;
-          }
-          .cf-page .cf-kpi-tile:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 12px 26px rgba(99, 102, 241, 0.20), 0 4px 10px rgba(15, 23, 42, 0.06);
-            border-color: rgba(99, 102, 241, 0.45) !important;
-          }
+          /* KPI tiles are the shared .rec-kpi-card component now — their
+             surface, hover lift and dark-mode treatment all live in
+             recruitment.css, so no page-local overrides here. */
           .cf-page .cf-back-btn { transition: background 150ms ease, color 150ms ease, border-color 150ms ease; }
           .cf-page .cf-back-btn:hover { background: #eef2ff !important; border-color: #c7d2fe !important; }
 
@@ -203,21 +197,10 @@ export default function HrCustomFields() {
           [data-bs-theme="dark"] .cf-page .cf-filter-card,
           [data-layout-mode="dark"] .cf-page .cf-filter-card,
           [data-bs-theme="dark"] .cf-page .cf-table-card,
-          [data-layout-mode="dark"] .cf-page .cf-table-card,
-          [data-bs-theme="dark"] .cf-page .cf-kpi-tile,
-          [data-layout-mode="dark"] .cf-page .cf-kpi-tile {
+          [data-layout-mode="dark"] .cf-page .cf-table-card {
             background: #1f2937 !important;
             border-color: rgba(255, 255, 255, 0.08) !important;
           }
-          [data-bs-theme="dark"] .cf-page .cf-kpi-tile:hover,
-          [data-layout-mode="dark"] .cf-page .cf-kpi-tile:hover {
-            box-shadow: 0 12px 28px rgba(99, 102, 241, 0.45), 0 4px 10px rgba(0, 0, 0, 0.3);
-            border-color: rgba(139, 92, 246, 0.55) !important;
-          }
-          [data-bs-theme="dark"] .cf-page .cf-kpi-value,
-          [data-layout-mode="dark"] .cf-page .cf-kpi-value { color: #f8fafc !important; }
-          [data-bs-theme="dark"] .cf-page .cf-kpi-label,
-          [data-layout-mode="dark"] .cf-page .cf-kpi-label { color: rgba(255, 255, 255, 0.65) !important; }
 
           [data-bs-theme="dark"] .cf-page .cf-back-btn,
           [data-layout-mode="dark"] .cf-page .cf-back-btn {
@@ -249,9 +232,28 @@ export default function HrCustomFields() {
           [data-bs-theme="dark"] .cf-page .cf-info-code,
           [data-layout-mode="dark"] .cf-page .cf-info-code { background: rgba(139,92,246,0.22) !important; color: #c4b5fd !important; }
 
-          /* Uniform cell padding + middle-align so the header columns line up
-             exactly with the body columns (some cells had ad-hoc inline padding). */
-          .cf-page .cf-table th, .cf-page .cf-table td { padding: 11px 14px !important; vertical-align: middle; }
+          /* Uniform body-cell padding + middle-align so the header columns line
+             up exactly with the body columns (some cells had ad-hoc inline
+             padding). Header padding is set with the header recipe below. */
+          .cf-page .cf-table td { padding: 11px 14px !important; vertical-align: middle; }
+
+          /* Header — an exact copy of the Recruitment list header
+             (.rec-list-table thead th): 10.5px / 700 micro-caps at 0.08em,
+             soft vertical gradient bar, 13px x 12px padding and a 1px divider.
+             Replaces the inline 11px / 800 / letterSpacing 0.4 styling that
+             used to sit on the thead and tr, which made this the only HRMS
+             table with its own header typography. */
+          .cf-page .cf-table thead th {
+            padding: 13px 12px !important;
+            vertical-align: middle;
+            background: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
+            color: var(--vz-secondary-color);
+            font-size: 10.5px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            border-bottom: 1px solid #ececf2;
+          }
           /* With table-layout: fixed, wrap long content (descriptions, variable
              tokens) inside the column instead of letting it overflow and break
              the header alignment. */
@@ -289,12 +291,15 @@ export default function HrCustomFields() {
           [data-bs-theme="dark"] .cf-page .cf-pag-current,
           [data-layout-mode="dark"] .cf-page .cf-pag-current { background: linear-gradient(135deg, #6d28d9, #4c1d95); }
 
-          [data-bs-theme="dark"] .cf-page .cf-table thead,
-          [data-layout-mode="dark"] .cf-page .cf-table thead {
-            background: rgba(99, 102, 241, 0.12) !important;
+          /* Dark header — same recipe as the Recruitment list header. */
+          [data-bs-theme="dark"] .cf-page .cf-table thead th,
+          [data-layout-mode="dark"] .cf-page .cf-table thead th {
+            background: linear-gradient(180deg,
+              color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
+              var(--vz-card-bg, #1a1d29) 100%);
+            color: rgba(255, 255, 255, 0.70);
+            border-bottom-color: var(--vz-border-color, #2c3242);
           }
-          [data-bs-theme="dark"] .cf-page .cf-table thead tr,
-          [data-layout-mode="dark"] .cf-page .cf-table thead tr { color: rgba(255, 255, 255, 0.65) !important; }
           [data-bs-theme="dark"] .cf-page .cf-table tbody tr,
           [data-layout-mode="dark"] .cf-page .cf-table tbody tr { border-color: rgba(255, 255, 255, 0.06); }
           [data-bs-theme="dark"] .cf-page .cf-row-name,
@@ -363,21 +368,23 @@ export default function HrCustomFields() {
             </button>
           </div>
 
-          {/* KPI strip */}
-          <div className="row g-2 mb-3">
+          {/* KPI strip — uses the shared .rec-page-kpis / .rec-kpi-card
+              component from recruitment.css so the tiles are identical to the
+              Employee master: label top-left, value directly under it, and the
+              gradient icon tile on the RIGHT. The old layout mirrored this
+              (icon left, right-aligned value) which broke module consistency. */}
+          <div className="row g-3 mb-3 align-items-stretch rec-page-kpis">
             {KPI.map(k => (
               <div key={k.label} className="col-xl col-md-4 col-sm-6">
-                <div className="cf-kpi-tile" style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden', cursor: 'default' }}>
-                  <div style={{ height: 4, background: k.gradient }} />
-                  <div className="d-flex align-items-center justify-content-between" style={{ padding: '12px 14px' }}>
-                    <span style={{ width: 42, height: 42, borderRadius: 10, background: k.gradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
-                    </span>
-                    <div style={{ textAlign: 'right' }}>
-                      <div className="cf-kpi-value" style={{ fontSize: 26, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
-                      <div className="cf-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', marginTop: 4 }}>{k.label}</div>
-                    </div>
+                <div className="rec-kpi-card h-100">
+                  <span className="rec-kpi-strip" style={{ background: k.gradient }} />
+                  <div className="rec-kpi-text">
+                    <span className="rec-kpi-label">{k.label}</span>
+                    <span className="rec-kpi-num">{k.value}</span>
                   </div>
+                  <span className="rec-kpi-icon" style={{ background: k.gradient }}>
+                    <i className={k.icon} />
+                  </span>
                 </div>
               </div>
             ))}
@@ -432,9 +439,13 @@ export default function HrCustomFields() {
                     header widths, NOT by row content, so switching the Type
                     filter can't reflow the columns and shift the headers. */}
                 <table className="table align-middle mb-0 cf-table" style={{ fontSize: 13, tableLayout: 'fixed', width: '100%' }}>
-                  <thead style={{ background: '#f5f3ff' }}>
-                    <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-                      <th style={{ padding: '10px 12px', width: 60 }}>Sr No</th>
+                  {/* Header typography/surface comes from .cf-table thead th in
+                      the style block above — the same recipe as the Recruitment
+                      list header. The inline font/background that used to live
+                      here made this table the odd one out across HRMS. */}
+                  <thead>
+                    <tr>
+                      <th style={{ width: 60 }}>Sr No</th>
                       <th style={{ width: '19%' }}>Field Name</th>
                       <th style={{ width: '17%' }}>Variable</th>
                       <th style={{ width: 110 }}>Type</th>

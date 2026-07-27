@@ -1257,7 +1257,16 @@
            markup because it paints cells via an inset box-shadow that reads as
            transparent under position:sticky.) Explicit opaque colour per theme. */
         .ep-att-scroll-wrap thead th { background-color: #f1f3f7; }
-        [data-bs-theme="dark"] .ep-att-scroll-wrap thead th { background-color: #1c2531; }
+        /* Dark mode: #1c2531 sat within a couple of shades of the dark card
+           surface, so the header row was almost indistinguishable from the
+           first data row. Lift it clear of the body, define the bottom edge,
+           and brighten the labels so the hierarchy reads at a glance. */
+        [data-bs-theme="dark"] .ep-att-scroll-wrap thead th,
+        [data-layout-mode="dark"] .ep-att-scroll-wrap thead th {
+          background-color: #2a3446;
+          color: #dbe2ea;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+        }
         .ep-att-table th { font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vz-secondary-color); font-weight: 700; padding: 10px 12px; border-bottom: 1px solid var(--vz-border-color); white-space: nowrap; }
         .ep-att-table td { padding: 10px 12px; border-bottom: 1px solid var(--vz-border-color); vertical-align: middle; white-space: nowrap; }
         .ep-att-table tbody tr:last-child td { border-bottom: none; }

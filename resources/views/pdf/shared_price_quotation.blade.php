@@ -434,10 +434,12 @@
                     <td class="l"><span class="pname">{{ $row['product_name'] }}</span></td>
                     <td class="c">{{ rtrim(rtrim(number_format((float) $row['quantity'], 3, '.', ','), '0'), '.') }}</td>
                     <td>{{ number_format((float) $row['rate'], 2) }}</td>
-                    {{-- TEST placeholders: static Tax% + a 10B Tax Amt so the fixed
-                    column widths can be verified against very large numbers. --}}
-                    <td class="c">18.00%</td>
-                    <td>{{ number_format(10000000000, 2) }}</td>
+                    {{-- Tax% is the product's mapped GST slab on a RUPEE quote, and
+                    0% when the product directory row is priced in a foreign
+                    currency (export — zero rated). Resolved in
+                    SalesPdfController::sharedPricePdf. --}}
+                    <td class="c">{{ number_format((float) ($row['tax_pct'] ?? 0), 2) }}%</td>
+                    <td>{{ number_format((float) ($row['tax_amount'] ?? 0), 2) }}</td>
                     <td>{{ number_format((float) $row['amount'], 2) }}</td>
                 </tr>
             @endforeach
@@ -458,19 +460,13 @@
                         <td style="text-align:right; padding:3px 0;"><strong
                                 style="color:#555;">{{ number_format((float) $quotation->total, 2) }}</strong></td>
                     </tr>
+                    {{-- One consolidated Tax Amount instead of the IGST / CGST /
+                    SGST split: the place-of-supply breakdown isn't meaningful on a
+                    price-share, and a foreign-currency line is zero rated. --}}
                     <tr>
-                        <td style="padding:3px 0; color:#555;">IGST</td>
-                        <td style="text-align:right; padding:3px 0;">{{ number_format((float) $quotation->igst, 2) }}
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding:3px 0; color:#555;">CGST</td>
-                        <td style="text-align:right; padding:3px 0;">{{ number_format((float) $quotation->cgst, 2) }}
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding:3px 0; color:#555;">SGST</td>
-                        <td style="text-align:right; padding:3px 0;">{{ number_format((float) $quotation->sgst, 2) }}
+                        <td style="padding:3px 0; color:#555;">Tax Amount</td>
+                        <td style="text-align:right; padding:3px 0;">
+                            {{ number_format((float) ($quotation->tax_amount ?? 0), 2) }}
                         </td>
                     </tr>
                     <tr>

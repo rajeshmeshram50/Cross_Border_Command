@@ -97,7 +97,9 @@ class SalesPdfController extends Controller
         $entry = \App\Models\LeadProductSharedPrice::with([
             'lead:id,opp_code,unique_query_id,customer_id,created_at,sender_name,sender_email,sender_mobile',
             'leadProduct:id,product_id,currency,quantity,target_price',
-            'leadProduct.product:id,product_code,name',
+            // gst_id is REQUIRED here — the column-limited select would leave it
+            // null and silently zero the tax on every domestic quote.
+            'leadProduct.product:id,product_code,name,gst_id',
         ])->where('client_id', $user->client_id)->findOrFail($id);
 
         $lp       = $entry->leadProduct;
@@ -107,6 +109,29 @@ class SalesPdfController extends Controller
         $amount   = round($rate * $qty, 2);
         $currency = $lp?->currency ?: 'INR';
         $quoteCode = 'Q-' . str_pad((string) $entry->id, 5, '0', STR_PAD_LEFT);
+
+        /* GST applies only to a RUPEE quote. The currency comes from the
+         * product directory row this price was shared against (lead_products
+         * .currency) — INR means a domestic sale that carries the product's
+         * mapped GST slab; any foreign currency is an export, which is zero
+         * rated here, so the document shows 0% and no tax amount.
+         * The slab lives on the product master (products.gst_id →
+         * master_gst_percentage.percentage), set by the GST-gated create flow.
+         *
+         * Looked up by id WITHOUT a client_id filter, matching
+         * ProductController: the standard GST slabs are SYSTEM rows with a null
+         * client_id (only tenant-added slabs carry one), so filtering by tenant
+         * silently resolved every standard slab to 0%. The id is already
+         * trusted — it comes off this tenant's own product row. */
+        $isInr   = strtoupper(trim((string) $currency)) === 'INR';
+        $taxPct  = 0.0;
+        if ($isInr && $product?->gst_id) {
+            $taxPct = (float) (optional(
+                \App\Models\Masters\GstPercentage::find($product->gst_id)
+            )->percentage ?? 0);
+        }
+        // Quoted price is tax-EXCLUSIVE, matching the Amount column (rate × qty).
+        $taxAmount = round($amount * $taxPct / 100, 2);
 
         // Load the customer WITHOUT the branch-visibility global scope (this is the
         // tenant's own quotation), keeping client isolation via client_id.
@@ -174,12 +199,18 @@ class SalesPdfController extends Controller
             'rate'                => $rate,
             'rate_with_tax'       => $rate,
             'amount'              => $amount,
+            'tax_pct'             => $taxPct,
+            'tax_amount'          => $taxAmount,
         ]]);
         $q = $vd['quotation'];
         $q->total = $amount;
+        // Single consolidated tax figure — this document no longer splits
+        // IGST / CGST / SGST (the place-of-supply split isn't meaningful on a
+        // price-share, and an export line is zero-rated anyway).
+        $q->tax_amount = $taxAmount;
         $q->igst = 0; $q->cgst = 0; $q->sgst = 0;
         $q->shipping_cost = 0; $q->packaging_cost = 0;
-        $q->grand_total = $amount;
+        $q->grand_total = round($amount + $taxAmount, 2);
         $q->pi_number = $quoteCode;
         $vd['pdf_title'] = 'QUOTATION';
         $vd['doc_label_short'] = 'Q';

@@ -1302,9 +1302,19 @@ class SalesLeadController extends Controller
             ->groupBy('product_id')
             ->pluck('c', 'product_id');
 
+        // Quotation / PI codes still quoting each product — drives the Product
+        // Directory's unmap lock (a quoted product can't be unmapped until it's
+        // removed from those documents). Batched for all rows at once.
+        $docsByProduct = $this->documentCodesByProduct(
+            $lead->id,
+            $rows->pluck('product_id')->filter()->unique()->values()->all(),
+        );
+
         $mapped = $rows->map(fn ($r) => [
             'id'               => $r->id,
             'product_id'       => $r->product_id,
+            // Non-empty ⇒ unmap is blocked; the codes explain why in the UI.
+            'used_in_documents' => array_values($docsByProduct[$r->product_id] ?? []),
             'product_code'     => $r->product?->product_code,
             'product_name'     => $r->product?->name,
             'product_status'   => $r->product?->status,
@@ -1844,14 +1854,25 @@ class SalesLeadController extends Controller
 
         $row = LeadProduct::where('lead_id', $lead->id)->findOrFail($mappingId);
 
-        // Unmap is allowed ONLY while the product has no sourcing decision yet.
-        // Once it's marked Sourcing Required / Not Required (Stage 3), it feeds
-        // shared prices, quotation and PI downstream, so removing it would
-        // orphan that data. Set the status back to undecided before unmapping.
-        if ($row->sourcing_status !== null) {
+        /* Unmap is blocked while the product is still QUOTED — i.e. it appears
+         * as a line item on a live (non-cancelled) Quotation or Proforma
+         * Invoice for this opportunity. Removing it there would leave the
+         * document referencing a product the opportunity no longer carries.
+         *
+         * The block is REVERSIBLE by design: edit the quotation / PI, drop the
+         * line, and the product becomes unmappable again. (This replaced an
+         * older guard that keyed off `sourcing_status` — that one latched as
+         * soon as a Stage-3 sourcing decision was made and could not be undone
+         * by editing the documents, so a product that was never actually
+         * quoted stayed locked forever.) */
+        $usedIn = $this->documentCodesByProduct($lead->id, [$row->product_id])[$row->product_id] ?? [];
+        if (!empty($usedIn)) {
             return response()->json([
                 'status'  => false,
-                'message' => "You can't unmap this product — a sourcing status (Required / Not Required) is already set for it.",
+                'message' => "You can't unmap this product — it's still on " . implode(', ', $usedIn)
+                    . '. Remove the product from ' . (count($usedIn) > 1 ? 'those documents' : 'that document')
+                    . ' first, then unmap it.',
+                'used_in' => $usedIn,
             ], 422);
         }
 
@@ -1870,6 +1891,50 @@ class SalesLeadController extends Controller
         });
 
         return response()->json(['status' => true, 'message' => 'Product unmapped']);
+    }
+
+    /**
+     * Which live Quotation / Proforma Invoice documents on this opportunity
+     * still quote each of the given products?
+     *
+     * Returns [product_id => ['QT/25-26/0007', 'PI/25-26/0002', …]], omitting
+     * products that aren't on any document. Cancelled documents are ignored —
+     * they no longer hold the product, so they must not block an unmap.
+     *
+     * Batched (one query per document type, not per row) so the Product
+     * Directory listing can flag every row without an N+1.
+     */
+    private function documentCodesByProduct(int $leadId, array $productIds): array
+    {
+        $ids = array_values(array_filter($productIds, fn ($v) => !empty($v)));
+        if (empty($ids)) return [];
+
+        $quoted = DB::table('quotation_items as qi')
+            ->join('quotations as q', 'q.id', '=', 'qi.quotation_id')
+            ->where('q.opp_id', $leadId)
+            ->where('q.status', '!=', \App\Models\Quotation::STATUS_CANCELLED)
+            ->whereIn('qi.product_id', $ids)
+            ->select('qi.product_id', 'q.code')
+            ->distinct()
+            ->get();
+
+        $invoiced = DB::table('proforma_invoice_items as pii')
+            ->join('proforma_invoices as p', 'p.id', '=', 'pii.proforma_invoice_id')
+            ->where('p.opp_id', $leadId)
+            ->where('p.status', '!=', \App\Models\ProformaInvoice::STATUS_CANCELLED)
+            ->whereIn('pii.product_id', $ids)
+            ->select('pii.product_id', 'p.code')
+            ->distinct()
+            ->get();
+
+        $out = [];
+        foreach ($quoted->concat($invoiced) as $r) {
+            $pid = (int) $r->product_id;
+            $code = $r->code ?: '(untitled document)';
+            if (!in_array($code, $out[$pid] ?? [], true)) $out[$pid][] = $code;
+        }
+
+        return $out;
     }
 
     /* ─────────────────────────────────────────────────────────────────
