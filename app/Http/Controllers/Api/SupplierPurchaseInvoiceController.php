@@ -925,9 +925,17 @@ class SupplierPurchaseInvoiceController extends Controller
     {
         if (!$vendorId) return null;
 
-        $v = Vendor::with(['primaryAddress', 'vendorType', 'gstScrutiny' => fn ($g) => $g->latest('id')])
+        $v = Vendor::with(['primaryAddress', 'vendorType', 'gstScrutiny' => fn ($g) => $g->latest('id'), 'segments:id'])
             ->forUser($user, null)->find($vendorId);
         if (!$v) return null;
+
+        // Supplier's segment ids (scalar segment_id + vendor_segments pivot) —
+        // the SPI product picker only enables products in these segments.
+        $segmentIds = collect([$v->segment_id])
+            ->merge($v->segments->pluck('id'))
+            ->filter()
+            ->map(fn ($x) => (int) $x)
+            ->unique()->values()->all();
 
         $a = $v->primaryAddress;
         // Newest scrutiny = current GST status (order-safe; see PurchaseOrderController).
@@ -954,6 +962,7 @@ class SupplierPurchaseInvoiceController extends Controller
             'gstStatus' => optional($g)->status,
             'filing' => $g && $g->last_filing_date ? $g->last_filing_date->toDateString() : null,
             'remarks' => $g ? ($g->prev_non_gst_2a_invoice ?: $g->red_flags) : null,
+            'segments' => $segmentIds,
         ];
     }
 
