@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
-import Swal from 'sweetalert2';
+// The withdraw flow used raw sweetalert2 dialogs, which carry their own look
+// and sat outside the app's dialog system. It now uses the shared confirm
+// modal + toaster, same as every other destructive action in the product.
+import { useConfirm } from '../../contexts/ConfirmContext';
+import { useToast } from '../../contexts/ToastContext';
 import WorklistPager from '../../components/ui/WorklistPager';
 import {
   employeeBalancesApi,
@@ -70,6 +74,8 @@ function shortDate(raw: string | null | undefined): string {
 }
 
 export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Props) {
+  const confirm = useConfirm();
+  const toast   = useToast();
   const [requests, setRequests] = useState<ApiLeaveRequest[]>([]);
   const [balances, setBalances] = useState<ApiEmployeeBalanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,6 +84,8 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
   const [detailsType, setDetailsType] = useState<ApiEmployeeBalanceType | null>(null);
   const [showRequest, setShowRequest] = useState(false);
   const [detailsRequestId, setDetailsRequestId] = useState<number | null>(null);
+  /** Id of the request currently being withdrawn — drives the row's spinner. */
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
 
   const refetch = useCallback(async () => {
     setLoading(true);
@@ -125,24 +133,29 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
   };
 
   const cancel = async (requestId: number) => {
-    const result = await Swal.fire({
+    const ok = await confirm({
       title: 'Cancel leave request?',
-      text: 'This will withdraw the request. This cannot be undone.',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Yes, cancel it',
-      cancelButtonText: 'Keep request',
-      confirmButtonColor: '#f06548',
-      cancelButtonColor: '#878a99',
+      message: 'This will withdraw the request. This cannot be undone.',
+      tone: 'danger',
+      confirmLabel: 'Yes, cancel it',
+      cancelLabel: 'Keep request',
     });
-    if (!result.isConfirmed) return;
+    if (!ok) return;
+    // The cancel POST plus the refetch that follows it take long enough that
+    // the row would otherwise sit there unchanged, still showing "Pending",
+    // as if the click had done nothing (QA #95). Mark the row busy for the
+    // whole round trip: its X turns into a spinner and stops accepting
+    // repeat clicks until the refreshed list has rendered.
+    setCancellingId(requestId);
     try {
       await leaveRequestsApi.cancel(requestId);
       await refetch();
-      Swal.fire({ title: 'Cancelled', text: 'Your leave request has been withdrawn.', icon: 'success', timer: 1600, showConfirmButton: false });
+      toast.success('Leave request cancelled', 'Your leave request has been withdrawn.');
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Cancel failed';
-      Swal.fire({ title: 'Could not cancel', text: msg, icon: 'error' });
+      toast.error('Could not cancel', msg);
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -248,9 +261,13 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
               className="btn btn-link p-0"
               style={{ fontSize: 12, color: '#dc2626' }}
               onClick={(e) => { e.stopPropagation(); cancel(r.id); }}
-              title="Cancel request"
+              disabled={cancellingId === r.id}
+              title={cancellingId === r.id ? 'Cancelling…' : 'Cancel request'}
             >
-              <i className="ri-close-circle-line" style={{ fontSize: 20 }} />
+              <i
+                className={cancellingId === r.id ? 'ri-loader-4-line ri-spin' : 'ri-close-circle-line'}
+                style={{ fontSize: 20 }}
+              />
             </button>
           </div>
         ))}
@@ -441,20 +458,68 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
         )}
       </div>
 
+      {/* Standard app modal chrome — same gradient header, rounded corners and
+          white close button used by the master Audit / Employee-Tree modals, so
+          these popups match the rest of the app (QA #90, #97). Lives at the
+          panel root rather than inside one modal: both the Approver chain and
+          the Leave details popups use it, and a <style> nested inside a
+          reactstrap Modal only exists while THAT modal is open. */}
+      <style>{`
+        .lrd-modal {
+          border-radius: 16px !important;
+          overflow: hidden;
+          border: 0;
+          box-shadow: 0 25px 60px rgba(15,23,42,0.25);
+        }
+        .lrd-modal-header {
+          padding: 18px 22px;
+          background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
+          border-bottom: 0;
+        }
+        .lrd-modal-title { color: #fff !important; letter-spacing: 0.01em; font-size: 16px; }
+        .lrd-modal-sub   { color: rgba(255,255,255,0.85) !important; font-size: 12px; }
+        .lrd-modal-icon {
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+          background: rgba(255,255,255,0.20); color: #fff;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
+        }
+        .lrd-modal-icon i { font-size: 18px; line-height: 1; }
+        .lrd-modal-close {
+          width: 30px; height: 30px; border-radius: 8px; border: 0;
+          background: rgba(255,255,255,0.18); color: #fff; cursor: pointer;
+          flex-shrink: 0; display: inline-flex; align-items: center;
+          justify-content: center; transition: background 0.15s ease;
+        }
+        .lrd-modal-close:hover { background: rgba(255,255,255,0.30); }
+        .lrd-modal-close i { font-size: 16px; line-height: 1; }
+        .lrd-modal-body { background: var(--vz-card-bg); }
+      `}</style>
+
       <Modal
         isOpen={approversFor !== null}
         toggle={() => setApproversFor(null)}
         centered
-        size="sm"
         zIndex={2100}
         modalClassName="ep-leave-modal"
         backdropClassName="ep-leave-backdrop"
+        contentClassName="lrd-modal"
       >
-        <ModalBody>
-          <div className="d-flex justify-content-between align-items-center mb-2">
-            <h6 className="fw-bold mb-0" style={{ fontSize: 13 }}>Approver chain</h6>
-            <button type="button" className="btn-close" onClick={() => setApproversFor(null)} aria-label="Close" />
+        <div className="lrd-modal-header">
+          <div className="d-flex align-items-center justify-content-between gap-3">
+            <div className="d-flex align-items-center gap-3 min-w-0">
+              <span className="lrd-modal-icon"><i className="ri-user-follow-line" /></span>
+              <div className="min-w-0">
+                <h5 className="mb-0 fw-bold lrd-modal-title">Approver chain</h5>
+                <small className="lrd-modal-sub">Who signs off on this leave request, in order</small>
+              </div>
+            </div>
+            <button type="button" className="lrd-modal-close" onClick={() => setApproversFor(null)} aria-label="Close">
+              <i className="ri-close-line" />
+            </button>
           </div>
+        </div>
+        <ModalBody className="lrd-modal-body px-4 py-3">
           {approversList.length === 0 ? (
             <div className="text-muted" style={{ fontSize: 12 }}>No approvers configured for this request.</div>
           ) : (
@@ -508,40 +573,6 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
         backdropClassName="ep-leave-backdrop"
         contentClassName="lrd-modal"
       >
-        {/* Standard app modal chrome — same gradient header, rounded corners
-            and white close button used by the master Audit / Employee-Tree
-            modals, so this ledger popup matches the rest of the app (QA #90). */}
-        <style>{`
-          .lrd-modal {
-            border-radius: 16px !important;
-            overflow: hidden;
-            border: 0;
-            box-shadow: 0 25px 60px rgba(15,23,42,0.25);
-          }
-          .lrd-modal-header {
-            padding: 18px 22px;
-            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
-            border-bottom: 0;
-          }
-          .lrd-modal-title { color: #fff !important; letter-spacing: 0.01em; font-size: 16px; }
-          .lrd-modal-sub   { color: rgba(255,255,255,0.85) !important; font-size: 12px; }
-          .lrd-modal-icon {
-            display: inline-flex; align-items: center; justify-content: center;
-            width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
-            background: rgba(255,255,255,0.20); color: #fff;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
-          }
-          .lrd-modal-icon i { font-size: 18px; line-height: 1; }
-          .lrd-modal-close {
-            width: 30px; height: 30px; border-radius: 8px; border: 0;
-            background: rgba(255,255,255,0.18); color: #fff; cursor: pointer;
-            flex-shrink: 0; display: inline-flex; align-items: center;
-            justify-content: center; transition: background 0.15s ease;
-          }
-          .lrd-modal-close:hover { background: rgba(255,255,255,0.30); }
-          .lrd-modal-close i { font-size: 16px; line-height: 1; }
-          .lrd-modal-body { background: var(--vz-card-bg); }
-        `}</style>
         <div className="lrd-modal-header">
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-3 min-w-0">

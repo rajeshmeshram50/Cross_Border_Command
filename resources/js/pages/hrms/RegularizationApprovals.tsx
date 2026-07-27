@@ -164,8 +164,14 @@ export default function RegularizationApprovals() {
           ) : (
             <>
             <div className="table-responsive">
-              <table className="table table-sm align-middle mb-0 reg-req-table">
-                <thead className="table-light">
+              {/* No .table-sm — its compressed cell padding is what made this
+                  table read tighter than every other HRMS list. No .table-light
+                  either: Bootstrap paints that band with an inset box-shadow
+                  that would cover the header gradient. Both the header and the
+                  body rhythm now come from .reg-req-table in recruitment.css,
+                  copied from the Recruitment list table. */}
+              <table className="table align-middle mb-0 reg-req-table">
+                <thead>
                   <tr>
                     <th>Employee</th>
                     <th>Date</th>

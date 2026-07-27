@@ -1355,3 +1355,22 @@
 .lp-plan-menu .dropdown-item i { font-size: 15px; color: var(--vz-secondary-color, #6b7280); }
 .lp-plan-menu .dropdown-item:hover:not(:disabled) i,
 .lp-plan-menu .dropdown-item:focus:not(:disabled) i { color: #7c5cfc; }
+
+/* ── Leave requests table — fixed column widths (QA #96) ──────────────────
+   The table is table-layout: fixed (set in HrLeave.tsx) so the <th> widths
+   hold whether the body is showing shimmer placeholders or real rows; the
+   columns no longer resize the instant data lands.
+
+   Under fixed layout a cell can no longer widen its column, so overlong
+   values must clip rather than spill into the neighbouring cell. The action
+   column is excluded — it holds icon buttons, not text, and clipping it
+   would cut the button row. */
+.lv-req-table th,
+.lv-req-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lv-req-table td:last-child,
+.lv-req-table th:last-child {
+  overflow: visible;
+}
