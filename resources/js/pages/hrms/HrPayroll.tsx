@@ -847,6 +847,15 @@ export default function HrPayroll() {
   const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
+  // Salary Setup renders the `roster` array (not `filtered`), so it needs its
+  // own slice off the same shared page/pageSize state — page resets on tab
+  // switch, so reusing the state is safe (only one tab is ever visible).
+  const rosterPageCount = Math.max(1, Math.ceil(roster.length / pageSize));
+  const rosterSafePage  = Math.min(page, rosterPageCount);
+  const rosterSliceFrom = (rosterSafePage - 1) * pageSize;
+  const rosterVisible   = roster.slice(rosterSliceFrom, rosterSliceFrom + pageSize);
+  const rosterGoto = (p: number) => setPage(Math.min(Math.max(1, p), rosterPageCount));
+
   const cycleStripRef = useRef<HTMLDivElement | null>(null);
   const scrollCycle = (dir: 'prev' | 'next') => {
     const el = cycleStripRef.current;
@@ -1266,8 +1275,8 @@ export default function HrPayroll() {
 
           {tab === 'processing' && (
             <div className="table-responsive table-card rounded p-2">
-              <table className="table align-middle table-nowrap mb-0">
-                <thead className="table-light">
+              <table className="rec-list-table align-middle table-nowrap mb-0">
+                <thead>
                   <tr>
                     <th scope="col" className="ps-3" style={{ width: 60 }}>Sr. No.</th>
                     <th scope="col">Employee</th>
@@ -1414,8 +1423,8 @@ export default function HrPayroll() {
               </Row>
 
               <div className="table-responsive table-card rounded p-2">
-                <table className="table align-middle table-nowrap mb-0">
-                  <thead className="table-light">
+                <table className="rec-list-table align-middle table-nowrap mb-0">
+                  <thead>
                     <tr>
                       <th scope="col" className="ps-3">Employee</th>
                       <th scope="col" className="text-center">Present</th>
@@ -1531,8 +1540,8 @@ export default function HrPayroll() {
               </Row>
 
               <div className="table-responsive table-card rounded p-2">
-                <table className="table align-middle table-nowrap mb-0">
-                  <thead className="table-light">
+                <table className="rec-list-table align-middle table-nowrap mb-0">
+                  <thead>
                     <tr>
                       <th scope="col" className="ps-3">Emp ID</th>
                       <th scope="col">Employee</th>
@@ -1638,8 +1647,8 @@ export default function HrPayroll() {
                 Set each employee's salary here. Employees without a structure (or annual salary) show ₹0 and are held during payroll.
               </div>
               <div className="table-responsive table-card rounded p-2">
-                <table className="table align-middle table-nowrap mb-0">
-                  <thead className="table-light">
+                <table className="rec-list-table align-middle table-nowrap mb-0">
+                  <thead>
                     <tr>
                       <th className="ps-3">Employee</th>
                       <th>Emp ID</th>
@@ -1658,7 +1667,7 @@ export default function HrPayroll() {
                         <i className="ri-team-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                         No employees found for this branch
                       </td></tr>
-                    ) : roster.map(emp => {
+                    ) : rosterVisible.map(emp => {
                       const accent = '#7c5cfc';
                       const initials = (emp.name || 'NA').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
                       const sourceTone = emp.source === 'structure'
@@ -1704,6 +1713,9 @@ export default function HrPayroll() {
 
           {tab !== 'salary' && (
             <WorklistPager total={filtered.length} page={safePage} pageSize={pageSize} onPage={goto} onPageSize={(n) => { setPageSize(n); setPage(1); }} />
+          )}
+          {tab === 'salary' && (
+            <WorklistPager total={roster.length} page={rosterSafePage} pageSize={pageSize} onPage={rosterGoto} onPageSize={(n) => { setPageSize(n); setPage(1); }} />
           )}
         </CardBody>
       </Card>
