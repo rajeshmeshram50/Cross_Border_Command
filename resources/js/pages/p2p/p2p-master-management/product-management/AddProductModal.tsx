@@ -610,12 +610,19 @@ export default function AddProductModal(props: {
     }
     const missing: string[] = [];
     if (!vendorSelected)        missing.push('Vendor');
-    if (!vendorPp || vendorPp <= 0) missing.push('Purchase Price');
+    // Only treat an EMPTY price as "missing". A price that was entered but is
+    // 0 / negative gets a clearer "must be greater than 0" message below
+    // instead of the misleading "Please fill: Purchase Price" (QA #51).
+    if (String(vendorPurchasePrice ?? '').trim() === '') missing.push('Purchase Price');
     if (missing.length) {
       toast.error('Missing required fields', `Please fill: ${missing.join(', ')}`);
       return;
     }
     if (!vendorSelected) return; // type-guard after the check
+    if (vendorPp <= 0) {
+      toast.error('Invalid Purchase Price', 'Purchase price must be greater than 0.');
+      return;
+    }
 
     const remarksErr = vendorRemarksError(vendorRemarks);
     if (remarksErr) {
