@@ -332,9 +332,13 @@ export default function HrDocumentTemplates() {
               {/* Table */}
               <div className="table-responsive">
                 <table className="table align-middle mb-0 dtm-table" style={{ fontSize: 13 }}>
-                  <thead className="table-light dtm-thead">
-                    <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-                      <th style={{ padding: '10px 12px', width: 44 }}>Sr No</th>
+                  {/* No .table-light — Bootstrap paints its fill with an inset
+                      box-shadow that would cover the header gradient. Header
+                      typography/surface comes from .dtm-thead th in the style
+                      block below, matching the Recruitment list header. */}
+                  <thead className="dtm-thead">
+                    <tr>
+                      <th style={{ width: 44 }}>Sr No</th>
                       <th>Code</th>
                       <th>Template Name</th>
                       <th>Version</th>
@@ -494,19 +498,33 @@ function DtmDarkStyles() {
       [data-bs-theme="dark"] .dtm-page .dtm-kpi-label { color: rgba(255,255,255,0.55) !important; }
       [data-bs-theme="dark"] .dtm-page .dtm-filter-label { color: rgba(255,255,255,0.5) !important; }
 
-      /* Header separation (Bug #14 / #15) — match the Employee & Employee
-         Onboarding tables: light 'table-light' band in light mode with a firm
-         bottom border, and the shared blurple gradient header in dark mode. */
+      /* Header — an exact copy of the Recruitment list header
+         (.rec-list-table thead th): 10.5px / 700 micro-caps at 0.08em, soft
+         vertical gradient bar, 13px x 12px padding and a 1px divider. Replaces
+         the inline 11px / 800 / letterSpacing 0.4 styling that sat on the tr
+         plus the 2px violet underline, which made this table's header read
+         differently from every other HRMS list. */
       .dtm-page .dtm-thead th {
-        border-bottom: 2px solid #c4b5fd;
-        color: #4b5563;
-        box-shadow: inset 0 -1px 0 rgba(124,92,252,0.10);
+        padding: 13px 12px;
+        vertical-align: middle;
+        background: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
+        color: var(--vz-secondary-color);
+        font-size: 10.5px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        border-bottom: 1px solid #ececf2;
+        box-shadow: none;
+        white-space: nowrap;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-thead th {
-        background-color: #6355e0 !important;
-        background-image: linear-gradient(180deg, #7a6ef0 0%, #5a4ce2 100%) !important;
-        color: #ffffff !important;
-        border-bottom-color: rgba(255,255,255,0.12) !important;
+      /* Dark header — same recipe as the Recruitment list header. */
+      [data-bs-theme="dark"] .dtm-page .dtm-thead th,
+      [data-layout-mode="dark"] .dtm-page .dtm-thead th {
+        background: linear-gradient(180deg,
+          color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
+          var(--vz-card-bg, #1a1d29) 100%) !important;
+        color: rgba(255, 255, 255, 0.70) !important;
+        border-bottom-color: var(--vz-border-color, #2c3242) !important;
         box-shadow: none;
       }
       [data-bs-theme="dark"] .dtm-page .dtm-table tbody td {

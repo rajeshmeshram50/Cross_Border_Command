@@ -1727,16 +1727,28 @@
 /* ---------------------------------------------------------------------
    11. Candidate Management page — recruitment context card + form steps
    --------------------------------------------------------------------- */
+/* Read-only recruitment summary above the Candidates list. The surface is the
+   plain card background — it used to be a lavender wash, which made this
+   panel read as a different kind of surface from every other card on the
+   page. Violet identity is carried by the left rail (::before) and the icon
+   tile instead of by tinting the whole block. */
 .cand-rec-card {
   position: relative;
   padding: 10px 14px;
-  background: linear-gradient(180deg, #ede9fe 0%, #f5f3ff 100%);
+  /* Literal white, not var(--vz-card-bg) — that variable resolves to the grey
+     secondary background outside a .card, which left this panel looking dirty
+     next to the white .frm-cstrip header. Same recipe the strip and the KPI
+     tiles use: #ffffff for light, the themed surface only under [dark]. */
+  background: #ffffff;
   border: 1px solid #ddd6fe;
   border-radius: 12px;
   box-shadow: 0 2px 6px rgba(91,63,209,0.08), inset 0 1px 0 rgba(255,255,255,0.7);
 }
-[data-bs-theme="dark"] .cand-rec-card {
-  background: linear-gradient(180deg, color-mix(in srgb, #7c5cfc 14%, var(--vz-card-bg)) 0%, color-mix(in srgb, #7c5cfc 8%, var(--vz-card-bg)) 100%);
+/* Higher specificity than the plain .cand-rec-card rules, so this wins in
+   dark mode regardless of which of the two light blocks comes last. */
+[data-bs-theme="dark"] .cand-rec-card,
+[data-layout-mode="dark"] .cand-rec-card {
+  background: var(--vz-card-bg, #1a1d29);
   border-color: color-mix(in srgb, #7c5cfc 28%, var(--vz-border-color));
 }
 .cand-rec-icon {
@@ -2808,13 +2820,14 @@
    12. Candidate Management page — refined header, recruitment context
        card layout, result chip, and dark-mode polish
    --------------------------------------------------------------------- */
+/* Later override of the block above — keeps the roomier padding but must
+   repeat the flat surface, otherwise the violet radial wash it used to carry
+   would win over the background set there. */
 .cand-rec-card {
   position: relative;
   overflow: hidden;
   padding: 16px 18px 18px;
-  background:
-    radial-gradient(600px 160px at 0% 0%, rgba(124,92,252,0.12) 0%, transparent 60%),
-    linear-gradient(180deg, #f5f3ff 0%, #faf8ff 100%);
+  background: #ffffff;
 }
 .cand-rec-card::before {
   content: '';
@@ -3855,18 +3868,15 @@
    glance like the Figma reference. Every cell stays vertically centred
    on the same horizontal line via fixed line-height + middle vertical
    alignment. */
-/* Align with the canonical table rhythm used on HR Employees / My Team /
-   Branches — 11px x 12px header padding, 10.5px / 800-weight micro-caps,
-   12px x 12px body padding, 12.75px body font. The earlier 6px/10px +
-   forced 46px row height made the Candidates table look tighter and
-   smaller than every other list in the product. */
-.cand-page-table.rec-list-table thead th {
-  padding: 11px 12px;
-  font-size: 10.5px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  line-height: 1.2;
-}
+/* Header: NO overrides on purpose. The header is inherited wholesale from
+   .rec-list-table thead th (13px x 12px padding, 10.5px / 700 micro-caps at
+   0.08em, gradient bar, 1px divider) so Candidates, Recruitment and the HR
+   Employees list all present an identical header. This block used to nudge
+   the padding / weight / tracking, which left the Candidates header subtly
+   heavier and tighter than every other list.
+
+   Body cells keep their own rhythm below — 12px x 12px padding and a 12.75px
+   font — because the Candidates table carries far more columns. */
 .cand-page-table.rec-list-table tbody td {
   padding: 12px 12px;
   font-size: 12.75px;
@@ -11429,24 +11439,43 @@
         .mschips-check { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--vz-border-color); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .mschips-item.is-on .mschips-check { background: #6366f1; border-color: #6366f1; color: #fff; }
 
-/* Active/Disabled Employee table — sticky header (bug #65).
+/* Active/Disabled Employee table — header is an exact copy of the Recruitment
+   list header (.rec-list-table thead th): same micro-caps type, 10.5px/700 at
+   0.08em, same soft vertical gradient bar, same 13px/12px padding and 1px
+   divider, so both modules read as one table system.
+
    Sticky lives on the th cells (not just thead) so the background paints over
-   scrolled rows in every browser, with an opaque theme-aware fill so dark mode
-   doesn't let rows bleed through the translucent .table-light. */
+   scrolled rows in every browser (bug #65). The fill must stay OPAQUE for that
+   to work — .table-light was dropped from the markup because Bootstrap paints
+   its fill via an inset box-shadow that covers any background set here. */
 .hr-emp-table thead.hr-emp-sticky-head th {
   position: sticky;
   top: 0;
   z-index: 3;
-  background-color: var(--vz-light);
   background-clip: padding-box;
+  padding: 13px 12px;
+  background-color: #f4f5f8;
+  background-image: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
+  color: var(--vz-secondary-color);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #ececf2;
+  white-space: nowrap;
+  vertical-align: middle;
 }
+.hr-emp-table thead.hr-emp-sticky-head th:first-child { border-top-left-radius: 14px; }
+.hr-emp-table thead.hr-emp-sticky-head th:last-child  { border-top-right-radius: 14px; }
 [data-bs-theme="dark"] .hr-emp-table thead.hr-emp-sticky-head th,
 [data-layout-mode="dark"] .hr-emp-table thead.hr-emp-sticky-head th {
-  /* Vertical gradient so it reads seamless across the per-cell sticky headers
-     (a horizontal gradient would restart in every column). Matches the active
-     "Active Employees" tab's blurple. */
-  background-color: #6355e0;
-  background-image: linear-gradient(180deg, #7a6ef0 0%, #5a4ce2 100%);
-  color: #ffffff;
-  border-bottom-color: rgba(255,255,255,0.12);
+  /* Same dark recipe as the Recruitment header. The fallback colour in the
+     var() is required: an opaque fill is what stops scrolled rows bleeding
+     through the sticky header. */
+  background-color: var(--vz-card-bg, #1a1d29);
+  background-image: linear-gradient(180deg,
+    color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
+    var(--vz-card-bg, #1a1d29) 100%);
+  color: rgba(255,255,255,0.70);
+  border-bottom-color: var(--vz-border-color, #2c3242);
 }

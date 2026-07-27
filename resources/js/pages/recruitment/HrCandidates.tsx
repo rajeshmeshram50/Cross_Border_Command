@@ -210,26 +210,24 @@ export default function HrCandidates() {
       <Row>
         <Col xs={12}>
           <div className="rec-page">
-            <div className="d-flex align-items-start justify-content-between flex-wrap gap-3 mb-2">
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{
-                    width: 46, height: 46,
-                    background: 'linear-gradient(135deg, #7c5cfc 0%, #a78bfa 100%)',
-                    boxShadow: '0 4px 10px rgba(124,92,252,0.30)',
-                  }}
-                >
-                  <i className="ri-group-line" style={{ color: '#fff', fontSize: 21 }} />
-                </span>
+            {/* Header — the shared .frm-cstrip strip used by Recruitment (and
+                Payroll / Attendance), rather than a bare flex row: bordered
+                white card, violet accent rail, 46px icon tile, and every page
+                action carried inside the strip on the right. */}
+            <div className="frm-cstrip mb-3">
+              <span className="frm-cstrip-accent" />
+              <div className="frm-cstrip-left">
+                <div className="frm-cstrip-icon"><i className="ri-group-line" /></div>
                 <div className="min-w-0">
-                  <h5 className="fw-bold mb-0" style={{ letterSpacing: '-0.01em' }}>Candidate Management</h5>
-                  <div className="text-muted mt-1" style={{ fontSize: 12.5 }}>
+                  <div className="d-flex align-items-center gap-2 flex-wrap">
+                    <span className="frm-cstrip-title">Candidate Management</span>
+                  </div>
+                  <div className="frm-cstrip-sub">
                     Track candidate profiles, experience, CVs, and selection status
                   </div>
                 </div>
               </div>
-              <div className="cand-actions d-flex align-items-center gap-2 flex-wrap">
+              <div className="cand-actions d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
                 <button type="button" className="cand-pill-btn cand-pill-btn--violet" onClick={() => navigate('/hr/recruitment')}>
                   <i className="ri-arrow-left-line" />Back to Recruitment List
                 </button>

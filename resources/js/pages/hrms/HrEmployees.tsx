@@ -2293,7 +2293,11 @@ export default function HrEmployees() {
             <div className="p-3 d-flex flex-column" ref={listScrollRef} style={{ minHeight: listFillH }}>
                 <div className="table-responsive flex-grow-1" style={{ maxHeight: listFillH ? Math.max(280, listFillH - 64) : undefined, overflowY: 'auto' }}>
                   <table className="table align-middle table-nowrap mb-0 hr-emp-table">
-                    <thead className="table-light hr-emp-sticky-head">
+                    {/* No .table-light — Bootstrap paints its fill with an inset
+                        box-shadow that would cover the header gradient (and reads
+                        as transparent under position:sticky). The header surface
+                        comes from .hr-emp-sticky-head in recruitment.css. */}
+                    <thead className="hr-emp-sticky-head">
                       <tr>
                         <th scope="col" className="ps-3 text-center" style={{ width: 56 }}>Sr No</th>
                         <th scope="col">Employee</th>

@@ -232,9 +232,28 @@ export default function HrCustomFields() {
           [data-bs-theme="dark"] .cf-page .cf-info-code,
           [data-layout-mode="dark"] .cf-page .cf-info-code { background: rgba(139,92,246,0.22) !important; color: #c4b5fd !important; }
 
-          /* Uniform cell padding + middle-align so the header columns line up
-             exactly with the body columns (some cells had ad-hoc inline padding). */
-          .cf-page .cf-table th, .cf-page .cf-table td { padding: 11px 14px !important; vertical-align: middle; }
+          /* Uniform body-cell padding + middle-align so the header columns line
+             up exactly with the body columns (some cells had ad-hoc inline
+             padding). Header padding is set with the header recipe below. */
+          .cf-page .cf-table td { padding: 11px 14px !important; vertical-align: middle; }
+
+          /* Header — an exact copy of the Recruitment list header
+             (.rec-list-table thead th): 10.5px / 700 micro-caps at 0.08em,
+             soft vertical gradient bar, 13px x 12px padding and a 1px divider.
+             Replaces the inline 11px / 800 / letterSpacing 0.4 styling that
+             used to sit on the thead and tr, which made this the only HRMS
+             table with its own header typography. */
+          .cf-page .cf-table thead th {
+            padding: 13px 12px !important;
+            vertical-align: middle;
+            background: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
+            color: var(--vz-secondary-color);
+            font-size: 10.5px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            border-bottom: 1px solid #ececf2;
+          }
           /* With table-layout: fixed, wrap long content (descriptions, variable
              tokens) inside the column instead of letting it overflow and break
              the header alignment. */
@@ -272,12 +291,15 @@ export default function HrCustomFields() {
           [data-bs-theme="dark"] .cf-page .cf-pag-current,
           [data-layout-mode="dark"] .cf-page .cf-pag-current { background: linear-gradient(135deg, #6d28d9, #4c1d95); }
 
-          [data-bs-theme="dark"] .cf-page .cf-table thead,
-          [data-layout-mode="dark"] .cf-page .cf-table thead {
-            background: rgba(99, 102, 241, 0.12) !important;
+          /* Dark header — same recipe as the Recruitment list header. */
+          [data-bs-theme="dark"] .cf-page .cf-table thead th,
+          [data-layout-mode="dark"] .cf-page .cf-table thead th {
+            background: linear-gradient(180deg,
+              color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
+              var(--vz-card-bg, #1a1d29) 100%);
+            color: rgba(255, 255, 255, 0.70);
+            border-bottom-color: var(--vz-border-color, #2c3242);
           }
-          [data-bs-theme="dark"] .cf-page .cf-table thead tr,
-          [data-layout-mode="dark"] .cf-page .cf-table thead tr { color: rgba(255, 255, 255, 0.65) !important; }
           [data-bs-theme="dark"] .cf-page .cf-table tbody tr,
           [data-layout-mode="dark"] .cf-page .cf-table tbody tr { border-color: rgba(255, 255, 255, 0.06); }
           [data-bs-theme="dark"] .cf-page .cf-row-name,
@@ -417,9 +439,13 @@ export default function HrCustomFields() {
                     header widths, NOT by row content, so switching the Type
                     filter can't reflow the columns and shift the headers. */}
                 <table className="table align-middle mb-0 cf-table" style={{ fontSize: 13, tableLayout: 'fixed', width: '100%' }}>
-                  <thead style={{ background: '#f5f3ff' }}>
-                    <tr style={{ fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase', color: '#6b7280', fontWeight: 800 }}>
-                      <th style={{ padding: '10px 12px', width: 60 }}>Sr No</th>
+                  {/* Header typography/surface comes from .cf-table thead th in
+                      the style block above — the same recipe as the Recruitment
+                      list header. The inline font/background that used to live
+                      here made this table the odd one out across HRMS. */}
+                  <thead>
+                    <tr>
+                      <th style={{ width: 60 }}>Sr No</th>
                       <th style={{ width: '19%' }}>Field Name</th>
                       <th style={{ width: '17%' }}>Variable</th>
                       <th style={{ width: 110 }}>Type</th>

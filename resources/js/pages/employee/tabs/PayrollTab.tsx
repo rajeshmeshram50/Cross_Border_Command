@@ -80,6 +80,10 @@ export default function PayrollTab() {
     if (s.length <= visible) return s;
     return 'X'.repeat(Math.max(4, s.length - visible)) + s.slice(-visible);
   };
+  // Aadhaar is optional on the employee record. When it is missing the field is
+  // dropped entirely instead of rendering a dash — a labelled "Aadhaar Number —"
+  // reads as missing/broken data rather than as "not applicable".
+  const hasAadhaar = String(empDetail?.aadhaar_number ?? '').replace(/\s+/g, '') !== '';
   const fullAddress = [empDetail?.address_line1, empDetail?.address_line2, empDetail?.city]
     .filter(Boolean).join(', ') || '—';
   const paymentMode = empDetail?.salary_payment_mode === 'bank' ? 'Bank Transfer'
@@ -254,10 +258,12 @@ export default function PayrollTab() {
                         </span>
                       </div>
                       <Row className="g-3">
-                        <Col md={3}>
-                          <div className="ep-field-label">Aadhaar Number</div>
-                          <span className="font-monospace fw-semibold pyt-mono-chip">{mask(empDetail?.aadhaar_number)}</span>
-                        </Col>
+                        {hasAadhaar && (
+                          <Col md={3}>
+                            <div className="ep-field-label">Aadhaar Number</div>
+                            <span className="font-monospace fw-semibold pyt-mono-chip">{mask(empDetail?.aadhaar_number)}</span>
+                          </Col>
+                        )}
                         <Col md={3}><div className="ep-field-label">Nationality</div><div className="ep-field-value">{empDetail?.nationality_country?.name || '—'}</div></Col>
                         <Col md={3}><div className="ep-field-label">Address</div><div className="ep-field-value">{fullAddress}</div></Col>
                         <Col md={3}><div className="ep-field-label">Gender</div><div className="ep-field-value">{empDetail?.gender || '—'}</div></Col>
@@ -286,10 +292,12 @@ export default function PayrollTab() {
                         </span>
                       </div>
                       <Row className="g-3">
-                        <Col md={6}>
-                          <div className="ep-field-label">Aadhaar Number</div>
-                          <span className="font-monospace fw-semibold pyt-mono-chip">{mask(empDetail?.aadhaar_number)}</span>
-                        </Col>
+                        {hasAadhaar && (
+                          <Col md={6}>
+                            <div className="ep-field-label">Aadhaar Number</div>
+                            <span className="font-monospace fw-semibold pyt-mono-chip">{mask(empDetail?.aadhaar_number)}</span>
+                          </Col>
+                        )}
                         <Col md={6}><div className="ep-field-label">Pincode</div><div className="ep-field-value">{empDetail?.pincode || '—'}</div></Col>
                         <Col md={6}><div className="ep-field-label">Address</div><div className="ep-field-value">{fullAddress}</div></Col>
                         <Col md={6}><div className="ep-field-label">City</div><div className="ep-field-value">{empDetail?.city || '—'}</div></Col>
