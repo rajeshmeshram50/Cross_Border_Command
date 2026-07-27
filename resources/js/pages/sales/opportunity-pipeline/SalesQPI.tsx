@@ -320,6 +320,10 @@ function MoreOptionsMenu(props: {
    * document is signed. When set, a "Download Signed Certificate" item is
    * added to the menu. */
   sigId: number | null;
+  /* Raw signature-request status ('declined' / 'recalled' / …). Used to show a
+   * "this document was declined" notice at the top of the menu even though
+   * sigId is null (a declined request has no signed PDF). */
+  sigStatus?: string | null;
   docCode: string;
   /* Customer-signed (Zoho-executed) document handlers — only used when the
    * row is signed (sigId set). View opens it in a tab; download saves it. */
@@ -331,7 +335,7 @@ function MoreOptionsMenu(props: {
    * row-level loader on this row. */
   onBusyChange?: (busy: boolean) => void;
 }) {
-  const { rect, kind, payload, sigId, docCode, onViewSigned, onDownloadSigned, onClose, onError, onBusyChange } = props;
+  const { rect, kind, payload, sigId, sigStatus, docCode, onViewSigned, onDownloadSigned, onClose, onError, onBusyChange } = props;
   const docLabel = kind === 'quotation' ? 'Quotation' : 'PI';
   const menuRef = useRef<HTMLDivElement>(null);
   /* Busy key encodes mode + signature so only the clicked item shows a
@@ -435,6 +439,15 @@ function MoreOptionsMenu(props: {
       role="menu"
       style={pos ? { top: pos.top, left: pos.left } : { top: -9999, left: -9999 }}
     >
+      {/* Declined / recalled notice — a declined request has no signed PDF, so
+          make it explicit at the top of the menu why the "Signed" options are
+          missing (the row can still be re-sent from the Send button). */}
+      {(sigStatus === 'declined' || sigStatus === 'recalled') && (
+        <div className="qpi-moremenu-notice" role="note">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          <span>This {docLabel} was {sigStatus === 'declined' ? 'declined' : 'recalled'} — it was not signed. You can re-send it for signature.</span>
+        </div>
+      )}
       {kind === 'quotation' ? (
         /* Quotations are never e-signed through Zoho here, so the whole
            with/without-Signature split (and the certificate) is meaningless
@@ -1301,7 +1314,12 @@ export default function SalesQPI() {
     const notSent    = st !== 'inprogress' && st !== 'completed';
     const inProgress = st === 'inprogress';
     const signed     = st === 'completed';
-    const hasSig     = st === 'inprogress' || st === 'completed';
+    // A declined / recalled request WAS sent — so it can be re-sent, and the
+    // signing tracker must stay open so the decline reason/date is reachable.
+    const declined   = st === 'declined' || st === 'recalled';
+    // Tracker is available for EVERY document that has a signature request,
+    // whatever its state (sent / signed / declined / recalled).
+    const hasSig     = !!sig?.id;
     // When signed, Send/View/Reminder are all moot — point the user to the
     // history (tracker) icon, which holds the signed document + full timeline.
     const signedHint = 'Document already signed — open the history icon to view it.';
@@ -1331,14 +1349,14 @@ export default function SalesQPI() {
               </button>
             </Tooltip>
           ) : (
-            <Tooltip label={readOnly ? 'View-only — you don\'t have permission to modify this record.' : 'Send for Signature'}>
+            <Tooltip label={readOnly ? 'View-only — you don\'t have permission to modify this record.' : declined ? (st === 'recalled' ? 'Recalled — re-send for signature' : 'Declined — re-send for signature') : 'Send for Signature'}>
               <button
                 type="button"
-                className="qpi-convert-btn qpi-send-btn"
+                className={`qpi-convert-btn qpi-send-btn${declined ? ' qpi-send-btn-resend' : ''}`}
                 disabled={readOnly}
                 onClick={() => setSigSendFor({ kind, id, code, customerName: customer || null, leadId: leadId ?? null })}
               >
-                <IconPaperPlaneSm /><span className="qpi-convert-btn-label">Send for Sign</span>
+                <IconPaperPlaneSm /><span className="qpi-convert-btn-label">{declined ? 'Resend for Sign' : 'Send for Sign'}</span>
               </button>
             </Tooltip>
           )
@@ -1555,7 +1573,7 @@ export default function SalesQPI() {
                   const qSig = r.id ? sigByRow[`quotation:${r.id}`] : undefined;
                   setQtMenuFor(prev => prev?.id === r.qtNo
                     ? null
-                    : { id: r.qtNo, rect, payload: piPayloadFromQuotation(r), sigId: qSig?.status === 'completed' ? qSig.id : null });
+                    : { id: r.qtNo, rect, payload: piPayloadFromQuotation(r), sigId: qSig?.status === 'completed' ? qSig.id : null, sigStatus: qSig?.status ?? null });
                 }}
               >
                 <IconKebab />
@@ -1639,6 +1657,10 @@ export default function SalesQPI() {
         const st = r.id ? sigByRow[`pi:${r.id}`]?.status : undefined;
         if (st === 'completed')  return <span className="qpi-sig-pill qpi-sig-signed">Signed</span>;
         if (st === 'inprogress') return <span className="qpi-sig-pill qpi-sig-sent">Sent</span>;
+        // A declined / recalled request reads "Declined" (not "Not Sent") until
+        // it is re-sent — then sigByRow flips to inprogress and it shows "Sent".
+        if (st === 'declined')   return <span className="qpi-sig-pill qpi-sig-declined">Declined</span>;
+        if (st === 'recalled')   return <span className="qpi-sig-pill qpi-sig-recalled">Recalled</span>;
         return <span className="qpi-sig-pill qpi-sig-none">Not Sent</span>;
       },
     },
@@ -1737,7 +1759,7 @@ export default function SalesQPI() {
                   const pSig = r.id ? sigByRow[`pi:${r.id}`] : undefined;
                   setPiMenuFor(prev => prev?.id === r.piNo
                     ? null
-                    : { id: r.piNo, rect, payload: piPayloadFromPI(r), sigId: pSig?.status === 'completed' ? pSig.id : null });
+                    : { id: r.piNo, rect, payload: piPayloadFromPI(r), sigId: pSig?.status === 'completed' ? pSig.id : null, sigStatus: pSig?.status ?? null });
                 }}
               >
                 <IconKebab />
@@ -1982,6 +2004,7 @@ export default function SalesQPI() {
             rect={qtMenuFor.rect}
             payload={qtMenuFor.payload}
             sigId={qtMenuFor.sigId}
+            sigStatus={(qtMenuFor as any).sigStatus}
             docCode={qtMenuFor.id}
             onViewSigned={qtMenuFor.sigId != null ? () => onViewSignedSig(qtMenuFor.sigId!) : undefined}
             onDownloadSigned={qtMenuFor.sigId != null ? () => onDownloadSignedSig(qtMenuFor.sigId!, qtMenuFor.id) : undefined}
@@ -1996,6 +2019,7 @@ export default function SalesQPI() {
             rect={piMenuFor.rect}
             payload={piMenuFor.payload}
             sigId={piMenuFor.sigId}
+            sigStatus={(piMenuFor as any).sigStatus}
             docCode={piMenuFor.id}
             onViewSigned={piMenuFor.sigId != null ? () => onViewSignedSig(piMenuFor.sigId!) : undefined}
             onDownloadSigned={piMenuFor.sigId != null ? () => onDownloadSignedSig(piMenuFor.sigId!, piMenuFor.id) : undefined}
@@ -5216,6 +5240,8 @@ const SCOPED_CSS = `
 .qpi-sig-none   { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
 .qpi-sig-sent   { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
 .qpi-sig-signed { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.qpi-sig-declined { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+.qpi-sig-recalled { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 /* Dark mode — translucent fills + light text, like the other app badges. */
 [data-bs-theme="dark"] .qpi-sig-none   { background: rgba(148,163,184,.16); color: #cbd5e1; border-color: rgba(148,163,184,.34); }
 [data-bs-theme="dark"] .qpi-sig-sent   { background: rgba(234,179,8,.16);   color: #fde68a; border-color: rgba(234,179,8,.40); }
@@ -5999,6 +6025,13 @@ const SCOPED_CSS = `
   opacity: 1; cursor: not-allowed;
 }
 .qpi-send-btn-signed:hover { transform: none; }
+/* Resend state — a declined / recalled PI can be sent again; a warm red-orange
+   gradient distinguishes it from the plain first-time "Send for Sign" blue. */
+.qpi-send-btn-resend {
+  background: linear-gradient(135deg, #f97316, #dc2626);
+  box-shadow: 0 3px 10px rgba(220,38,38,.30);
+}
+.qpi-send-btn-resend:hover:not(:disabled) { box-shadow: 0 4px 14px rgba(220,38,38,.42); }
 /* Loading state — shown until the first signing-status poll resolves so a PI
    can't be re-sent before we know it was already sent/signed. */
 .qpi-send-btn-loading, .qpi-send-btn-loading:disabled {
@@ -6105,6 +6138,16 @@ const SCOPED_CSS = `
 .qpi-moremenu-item:disabled { opacity: .65; cursor: wait; }
 .qpi-moremenu-item svg { flex-shrink: 0; color: #0ea5e9; }
 .qpi-moremenu-item span { flex: 1; white-space: nowrap; }
+/* Declined / recalled notice banner at the top of the menu. */
+.qpi-moremenu-notice {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin: 2px 4px 6px; padding: 9px 11px; border-radius: 8px;
+  font-size: 12px; font-weight: 700; line-height: 1.4;
+  color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca;
+}
+.qpi-moremenu-notice svg { flex-shrink: 0; color: #ef4444; margin-top: 1px; }
+[data-bs-theme="dark"] .qpi-moremenu-notice { color: #fca5a5; background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.34); }
+[data-bs-theme="dark"] .qpi-moremenu-notice svg { color: #f87171; }
 /* Slim divider between the View group and the Download group. */
 .qpi-moremenu-sep {
   height: 1px;

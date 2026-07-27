@@ -256,3 +256,52 @@ export function mergeTradeDocuments(
 
   return [...merged, ...extras];
 }
+
+/** Raw clm_signature_requests.status → the vault's display status. */
+export function rawSigToVaultStatus(raw?: string | null): string {
+  const s = String(raw ?? '').toLowerCase();
+  if (s === 'completed')  return 'Signed';
+  if (s === 'inprogress') return 'Pending';
+  if (s === 'declined' || s === 'rejected') return 'Declined';
+  if (s === 'recalled')   return 'Recalled';
+  if (s === 'expired')    return 'Expired';
+  return 'Draft';
+}
+
+/**
+ * Overlay the freshly-synced signature status onto a shipment-deals structure
+ * (each shipment has trade_docs_buyer/consignee + agreements_buyer/consignee).
+ *
+ * The vault endpoint (buildDeals) reads clm_signature_requests.status straight
+ * from the DB WITHOUT a Zoho sync, so a just-declined doc can still read
+ * "Pending" there. `sigReqs` come from GET /clm/signature-requests?sync=1 and
+ * carry the authoritative latest status — matched to each deal doc by request
+ * id (signature_request_id, falling back to the legacy sig_req_id).
+ */
+export function overlayShipmentSigStatus<T extends Record<string, any>>(shipments: T[], sigReqs: SigReqRow[]): T[] {
+  if (!Array.isArray(shipments) || shipments.length === 0) return shipments;
+  const byId = new Map<number, SigReqRow>();
+  for (const r of sigReqs) if (r && r.id != null) byId.set(Number(r.id), r);
+  if (byId.size === 0) return shipments;
+
+  const overlayDoc = (d: any): any => {
+    if (!d) return d;
+    const sid = (d.signature_request_id != null && Number(d.signature_request_id) > 0)
+      ? Number(d.signature_request_id)
+      : (typeof d.sig_req_id === 'number' && d.sig_req_id > 0 ? d.sig_req_id : null);
+    if (sid == null) return d;
+    const sr = byId.get(sid);
+    if (!sr) return d;
+    const raw = String(sr.status ?? '').toLowerCase();
+    return { ...d, status: rawSigToVaultStatus(raw), sig_state: raw, signature_request_id: Number(sr.id) };
+  };
+  const overlayArr = (a: any): any => (Array.isArray(a) ? a.map(overlayDoc) : a);
+
+  return shipments.map((s) => ({
+    ...s,
+    trade_docs_buyer:     overlayArr(s.trade_docs_buyer),
+    trade_docs_consignee: overlayArr(s.trade_docs_consignee),
+    agreements_buyer:     overlayArr(s.agreements_buyer),
+    agreements_consignee: overlayArr(s.agreements_consignee),
+  }));
+}

@@ -12,6 +12,7 @@ import { downloadFile } from '../../../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 import { CEV_CSS } from '../../../sales/core-masters/customer/CustomerEvidenceVaultModal';
 import { SegmentRefUploadPopup, SCOPED_CSS as AVM_SCOPED_CSS } from './AddVendorModal';
+import { SigningTrackerModal } from '../../../sales/opportunity-pipeline/SigningTrackerModal';
 
 /* Fetch a stored attachment as a Blob for the ZIP export. Our own uploads
  * (segment_doc_uploads/…) stream THROUGH the backend so Azure's cross-origin
@@ -1334,6 +1335,8 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const [busy, setBusy] = useState(false);
   const [reminding, setReminding] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [trackerOpen, setTrackerOpen] = useState(false);
+  const canTrack = !!doc.signature_request_id;
   const canViewOrDownload = !!doc.attachment_url;
   const canReupload = !!ownerId && !!doc.doc_code;
   // Standard docs reuse the supplier form's exact upload popup (SegmentRefUploadPopup)
@@ -1466,6 +1469,31 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           </button>
         </Tooltip>
+      )}
+      {canTrack && (
+        <Tooltip label="Signing activity tracker">
+          <button
+            type="button"
+            onClick={() => setTrackerOpen(true)}
+            className="cev-row-act cev-row-act-track"
+            aria-label="Signing activity tracker"
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, borderRadius: 6,
+              background: '#ede9fe', color: '#6d28d9', border: '1px solid #ddd6fe',
+              cursor: 'pointer',
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </button>
+        </Tooltip>
+      )}
+      {trackerOpen && doc.signature_request_id && (
+        <SigningTrackerModal
+          sigId={doc.signature_request_id}
+          code={doc.doc_code || doc.name || `Doc #${doc.db_id ?? ''}`}
+          onClose={() => setTrackerOpen(false)}
+        />
       )}
       <Tooltip label={canViewOrDownload ? `View ${clipFileName(doc.attachment)}` : 'No attachment yet'}>
         <a
@@ -1611,6 +1639,9 @@ const DEAL_SUB_TH: React.CSSProperties = { padding: '8px 12px', fontSize: 6.5, f
 function dealDocState(d: VaultDoc): { label: string; c: [string, string, string, string] } {
   if (d.sig_state === 'completed' || d.status === 'Signed') return { label: 'Signed', c: ['#ecfdf5', '#059669', '#a7f3d0', '#10b981'] };
   if (d.sig_state === 'inprogress') return { label: 'Sent', c: ['#fffbeb', '#d97706', '#fcd34d', '#f59e0b'] };
+  // Declined / recalled read as such (until re-sent) instead of collapsing to Pending.
+  if (d.sig_state === 'declined' || d.sig_state === 'rejected') return { label: 'Declined', c: ['#fef2f2', '#b91c1c', '#fecaca', '#ef4444'] };
+  if (d.sig_state === 'recalled') return { label: 'Recalled', c: ['#fffbeb', '#92400e', '#fde68a', '#f59e0b'] };
   if (d.status === 'Verified') return { label: 'Verified', c: ['#ecfdf5', '#059669', '#a7f3d0', '#10b981'] };
   return { label: 'Pending', c: ['#fef2f2', '#dc2626', '#fca5a5', '#ef4444'] };
 }

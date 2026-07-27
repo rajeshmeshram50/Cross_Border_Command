@@ -972,8 +972,11 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                         {rows.map((td, i) => {
                           const tdSig       = td.signature_request;
                           const tdSigStatus = tdSig?.status ?? null;
-                          // Already out for / back from signature → can't re-send.
-                          const tdSent      = !!tdSigStatus && !['draft', 'recalled', 'superseded'].includes(tdSigStatus);
+                          // Only inprogress / completed are locked. A declined,
+                          // recalled or expired round is DEAD → it can be re-sent
+                          // (the Send button becomes "Resend").
+                          const tdSent      = !!tdSigStatus && !['draft', 'recalled', 'superseded', 'declined', 'rejected', 'expired'].includes(tdSigStatus);
+                          const tdResend    = !!tdSigStatus && ['declined', 'rejected', 'recalled', 'expired'].includes(tdSigStatus);
                           const tdRemind    = tdSigStatus === 'inprogress';
                           const tdIsRemind  = !!tdSig && reminderId === tdSig.id;
                           const sendable = td.db_id != null && !!tdSignCustomer && !tdSent;
@@ -1009,16 +1012,17 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             </td>
                             <td>
                               <div className="lasm-actions">
-                                {/* Send — only while the doc hasn't been sent yet. */}
+                                {/* Send — while the doc hasn't been sent; becomes
+                                    "Resend" for a declined / recalled / expired round. */}
                                 {sendable && (
-                                  <Tooltip label={`Send to ${tdSignerLabel} for signature`}>
+                                  <Tooltip label={tdResend ? `Re-send to ${tdSignerLabel} for signature` : `Send to ${tdSignerLabel} for signature`}>
                                     <button
                                       type="button"
-                                      className="lasm-td-send"
+                                      className={`lasm-td-send${tdResend ? ' lasm-td-resend' : ''}`}
                                       onClick={() => td.db_id != null && setTdSendIds([td.db_id])}
                                     >
                                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                                      Send
+                                      {tdResend ? 'Resend' : 'Send'}
                                     </button>
                                   </Tooltip>
                                 )}
@@ -1260,7 +1264,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     ) : activeAgreements.map((a, idx) => {
                       const sig = a.signature_request;
                       const sigStatus = sig?.status ?? 'draft';
-                      const sentAlready = sigStatus !== 'draft' && sigStatus !== 'recalled';
+                      // Only inprogress / completed lock the row; a declined /
+                      // recalled / expired agreement can be re-sent.
+                      const sentAlready = !['draft', 'recalled', 'declined', 'rejected', 'expired'].includes(sigStatus);
+                      const agResend      = ['declined', 'rejected', 'recalled', 'expired'].includes(sigStatus);
                       const isPrev        = previewingId === a.id;
                       const isRemind      = !!sig && reminderId === sig.id;
                       const checkboxLocked = sentAlready || !canSelectAgreement(a);
@@ -1330,14 +1337,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                           <td>
                             <div className="lasm-actions">
                               {!sentAlready && (
-                                <Tooltip label="Send for signature">
+                                <Tooltip label={agResend ? 'Re-send for signature' : 'Send for signature'}>
                                   <button
                                     type="button"
-                                    className="lasm-btn-send"
+                                    className={`lasm-btn-send${agResend ? ' lasm-td-resend' : ''}`}
                                     onClick={() => handleSend([a])}
                                   >
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                                    Send
+                                    {agResend ? 'Resend' : 'Send'}
                                   </button>
                                 </Tooltip>
                               )}
@@ -1749,6 +1756,9 @@ const LASM_CSS = `
 .lasm-td-send { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; border: 1px solid rgba(124,58,237,.30); background: linear-gradient(135deg,#8b5cf6,#6d28d9); color: #fff; font-family: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: filter .15s, opacity .15s; }
 .lasm-td-send:hover:not(:disabled) { filter: brightness(1.06); }
 .lasm-td-send:disabled { opacity: .45; cursor: not-allowed; }
+/* Resend (declined / recalled / expired) — warm red-orange to distinguish it
+   from a first-time send. Applies to both trade-doc and agreement send buttons. */
+.lasm-td-resend { background: linear-gradient(135deg,#f97316,#dc2626) !important; border-color: rgba(220,38,38,.30) !important; }
 .lasm-party-pill { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: 10px; font-weight: 700; }
 .lasm-party-customer  { background: #fef3c7; color: #92400e; }
 .lasm-party-consignee { background: #d1fae5; color: #065f46; }

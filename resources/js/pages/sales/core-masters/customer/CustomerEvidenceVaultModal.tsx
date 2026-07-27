@@ -8,7 +8,7 @@ import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
 import { useToast } from '../../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
-import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../../../utils/vaultSignatureRows';
+import { signatureRequestsToVaultDocs, mergeTradeDocuments, overlayShipmentSigStatus, type SigReqRow } from '../../../../utils/vaultSignatureRows';
 import { downloadFile } from '../../../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal, {
   type AgreementContext, type AgreementSigner, type AgreementSendRow, type SendForSignatureCustomer,
@@ -85,6 +85,11 @@ export interface VaultDoc {
 /** One document inside a shipment's Buyer/Consignee sub-table. */
 export interface VaultShipmentDoc {
   sig_req_id: number;
+  /** Signature request id of ANY status (sent / signed / declined / recalled) —
+   *  drives the Signing Tracker button. `sig_req_id` above stays completed/active
+   *  only (legacy Send/Remind gating). */
+  signature_request_id?: number | null;
+  sig_state?: string | null;
   /** Library id — clm_agreement_library.id or clm_trade_doc_library.id.
    *  Set on applicable (not-yet-sent) rows so the Send button can launch
    *  Send-for-Signature for the exact document. */
@@ -484,6 +489,11 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
     const sigRows            = signatureRequestsToVaultDocs(signatureRows);
     const baseSegmentTd      = (base.trade_documents ?? []) as VaultDoc[];
     const mergedTd           = mergeTradeDocuments(baseSegmentTd as any, sigRows, 'buyer') as unknown as VaultDoc[];
+    // Overlay the FRESHLY-SYNCED signature status onto the shipment deal docs.
+    // The vault endpoint (buildDeals) reads the DB status without a Zoho sync,
+    // so a just-declined doc can still read "Pending" there; signatureRows were
+    // fetched with sync=1, so they carry the authoritative latest status.
+    const overlaidShipments = overlayShipmentSigStatus(base.shipment_agreements ?? [], signatureRows);
     return {
       ...base,
       // The header KPIs (Total Documents / Verified / Pending / Trade Documents /
@@ -492,6 +502,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
       // unchanged. We still merge the segment-rule TD bucket with live
       // signatures for the Export workbook's Trade Documents sheet.
       trade_documents: mergedTd as typeof base.trade_documents,
+      shipment_agreements: overlaidShipments as typeof base.shipment_agreements,
     };
   }, [customer, data, vaultLive, signatureRows]);
 
@@ -1510,6 +1521,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
   const toast = useToast();
   const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>(forceParty ?? 'buyer');
   const [busy, setBusy] = useState<number | null>(null);
+  const [trackSig, setTrackSig] = useState<{ id: number; code: string } | null>(null);
   // A document whose party is "both" (buyer AND consignee) is returned in BOTH
   // lists. Split the three views by membership:
   //   • Customer Documents  → docs only the buyer has (buyer-exclusive)
@@ -1601,7 +1613,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                     {/* Proforma Invoice — same Send-for-Signature the Sales-Matrix
                         Q/PI stage offers. Routes through onSend; the parent opens
                         SalesDocSendForSignatureModal (kind='pi') off the pi_id. */}
-                    {d.pi_id && onSend && d.status !== 'Signed' && !d.sig_req_id && (() => {
+                    {d.pi_id && onSend && d.status !== 'Signed' && !d.sig_req_id && d.status !== 'Declined' && d.status !== 'Recalled' && (() => {
                       const isSending = !!pendingSend && pendingSend.doc === d;
                       return (
                         <button type="button" title="Send for Signature" aria-label="Send for Signature" disabled={isSending}
@@ -1613,13 +1625,39 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                         </button>
                       );
                     })()}
-                    {d.status !== 'Signed' && d.sig_req_id > 0 && <button type="button" title="Send Reminder" aria-label="Send Reminder" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={{ ...docActStyle('#06b6d4'), padding: '4px 8px' }}>{busy === d.sig_req_id ? '…' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}</button>}
+                    {/* Resend — a declined / recalled doc (PI or trade doc) can be
+                        re-sent for signature; routes through the same onSend flow. */}
+                    {(d.status === 'Declined' || d.status === 'Recalled') && onSend && (d.db_id || d.pi_id) && (() => {
+                      const isSending = !!pendingSend && pendingSend.doc === d;
+                      return (
+                        <button type="button" title="Resend for Signature" aria-label="Resend for Signature" disabled={isSending}
+                          onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
+                          style={{ ...docActStyle('#dc2626'), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
+                          {isSending
+                            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
+                            : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg>}
+                        </button>
+                      );
+                    })()}
+                    {d.status === 'Pending' && d.sig_req_id > 0 && <button type="button" title="Send Reminder" aria-label="Send Reminder" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={{ ...docActStyle('#06b6d4'), padding: '4px 8px' }}>{busy === d.sig_req_id ? '…' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}</button>}
+                    {/* Signing tracker — shown once the doc has a signature
+                        request of ANY status (sent / signed / declined). */}
+                    {(d.signature_request_id ?? (d.sig_req_id > 0 ? d.sig_req_id : null)) && (
+                      <button type="button" title="Signing activity tracker" aria-label="Signing activity tracker"
+                        onClick={() => setTrackSig({ id: (d.signature_request_id ?? d.sig_req_id) as number, code: d.pi_code || d.name })}
+                        style={{ ...docActStyle('#7c3aed'), padding: '4px 8px' }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l4 2" /></svg>
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+      {trackSig && (
+        <SigningTrackerModal sigId={trackSig.id} code={trackSig.code} onClose={() => setTrackSig(null)} />
       )}
     </div>
   );

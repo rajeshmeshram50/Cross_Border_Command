@@ -400,6 +400,11 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
           const st = stateOf(d);
           const sent = st !== 'pending';
           const sig = sigByRow[d.id];
+          /* Display-only chip: a declined / recalled request still counts as
+           * "pending" for send-eligibility (stateOf), but the chip must read
+           * "Declined" until it is re-sent (then the poll flips it to Sent). */
+          const rawSig = sig?.status;
+          const chip = rawSig === 'declined' ? 'declined' : rawSig === 'recalled' ? 'recalled' : st;
           const checked = !!sel[d.id];
           const signing = d.id === 'po'
             ? (poSign || isBusy('send:po'))
@@ -411,7 +416,7 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
               <td className="cptd-l"><div className="cptd-docname">{d.name}</div><div className="cptd-docsub">{d.sub}</div></td>
               <td>{d.required ? <span className="cptd-req">Mandatory</span> : <span className="cptd-opt">Optional</span>}</td>
               <td className="cptd-date">{d.generated}</td>
-              <td><span className={`cptd-status cptd-status--${st}`}><span className="cptd-dot" />{st === 'pending' ? 'Pending' : st === 'sent' ? 'Sent' : 'Signed'}</span></td>
+              <td><span className={`cptd-status cptd-status--${chip}`}><span className="cptd-dot" />{chip === 'pending' ? 'Pending' : chip === 'sent' ? 'Sent' : chip === 'declined' ? 'Declined' : chip === 'recalled' ? 'Recalled' : 'Signed'}</span></td>
               <td><div className="cptd-actions">
                 {st === 'signed' ? (
                   <>
@@ -429,8 +434,8 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
                   /* Busy from the click until the row's send finishes: either the
                      unsaved-PO draft PDF request, or the Zoho sign modal this row
                      opened (still open = still sending). */
-                  <button className={`cptd-send${signing ? ' is-busy' : ''}`} type="button" disabled={sent || signing} onClick={() => sendDoc(d.id)}>
-                    {signing ? I.spinSm : I.send} {sent ? 'Sent' : signing ? 'Sending…' : 'Send for Sign'}
+                  <button className={`cptd-send${signing ? ' is-busy' : ''}${(chip === 'declined' || chip === 'recalled') ? ' cptd-send--resend' : ''}`} type="button" disabled={sent || signing} onClick={() => sendDoc(d.id)}>
+                    {signing ? I.spinSm : I.send} {sent ? 'Sent' : signing ? 'Sending…' : (chip === 'declined' || chip === 'recalled') ? 'Resend for Sign' : 'Send for Sign'}
                   </button>
                 )}
                 {/* Draft view — always available (unsigned PO PDF). Icon-only,

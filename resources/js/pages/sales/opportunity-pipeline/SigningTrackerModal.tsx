@@ -86,6 +86,8 @@ const TRACKER_CSS = `
 .qpi-trk-stat-teal .qpi-trk-stat-icon { background: linear-gradient(135deg, #2dd4bf, #0d9488) !important; color: #fff !important; border-color: transparent !important; }
 .qpi-trk-stat-green  { border-top-color: #22c55e; }
 .qpi-trk-stat-green .qpi-trk-stat-icon { background: linear-gradient(135deg, #34d399, #16a34a) !important; color: #fff !important; border-color: transparent !important; }
+.qpi-trk-stat-red    { border-top-color: #ef4444; }
+.qpi-trk-stat-red .qpi-trk-stat-icon { background: linear-gradient(135deg, #f87171, #dc2626) !important; color: #fff !important; border-color: transparent !important; }
 .qpi-trk-stat > div { min-width: 0; }
 .qpi-trk-stat-icon { width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #aab4ee; background: rgba(99,102,241,0.16); border: 1px solid rgba(129,140,248,0.22); }
 .qpi-trk-stat-label { font-size: 11px; font-weight: 600; color: #94a0d8; }
@@ -97,6 +99,7 @@ const TRACKER_CSS = `
 .qpi-trk-panel-violet { border-top-color: #8b5cf6; }
 .qpi-trk-panel-blue   { border-top-color: #3b82f6; }
 .qpi-trk-panel-amber  { border-top-color: #f59e0b; }
+.qpi-trk-panel-red    { border-top-color: #ef4444; }
 .qpi-trk-panel-h { font-size: 13.5px; font-weight: 800; color: #dbe2ff; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
 .qpi-trk-panel-cnt { font-size: 11px; font-weight: 700; color: #97a2d8; background: rgba(120,140,255,.10); border: 1px solid rgba(120,140,255,.20); padding: 2px 9px; border-radius: 20px; }
 /* Reminder history — ~5 rows visible, scroll for the rest. */
@@ -130,8 +133,13 @@ const TRACKER_CSS = `
 .qpi-trk-table thead tr th:first-child { border-top-left-radius: 8px; }
 .qpi-trk-table thead tr th:last-child { border-top-right-radius: 8px; }
 /* Horizontal timeline (View Details tab). */
-.qpi-trk-htl { display: flex; align-items: flex-start; }
-.qpi-trk-htl-step { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
+/* Horizontal stepper — fixed-width steps so a long trail shows ~5 at a time
+   and the rest scroll (instead of squashing every step to unreadable). */
+.qpi-trk-htl { display: flex; align-items: flex-start; overflow-x: auto; padding-bottom: 8px; scrollbar-width: thin; }
+.qpi-trk-htl::-webkit-scrollbar { height: 7px; }
+.qpi-trk-htl::-webkit-scrollbar-thumb { background: rgba(120,140,255,.25); border-radius: 10px; }
+[data-bs-theme="light"] .qpi-trk-htl::-webkit-scrollbar-thumb { background: #d1c7f5; }
+.qpi-trk-htl-step { flex: 0 0 128px; min-width: 128px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
 .qpi-trk-htl-iconrow { display: flex; align-items: center; width: 100%; }
 .qpi-trk-htl-line { flex: 1; height: 2px; background: rgba(120,140,255,.20); }
 .qpi-trk-htl-step:first-child .qpi-trk-htl-line-l { visibility: hidden; }
@@ -147,6 +155,12 @@ const TRACKER_CSS = `
 .qpi-trk-table td { padding: 11px 10px; color: #e7ecff; border-bottom: 1px solid rgba(120,140,255,.07); white-space: nowrap; vertical-align: middle; }
 .qpi-trk-table tr:last-child td { border-bottom: 0; }
 .qpi-trk-muted { color: #97a2d8; }
+/* Reason cell in the Signer Details table — clamped to 2 lines & clickable so
+   a long reason opens the popup instead of stretching / breaking the table. */
+.qpi-trk-reason { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; width: 200px; max-width: 200px; text-align: left; padding: 0; margin: 0; background: none; border: none; cursor: pointer; font: inherit; font-style: italic; color: #fca5a5; text-decoration: underline dotted; text-underline-offset: 2px; }
+.qpi-trk-reason:hover { color: #fecaca; }
+[data-bs-theme="light"] .qpi-trk-reason { color: #b91c1c; }
+[data-bs-theme="light"] .qpi-trk-reason:hover { color: #dc2626; }
 /* Activity cell — icon badge + label on one line. */
 .qpi-trk-act-cell { display: inline-flex; align-items: center; gap: 9px; white-space: nowrap; }
 .qpi-trk-act-ic { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 7px; flex-shrink: 0; }
@@ -202,7 +216,12 @@ const TRACKER_CSS = `
 .qpi-trk-prog-cnt { font-size: 13px; font-weight: 800; color: #e7ecff; }
 .qpi-trk-prog-bar { height: 8px; border-radius: 20px; background: rgba(120,140,255,0.14); overflow: hidden; }
 .qpi-trk-prog-bar > span { display: block; height: 100%; border-radius: 20px; background: linear-gradient(90deg, #7c3aed, #22c55e); transition: width .45s ease; }
-.qpi-trk-ibody { position: relative; z-index: 2; padding: 16px 22px 22px; max-height: 56vh; overflow-y: auto; }
+.qpi-trk-ibody { position: relative; z-index: 2; padding: 16px 22px 22px; display: flex; flex-direction: column; min-height: 0; }
+/* The timeline scrolls inside this; the "View details" button below stays put. */
+.qpi-trk-itl-scroll { max-height: 46vh; overflow-y: auto; margin: 0 -6px; padding: 0 6px; scrollbar-width: thin; }
+.qpi-trk-itl-scroll::-webkit-scrollbar { width: 7px; }
+.qpi-trk-itl-scroll::-webkit-scrollbar-thumb { background: rgba(120,140,255,.25); border-radius: 10px; }
+[data-bs-theme="light"] .qpi-trk-itl-scroll::-webkit-scrollbar-thumb { background: #d1c7f5; }
 .qpi-trk-itl { display: flex; flex-direction: column; }
 .qpi-trk-itl-step { display: flex; gap: 14px; }
 .qpi-trk-itl-dotcol { display: flex; flex-direction: column; align-items: center; }
@@ -221,8 +240,33 @@ const TRACKER_CSS = `
 .qpi-trk-itl-badge-warn { background: rgba(245,158,11,.16); color: #fcd34d; border-color: rgba(245,158,11,.35); }
 .qpi-trk-itl-badge-bad  { background: rgba(239,68,68,.16);  color: #fca5a5; border-color: rgba(239,68,68,.35); }
 .qpi-trk-itl-badge-idle { background: rgba(120,140,255,.10); color: #97a2d8; border-color: rgba(120,140,255,.22); }
-.qpi-trk-itl-desc { font-size: 12.5px; color: #97a2d8; margin-top: 4px; }
+/* Clamp a long decline reason to 2 lines — the full text is in the title
+   tooltip so the timeline card never grows unbounded. */
+.qpi-trk-itl-desc { font-size: 12.5px; color: #97a2d8; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .qpi-trk-itl-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; margin-top: 7px; }
+/* Clickable decline reason → opens the full text in an in-card popup. */
+.qpi-trk-itl-desc-btn { background: none; border: none; padding: 0; margin-top: 4px; text-align: left; width: 100%; cursor: pointer; font: inherit; }
+.qpi-trk-itl-more { display: block; margin-top: 3px; font-size: 11px; font-weight: 700; color: #93b4ff; }
+.qpi-trk-itl-desc-btn:hover .qpi-trk-itl-more { text-decoration: underline; }
+[data-bs-theme="light"] .qpi-trk-itl-more { color: #6d28d9; }
+/* Full-reason popup — sits over the card (not a native title tooltip). */
+/* Full-screen popup (portalled above the tracker) so it can be WIDER than the
+   tracker card and never clipped by it. */
+.qpi-trk-reason-overlay { position: fixed; inset: 0; z-index: 13000; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(6,9,28,0.62); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); font-family: var(--font-sans); }
+.qpi-trk-reason-box { width: min(680px, 94vw); max-height: 82vh; display: flex; flex-direction: column; border-radius: 18px; overflow: hidden; background: #0f1442; border: 1px solid rgba(120,140,255,.30); box-shadow: 0 40px 100px rgba(0,0,0,.55); }
+.qpi-trk-reason-head { display: flex; align-items: center; justify-content: space-between; padding: 13px 16px; font-size: 13px; font-weight: 800; color: #fff; background: linear-gradient(135deg, #ef4444, #b91c1c); }
+.qpi-trk-reason-x { width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); background: rgba(255,255,255,.16); color: #fff; cursor: pointer; font-size: 12px; }
+.qpi-trk-reason-x:hover { background: rgba(255,255,255,.28); }
+.qpi-trk-reason-body { padding: 16px; overflow-y: auto; font-size: 13px; line-height: 1.55; color: #e7ecff; white-space: pre-wrap; word-break: break-word; }
+[data-bs-theme="light"] .qpi-trk-reason-overlay { background: rgba(40,18,80,0.35); }
+[data-bs-theme="light"] .qpi-trk-reason-box { background: #ffffff; border-color: #e3d9fb; }
+[data-bs-theme="light"] .qpi-trk-reason-body { color: #1f2937; }
+/* Download-declined-document button on the declined timeline step. */
+.qpi-trk-itl-dl { margin-top: 9px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 8px; font-size: 11.5px; font-weight: 700; cursor: pointer; background: rgba(239,68,68,.14); border: 1px solid rgba(239,68,68,.35); color: #fca5a5; transition: background .15s; }
+.qpi-trk-itl-dl:hover:not(:disabled) { background: rgba(239,68,68,.24); }
+.qpi-trk-itl-dl:disabled { opacity: .6; cursor: wait; }
+[data-bs-theme="light"] .qpi-trk-itl-dl { background: #fee2e2; color: #b91c1c; border-color: #fecaca; }
+[data-bs-theme="light"] .qpi-trk-itl-dl:hover:not(:disabled) { background: #fecaca; }
 .qpi-trk-itl-metait { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: #8e9ad6; }
 /* Light mode for the informative view */
 [data-bs-theme="light"] .qpi-trk-prog-lbl { color: #8b80b8; }
@@ -395,6 +439,25 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
       .finally(() => setDlSigned(false));
   };
 
+  /* Download the DECLINED document — the version the signer reviewed & declined
+   * (pulled from Zoho; a declined request has no signed PDF). `dlId` targets a
+   * specific attempt so a prior declined round in the trail can be downloaded too. */
+  const [dlDeclined, setDlDeclined] = useState<number | null>(null);
+  /* Full decline reason shown in an in-card popup (not a native title tooltip). */
+  const [reasonView, setReasonView] = useState<string | null>(null);
+  const downloadDeclined = (dlId: number) => {
+    setDlDeclined(dlId);
+    api.get(`/clm/signature-requests/${dlId}/declined-file`, { responseType: 'blob' })
+      .then((res) => {
+        const url = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
+        const a = document.createElement('a');
+        a.href = url; a.download = `${(code || `sig-${dlId}`).replace(/[^a-z0-9\-_.]/gi, '_')}_declined.pdf`;
+        a.click(); URL.revokeObjectURL(url);
+      })
+      .catch(() => { /* Zoho fetch may be unavailable */ })
+      .finally(() => setDlDeclined(null));
+  };
+
   const reviewed = isDone || isDeclined || isRecalled;
   /* Real "Viewed" signal — backend stamps signers[].viewed_at from Zoho's
    * action_status (UNOPENED → VIEWED → SIGNED). Earliest view across signers
@@ -418,10 +481,43 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
     : `${signerNamesArr[0]} +${signerNamesArr.length - 1} more`;
 
   /* Informative timeline steps — each carries an icon, description, person,
-   * date and a status badge (Done / In Progress / Pending). */
-  type TStep = { key: string; icon: string; label: string; short: string; desc: string; person: string | null; persons?: string[] | null; date: string | null; state: 'done' | 'current' | 'idle'; tone: 'ok' | 'warn' | 'bad'; badge: string };
-  const steps: TStep[] = [
-    { key: 'sent', icon: 'send', label: 'Sent for signature', short: 'Sent', desc: 'Document sent via secure e-sign link', person: null, date: fmt(data?.created_at), state: 'done', tone: 'ok', badge: 'Done' },
+   * date and a status badge (Done / In Progress / Pending). `download`/`dlId`
+   * mark a declined step whose document can be downloaded. */
+  type TStep = { key: string; icon: string; label: string; short: string; desc: string; person: string | null; persons?: string[] | null; date: string | null; state: 'done' | 'current' | 'idle'; tone: 'ok' | 'warn' | 'bad'; badge: string; download?: boolean; dlId?: number };
+
+  /* Attempt trail — a re-send after a decline is a fresh request, so the
+   * backend returns every attempt for this document (oldest→newest). The ones
+   * OLDER than the request being viewed are the prior decline rounds; render
+   * each as a "Declined" step so the full decline→resend history reads inline. */
+  const attempts: any[] = Array.isArray(data?.attempts) ? data.attempts : [];
+  const curCreatedMs = data?.created_at ? new Date(data.created_at).getTime() : 0;
+  const priorAttempts = attempts
+    .filter((a) => a && a.id !== sigId && a.created_at && new Date(a.created_at).getTime() < curCreatedMs)
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  /* Each prior round renders its full lifecycle — Sent → (Viewed) → Declined —
+   * so the trail reads: Sent→Viewed→Declined → Resent→Viewed→Declined → … */
+  const historySteps: TStep[] = priorAttempts.flatMap((a, k) => {
+    const st = String(a.status ?? '').toLowerCase();
+    const first = k === 0;
+    const out: TStep[] = [
+      { key: `att-${a.id}-sent`, icon: 'send', label: first ? 'Sent for signature' : 'Resent for signature', short: first ? 'Sent' : 'Resent', desc: first ? 'Document sent via secure e-sign link' : 'Document re-sent after the previous round', person: null, date: fmt(a.created_at), state: 'done', tone: 'ok', badge: 'Done' },
+    ];
+    if (a.viewed_at) {
+      out.push({ key: `att-${a.id}-view`, icon: 'eye', label: 'Reviewed by signer(s)', short: 'Reviewed', desc: 'Opened & reviewed by the signer(s)', person: null, date: fmt(a.viewed_at), state: 'done', tone: 'ok', badge: 'Done' });
+    }
+    if (st === 'recalled') {
+      out.push({ key: `att-${a.id}-final`, icon: 'x', label: 'Recalled', short: 'Recalled', desc: a.recall_reason || 'The request was recalled', person: null, date: fmt(a.recalled_at || a.created_at), state: 'done', tone: 'warn', badge: 'Recalled', download: true, dlId: a.id });
+    } else if (st === 'completed') {
+      out.push({ key: `att-${a.id}-final`, icon: 'check', label: 'Signed & completed', short: 'Signed', desc: 'A previous round was completed', person: null, date: fmt(a.completed_at || a.created_at), state: 'done', tone: 'ok', badge: 'Done' });
+    } else {
+      out.push({ key: `att-${a.id}-final`, icon: 'x', label: 'Declined', short: 'Declined', desc: a.decline_reason || 'A signer declined the document', person: null, date: fmt(a.declined_at || a.created_at), state: 'done', tone: 'bad', badge: 'Declined', download: true, dlId: a.id });
+    }
+    return out;
+  });
+  const isResend = priorAttempts.length > 0;
+
+  const currentSteps: TStep[] = [
+    { key: 'sent', icon: 'send', label: isResend ? 'Resent for signature' : 'Sent for signature', short: isResend ? 'Resent' : 'Sent', desc: isResend ? 'Document re-sent after the previous round' : 'Document sent via secure e-sign link', person: null, date: fmt(data?.created_at), state: 'done', tone: 'ok', badge: 'Done' },
     {
       key: 'progress', icon: 'eye',
       // Three states: reviewed (signed/declined/recalled) → "Reviewed",
@@ -441,12 +537,22 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
       key: 'reminders', icon: 'bell', label: `${remCount} reminder${remCount === 1 ? '' : 's'} sent`, short: 'Reminders',
       desc: 'Automatic signing reminders', person: null, date: lastRem ? fmt(lastRem) : null, state: 'done' as const, tone: 'warn' as const, badge: 'Done',
     }] : []),
-    isDeclined ? { key: 'final', icon: 'x', label: 'Declined', short: 'Declined', desc: data?.decline_reason || 'A signer declined the document', person: signerName, persons: signerNamesArr, date: fmt(data?.declined_at), state: 'done' as const, tone: 'bad' as const, badge: 'Declined' }
-    : isRecalled ? { key: 'final', icon: 'x', label: 'Recalled', short: 'Recalled', desc: data?.recall_reason || 'The request was recalled', person: signerName, persons: signerNamesArr, date: fmt(data?.recalled_at), state: 'done' as const, tone: 'warn' as const, badge: 'Recalled' }
-    : { key: 'final', icon: 'check', label: 'Signed & completed', short: 'Completed', desc: 'All parties have executed the document', person: signerName, persons: signerNamesArr, date: isDone ? fmt(completedAt) : null, state: isDone ? 'done' as const : 'idle' as const, tone: 'ok' as const, badge: isDone ? 'Done' : 'Pending' },
+    // A declined / recalled event is its OWN step…
+    ...(isDeclined ? [{ key: 'declined', icon: 'x', label: 'Declined', short: 'Declined', desc: data?.decline_reason || 'A signer declined the document', person: signerName, persons: signerNamesArr, date: fmt(data?.declined_at), state: 'done' as const, tone: 'bad' as const, badge: 'Declined', download: true, dlId: sigId }] : []),
+    ...(isRecalled ? [{ key: 'recalled', icon: 'x', label: 'Recalled', short: 'Recalled', desc: data?.recall_reason || 'The request was recalled', person: signerName, persons: signerNamesArr, date: fmt(data?.recalled_at), state: 'done' as const, tone: 'warn' as const, badge: 'Recalled', download: true, dlId: sigId }] : []),
+    // …and "Signed & completed" ALWAYS stays as the final source of truth
+    // (Pending until it actually completes) — even after a decline, since a
+    // re-send can still carry the document through to completion.
+    { key: 'final', icon: 'check', label: 'Signed & completed', short: 'Completed', desc: isDone ? 'All parties have executed the document' : 'Awaiting completion — the document is not yet fully signed', person: isDone ? signerName : null, persons: isDone ? signerNamesArr : null, date: isDone ? fmt(completedAt) : null, state: isDone ? 'done' as const : 'idle' as const, tone: 'ok' as const, badge: isDone ? 'Done' : 'Pending' },
   ];
-  const doneCount = steps.filter(s => s.state === 'done').length;
-  const pctDone = Math.round((doneCount / steps.length) * 100);
+  /* Full timeline = prior declined rounds (oldest→newest) then the current
+   * request's steps, so a resend reads directly below the decline it followed. */
+  const steps: TStep[] = [...historySteps, ...currentSteps];
+  /* Progress + "Total Stages" reflect only the CURRENT round's lifecycle
+   * (Sent → Reviewed → Reminder → Signed/Declined), not the accumulated trail —
+   * so a re-sent document reads "3 / 4", never "9 / 9". */
+  const doneCount = currentSteps.filter(s => s.state === 'done').length;
+  const pctDone = Math.round((doneCount / currentSteps.length) * 100);
 
   const stepIcon = (k: string) => {
     const p = { width: 15, height: 15, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
@@ -473,7 +579,16 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
               <div className="qpi-trk-itl-title">{s.label}</div>
               <span className={`qpi-trk-itl-badge qpi-trk-itl-badge-${badgeCls(s)}`}>{s.state === 'done' ? '✓ ' : ''}{s.badge}</span>
             </div>
-            <div className="qpi-trk-itl-desc">{s.desc}</div>
+            {/* A long decline reason clamps to 2 lines; on a reason-bearing
+                (declined / recalled) step it's clickable to open the full text
+                in an in-card popup instead of a native tooltip. */}
+            {s.download ? (
+              <button type="button" className="qpi-trk-itl-desc qpi-trk-itl-desc-btn" onClick={() => setReasonView(s.desc)}>
+                {s.desc}<span className="qpi-trk-itl-more">View full reason</span>
+              </button>
+            ) : (
+              <div className="qpi-trk-itl-desc">{s.desc}</div>
+            )}
             {(s.person || (s.persons && s.persons.length) || s.date) && (
               <div className="qpi-trk-itl-meta">
                 {/* Signers stacked one-per-line (not inline) so a multi-signer
@@ -485,6 +600,15 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
                   : s.person && <span className="qpi-trk-itl-metait"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>{s.person}</span>}
                 {s.date && <span className="qpi-trk-itl-metait"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>{s.date}</span>}
               </div>
+            )}
+            {/* Declined step → download the document the signer reviewed. */}
+            {s.download && s.dlId != null && (
+              <button type="button" className="qpi-trk-itl-dl" disabled={dlDeclined === s.dlId} onClick={() => downloadDeclined(s.dlId!)}>
+                {dlDeclined === s.dlId
+                  ? <span className="qpi-moremenu-spinner" />
+                  : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
+                Download declined document
+              </button>
             )}
           </div>
         </div>
@@ -612,12 +736,29 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
     </div>
   );
 
+  /* In-card popup showing the FULL decline reason (replaces the native title
+     tooltip so long reasons are readable). Included in both card views. */
+  const reasonPopupEl = reasonView != null ? createPortal(
+    <div className="qpi-trk-reason-overlay" role="dialog" aria-modal="true" onMouseDown={() => setReasonView(null)}>
+      <style>{TRACKER_CSS}</style>
+      <div className="qpi-trk-reason-box" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="qpi-trk-reason-head">
+          <span>Decline reason</span>
+          <button type="button" className="qpi-trk-reason-x" onClick={() => setReasonView(null)} aria-label="Close">✕</button>
+        </div>
+        <div className="qpi-trk-reason-body">{reasonView || '—'}</div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
   /* ── COMPACT card (default) — code + status, mini timeline, one signer,
         and a "View details" button that opens the full panel. ── */
   if (view === 'compact') {
     return createPortal(
       <div className="qpi-trk-overlay" role="dialog" aria-modal="true"><style>{TRACKER_CSS}</style>
         <div className="qpi-trk-card qpi-trk-card-info" onMouseDown={(e) => e.stopPropagation()}>
+          {reasonPopupEl}
           {/* Coloured workflow header (Figma "Agreement Timeline" look). */}
           <div className="qpi-trk-ihead">
             <div className="qpi-trk-ihead-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
@@ -639,13 +780,17 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
               <div className="qpi-trk-prog">
                 <div className="qpi-trk-prog-row">
                   <span className="qpi-trk-prog-lbl">OVERALL PROGRESS</span>
-                  <span className="qpi-trk-prog-cnt">{doneCount} / {steps.length} steps complete</span>
+                  <span className="qpi-trk-prog-cnt">{doneCount} / {currentSteps.length} steps complete</span>
                 </div>
                 <div className="qpi-trk-prog-bar"><span style={{ width: `${pctDone}%` }} /></div>
               </div>
 
               <div className="qpi-trk-ibody">
-                <InfoTimeline />
+                {/* Only the timeline scrolls; "View details" stays pinned below
+                    so it's always reachable no matter how long the trail grows. */}
+                <div className="qpi-trk-itl-scroll">
+                  <InfoTimeline />
+                </div>
                 <button type="button" className="qpi-trk-viewbtn" onClick={() => setView('expanded')}>
                   View details
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
@@ -662,6 +807,7 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   return createPortal(
     <div className="qpi-trk-overlay" role="dialog" aria-modal="true"><style>{TRACKER_CSS}</style>
       <div className="qpi-trk-card" onMouseDown={(e) => e.stopPropagation()}>
+        {reasonPopupEl}
         <span className="qpi-trk-orb qpi-trk-orb-1" aria-hidden />
         <span className="qpi-trk-orb qpi-trk-orb-2" aria-hidden />
         <div className="qpi-trk-head">
@@ -681,13 +827,15 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
             <>
               {/* Stat cards */}
               <div className="qpi-trk-stats">
-                <StatCard accent="violet" label="Total Stages" value={steps.length}
+                <StatCard accent="violet" label="Total Stages" value={currentSteps.length}
                   icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>} />
                 <StatCard accent="amber" label="Reminders" value={remCount}
                   icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>} />
                 <StatCard accent="teal" label="Signers" value={signers.length}
                   icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>} />
-                <StatCard accent="green" label="Completed On" value={isDone ? fmtD(completedAt) : '—'}
+                <StatCard accent={isDeclined ? 'red' : isRecalled ? 'amber' : 'green'}
+                  label={isDeclined ? 'Declined On' : isRecalled ? 'Recalled On' : 'Completed On'}
+                  value={isDeclined ? fmtD(data?.declined_at) : isRecalled ? fmtD(data?.recalled_at) : (isDone ? fmtD(completedAt) : '—')}
                   icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>} />
               </div>
 
@@ -703,7 +851,9 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
                   <div className="qpi-trk-panel-h">Signer Details</div>
                   <div className="qpi-trk-table-scroll">
                   <table className="qpi-trk-table">
-                    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Viewed On</th><th>Signed On</th></tr></thead>
+                    {/* The Reason column only appears once a signer has
+                        declined — otherwise the table keeps its normal shape. */}
+                    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Viewed On</th><th>Signed On</th>{isDeclined && <th>Reason</th>}</tr></thead>
                     <tbody>
                       {signers.map((sg: any, i: number) => {
                         const pill = signerPill(sg);
@@ -720,6 +870,9 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
                           <td><span className={`qpi-trk-spill qpi-trk-spill-${pill.cls}`}>{pill.txt}</span></td>
                           <td className="qpi-trk-muted">{sg?.viewed_at ? fmt(sg.viewed_at) : '—'}</td>
                           <td className="qpi-trk-muted">{sg?.signed_at ? fmt(sg.signed_at) : (isDone ? fmt(completedAt) : '—')}</td>
+                          {isDeclined && <td>{pill.txt === 'Declined' && (sg?.decline_reason || data?.decline_reason)
+                            ? <button type="button" className="qpi-trk-reason" onClick={() => setReasonView(sg?.decline_reason || data?.decline_reason)}>{sg?.decline_reason || data?.decline_reason}</button>
+                            : <span className="qpi-trk-muted">—</span>}</td>}
                         </tr>
                         );
                       })}
@@ -759,10 +912,19 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
             the active one shows a spinner. Close stays enabled as an escape so
             a slow/stuck request can never trap the user. */}
         <div className="qpi-trk-foot">
-          <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={downloadSignedPdf} disabled={dlSigned || loading || !isDone}>
-            {dlSigned ? <span className="qpi-moremenu-spinner" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
-            Download signed PDF
-          </button>
+          {/* Declined / recalled → offer the declined document; otherwise the
+              customer-signed PDF (enabled only once completed). */}
+          {isDeclined || isRecalled ? (
+            <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={() => downloadDeclined(sigId)} disabled={dlDeclined != null || loading}>
+              {dlDeclined != null ? <span className="qpi-moremenu-spinner" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
+              Download declined document
+            </button>
+          ) : (
+            <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={downloadSignedPdf} disabled={dlSigned || loading || !isDone}>
+              {dlSigned ? <span className="qpi-moremenu-spinner" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
+              Download signed PDF
+            </button>
+          )}
           <button type="button" className="qpi-trk-btn qpi-trk-btn-light" onClick={() => void load()} disabled={dlSigned || loading}>
             {loading && !dlSigned ? <span className="qpi-moremenu-spinner" /> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: 6 }}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>}
             Refresh

@@ -742,18 +742,24 @@ class SegmentDocUploadController extends Controller
         // duplicate signature request.
         $piSigReq    = [];   // pi_id ⇒ latest COMPLETED sig (Signed + View link)
         $piActiveReq = [];   // pi_id ⇒ latest IN-PROGRESS sig (sent, remind-able)
+        $piLatestReq = [];   // pi_id ⇒ latest sig of ANY status (drives the tracker
+                             //         + the display status incl. Declined/Recalled)
         $piIds = $piByLead->flatten()->pluck('id')->all();
         if ($piIds) {
+            // ALL statuses (not just completed/inprogress) so a DECLINED or
+            // recalled PI still surfaces its signature request — the vault needs
+            // the request id to open the Signing Tracker and to read "Declined".
             ClmSignatureRequest::where('client_id', $cid)
                 ->where('document_type', ClmSignatureRequest::DOC_PROFORMA_INVOICE)
                 ->whereIn('trade_doc_id', $piIds)
-                ->whereIn('status', ['completed', 'inprogress'])
                 ->orderBy('id')
                 ->get()
-                ->each(function ($r) use (&$piSigReq, &$piActiveReq) {
+                ->each(function ($r) use (&$piSigReq, &$piActiveReq, &$piLatestReq) {
                     $pid = (int) $r->trade_doc_id;
-                    if ($r->status === 'completed') $piSigReq[$pid]    = $r;   // latest completed wins
-                    else                            $piActiveReq[$pid] = $r;   // latest in-progress wins
+                    $st  = strtolower((string) $r->status);
+                    $piLatestReq[$pid] = $r;                                 // ordered by id → latest wins
+                    if ($st === 'completed')  $piSigReq[$pid]    = $r;       // latest completed wins
+                    if ($st === 'inprogress') $piActiveReq[$pid] = $r;       // latest in-progress wins
                 });
         }
 
@@ -797,8 +803,15 @@ class SegmentDocUploadController extends Controller
             foreach (($piByLead->get($lid) ?? collect()) as $pi) {
                 $sigReq    = $piSigReq[(int) $pi->id] ?? null;
                 $activeReq = $piActiveReq[(int) $pi->id] ?? null;   // sent-but-unsigned
+                $latestReq = $piLatestReq[(int) $pi->id] ?? null;   // any status (latest)
                 $piSigned  = (bool) $sigReq;
                 $piDate    = $sigReq?->completed_at;
+                // Latest request drives the display status + the tracker id, so a
+                // declined PI reads "Declined" (until re-sent) and can be tracked.
+                $latestState = $latestReq ? strtolower((string) $latestReq->status) : null;
+                $piStatus = $piSigned ? 'Signed'
+                    : (in_array($latestState, ['declined', 'rejected'], true) ? 'Declined'
+                    : ($latestState === 'recalled' ? 'Recalled' : 'Pending'));
                 // Resolve the signed-document URL the same way trade docs do, so
                 // the vault can offer a "View" link on the signed PI.
                 $signedUrl = null;
@@ -814,9 +827,15 @@ class SegmentDocUploadController extends Controller
                     // in-progress) → the vault hides "Send" and shows "Remind",
                     // so a sent PI can't be re-sent into a duplicate request.
                     'sig_req_id'  => $sigReq ? (int) $sigReq->id : ($activeReq ? (int) $activeReq->id : 0),
+                    // Frontend reads `signature_request_id` for the Signing
+                    // Tracker + Reminder gating (the legacy `sig_req_id` above is
+                    // kept for older callers). Set for ANY status so a declined /
+                    // in-progress / signed PI all open the tracker.
+                    'signature_request_id' => $latestReq ? (int) $latestReq->id : null,
+                    'sig_state'   => $latestState,
                     'name'        => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
                     'required'    => 'REQ',
-                    'status'      => $piSigned ? 'Signed' : 'Pending',
+                    'status'      => $piStatus,
                     // "Signed On" — the e-signature completion date; unsigned shows —.
                     'uploaded_on' => $piSigned && $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d/m/Y') : '—',
                     'valid_upto'  => '—',

@@ -1924,6 +1924,11 @@ class ClmSignatureController extends Controller
                         $row->save();
                         $changed = true;
                     }
+                    // Capture WHO/WHY/WHEN on a decline (or recall) so the
+                    // tracker + list can show the reason & timestamp.
+                    if (in_array($newStatus, ['declined', 'rejected', 'recalled'], true)) {
+                        if ($this->stampDeclineFromZoho($row, $details)) $changed = true;
+                    }
                     // Retry artifact fetch on EVERY completed-with-no-file
                     // pass too, not just on the status transition. Cheap
                     // when files already exist (fetchSignedArtifacts
@@ -2065,6 +2070,13 @@ class ClmSignatureController extends Controller
             // list's sync poll).
             $this->syncSignerActivity($row, $details);
 
+            // On a declined / recalled request, stamp the reason + timestamp
+            // (and mark the declining signer) — backfills older rows too since
+            // this runs on every show() regardless of a status change.
+            if (in_array($zohoState, ['declined', 'rejected', 'recalled'], true)) {
+                $this->stampDeclineFromZoho($row, $details);
+            }
+
             foreach (data_get($details, 'requests.actions', []) as $a) {
                 $email = strtolower((string) ($a['recipient_email'] ?? ''));
                 if ($email === '') continue;
@@ -2121,10 +2133,143 @@ class ClmSignatureController extends Controller
         $payload = $fresh->toArray();
         $payload['signers'] = $signersOut;
 
+        // Attempt trail — a re-send after a decline is a fresh request, so the
+        // full decline→resend history for ONE document is spread across sibling
+        // rows. Return them (oldest→newest) so the tracker can show every
+        // attempt (Declined → Resent → …) in a single timeline. Only resolved
+        // for single-document types (PI / Quotation / PO) where trade_doc_id
+        // uniquely identifies the document; multi-doc bundles skip it (empty).
+        $payload['attempts'] = [];
+        if ($fresh->trade_doc_id) {
+            try {
+                $sibs = ClmSignatureRequest::query()->forUser($user)
+                    ->where('document_type', $fresh->document_type)
+                    ->where('model_name', $fresh->model_name)
+                    ->where('party_id', $fresh->party_id)
+                    ->where('trade_doc_id', $fresh->trade_doc_id)
+                    ->orderBy('created_at')
+                    ->get(['id', 'status', 'created_at', 'declined_at', 'decline_reason', 'recalled_at', 'recall_reason', 'completed_at', 'reminder_count', 'signers']);
+                $payload['attempts'] = $sibs->map(function ($r) {
+                    // Earliest "viewed" across this attempt's signers so each
+                    // round can render its own Sent → Viewed → Declined trail.
+                    $viewed = collect(is_array($r->signers) ? $r->signers : [])
+                        ->pluck('viewed_at')->filter()->sort()->first();
+                    return [
+                        'id'             => $r->id,
+                        'status'         => $r->status,
+                        'created_at'     => optional($r->created_at)->toIso8601String(),
+                        'viewed_at'      => $viewed ?: null,
+                        'declined_at'    => optional($r->declined_at)->toIso8601String(),
+                        'decline_reason' => $r->decline_reason,
+                        'recalled_at'    => optional($r->recalled_at)->toIso8601String(),
+                        'recall_reason'  => $r->recall_reason,
+                        'completed_at'   => optional($r->completed_at)->toIso8601String(),
+                    ];
+                })->all();
+            } catch (\Throwable $e) {
+                Log::warning('Attempt-trail lookup failed for sig ' . $fresh->id . ': ' . $e->getMessage());
+            }
+        }
+
         return response()->json([
             'status' => true,
             'data'   => $payload,
         ]);
+    }
+
+    /**
+     * When Zoho reports a declined / rejected / recalled request, stamp the
+     * decline metadata onto the signature request so the tracker + lists can
+     * show WHO declined, WHY and WHEN. Without this the sync only flips
+     * `status` and `declined_at` / `decline_reason` stay null.
+     *
+     * Idempotent: the timestamp is written once (first time we see it); the
+     * reason is refreshed if Zoho later surfaces one. Also marks the declining
+     * signer(s) inside the stored `signers` array with their own reason so the
+     * per-signer detail table can render it. Returns true if anything changed
+     * (so the list sync knows to re-query). Mirrors the reason-extraction
+     * already used for CTC contracts in ctcSignatureStatus().
+     */
+    private function stampDeclineFromZoho(ClmSignatureRequest $row, array $details): bool
+    {
+        $reqStatus = strtolower((string) data_get($details, 'requests.request_status', ''));
+
+        // Zoho's decline-reason key is inconsistent across orgs/versions —
+        // take the first non-empty from a broad candidate list.
+        $pickReason = function (array $a): string {
+            foreach (['reason', 'reject_reason', 'rejection_reason', 'decline_reason', 'declined_reason', 'recipient_comment', 'comments', 'comment', 'action_comment'] as $k) {
+                if (!empty($a[$k])) return (string) $a[$k];
+            }
+            return '';
+        };
+        $reqLevelReason = '';
+        foreach (['reason', 'reject_reason', 'declined_reason', 'decline_reason'] as $k) {
+            $rv = data_get($details, "requests.$k");
+            if (!empty($rv)) { $reqLevelReason = (string) $rv; break; }
+        }
+
+        // Locate the declining signer(s) from the per-recipient actions.
+        $reasonByEmail  = [];
+        $declinedReason = '';
+        foreach (data_get($details, 'requests.actions', []) as $a) {
+            $st = strtolower((string) ($a['action_status'] ?? ''));
+            if (!in_array($st, ['declined', 'rejected', 'recalled'], true)) continue;
+            $email  = strtolower((string) ($a['recipient_email'] ?? ''));
+            $reason = $pickReason((array) $a) ?: $reqLevelReason;
+            if ($email !== '') $reasonByEmail[$email] = $reason;
+            if ($declinedReason === '' && $reason !== '') $declinedReason = $reason;
+        }
+
+        $isRecalled = $reqStatus === 'recalled';
+        $isDeclined = in_array($reqStatus, ['declined', 'rejected'], true)
+            || (!$isRecalled && !empty($reasonByEmail));
+        if (!$isDeclined && !$isRecalled) return false;
+
+        // Use Zoho's ACTUAL action time (the instant the signer declined),
+        // not our sync-detection time. Zoho returns `action_time` (epoch-ms)
+        // for the most recent action — the decline/recall we're processing.
+        // Fall back to the declining action's own time, then to now().
+        $actionMs = (int) (data_get($details, 'requests.action_time') ?: 0);
+        if ($actionMs <= 0) {
+            foreach (data_get($details, 'requests.actions', []) as $a) {
+                if (!in_array(strtolower((string) ($a['action_status'] ?? '')), ['declined', 'rejected', 'recalled'], true)) continue;
+                foreach (['action_time', 'declined_time', 'rejected_time', 'recall_time'] as $tk) {
+                    if (is_numeric($a[$tk] ?? null) && (int) $a[$tk] > 0) { $actionMs = (int) $a[$tk]; break 2; }
+                }
+            }
+        }
+        $eventAt = $actionMs > 0 ? \Illuminate\Support\Carbon::createFromTimestampMs($actionMs) : now();
+
+        $reason  = $declinedReason ?: $reqLevelReason;
+        $changed = false;
+
+        if ($isRecalled) {
+            if (!$row->recalled_at) { $row->recalled_at = $eventAt; $changed = true; }
+            if ($reason !== '' && $row->recall_reason !== $reason) { $row->recall_reason = $reason; $changed = true; }
+        } else {
+            if (!$row->declined_at) { $row->declined_at = $eventAt; $changed = true; }
+            if ($reason !== '' && $row->decline_reason !== $reason) { $row->decline_reason = $reason; $changed = true; }
+        }
+
+        // Tag the declining signer(s) in the stored signers array.
+        if (!empty($reasonByEmail) && is_array($row->signers)) {
+            $signers = $row->signers;
+            $touched = false;
+            foreach ($signers as &$s) {
+                if (!is_array($s)) continue;
+                $email = strtolower((string) ($s['email'] ?? ''));
+                if (!array_key_exists($email, $reasonByEmail)) continue;
+                $s['status']        = 'declined';
+                $s['action_status'] = 'declined';
+                if ($reasonByEmail[$email] !== '') $s['decline_reason'] = $reasonByEmail[$email];
+                $touched = true;
+            }
+            unset($s);
+            if ($touched) { $row->signers = $signers; $changed = true; }
+        }
+
+        if ($changed) $row->save();
+        return $changed;
     }
 
     public function remind(Request $request, $id)
@@ -2268,6 +2413,70 @@ class ClmSignatureController extends Controller
         return response(Storage::disk('public')->get($path), 200, [
             'Content-Type'        => 'application/pdf',
             'Content-Disposition' => 'inline; filename="' . basename($path) . '"',
+        ]);
+    }
+
+    /**
+     * Download the DECLINED document — the version the signer reviewed and
+     * declined. A declined request has no signed PDF, so we pull the document
+     * straight from Zoho (downloadRequestPdf works regardless of status). Lets
+     * the sender see exactly what was rejected before re-sending.
+     */
+    public function declinedFile(Request $request, $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $row  = ClmSignatureRequest::query()->forUser($user)->findOrFail($id);
+
+        if (!in_array(strtolower((string) $row->status), ['declined', 'rejected', 'recalled'], true)) {
+            return response()->json(['status' => false, 'message' => 'This document was not declined.'], 404);
+        }
+        if (!$row->zoho_request_id) {
+            return response()->json(['status' => false, 'message' => 'The declined document is not available.'], 404);
+        }
+
+        // Stored filename: <doc code>_<customer>_declined.pdf (e.g. the PI code
+        // + the customer/party name). Kept in our own storage so the file is
+        // served from us — not proxied from Zoho on every click.
+        $slug = fn ($s) => trim(preg_replace('/_+/', '_', preg_replace('/[^A-Za-z0-9]+/', '_', (string) $s)), '_');
+        $party    = $row->party;
+        $customer = (string) (data_get($party, 'company_name') ?: data_get($party, 'name') ?: '');
+        $codeBase = (string) ($row->request_name ?: ($row->document_type . '-' . ($row->trade_doc_id ?: $row->id)));
+        $fileBase = $slug($codeBase) . ($customer ? '_' . $slug($customer) : '') . '_declined';
+        $storePath = 'signed_documents/declined/' . $row->id . '_' . $fileBase . '.pdf';
+
+        // Fetch + cache once; serve from our disk thereafter.
+        if (!Storage::disk('public')->exists($storePath)) {
+            try {
+                // A declined request has no signed/completed PDF, so pull the
+                // DOCUMENT that was sent (the version the signer reviewed) — the
+                // per-document endpoint works regardless of completion. Fall
+                // back to the request-level PDF only if no document id is stored.
+                $docIds  = is_array($row->zoho_document_ids) ? $row->zoho_document_ids : [];
+                $firstDoc = null;
+                foreach ($docIds as $d) {
+                    $firstDoc = is_array($d) ? ($d['document_id'] ?? null) : $d;
+                    if ($firstDoc) break;
+                }
+                $pdf = $firstDoc
+                    ? $this->zoho->downloadDocumentPdf($row->zoho_request_id, (string) $firstDoc)
+                    : $this->zoho->downloadRequestPdf($row->zoho_request_id);
+
+                // Guard against Zoho handing back an error page / JSON with a 200
+                // (which is what produced the "Failed to load PDF" earlier).
+                if (substr($pdf, 0, 4) !== '%PDF') {
+                    throw new RuntimeException('Zoho did not return a valid PDF for the declined document.');
+                }
+                Storage::disk('public')->put($storePath, $pdf);
+            } catch (\Throwable $e) {
+                Log::warning("Declined document fetch failed for sig {$row->id}: " . $e->getMessage());
+                return response()->json(['status' => false, 'message' => 'Could not fetch the declined document from Zoho.'], 502);
+            }
+        }
+
+        return response(Storage::disk('public')->get($storePath), 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="' . basename($storePath) . '"',
         ]);
     }
 

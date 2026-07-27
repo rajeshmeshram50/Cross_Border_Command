@@ -22,6 +22,7 @@ import {
   validateGstin, validateIfsc, validateAccountNumber,
 } from '../../../../utils/fieldValidators';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
+import { SigningTrackerModal } from '../../../sales/opportunity-pipeline/SigningTrackerModal';
 import {
   readVendorMasterBundle,
   writeVendorMasterBundle,
@@ -5434,6 +5435,8 @@ function TradeDocsTable(props: {
   onSend: (code: string) => void;
   onSendSelected: () => void;
 }) {
+  // Signing-tracker modal target (one shared modal for the whole table).
+  const [trackSig, setTrackSig] = useState<{ id: number; code: string } | null>(null);
   // Signed docs are locked — select-all reflects only the unsigned rows.
   const selectable = props.rows.filter(r => r.status !== 'completed' && r.status !== 'Signed');
   const allChecked = selectable.length > 0 && selectable.every(r => r.sendForSignature);
@@ -5591,6 +5594,21 @@ function TradeDocsTable(props: {
                           </a>
                         </Tooltip>
                       )}
+                      {/* Signing tracker — available once the document has a
+                          signature request (sent / signed / declined). Shows the
+                          full timeline incl. any decline reason + date. */}
+                      {!!r.signatureRequestId && (
+                        <Tooltip label="Signing activity tracker">
+                          <button
+                            type="button"
+                            onClick={() => setTrackSig({ id: r.signatureRequestId!, code: r.name || r.code })}
+                            className="btn btn-sm btn-soft-primary"
+                            aria-label="Signing activity tracker"
+                          >
+                            <i className="ri-pulse-line" />
+                          </button>
+                        </Tooltip>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -5599,6 +5617,9 @@ function TradeDocsTable(props: {
           </tbody>
         </table>
       </div>
+      {trackSig && (
+        <SigningTrackerModal sigId={trackSig.id} code={trackSig.code} onClose={() => setTrackSig(null)} />
+      )}
       {props.rows.length > 0 && (
         <div style={{ marginTop: 12, display: 'flex', justifyContent: 'center' }}>
           <button type="button" className="avm-btn-primary" onClick={props.onSendSelected}>

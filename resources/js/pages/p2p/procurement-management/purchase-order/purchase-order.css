@@ -712,10 +712,15 @@
 .pom .cptd-status--pending{color:#b45309;background:#fef3c7;border:1px solid #fde68a;}
 .pom .cptd-status--sent{color:#0e7490;background:#e0f7fb;border:1px solid #bbe9f1;}
 .pom .cptd-status--signed{color:#15803d;background:#dcfce7;border:1px solid #bbf7d0;}
+.pom .cptd-status--declined{color:#b91c1c;background:#fee2e2;border:1px solid #fecaca;}
+.pom .cptd-status--recalled{color:#92400e;background:#fef3c7;border:1px solid #fde68a;}
 .pom .cptd-actions{display:inline-flex;align-items:center;gap:8px;justify-content:center;}
 .pom .cptd-send{display:inline-flex;align-items:center;gap:6px;font-family:inherit;font-size:11.5px;font-weight:800;color:#fff;background:linear-gradient(135deg,#0e7490,#0891b2 55%,#06b6d4);border:none;border-radius:9px;padding:7px 15px;cursor:pointer;box-shadow:0 3px 10px rgba(8,145,178,.3);transition:transform .15s,box-shadow .15s,opacity .15s;}
 .pom .cptd-send:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 16px rgba(8,145,178,.42);}
 .pom .cptd-send:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none;}
+/* Resend (declined / recalled) — warm red-orange to set it apart from a first send. */
+.pom .cptd-send--resend{background:linear-gradient(135deg,#f97316,#dc2626);box-shadow:0 3px 10px rgba(220,38,38,.3);}
+.pom .cptd-send--resend:hover:not(:disabled){box-shadow:0 6px 16px rgba(220,38,38,.42);}
 .pom .cptd-act{width:32px;height:32px;border-radius:8px;border:1.5px solid #d3e3ea;background:#fff;color:#0891b2;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:border-color .13s,background .13s;}
 .pom .cptd-act:hover{border-color:#22d3ee;background:#f0fbfe;}
 .pom .cptd-act:disabled{opacity:.5;cursor:not-allowed;}

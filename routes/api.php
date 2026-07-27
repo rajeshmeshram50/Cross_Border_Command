@@ -303,6 +303,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/clm/signature-requests/{id}/download-file/{index}',    [ClmSignatureController::class, 'downloadFile'])->whereNumber('id')->whereNumber('index');
     Route::get   ('/clm/signature-requests/{id}/view-file/{index}',        [ClmSignatureController::class, 'viewFile'])->whereNumber('id')->whereNumber('index');
     Route::get   ('/clm/signature-requests/{id}/certificate',              [ClmSignatureController::class, 'viewCertificate'])->whereNumber('id');
+    Route::get   ('/clm/signature-requests/{id}/declined-file',            [ClmSignatureController::class, 'declinedFile'])->whereNumber('id');
 
     Route::post  ('/clm/signature-requests/ctc-preview',                   [ClmSignatureController::class, 'ctcPreview']);
     Route::post  ('/clm/signature-requests/ctc-send',                      [ClmSignatureController::class, 'ctcSend']);

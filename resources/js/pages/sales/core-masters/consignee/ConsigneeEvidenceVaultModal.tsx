@@ -7,7 +7,7 @@ import { saveAs } from 'file-saver';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { useToast } from '../../../../contexts/ToastContext';
-import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } from '../../../../utils/vaultSignatureRows';
+import { signatureRequestsToVaultDocs, mergeTradeDocuments, overlayShipmentSigStatus, type SigReqRow } from '../../../../utils/vaultSignatureRows';
 import { downloadFile } from '../../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import SalesCustomerSendForSignatureModal from '../customer/SalesCustomerSendForSignatureModal';
@@ -391,6 +391,10 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
     const sigRows            = signatureRequestsToVaultDocs(signatureRows);
     const baseSegmentTd      = (base.trade_documents ?? []) as VaultDoc[];
     const mergedTd           = mergeTradeDocuments(baseSegmentTd as any, sigRows, 'consignee') as unknown as VaultDoc[];
+    // Overlay freshly-synced signature status onto the shipment deal docs — the
+    // vault endpoint reads the DB status without a Zoho sync, so a just-declined
+    // doc can read "Pending" there (see CustomerEvidenceVaultModal for detail).
+    const overlaidShipments = overlayShipmentSigStatus(base.shipment_agreements ?? [], signatureRows);
     return {
       ...base,
       // The header KPIs (Total Documents / Verified / Pending / Trade Documents /
@@ -399,6 +403,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
       // unchanged. We still merge the segment-rule TD bucket with live
       // signatures for the Export workbook's Trade Documents sheet.
       trade_documents: mergedTd as typeof base.trade_documents,
+      shipment_agreements: overlaidShipments as typeof base.shipment_agreements,
     };
   }, [consignee, data, vaultLive, signatureRows]);
 

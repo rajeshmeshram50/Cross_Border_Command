@@ -781,6 +781,14 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             if (st === 'inprogress') {
                               return <span className="s5-st-badge s5-st-sent">Sent</span>;
                             }
+                            // Declined / recalled read as such until re-sent (then
+                            // sigByRow flips to inprogress → "Sent").
+                            if (st === 'declined') {
+                              return <span className="s5-st-badge s5-st-declined">Declined</span>;
+                            }
+                            if (st === 'recalled') {
+                              return <span className="s5-st-badge s5-st-recalled">Recalled</span>;
+                            }
                             return <span className="s5-st-badge s5-st-notsent">Not Sent</span>;
                           })()}
                         </td>
@@ -865,15 +873,20 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                                 </button>
                               );
                             }
+                            // Declined / recalled → the PI was already sent, so
+                            // the button re-sends (warm red-orange to distinguish
+                            // it from a first-time blue "Send for Sign").
+                            const declined = st === 'declined' || st === 'recalled';
                             return (
                               <button
-                                type="button" className="s5-convert2" title="Send for Signature"
+                                type="button" className="s5-convert2"
+                                title={declined ? (st === 'recalled' ? 'Recalled — re-send for signature' : 'Declined — re-send for signature') : 'Send for Signature'}
                                 onClick={() => setSigSendFor({ kind: docType, id: r.id, code: r.code, customerName: r.customer?.company_name ?? null })}
                                 disabled={anyActing}
-                                style={{ background: 'linear-gradient(135deg,#0ea5e9,#0284c7)' }}
+                                style={{ background: declined ? 'linear-gradient(135deg,#f97316,#dc2626)' : 'linear-gradient(135deg,#0ea5e9,#0284c7)' }}
                               >
                                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
-                                Send for Sign
+                                {declined ? 'Resend for Sign' : 'Send for Sign'}
                               </button>
                             );
                           })()}
@@ -1639,6 +1652,8 @@ const STAGE5_CSS = `
 .s5-st-signed  { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
 .s5-st-sent    { background: #fef9c3; color: #854d0e; border: 1px solid #fde68a; }
 .s5-st-notsent { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+.s5-st-declined { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+.s5-st-recalled { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 
 /* ─── Action cell ─── */
 .s5-acts { display: flex; align-items: center; justify-content: flex-end; gap: 5px; flex-wrap: nowrap; }
@@ -1870,6 +1885,8 @@ const STAGE5_CSS = `
 [data-bs-theme="dark"] .s5-st-signed,  [data-layout-mode="dark"] .s5-st-signed  { background: rgba(34,197,94,.18);  color: #86efac; border-color: rgba(34,197,94,.35); }
 [data-bs-theme="dark"] .s5-st-sent,    [data-layout-mode="dark"] .s5-st-sent    { background: rgba(234,179,8,.18);   color: #fde047; border-color: rgba(234,179,8,.35); }
 [data-bs-theme="dark"] .s5-st-notsent, [data-layout-mode="dark"] .s5-st-notsent { background: rgba(148,163,184,.16); color: #cbd5e1; border-color: rgba(148,163,184,.30); }
+[data-bs-theme="dark"] .s5-st-declined, [data-layout-mode="dark"] .s5-st-declined { background: rgba(239,68,68,.18); color: #fca5a5; border-color: rgba(239,68,68,.35); }
+[data-bs-theme="dark"] .s5-st-recalled, [data-layout-mode="dark"] .s5-st-recalled { background: rgba(245,158,11,.18); color: #fcd34d; border-color: rgba(245,158,11,.35); }
 /* Uniform action icons — dark neutral resting surface (hover accents already
    work on dark). */
 [data-bs-theme="dark"] .s5-icn, [data-layout-mode="dark"] .s5-icn { background: rgba(148,163,184,.12); border-color: rgba(148,163,184,.28); color: #cbd5e1; }
