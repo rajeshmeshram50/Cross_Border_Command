@@ -251,8 +251,12 @@
 
         /* ── Checklist modal ─────────────────────────────────────────────── */
         .onb-checklist-modal .modal-dialog { max-width: min(1080px, 96vw); }
-        .onb-checklist-content { border-radius: 18px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); }
-        .onb-checklist-header { background: linear-gradient(135deg,#3b0764,#4c1d95 35%,#6d28d9 70%,#7c3aed); color: #fff; padding: 14px 20px 12px; position: relative; }
+        /* The modal is a bounded flex column: header + footer stay put and the
+           checkpoint list is the ONE scroll area. The modal-body must not
+           scroll as well, otherwise the popup shows two nested scrollbars. */
+        .onb-checklist-content { border-radius: 18px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); max-height: calc(100vh - var(--vz-modal-margin, 1.75rem) * 2); }
+        .onb-checklist-content > .modal-body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+        .onb-checklist-header { background: linear-gradient(135deg,#3b0764,#4c1d95 35%,#6d28d9 70%,#7c3aed); color: #fff; padding: 14px 20px 12px; position: relative; flex: 0 0 auto; }
         .onb-checklist-header .close-btn { position: absolute; top: 14px; right: 14px; width: 26px; height: 26px; border-radius: 7px; background: rgba(255,255,255,0.18); border: none; color: #fff; transition: background .15s ease; display: inline-flex; align-items: center; justify-content: center; }
         .onb-checklist-header .close-btn:hover { background: rgba(255,255,255,0.30); }
 
@@ -289,7 +293,9 @@
 
         .onb-cl-summary { margin-left: auto; padding: 6px 14px; border-radius: 999px; font-size: 11.5px; font-weight: 700; background: rgba(255,255,255,0.16); color: #fff; border: 1px solid rgba(255,255,255,0.22); }
 
-        .onb-cl-body { background: #f7f5fc; padding: 14px 18px 10px; max-height: 50vh; overflow-y: auto; }
+        /* Only scroller in the modal — grows to fill whatever the header and
+           footer leave behind (min-height:0 lets it actually shrink). */
+        .onb-cl-body { background: #f7f5fc; padding: 14px 18px 10px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
         [data-bs-theme="dark"] .onb-cl-body { background: #1f2630; }
 
         .onb-stage { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
@@ -324,11 +330,11 @@
           color: color-mix(in srgb, var(--pill-fg) 58%, #ffffff) !important;
         }
 
-        /* Pinned to the bottom of the scroll area so the Close button is always
-           fully visible (it used to scroll below the fold / jam into the 18px
+        /* Sits outside the scroll area so the Close button is always fully
+           visible (it used to scroll below the fold / jam into the 18px
            rounded corner on short viewports). Extra, even padding keeps a
            consistent gap from the modal boundaries. */
-        .onb-cl-footer { position: sticky; bottom: 0; z-index: 2; background: #fff; border-top: 1px solid #eef0f4; padding: 14px 22px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .onb-cl-footer { flex: 0 0 auto; background: #fff; border-top: 1px solid #eef0f4; padding: 14px 22px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
         [data-bs-theme="dark"] .onb-cl-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
         .onb-cl-footer .hint { font-size: 11px; color: #6b7280; }
         [data-bs-theme="dark"] .onb-cl-footer .hint { color: var(--vz-secondary-color); }
@@ -336,6 +342,14 @@
            wraps onto its own line (space-between would otherwise left-align it). */
         .onb-cl-close { margin-left: auto; padding: 8px 20px; border-radius: 9px; font-size: 12px; font-weight: 700; color: #fff; border: none; background: linear-gradient(90deg,#7c3aed,#4c1d95); box-shadow: 0 6px 14px rgba(76,29,149,0.28); cursor: pointer; }
         .onb-cl-close:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(76,29,149,0.36); }
+
+        /* Phone — fill the screen, same as the Exit Process Checklist modal.
+           The flex column above still keeps .onb-cl-body the only scroller. */
+        @media (max-width: 767.98px) {
+          .onb-checklist-modal .modal-dialog { height: calc(100vh - 30px); margin: 15px auto; }
+          .onb-checklist-content { height: 100%; }
+          .onb-cl-body { -webkit-overflow-scrolling: touch; }
+        }
 
 /* ── Block 2: Edit Employee modal ── */
         .onb-edit-emp-modal .modal-dialog { max-width: min(960px, 95vw); }

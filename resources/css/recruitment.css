@@ -4190,13 +4190,28 @@
    Exit Process Checklist modal
    ════════════════════════════════════════════════════════════════════════ */
 .modal-dialog:has(> .ecl-modal) { max-width: 1080px; }
+/* Bounded flex column (same treatment as the Onboarding Checklist modal):
+   header, info bar and footer stay put, and .ecl-body is the ONE scroll
+   area. Capping the height here keeps the overlay itself from scrolling,
+   which is what used to produce a second scrollbar beside the body's. */
 .ecl-modal {
   border-radius: 16px !important;
   overflow: hidden;
+  max-height: calc(100vh - var(--vz-modal-margin, 1.75rem) * 2);
+  display: flex;
+  flex-direction: column;
   box-shadow:
     0 30px 60px rgba(15,23,42,0.30),
     0 12px 24px rgba(15,23,42,0.18);
 }
+.ecl-modal > .modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ecl-head, .ecl-info-bar, .ecl-footer { flex: 0 0 auto; }
 
 /* Header — compact red banner */
 .ecl-head {
@@ -4374,11 +4389,13 @@
 }
 [data-bs-theme="dark"] .ecl-info-msg { color: #fca5a5; }
 
-/* Body */
+/* Body — the only scroller in the modal; fills whatever the header,
+   info bar and footer leave behind (min-height:0 lets it shrink). */
 .ecl-body {
   background: #f8f9fb;
   padding: 14px 18px 18px;
-  max-height: 56vh;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
 [data-bs-theme="dark"] .ecl-body {
@@ -6254,7 +6271,8 @@
   .ecl-type-row { gap: 6px; }
   .ecl-filter-badge { margin-left: 0; }
   .ecl-info-bar { padding: 9px 16px; gap: 8px; }
-  .ecl-body { padding: 12px 14px 14px; max-height: 50vh; }
+  /* No max-height here — the modal's flex column already sizes the body. */
+  .ecl-body { padding: 12px 14px 14px; }
 
   /* ── Exit Process modal — full-height flex layout ──
      The modal becomes a viewport-bound flex column so the header and
@@ -6333,32 +6351,15 @@
     justify-content: center;
   }
 
-  /* Exit Checklist modal — full-height flex layout so header + footer
-     stay pinned and only the body scrolls. */
+  /* Exit Checklist modal — fills the phone screen. The flex column that
+     pins the header + footer and leaves .ecl-body as the only scroller is
+     defined on .ecl-modal itself, so it needs no restating here. */
   .modal-dialog:has(> .ecl-modal) {
     height: calc(100vh - 30px);
     margin: 15px auto;
   }
-  .ecl-modal {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-  }
-  .ecl-modal > .modal-body {
-    flex: 1;
-    min-height: 0;
-    display: flex !important;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .ecl-head, .ecl-info-bar, .ecl-footer { flex-shrink: 0; }
-  .ecl-body {
-    flex: 1;
-    min-height: 0;
-    max-height: none;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
+  .ecl-modal { height: 100%; }
+  .ecl-body { -webkit-overflow-scrolling: touch; }
 
   /* Sample / Import / Export modals — same flex pinning so their
      footers stay visible on phones. */
