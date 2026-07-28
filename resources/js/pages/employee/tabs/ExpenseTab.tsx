@@ -13,7 +13,7 @@ type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
 export default function ExpenseTab() {
   const toast = useToast();
   const {
-    employee, employeeId, initials, accent, authUser, isOwnProfile,
+    employee, employeeId, initials, accent, authUser, isOwnProfile, canRaiseHrRequest,
     expenseModuleTab, setExpenseModuleTab, expenseSubTab, setExpenseSubTab,
     advanceSubTab, setAdvanceSubTab, expenseFilter, setExpenseFilter,
     expenseSearch, setExpenseSearch,
@@ -219,7 +219,10 @@ export default function ExpenseTab() {
                   </DropdownMenu>
                 </Dropdown>
                 {/* Raise New Claim — inline styles can't carry :hover, so
-                    we drive the brightening + lift via mouse handlers. */}
+                    we drive the brightening + lift via mouse handlers.
+                    Hidden until the employee's own onboarding is complete
+                    (CBC #85); the server rejects the POST either way. */}
+                {canRaiseHrRequest && (
                 <button
                   type="button"
                   className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1 ext-new-claim"
@@ -244,6 +247,7 @@ export default function ExpenseTab() {
                 >
                   <i className="ri-add-line" /> {expenseModuleTab === 'advance' ? 'New Advance Request' : 'Raise New Claim'}
                 </button>
+                )}
               </div>
             </div>
             <div className="px-3 pb-3 pt-2">
@@ -365,6 +369,12 @@ export default function ExpenseTab() {
                   advanceEntries={advanceDrafts}
                   claimCategories={claimCategories}
                   onResume={(draftId) => {
+                    // Same onboarding gate as the Raise CTA above — resuming a
+                    // draft leads to the same blocked submission.
+                    if (!canRaiseHrRequest) {
+                      toast.error('Onboarding incomplete', 'You can submit this once your onboarding is complete.');
+                      return;
+                    }
                     setClaimMode(expenseModuleTab === 'advance' ? 'advance' : 'expense');
                     setEditingDraftId(draftId);
                     setResumeFromDraft(true);

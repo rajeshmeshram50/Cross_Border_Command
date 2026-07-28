@@ -1,13 +1,25 @@
+/* ── KPI tiles — same recipe as the dashboard "Sales Performance" tiles
+   (.dashboard-kpi-card in pages/dashboard/DashboardSections.tsx): compact
+   11px/14px padding on a 13px radius, a thin gradient rail down the LEFT edge
+   (this page used a full-width strip across the top), a faint gradient glow
+   tucked into the top-right corner, a glass sheen and a hover shine streak.
+   Values are copied rather than shared because the dashboard defines its
+   version in a page-level <style> block. ── */
 .hr-ov-kpi-card {
   position: relative;
   height: 100%;
-  padding: 18px 18px 14px;
-  border-radius: 16px;
+  padding: 11px 14px;
+  border-radius: 13px;
   border: 1px solid var(--vz-border-color);
-  background: #fff;
-  box-shadow: 0 6px 16px -4px rgba(15, 23, 42, 0.10), 0 2px 4px rgba(15, 23, 42, 0.06);
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 14px 30px -16px rgba(64, 81, 137, 0.28);
   overflow: hidden;
-  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  cursor: default;
+  will-change: transform;
+  transition:
+    transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 220ms ease,
+    border-color 220ms ease;
 }
 /* Dark theme keeps the themed card surface — only light mode is forced to
    pure white so the KPI cards match the white panels above/below them. */
@@ -15,60 +27,125 @@
 [data-layout-mode="dark"] .hr-ov-kpi-card {
   background: var(--vz-card-bg);
 }
-.hr-ov-kpi-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 16px 32px -8px rgba(15, 23, 42, 0.18), 0 4px 10px rgba(124, 92, 252, 0.10);
-  border-color: rgba(124, 92, 252, 0.45) !important;
+
+/* Glossy glass sheen — a soft diagonal highlight across the top-left, plus a
+   thin top edge highlight, so each tile reads as a polished glass surface. */
+.hr-ov-kpi-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(155deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0.18) 26%, rgba(255,255,255,0) 52%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+  pointer-events: none;
+  z-index: 0;
 }
-[data-bs-theme="dark"] .hr-ov-kpi-card:hover,
-[data-layout-mode="dark"] .hr-ov-kpi-card:hover {
-  box-shadow: 0 18px 36px -8px rgba(0, 0, 0, 0.65), 0 4px 12px rgba(124, 92, 252, 0.25);
-  border-color: rgba(124, 92, 252, 0.55) !important;
+[data-bs-theme="dark"] .hr-ov-kpi-card::before,
+[data-layout-mode="dark"] .hr-ov-kpi-card::before {
+  background: linear-gradient(155deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.03) 30%, rgba(255,255,255,0) 58%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
 }
 
+/* Sweeping shine on hover — a light streak that glides across the tile. */
+.hr-ov-kpi-card::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: -60%;
+  width: 45%;
+  background: linear-gradient(105deg, transparent 0%, rgba(255,255,255,0.45) 50%, transparent 100%);
+  transform: skewX(-18deg);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: none;
+}
+.hr-ov-kpi-card:hover::after { animation: hr-ov-kpi-shine 0.85s ease-out; }
+[data-bs-theme="dark"] .hr-ov-kpi-card::after,
+[data-layout-mode="dark"] .hr-ov-kpi-card::after {
+  background: linear-gradient(105deg, transparent 0%, rgba(255,255,255,0.14) 50%, transparent 100%);
+}
+@keyframes hr-ov-kpi-shine {
+  0%   { left: -60%; opacity: 0; }
+  15%  { opacity: 1; }
+  100% { left: 130%; opacity: 0; }
+}
+
+.hr-ov-kpi-card:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 18px 36px -8px rgba(64, 81, 137, 0.28),
+    0 8px 16px -4px rgba(64, 81, 137, 0.18),
+    0 2px 4px rgba(0, 0, 0, 0.06) !important;
+  border-color: rgba(64, 81, 137, 0.35) !important;
+}
+
+/* Thin glossy accent rail down the left edge. */
 .hr-ov-kpi-strip {
   position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
+  top: 11px; bottom: 11px; left: 0;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+}
+/* Faint gradient tint tucked tight into the top-right corner. Kept subtle so
+   the tile reads clean, not "smoky". */
+.hr-ov-kpi-glow {
+  position: absolute;
+  top: -48px; right: -42px;
+  width: 96px; height: 96px;
+  border-radius: 50%;
+  opacity: 0.06;
+  filter: blur(6px);
+  pointer-events: none;
 }
 .hr-ov-kpi-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
 }
 .hr-ov-kpi-label {
-  margin-bottom: 8px;
-  font-size: 11px;
+  margin-bottom: 5px;
+  font-size: 9.5px;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--vz-secondary-color);
 }
 .hr-ov-kpi-value {
   margin: 0;
-  font-size: clamp(20px, 1.8vw, 26px);
+  font-size: clamp(17px, 1.4vw, 22px);
   font-weight: 800;
-  line-height: 1.05;
+  line-height: 1;
+  letter-spacing: -0.02em;
   color: var(--vz-heading-color, var(--vz-body-color));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .hr-ov-kpi-hint {
-  margin-top: 6px;
-  font-size: 11px;
+  margin-top: 5px;
+  font-size: 10.5px;
+  font-weight: 500;
   color: var(--vz-secondary-color);
 }
 .hr-ov-kpi-icon {
-  width: 40px; height: 40px;
+  width: 36px; height: 36px;
   flex-shrink: 0;
-  border-radius: 12px;
+  border-radius: 10px;
   display: flex; align-items: center; justify-content: center;
-  transition: transform .18s ease, box-shadow .18s ease;
+  /* Coloured glow under the icon tile so it lifts off the card. */
+  box-shadow: 0 7px 14px -6px rgba(64, 81, 137, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition:
+    transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 220ms ease;
 }
 .hr-ov-kpi-card:hover .hr-ov-kpi-icon {
-  transform: scale(1.06);
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+  transform: scale(1.08) rotate(-3deg);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
 }
-.hr-ov-kpi-icon > i { font-size: 18px; color: #fff; }
+.hr-ov-kpi-icon > i { font-size: 16px; color: #fff; }
 
 .hr-ov-card {
   height: 100%;
@@ -139,19 +216,17 @@
 }
 
 @media (max-width: 767.98px) {
-  .hr-ov-kpi-card { padding: 15px 14px 12px; }
-  .hr-ov-kpi-icon { width: 36px; height: 36px; border-radius: 11px; }
-  .hr-ov-kpi-icon > i { font-size: 16px; }
+  /* No KPI overrides — the base tile is already the dashboard's compact size
+     (11px/14px padding, 36px icon), so tablet needs no separate step. */
   .hr-ov-card-head { padding: 13px 15px; }
   .hr-ov-card-title { font-size: 14px; }
   .hr-ov-list-row { padding: 10px 14px; }
 }
 
 @media (max-width: 575.98px) {
-  .hr-ov-kpi-card { padding: 13px 12px 11px; }
-  .hr-ov-kpi-label { font-size: 10px; margin-bottom: 6px; }
-  .hr-ov-kpi-value { font-size: clamp(18px, 5vw, 22px); }
-  .hr-ov-kpi-hint { font-size: 10px; }
+  /* Phone — only the gutters and the icon tighten; type stays at the shared
+     dashboard sizes so the tiles still read as the same component. */
+  .hr-ov-kpi-card { padding: 11px 12px; }
   .hr-ov-kpi-icon { width: 32px; height: 32px; }
   .hr-ov-kpi-icon > i { font-size: 15px; }
   .hr-ov-card-head { padding: 12px 14px; }

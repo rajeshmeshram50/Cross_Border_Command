@@ -624,12 +624,14 @@ export default function HrEmployeeOnboarding() {
   const visible   = filtered.slice(sliceFrom, sliceFrom + rowsPerPage);
   const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
 
-  // ── Dynamic fill height — stretch the list body to the bottom of the
-  //    viewport so the pagination footer pins to the bottom of the card
-  //    (same mechanism the CLM Authority / master pages use) instead of
-  //    floating directly under the last row. Recomputes on resize and
-  //    whenever the row count changes. `rootRef` is observed so header /
-  //    KPI reflows above also retrigger the measurement.
+  // ── Dynamic fill height — the list body stretches to the bottom of the
+  //    viewport so the card fills the screen, the table scrolls INSIDE it and
+  //    the pager stays pinned at the card's bottom edge. Same behaviour as the
+  //    My Workplace / Lead Worksheet page, which gets there with a static
+  //    `height: calc(100vh - 130px)`; this page measures instead because the
+  //    hero strip + KPI row above it are variable height (they wrap on narrow
+  //    screens). Recomputes on resize and whenever the row count changes;
+  //    `rootRef` is observed so header / KPI reflows above also retrigger it.
   const rootRef   = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [fillH, setFillH] = useState<number | undefined>(undefined);
@@ -638,7 +640,12 @@ export default function HrEmployeeOnboarding() {
       const el = scrollRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
-      const fh = Math.max(320, window.innerHeight - top - 24);
+      // Reserve the page footer (it sits in normal flow after the content) plus
+      // .page-content's bottom padding, so the card stops just above it instead
+      // of pushing it off-screen. Measured rather than hardcoded — the theme
+      // ships 60px but a wrapped footer on narrow screens is taller.
+      const footerH = (document.querySelector('.footer') as HTMLElement | null)?.offsetHeight ?? 60;
+      const fh = Math.max(320, window.innerHeight - top - footerH - 24);
       setFillH(prev => (prev === fh ? prev : fh));
     };
     recompute();
@@ -756,14 +763,17 @@ export default function HrEmployeeOnboarding() {
           </div>
         </div>
 
-        {/* Body sizes to its content so the pager sits directly below the table
-            with no blank gap above the page footer (QA #41). (Previously it was
-            force-filled to the viewport bottom to pin the pager down, which left
-            a large empty space on short / empty result sets.) */}
-        <div className="p-3 d-flex flex-column" ref={scrollRef}>
+        {/* Body fills the remaining viewport height (see `fillH` above) so the
+            card reaches the footer and the pager pins to its bottom edge — the
+            My Workplace table's behaviour. The rows scroll inside
+            .onb-list-table rather than scrolling the whole page. */}
+        <div className="p-3 d-flex flex-column" ref={scrollRef} style={{ height: fillH }}>
           <div className="table-responsive onb-list-table flex-grow-1">
                   <table className="table align-middle table-nowrap mb-0">
-                    <thead className="table-light">
+                    {/* No .table-light — Bootstrap paints its fill via an inset
+                        box-shadow that covers the sticky header's own opaque
+                        background (see .onb-list-table thead th). */}
+                    <thead>
                       <tr>
                         <th scope="col" className="ps-3" style={{ width: 60 }}>Sr No</th>
                         <th scope="col">Employee</th>

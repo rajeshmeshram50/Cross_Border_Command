@@ -8,6 +8,7 @@ use App\Models\Employee;
 use App\Models\ExpenseClaim;
 use App\Models\Module;
 use App\Models\Permission;
+use App\Support\OnboardingGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -172,6 +173,15 @@ class ExpenseClaimController extends Controller
             && $employee->user_id !== $user->id) {
             abort(403, 'You can only file claims for your own employee record.');
         }
+
+        // Onboarding gate (CBC #85) — no claims until HR has finished onboarding
+        // the employee. Reachable before this because /profile stays open to a
+        // mid-onboarding employee and carries the claim form.
+        OnboardingGuard::assertComplete(
+            $employee,
+            'raise an expense claim',
+            (int) ($employee->user_id ?? 0) === (int) $user->id,
+        );
 
         // A future-joining employee is not yet on the roster — they cannot raise
         // an expense claim before their joining date (CBC #32).
