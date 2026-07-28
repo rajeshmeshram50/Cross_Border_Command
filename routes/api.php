@@ -559,6 +559,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'update'])->whereNumber('id');
     Route::delete('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/sync',               [PurchaseOrderController::class, 'sync'])->whereNumber('id');
+    Route::post  ('/p2p/purchase-orders/{id}/sync-payment',       [PurchaseOrderController::class, 'syncPayment'])->whereNumber('id');
     Route::get   ('/p2p/purchase-orders/{id}/attachment-status',  [PurchaseOrderController::class, 'attachmentStatus'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/reattach',           [PurchaseOrderController::class, 'reattach'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/send-for-signature', [PurchaseOrderController::class, 'sendForSignature'])->whereNumber('id');
@@ -586,6 +587,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put   ('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'update'])->whereNumber('id');
     Route::delete('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/supplier-purchase-invoices/{id}/sync',           [SupplierPurchaseInvoiceController::class, 'sync'])->whereNumber('id');
+    Route::post  ('/p2p/supplier-purchase-invoices/{id}/sync-payment',   [SupplierPurchaseInvoiceController::class, 'syncPayment'])->whereNumber('id');
     Route::get   ('/p2p/supplier-purchase-invoices/{id}/zoho-pdf',        [SupplierPurchaseInvoiceController::class, 'zohoPdf'])->whereNumber('id');
     // Direct-SPI payments ("Payment Summary Against SPI") — mirrors the PO flow.
     Route::get   ('/p2p/supplier-purchase-invoices/{spi}/payment-summary',     [SpiPaymentController::class, 'summary'])->whereNumber('spi');

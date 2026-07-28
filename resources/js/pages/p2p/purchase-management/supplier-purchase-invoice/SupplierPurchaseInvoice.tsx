@@ -33,7 +33,7 @@ interface SpiRow {
 }
 
 // State for the Zoho-sync confirm + speedometer modal (mirrors the PO screen).
-type SyncState = { id: number; spiNo: string; supplier?: string; busy: boolean; progress: number; attempt: number; failed: boolean };
+type SyncState = { id: number; spiNo: string; supplier?: string; busy: boolean; progress: number; attempt: number; failed: boolean; errorMsg?: string };
 
 const STEPS = [
   { n: 'STEP 01', title: 'PO Link Supplier Details', desc: 'Link the purchase order and confirm supplier details.', ico: <IcoLink /> },
@@ -177,15 +177,12 @@ export default function SupplierPurchaseInvoice() {
   // The invoice whose Zoho-sync confirm + speedometer modal is open.
   const [sync, setSync] = useState<SyncState | null>(null);
 
-  // Open the sync confirm dialog. Blocked until the linked PO's amount is fully
-  // utilised (the backend enforces the same rule; this surfaces it up-front).
+  // Open the sync confirm dialog. Full utilisation is NOT required — payments are
+  // synced separately (entry-wise). The bill-sync rules (TDS must be deducted;
+  // With-PO invoices go through the linked PO, which enforces the PO's TDS cut)
+  // are enforced by the backend, which returns a clear 422 the sync modal surfaces.
   const syncRow = (r: SpiRow) => {
     setMenu(null);
-    if (!r.po_fully_utilized) {
-      const where = r.poId ? 'the linked purchase order' : 'this invoice';
-      toast.warning('Utilise the full amount first', `Record payments against ${where} until its balance is cleared before syncing to Zohobook.`);
-      return;
-    }
     setSync({ id: r.id, spiNo: r.spiNo, supplier: r.supplier, busy: false, progress: 0, attempt: 0, failed: false });
   };
 
@@ -232,8 +229,9 @@ export default function SupplierPurchaseInvoice() {
           setSync(s => (s ? { ...s, progress: 0 } : s));
           window.setTimeout(() => run(attempt + 1), 800);
         } else {
-          setSync(s => (s ? { ...s, busy: false, failed: true, progress: 0 } : s));
-          toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this invoice.');
+          const msg = e?.response?.data?.message;
+          setSync(s => (s ? { ...s, busy: false, failed: true, progress: 0, errorMsg: msg } : s));
+          toast.error('Sync failed', msg ?? 'Could not sync this invoice.');
         }
       });
     };
@@ -517,7 +515,7 @@ export default function SupplierPurchaseInvoice() {
                   <div className={`spicfm-ico${sync.failed ? ' spicfm-ico--fail' : ''}`}><IcoSync size={26} /></div>
                   <div className="spicfm-t">{sync.failed ? 'Sync failed' : 'Sync with Zohobook?'}</div>
                   <div className="spicfm-msg">{sync.failed
-                    ? 'Something went wrong pushing this invoice to Zohobook. You can try again.'
+                    ? (sync.errorMsg || 'Something went wrong pushing this invoice to Zohobook. You can try again.')
                     : 'This will post the approved invoice, its bill and payments to your Zohobook account and update its sync status.'}</div>
                 </>
               )}
