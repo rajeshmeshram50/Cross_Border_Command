@@ -8,7 +8,6 @@
 @source '../**/*.ts';
 
 @theme {
-  /* Single source of truth for the app font. Change here to restyle everywhere. */
   --font-sans: 'DM Sans', system-ui, sans-serif;
   --font-mono: 'DM Mono', 'JetBrains Mono', monospace;
 
@@ -26,18 +25,7 @@
   --color-sidebar: #0C1322;
   --color-sidebar-text: #8896B2;
 }
-
-/* Tailwind dark-variant — fires under either the legacy [data-theme]
-   attribute or velzon's [data-bs-theme] attribute that the rest of the
-   app uses (set by the theme-customizer toggle). Without the velzon
-   selector, `dark:` Tailwind classes never activated on theme switch. */
 @custom-variant dark (&:where([data-theme="dark"] *, [data-bs-theme="dark"] *));
-
-/* Drive the dark CSS-vars off the CANONICAL [data-bs-theme] (the attribute the
-   Velzon theme toggle actually sets) — not the legacy [data-theme]. When the two
-   briefly desync (toggle sets only data-bs-theme), keying on data-theme left the
-   page background (--color-bg) stuck dark while every component went light,
-   showing a dark/black band below short pages. */
 [data-bs-theme="dark"] {
   --color-bg: #090E1A;
   --color-surface: #111827;
@@ -48,11 +36,6 @@
   --color-muted: #4E5D7A;
   --color-sidebar: #070C17;
 }
-
-/* ═══════════════════════════════════════════════════════════════
-   Velzon-inspired variants (Phase 1: primary accent switching)
-   Switched via data-variant on <html>. No variant = current CBC look.
-   ═══════════════════════════════════════════════════════════════ */
 [data-variant="velzon-default"] {
   --color-primary: #405189;
   --color-primary-hover: #334070;
@@ -100,76 +83,22 @@ body,
   margin: 0;
   min-height: 100%;
 }
-
-/* ═══════════════════════════════════════════════════════════════
-   Velzon shell guardrails — prevent horizontal overflow caused by
-   pricing ribbons, wide tables, or the profile banner spilling
-   past the main-content width.
-   ═══════════════════════════════════════════════════════════════ */
 body { overflow-x: hidden; }
 .main-content { overflow-x: hidden; min-width: 0; }
 .page-content > .container-fluid { min-width: 0; }
-
-/* Tighter page gutters — the default Velzon layout stacks two horizontal
- * paddings (.page-content ~12px + Bootstrap .container-fluid ~12px ≈ 24px
- * per side). Trim both so content sits closer to the screen edges. Only
- * left/right are touched; the header/footer vertical spacing is left alone. */
-.page-content { padding-left: 8px !important; padding-right: 8px !important; }
+.page-content { padding-left: 8px !important; padding-right: 8px !important; padding-bottom: 12px !important; }
 .page-content > .container-fluid { padding-left: 6px !important; padding-right: 6px !important; }
-
-/* Footer flows with the page instead of being pinned to the bottom of
- * .main-content (Velzon ships it as `position:absolute; bottom:0`). Pinned, it
- * overlapped tall page content — e.g. the Products card grid's last row. As a
- * normal in-flow block it always sits BELOW the content and scrolls with it.
- * We only trim its bulk a touch — drop Velzon's fixed 60px height and shave the
- * 20px padding to 12px — so there's a little less space around the footer text.
- * Nothing else about the footer changes. */
-.footer { position: static !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 12px .75rem !important; }
-
-/* WorklistPager pins to the BOTTOM of its card. The list pages size their card
- * to fill the screen (`minHeight: fillH`); when the rows don't fill it, the
- * pager used to sit right under the last row with a big empty gap BELOW it
- * (between the pager and the footer). `margin-top:auto` on the pager pushes it
- * to the card's bottom edge instead, so the slack moves ABOVE the pager (a
- * normal partly-empty table) and the pager+footer sit together — no gap. It's a
- * pure flexbox no-op in any card that isn't a flex column with spare height, so
- * natural-height lists and wrapped pagers are unaffected. */
+.footer { position: static; }
 .wl-pager { margin-top: auto; }
-
-/* Footer must present a CONSISTENT surface on every module. Left transparent it
- * inherited each page's background — so the P2P / CLM teal page tints (and the
- * bulk-sourcing cyan gradient) bled through and the SAME footer looked teal on
- * one module and white on another. Pin it to the theme's footer surface so it
- * reads identically everywhere, and drive it off the Velzon vars so it still
- * flips correctly in dark mode. */
-.footer { background: var(--vz-footer-bg, #fff) !important; background-image: none !important; color: var(--vz-footer-color, #878a99) !important; }
-
-/* Responsive tenant logo — a wide uploaded logo must scale DOWN to fit the
- * brand box instead of overflowing the bar. Applies to all three layouts:
- * vertical sidebar (.navbar-brand-box), horizontal header (.horizontal-logo),
- * and two-column (#two-column-menu). object-fit:contain preserves aspect. */
 .navbar-brand-box .logo img,
 .navbar-brand-box.horizontal-logo .logo img,
 #two-column-menu .twocolumn-iconview .logo img {
   max-width: 100%;
   object-fit: contain;
 }
-
-/* Two-column icon rail — render the violet column as a brand gradient
- * instead of a flat fill. The theme sets `background-color: var(...)`
- * (a single colour, can't be a gradient), so we layer a vertical
- * purple gradient via background-image. Matches the page accent strips
- * (#a78bfa → #7c3aed → #5b21b6). */
 #two-column-menu .twocolumn-iconview {
   background-image: linear-gradient(90deg, #7e68c0 0%, #7c3aed 50%, #5b21b6 100%) !important;
 }
-
-/* Branch/Client name pill inside the topbar.
- * The pill uses the app's `bg-surface` / `text-text` tokens which only track
- * the GLOBAL light/dark theme. The topbar however has its own independent
- * `data-topbar="dark"` mode (Velzon customizer) — when that is on with global
- * theme still light, the pill rendered white-on-white. Pull it onto Velzon's
- * header CSS vars when the dark topbar is active so it follows the topbar. */
 [data-topbar="dark"] .branch-switcher-pill {
   background-color: var(--vz-header-item-bg, rgba(255, 255, 255, 0.08));
   color: var(--vz-header-item-color, rgba(255, 255, 255, 0.9));
@@ -190,10 +119,6 @@ body {
   line-height: 1.5;
   letter-spacing: -0.02em;
 }
-
-/* ═══ Scrollbar ═══
-   Theme-neutral light grey everywhere (the old #5A51E8 blue/purple clashed
-   with the tenant themes). Thin + grey thumb, transparent track. */
 ::-webkit-scrollbar {
   width: 2px;
   height: 2px;
@@ -204,25 +129,17 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1; /* light grey (slate-300) */
+  background: #cbd5e1;
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8; /* slate-400 on hover */
+  background: #94a3b8;
 }
-
-/* Firefox */
 * {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
 }
-
-/* Dark mode — light translucent thumb so it reads on dark surfaces.
-   The no-space selectors ([data-bs-theme="dark"]::-webkit-scrollbar-thumb)
-   target the element's OWN scrollbar — needed for the page/document scrollbar,
-   which lives on <html> (the same element that carries data-bs-theme). The
-   descendant (space) selectors cover every inner scroll area. */
 [data-bs-theme="dark"]::-webkit-scrollbar-thumb,
 [data-layout-mode="dark"]::-webkit-scrollbar-thumb,
 [data-bs-theme="dark"] ::-webkit-scrollbar-thumb,
@@ -241,8 +158,6 @@ body {
 [data-layout-mode="dark"] * {
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
-
-/* ═══ Animated Gradient Button ═══ */
 .btn-gradient-primary {
   background: linear-gradient(-45deg, #5A51E8, #7C6FF0, #9D8AFF, #5A51E8);
   background-size: 300% 300%;
@@ -252,17 +167,6 @@ body {
 .btn-gradient-primary:hover {
   box-shadow: 0 8px 20px rgba(90, 81, 232, 0.4);
 }
-
-/* ═══ TopNav active menu pill ═══
- *
- * The "Dashboard" / "Master" etc. pills on the top navbar were a flat
- * `bg-primary` colour with just a soft shadow — against the dark
- * topbar canvas it read as a dull purple rectangle, especially the
- * active "Dashboard" tile the user pointed out. This pill replaces
- * the flat fill with a two-stop indigo→violet gradient + an inset
- * highlight + a softer outer ring so the active tab pops without
- * looking like a stray UI element. Hover lift on the parent makes
- * the affordance match the dashboard's other interactive elements. */
 .topnav-active-pill {
   background: linear-gradient(135deg, #5A51E8 0%, #8b5cf6 100%);
   box-shadow:
@@ -277,8 +181,6 @@ body {
     0 8px 20px rgba(90, 81, 232, 0.55),
     0 0 0 1px rgba(255, 255, 255, 0.10);
 }
-
-/* ═══ Keyframes ═══ */
 @keyframes fadeUp {
   from {
     opacity: 0;
@@ -411,15 +313,6 @@ body {
     transform: translateY(-2px);
   }
 }
-
-/* Spinning icon utility.
-   `ri-spin` is used on ~20 loading indicators across the app (leave request
-   Submit, exports, face capture, evidence vaults, …) but Remix Icon does NOT
-   ship this class and it was never defined here — so every one of those
-   "loading" icons rendered frozen. Buttons changed their label to
-   "Submitting…" while the icon sat still, which read as no loading state at
-   all (QA #99). `display: inline-block` is required: transforms do not apply
-   to the default inline box of an <i>. */
 .ri-spin {
   display: inline-block;
   animation: ri-spin 0.9s linear infinite;
@@ -435,16 +328,11 @@ body {
     transform: rotate(360deg);
   }
 }
-
-/* Respect users who ask for reduced motion — keep the icon visible, just
-   don't spin it. */
 @media (prefers-reduced-motion: reduce) {
   .ri-spin {
     animation: none;
   }
 }
-
-/* ═══ Animation Classes ═══ */
 .animate-in {
   animation: fadeUp .35s cubic-bezier(.22, 1, .36, 1) both;
 }
@@ -473,12 +361,6 @@ body {
   animation: shimmer 2s linear infinite;
   background-size: 200% 100%;
 }
-
-/* Shimmer placeholder — visible contrast between the base and the
-   sweeping highlight is essential, otherwise the animation reads as a
-   static blank bar. The CSS vars in this theme (#E2E6F0 / #F7F8FC) are
-   too close together; using fixed colour stops with enough delta makes
-   the wave actually visible on white card surfaces. */
 .shimmer {
   background-color: #eef0f4;
   background-image: linear-gradient(
@@ -493,8 +375,6 @@ body {
 }
 [data-bs-theme="dark"] .shimmer,
 [data-layout-mode="dark"] .shimmer {
-  /* Lighter than the dark card surface so the skeleton bars actually read as
-     placeholders (the old #2a3142 was nearly the card colour → looked empty). */
   background-color: #3a4256;
   background-image: linear-gradient(
     90deg,
@@ -503,14 +383,6 @@ body {
     rgba(255, 255, 255, 0) 100%
   );
 }
-
-/* Shimmer card/surface tokens.
- * Velzon exposes `--vz-card-bg` as a Sass variable (not a CSS custom
- * property), so `var(--vz-card-bg, #fff)` always fell back to white and
- * the skeleton cards stayed white in dark mode. These dedicated tokens
- * give the shimmer placeholders a surface that actually flips with the
- * theme. Keep them scoped to the `--shim-*` namespace so we don't
- * conflict with Bootstrap/Velzon's own token names. */
 :root {
   --shim-card-bg:      #ffffff;
   --shim-border:       #e5e7eb;
@@ -538,8 +410,6 @@ body {
 .toast-progress {
   animation: toast-progress 4s linear forwards;
 }
-
-/* ═══ Enhanced Transitions ═══ */
 .hover-lift {
   transition: all .2s cubic-bezier(.22, 1, .36, 1);
 }
@@ -560,8 +430,6 @@ body {
 .hover-scale:hover {
   transform: scale(1.02);
 }
-
-/* ═══ Glass Effect ═══ */
 .glass {
   backdrop-filter: blur(12px) saturate(180%);
   background: rgba(255, 255, 255, .75);
@@ -570,8 +438,6 @@ body {
 [data-theme="dark"] .glass {
   background: rgba(17, 24, 39, .75);
 }
-
-/* ═══ Gradient Text ═══ */
 .gradient-text {
   background: linear-gradient(90deg, #6d63f4 0%, #713ee7 50%, #6d63f4 100%);
   background-size: 200% auto;
@@ -585,20 +451,13 @@ body {
   0% { background-position: 0% center; }
   100% { background-position: 200% center; }
 }
-
-/* ═══ Selection ═══ */
 ::selection {
   background: rgba(90, 81, 232, .2);
 }
-
-
-/* ═══ Focus Ring ═══ */
 .focus-ring:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
-
-/* ═══ Row Stagger Animation ═══ */
 tbody tr {
   animation: fadeUp .3s cubic-bezier(.22, 1, .36, 1) both;
 }
@@ -642,10 +501,6 @@ tbody tr:nth-child(9) {
 tbody tr:nth-child(10) {
   animation-delay: 270ms;
 }
-
-/* ═══════════════════════════════════════════════════════════════
-   Payment Modal (PlanSelection.tsx — Subscribe flow)
-   ═══════════════════════════════════════════════════════════════ */
 .pay-modal .modal-content {
   border-radius: 16px;
   border: 1px solid rgba(15, 23, 42, 0.08);
@@ -783,8 +638,6 @@ tbody tr:nth-child(10) {
 .pay-success-icon {
   animation: pay-success-pop .45s cubic-bezier(.22, 1, .36, 1) both;
 }
-
-/* ── Hero header elements ── */
 .pay-hero-close i { font-size: 15px; }
 
 .pay-hero-icon {
@@ -807,8 +660,6 @@ tbody tr:nth-child(10) {
 .pay-hero-meta { font-size: 11.5px; opacity: 0.9; }
 .pay-hero-meta i { font-size: 13px; }
 .pay-hero-meta .pay-hero-sep { opacity: 0.5; }
-
-/* ── Section header label (Order Summary / Payment Method) ── */
 .pay-section-label {
   font-size: 10.5px;
   letter-spacing: 0.07em;
@@ -817,8 +668,6 @@ tbody tr:nth-child(10) {
 .pay-section-label-icon { font-size: 14px; }
 .pay-section-label-icon.text-violet { color: #7c5cfc; }
 .pay-section-label-icon.text-vz-primary { color: #405189; }
-
-/* ── Order summary inner ── */
 .pay-row        { font-size: 13px; }
 .pay-row-sm     { font-size: 12.5px; }
 .pay-total-row  { border-top: 1px dashed var(--vz-border-color); }
@@ -828,19 +677,13 @@ tbody tr:nth-child(10) {
   color: #0ab39c;
   letter-spacing: -0.01em;
 }
-
-/* ── Method tiles ── */
 .pay-method-tile .pay-chip i { font-size: 17px; }
 .pay-method-label { font-size: 12.5px; }
 .pay-method-desc  { font-size: 10.5px; margin-top: 1px; }
-
-/* ── Form labels + inputs ── */
 .pay-form-label { font-size: 12px; }
 .pay-form-label i { color: #7c5cfc; }
 .pay-input      { font-size: 13px; }
 .pay-input-mono { font-size: 13px; font-family: monospace; }
-
-/* ── Net banking callout ── */
 .pay-netbank-box {
   background: rgba(124, 92, 252, 0.06);
   border: 1px solid rgba(124, 92, 252, 0.20);
@@ -850,8 +693,6 @@ tbody tr:nth-child(10) {
   font-size: 12.5px;
   color: var(--vz-body-color);
 }
-
-/* ── Trust row ── */
 .pay-trust {
   background: rgba(10, 179, 156, 0.08);
   border: 1px solid rgba(10, 179, 156, 0.25);
@@ -862,8 +703,6 @@ tbody tr:nth-child(10) {
   color: var(--vz-body-color);
 }
 .pay-trust .pay-trust-text strong { color: #0ab39c; }
-
-/* ── Processing screen ── */
 .pay-processing-spinner {
   width: 54px;
   height: 54px;
@@ -871,8 +710,6 @@ tbody tr:nth-child(10) {
 }
 .pay-processing-title { font-size: 16px; }
 .pay-processing-desc  { font-size: 12.5px; }
-
-/* ── Success screen ── */
 .pay-success-icon {
   width: 72px;
   height: 72px;
@@ -907,8 +744,6 @@ tbody tr:nth-child(10) {
 .pay-value-success { color: #0ab39c; }
 .pay-value-primary { color: #405189; }
 .pay-value-warning { color: #f7b84b; }
-
-/* ── Footer buttons ── */
 .pay-btn-cancel { font-size: 13px; }
 .pay-btn-pay    { font-size: 13px; }
 .pay-btn-pay i  { font-size: 15px; }
@@ -936,8 +771,6 @@ tbody tr:nth-child(10) {
         .plan-modules-scroll.plan-scroll-dark { scrollbar-color: rgba(247, 184, 75, 0.30) transparent; }
         .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb { background: rgba(247, 184, 75, 0.28); }
         .plan-modules-scroll.plan-scroll-dark::-webkit-scrollbar-thumb:hover { background: rgba(247, 184, 75, 0.50); }
-
-        /* ── Swiper carousel styling ── */
         .plansel-swiper-outer {
           position: relative;
           padding: 0 52px;
@@ -984,8 +817,6 @@ tbody tr:nth-child(10) {
           background: var(--vz-card-bg);
           box-shadow: 0 6px 18px rgba(124,92,252,0.35);
         }
-
-        /* Violet pagination bullets */
         .plansel-swiper .swiper-pagination-bullet {
           background: #7c5cfc !important;
           opacity: 0.35;
@@ -1032,23 +863,14 @@ tbody tr:nth-child(10) {
           z-index: 0;
         }
         .bc-save-badge { animation: bc-save-pulse 2s ease-in-out infinite; }
-
-/* ═══════════════════════════════════════════════════════════════
-   Payments page (Payments.tsx)
-   ═══════════════════════════════════════════════════════════════ */
 .payments-surface { background: #ffffff; }
 [data-bs-theme="dark"] .payments-surface { background: #1c2531; }
-
-/* Page-level wrapper card */
 .pmt-page-card {
   border-radius: 16px;
   border: 1px solid var(--vz-border-color);
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
   padding: 20px;
 }
-
-/* Header strip — same shape/parts as the Clients (.cl-cstrip) header:
-   white container, 1px violet border, left accent strip, violet icon. */
 .pmt-cstrip {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
@@ -1094,9 +916,6 @@ tbody tr:nth-child(10) {
 [data-bs-theme="dark"] .pmt-cstrip-icon::after { border-color: var(--vz-card-bg); }
 [data-bs-theme="dark"] .pmt-cstrip-export { background: transparent; color: #c4b5fd; }
 [data-bs-theme="dark"] .pmt-cstrip-export:hover:not(:disabled) { background: rgba(124, 58, 237, .14); }
-
-/* Shared form-page header strip — same shape as the Clients (.cl-cstrip)
-   header. Used by the Client / Branch / (other) add-edit forms. */
 .frm-cstrip {
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
@@ -1121,17 +940,11 @@ tbody tr:nth-child(10) {
 }
 .frm-cstrip-title { font-size: 18px; font-weight: 800; color: var(--vz-heading-color, #2e1065); letter-spacing: -.3px; line-height: 1.2; }
 .frm-cstrip-sub { font-size: 12px; color: var(--vz-secondary-color, #6b7280); font-weight: 400; margin-top: 4px; line-height: 1.5; }
-
-/* Attendance page — compact header strip. The shared strip reads too tall on
-   this page; scope the smaller sizing to .att-page so every other page that
-   uses .frm-cstrip keeps its original height. */
 .att-page .frm-cstrip { min-height: 52px; padding: 8px 16px; }
 .att-page .frm-cstrip-left { gap: 12px; }
 .att-page .frm-cstrip-icon { width: 38px; height: 38px; border-radius: 10px; font-size: 18px; }
 .att-page .frm-cstrip-title { font-size: 16px; }
 .att-page .frm-cstrip-sub { font-size: 11.5px; margin-top: 2px; }
-/* Premium dark header strip — elevated glass with a soft violet glow on the
-   accent side instead of a flat near-black bar. */
 [data-bs-theme="dark"] .att-page .frm-cstrip {
   background:
     radial-gradient(130% 130% at 0% 50%, rgba(124,58,237,0.18), transparent 55%),
@@ -1153,24 +966,6 @@ tbody tr:nth-child(10) {
 [data-bs-theme="dark"] .frm-cstrip { background: var(--vz-card-bg); border-color: rgba(167, 139, 250, 0.40); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.30); }
 [data-bs-theme="dark"] .frm-cstrip-back { background: transparent; color: #c4b5fd; }
 [data-bs-theme="dark"] .frm-cstrip-back:hover { background: rgba(124, 58, 237, .14); }
-
-/* ── TableContainer "worklist" pagination footer ───────────────────────
-   Same pill / round-button shapes as the My Workplace (.lwp-pagination)
-   footer. Full-bleed band assumes the table sits inside a `p-3` wrapper
-   (Clients / Branches / Payments).
-
-   THEMEABLE: every colour is a CSS variable with the default VIOLET as its
-   fallback, so nothing changes unless a caller overrides them. To recolour
-   the footer for a specific table, set the `--tcwl-*` vars on any ancestor
-   of the table (e.g. its `.xxx-table-wrap`) — see the Consignee green
-   override in SalesConsignee.css. Vars:
-     --tcwl-band       footer band background       (light)
-     --tcwl-border     pill / button / top border   (light)
-     --tcwl-text       muted label text             (light)
-     --tcwl-accent     strong accent + button glyph (light)
-     --tcwl-range-bg   filled "page / pages" pill    (light)
-     --tcwl-glow       accent shadow colour          (light)
-     --tcwl-band-dark / --tcwl-border-dark / --tcwl-text-dark / --tcwl-btn-bg-dark  (dark mode) */
 .tc-wl-pag {
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 8px;
@@ -1214,34 +1009,18 @@ tbody tr:nth-child(10) {
 [data-bs-theme="dark"] .tc-wl-info,
 [data-bs-theme="dark"] .tc-wl-rows,
 [data-bs-theme="dark"] .tc-wl-btn { background: rgba(255, 255, 255, .06); border-color: var(--tcwl-border-dark, rgba(167, 139, 250, .30)); color: var(--tcwl-text-dark, #c4b5fd); }
-/* The arrow buttons are small circles, so the white-tinted (.06) fill above
-   read as a glaring pale disc on the dark band ("not dark-mode"). Give them a
-   purple-tinted dark surface + lavender glyph so they match the rest of the
-   pager. */
 [data-bs-theme="dark"] .tc-wl-btn { background: var(--tcwl-btn-bg-dark, rgba(124, 58, 237, .18)); border-color: var(--tcwl-border-dark, rgba(167, 139, 250, .42)); color: var(--tcwl-text-dark, #ddd6fe); }
-/* The base hover fills the arrow white — a glaring disc in dark mode. Use a
-   translucent violet hover with light glyph so it stays on-theme. */
 [data-bs-theme="dark"] .tc-wl-btn:hover:not(:disabled) { background: rgba(124, 92, 252, .28); border-color: #a78bfa; color: #ffffff; box-shadow: 0 4px 12px rgba(124, 58, 237, .35); }
 [data-bs-theme="dark"] .tc-wl-info .tc-wl-hl { color: #ddd6fe; }
-
-/* Mobile — stack the footer cleanly: the "Showing X–Y of Z" pill on its own
-   centred row, then the rows-per-page + page pill + arrows centred below.
-   Avoids the cramped left/right wrap on narrow screens. */
 @media (max-width: 640px) {
   .tc-wl-pag { flex-direction: column; align-items: center; gap: 9px; }
   .tc-wl-right { width: 100%; justify-content: center; flex-wrap: wrap; }
 }
 [data-bs-theme="dark"] .tc-wl-rows select { color: #ddd6fe; }
-/* The native dropdown popup ignores the translucent pill background, so the
-   10 / 25 / 50 options render light-on-light. Pin a solid dark surface +
-   readable text on the options themselves so the popup follows the theme. */
 [data-bs-theme="dark"] .tc-wl-rows select option {
   background-color: #1f1b3a;
   color: #ddd6fe;
 }
-
-/* Non-bleed band for the reusable WorklistPager (used in HR tables). Same
-   look as .tc-wl-pag but without the full-bleed negative margins. */
 .wl-pager {
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 8px;
@@ -1251,11 +1030,6 @@ tbody tr:nth-child(10) {
   border-radius: 0 0 12px 12px;
 }
 [data-bs-theme="dark"] .wl-pager { background: linear-gradient(90deg, rgba(124, 58, 237, .08), rgba(124, 58, 237, .14), rgba(124, 58, 237, .08)); border-top-color: rgba(167, 139, 250, .30); }
-
-/* Teal/cyan variant of the WorklistPager — for teal-themed pages (CTC
-   Agreements Sent / To-Approve). Recolours the child pills via the tcwl vars
-   and the hardcoded .wl-pager band so the footer matches the page theme
-   instead of the default violet. */
 .wl-pager.wl-teal {
   border-top-color: #a5e8f5;
   background: linear-gradient(90deg, #f0fdff 0%, #e6fafe 40%, #f0fdff 100%);
@@ -1271,8 +1045,6 @@ tbody tr:nth-child(10) {
   --tcwl-text-dark: #67e8f9;
   --tcwl-border-dark: #173947;
 }
-
-/* Unified list frame (search + filters + table) — mirrors the Clients frame. */
 .pmt-list-frame {
   background: #ffffff;
   border: 1px solid #ececf2;
@@ -1286,11 +1058,6 @@ tbody tr:nth-child(10) {
   border-color: var(--vz-border-color);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.30);
 }
-
-/* KPI cards — compact, with the same haptic hover lift used on the
-   Clients / ClientPayments KPIs so every list page feels alive on hover
-   instead of sitting flat. transform + layered shadow only — no layout
-   change so the row never reflows. */
 .pmt-kpi-card {
   border-radius: 12px;
   border: 1px solid var(--vz-border-color);
@@ -1364,11 +1131,6 @@ tbody tr:nth-child(10) {
     box-shadow 220ms ease;
 }
 .pmt-kpi-icon i { font-size: 17px; color: #fff; }
-
-/* Export button — outlined emerald, matches the Clients / Branches
-   .export-btn so all listing pages share the same "download" affordance.
-   Distinct from the solid-purple Add / Record-Payment button so the two
-   never read as duplicates. */
 .btn.pmt-btn-export,
 .btn.pmt-btn-export:focus,
 .btn.pmt-btn-export:active {
@@ -1412,13 +1174,6 @@ tbody tr:nth-child(10) {
   border-color: #5be0cb !important;
   box-shadow: 0 4px 14px rgba(46, 199, 176, 0.28) !important;
 }
-
-/* Row action button (view / PDF / reminder / delete). Bootstrap's .btn
-   forces transparent background + transparent border at higher
-   specificity, so this rule needs !important to actually paint the
-   pill shape — without it the icons render bare on the row.
-   Matches the inline-styles ActionBtn used by Clients / Branches /
-   HrEmployees so every list page shares the same crisp pill look. */
 .pmt-action-btn,
 button.pmt-action-btn,
 .btn.pmt-action-btn {
@@ -1434,8 +1189,6 @@ button.pmt-action-btn,
   align-items: center;
   justify-content: center;
 }
-/* Hover: lift slightly + tint background to match the icon's brand
-   colour (uses the colour vars Velzon ships, with a 10% alpha wash). */
 .pmt-action-btn[data-color="primary"]:hover,
 button.pmt-action-btn[data-color="primary"]:hover { border-color: var(--vz-primary) !important; color: var(--vz-primary) !important; background: rgba(64,81,137,0.10) !important; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(64,81,137,0.18); }
 .pmt-action-btn[data-color="info"]:hover,
@@ -1446,16 +1199,7 @@ button.pmt-action-btn[data-color="success"]:hover { border-color: var(--vz-succe
 button.pmt-action-btn[data-color="warning"]:hover { border-color: var(--vz-warning) !important; color: var(--vz-warning) !important; background: rgba(247,184,75,0.10)  !important; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(247,184,75,0.18); }
 .pmt-action-btn[data-color="danger"]:hover,
 button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-danger)  !important; color: var(--vz-danger)  !important; background: rgba(240,101,72,0.10)  !important; transform: translateY(-1px); box-shadow: 0 3px 8px rgba(240,101,72,0.18); }
-
-/* Status badge dot inside the table column */
 .pmt-status-dot { width: 6px; height: 6px; }
-
-/* ═══════════════════════════════════════════════════════════════
-   Record Payment form — "Registration-form" style
-   (section banners + stacked label-over-input)
-   ═══════════════════════════════════════════════════════════════ */
-
-/* Top header — compact hero strip with icon chip and "New Payment" pill */
 .pmt-reg-hero {
   display: flex;
   align-items: center;
@@ -1501,8 +1245,6 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
   flex-shrink: 0;
 }
 .pmt-reg-hero-pill i { font-size: 7px; }
-
-/* Close (×) button at the top-right of the hero */
 .pmt-reg-hero-close {
   width: 26px;
   height: 26px;
@@ -1537,8 +1279,6 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
   border-color: rgba(239, 68, 68, 0.38);
   color: #fca5a5;
 }
-
-/* Close button anchored to absolute top-right corner of the View Payment modal header */
 .pmt-view-header { position: relative; padding-right: 48px !important; }
 .pmt-close-corner {
   position: absolute;
@@ -1546,9 +1286,6 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
   right: 10px;
   margin: 0 !important;
 }
-
-/* Section banner — hidden in the new Add-Company-style layout
-   (kept in the markup but visually removed, fields flow flat). */
 .pmt-reg-banner { display: none !important; }
 .pmt-reg-banner-icon {
   width: 16px;
@@ -1568,8 +1305,6 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
   text-transform: uppercase;
   color: var(--vz-secondary-color);
 }
-
-/* Color variants */
 .pmt-reg-banner.is-violet {
   --reg-banner-tint: rgba(124, 92, 252, 0.12);
   --reg-banner-border: rgba(124, 92, 252, 0.22);
@@ -1600,8 +1335,6 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
   --reg-banner-grad: linear-gradient(135deg, #f59e0b, #fbbf24);
   --reg-banner-shadow: rgba(245, 158, 11, 0.35);
 }
-
-/* Registration-style fields — label above input, clean look (Add-Company style) */
 .pmt-reg-form .form-label,
 .pmt-reg-form label {
   display: block;
@@ -1640,8 +1373,6 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
   color: rgba(255, 255, 255, 0.32);
   font-weight: 300;
 }
-
-/* Inline info-icon next to labels — native browser tooltip (title attr) shows on hover */
 .pmt-hint-icon {
   display: inline-flex;
   align-items: center;
@@ -1657,8 +1388,6 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
 [data-layout-mode="dark"] .pmt-hint-icon { color: rgba(167, 139, 250, 0.65); }
 [data-bs-theme="dark"] .pmt-hint-icon:hover,
 [data-layout-mode="dark"] .pmt-hint-icon:hover { color: #c4b5fd; }
-
-/* Icon-inside-input wrapper — prefix icon on the left of the field */
 .pmt-reg-field { position: relative; }
 .pmt-reg-field-icon {
   position: absolute;
@@ -1691,22 +1420,16 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
   padding-bottom: 10px;
   line-height: 1.5;
 }
-
-/* Comfortable row gutters inside the form (Add-Company style) */
 .pmt-reg-form .row.g-3 { --bs-gutter-y: 1rem;   --bs-gutter-x: 1rem; }
 .pmt-reg-form .row.g-2 { --bs-gutter-y: 0.85rem; --bs-gutter-x: 0.85rem; }
 .pmt-reg-form .mb-3 { margin-bottom: 1rem !important; }
 .pmt-reg-form .mb-4 { margin-bottom: 1.4rem !important; }
-
-/* Help text */
 .pmt-reg-form .form-text {
   font-size: 11.5px;
   color: var(--vz-secondary-color);
   margin-top: 5px;
   line-height: 1.4;
 }
-
-/* AUTO / FROM PLAN chips inside labels */
 .pmt-chip {
   font-size: 9px !important;
   padding: 1px 6px !important;
@@ -1725,8 +1448,6 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
   background-color: rgba(41, 156, 219, 0.18) !important;
   color: #7dd3fc !important;
 }
-
-/* Inline reset link next to auto-filled labels */
 .pmt-reset-link {
   font-size: 10px !important;
   color: #94a3b8 !important;
@@ -1749,8 +1470,6 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
   border-color: rgba(255, 255, 255, 0.12);
 }
 [data-bs-theme="dark"] .pmt-reg-form .form-control::placeholder { color: rgba(255, 255, 255, 0.28); }
-
-/* Ghost Close button used in View Payment modal footer */
 .btn.pmt-btn-ghost {
   background-color: transparent !important;
   color: var(--vz-body-color) !important;
@@ -1774,9 +1493,6 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
   border-color: rgba(255, 255, 255, 0.22) !important;
   color: #c4bedd !important;
 }
-
-/* Method column badge — readable in both light and dark mode
-   Uses .badge.pmt-method-badge to outrank Bootstrap's default `.badge { color: #fff }` */
 .badge.pmt-method-badge {
   background-color: rgba(124, 92, 252, 0.12) !important;
   color: #c4bedd !important;
@@ -1792,12 +1508,6 @@ button.pmt-action-btn[data-color="danger"]:hover  { border-color: var(--vz-dange
   color: #c4b5fd !important;
   border-color: rgba(124, 92, 252, 0.40) !important;
 }
-
-/* Blurred backdrop for Record Payment / View Payment modals — uses
-   Bootstrap's own .modal-backdrop element, which is a dedicated
-   fullscreen overlay. We force its opacity to 1 (override Bootstrap's
-   animated --bs-backdrop-opacity) and apply the same blur recipe
-   DeleteConfirmModal's .dcm-overlay uses. */
 body:has(.cbc-payment-modal.show) .modal-backdrop,
 body:has(.cbc-view-payment.show) .modal-backdrop,
 body:has(.cbc-payment-modal.show) .modal-backdrop.show,
@@ -1819,15 +1529,11 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
 [data-layout-mode="dark"] body:has(.cbc-view-payment.show) .modal-backdrop.show {
   background-color: rgba(3, 6, 12, 0.60) !important;
 }
-
-/* ── View Payment modal ── */
 .cbc-view-payment .modal-content { border-radius: 18px; overflow: hidden; }
 .pmt-modal-header { background: var(--vz-secondary-bg); }
 .pmt-modal-icon { width: 36px; height: 36px; }
 .pmt-modal-icon i { font-size: 18px; }
 .pmt-modal-body-scroll { overflow-y: auto; flex: 1 1 auto; min-height: 0; }
-
-/* Invoice number pill — right side of the View Payment modal header */
 .pmt-invoice-pill {
   display: inline-flex;
   align-items: center;
@@ -1850,8 +1556,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
   border-color: rgba(124, 92, 252, 0.45);
   color: #c4b5fd;
 }
-
-/* Compact hero — status-tinted left accent + total + pill (single-line inline) */
 .pmt-view-hero {
   position: relative;
   border-radius: 10px;
@@ -1874,8 +1578,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
 .pmt-view-hero[data-status="pending"]::before  { background: #f7b84b; }
 .pmt-view-hero[data-status="failed"]::before   { background: #f06548; }
 .pmt-view-hero[data-status="refunded"]::before { background: #299cdb; }
-
-/* ── Dark-mode glossy treatment for the View Payment modal ── */
 [data-bs-theme="dark"] .cbc-view-payment .modal-content,
 [data-layout-mode="dark"] .cbc-view-payment .modal-content {
   background:
@@ -1884,8 +1586,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
   border: 1px solid rgba(255, 255, 255, 0.06) !important;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
 }
-
-/* Hero card — rich glossy gradient with status tint */
 [data-bs-theme="dark"] .pmt-view-hero,
 [data-layout-mode="dark"] .pmt-view-hero {
   background:
@@ -1921,8 +1621,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
     #1a2030;
   border-color: rgba(41, 156, 219, 0.24);
 }
-
-/* Left accent bar gets a glow in dark mode */
 [data-bs-theme="dark"] .pmt-view-hero::before,
 [data-layout-mode="dark"] .pmt-view-hero::before {
   box-shadow: 0 0 12px 0 rgba(10, 179, 156, 0.55);
@@ -1933,8 +1631,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
 [data-layout-mode="dark"] .pmt-view-hero[data-status="failed"]::before { box-shadow: 0 0 12px 0 rgba(240, 101, 72, 0.55); }
 [data-bs-theme="dark"] .pmt-view-hero[data-status="refunded"]::before,
 [data-layout-mode="dark"] .pmt-view-hero[data-status="refunded"]::before { box-shadow: 0 0 12px 0 rgba(41, 156, 219, 0.55); }
-
-/* Info group cards — glass surface with subtle top highlight */
 [data-bs-theme="dark"] .pmt-view-group,
 [data-layout-mode="dark"] .pmt-view-group {
   background:
@@ -1956,8 +1652,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
   color: #c4b5fd;
   filter: drop-shadow(0 0 4px rgba(124, 92, 252, 0.45));
 }
-
-/* Dashed divider lines between kv rows — softer in dark */
 [data-bs-theme="dark"] .pmt-view-kv,
 [data-layout-mode="dark"] .pmt-view-kv {
   border-bottom-color: rgba(255, 255, 255, 0.06);
@@ -1966,8 +1660,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
 [data-layout-mode="dark"] .pmt-view-kv .k { color: rgba(255, 255, 255, 0.55); }
 [data-bs-theme="dark"] .pmt-view-kv .v,
 [data-layout-mode="dark"] .pmt-view-kv .v { color: rgba(255, 255, 255, 0.92); }
-
-/* Receipt-style rows — brighter total */
 [data-bs-theme="dark"] .pmt-view-receipt-row .k,
 [data-layout-mode="dark"] .pmt-view-receipt-row .k { color: rgba(255, 255, 255, 0.55); }
 [data-bs-theme="dark"] .pmt-view-receipt-row .v,
@@ -1981,26 +1673,16 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
   color: #2dd4bf;
   filter: drop-shadow(0 0 8px rgba(10, 179, 156, 0.35));
 }
-
-/* Total value in the hero glows softly */
 [data-bs-theme="dark"] .pmt-view-hero .pmt-total-value,
 [data-layout-mode="dark"] .pmt-view-hero .pmt-total-value {
   color: rgba(255, 255, 255, 0.98);
   text-shadow: 0 0 18px rgba(10, 179, 156, 0.25);
 }
-
-/* Header strip gets a whispered violet wash */
 [data-bs-theme="dark"] .cbc-view-payment .pmt-modal-header,
 [data-layout-mode="dark"] .cbc-view-payment .pmt-modal-header {
   background: linear-gradient(180deg, rgba(124, 92, 252, 0.05), transparent);
   border-bottom-color: rgba(255, 255, 255, 0.06) !important;
 }
-
-/* ═══════════════════════════════════════════════════════════════
-   Dark-mode glossy treatment for the Record Payment modal
-   ═══════════════════════════════════════════════════════════════ */
-
-/* Modal surface — rich charcoal with subtle violet wash + inset highlight */
 [data-bs-theme="dark"] .cbc-payment-modal .modal-content,
 [data-layout-mode="dark"] .cbc-payment-modal .modal-content {
   background:
@@ -2012,8 +1694,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
     0 28px 70px rgba(0, 0, 0, 0.60),
     inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
 }
-
-/* Hero strip — deeper violet-to-pink gradient with top highlight + glow */
 [data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-hero,
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-hero {
   background:
@@ -2026,8 +1706,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
     inset 0 1px 0 rgba(255, 255, 255, 0.07),
     0 4px 16px rgba(124, 92, 252, 0.12);
 }
-
-/* Hero icon chip — brighter glow */
 [data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-hero-icon,
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-hero-icon {
   background: linear-gradient(135deg, #8b6cff 0%, #c4b5fd 100%);
@@ -2035,8 +1713,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
     0 6px 16px rgba(124, 92, 252, 0.50),
     inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
-
-/* Hero title/sub — brighter */
 [data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-hero-title,
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-hero-title {
   color: rgba(255, 255, 255, 0.96);
@@ -2046,8 +1722,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-hero-sub {
   color: rgba(255, 255, 255, 0.58);
 }
-
-/* NEW PAYMENT pill — glow */
 [data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-hero-pill,
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-hero-pill {
   background: linear-gradient(135deg, #8b6cff 0%, #c4b5fd 100%);
@@ -2055,8 +1729,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
     0 4px 12px rgba(124, 92, 252, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
-
-/* Section banner icon chips — glow tinted by variant */
 [data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-banner-icon,
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-banner-icon {
   box-shadow: 0 0 10px var(--reg-banner-shadow, rgba(124, 92, 252, 0.35));
@@ -2065,8 +1737,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-banner-title {
   color: rgba(255, 255, 255, 0.55);
 }
-
-/* Inputs & selects — glass surface with inset highlight */
 [data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form .form-control,
 [data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form .form-select,
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form .form-control,
@@ -2098,43 +1768,30 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
     linear-gradient(180deg, rgba(124, 92, 252, 0.06) 0%, rgba(255, 255, 255, 0.02) 100%),
     rgba(20, 26, 38, 0.90);
 }
-
-/* Labels pop slightly brighter in dark */
 [data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form .form-label,
 [data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form label,
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form .form-label,
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form label {
   color: rgba(255, 255, 255, 0.78);
 }
-
-/* Prefix icon — brighter violet in dark */
 [data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-field-icon,
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-field-icon {
   color: rgba(196, 181, 253, 0.80);
 }
-
-/* Help text softer */
 [data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form .form-text,
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form .form-text {
   color: rgba(255, 255, 255, 0.45);
 }
-
-/* Modal body gets the same subtle violet wash as the content surface
-   (overrides Reactstrap's default white body) */
 [data-bs-theme="dark"] .cbc-payment-modal .modal-body,
 [data-layout-mode="dark"] .cbc-payment-modal .modal-body {
   background: transparent;
 }
-
-/* Footer — glass divider with violet wash */
 [data-bs-theme="dark"] .cbc-payment-modal .modal-footer,
 [data-layout-mode="dark"] .cbc-payment-modal .modal-footer {
   background: linear-gradient(180deg, transparent 0%, rgba(124, 92, 252, 0.06) 100%);
   border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
-
-/* Premium submit button — richer glow */
 [data-bs-theme="dark"] .cbc-payment-modal .modal-footer .btn.btn-primary,
 [data-layout-mode="dark"] .cbc-payment-modal .modal-footer .btn.btn-primary {
   background: linear-gradient(135deg, #8b6cff 0%, #7c5cfc 50%, #6366f1 100%) !important;
@@ -2148,8 +1805,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
     0 10px 26px rgba(124, 92, 252, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
 }
-
-/* Textarea gets the same glass treatment */
 [data-bs-theme="dark"] .cbc-payment-modal .pmt-reg-form textarea.form-control,
 [data-layout-mode="dark"] .cbc-payment-modal .pmt-reg-form textarea.form-control {
   background:
@@ -2173,8 +1828,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
 }
 .pmt-client-line { font-size: 12px; margin-top: 0; }
 .pmt-status-pill { font-size: 10px; padding: 4px 10px; }
-
-/* Grouped info card — 2×2 grid */
 .pmt-view-group {
   border-radius: 12px;
   border: 1px solid var(--vz-border-color);
@@ -2244,8 +1897,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
   border: 1px solid var(--vz-border-color);
 }
 .pmt-notes-text { color: var(--vz-body-color); font-size: 13px; line-height: 1.5; }
-
-/* ── Add / Record Payment modal ── */
 .cbc-payment-modal .modal-content { border-radius: 18px; }
 .cbc-payment-modal .modal-content > form {
   display: flex;
@@ -2254,16 +1905,6 @@ body:has(.cbc-view-payment.show) .modal-backdrop.show {
   min-height: 0;
   overflow: hidden;
 }
-/* ╔═══════════════════════════════════════════════════════════════╗
-   ║ Payment-modal width — TWEAK the bold numbers to resize popup   ║
-   ║                                                                ║
-   ║  • Mobile  (<992px) ........  95vw  (line ~1748)               ║
-   ║  • Desktop (≥992px) ........  1100px cap, 85vw (line ~1758)    ║
-   ║  • Wide    (≥1400px) .......  1200px cap, 80vw (line ~1769)    ║
-   ║                                                                ║
-   ║  Want it smaller?  reduce the px caps (e.g. 1100 → 950).       ║
-   ║  Want it bigger?   raise the px caps  (e.g. 1100 → 1400).      ║
-   ╚═══════════════════════════════════════════════════════════════╝ */
 .cbc-payment-modal .modal-dialog,
 .cbc-payment-modal .modal-dialog.modal-lg,
 .modal.cbc-payment-modal .modal-dialog,
@@ -2300,8 +1941,6 @@ body .modal.cbc-payment-modal .modal-dialog {
     width: min(80vw, 1200px) !important;
   }
 }
-
-/* Compact footer — reduce vertical padding + shrink footer buttons */
 .cbc-payment-modal .modal-footer {
   padding: 10px 18px !important;
   gap: 10px;
@@ -2314,8 +1953,6 @@ body .modal.cbc-payment-modal .modal-dialog {
   border-radius: 999px !important;
 }
 .cbc-payment-modal .modal-footer .btn i { font-size: 13px !important; }
-
-/* Premium "Record Payment" submit button */
 .cbc-payment-modal .modal-footer .btn.btn-primary {
   background: linear-gradient(135deg, #7c5cfc 0%, #6366f1 50%, #4f46e5 100%) !important;
   border: none !important;
@@ -2334,8 +1971,6 @@ body .modal.cbc-payment-modal .modal-dialog {
 .cbc-payment-modal .modal-footer .btn.btn-primary:active {
   transform: translateY(0);
 }
-
-/* Cancel / secondary in the footer — clean ghost look */
 .cbc-payment-modal .modal-footer .btn.btn-light {
   background: transparent !important;
   border: 1px solid var(--vz-border-color) !important;
@@ -2362,8 +1997,6 @@ body .modal.cbc-payment-modal .modal-dialog {
 }
 .pmt-hint-banner i { color: var(--vz-info, #299cdb); }
 .pmt-hint-banner-text { color: var(--vz-body-color); }
-
-/* ── PlainDetail helper ── */
 .pmt-detail {
   background: var(--vz-secondary-bg);
   border: 1px solid var(--vz-border-color);
@@ -2380,8 +2013,6 @@ body .modal.cbc-payment-modal .modal-dialog {
   margin-top: 2px;
 }
 .pmt-detail-value.pmt-detail-emphasize { font-size: 16px; }
-
-/* ── DetailCard helper (legacy, kept for back-compat) ── */
 .pmt-detail-card {
   background: var(--vz-card-bg);
   border: 1px solid var(--vz-border-color);
@@ -2402,8 +2033,6 @@ body .modal.cbc-payment-modal .modal-dialog {
   margin-top: 2px;
 }
 .pmt-detail-card-value.pmt-detail-emphasize { font-size: 17px; }
-
-/* ── SectionHeader helper ── */
 .pmt-section-head { border-bottom: 1px dashed var(--vz-border-color); }
 .pmt-section-chip { width: 26px; height: 26px; font-size: 13px; }
 .pmt-section-title {
@@ -2412,13 +2041,6 @@ body .modal.cbc-payment-modal .modal-dialog {
   color: var(--vz-heading-color, var(--vz-body-color));
 }
 .pmt-section-hint { line-height: 1.2; }
-/* ────────────────────────────────────────────────────────────────────────
-   HR mega-menu (horizontal navbar dropdown — 2-step expand)
-   Step 1: only the category strip is shown.
-   Step 2: clicking a category reveals its leaves in a horizontal row below.
-   The whole menu sizes to its content and is centered under HR so the
-   4 categories visually split around the HR menu item (2 left / 2 right).
-   ──────────────────────────────────────────────────────────────────────── */
 .hr-mega-menu {
   width: auto !important;
   min-width: max-content !important;
@@ -2428,8 +2050,6 @@ body .modal.cbc-payment-modal .modal-dialog {
   right: auto !important;
   transform: translateX(-50%);
   margin-top: 10px;
-  /* Wrapper itself is transparent — each inner row paints its own card so
-     the strip and the leaves look like two separate floating panels. */
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
@@ -2440,10 +2060,6 @@ body .modal.cbc-payment-modal .modal-dialog {
   align-items: flex-start;
   gap: 6px;
 }
-/* Leaves panel is positioned under the active category button via JS that
-   sets an inline `margin-left` (see HorizontalLayout.useLayoutEffect). The
-   wrap itself sticks to flex-start so the JS-set offset isn't fighting a
-   centering rule. */
 .hr-mega-leaves { margin-left: 0; }
 
 .hr-mega-cats {
@@ -2497,9 +2113,6 @@ body .modal.cbc-payment-modal .modal-dialog {
   opacity: 0.65;
 }
 .hr-mega-cat-btn.is-active .hr-mega-cat-caret { transform: rotate(180deg); opacity: 1; }
-
-/* Plain-link variant of the strip button (used by More for items that have
-   no expandable sub-tree — they navigate directly on click). */
 .hr-mega-cat-btn.is-link {
   text-decoration: none;
   color: var(--vz-secondary-color);
@@ -2569,9 +2182,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   color: #ffffff !important;
   border: 1px solid rgba(124,92,252,0.45);
 }
-
-/* On small screens, stack the category strip vertically so the buttons
-   remain tappable rather than being squeezed onto one line. */
 @media (max-width: 1024px) {
   .hr-mega-menu {
     width: 100% !important;
@@ -2583,26 +2193,12 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   .hr-mega-cat-btn { justify-content: space-between; }
   .hr-mega-leaves { justify-content: flex-start; }
 }
-
-
-/* Default = LIGHT mode (the app sets `data-bs-theme="dark"` only for dark;
-   light has no attribute, so the unconditional block IS the light rule).
-   ONLY .active gets the strong gradient pill — that represents the page the
-   user is currently on. An open dropdown (aria-expanded=true) without
-   .active gets a much softer treatment below, so the active page stays
-   visually distinct when another menu is opened on top of it.
-   Strong saturated purple + white text mirrors the vertical sidebar pill so
-   the active page reads clearly against any header background. */
 [data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active {
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
   color: #ffffff !important;
   border: 1px solid #7c3aed !important;
   border-radius: 8px !important;
   box-shadow: 0 2px 6px rgba(124, 58, 237, 0.25);
-  /* Shorten the pill so it doesn't fill the full nav-link height — sits
-     compactly like the HR CORE / EMP ID pill. Margin compensates for the
-     padding reduction so the .nav-item total height stays close to the
-     original and the absolute-positioned mega-menu still anchors below. */
   padding-top: 6px !important;
   padding-bottom: 6px !important;
   margin-top: 6px;
@@ -2613,13 +2209,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active * {
   color: #ffffff !important;
 }
-
-/* Open-dropdown indicator — subtle, no full pill. Only applies when the
-   trigger is NOT also the active page, so the active-page pill keeps its
-   strong gradient when another menu is opened on top of it. Padding +
-   margin mirror the .active block so the open pill has the SAME compact
-   height as the active pill — without these the default nav-link height
-   stretches the open pill taller than its neighbour. */
 [data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"]:not(.active) {
   background: rgba(124,92,252,0.10) !important;
   border: 1px solid transparent !important;
@@ -2629,12 +2218,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   margin-top: 6px;
   margin-bottom: 6px;
 }
-
-/* DARK-mode override. No `html` prefix so the selector matches whether
-   `data-bs-theme="dark"` lives on <html> or <body>. Every declaration is
-   !important and we re-target i + span explicitly because Velzon's SCSS
-   nav-link rules pipe `color` through --vz-topnav-item-active-color,
-   which is dynamically set per-tenant by AuthContext. */
 [data-bs-theme="dark"][data-layout="horizontal"] .navbar-nav > .nav-item > .nav-link.menu-link.active {
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
   border: 1px solid #7c3aed !important;
@@ -2655,17 +2238,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   margin-top: 6px;
   margin-bottom: 6px;
 }
-
-/* ─────────────────────────────────────────────────────────────────────
-   Vertical sidebar — mirror the horizontal gradient pill on the ACTIVE
-   top-level menu item so the highlight reads the same in both layouts.
-   Scoped to direct `.nav-item > .nav-link` children of `.navbar-nav` so
-   we only hit top-level entries, not the indented sub-links (.nav-sm).
-   ───────────────────────────────────────────────────────────────────── */
-/* Default = light mode (see note on horizontal block above). Only .active
-   gets the strong pill; open-but-not-active uses a softer wash.
-   Strong saturated purple + white text so the pill reads clearly against
-   ANY sidebar background — light/white sidebars used to wash this out. */
 [data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link.active {
   background: linear-gradient(135deg, rgba(139, 92, 246, 0.24) 0%, rgba(109, 40, 217, 0.12) 100%) !important;
   color: #ffffff !important;
@@ -2696,21 +2268,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-bs-theme="dark"][data-layout="vertical"] .navbar-menu .navbar-nav > .nav-item > .nav-link.menu-link[aria-expanded="true"]:not(.active) {
   background: rgba(124,92,252,0.16);
 }
-
-/* ─────────────────────────────────────────────────────────────────────
-   Global tooltip — opt-in via [data-tooltip="..."] attribute.
-
-   Why a custom tooltip: native title tooltips can't be styled (font,
-   colour, position, delay, dark mode). Using data-tooltip + ::after/
-   ::before lets us match the dark-pill look in the screenshot, control
-   the appear delay, and make it consistent across every page.
-
-   Usage:  <button data-tooltip="Delete">…</button>
-           <i  data-tooltip="Workstation" data-tooltip-pos="bottom" />
-
-   Positioning: defaults to top; pass data-tooltip-pos="bottom"|"left"|
-   "right" to override. The arrow flips automatically.
-   ───────────────────────────────────────────────────────────────────── */
 [data-tooltip] {
   position: relative;
 }
@@ -2722,7 +2279,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   z-index: 9999;
   transition: opacity .15s ease, transform .15s ease;
 }
-/* Tooltip body (label) */
 [data-tooltip]::after {
   content: attr(data-tooltip);
   background: #1f2937;
@@ -2732,23 +2288,18 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   letter-spacing: 0.01em;
   padding: 5px 10px;
   border-radius: 6px;
-  /* Wrap + cap so a long label doesn't render as one giant nowrap line that
-     overflows the viewport/modal. */
   white-space: normal;
   overflow-wrap: anywhere;
   max-width: min(320px, calc(100vw - 16px));
   width: max-content;
   box-shadow: 0 6px 14px -4px rgba(15,23,42,0.35), 0 2px 4px rgba(15,23,42,0.18);
-  /* default = above */
   bottom: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%) translateY(4px);
 }
-/* Tooltip arrow */
 [data-tooltip]::before {
   content: '';
   border: 5px solid transparent;
-  /* default = above (arrow points down toward element) */
   bottom: calc(100% + 3px);
   left: 50%;
   transform: translateX(-50%) translateY(4px);
@@ -2761,8 +2312,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
-
-/* ── Position variants ── */
 [data-tooltip][data-tooltip-pos="bottom"]::after {
   bottom: auto;
   top: calc(100% + 8px);
@@ -2811,34 +2360,11 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-tooltip][data-tooltip-pos="right"]:hover::before {
   transform: translateY(50%);
 }
-
-/* Disabled element shouldn't dim the tooltip — let it remain readable. */
 [data-tooltip]:disabled::after,
 [data-tooltip]:disabled::before { opacity: 0; }
 [data-tooltip]:disabled:hover::after,
 [data-tooltip]:disabled:hover::before { opacity: 1; }
-
-/* ── SweetAlert2 stacking ──────────────────────────────────────────────────
- * Swal's default container z-index is 1060, which sits BEHIND the app's
- * modals/drawers (reactstrap modals run up to z-index 2100, some custom
- * overlays up to ~11200). That made confirm/warning dialogs fire invisibly —
- * e.g. the "Not enough leave balance" warning in RequestLeaveModal (z 2100):
- * submission was blocked but the user saw no message. Force every Swal popup
- * to the very top so alerts are always visible above whatever opened them. */
 .swal2-container { z-index: 20000 !important; }
-
-/* ═══════════════════════════════════════════════════════════════════════
-   SIDEBAR THEMES (chosen designs)
-   · Vertical layout   → "Dark Modern"      (deep navy + violet accents)
-   · Two-column layout → "Bold Icon Strip"  (violet gradient icon rail)
-   Forced per layout, independent of the Sidebar-Color setting. !important
-   is required because velzon.scss is imported AFTER app.css, so equal-
-   specificity Velzon rules would otherwise win.
-   The top-level ACTIVE pill is already handled by the vertical block above
-   (violet gradient + white text) and reads correctly on the dark surface.
-   ═══════════════════════════════════════════════════════════════════════ */
-
-/* ───────────────── Vertical = DARK MODERN ───────────────── */
 [data-layout="vertical"] .app-menu.navbar-menu,
 [data-layout="vertical"] .app-menu .sidebar-background {
   background: #0F1729 !important;
@@ -2847,23 +2373,18 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   border-right: 1px solid #1E293B !important;
 }
 [data-layout="vertical"] .app-menu .navbar-brand-box {
-  background: #0F1729 !important;   /* solid so scrolled menu items hide behind it */
+  background: #0F1729 !important;
   border-bottom: 1px solid #1C2638 !important;
   display: flex !important;
   align-items: center;
-  justify-content: flex-start !important;  /* logo left */
-  min-height: 73px !important;             /* a bit taller */
+  justify-content: flex-start !important;
+  min-height: 73px !important;
   padding-left: 20px !important;
 }
-/* bigger logo (width scales with the height) */
 [data-layout="vertical"] .app-menu .navbar-brand-box .logo img {
   height: 40px !important;
   width: auto !important;
 }
-
-/* ── Collapsed / minimized sidebar (toggle → data-sidebar-size="sm") ──
-   Narrow icon rail: shrink the logo to fit, centre the brand + the icons,
-   and drop the left padding/right margin used by the expanded state. */
 [data-layout="vertical"][data-sidebar-size="sm"] .app-menu .navbar-brand-box {
   min-height: 70px !important;
   justify-content: center !important;
@@ -2883,38 +2404,20 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="vertical"][data-sidebar-size="sm"] .app-menu .navbar-nav > .nav-item > .nav-link.menu-link > i {
   margin-right: 0 !important;
 }
-/* Collapsed (sm) hover flyout popups were rendering see-through over the page —
-   give every flyout level a solid dark surface, border + shadow so it reads. */
 [data-layout="vertical"][data-sidebar-size="sm"] .app-menu .navbar-nav .menu-dropdown {
   background: #131B2C !important;
   border: 1px solid #2A3650 !important;
   border-radius: 12px !important;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55) !important;
   padding: 8px !important;
-  /* Keep the flyout COMPACT — Velzon defaults the dropdown to 200px, which
-     (plus the 70px rail) stretched it ~270px out over the page content. */
   width: 170px !important;
   min-width: 170px !important;
 }
-/* ── Collapsed flyout HEADER (the hovered top-level row that titles the popup) ──
-   On hover Velzon widens the top-level menu-link into a labelled bar that sits
-   above the dropdown. When that item is the ACTIVE page, our violet active
-   gradient bled across the whole bar — and it landed right over the page's
-   purple table header, so "Sales Matrix" was unreadable. Force the header to
-   the same dark surface as the dropdown panel below it (even when active), and
-   pull the label in so the heading starts next to the icon instead of 25px
-   away. Scoped to sm (collapsed) only — the expanded sidebar keeps its
-   gradient active pill untouched. */
 [data-layout="vertical"][data-sidebar-size="sm"] .app-menu .navbar-nav > .nav-item:hover > .nav-link.menu-link,
 [data-layout="vertical"][data-sidebar-size="sm"] .app-menu .navbar-nav > .nav-item:hover > .nav-link.menu-link.active {
   background: #131B2C !important;
   border: 1px solid #2A3650 !important;
-  /* Match the trimmed dropdown width below (170px) instead of Velzon's
-     calc(200px + rail) so the header bar doesn't extend wide over the page. */
   width: calc(170px + var(--vz-vertical-menu-width-sm)) !important;
-  /* the dropdown panel butts directly underneath — drop the facing (bottom)
-     edge so the two don't read as two separate rounded cards with the page
-     showing through the seam */
   border-bottom: none !important;
   border-radius: 12px 12px 0 0 !important;
   box-shadow: none !important;
@@ -2925,24 +2428,17 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   color: #E5E7EB !important;
   font-weight: 600 !important;
 }
-/* the level-1 dropdown sitting directly under that header: drop its top cap
-   (border + radius) and any offset so it merges flush into the header above —
-   this is what removes the gap. Deeper (nested) dropdowns keep their full
-   rounded card via the base rule above. */
 [data-layout="vertical"][data-sidebar-size="sm"] .app-menu .navbar-nav > .nav-item:hover > .menu-dropdown {
   margin-top: 0 !important;
   border-top: none !important;
   border-top-left-radius: 0 !important;
   border-top-right-radius: 0 !important;
 }
-
-/* breathing room above the first menu item (no section header anymore) */
 [data-layout="vertical"] .app-menu .navbar-nav {
   padding-top: 14px !important;
   padding-left: 6px !important;
   padding-right: 6px !important;
 }
-/* pull the top-level rows (Dashboard, Sales Matrix, …) a bit further left */
 [data-layout="vertical"] .app-menu .navbar-nav > .nav-item > .nav-link.menu-link {
   padding-left: 12px !important;
   padding-right: 10px !important;
@@ -2952,13 +2448,10 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="vertical"] .app-menu .menu-title span {
   color: #5C6985 !important;
 }
-/* top-level + sub-menu link text */
 [data-layout="vertical"] .app-menu .navbar-nav .nav-link.menu-link,
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link {
   color: #9AA6BD !important;
 }
-/* top-level menu icon → rounded TILE (image 2): translucent when idle,
-   filled violet gradient when active, brighter on hover */
 [data-layout="vertical"] .app-menu .navbar-nav > .nav-item > .nav-link.menu-link > i {
   display: inline-flex !important;
   align-items: center;
@@ -2992,10 +2485,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="vertical"] .app-menu .navbar-nav .nav-link.menu-link:hover i {
   color: #C4B5FD !important;
 }
-/* ── SUB-MENU (level-2) + nested SUB-SUB-MENU (level-3) ──
-   Every sub link gets a rounded hover/active pill + a dot marker; the
-   expandable GROUP headers (HRMS Command Center, HR Core …) read as
-   brighter, bolder violet labels so the hierarchy is obvious. */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-sm .nav-link {
   margin: 1px 8px 1px 2px !important;
   padding-top: 7px !important;
@@ -3005,7 +2494,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   font-weight: 500 !important;
   transition: background .14s, color .14s !important;
 }
-/* recolour Velzon's existing leading marker (don't redraw it) */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-sm .nav-link::before {
   background-color: #3A4763 !important;
   transition: background-color .14s !important;
@@ -3017,7 +2505,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-sm .nav-link:hover::before {
   background-color: #A78BFA !important;
 }
-/* leaf active (the deepest highlighted page) */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link.active {
   color: #C4B5FD !important;
   background: rgba(167, 139, 250, 0.12) !important;
@@ -3026,7 +2513,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link.active::before {
   background-color: #A78BFA !important;
 }
-/* expandable GROUP header — brighter, bolder violet so it reads as a header */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded] {
   color: #A78BFA !important;
   font-weight: 700 !important;
@@ -3039,24 +2525,13 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   transform: translateY(-50%) rotate(90deg) !important;
   color: #A78BFA !important;
 }
-/* connector line that runs down each open group */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-sm {
   border-left-color: #27324A !important;
 }
-/* toggle button removed from the brand row (per request) */
 [data-layout="vertical"] .app-menu #vertical-hover {
   display: none !important;
 }
 [data-layout="vertical"] .app-menu .simplebar-scrollbar:before { background: #3A4763 !important; }
-
-/* ═══════════════════════════════════════════════════════════════════════
-   Two-column = BOLD ICON STRIP
-   Violet icon rail (left) + WHITE panel that lists the FULL top-level menu
-   (icon tile + label + caret), expandable in place. The panel renders the
-   complete VerticalLayout menu (see TwoColumnLayout/index.tsx) — it used to
-   only show the active icon's sub-items, leaving the panel empty.
-   ═══════════════════════════════════════════════════════════════════════ */
-/* ── Left violet icon rail ── */
 [data-layout="twocolumn"] .twocolumn-iconview {
   background: linear-gradient(180deg, #7c3aed 0%, #6d28d9 100%) !important;
   box-shadow: 2px 0 16px rgba(76, 29, 149, 0.25) !important;
@@ -3077,13 +2552,8 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="twocolumn"] .twocolumn-iconview .logo {
   padding: 14px 0 10px !important;
 }
-/* one logo at a time: while the white panel is EXPANDED its brand-box logo
-   stands in for the app, so hide the icon-rail logo; show the rail logo only
-   when the panel is COLLAPSED (twocolumn-panel) and the brand box is gone. */
 [data-layout="twocolumn"] .twocolumn-iconview .logo { display: none !important; }
 [data-layout="twocolumn"] .twocolumn-panel .twocolumn-iconview .logo { display: block !important; }
-
-/* ── Right WHITE label panel ── */
 [data-layout="twocolumn"] .app-menu,
 [data-layout="twocolumn"] .app-menu .navbar-nav,
 [data-layout="twocolumn"] .app-menu .sidebar-background {
@@ -3094,7 +2564,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 }
 [data-layout="twocolumn"] .app-menu .navbar-nav { padding: 0 0 14px !important; }
 [data-layout="twocolumn"] .navbar-nav-list { list-style: none; margin: 0; padding: 4px 10px; }
-/* taller IGC logo / brand header at the top of the panel */
 [data-layout="twocolumn"] .app-menu .navbar-brand-box {
   min-height: 69px !important;
   display: flex !important;
@@ -3102,14 +2571,8 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   padding: 0 18px !important;
 }
 [data-layout="twocolumn"] .app-menu .navbar-brand-box .logo img { height: 42px !important; width: auto !important; }
-/* when the panel is collapsed (twocolumn-panel), re-hide the brand box — our
-   display:flex above would otherwise override Velzon's non-!important
-   display:none and leave a stray dark box at the top-left */
 [data-layout="twocolumn"] .twocolumn-panel .app-menu .navbar-brand-box { display: none !important; }
-/* section title (e.g. "Menu") — hidden to match the clean Bold Icon Strip look */
 [data-layout="twocolumn"] .app-menu .navbar-nav .menu-title { display: none !important; }
-
-/* top-level rows: lavender icon tile + dark label + caret */
 [data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link {
   display: flex !important;
   align-items: center;
@@ -3146,13 +2609,7 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.active > i {
   background: linear-gradient(135deg, #8b5cf6, #6d28d9) !important; color: #ffffff !important;
 }
-/* caret for expandable top-level rows only (marked with .cbc-has-sub — NOT
-   aria-expanded, which the activation JS also stamps on flat active items like
-   Dashboard). VerticalLayout uses aria-expanded not data-bs-toggle, so Velzon's
-   own caret never fires here — draw our own. */
 [data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.cbc-has-sub::after {
-  /* Velzon's two-column rule does `.menu-link:after { display:none !important }`
-     — override with display:block !important so our caret actually renders. */
   display: block !important;
   content: "\F0140";
   font-family: 'Material Design Icons';
@@ -3162,9 +2619,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.cbc-has-sub[aria-expanded="true"]::after {
   transform: translateY(-50%) rotate(180deg); color: #6D28D9;
 }
-
-/* ── Expanded sub-levels inside the white panel ── */
-/* level-2 group headers (e.g. "HRMS Command Center") → small violet label */
 [data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded] {
   color: #6D28D9 !important;
   font-weight: 700 !important;
@@ -3174,10 +2628,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   position: relative !important;
   padding-left: 18px !important;
 }
-/* chevron arrow before the level-2 group header — same Material Design glyph
-   as the vertical bar (points right collapsed, rotates down when expanded).
-   Replaces Velzon's default L-shaped connector marker. Tuned to the light
-   panel: violet #7C3AED instead of the sidebar's lighter #A78BFA. */
 [data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded]::before {
   content: "\F0142" !important;
   font-family: 'Material Design Icons' !important;
@@ -3199,7 +2649,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded="true"]::before {
   transform: translateY(-50%) rotate(90deg) !important;
 }
-/* plain sub-links */
 [data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link {
   color: #64748B !important;
   border-radius: 8px;
@@ -3212,8 +2661,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link.active {
   background: #F3EFFE !important; color: #6D28D9 !important; font-weight: 600 !important;
 }
-/* leaf TILES (cbc-sub) on the white panel — re-declare structure (the base
-   rules are scoped to [data-layout="vertical"]) and use light-panel colours */
 [data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link.cbc-sub {
   display: flex !important; align-items: center !important; gap: 9px !important;
   padding: 6px 9px !important; text-transform: none !important;
@@ -3226,9 +2673,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   background: #F2EEFE; color: #7C3AED;
 }
 [data-layout="twocolumn"] .app-menu .cbc-sub-ico i {
-  /* the base reset is scoped to [data-layout="vertical"]; re-declare it here or
-     Velzon's default icon-column min-width/margin pushes the glyph out of the
-     tile in two-column too */
   min-width: 0 !important;
   width: auto !important;
   margin: 0 !important;
@@ -3247,12 +2691,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="twocolumn"] .app-menu .nav-link.cbc-sub:hover .cbc-sub-t { color: #6D28D9; }
 [data-layout="twocolumn"] .app-menu .nav-link.cbc-sub.active .cbc-sub-ico { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #fff; }
 [data-layout="twocolumn"] .app-menu .nav-link.cbc-sub.active .cbc-sub-t { color: #6D28D9; }
-
-/* ── Two-column DARK MODE ──
-   The label panel is forced white above; in dark mode flip it to the same deep
-   navy surface the vertical Dark Modern sidebar uses, and recolour text, icon
-   tiles, hovers and leaf tiles for the dark panel. The violet icon rail already
-   reads on both themes, so it's left as-is. */
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu,
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav,
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .sidebar-background {
@@ -3263,7 +2701,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   background: #0F1729 !important;
   border-bottom: 1px solid #1C2638 !important;
 }
-/* top-level rows */
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link { color: #9AA6BD !important; }
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link > i {
   background: rgba(167, 139, 250, 0.16); color: #A78BFA !important;
@@ -3283,7 +2720,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 }
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.cbc-has-sub::after { color: #5C6985; }
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .nav-link.menu-link.cbc-has-sub[aria-expanded="true"]::after { color: #C4B5FD; }
-/* expanded sub-levels */
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link { color: #9AA6BD !important; }
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded] { color: #A78BFA !important; }
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-link:hover {
@@ -3293,24 +2729,16 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   background: rgba(167, 139, 250, 0.12) !important; color: #C4B5FD !important;
 }
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .navbar-nav .menu-dropdown .nav-sm { border-left-color: #27324A !important; }
-/* leaf tiles on the dark panel */
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .cbc-sub-ico { background: rgba(167, 139, 250, 0.16); color: #A78BFA; }
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .cbc-sub-t { color: #E5E7EB; }
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .nav-link.cbc-sub:hover .cbc-sub-ico { background: rgba(167, 139, 250, 0.24); }
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .nav-link.cbc-sub:hover .cbc-sub-t { color: #C4B5FD; }
 [data-bs-theme="dark"][data-layout="twocolumn"] .app-menu .nav-link.cbc-sub.active .cbc-sub-t { color: #C4B5FD; }
-
-/* ───────────────── Vertical sub-item TILES (icon + title + description) ─────────────────
-   Matches the mega-menu leaf style: lavender/translucent icon tile, bold title,
-   muted description. Replaces the plain dot-marker sub-link in the Dark Modern
-   sidebar. Group headers (expandable) become purple UPPERCASE labels + dot. */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-sm .nav-link.cbc-sub {
   display: flex !important;
   align-items: flex-start !important;
   gap: 11px !important;
   padding: 8px 10px !important;
-  /* leaves are never group headers — keep their label in normal case even
-     after Velzon stamps aria-expanded="false" on a just-deactivated link */
   text-transform: none !important;
 }
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-sm .nav-link.cbc-sub::before {
@@ -3318,24 +2746,16 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 }
 [data-layout="vertical"] .app-menu .cbc-sub-ico {
   width: 30px; height: 30px; flex-shrink: 0; margin-top: 1px;
-  /* !important: in the collapsed (sm) flyout Velzon forces every span inside a
-     hovered item to display:inline-block — that beat our flex box and dropped
-     the glyph to the top-left corner of the tile. Force the flex centring. */
   display: flex !important; align-items: center !important; justify-content: center !important;
   border-radius: 8px; font-size: 14px;
   background: rgba(167, 139, 250, 0.16); color: #A78BFA;
   transition: background .14s, color .14s, transform .14s;
 }
-/* the leaf <i> is a descendant of .nav-link, which Velzon gives a min-width
-   (icon column) → the glyph was left-aligned inside that wider box instead of
-   centred in the tile. Reset so it sits dead-centre in the square. */
 [data-layout="vertical"] .app-menu .cbc-sub-ico i {
   min-width: 0 !important;
   width: auto !important;
   margin: 0 !important;
   padding: 0 !important;
-  /* Velzon's collapsed (sm) rule blows the leaf glyph up to 22px, which then
-     spilled out of this tile — pin it back to the tile's design size. */
   font-size: 14px !important;
   line-height: 1 !important;
   display: inline-flex !important;
@@ -3345,7 +2765,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 }
 [data-layout="vertical"] .app-menu .cbc-sub-tx { display: flex !important; flex-direction: column; min-width: 0; line-height: 1.25; }
 [data-layout="vertical"] .app-menu .cbc-sub-t { font-size: 11.5px; font-weight: 600; color: #E5E7EB; transition: color .14s; }
-/* descriptions removed from sub-items — keep only the icon + title */
 [data-layout="vertical"] .app-menu .cbc-sub-d { display: none !important; }
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-sm .nav-link.cbc-sub { align-items: center !important; }
 [data-layout="vertical"] .app-menu .cbc-sub-ico { margin-top: 0 !important; }
@@ -3353,8 +2772,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="vertical"] .app-menu .nav-link.cbc-sub:hover .cbc-sub-t { color: #C4B5FD; }
 [data-layout="vertical"] .app-menu .nav-link.cbc-sub.active .cbc-sub-ico { background: linear-gradient(135deg, #8b5cf6, #6d28d9); color: #ffffff; }
 [data-layout="vertical"] .app-menu .nav-link.cbc-sub.active .cbc-sub-t { color: #C4B5FD; }
-
-/* group header (expandable level-2) → purple UPPERCASE label + violet chevron */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded] {
   text-transform: uppercase;
   letter-spacing: .6px;
@@ -3363,8 +2780,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   position: relative !important;
   padding-left: 18px !important;
 }
-/* chevron arrow (not a dot) before the group header — points right when
-   collapsed, rotates down when expanded */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded]::before {
   content: "\F0142" !important;
   font-family: 'Material Design Icons' !important;
@@ -3374,8 +2789,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   transform: translateY(-50%) !important;
   width: auto !important;
   height: auto !important;
-  /* Velzon's base marker draws an L using border-left/-bottom + radius — clear
-     it so only the chevron glyph shows, no box around it */
   border: none !important;
   border-radius: 0 !important;
   background: transparent !important;
@@ -3385,13 +2798,9 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   opacity: 1 !important;
   transition: transform .2s !important;
 }
-/* open group → rotate the chevron to point DOWN. Declared AFTER the base rule
-   above (same specificity) so it wins; collapsed groups keep the ">" glyph. */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded="true"]::before {
   transform: translateY(-50%) rotate(90deg) !important;
 }
-/* group headers are plain dotted labels — never a filled block, even when the
-   active page lives inside them (only leaf tiles get the active pill) */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded],
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded].active,
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded="true"] {
@@ -3400,9 +2809,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   margin-left: 0 !important;
   margin-right: 0 !important;
 }
-/* keep the chevron a bare glyph in hover/active/expanded states too — Velzon's
-   hover/active marker rules paint a background-color on this ::before, which
-   turned the arrow into a filled violet square */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded]:hover::before,
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded].active::before,
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link[aria-expanded="true"]:hover::before {
@@ -3410,11 +2816,6 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
   border: none !important;
   color: #C4B5FD !important;
 }
-/* Velzon stamps aria-expanded="false" on a leaf you just navigated away from,
-   which made the group-header rules above (uppercase / 800 weight / violet
-   colour / dot) leak onto it — that's the font-weight jump. Leaves are
-   .cbc-sub and are never group headers, so neutralise all of it here (this
-   selector outranks the rules above). */
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link.cbc-sub[aria-expanded] {
   text-transform: none !important;
   letter-spacing: normal !important;
@@ -3425,19 +2826,12 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
 [data-layout="vertical"] .app-menu .navbar-nav .menu-dropdown .nav-link.cbc-sub[aria-expanded]::before {
   content: none !important;
 }
-
-/* Onboarding-pending banner (app shell) — inline light amber in light mode;
-   translucent dark amber so the full-width strip reads on the dark shell. */
 [data-bs-theme="dark"] .app-onboarding-banner,
 [data-layout-mode="dark"] .app-onboarding-banner {
   background: rgba(245, 158, 11, 0.16) !important;
   color: #fcd34d !important;
   border-bottom-color: rgba(245, 158, 11, 0.30) !important;
 }
-
-/* Recharts — remove the browser focus outline that appears as a black border
- * around a chart when a bar / slice / point is clicked. Applies to every chart
- * (Recharts renders .recharts-wrapper + .recharts-surface everywhere). */
 .recharts-wrapper:focus,
 .recharts-wrapper:focus-visible,
 .recharts-surface:focus,

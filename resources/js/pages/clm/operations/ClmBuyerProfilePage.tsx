@@ -205,7 +205,12 @@ function useFillHeight(
  * Scoped CSS (extracted from the prototype)
  * ────────────────────────────────────────────────────────────────────────── */
 const BP_CSS = `
-.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 0; display:flex; flex-direction:column; gap:8px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+/* margin-top:-8px — the IDIMS shell pads .page-content 16px at the top
+ * (Layouts/index.tsx) while this stack sets its cards 8px apart, so the first
+ * card sat twice as far from the top of the page as it did from the card below
+ * it. Pulling 8px back makes the space above the header strip match the gap
+ * beneath it. */
+.seg-page { background: #F4F6FB; min-height: calc(100vh - 56px); padding: 0; margin-top: -8px; display:flex; flex-direction:column; gap:8px; font-family: var(--font-sans); -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
 .seg-page-card {
   background: #fff;
   border: 1px solid rgba(6,182,212,.2);
@@ -245,7 +250,7 @@ const BP_CSS = `
 @media(max-width:1100px){.bref-box__body{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:700px){.bref-box__body{grid-template-columns:repeat(2,1fr)}}
 .bpa-seg{display:flex;align-items:center;background:rgba(255,255,255,.6);border:1.5px solid rgba(6,182,212,.25);border-radius:11px;padding:4px;gap:3px;box-shadow:0 2px 8px rgba(6,182,212,.12),inset 0 1px 0 rgba(255,255,255,.9);}
-.bpa-tab{position:relative;height:46px;padding:0 18px;border-radius:9px;border:none;font-family:inherit;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .2s cubic-bezier(.22,1,.36,1);letter-spacing:.01em;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;}
+.bpa-tab{position:relative;height:38px;padding:0 18px;border-radius:9px;border:none;font-family:inherit;font-size:11.5px;font-weight:700;cursor:pointer;transition:all .2s cubic-bezier(.22,1,.36,1);letter-spacing:.01em;overflow:hidden;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;}
 .bpa-tab::before{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.2),transparent);border-radius:inherit;pointer-events:none;}
 .bpa-tab svg{flex-shrink:0;}
 .bpa-tab-active{background:linear-gradient(135deg,#06b6d4 0%,#0891b2 55%,#0e7490 100%);color:#fff;box-shadow:0 3px 12px rgba(6,182,212,.4),0 1px 4px rgba(8,145,178,.3);}
@@ -401,7 +406,7 @@ const BP_CSS = `
  * Party/Transaction tab pills wrap, and hide the long sub-heading on phones. */
 @media (max-width: 820px) {
   .seg-page .bpa-seg { flex-wrap: wrap; }
-  .seg-page .bpa-tab { height: 40px; padding: 0 14px; font-size: 11px; }
+  .seg-page .bpa-tab { height: 34px; padding: 0 14px; font-size: 11px; }
   .seg-page input[type="text"] { width: auto !important; flex: 1 1 120px; min-width: 0; }
 }
 @media (max-width: 560px) {
@@ -924,7 +929,15 @@ export default function ClmBuyerProfilePage() {
 
       {/* ── Header Strip ── */}
       <div className="seg-page-card" style={{ background: 'linear-gradient(110deg,#e0f9fd 0%,#cef8ff 18%,#d0f4f9 45%,#baeef7 75%,#a0e8f2 100%)' }}>
-        <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '10px 18px', minHeight: '64px' }}>
+        {/* Padding matches the Supplier Profile header strip (0 18px) — this
+            used to add 10px of vertical padding plus a wrapping flex row, which
+            pushed the strip taller and widened the apparent gap to the card
+            below. minHeight is 58px: the tallest thing in the row is the
+            Party/Transaction segmented control at 49px (.bpa-tab 38 + .bpa-seg
+            padding 4x2 + border 1.5x2), so this adds ~4px of breathing room
+            above and below it (the row is centre-aligned, so the slack splits
+            evenly) without touching the pills themselves. */}
+        <div style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: '58px' }}>
           <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '5px', background: 'linear-gradient(180deg,#22d3ee,#0891b2,#0e7490)' }} />
           <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.5),transparent)', pointerEvents: 'none' }} />
           <span style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle,rgba(6,182,212,.07) 1px,transparent 1px)', backgroundSize: '18px 18px', pointerEvents: 'none' }} />
@@ -1063,7 +1076,9 @@ export default function ClmBuyerProfilePage() {
           </div>
 
           {/* ── SHIPMENT TABS ── */}
-          <div ref={txnCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: txnCardFill }}>
+          {/* marginTop:8px — Transaction-wise CLM tab; same nested-wrapper gap
+              as the party-wise list cards. */}
+          <div ref={txnCardRef} className="seg-page-card" style={{ marginTop: '8px', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: txnCardFill }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px 10px 20px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 30%,#d8f8fc 60%,#caf5fa 80%,#baf2f9 100%)', borderBottom: '1px solid #A5F3FC', minHeight: '52px', flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.32)' }}>
@@ -1348,7 +1363,12 @@ export default function ClmBuyerProfilePage() {
           {/* ── BUYER LIST TABLE ── */}
           {bpaTab === 'buyer' && (
             <div>
-              <div ref={buyerCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: buyerCardFill }}>
+              {/* marginTop:8px — this card is nested inside plain wrappers, so
+                  .seg-page's 8px flex gap doesn't reach it and it butted right
+                  up against the Analytics card above. Restores the same spacing
+                  the top-level cards have. Same pattern the Supplier Profile
+                  page uses for its nested cards. */}
+              <div ref={buyerCardRef} className="seg-page-card" style={{ marginTop: '8px', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: buyerCardFill }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>
@@ -1440,7 +1460,9 @@ export default function ClmBuyerProfilePage() {
           {/* ── CONSIGNEE LIST TABLE ── */}
           {bpaTab === 'consignee' && (
             <div>
-              <div ref={consCardRef} className="seg-page-card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: consCardFill }}>
+              {/* marginTop:8px — see the Customer List card above; same nested
+                  wrapper, same missing gap under the Analytics card. */}
+              <div ref={consCardRef} className="seg-page-card" style={{ marginTop: '8px', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: consCardFill }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px', padding: '12px 18px', background: 'linear-gradient(110deg,#f0fdff 0%,#e8fbfd 40%,#caf5fa 100%)', borderBottom: '1.5px solid #A5F3FC', minHeight: '60px', flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg,#06b6d4,#0891b2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 0 0 3px rgba(6,182,212,.18),0 3px 10px rgba(8,145,178,.3)' }}>

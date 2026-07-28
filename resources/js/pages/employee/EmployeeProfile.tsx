@@ -1380,6 +1380,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       || apiClaims.some(c => c.employee_id === authUser.employee_id)
     );
 
+  // Onboarding gate (CBC #84/#85). A mid-onboarding employee is locked to the
+  // Inbox everywhere else (App.tsx), but /profile stays open so they can view
+  // their record — and this page carries the Leave / Expense Claim / Advance
+  // Request forms, which is how those submissions were reachable. Hide the
+  // entry points; App\Support\OnboardingGuard rejects them server-side too.
+  const onboardingPending = authUser?.user_type === 'employee' && !!(authUser as any)?.onboarding_pending;
+  const canRaiseHrRequest = isOwnProfile && !onboardingPending;
+
   // Detect whether the *profile owner* manages anyone — drives visibility
   // of the Hiring Requests tab. Hits /my-team/employees which, for an
   // employee user_type, returns rows where reporting_manager_id matches
@@ -2027,7 +2035,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     payrollTab, setPayrollTab, salaryStruct, realMonthlyGross, realAnnualCtc, realTimeline,
     openLatestPayslip, setSalaryModalOpen, setBreakdownOpen, setBreakdownRowId,
     // Expense tab
-    authUser, isOwnProfile,
+    authUser, isOwnProfile, canRaiseHrRequest,
     expenseModuleTab, setExpenseModuleTab, expenseSubTab, setExpenseSubTab,
     advanceSubTab, setAdvanceSubTab, expenseFilter, setExpenseFilter,
     expenseSearch, setExpenseSearch,
@@ -2252,7 +2260,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <div className="ep-tab-fill">
           <LeaveSummaryPanel
             employeeId={empDetail?.id != null ? String(empDetail.id) : (profileEmpIdNum != null ? String(profileEmpIdNum) : '')}
-            canRequest={isOwnProfile}
+            canRequest={canRaiseHrRequest}
           />
         </div>
       )}

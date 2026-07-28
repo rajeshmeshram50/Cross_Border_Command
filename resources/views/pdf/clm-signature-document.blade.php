@@ -168,10 +168,38 @@
          dompdf actually honours — overflow-wrap/word-break are kept for parity
          with the on-screen editor. */
       .document-content table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      /* NO forced cell border here: a bordered table carries its border inline
+         (the Insert-Table modal writes border:1px on each cell, now preserved by
+         TipTap), while clause / layout tables stay clean. Forcing a border here
+         boxed up every clause table in the PDF even though the editor showed it
+         borderless (CBC — clause content broken in PDF). */
       .document-content table td,
-      .document-content table th { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; }
+      .document-content table th { padding: 6px 8px; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; }
       .document-content img { max-width: 100%; }
       .document-content ul, .document-content ol { margin: 0 0 8px 24px; }
+      /* Clause Library bodies routinely arrive wrapped in a <pre> (monospace
+         signature blocks, dashed rules) or a <pre><code> (TipTap code block).
+         dompdf gives <pre> white-space:pre + NO line-height, so long lines run
+         off the page edge and the tight leading makes lines OVERLAP (CBC-438).
+         pre-wrap keeps the authored line breaks but lets long lines wrap at the
+         page width, and the explicit line-height stops the overlap. */
+      .document-content pre,
+      .document-content pre code {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        word-break: break-word;
+        line-height: 1.5;
+        margin: 0 0 8px 0;
+        max-width: 100%;
+      }
+      .document-content code { line-height: 1.5; word-wrap: break-word; }
+      .document-content blockquote {
+        margin: 0 0 8px 0;
+        padding-left: 12px;
+        border-left: 3px solid #cbd5e1;
+        line-height: 1.5;
+      }
 
       .content-wrapper { margin-bottom: 25px; }
       .first-page-fix  { page-break-before: avoid; page-break-after: avoid; }

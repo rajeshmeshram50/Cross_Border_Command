@@ -9,29 +9,64 @@
    weight which reads as fuzzy on 1440p+ and especially loses
    contrast in dark mode. Bump to 14px / 500, enable subpixel
    antialiasing, and lift contrast for dark mode. */
+/* The rows scroll INSIDE this wrapper (min-height:0 lets the flex child shrink
+   below its content), so the card keeps its full height, the sticky header
+   stays put and the pager below never leaves the card's bottom edge. */
 .onb-list-table {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  min-height: 0;
+  overflow-y: auto;
 }
 .onb-list-table table { font-size: 13px; }
+
+/* Header — an exact copy of the Recruitment list header
+   (.rec-list-table thead th in resources/css/recruitment.css): same micro-caps
+   type, 10.5px/700 at 0.08em, same soft vertical gradient bar, same 13px/12px
+   padding and 1px divider, so Onboarding, Recruitment and HR Employees read as
+   one table system. It used to run 11px/800 at 0.4px on a flat tint, which sat
+   noticeably heavier and looser than every other HRMS list.
+
+   Sticky lives on the th cells so the background paints over scrolled rows in
+   every browser. The fill must stay OPAQUE for that to work — .table-light was
+   dropped from the markup because Bootstrap paints its fill via an inset
+   box-shadow that would cover any background set here. */
 .onb-list-table thead th {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background-clip: padding-box;
+  padding: 13px 12px;
+  background-color: #f4f5f8;
+  background-image: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
   color: var(--vz-secondary-color);
-  padding-top: 10px;
-  padding-bottom: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #ececf2;
   white-space: nowrap;
+  vertical-align: middle;
 }
+.onb-list-table thead th:first-child { border-top-left-radius: 14px; }
+.onb-list-table thead th:last-child  { border-top-right-radius: 14px; }
+/* Body keeps its denser 10px vertical rhythm (the rows carry 34px avatars and
+   progress bars), but takes the header's 12px horizontal padding so the column
+   text lines up with the header labels — Bootstrap's default cell padding is
+   8px, which left every heading sitting 4px right of its own column. */
 .onb-list-table tbody td {
   font-size: 13px;
   color: var(--vz-body-color);
   padding-top: 10px;
   padding-bottom: 10px;
+  padding-left: 12px;
+  padding-right: 12px;
   vertical-align: middle;
 }
+/* Pager never shrinks — the table above it absorbs the height instead. */
+.onb-page .wl-pager { flex-shrink: 0; }
+
 .onb-list-table tbody tr { transition: background 120ms ease; }
 .onb-list-table tbody tr:hover { background: rgba(99,102,241,0.06); }
 .onb-list-table .onb-id-pill,
@@ -60,15 +95,20 @@
 [data-layout-mode="dark"] .onb-list-table tbody td .text-muted {
   color: rgba(241,245,249,0.62) !important;
 }
-/* Dark-mode header — match the Employee / Exit Management tables' blurple
-   gradient header instead of the near-invisible faint tint (Bug #38). The
-   !important beats Bootstrap's .table-light --bs-table-bg variable. */
+/* Dark-mode header — the same dark recipe as the Recruitment header, replacing
+   the blurple gradient this table used to carry (Bug #38 fixed the older
+   near-invisible tint by inventing a violet band; matching Recruitment solves
+   the same contrast problem without diverging from the other lists). The
+   fallback colour in the var() is required: an opaque fill is what stops
+   scrolled rows bleeding through the sticky header. */
 [data-bs-theme="dark"] .onb-list-table thead th,
 [data-layout-mode="dark"] .onb-list-table thead th {
-  background-color: #6355e0 !important;
-  background-image: linear-gradient(180deg, #7a6ef0 0%, #5a4ce2 100%) !important;
-  color: #ffffff !important;
-  border-bottom-color: rgba(255,255,255,0.12) !important;
+  background-color: var(--vz-card-bg, #1a1d29);
+  background-image: linear-gradient(180deg,
+    color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
+    var(--vz-card-bg, #1a1d29) 100%);
+  color: rgba(255,255,255,0.70);
+  border-bottom-color: var(--vz-border-color, #2c3242);
 }
 [data-bs-theme="dark"] .onb-list-table tbody tr:hover,
 [data-layout-mode="dark"] .onb-list-table tbody tr:hover {
@@ -251,8 +291,12 @@
 
         /* ── Checklist modal ─────────────────────────────────────────────── */
         .onb-checklist-modal .modal-dialog { max-width: min(1080px, 96vw); }
-        .onb-checklist-content { border-radius: 18px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); }
-        .onb-checklist-header { background: linear-gradient(135deg,#3b0764,#4c1d95 35%,#6d28d9 70%,#7c3aed); color: #fff; padding: 14px 20px 12px; position: relative; }
+        /* The modal is a bounded flex column: header + footer stay put and the
+           checkpoint list is the ONE scroll area. The modal-body must not
+           scroll as well, otherwise the popup shows two nested scrollbars. */
+        .onb-checklist-content { border-radius: 18px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.22); max-height: calc(100vh - var(--vz-modal-margin, 1.75rem) * 2); }
+        .onb-checklist-content > .modal-body { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+        .onb-checklist-header { background: linear-gradient(135deg,#3b0764,#4c1d95 35%,#6d28d9 70%,#7c3aed); color: #fff; padding: 14px 20px 12px; position: relative; flex: 0 0 auto; }
         .onb-checklist-header .close-btn { position: absolute; top: 14px; right: 14px; width: 26px; height: 26px; border-radius: 7px; background: rgba(255,255,255,0.18); border: none; color: #fff; transition: background .15s ease; display: inline-flex; align-items: center; justify-content: center; }
         .onb-checklist-header .close-btn:hover { background: rgba(255,255,255,0.30); }
 
@@ -289,7 +333,9 @@
 
         .onb-cl-summary { margin-left: auto; padding: 6px 14px; border-radius: 999px; font-size: 11.5px; font-weight: 700; background: rgba(255,255,255,0.16); color: #fff; border: 1px solid rgba(255,255,255,0.22); }
 
-        .onb-cl-body { background: #f7f5fc; padding: 14px 18px 10px; max-height: 50vh; overflow-y: auto; }
+        /* Only scroller in the modal — grows to fill whatever the header and
+           footer leave behind (min-height:0 lets it actually shrink). */
+        .onb-cl-body { background: #f7f5fc; padding: 14px 18px 10px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
         [data-bs-theme="dark"] .onb-cl-body { background: #1f2630; }
 
         .onb-stage { background: #fff; border: 1px solid #ece9f6; border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
@@ -324,11 +370,11 @@
           color: color-mix(in srgb, var(--pill-fg) 58%, #ffffff) !important;
         }
 
-        /* Pinned to the bottom of the scroll area so the Close button is always
-           fully visible (it used to scroll below the fold / jam into the 18px
+        /* Sits outside the scroll area so the Close button is always fully
+           visible (it used to scroll below the fold / jam into the 18px
            rounded corner on short viewports). Extra, even padding keeps a
            consistent gap from the modal boundaries. */
-        .onb-cl-footer { position: sticky; bottom: 0; z-index: 2; background: #fff; border-top: 1px solid #eef0f4; padding: 14px 22px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .onb-cl-footer { flex: 0 0 auto; background: #fff; border-top: 1px solid #eef0f4; padding: 14px 22px; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
         [data-bs-theme="dark"] .onb-cl-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
         .onb-cl-footer .hint { font-size: 11px; color: #6b7280; }
         [data-bs-theme="dark"] .onb-cl-footer .hint { color: var(--vz-secondary-color); }
@@ -336,6 +382,14 @@
            wraps onto its own line (space-between would otherwise left-align it). */
         .onb-cl-close { margin-left: auto; padding: 8px 20px; border-radius: 9px; font-size: 12px; font-weight: 700; color: #fff; border: none; background: linear-gradient(90deg,#7c3aed,#4c1d95); box-shadow: 0 6px 14px rgba(76,29,149,0.28); cursor: pointer; }
         .onb-cl-close:hover { transform: translateY(-1px); box-shadow: 0 10px 18px rgba(76,29,149,0.36); }
+
+        /* Phone — fill the screen, same as the Exit Process Checklist modal.
+           The flex column above still keeps .onb-cl-body the only scroller. */
+        @media (max-width: 767.98px) {
+          .onb-checklist-modal .modal-dialog { height: calc(100vh - 30px); margin: 15px auto; }
+          .onb-checklist-content { height: 100%; }
+          .onb-cl-body { -webkit-overflow-scrolling: touch; }
+        }
 
 /* ── Block 2: Edit Employee modal ── */
         .onb-edit-emp-modal .modal-dialog { max-width: min(960px, 95vw); }

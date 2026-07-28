@@ -253,7 +253,7 @@ export default function ClmCaseToCasePage() {
         <div className="ctc-header-strip" style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 18px', minHeight: 64 }}>
           <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: 'linear-gradient(180deg,#A78BFA,#7C3AED,#5B21B6)' }} />
           <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: t.dark ? 'linear-gradient(180deg,rgba(255,255,255,.04),transparent)' : 'linear-gradient(180deg,rgba(255,255,255,.55),transparent)', pointerEvents: 'none' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, zIndex: 1, paddingLeft: 10 }}>
+          <div className="ctc-header-titlewrap" style={{ display: 'flex', alignItems: 'center', gap: 14, zIndex: 1, paddingLeft: 10 }}>
             <div style={{ position: 'relative', flexShrink: 0 }}>
               <div style={{ width: 42, height: 42, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', boxShadow: '0 0 0 3px rgba(124,58,237,.22),0 4px 12px rgba(91,33,182,.42)' }}>
                 <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.85" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>
@@ -261,7 +261,7 @@ export default function ClmCaseToCasePage() {
               <span style={{ position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: '50%', background: 'linear-gradient(135deg,#4ade80,#22c55e)', border: '2px solid #EDE9FE', boxShadow: '0 0 5px rgba(34,197,94,.45)' }} />
             </div>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 500, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.4px', lineHeight: 1.15 }}>Case to Case Contracts Management</div>
+              <div className="ctc-header-title" style={{ fontSize: 16, fontWeight: 500, color: t.dark ? '#c4b5fd' : '#2e1065', letterSpacing: '-.4px', lineHeight: 1.15 }}>Case to Case Contracts Management</div>
               <div style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', opacity: .9, marginTop: 3 }}>Manage one-time operational agreements and contract approval workflows.</div>
             </div>
           </div>
@@ -525,7 +525,11 @@ const CTC_CSS = `
    search takes the next row at full width. The wide table already scrolls
    horizontally on its own. */
 @media (max-width: 860px) {
-  .ctc-header-strip { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 16px; }
+  .ctc-header-strip { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 16px; min-height: 0; }
+  /* Drop the extra indent so the title block lines up flush with the full-width
+     Create button below it, and let the title sit at a calmer size. */
+  .ctc-header-titlewrap { padding-left: 6px !important; }
+  .ctc-header-title { font-size: 15px !important; }
   .ctc-header-strip > button { width: 100%; justify-content: center; }
   .ctc-stagegrid { grid-template-columns: repeat(2, 1fr) !important; }
   .ctc-tabrail { flex-wrap: wrap; width: 100%; justify-content: flex-start; }
@@ -533,5 +537,15 @@ const CTC_CSS = `
   .ctc-hspacer { display: none; }
   .ctc-searchbox { width: 100%; }
   .ctc-searchbox input { width: 100% !important; }
+}
+/* Phones: two-per-row squeezes the long "Rejected / Unapproved" tab and clips
+   it. Give each tab its OWN full-width row so the label + count always fit and
+   the pills read as a clean, uniform, easy-to-tap filter list. */
+@media (max-width: 560px) {
+  .ctc-toolbar { padding: 12px !important; gap: 8px !important; }
+  .ctc-tabrail { width: 100%; gap: 6px; }
+  .ctc-tabrail > button { flex: 1 1 100% !important; justify-content: flex-start; height: 40px; }
+  /* Push the count badge to the far right so every row lines up. */
+  .ctc-tabrail > button > span:last-child { margin-left: auto; }
 }
 `;

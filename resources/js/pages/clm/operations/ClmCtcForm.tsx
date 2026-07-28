@@ -265,18 +265,21 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
         // row, so no duplicate). resubmit applies the edited fields + new
         // approver list and resets the all-must-approve gate.
         await api.post(`/clm/ctc-contracts/${workingId}/resubmit`, payload);
-        toast.success('Sent for approval', `${agTitle} is back in the approval queue.`);
         setSentForApproval(true);
         await refreshRecord(workingId);
         goStage(2);
+        // Toast LAST — after the record refresh + stage transition close the
+        // approval modal — so the success message never appears while the modal
+        // is still showing "Submitting…" (looked like it fired before completion).
+        toast.success('Sent for approval', `${agTitle} is back in the approval queue.`);
       } else {
         const res = await api.post('/clm/ctc-contracts', payload);
         const newId = Number((res.data?.data as { dbId?: number } | undefined)?.dbId ?? 0) || null;
-        toast.success('Sent for approval', `${agTitle} is now in the approval queue.`);
         setSentForApproval(true);
         setWorkingId(newId);
         await refreshRecord(newId);
         goStage(2);
+        toast.success('Sent for approval', `${agTitle} is now in the approval queue.`);
       }
       return true;
     } catch (e) {
@@ -354,14 +357,14 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     <div style={{ position: 'fixed', inset: 0, zIndex: 9000, background: t.dark ? '#0d0a1a' : '#F0F0FA', overflowY: 'auto', fontFamily: 'var(--font-sans)', WebkitFontSmoothing: 'antialiased' }}>
       <style>{CTC_FORM_CSS}</style>
       <MasterFormStyles />
-      <div style={{ height: '100vh', background: t.dark ? '#0d0a1a' : '#F0F0F8', display: 'flex', flexDirection: 'column', padding: '16px 16px 0', gap: 10, overflow: 'hidden' }}>
+      <div className="ctc-shell" style={{ height: '100vh', background: t.dark ? '#0d0a1a' : '#F0F0F8', display: 'flex', flexDirection: 'column', padding: '16px 16px 0', gap: 10, overflow: 'hidden' }}>
 
         {/* HEADER */}
         <div style={{ borderRadius: 14, overflow: 'hidden', flexShrink: 0, boxShadow: '0 2px 12px rgba(109,40,217,.1)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : 'rgba(124,58,237,.18)'}` }}>
           <div style={{ background: t.dark ? '#1c1438' : 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 25%,#DDD6FE 55%,#C4B5FD 80%,#A78BFA 100%)', position: 'relative', overflow: 'hidden' }}>
             <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: 'linear-gradient(180deg,#A78BFA,#7C3AED,#5B21B6)' }} />
             <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.5),transparent)', pointerEvents: 'none' }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', minHeight: 60, position: 'relative', zIndex: 1 }}>
+            <div className="ctc-header-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', minHeight: 60, position: 'relative', zIndex: 1, gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 40, height: 40, borderRadius: 11, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 0 3px rgba(124,58,237,.2),0 4px 12px rgba(91,33,182,.4)', flexShrink: 0 }}>
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>
@@ -371,7 +374,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
                   <div style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', marginTop: 2, opacity: .9 }}>{editing && editLock ? 'View this operational agreement and its lifecycle' : 'Create one-time operational agreement with a counterparty'}</div>
                 </div>
               </div>
-              <button onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', border: 'none', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', background: 'linear-gradient(135deg,#8B5CF6,#6D28D9,#5B21B6)', boxShadow: '0 3px 12px rgba(91,33,182,.38)' }}>
+              <button onClick={onClose} className="ctc-header-back" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 18px', border: 'none', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', background: 'linear-gradient(135deg,#8B5CF6,#6D28D9,#5B21B6)', boxShadow: '0 3px 12px rgba(91,33,182,.38)', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
                 Back to CTC Agreement List
               </button>
@@ -382,7 +385,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
         {/* STAGE FLOW */}
         <div style={{ borderRadius: 14, overflow: 'hidden', flexShrink: 0, background: t.surface, boxShadow: '0 2px 10px rgba(109,40,217,.07)', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : 'rgba(124,58,237,.12)'}` }}>
           <div style={{ padding: '10px 16px 12px' }}>
-            <div style={{ display: 'flex', alignItems: 'stretch', justifyContent: 'space-between' }}>
+            <div className="ctc-stepper" style={{ display: 'flex', alignItems: 'stretch', justifyContent: 'space-between' }}>
               {STAGES.map((s, i) => {
                 const active = s.n === stage;
                 // "done" = any stage we've reached but aren't currently viewing,
@@ -426,7 +429,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
         </div>
 
         {/* STAGE BODY */}
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', paddingBottom: 16 }}>
+        <div className="ctc-stagebody" style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', paddingBottom: 16 }}>
           {hydrating && <CtcFormShimmer t={t} />}
           {!hydrating && stage === 1 && (
             <Stage1
@@ -524,7 +527,7 @@ function CtcFormShimmer({ t }: { t: OpsTokens }) {
     </div>
   );
   return (
-    <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
+    <div className="ctc-workspace" style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
       <div style={{ flex: 2, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}><div style={card}>{head('#4C1D95,#6D28D9,#7C3AED,#8B5CF6')}{body(6)}</div></div>
       <div style={{ flex: 5.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}><div style={card}>{head('#3B0764,#5B21B6,#7C3AED,#8B5CF6')}{body(11)}</div></div>
       <div style={{ flex: 2.5, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}><div style={card}>{head('#6D28D9,#7C3AED,#8B5CF6,#A78BFA')}{body(7)}</div></div>
@@ -562,6 +565,12 @@ function Stage1(p: {
   // Content) — that's what the approver returned for revision, so the user
   // shouldn't have to click through Counter Party + Basic Details first.
   const [midStep, setMidStep] = useState<1 | 2 | 3>(p.resubmitMode ? 3 : 1);
+  // Previous-stage fields (counterparty, organisation, agreement type, dates,
+  // title) are frozen when the record is view-locked OR when we're resubmitting a
+  // REJECTED / declined agreement: a resubmit fixes the DRAFT CONTENT the approver
+  // returned, not the parties or terms of the deal. The draft editor stays
+  // editable in resubmit (it's gated on p.editLock only, which is false here).
+  const prevLocked = !!p.editLock || !!p.resubmitMode;
   const [editorFs, setEditorFs] = useState(false);              // draft editor full-screen
   const [docxBusy, setDocxBusy] = useState(false);              // DOCX → HTML conversion in flight
   // Page-shell header/footer config (logo, header name, footer text, pagination) —
@@ -692,7 +701,7 @@ function Stage1(p: {
   const cpPct = p.cps.length ? 100 : 0;
   const orgPct = p.org ? 100 : 0;
   return (
-    <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
+    <div className="ctc-workspace" style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
       {/* LEFT — Counterparty Details */}
       <div style={{ flex: leftOpen ? 2 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
         {!leftOpen ? <CollapsedBar t={t} title="Counterparty Details" headGrad="#4C1D95,#6D28D9,#7C3AED,#8B5CF6,#A78BFA" dir="left" onExpand={() => setLeftOpen(true)} /> :
@@ -731,14 +740,15 @@ function Stage1(p: {
                   )}
                   {visible.map((cp, vi) => {
                     const idx = safe * 2 + vi;
-                    return <CpCard key={idx} t={t} slot={idx + 1} cp={cp} onRemove={() => p.onRemoveCp(idx)} readOnly={p.editLock} />;
+                    return <CpCard key={idx} t={t} slot={idx + 1} cp={cp} onRemove={() => p.onRemoveCp(idx)} readOnly={prevLocked} />;
                   })}
                   {/* Max one of each (Customer / Consignee / Supplier) ⇒ at most 3.
                       Hide the add button once all three slots are filled. */}
                   {(() => {
-                    // Locked (sent for approval / signing / signed): the previous-
-                    // stage counter-party list is read-only, so no "Add" affordance.
-                    if (p.editLock) return null;
+                    // Locked (sent for approval / signing / signed / resubmit of a
+                    // rejected agreement): the previous-stage counter-party list is
+                    // read-only, so no "Add" affordance.
+                    if (prevLocked) return null;
                     const usedTypes = new Set(p.cps.map(c => (c.sourceType || c.badge || '').toLowerCase()));
                     const allFilled = ['buyer', 'consignee', 'supplier'].every(tp => usedTypes.has(tp));
                     if (allFilled) {
@@ -772,7 +782,7 @@ function Stage1(p: {
               <div style={{ padding: 10 }}>
             <div style={{ position: 'relative' }}>
               {!p.org ? (
-                <div onClick={() => p.setOrgOpen(!p.orgOpen)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, border: '1.5px dashed #C4B5FD', background: 'transparent', cursor: 'pointer' }}>
+                <div onClick={() => { if (!prevLocked) p.setOrgOpen(!p.orgOpen); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '7px 10px', borderRadius: 8, border: '1.5px dashed #C4B5FD', background: 'transparent', cursor: prevLocked ? 'not-allowed' : 'pointer', opacity: prevLocked ? 0.5 : 1 }}>
                   <div style={{ width: 15, height: 15, borderRadius: '50%', background: 'linear-gradient(135deg,#7C3AED,#A78BFA)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg></div>
                   <span style={{ fontSize: 9, fontWeight: 700, color: '#7C3AED' }}>Select Organisation</span>
                   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#C4B5FD" strokeWidth="2.5" strokeLinecap="round" style={{ marginLeft: 'auto', transform: p.orgOpen ? 'rotate(180deg)' : 'none' }}><polyline points="6 9 12 15 18 9" /></svg>
@@ -783,7 +793,7 @@ function Stage1(p: {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px 6px' }}>
                     <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${p.org.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 8px rgba(109,40,217,.3)' }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{p.org.initials}</span></div>
                     <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, lineHeight: 1.3 }}>{p.org.name}</div><div style={{ fontSize: 8.5, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500, marginTop: 2 }}>{p.org.sub}</div></div>
-                    {!p.editLock && <button onClick={p.onResetOrg} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
+                    {!prevLocked && <button onClick={p.onResetOrg} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
                   </div>
                   <div style={{ borderTop: `1px solid ${t.dark ? 'rgba(148,163,184,.12)' : '#F1EEFF'}`, padding: '5px 10px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
                     <OrgDetail t={t} label="Country" text={p.org.country} /><OrgDetail t={t} label="State" text={p.org.state} /><OrgDetail t={t} label="Short Code" text={p.org.shortCode} />
@@ -916,14 +926,14 @@ function Stage1(p: {
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
                     <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Agreement Basics</div><div style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500 }}>Title &amp; type of this contract</div></div>
                   </div>
-                  <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 9, alignItems: 'end' }}>
+                  <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 9, alignItems: 'start' }}>
                     {/* 255-char limit enforced + surfaced WHILE typing (QA #43) —
                         maxLength hard-stops entry and the inline message shows the
                         moment the cap is hit, instead of only failing at Submit for
                         Approval (backend title max:255). */}
-                    <Field t={t} label="Agreement Title *" error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : (p.agTitle.length >= 255 ? 'Agreement title cannot exceed 255 characters.' : undefined)}><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, 255))} maxLength={255} readOnly={p.editLock} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={{ ...ipt, ...(p.editLock ? { background: t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC', cursor: 'default' } : null) }} /></Field>
+                    <Field t={t} label="Agreement Title *" error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : (p.agTitle.length >= 255 ? 'Agreement title cannot exceed 255 characters.' : undefined)}><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, 255))} maxLength={255} readOnly={prevLocked} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={{ ...ipt, ...(prevLocked ? { background: t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC', cursor: 'default' } : null) }} /></Field>
                     <Field t={t} label="Agreement Type *" error={errors.type && !p.agType ? 'Agreement type is required' : undefined}>
-                      <MasterSelect value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} disabled={p.editLock} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} />
+                      <MasterSelect value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} disabled={prevLocked} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} />
                     </Field>
                   </div>
                 </div>
@@ -936,12 +946,12 @@ function Stage1(p: {
                   </div>
                   <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
-                      <Field t={t} label="Effective Date *" green error={errors.effDate && !p.effDate ? 'Effective date is required' : undefined}><MasterDatePicker value={p.effDate} onChange={p.setEffDate} disabled={p.editLock} placeholder="Select date" /></Field>
+                      <Field t={t} label="Effective Date *" green error={errors.effDate && !p.effDate ? 'Effective date is required' : undefined}><MasterDatePicker value={p.effDate} onChange={p.setEffDate} disabled={prevLocked} placeholder="Select date" /></Field>
                       {/* The inverted-range error is NOT gated on `errors` — it is a live
                           invariant, so it surfaces the instant the user creates the bad
                           combination (typically by moving Effective Date past End Date)
                           rather than waiting for them to press Next. It self-clears too. */}
-                      <Field t={t} label="End Date *" green error={errors.endDate && !p.endDate ? 'End date is required' : endBeforeEff ? 'End date cannot be earlier than the effective date' : endBeforeToday ? 'End date cannot be earlier than today' : undefined}><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={(p.effDate && p.effDate > todayISO) ? p.effDate : todayISO} disabled={p.editLock} placeholder="Select date" /></Field>
+                      <Field t={t} label="End Date *" green error={errors.endDate && !p.endDate ? 'End date is required' : endBeforeEff ? 'End date cannot be earlier than the effective date' : endBeforeToday ? 'End date cannot be earlier than today' : undefined}><MasterDatePicker value={p.endDate} onChange={p.setEndDate} minDate={(p.effDate && p.effDate > todayISO) ? p.effDate : todayISO} disabled={prevLocked} placeholder="Select date" /></Field>
                     </div>
                   </div>
                 </div>
@@ -1182,7 +1192,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   const summary: [string, string][] = [['Agreement', agTitle || 'Agreement Draft'], ['Type', agType || '—'], ['Eff. Date', effDate || '—'], ['End Date', endDate || '—'], ['Renewable', 'No'], ['Term', '30 days']];
 
   return (
-    <div style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
+    <div className="ctc-workspace" style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
 
       {/* LEFT — Counterparty Details (stages 2-3) · Contract Summary (stage 4) */}
       <div style={{ flex: 2, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
@@ -1345,11 +1355,11 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#c4b5fd' : '#7C3AED'} strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
                   <span style={{ fontSize: 8.5, fontWeight: 800, color: t.dark ? '#c4b5fd' : '#7C3AED', textTransform: 'uppercase', letterSpacing: '.08em' }}>Clarification Requested{(openClar.by || apprName) ? ` · ${openClar.by || apprName}` : ''}</span>
                 </div>
-                <div style={{ fontSize: 9, color: t.dark ? '#ddd6fe' : '#4C1D95', lineHeight: 1.5 }}>{openClar.query || 'The approver requested clarification before deciding.'}</div>
+                <div style={{ fontSize: 9, color: t.dark ? '#ddd6fe' : '#4C1D95', lineHeight: 1.5, overflowWrap: 'break-word', wordBreak: 'break-word' }}>{openClar.query || 'The approver requested clarification before deciding.'}</div>
                 {openClar.response
                   ? <div style={{ marginTop: 7, padding: '6px 9px', borderRadius: 8, background: t.dark ? 'rgba(16,185,129,.12)' : '#ECFDF5', border: `1px solid ${t.dark ? 'rgba(16,185,129,.38)' : '#A7F3D0'}` }}>
                       <div style={{ fontSize: 7.5, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#059669', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 2 }}>Your Response</div>
-                      <div style={{ fontSize: 9, color: t.dark ? '#a7f3d0' : '#065F46', lineHeight: 1.5 }}>{openClar.response}</div>
+                      <div style={{ fontSize: 9, color: t.dark ? '#a7f3d0' : '#065F46', lineHeight: 1.5, overflowWrap: 'break-word', wordBreak: 'break-word' }}>{openClar.response}</div>
                       <div style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#7C3AED', marginTop: 4, fontWeight: 600 }}>Awaiting the approver's decision.</div>
                     </div>
                   : <div style={{ marginTop: 7 }}>
@@ -1591,15 +1601,31 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
       if (!alive) return;
       const norm = results.map((list, i) => list.length ? list : (cps[i].email ? [{ name: cps[i].name, email: cps[i].email, designation: 'Primary Contact', phone: cps[i].phone, is_primary: true }] : []));
       setContacts(norm);
+      // Pre-select ONE contact per counterparty (the primary, else the first) —
+      // single-select, so never more than one per party.
       const pre = new Set<string>();
-      norm.forEach((list, i) => list.forEach((c, j) => { if (c.is_primary || j === 0) pre.add(`${i}:${j}`); }));
+      norm.forEach((list, i) => {
+        if (!list.length) return;
+        const idx = list.findIndex(c => c.is_primary);
+        pre.add(`${i}:${idx >= 0 ? idx : 0}`);
+      });
       setSel(pre);
       setLoading(false);
     });
     return () => { alive = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggle = (k: string) => setSel(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  // Single-select PER counterparty: picking a contact for party `i` clears any
+  // other contact already chosen for that same party (only one recipient per
+  // counterparty). Clicking the already-selected one deselects it.
+  const selectOne = (i: number, j: number) => setSel(s => {
+    const n = new Set(s);
+    const k = `${i}:${j}`;
+    const already = n.has(k);
+    for (const key of Array.from(n)) { if (key.startsWith(`${i}:`)) n.delete(key); }
+    if (!already) n.add(k);
+    return n;
+  });
   const badgeTone = (badge: string) => badge === 'SUPPLIER' ? { fg: t.dark ? '#6ee7b7' : '#059669' } : badge === 'CONSIGNEE' ? { fg: t.dark ? '#67e8f9' : '#0891b2' } : { fg: t.dark ? '#c4b5fd' : '#7C3AED' };
   const submit = () => {
     const recipients = cps.map((cp, i) => {
@@ -1647,8 +1673,9 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
                         {list.map((c, j) => {
                           const k = `${i}:${j}`; const on = sel.has(k);
                           return (
-                            <div key={j} onClick={() => toggle(k)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, cursor: 'pointer', border: `1.5px solid ${on ? `${tone.fg}66` : (t.dark ? 'rgba(148,163,184,.18)' : '#EDE9FE')}`, background: on ? (t.dark ? 'rgba(124,58,237,.1)' : '#F7F4FF') : t.surface }}>
-                              <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, border: `2px solid ${on ? tone.fg : (t.dark ? 'rgba(148,163,184,.4)' : '#CBD5E1')}`, background: on ? `linear-gradient(135deg,${cp.grad})` : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{on && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}</div>
+                            <div key={j} onClick={() => selectOne(i, j)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, cursor: 'pointer', border: `1.5px solid ${on ? `${tone.fg}66` : (t.dark ? 'rgba(148,163,184,.18)' : '#EDE9FE')}`, background: on ? (t.dark ? 'rgba(124,58,237,.1)' : '#F7F4FF') : t.surface }}>
+                              {/* Radio (circle) — single-select: only one contact per counterparty. */}
+                              <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: `2px solid ${on ? tone.fg : (t.dark ? 'rgba(148,163,184,.4)' : '#CBD5E1')}`, background: on ? `linear-gradient(135deg,${cp.grad})` : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{on && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#fff' }} />}</div>
                               <div style={{ width: 28, height: 28, borderRadius: 8, background: `linear-gradient(135deg,${cp.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9, fontWeight: 800, color: '#fff' }}>C{j + 1}</span></div>
                               <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 10.5, fontWeight: 600, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name || `Contact ${j + 1}`}</div><div style={{ fontSize: 8, color: t.textMuted, fontWeight: 600 }}>{c.designation || (c.is_primary ? 'Primary Contact' : 'Contact')}</div></div>
                               {c.email && <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={t.textMuted} strokeWidth="2" strokeLinecap="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></svg><span style={{ fontSize: 8.5, color: t.textMuted, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{c.email}</span></div>}
@@ -1855,14 +1882,17 @@ function TimelineItem({ t, tone, title, badge, sub, date, by, last }: { t: OpsTo
         </div>
         {!last && <div style={{ width: 2, height: 28, background: `linear-gradient(180deg,${c},${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'})`, margin: '3px 0' }} />}
       </div>
-      <div style={{ flex: 1, paddingBottom: last ? 0 : 18 }}>
+      <div style={{ flex: 1, minWidth: 0, paddingBottom: last ? 0 : 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 3 }}>
-          <div style={{ fontSize: 10, fontWeight: 800, color: c }}>{title}</div>
+          <div style={{ fontSize: 10, fontWeight: 800, color: c, minWidth: 0, overflowWrap: 'break-word', wordBreak: 'break-word' }}>{title}</div>
           <span style={{ fontSize: 7, fontWeight: 700, padding: '2px 7px', borderRadius: 10, background: badgeBg, color: badgeFg, whiteSpace: 'nowrap', flexShrink: 0 }}>{badge}</span>
         </div>
-        <div style={{ fontSize: 8, color: t.textMuted, lineHeight: 1.55 }}>{sub}</div>
+        {/* Clarification / response text can be long (incl. one unbroken string):
+            wrap it and let the column shrink (minWidth:0 above) so it never
+            overflows the panel and triggers a horizontal scrollbar. */}
+        <div style={{ fontSize: 8, color: t.textMuted, lineHeight: 1.55, overflowWrap: 'break-word', wordBreak: 'break-word' }}>{sub}</div>
         {(date || by) && (
-          <div style={{ fontSize: 7.5, color: t.textMuted, fontWeight: 700, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5, opacity: .9 }}>
+          <div style={{ fontSize: 7.5, color: t.textMuted, fontWeight: 700, marginTop: 3, display: 'flex', alignItems: 'center', gap: 5, opacity: .9, flexWrap: 'wrap', overflowWrap: 'break-word', wordBreak: 'break-word' }}>
             {date && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>{date}</span>}
             {date && by && <span style={{ opacity: .5 }}>·</span>}
             {by && <span>{by}</span>}
@@ -2253,12 +2283,16 @@ function Field({ t, label, green, error, children }: { t: OpsTokens; label: stri
       {/* Red ring hugs whatever control sits inside (input / select / date) so a
           single wrapper validates every field type uniformly. */}
       <div style={{ borderRadius: 9, boxShadow: error ? '0 0 0 1.5px #ef4444' : 'none' }}>{children}</div>
-      {error && (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 8.5, fontWeight: 700, color: '#ef4444' }}>
+      {/* The error line is ALWAYS in the layout (min-height reserved) so showing
+          or hiding it never changes the field's height — side-by-side fields
+          (Agreement Title vs Type) stay perfectly aligned and the section below
+          doesn't jump when validation toggles. */}
+      <span style={{ minHeight: 12, display: 'flex', alignItems: 'center', gap: 4, fontSize: 8.5, fontWeight: 700, color: '#ef4444', lineHeight: 1.2 }}>
+        {error && <>
           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
           {error}
-        </span>
-      )}
+        </>}
+      </span>
     </div>
   );
 }
@@ -2596,6 +2630,30 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
 }
 
 const CTC_FORM_CSS = `
+/* ── Mobile / narrow-screen layout ─────────────────────────────────────────
+   The workspace is a desktop-first 3-panel flex row locked to 100vh. Below
+   820px that crushes each panel to ~1/3 width (unusable), so here we: unlock
+   the height so the page scrolls, STACK the three panels vertically full-width,
+   and let the 4-step stage stepper scroll sideways instead of cramming. Uses
+   !important because the layout is set via inline styles (higher specificity). */
+@media (max-width: 820px) {
+  .ctc-shell { height: auto !important; min-height: 100vh; overflow: visible !important; padding: 12px 12px 24px !important; }
+  .ctc-stagebody { overflow: visible !important; }
+  .ctc-workspace { flex-direction: column !important; }
+  .ctc-workspace > * { flex: 1 1 auto !important; width: 100% !important; }
+  .ctc-workspace > *:nth-child(2) { min-height: 520px; }
+  .ctc-workspace > *:nth-child(1), .ctc-workspace > *:nth-child(3) { min-height: 280px; }
+  /* Header: stack the title block and the "Back to CTC Agreement List" button so
+     the button gets its own full-width row instead of squeezing the title. */
+  .ctc-header-row { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; padding: 12px 14px !important; min-height: 0 !important; }
+  .ctc-header-back { width: 100%; }
+  .ctc-stepper { overflow-x: auto; padding-bottom: 6px; }
+  /* !important + flex:none beat the inline "flex:1; min-width:0" on each stage
+     card — otherwise they stay squeezed to ~1/4 width and the labels wrap into
+     an unreadable column. Given a real width they line up and the row scrolls
+     sideways instead. */
+  .ctc-stepper > * { min-width: 168px !important; flex: 0 0 auto !important; }
+}
 /* Keep cards/rows in a flex-column scroll list at their natural height — without
    this, children with overflow:hidden get min-height:0 and compress to fit
    instead of overflowing, so the scrollbar never appears. */
