@@ -8,7 +8,10 @@ import { useScrollLock } from '../../../../hooks/useScrollLock';
 import { formatDmy } from '../../../../utils/formatDmy';
 
 type Summary = {
-  po: { id: number; code: string; pi_number: string | null; status: string };
+  po: {
+    id: number; code: string; pi_number: string | null; status: string;
+    zoho_synced?: boolean; zoho_bill_number?: string | null;
+  };
   supplier: {
     name?: string; code?: string; type?: string; state?: string; stateCode?: string;
     city?: string; contact?: string; phone?: string; gstNo?: string; gstStatus?: string;
@@ -23,6 +26,7 @@ type Summary = {
     utr_cheque_number: string | null; utr_cheque_date: string | null;
     attachment_url: string | null; attachment_name: string | null;
     balance_after: number; status: string;
+    zoho_synced?: boolean; zoho_applied?: number;
   }>;
 };
 
@@ -66,6 +70,8 @@ export default function PoPaymentModal({
   const [savingTds, setSavingTds] = useState(false);
   const [addOpen, setAddOpen] = useState(false);   // "Update Payment" sub-modal
   const [gstOpen, setGstOpen] = useState(false);   // GST amount breakdown sub-modal
+  const [syncingId, setSyncingId] = useState<number | null>(null); // payment row being synced
+  const [syncingAll, setSyncingAll] = useState(false);             // footer: sync ALL payments at once
   const [pulse, bumpPulse, endPulse] = usePulse(); // outside-click heartbeat
 
   const label = spiId ? 'SPI' : 'PO';
@@ -106,9 +112,22 @@ export default function PoPaymentModal({
 
   const a = data?.amounts;
   const sup = data?.supplier;
-  // TDS % is editable until the first payment is recorded; it locks only once a
-  // payment exists (changing it afterwards would desync the paid balance). QA #15.
-  const tdsLocked = (a?.paidCount ?? 0) > 0;
+  // The footer "Sync All Payments" button only appears once the bill IS synced to
+  // Zoho AND there's at least one cleared payment still un-synced (payment syncing
+  // isn't complete). If the PO isn't synced, or every payment is already posted,
+  // it's hidden. The per-row Sync buttons remain for one-at-a-time syncing.
+  const showSyncAll = !!data?.po.zoho_synced
+    && (data?.payments || []).some(p => p.status === 'Cleared' && !p.zoho_synced);
+  // TDS % is editable until the first payment is recorded OR the bill is synced to
+  // Zoho Books — whichever comes first. It locks after a payment (changing it would
+  // desync the paid balance — QA #15) or after a Zoho sync (the bill already
+  // carries the TDS, so a later change would desync from Zoho).
+  const tdsHasPayment = (a?.paidCount ?? 0) > 0;
+  const tdsSynced = !!data?.po.zoho_synced;
+  const tdsLocked = tdsHasPayment || tdsSynced;
+  const tdsLockReason = tdsHasPayment
+    ? `TDS locked — a payment has been recorded for this ${label}`
+    : `TDS locked — this ${label}'s bill is already synced to Zoho Books`;
   const tryAddPayment = () => {
     if (!entityId) return;
     if (!a?.tdsCut) { toast.warning('Deduct the TDS first', 'Save the TDS deduction in Payment Details before recording a payment.'); return; }
@@ -128,6 +147,62 @@ export default function PoPaymentModal({
     } catch (e: any) {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save TDS %.');
     } finally { setSavingTds(false); }
+  };
+
+  // Post a SINGLE payment entry to Zoho Books as a vendor payment against the
+  // bill — entry-wise from the Payment History table (not all at once). GATING:
+  // the bill must be synced first (you can't post a payment against a bill Zoho
+  // doesn't have yet).
+  const syncPaymentEntry = async (p: Summary['payments'][number]) => {
+    if (!entityId || !data) return;
+    // "before sync i want message first sync PO" — block + tell the user.
+    if (!data.po.zoho_synced) {
+      toast.warning(
+        `Sync the ${label} first`,
+        `Sync this ${label} to Zoho Books before syncing its payments — the bill must exist in Zoho before a payment can be posted against it.`,
+      );
+      return;
+    }
+    if (p.status !== 'Cleared') {
+      toast.warning('Payment not cleared', 'Only a cleared payment can be synced to Zoho Books.');
+      return;
+    }
+    setSyncingId(p.id);
+    try {
+      const { data: r } = await api.post<{ status: boolean; message?: string }>(`${apiBase}/sync-payment`, { payment_id: p.id });
+      toast.success('Payment synced', r?.message ?? `This payment entry was posted to Zoho Books.`);
+      load();
+      onChanged?.();
+    } catch (e: any) {
+      toast.error('Payment sync failed', e?.response?.data?.message ?? `Could not sync this payment entry to Zoho Books.`);
+    } finally { setSyncingId(null); }
+  };
+
+  // Footer: post ALL un-synced payments in ONE go (same endpoint, no payment_id).
+  // The per-row Sync buttons stay for one-at-a-time syncing — this is a shortcut.
+  const syncAllPayments = async () => {
+    if (!entityId || !data) return;
+    if (!data.po.zoho_synced) {
+      toast.warning(
+        `Sync the ${label} first`,
+        `Sync this ${label} to Zoho Books before syncing its payments — the bill must exist in Zoho before a payment can be posted against it.`,
+      );
+      return;
+    }
+    const hasUnsynced = (data.payments || []).some(p => !p.zoho_synced && p.status === 'Cleared');
+    if (!hasUnsynced) {
+      toast.info('Nothing to sync', 'All cleared payments are already posted to Zoho Books.');
+      return;
+    }
+    setSyncingAll(true);
+    try {
+      const { data: r } = await api.post<{ status: boolean; message?: string }>(`${apiBase}/sync-payment`, {});
+      toast.success('Payments synced', r?.message ?? `Payments posted to Zoho Books against this ${label}.`);
+      load();
+      onChanged?.();
+    } catch (e: any) {
+      toast.error('Payment sync failed', e?.response?.data?.message ?? `Could not sync this ${label}'s payments to Zoho Books.`);
+    } finally { setSyncingAll(false); }
   };
 
   return createPortal(
@@ -216,7 +291,7 @@ export default function PoPaymentModal({
                        }} disabled={tdsLocked} /></td>
                   <td><span className="pop-ro">{inr(preview?.tdsAmount ?? a?.tdsAmount)}</span></td>
                   <td><span className="pop-ro">{inr(preview?.netPayable ?? a?.netPayable)}</span></td>
-                  <td><Tooltip label={tdsLocked ? `TDS locked — a payment has been recorded for this ${label}` : (a?.tdsCut ? 'Edit the TDS % (allowed until the first payment)' : 'Deduct the TDS')} themed zIndex={2999999}><button className={`pop-btn-save ${tdsLocked ? 'is-cut' : ''}`} disabled={savingTds || tdsLocked} onClick={saveTds}>{savingTds ? '…' : (tdsLocked ? '✓ Deducted' : (a?.tdsCut ? 'Update' : 'Deduct'))}</button></Tooltip></td>
+                  <td><Tooltip label={tdsLocked ? tdsLockReason : (a?.tdsCut ? 'Edit the TDS % (allowed until the first payment or Zoho sync)' : 'Deduct the TDS')} themed zIndex={2999999}><button className={`pop-btn-save ${tdsLocked ? 'is-cut' : ''}`} disabled={savingTds || tdsLocked} onClick={saveTds}>{savingTds ? '…' : (tdsLocked ? '✓ Deducted' : (a?.tdsCut ? 'Update' : 'Deduct'))}</button></Tooltip></td>
                 </tr></tbody>
               </table>
             </div>
@@ -235,13 +310,13 @@ export default function PoPaymentModal({
               <table className="pop-tbl">
                 <thead><tr>
                   <th>SR NO</th><th>AMOUNT TO BE PAY</th><th>BANK NAME</th><th>UTR / CHEQUE NUMBER</th>
-                  <th>UTR / CHEQUE DATE</th><th>ATTACHMENT</th><th>BALANCE AMOUNT</th><th>STATUS</th>
+                  <th>UTR / CHEQUE DATE</th><th>ATTACHMENT</th><th>BALANCE AMOUNT</th><th>STATUS</th><th>ZOHO SYNC</th>
                 </tr></thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={8} className="pop-empty">Loading…</td></tr>
+                    <tr><td colSpan={9} className="pop-empty">Loading…</td></tr>
                   ) : (data?.payments.length ?? 0) === 0 ? (
-                    <tr><td colSpan={8} className="pop-empty">No payments recorded yet.</td></tr>
+                    <tr><td colSpan={9} className="pop-empty">No payments recorded yet.</td></tr>
                   ) : data!.payments.map(p => (
                     <tr key={p.id}>
                       <td>{p.sr}</td>
@@ -256,6 +331,29 @@ export default function PoPaymentModal({
                         : '—'}</td>
                       <td className="pop-amt">{inr(p.balance_after)}</td>
                       <td><span className={`pop-badge ${p.status === 'Cleared' ? 'is-ok' : 'is-pend'}`}>● {p.status}</span></td>
+                      <td>
+                        {p.zoho_synced ? (
+                          <span className="pop-badge is-ok" title="This payment entry is posted to Zoho Books">● Synced</span>
+                        ) : (
+                          <Tooltip
+                            label={!data?.po.zoho_synced
+                              ? `Sync this ${label} to Zoho Books first`
+                              : p.status !== 'Cleared'
+                                ? 'Only a cleared payment can be synced'
+                                : 'Post this payment entry to Zoho Books'}
+                            themed zIndex={2999999}
+                          >
+                            <button
+                              className="pop-btn-rowsync"
+                              disabled={syncingId === p.id || p.status !== 'Cleared' || !data?.po.zoho_synced}
+                              onClick={() => syncPaymentEntry(p)}
+                            >
+                              <IcoSync spin={syncingId === p.id} />
+                              <span>{syncingId === p.id ? 'Syncing…' : 'Sync'}</span>
+                            </button>
+                          </Tooltip>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -267,7 +365,20 @@ export default function PoPaymentModal({
         {/* ── Footer ── */}
         <div className="pop-foot">
           <button className="pop-btn-ghost" onClick={onClose}>Previous</button>
-          <button className="pop-btn-submit" onClick={onClose}>Submit</button>
+          <div className="pop-foot-r">
+            {showSyncAll && (
+              <Tooltip
+                label={`Post ALL un-synced payments to Zoho Books at once (bill ${data?.po.zoho_bill_number ?? ''}). Use the row buttons to sync one at a time.`}
+                themed zIndex={2999999}
+              >
+                <button className="pop-btn-syncpay" onClick={syncAllPayments} disabled={syncingAll || !entityId}>
+                  <IcoSync spin={syncingAll} />
+                  <span>{syncingAll ? 'Syncing…' : 'Sync All Payments'}</span>
+                </button>
+              </Tooltip>
+            )}
+            <button className="pop-btn-submit" onClick={onClose}>Submit</button>
+          </div>
         </div>
       </div>
 
@@ -674,6 +785,7 @@ const IcoWallet = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="no
 const IcoPct = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>;
 const IcoMinus = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>;
 const IcoUpload = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>;
+const IcoSync = ({ spin }: { spin?: boolean }) => <svg className={spin ? 'pop-spin' : ''} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>;
 
 /* ── Shimmer skeletons (shown while data loads) ── */
 const Sk = (props: React.CSSProperties & { hero?: boolean }) => {
@@ -873,6 +985,16 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 .pop-btn-ghost:hover{background:#f1f5f9;}
 .pop-btn-submit{background:linear-gradient(135deg,#0e7490 0%,#0891b2 55%,#22d3ee 100%);color:#fff;border:none;border-radius:10px;padding:9px 26px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 12px rgba(8,145,178,.32);}
 .pop-btn-submit:hover{filter:brightness(1.06);}
+.pop-foot-r{display:flex;align-items:center;gap:10px;}
+.pop-btn-syncpay{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1.5px solid #0891b2;color:#0e7490;border-radius:10px;padding:8px 18px;font-size:13px;font-weight:800;cursor:pointer;transition:background .15s,box-shadow .15s;}
+.pop-btn-syncpay:hover:not(:disabled){background:#ecfeff;box-shadow:0 3px 10px rgba(8,145,178,.18);}
+.pop-btn-syncpay:disabled{opacity:.6;cursor:not-allowed;}
+.pop-btn-rowsync{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1.4px solid #0891b2;color:#0e7490;border-radius:8px;padding:4px 11px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .15s,box-shadow .15s;}
+.pop-btn-rowsync:hover:not(:disabled){background:#ecfeff;box-shadow:0 2px 7px rgba(8,145,178,.16);}
+.pop-btn-rowsync:disabled{opacity:.55;cursor:not-allowed;}
+.pop-btn-rowsync svg{flex-shrink:0;}
+.pop-spin{animation:pop-spin .9s linear infinite;transform-origin:center;}
+@keyframes pop-spin{to{transform:rotate(360deg);}}
 .pop-badge{font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:20px;}
 .pop-badge.is-ok{background:#dcfce7;color:#16a34a;} .pop-badge.is-pend{background:#fef3c7;color:#b45309;}
 .pop-link{color:#0e7490;font-weight:600;text-decoration:none;} .pop-link:hover{text-decoration:underline;}
@@ -881,7 +1003,7 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 .pop-attach svg{flex-shrink:0;}
 .pop-attach-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .pop-del{width:24px;height:24px;border-radius:6px;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;cursor:pointer;font-size:11px;}
-.pop-foot{display:flex;align-items:center;justify-content:center;gap:12px;padding:14px 22px;background:#fff;border-top:1px solid #e2e8f0;flex-shrink:0;}
+.pop-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 22px;background:#fff;border-top:1px solid #e2e8f0;flex-shrink:0;}
 
 /* ── Update Payment popup ── */
 .upm-backdrop{position:fixed;inset:0;z-index:2900010;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:24px 16px;font-family:var(--font-sans,'Inter',sans-serif);}
@@ -962,6 +1084,8 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
   .pop-gstbtn span,.pop-btn-add{font-size:11px;}
   .pop-foot{flex-wrap:wrap;gap:9px;padding:12px 14px;}
   .pop-btn-ghost,.pop-btn-submit{flex:1 1 auto;text-align:center;}
+  .pop-foot-r{flex:1 1 100%;justify-content:flex-end;}
+  .pop-btn-syncpay{justify-content:center;}
   /* Update-payment popup */
   .upm-backdrop{padding:12px 8px;align-items:flex-start;}
   .upm-head{padding:12px 14px;}
@@ -1067,6 +1191,8 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 [data-bs-theme="dark"] .pop-empty{color:#64748b;}
 [data-bs-theme="dark"] .pop-btn-ghost{background:#1e293b;border-color:rgba(148,163,184,.25);color:#cbd5e1;}
 [data-bs-theme="dark"] .pop-btn-ghost:hover{background:#334155;}
+[data-bs-theme="dark"] .pop-btn-rowsync,[data-bs-theme="dark"] .pop-btn-syncpay{background:#0f172a;border-color:#0e7490;color:#67e8f9;}
+[data-bs-theme="dark"] .pop-btn-rowsync:hover:not(:disabled),[data-bs-theme="dark"] .pop-btn-syncpay:hover:not(:disabled){background:#164e63;}
 [data-bs-theme="dark"] .pop-attach{background:rgba(6,182,212,.1);border-color:rgba(6,182,212,.3);color:#67e8f9;}
 [data-bs-theme="dark"] .pop-attach:hover{background:rgba(6,182,212,.18);border-color:rgba(6,182,212,.45);}
 [data-bs-theme="dark"] .pop-badge.is-ok{background:rgba(22,163,74,.22);color:#4ade80;}

@@ -267,32 +267,22 @@ class SupplierPurchaseInvoiceController extends Controller
         $spi->refresh();
 
         // Idempotent on the BILL — never push a second bill for the same invoice.
-        // But re-sync still TOPS UP any payments that didn't fully post last time
-        // (a mid-push failure or a partial multi-SPI split), so the bill can be
-        // brought fully paid without a duplicate.
+        // Bill sync is BILL-ONLY: it no longer touches payments. Payments are
+        // posted by the separate "Sync Payment" action (syncPayment) so the bill
+        // and its payments sync independently.
         if (!empty($spi->zoho_bill_id)) {
-            $msg = 'This invoice is already synced to Zoho Books (bill ' . ($spi->zoho_bill_number ?: $spi->zoho_bill_id) . ').';
-            try {
-                $vendor = Vendor::with('primaryAddress')->find($spi->vendor_id);
-                if ($vendor) {
-                    $gstin = ($vendor->gst_number ?: null)
-                        ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
-                    $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, optional($vendor->primaryAddress)->state_code);
-                    $bill = $books->getBill((string) $spi->zoho_bill_id);
-                    $r = $this->pushPaymentsToZoho($spi, $books, $zohoVendorId, (string) $spi->zoho_bill_id, (float) ($bill['balance'] ?? 0));
-                    if ($r['pushed'] > 0)        $msg = 'Posted ₹' . number_format($r['applied'], 2) . ' of previously-unsynced payment(s) to bill ' . ($spi->zoho_bill_number ?: $spi->zoho_bill_id) . '.';
-                    elseif ($r['noAccount'])     $msg .= ' Payments still not posted — add a Bank/Cash account in Zoho, then re-sync.';
-                }
-            } catch (\Throwable $e) {
-                Log::warning('Zoho bill payment top-up failed', ['spi' => $spi->id, 'err' => $e->getMessage()]);
-            }
-            return response()->json(['status' => true, 'message' => $msg, 'data' => $this->shapeListRow($spi->fresh())]);
+            return response()->json([
+                'status'  => true,
+                'message' => 'This invoice is already synced to Zoho Books (bill ' . ($spi->zoho_bill_number ?: $spi->zoho_bill_id) . '). Use “Sync Payment” to post its payments.',
+                'data'    => $this->shapeListRow($spi->fresh()),
+            ]);
         }
         // With-PO invoices are billed through the PO: the PO sync creates ONE bill
-        // and posts all of the PO's payments. Syncing from the invoice therefore
-        // delegates to the PO sync (idempotent — one bill per PO, payments topped up
-        // via the zoho_applied_amount ledger), then stamps every With-PO invoice on
-        // that PO so their rows reflect the shared bill.
+        // (bill-only now — no payments). Syncing from the invoice therefore
+        // delegates to the PO sync (idempotent — one bill per PO), then stamps
+        // every With-PO invoice on that PO so their rows reflect the shared bill.
+        // Payments for these invoices are posted via syncPayment(), which
+        // delegates to the PO's payment sync.
         if ($spi->purchase_order_id) {
             $po = PurchaseOrder::find($spi->purchase_order_id);
             if (!$po) {
@@ -320,7 +310,7 @@ class SupplierPurchaseInvoiceController extends Controller
             }
             return response()->json([
                 'status'  => true,
-                'message' => $poData['message'] ?? ('Synced through purchase order ' . $po->code . ' — bill and payments posted to Zoho Books.'),
+                'message' => $poData['message'] ?? ('Synced through purchase order ' . $po->code . ' — bill posted to Zoho Books. Use “Sync Payment” to post its payments.'),
                 'data'    => $this->shapeListRow($spi->fresh()),
             ]);
         }
@@ -330,33 +320,26 @@ class SupplierPurchaseInvoiceController extends Controller
         if ($spi->items->isEmpty()) {
             return response()->json(['status' => false, 'message' => 'Add at least one product line before syncing to Zoho Books.'], 422);
         }
-        // The payable amount must be fully utilised (balance cleared) before this
-        // invoice can be synced to Zohobook — the linked PO for a With-PO SPI, or
-        // the invoice itself for a Direct SPI.
-        if (!$this->spiSyncUtilized($spi)) {
-            $where = $spi->purchase_order_id ? 'the linked purchase order' : 'this invoice';
+        // TDS must be decided BEFORE the bill is created: a Direct SPI's bill folds
+        // the TDS in as a deduction (buildZohoBillPayload), so a bill synced before
+        // TDS is cut would omit it and never reflect the TDS in Zoho. Requiring the
+        // cut here guarantees the bill always carries the correct net payable.
+        // (Deducting 0% is valid when no TDS applies. With-PO invoices are handled
+        // above by delegating to the PO sync, which enforces the PO's TDS cut.)
+        if (!$spi->tds_cut) {
             return response()->json([
                 'status'  => false,
-                'message' => "Utilise the full amount first — record payments against {$where} until its balance is cleared before syncing to Zohobook.",
-                'errors'  => ['amount' => ['The payable amount must be fully utilised before syncing.']],
+                'message' => 'Deduct the TDS before syncing to Zoho Books — the bill amount depends on it. Open this invoice’s Payment Summary and deduct the TDS (use 0% if none applies), then sync.',
+                'errors'  => ['tds' => ['TDS must be deducted before syncing.']],
             ], 422);
         }
-
-        // Pre-flight (the "bridge"): a vendor payment can only post through a Zoho
-        // Bank/Cash account. If this Direct SPI has cleared payments to post but the
-        // org has none, ABORT now — before creating the bill — so the sync is
-        // all-or-nothing and never leaves an unpaid bill that needs a manual re-sync.
-        if (\App\Models\SpiPayment::where('supplier_purchase_invoice_id', $spi->id)->where('status', 'Cleared')->exists()
-            && !$books->resolvePaidThroughAccountId(null)) {
-            return response()->json([
-                'status'  => false,
-                'message' => 'Add a Bank / Cash account in Zoho Books before syncing — this invoice’s payments cannot be posted without one.',
-                'errors'  => ['account' => ['No Bank/Cash account exists in the Zoho organization.']],
-            ], 422);
-        }
+        // NOTE: the bill sync no longer requires the invoice to be fully utilised,
+        // and no longer posts payments — it creates the bill only. Payments are
+        // posted separately via syncPayment() (which validates the bill exists
+        // first). This lets the bill sync even with an outstanding balance.
 
         // Track what THIS run creates in Zoho so a mid-flow failure can be fully
-        // reversed (all-or-nothing): the bill and each vendor payment.
+        // reversed (all-or-nothing): the bill (payments are posted separately now).
         $createdBillId   = null;
         $createdPayments = [];
         try {
@@ -383,16 +366,6 @@ class SupplierPurchaseInvoiceController extends Controller
             $bill   = $books->createBill($this->buildZohoBillPayload($spi, $books, $zohoVendorId, (bool) $gstin, $interState));
             $billId = (string) $bill['bill_id'];
             $createdBillId = $billId; // created THIS run → reversible on failure
-
-            // Post each recorded payment against this invoice to Zoho as a vendor
-            // payment applied to the new bill (best-effort — a payment hiccup must
-            // not undo an otherwise-successful bill push; any un-posted portion is
-            // topped up on the next re-sync via the zoho_applied_amount ledger).
-            // All-or-nothing: a payment that Zoho rejects throws through to the
-            // catch below, which reverses the bill + any payments already posted.
-            // ($createdPayments is filled by reference, so the reverse still sees
-            // payments made before the throw.)
-            $pay = $this->pushPaymentsToZoho($spi, $books, $zohoVendorId, $billId, (float) ($bill['balance'] ?? $bill['total'] ?? 0), $createdPayments);
 
             // Cache Zoho's own rendered bill PDF — best-effort.
             $pdfPath = null;
@@ -422,17 +395,23 @@ class SupplierPurchaseInvoiceController extends Controller
             $note = $tds > 0.005
                 ? ' ₹' . number_format($tds, 2) . ' TDS remains as an open balance in Zoho — record the TDS there.'
                 : '';
-            // Truthfully surface payments that could NOT be posted, so "Synced"
-            // never implies a fully-paid bill when it isn't.
-            if ($pay['noAccount']) {
-                $note .= ' NOTE: payments were NOT posted — add a Bank/Cash account in Zoho, then re-sync to post them.';
-            } elseif (($pay['pending'] ?? 0) > 0) {
-                $note .= ' Some payments could not be posted yet — re-sync to retry.';
+
+            // BEST-EFFORT: also post any already-recorded Cleared payments to the new
+            // bill now, so they appear against the bill and show "Synced" (the old
+            // combined behaviour). Runs AFTER the bill is committed; a hiccup must NOT
+            // roll the bill back — later/failed payments go via the per-row / "Sync
+            // All Payments" buttons. So it swallows its own errors.
+            $pay = ['pushed' => 0, 'applied' => 0.0];
+            try {
+                $pay = $this->pushPaymentsToZoho($spi, $books, $zohoVendorId, $billId, (float) ($bill['balance'] ?? $bill['total'] ?? 0));
+            } catch (\Throwable $e) {
+                Log::warning('Zoho SPI payment posting during bill sync failed (bill kept; retry via Sync buttons)', ['spi' => $spi->id, 'err' => $e->getMessage()]);
             }
+            $paidNote = ($pay['pushed'] ?? 0) > 0 ? (' Posted ₹' . number_format($pay['applied'], 2) . ' payment(s).') : '';
 
             return response()->json([
                 'status'  => true,
-                'message' => 'Synced to Zoho Books as bill ' . ($bill['bill_number'] ?? $billId) . '.' . $note,
+                'message' => 'Synced to Zoho Books as bill ' . ($bill['bill_number'] ?? $billId) . '.' . $note . $paidNote,
                 'data'    => $this->shapeListRow($spi->fresh()),
             ]);
         } catch (\Throwable $e) {
@@ -444,6 +423,122 @@ class SupplierPurchaseInvoiceController extends Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
         }
 
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Post this invoice's recorded payments to Zoho Books as vendor payments
+     * applied to its bill — a SEPARATE step from the bill sync. VALIDATION: the
+     * bill must already be synced (a payment can't post to a bill Zoho doesn't
+     * have yet). Idempotent via the zoho_applied_amount ledger, so re-running
+     * only posts the un-posted portion. A With-PO invoice's payments live on the
+     * PO, so this delegates to the PO's payment sync.
+     */
+    public function syncPayment(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $spi = SupplierPurchaseInvoice::findOrFail($id);
+        $this->assertScope($spi, $user, 'write');
+
+        $books = app(ZohoBooksService::class);
+        if (!$books->isConfigured()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Zoho Books is not connected yet. Add the Zoho Books credentials to the server .env, then try again.',
+            ], 503);
+        }
+
+        // With-PO invoices are paid through the PO (bill + payments live on the
+        // PO) — delegate to the PO's payment sync and surface its result verbatim.
+        if ($spi->purchase_order_id) {
+            $po = PurchaseOrder::find($spi->purchase_order_id);
+            if (!$po) {
+                return response()->json(['status' => false, 'message' => 'The linked purchase order no longer exists.'], 422);
+            }
+            $resp = app(PurchaseOrderController::class)->syncPayment($request, $po->id);
+            $data = $resp->getData(true);
+            $data['data'] = $this->shapeListRow($spi->fresh());
+            return response()->json($data, $resp->getStatusCode());
+        }
+
+        // VALIDATION: bill must be synced first — you cannot sync a payment through
+        // the invoice until its bill exists in Zoho Books.
+        if (empty($spi->zoho_bill_id)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Sync this invoice to Zoho Books first — its bill must exist before you can post payments against it.',
+                'errors'  => ['bill' => ['The invoice bill is not synced to Zoho Books yet.']],
+            ], 422);
+        }
+        if (!$spi->vendor_id) {
+            return response()->json(['status' => false, 'message' => 'Attach a supplier to this invoice before syncing payments.'], 422);
+        }
+
+        // Optional: sync ONE payment entry (entry-wise from the Payment History
+        // table). When given, validate it belongs to this invoice and is Cleared.
+        $onlyPaymentId = $request->integer('payment_id') ?: null;
+        if ($onlyPaymentId) {
+            $row = \App\Models\SpiPayment::where('supplier_purchase_invoice_id', $spi->id)->where('id', $onlyPaymentId)->first();
+            if (!$row) {
+                return response()->json(['status' => false, 'message' => 'That payment entry does not belong to this invoice.'], 422);
+            }
+            if ($row->status !== 'Cleared') {
+                return response()->json(['status' => false, 'message' => 'Only a Cleared payment can be synced to Zoho Books — this entry is still pending.'], 422);
+            }
+        }
+
+        // A vendor payment can only post through a Zoho Bank/Cash account.
+        if (\App\Models\SpiPayment::where('supplier_purchase_invoice_id', $spi->id)->where('status', 'Cleared')->exists()
+            && !$books->resolvePaidThroughAccountId(null)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Add a Bank / Cash account in Zoho Books before syncing payments — they cannot be posted without one.',
+                'errors'  => ['account' => ['No Bank/Cash account exists in the Zoho organization.']],
+            ], 422);
+        }
+
+        // Serialize concurrent payment syncs of the SAME invoice so a double-submit
+        // can't double-post a payment (the ledger also guards, this is belt-and-braces).
+        $lock = \Illuminate\Support\Facades\Cache::lock('zoho:syncpay:spi:' . $spi->id, 120);
+        if (!$lock->get()) {
+            return response()->json(['status' => false, 'message' => 'A payment sync for this invoice is already in progress — try again in a moment.'], 409);
+        }
+        try {
+            $vendor = Vendor::with('primaryAddress')->findOrFail($spi->vendor_id);
+            $gstin  = ($vendor->gst_number ?: null)
+                ?: (DB::table('vendor_gst_scrutiny')->where('vendor_id', $vendor->id)->latest('id')->value('gst_number') ?: null);
+            $zohoVendorId = $books->findOrCreateVendorId($vendor, $gstin, optional($vendor->primaryAddress)->state_code);
+            $bill = $books->getBill((string) $spi->zoho_bill_id);
+            $created = [];
+            $pay  = $this->pushPaymentsToZoho($spi, $books, $zohoVendorId, (string) $spi->zoho_bill_id, (float) ($bill['balance'] ?? 0), $created, $onlyPaymentId);
+
+            if ($pay['noAccount']) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Payments were NOT posted — add a Bank/Cash account in Zoho Books, then try again.',
+                    'errors'  => ['account' => ['No Bank/Cash account exists in the Zoho organization.']],
+                ], 422);
+            }
+            if (($pay['pushed'] ?? 0) <= 0) {
+                return response()->json([
+                    'status'  => true,
+                    'message' => ($pay['pending'] ?? 0) > 0
+                        ? 'Nothing posted — the bill balance is already cleared or the payment is still pending.'
+                        : ($onlyPaymentId ? 'This payment entry is already posted to Zoho Books.' : 'All recorded payments are already posted to Zoho Books.'),
+                    'data'    => $this->shapeListRow($spi->fresh()),
+                ]);
+            }
+            return response()->json([
+                'status'  => true,
+                'message' => 'Posted ₹' . number_format($pay['applied'], 2) . ($onlyPaymentId ? ' for this entry' : ' payment(s)') . ' to bill ' . ($spi->zoho_bill_number ?: $spi->zoho_bill_id) . '.',
+                'data'    => $this->shapeListRow($spi->fresh()),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Zoho SPI payment sync failed', ['spi' => $spi->id, 'err' => $e->getMessage()]);
+            return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
         } finally {
             $lock->release();
         }
@@ -575,19 +670,21 @@ class SupplierPurchaseInvoiceController extends Controller
      * applying more than a bill owes). The bank name is mapped to the matching
      * Zoho Bank ledger. Returns ['applied','pushed','pending','noAccount'].
      */
-    private function pushPaymentsToZoho(SupplierPurchaseInvoice $spi, ZohoBooksService $books, string $zohoVendorId, string $billId, float $billBalance, array &$created = []): array
+    private function pushPaymentsToZoho(SupplierPurchaseInvoice $spi, ZohoBooksService $books, string $zohoVendorId, string $billId, float $billBalance, array &$created = [], ?int $onlyPaymentId = null): array
     {
         // $created accumulates the Zoho vendor payments made THIS run so a later
         // failure can reverse them — BY REFERENCE, so the caller still has the
         // list even if this method throws midway.
+        // $onlyPaymentId restricts posting to a SINGLE payment row (entry-wise
+        // sync from the Payment History table); null posts all un-posted rows.
         $result = ['applied' => 0.0, 'pushed' => 0, 'pending' => 0, 'noAccount' => false];
 
         // Rows that still have an un-posted portion (posted < recorded amount).
         // Only CLEARED payments are pushed — an uncleared cheque must not become a
         // real Zoho vendor payment.
         $payments = $spi->purchase_order_id
-            ? \App\Models\PoPayment::where('purchase_order_id', $spi->purchase_order_id)->where('status', 'Cleared')->whereColumn('zoho_applied_amount', '<', 'amount')->orderBy('id')->get()
-            : \App\Models\SpiPayment::where('supplier_purchase_invoice_id', $spi->id)->where('status', 'Cleared')->whereColumn('zoho_applied_amount', '<', 'amount')->orderBy('id')->get();
+            ? \App\Models\PoPayment::where('purchase_order_id', $spi->purchase_order_id)->where('status', 'Cleared')->whereColumn('zoho_applied_amount', '<', 'amount')->when($onlyPaymentId, fn ($q) => $q->where('id', $onlyPaymentId))->orderBy('id')->get()
+            : \App\Models\SpiPayment::where('supplier_purchase_invoice_id', $spi->id)->where('status', 'Cleared')->whereColumn('zoho_applied_amount', '<', 'amount')->when($onlyPaymentId, fn ($q) => $q->where('id', $onlyPaymentId))->orderBy('id')->get();
 
         if ($payments->isEmpty()) return $result;
 

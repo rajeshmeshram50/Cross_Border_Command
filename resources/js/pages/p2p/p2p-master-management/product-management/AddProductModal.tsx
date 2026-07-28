@@ -1239,6 +1239,9 @@ export default function AddProductModal(props: {
     // Editing an existing product, or the Purchase dept (no Sales step),
     // commits straight away as before.
     if (!productId && !isPurchaseDept) {
+      // GST is mandatory before the product reaches Stage 2 — surface the spec
+      // message when it hasn't been picked yet, then open the master-driven picker.
+      if (!gstId) toast.info('GST is mandatory', 'Please select a GST rate from the GST Master before proceeding to Stage 2.');
       setGstMapValue(gstId);
       setGstMasterOpen(false);
       setGstMapOpen(true);
@@ -1364,10 +1367,16 @@ export default function AddProductModal(props: {
     }
     const errs: Record<string, string> = {};
     if (!basePrice || basePriceNum <= 0) errs.basePrice  = 'Selling Price is required (must be greater than 0)';
-    if (!gstId)                          errs.gstId      = 'GST % is required';
+    // GST is mandatory and master-driven — block the save until a rate is picked.
+    if (!gstId)                          errs.gstId      = 'GST is mandatory. Please select a valid GST rate from the GST Master.';
     if (Object.keys(errs).length) {
       setFieldErrors(errs);
-      toast.error('Missing required fields', 'Please fix the highlighted fields');
+      // A GST-only miss gets the spec's precise message; otherwise the generic one.
+      if (errs.gstId && !errs.basePrice) {
+        toast.error('GST is mandatory', 'Product cannot be saved because the GST field is mandatory. Please select a GST rate from the GST Master.');
+      } else {
+        toast.error('Missing required fields', 'Please fix the highlighted fields');
+      }
       return;
     }
     setFieldErrors({});
@@ -1796,10 +1805,11 @@ export default function AddProductModal(props: {
                       placeholder="Enter printable description"
                       value={description}
                       onChange={e => handleDescriptionChange(e.target.value)}
+                      maxLength={10000}
                       rows={3}
                     />
-                    <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 11, color: 'var(--vz-secondary-color)', pointerEvents: 'none' }}>
-                      {description.length} characters
+                    <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 11, color: description.length >= 10000 ? '#dc2626' : 'var(--vz-secondary-color)', pointerEvents: 'none' }}>
+                      {description.length} / 10000 characters
                     </div>
                   </Field>
 
