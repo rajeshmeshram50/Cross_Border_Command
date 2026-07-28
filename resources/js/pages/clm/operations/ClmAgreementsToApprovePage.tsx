@@ -707,10 +707,15 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
 
-  const reachedEnd = numPages > 0 && maxSeen >= numPages;
+  // "reachedEnd" = scrolled through every page. For a MULTI-page agreement that
+  // is a valid self-attest (they've seen it all). A SINGLE-page doc is trivially
+  // "reachedEnd" the instant it loads, so it must NOT auto-unlock — the reviewer
+  // still has to tick the consent box before acting.
+  const reachedEnd = numPages > 1 && maxSeen >= numPages;
   // A long agreement (100s of pages) shouldn't force clicking through every page
   // to unlock actions — the reviewer can self-attest with a checkbox instead.
-  // Actions unlock on EITHER reaching the last page OR ticking "I have read".
+  // Actions unlock on EITHER reaching the last page (multi-page) OR ticking
+  // "I have read" (always required for a single-page doc).
   const [confirmedRead, setConfirmedRead] = useState(false);
   const unlocked = reachedEnd || confirmedRead;
 
@@ -767,6 +772,10 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
         setNumPages(pdf.numPages);
         setActivePage(1);
         setMaxSeen(1);
+        // Each document needs its OWN read-confirmation — reset the consent so a
+        // tick carried over from a previously-reviewed doc can't auto-unlock this
+        // one (which made a single-page doc show "Fully reviewed" with no pill).
+        setConfirmedRead(false);
         setLoading(false);
       } catch { if (!cancelled) { setError(true); setLoading(false); } }
     })();
