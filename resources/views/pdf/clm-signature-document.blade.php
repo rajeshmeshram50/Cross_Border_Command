@@ -168,8 +168,13 @@
          dompdf actually honours — overflow-wrap/word-break are kept for parity
          with the on-screen editor. */
       .document-content table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      /* NO forced cell border here: a bordered table carries its border inline
+         (the Insert-Table modal writes border:1px on each cell, now preserved by
+         TipTap), while clause / layout tables stay clean. Forcing a border here
+         boxed up every clause table in the PDF even though the editor showed it
+         borderless (CBC — clause content broken in PDF). */
       .document-content table td,
-      .document-content table th { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; }
+      .document-content table th { padding: 6px 8px; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; }
       .document-content img { max-width: 100%; }
       .document-content ul, .document-content ol { margin: 0 0 8px 24px; }
       /* Clause Library bodies routinely arrive wrapped in a <pre> (monospace

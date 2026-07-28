@@ -60,6 +60,25 @@ const ParagraphIndent = Extension.create({
   },
 });
 
+/* Preserve the inline `style` attribute on table nodes. TipTap's default table
+ * extensions drop arbitrary `style`, which stripped the border/background the
+ * Insert-Table modal writes inline — so inserted tables lost their borders and
+ * the PDF had to force a border on EVERY cell, which then boxed up clause /
+ * layout tables that were never meant to have borders. Keeping the inline style
+ * lets a bordered table stay bordered and a borderless one stay clean, in both
+ * the editor and the generated PDF. */
+const keepStyleAttr = {
+  style: {
+    default: null,
+    parseHTML: (el: HTMLElement) => el.getAttribute('style'),
+    renderHTML: (attrs: { style?: string | null }) => (attrs.style ? { style: attrs.style } : {}),
+  },
+};
+const StyledTable = Table.extend({ addAttributes() { return { ...this.parent?.(), ...keepStyleAttr }; } });
+const StyledTableRow = TableRow.extend({ addAttributes() { return { ...this.parent?.(), ...keepStyleAttr }; } });
+const StyledTableCell = TableCell.extend({ addAttributes() { return { ...this.parent?.(), ...keepStyleAttr }; } });
+const StyledTableHeader = TableHeader.extend({ addAttributes() { return { ...this.parent?.(), ...keepStyleAttr }; } });
+
 export interface CtcEditor {
   editor: Editor | null;
   /** Insert an HTML fragment at the caret (Clause Library, HTML placeholders). */
@@ -106,10 +125,10 @@ export function useCtcEditor(opts: { value: string; onChange: (html: string) => 
       // Tables — required by the Agreement / Trade Doc editors (Insert Table +
       // tables carried in from an uploaded DOCX). Harmless for CTC (no table
       // button in its toolbar). resizable off keeps the serialized HTML clean.
-      Table.configure({ resizable: false }),
-      TableRow,
-      TableHeader,
-      TableCell,
+      StyledTable.configure({ resizable: false }),
+      StyledTableRow,
+      StyledTableHeader,
+      StyledTableCell,
       ParagraphIndent,
     ],
     content: value || '<p></p>',
