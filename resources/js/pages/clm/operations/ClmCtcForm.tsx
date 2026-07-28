@@ -364,7 +364,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
           <div style={{ background: t.dark ? '#1c1438' : 'linear-gradient(110deg,#F5F3FF 0%,#EDE9FE 25%,#DDD6FE 55%,#C4B5FD 80%,#A78BFA 100%)', position: 'relative', overflow: 'hidden' }}>
             <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, background: 'linear-gradient(180deg,#A78BFA,#7C3AED,#5B21B6)' }} />
             <span style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '50%', background: 'linear-gradient(180deg,rgba(255,255,255,.5),transparent)', pointerEvents: 'none' }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', minHeight: 60, position: 'relative', zIndex: 1 }}>
+            <div className="ctc-header-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', minHeight: 60, position: 'relative', zIndex: 1, gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 40, height: 40, borderRadius: 11, background: 'linear-gradient(135deg,#8B5CF6,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 0 3px rgba(124,58,237,.2),0 4px 12px rgba(91,33,182,.4)', flexShrink: 0 }}>
                   <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="12" y2="17" /></svg>
@@ -374,7 +374,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
                   <div style={{ fontSize: 11, fontWeight: 500, color: t.dark ? '#a78bfa' : '#5B21B6', marginTop: 2, opacity: .9 }}>{editing && editLock ? 'View this operational agreement and its lifecycle' : 'Create one-time operational agreement with a counterparty'}</div>
                 </div>
               </div>
-              <button onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', border: 'none', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', background: 'linear-gradient(135deg,#8B5CF6,#6D28D9,#5B21B6)', boxShadow: '0 3px 12px rgba(91,33,182,.38)' }}>
+              <button onClick={onClose} className="ctc-header-back" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 18px', border: 'none', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#fff', cursor: 'pointer', background: 'linear-gradient(135deg,#8B5CF6,#6D28D9,#5B21B6)', boxShadow: '0 3px 12px rgba(91,33,182,.38)', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
                 Back to CTC Agreement List
               </button>
@@ -2622,8 +2622,16 @@ const CTC_FORM_CSS = `
   .ctc-workspace > * { flex: 1 1 auto !important; width: 100% !important; }
   .ctc-workspace > *:nth-child(2) { min-height: 520px; }
   .ctc-workspace > *:nth-child(1), .ctc-workspace > *:nth-child(3) { min-height: 280px; }
-  .ctc-stepper { overflow-x: auto; padding-bottom: 4px; }
-  .ctc-stepper > * { min-width: 150px; }
+  /* Header: stack the title block and the "Back to CTC Agreement List" button so
+     the button gets its own full-width row instead of squeezing the title. */
+  .ctc-header-row { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; padding: 12px 14px !important; min-height: 0 !important; }
+  .ctc-header-back { width: 100%; }
+  .ctc-stepper { overflow-x: auto; padding-bottom: 6px; }
+  /* !important + flex:none beat the inline "flex:1; min-width:0" on each stage
+     card — otherwise they stay squeezed to ~1/4 width and the labels wrap into
+     an unreadable column. Given a real width they line up and the row scrolls
+     sideways instead. */
+  .ctc-stepper > * { min-width: 168px !important; flex: 0 0 auto !important; }
 }
 /* Keep cards/rows in a flex-column scroll list at their natural height — without
    this, children with overflow:hidden get min-height:0 and compress to fit
