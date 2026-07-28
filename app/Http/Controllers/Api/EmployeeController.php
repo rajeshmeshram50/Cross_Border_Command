@@ -276,12 +276,22 @@ class EmployeeController extends Controller
         // findOrFail in resolveRow with "No query results for Employee N"
         // (e.g. password reset on a newly-onboarded employee). Scope the lookup
         // to the caller's own tenant; super-admins resolve across tenants.
+        // Codes now also repeat ACROSS THE BRANCHES of one client (each branch
+        // restarts at EMP-001 — see the emp_code_unique_per_branch migration),
+        // so a caller who belongs to a branch must resolve within that branch or
+        // they'd land on their sibling branch's EMP-001. Callers who legitimately
+        // span branches (client_admin / super_admin) keep the wider lookup.
         $user = request()->user();
         $q = Employee::withTrashed()->where('emp_code', $raw);
         if ($user && $user->user_type !== 'super_admin') {
             $q->where(function ($w) use ($user) {
                 $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
             });
+            if ($user->branch_id) {
+                $q->where(function ($w) use ($user) {
+                    $w->whereNull('branch_id')->orWhere('branch_id', $user->branch_id);
+                });
+            }
         }
         $byEmpCode = $q->value('id');
         return (int) ($byEmpCode ?? 0);
@@ -844,12 +854,30 @@ class EmployeeController extends Controller
                 ], 201);
             });
         } catch (QueryException $e) {
-            // Postgres unique violation (23505) on users.email — surface as a
-            // friendly field error instead of a 500.
+            // Postgres unique violation (23505). Read the CONSTRAINT NAME before
+            // blaming a field: this used to map every 23505 raised anywhere in
+            // the transaction onto the email message, so an emp_code clash
+            // ("EMP-001 already used in another branch of this client") was
+            // reported to QA as "this email already has an account" while the
+            // address was brand new. Only claim the email is taken when the
+            // email index is the one that actually fired.
             if ($e->getCode() === '23505') {
-                throw ValidationException::withMessages([
-                    'email' => ['This email already has an account in this organization. Each email can be used only once per organization — use a different email.'],
-                ]);
+                $constraint = $e->getMessage();
+                if (str_contains($constraint, 'users_email')) {
+                    throw ValidationException::withMessages([
+                        'email' => ['This email already has an account in this organization. Each email can be used only once per organization — use a different email.'],
+                    ]);
+                }
+                if (str_contains($constraint, 'emp_code')) {
+                    throw ValidationException::withMessages([
+                        'employee_code' => ['Could not allocate an employee code — that code is already in use. Please retry.'],
+                    ]);
+                }
+                if (str_contains($constraint, 'pan_number')) {
+                    throw ValidationException::withMessages([
+                        'pan_number' => ['This PAN is already registered to another employee.'],
+                    ]);
+                }
             }
             throw $e;
         }
@@ -1541,27 +1569,45 @@ class EmployeeController extends Controller
       if ($request->filled('pan_number')) {
             $request->merge(['pan_number' => mb_strtoupper(trim($request->input('pan_number')))]);
         }
+        // Tenant the dup checks below run against. This MUST be the client the
+        // row is actually written under (resolveOwnership), not the acting
+        // user's own client_id: a super_admin has client_id = NULL, and the old
+        // `$x ? where(...) : $q` / `when($x, ...)` form silently DROPPED the
+        // client predicate for them, turning a per-tenant check into a GLOBAL
+        // one. Effect: creating an employee whose email exists under a
+        // completely different client was rejected with "this email already has
+        // an account in this organization" even though the organization had no
+        // such user. On update we take the tenant off the existing row so an
+        // edit can never be re-scoped by who happens to be saving it.
+        $scopeClientId = $isUpdate
+            ? Employee::withTrashed()->where('id', $employeeId)->value('client_id')
+            : $this->resolveOwnership($request)[0];
+        $scopeClientId = $scopeClientId === null ? null : (int) $scopeClientId;
+
+        // Always apply a client predicate — NULL client_id rows form their own
+        // bucket, exactly like the COALESCE(client_id, 0) in the DB indexes.
+        $tenantWhere = fn($q) => $scopeClientId === null
+            ? $q->whereNull('client_id')
+            : $q->where('client_id', $scopeClientId);
+
     $panRule = ['nullable', 'string', 'regex:/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/'];
         if ($request->filled('pan_number')) {
-            $panClientId = optional($request->user())->client_id;
             $panRule[] = Rule::unique('employees', 'pan_number')
                 ->whereNull('deleted_at')
-                ->where(fn($q) => $panClientId ? $q->where('client_id', $panClientId) : $q)
+                ->where($tenantWhere)
                 ->ignore($employeeId);
         }
 
-        
+
         $emailRule = $isUpdate ? ['nullable', 'email', 'max:191'] : ['required', 'email', 'max:191'];
         // Email is unique PER TENANT (not globally) — the same email may belong
-        // to another client. Scope the dup check to the creator's client_id so a
+        // to another client. Scope the dup check to the owning client_id so a
         // collision in a DIFFERENT client no longer blocks creation here. Mirrors
         // the pan_number rule above and the users_email_client_unique DB index.
-        $emailClientId = optional($request->user())->client_id;
         $emailRule[] = Rule::unique('users', 'email')
             ->whereNull('deleted_at')
-            ->where(fn($q) => $q
-                ->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))])
-                ->when($emailClientId, fn($qq) => $qq->where('client_id', $emailClientId)))
+            ->where(fn($q) => $tenantWhere($q)
+                ->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))]))
             ->ignore($ignoreUserId);
 
         
