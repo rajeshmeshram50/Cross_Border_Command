@@ -62,6 +62,10 @@ export interface EmployeeProfileCtx {
   // ── Expense tab ──
   authUser: any;
   isOwnProfile: boolean;
+  /** False while the employee's own onboarding is still in flight — no leave,
+   *  expense-claim or advance submissions until HR completes it (CBC #84/#85).
+   *  The server enforces the same rule via App\Support\OnboardingGuard. */
+  canRaiseHrRequest: boolean;
   expenseModuleTab: 'expense' | 'advance';
   setExpenseModuleTab: (v: 'expense' | 'advance') => void;
   expenseSubTab: 'mine' | 'team';

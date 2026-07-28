@@ -7,7 +7,8 @@ use App\Models\AdvanceRequest;
 use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\Module;
-use App\Models\Permission; 
+use App\Models\Permission;
+use App\Support\OnboardingGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -109,6 +110,15 @@ class AdvanceRequestController extends Controller
             && $employee->user_id !== $user->id) {
             abort(403, 'You can only file advance requests for your own employee record.');
         }
+
+        // Onboarding gate (CBC #85) — no advances until HR has finished
+        // onboarding the employee. Same reachability gap as the expense claim
+        // above: /profile stays open mid-onboarding and carries the form.
+        OnboardingGuard::assertComplete(
+            $employee,
+            'raise an advance request',
+            (int) ($employee->user_id ?? 0) === (int) $user->id,
+        );
 
         // A future-joining employee is not yet on the roster — they cannot raise
         // an advance request before their joining date (CBC #32).

@@ -7,6 +7,7 @@ use App\Models\Employee;
 use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Notifications\LeaveRequestNotification;
+use App\Support\OnboardingGuard;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
@@ -129,9 +130,16 @@ class LeaveRequestController extends Controller
         // from another employee's profile (matches the hidden "Request Leave"
         // button in the UI).
         $isAdmin = in_array($user->user_type, ['super_admin', 'client_admin'], true);
-        if (!$isAdmin && (int) ($employee->user_id ?? 0) !== (int) $user->id) {
+        $isSelf  = (int) ($employee->user_id ?? 0) === (int) $user->id;
+        if (!$isAdmin && !$isSelf) {
             abort(403, 'You can only raise a leave request for yourself.');
         }
+
+        // Onboarding gate (CBC #84) — an employee still mid-onboarding has no
+        // leave plan assigned and no approval chain to snapshot, so the request
+        // would be unroutable. Keyed on the TARGET employee, so it also stops an
+        // admin filing on their behalf before HR has finished.
+        OnboardingGuard::assertComplete($employee, 'raise a leave request', $isSelf);
 
         // Date guards. "Today" is resolved in the display timezone (IST): the
         // app runs in UTC, so now()->toDateString() reports YESTERDAY for the

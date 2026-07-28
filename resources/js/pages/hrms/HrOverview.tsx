@@ -76,6 +76,8 @@ interface KpiProps {
 function KpiCard({ label, value, iconClass, gradient, hint }: KpiProps) {
   return (
     <div className="hr-ov-kpi-card">
+      {/* Corner tint + left accent rail — the dashboard KPI tile treatment. */}
+      <div className="hr-ov-kpi-glow" style={{ background: gradient }} />
       <div className="hr-ov-kpi-strip" style={{ background: gradient }} />
       <div className="hr-ov-kpi-head">
         <div style={{ flex: 1, minWidth: 0 }}>
