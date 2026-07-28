@@ -2055,7 +2055,16 @@ class SalesPdfController extends Controller
             ];
         });
 
-        $subTotal      = (float) $q->sub_total;
+        /* Sub Total printed on the PDF is the PRE-TAX total (qty x rate), so the
+         * totals stack reads Sub Total + IGST/CGST/SGST + Shipping = Grand Total.
+         *
+         * It is DERIVED here rather than read from `$q->sub_total`, because that
+         * stored column holds the tax-INCLUSIVE sum (see
+         * QuotationController::aggregateTotals). Printing that with the tax rows
+         * beneath it made the GST look counted twice (CBC #184). Deriving also
+         * means documents saved before this fix print correctly — no backfill of
+         * the stored column is needed, and grand_total is untouched either way. */
+        $subTotal      = round($quotationProducts->sum(fn ($it) => $it['quantity'] * $it['rate']), 2);
         $shippingCost  = (float) $q->shipping;
         $grandTotal    = (float) $q->grand_total;
         $packagingCost = 0.0;

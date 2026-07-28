@@ -988,8 +988,10 @@
                                 </tr>
                                 {{-- IGST / CGST / SGST always render (matches the reference
                                 Inorbvict totals stack — Sub Total → IGST → CGST → SGST →
-                                Grand Total). Values come from the quotation row; they're
-                                0.00 when the doc_type doesn't apply that tax bucket. --}}
+                                Shipping → Grand Total). Values come from the quotation row;
+                                they're 0.00 when the doc_type doesn't apply that tax bucket.
+                                Sub Total above is PRE-TAX, so these rows add up:
+                                Sub Total + tax + shipping = Grand Total. --}}
                                 <tr>
                                     <td style="padding:3px 0; color:#555;">IGST</td>
                                     <td style="text-align:right; padding:3px 0;">
@@ -1008,6 +1010,17 @@
                                         {{ number_format($quotation->sgst, 2) }}
                                     </td>
                                 </tr>
+                                {{-- Shipping only when it was actually charged — a 0.00 row on
+                                every domestic document is noise, but omitting a non-zero one
+                                would leave Sub Total + tax short of the Grand Total. --}}
+                                @if (($quotation->shipping_cost ?? 0) > 0)
+                                    <tr>
+                                        <td style="padding:3px 0; color:#555;">Shipping Cost</td>
+                                        <td style="text-align:right; padding:3px 0;">
+                                            {{ number_format($quotation->shipping_cost, 2) }}
+                                        </td>
+                                    </tr>
+                                @endif
                                 {{-- Grand Total highlighted — larger font, bolder, with a top
                                 border separator so the eye lands on it as the row that
                                 actually matters. --}}
@@ -1221,21 +1234,26 @@
                                         <strong>{{ number_format($quotation->total, 2) }}</strong>
                                     </th>
                                 </tr>
-                                @if ($quotation->document_type == "Domestic")
-                                    <tr>
-                                        <td>IGST</td>
-                                        <td style="text-align:right;">{{ number_format($quotation->igst, 2) }}</td>
-                                    </tr>
-                                    <tr>
-                                        <td>CGST</td>
-                                        <td style="text-align:right;">{{ number_format($quotation->cgst, 2) }}</td>
-                                    </tr>
-                                    <tr>
-                                        <td>SGST</td>
-                                        <td style="text-align:right;">{{ number_format($quotation->sgst, 2) }}</td>
-                                    </tr>
-                                @endif
-                                @if($quotation->document_type == "International")
+                                {{-- Same stack as the in-page footer above (this copy renders
+                                when the footer spills onto its own page), so it must break the
+                                total down the same way. The tax rows used to be Domestic-only
+                                and Shipping International-only, which left an export's tax and
+                                a domestic doc's shipping unaccounted for now that SUB TOTAL is
+                                pre-tax. Values are already 0.00 for whichever bucket doesn't
+                                apply, so rendering them unconditionally is safe. --}}
+                                <tr>
+                                    <td>IGST</td>
+                                    <td style="text-align:right;">{{ number_format($quotation->igst, 2) }}</td>
+                                </tr>
+                                <tr>
+                                    <td>CGST</td>
+                                    <td style="text-align:right;">{{ number_format($quotation->cgst, 2) }}</td>
+                                </tr>
+                                <tr>
+                                    <td>SGST</td>
+                                    <td style="text-align:right;">{{ number_format($quotation->sgst, 2) }}</td>
+                                </tr>
+                                @if (($quotation->shipping_cost ?? 0) > 0)
                                     <tr>
                                         <td>Shipping Cost</td>
                                         <td style="text-align:right;">{{ number_format($quotation->shipping_cost, 2) }}</td>

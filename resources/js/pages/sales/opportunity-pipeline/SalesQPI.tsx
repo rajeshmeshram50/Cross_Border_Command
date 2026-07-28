@@ -3126,8 +3126,15 @@ export function CreateQuotationModal(props: {
     toast.success('Product removed', removed?.name ? `${removed.name} removed from the list.` : 'Removed from the list.');
   };
 
-  const subTotal = products.reduce((s, p) => s + calcRow(p).amount, 0);
-  const grandTotal = subTotal + (Number(shipping) || 0);
+  /* Sub Total is the PRE-TAX total (qty x rate), tax is its own line, and the
+   * Grand Total adds them plus shipping. It used to sum calcRow().amount, which
+   * is tax-INCLUSIVE — so the summary read "Sub Total (incl. tax) + Total GST
+   * Amount = Grand Total (unchanged)" and the GST looked double-counted even
+   * though the Grand Total was right. calcRow().sub + .taxAmt === .amount, so
+   * the Grand Total is numerically identical to before (CBC #184). */
+  const subTotal = products.reduce((s, p) => s + calcRow(p).sub, 0);
+  const taxTotal = products.reduce((s, p) => s + calcRow(p).taxAmt, 0);
+  const grandTotal = subTotal + taxTotal + (Number(shipping) || 0);
 
   /* PORTALLED TO <body> — same as the Add Customer / Add Product wizards.
    * Rendered inline, the backdrop stayed trapped inside the Sales Matrix
@@ -3592,8 +3599,15 @@ export function CreatePIModal(props: {
     toast.success('Product removed', removed?.name ? `${removed.name} removed from the list.` : 'Removed from the list.');
   };
 
-  const subTotal = products.reduce((s, p) => s + calcRow(p).amount, 0);
-  const grandTotal = subTotal + (Number(shipping) || 0);
+  /* Sub Total is the PRE-TAX total (qty x rate), tax is its own line, and the
+   * Grand Total adds them plus shipping. It used to sum calcRow().amount, which
+   * is tax-INCLUSIVE — so the summary read "Sub Total (incl. tax) + Total GST
+   * Amount = Grand Total (unchanged)" and the GST looked double-counted even
+   * though the Grand Total was right. calcRow().sub + .taxAmt === .amount, so
+   * the Grand Total is numerically identical to before (CBC #184). */
+  const subTotal = products.reduce((s, p) => s + calcRow(p).sub, 0);
+  const taxTotal = products.reduce((s, p) => s + calcRow(p).taxAmt, 0);
+  const grandTotal = subTotal + taxTotal + (Number(shipping) || 0);
 
   /* Portalled to <body> for the same reason as the Quotation wizard above —
    * otherwise the app topbar renders over the backdrop. */
@@ -4782,7 +4796,8 @@ function ProductsStep(props: {
     [isIntl, products],
   );
   // Domestic summary breakdown. cgst + sgst (or igst alone) always equals the
-  // tax already inside Sub Total — this only re-labels it.
+  // document's total tax, which sits BETWEEN the pre-tax Sub Total and the
+  // Grand Total — the intra/inter split is presentation only.
   const taxTotals = useMemo(() => {
     let cgst = 0, sgst = 0, igst = 0;
     products.forEach(p => {
@@ -5063,9 +5078,21 @@ function ProductsStep(props: {
             <span>Sub Total</span>
             <span className="qpi-summary-val">{subTotal.toFixed(2)}</span>
           </div>
-          {/* Domestic tax breakdown. Purely informational — Sub Total already
-              includes this tax, so these lines are NOT added into Grand Total
-              (that would double-count). */}
+          {/* Tax breakdown. Sub Total above is PRE-tax, so these lines ARE part
+              of the Grand Total: Sub Total + tax + Shipping = Grand Total. The
+              domestic split is cosmetic — cgst + sgst === igst === the same
+              total tax either way. International documents show a single
+              un-split "Total Tax Amount"; without it the summary would jump
+              from a pre-tax Sub Total straight to a tax-inclusive Grand Total
+              with nothing explaining the difference. */}
+          {isIntl && (
+            <div className="qpi-summary-line">
+              <span>Total Tax Amount</span>
+              <span className="qpi-summary-val">
+                {products.reduce((s, p) => s + calcRow(p).taxAmt, 0).toFixed(2)}
+              </span>
+            </div>
+          )}
           {!isIntl && (intra ? (
             <>
               <div className="qpi-summary-line">
