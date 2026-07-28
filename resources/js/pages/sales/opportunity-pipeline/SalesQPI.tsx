@@ -2266,6 +2266,13 @@ const normStateCode = (code: string): string => {
  * /sales/gst-home-state is still in flight. */
 const DEFAULT_HOME_STATE_CODE = '27';
 
+/* Terms & Conditions cap. Mirrors the server rule (`terms => max:8000` in both
+ * QuotationController and ProformaInvoiceController) so the user is told at the
+ * keystroke that overflowed rather than after a failed save. Anything longer
+ * belongs in the T&C master and gets referenced from there. */
+const TERMS_MAX_LEN = 8000;
+const TERMS_LIMIT_MSG = `Character limit is ${TERMS_MAX_LEN}. To add more terms & conditions, navigate to the Terms & Conditions master.`;
+
 /* Intra-state (CGST + SGST) only when the customer's GST state code equals our
  * own; anything else is inter-state (IGST).
  *
@@ -3026,6 +3033,10 @@ export function CreateQuotationModal(props: {
     if (!form.customerId) { toast.error('Customer required', 'Pick a customer before saving.'); return; }
     if (!form.consigneeId) { setStep1Errors(prev => new Set(prev).add('consignee')); setStep(1); toast.error('Consignee required', 'Select a consignee before saving.'); return; }
     if (products.length === 0) { toast.error('No products', 'Add at least one line item.'); return; }
+    // Backstop for terms loaded from an older record that predates the cap —
+    // the textarea clamps live typing, this catches everything else before the
+    // server answers with a bare 422.
+    if (terms.length > TERMS_MAX_LEN) { toast.error('Character limit reached', TERMS_LIMIT_MSG); return; }
     setSaving(true);
     const isDomestic = form.docType === 'Domestic';
     try {
@@ -3502,6 +3513,10 @@ export function CreatePIModal(props: {
     if (!form.customerId) { toast.error('Customer required', 'Pick a customer before saving.'); return; }
     if (!form.consigneeId) { setStep1Errors(prev => new Set(prev).add('consignee')); setStep(1); toast.error('Consignee required', 'Select a consignee before saving.'); return; }
     if (products.length === 0) { toast.error('No products', 'Add at least one line item.'); return; }
+    // Backstop for terms loaded from an older record that predates the cap —
+    // the textarea clamps live typing, this catches everything else before the
+    // server answers with a bare 422.
+    if (terms.length > TERMS_MAX_LEN) { toast.error('Character limit reached', TERMS_LIMIT_MSG); return; }
     setSaving(true);
     const isDomestic = form.docType === 'Domestic';
     try {
@@ -4589,6 +4604,26 @@ function ProductsStep(props: {
           productOptions, productsRaw, loadingProducts, homeStateCode, customerSegments } = props;
   const toast = useToast();
 
+  /* Terms & Conditions is capped at TERMS_MAX_LEN (the server rejects longer).
+   * The textarea deliberately has NO maxLength attribute: the browser would
+   * swallow the extra characters silently and onChange would never fire, so the
+   * user gets no explanation. Instead we clamp here and toast — which also
+   * covers a paste that blows past the cap in one go. The ref throttles the
+   * toast so holding a key down doesn't stack a dozen of them. */
+  const termsToastAt = useRef(0);
+  const onTermsChange = (next: string) => {
+    if (next.length > TERMS_MAX_LEN) {
+      setTerms(next.slice(0, TERMS_MAX_LEN));
+      const now = performance.now();
+      if (now - termsToastAt.current > 3000) {
+        termsToastAt.current = now;
+        toast.error('Character limit reached', TERMS_LIMIT_MSG);
+      }
+      return;
+    }
+    setTerms(next);
+  };
+
   // Per-opportunity product filter. When the user picks an Opportunity
   // on Step 1, the Product Directory mapping (lead_products) tells us
   // which products that opportunity is actively quoting for — narrow
@@ -5064,10 +5099,10 @@ function ProductsStep(props: {
               className="qpi-textarea"
               placeholder="Enter terms and conditions..."
               value={terms}
-              onChange={(e) => setTerms(e.target.value)}
+              onChange={(e) => onTermsChange(e.target.value)}
             />
-            <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 11, color: 'var(--vz-secondary-color)', pointerEvents: 'none' }}>
-              {terms.length} characters
+            <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 11, color: terms.length >= TERMS_MAX_LEN ? '#ef4444' : 'var(--vz-secondary-color)', pointerEvents: 'none' }}>
+              {terms.length} / {TERMS_MAX_LEN} characters
             </div>
           </div>
         </div>

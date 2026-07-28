@@ -185,14 +185,7 @@ export default function IdimsHeader() {
   const { selectedBranch } = useBranchSwitcher();
   const dispatch = useDispatch();
 
-  /* Toggle dark/light through BOTH theme authorities at once. ThemeContext
-   * drives the CSS-var pages; Velzon's Redux `layoutModeType` drives the shell
-   * + `data-bs-theme`. Flipping only ThemeContext left Redux stale, so a later
-   * structural layout effect would re-dispatch changeLayoutMode(staleMode),
-   * revert data-bs-theme, and the ThemeContext MutationObserver would flip React
-   * state back — the rapid theme shake/flash (QA #56). Keeping them in lockstep
-   * removes the disagreement. changeLayoutMode is excluded from the shell
-   * effect's deps, so this dispatch does NOT fire a synthetic resize/reflow. */
+  
   const toggleThemeSynced = () => {
     const next = theme === 'light' ? 'dark' : 'light';
     dispatch(changeLayoutMode(next));
@@ -208,8 +201,6 @@ export default function IdimsHeader() {
   const [isFs, setIsFs] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileExpand, setMobileExpand] = useState<DD | null>(null);
-  // Overflow "More" menu — collapses nav items that don't fit on one row
-  // (instead of horizontal scrolling) into a dropdown.
   const [moreOpen, setMoreOpen] = useState(false);
   const [moreExpand, setMoreExpand] = useState<DD | null>(null);
   const [visibleCount, setVisibleCount] = useState(99);
@@ -217,15 +208,10 @@ export default function IdimsHeader() {
   const navGhostRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  /* ── Permission helpers (mirror LayoutMenuData) ── */
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perms = user?.permissions || {};
   const planExpired = !!(user?.plan && (!user.plan.has_plan || user.plan.expired)) &&
     user?.user_type !== 'super_admin';
-
-  // Clock-In is an attendance action — only users with an actual employee
-  // record can punch in. Hidden for super-admin / client / branch logins
-  // (mirrors the `isEmployee` guard in components/App.tsx).
   const isEmployee = user?.user_type === 'employee' && !!user?.employee_id;
   const can = (slug: string) => isSuperAdmin || (!planExpired && !!perms[slug]?.can_view);
   const hasGroupView = (prefix: string) =>
@@ -234,9 +220,6 @@ export default function IdimsHeader() {
   /* ── Logo ── */
   const rawLogo = user?.branch_logo || user?.client_logo || null;
   const logoSrc = rawLogo ? resolveFileUrl(rawLogo) : logoFallback;
-  // Dark-mode logo: same file with a "-dark" suffix (a recoloured variant whose
-  // dark ink is turned light so it reads on the dark nav, no box). If that file
-  // doesn't exist for a tenant, onError flips to the original on a soft pill.
   const darkRaw = rawLogo && /\.(png|jpe?g|webp)$/i.test(rawLogo)
     ? rawLogo.replace(/\.(png|jpe?g|webp)$/i, '-dark.png')
     : null;
