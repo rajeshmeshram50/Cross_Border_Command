@@ -100,10 +100,7 @@ class ZohoBooksService
         $ttl = max(60, ((int) ($data['expires_in'] ?? 3600)) - 600);
         Cache::put(self::TOKEN_CACHE_KEY, $token, now()->addSeconds($ttl));
 
-        return $token; work place 6 
-        trade doc 5 
-        T&C 1 
-        
+        return $token;
     }
 
     /* ─────────────────────── Low-level HTTP ─────────────────────── */
@@ -112,7 +109,7 @@ class ZohoBooksService
     private function get(string $endpoint, array $query = []): array
     {
         return $this->sendWithAuthRetry(
-            fn (string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])
+            fn(string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])
                 ->get("{$this->baseUrl}/" . ltrim($endpoint, '/'), array_merge(['organization_id' => $this->orgId], $query)),
             'GET ' . $endpoint
         );
@@ -127,7 +124,7 @@ class ZohoBooksService
             $url .= '&' . $k . '=' . rawurlencode((string) $v);
         }
         return $this->sendWithAuthRetry(
-            fn (string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])->post($url, $body),
+            fn(string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])->post($url, $body),
             'POST ' . $endpoint
         );
     }
@@ -141,7 +138,7 @@ class ZohoBooksService
             $url .= '&' . $k . '=' . rawurlencode((string) $v);
         }
         return $this->sendWithAuthRetry(
-            fn (string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])->delete($url),
+            fn(string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])->delete($url),
             'DELETE ' . $endpoint
         );
     }
@@ -158,7 +155,7 @@ class ZohoBooksService
             // from the query on a multipart/form-data request, so without the form
             // field the upload fails with "This user is not associated with the
             // CompanyID/CompanyName" — even though the (JSON) create calls work.
-            fn (string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])
+            fn(string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])
                 ->attach($field, $fileBytes, $filename)
                 ->post($url, ['organization_id' => $this->orgId]),
             'UPLOAD ' . $endpoint
@@ -173,7 +170,7 @@ class ZohoBooksService
             $url .= '&' . $k . '=' . rawurlencode((string) $v);
         }
         return $this->sendWithAuthRetry(
-            fn (string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])->put($url, $body),
+            fn(string $token) => Http::withHeaders(['Authorization' => 'Zoho-oauthtoken ' . $token])->put($url, $body),
             'PUT ' . $endpoint
         );
     }
@@ -261,22 +258,32 @@ class ZohoBooksService
         if (!empty($vendor->zoho_contact_id)) {
             $id = (string) $vendor->zoho_contact_id;
             $contact = null;
-            try { $contact = $this->get('contacts/' . $id)['contact'] ?? null; }
-            catch (\Throwable $e) { $contact = null; /* deleted / not accessible */ }
+            try {
+                $contact = $this->get('contacts/' . $id)['contact'] ?? null;
+            } catch (\Throwable $e) {
+                $contact = null; /* deleted / not accessible */
+            }
 
             if ($contact) {
                 // Reactivate a contact that was marked inactive in Zoho.
                 if (mb_strtolower((string) ($contact['status'] ?? 'active')) === 'inactive') {
-                    try { $this->post('contacts/' . $id . '/active', []); }
-                    catch (\Throwable $e) { Log::warning('Zoho vendor contact reactivate failed', ['vendor' => $vendor->id, 'err' => $e->getMessage()]); }
+                    try {
+                        $this->post('contacts/' . $id . '/active', []);
+                    } catch (\Throwable $e) {
+                        Log::warning('Zoho vendor contact reactivate failed', ['vendor' => $vendor->id, 'err' => $e->getMessage()]);
+                    }
                 }
                 // Keep its billing/shipping address in sync (best-effort, hash-gated).
                 if ($zaddr) {
                     $upd = ['billing_address' => $zaddr, 'shipping_address' => $zaddr];
                     $vk = 'zoho_vendor_addr:' . $vendor->id;
                     if (Cache::get($vk) !== md5(json_encode($upd))) {
-                        try { $this->put('contacts/' . $id, $upd); Cache::forever($vk, md5(json_encode($upd))); }
-                        catch (\Throwable $e) { Log::warning('Zoho vendor address update failed', ['vendor' => $vendor->id, 'err' => $e->getMessage()]); }
+                        try {
+                            $this->put('contacts/' . $id, $upd);
+                            Cache::forever($vk, md5(json_encode($upd)));
+                        } catch (\Throwable $e) {
+                            Log::warning('Zoho vendor address update failed', ['vendor' => $vendor->id, 'err' => $e->getMessage()]);
+                        }
                     }
                 }
                 return $id;
@@ -365,7 +372,7 @@ class ZohoBooksService
                 'email'       => $cmail ?: null,
                 'phone'       => trim((string) $a->contact_no) ?: null,
                 'designation' => trim((string) $a->designation) ?: null,
-            ], fn ($v) => $v !== null && $v !== '');
+            ], fn($v) => $v !== null && $v !== '');
         }
 
         // No address contacts at all → keep the old single-contact fallback.
@@ -373,7 +380,7 @@ class ZohoBooksService
             $persons[] = array_filter([
                 'first_name' => $name,
                 'email'      => $email,
-            ], fn ($v) => $v !== null && $v !== '');
+            ], fn($v) => $v !== null && $v !== '');
         }
 
         if ($persons) $persons[0]['is_primary_contact'] = true;   // first = primary
@@ -400,7 +407,7 @@ class ZohoBooksService
             'zip'        => trim((string) $addr->pincode),
             'country'    => trim((string) $country),
             'phone'      => trim((string) $addr->contact_no),
-        ], fn ($v) => $v !== null && $v !== '');
+        ], fn($v) => $v !== null && $v !== '');
         return $out ?: null;
     }
 
@@ -416,7 +423,10 @@ class ZohoBooksService
     {
         if ($rate < 0) return null;
 
-        $maps = Cache::remember('zoho_books_tax_maps:' . $this->orgId, now()->addMinutes(30), function () {
+        $cacheKey = 'zoho_books_tax_maps:' . $this->orgId;
+        // Fetch Zoho's tax list and split it into rate→id maps (intra = CGST+SGST
+        // group, inter = IGST). Pulled out so we can re-run it on a cache miss.
+        $build = function () {
             $intra = [];
             $inter = [];
             foreach (($this->get('settings/taxes')['taxes'] ?? []) as $t) {
@@ -430,15 +440,29 @@ class ZohoBooksService
                 }
             }
             return ['intra' => $intra, 'inter' => $inter];
-        });
+        };
 
-        $map = $interState ? $maps['inter'] : $maps['intra'];
-        $key = (string) round($rate, 2);
-        if (empty($map[$key])) {
-            $label = $interState ? 'IGST' : 'GST (CGST+SGST)';
-            throw new RuntimeException("No {$label} tax at {$key}% is configured in Zoho Books. Add it under Settings → Taxes, then sync again.");
+        $maps = Cache::remember($cacheKey, now()->addMinutes(30), $build);
+
+        $key   = (string) round($rate, 2);
+        $pick  = fn($m) => $interState ? ($m['inter'][$key] ?? '') : ($m['intra'][$key] ?? '');
+        $id    = $pick($maps);
+
+        // Not in the cached list — the user may have JUST added this tax in Zoho.
+        // Bust the 30-min cache, re-fetch ONCE, and re-check before failing, so a
+        // retry right after adding the tax works without waiting for the cache to
+        // expire (and the "not found" error is only raised after a fresh re-read).
+        if ($id === '') {
+            $maps = $build();
+            Cache::put($cacheKey, $maps, now()->addMinutes(30));
+            $id = $pick($maps);
         }
-        return $map[$key];
+
+        if ($id === '') {
+            $label = $interState ? 'IGST' : 'GST (CGST+SGST)';
+            throw new RuntimeException("{$label} {$key}% tax not found in Zoho Books — add it and try again.");
+        }
+        return $id;
     }
 
     /**
@@ -447,42 +471,88 @@ class ZohoBooksService
      * Used to resolve the org's own state when Zoho doesn't fill `gst_no`.
      */
     private const GST_STATE_CODES = [
-        'JK' => '01', 'jammu and kashmir' => '01', 'jammu & kashmir' => '01',
-        'HP' => '02', 'himachal pradesh' => '02',
-        'PB' => '03', 'punjab' => '03',
-        'CH' => '04', 'chandigarh' => '04',
-        'UT' => '05', 'UK' => '05', 'uttarakhand' => '05',
-        'HR' => '06', 'haryana' => '06',
-        'DL' => '07', 'delhi' => '07',
-        'RJ' => '08', 'rajasthan' => '08',
-        'UP' => '09', 'uttar pradesh' => '09',
-        'BR' => '10', 'bihar' => '10',
-        'SK' => '11', 'sikkim' => '11',
-        'AR' => '12', 'arunachal pradesh' => '12',
-        'NL' => '13', 'nagaland' => '13',
-        'MN' => '14', 'manipur' => '14',
-        'MZ' => '15', 'mizoram' => '15',
-        'TR' => '16', 'tripura' => '16',
-        'ML' => '17', 'meghalaya' => '17',
-        'AS' => '18', 'assam' => '18',
-        'WB' => '19', 'west bengal' => '19',
-        'JH' => '20', 'jharkhand' => '20',
-        'OD' => '21', 'OR' => '21', 'odisha' => '21', 'orissa' => '21',
-        'CG' => '22', 'CT' => '22', 'chhattisgarh' => '22',
-        'MP' => '23', 'madhya pradesh' => '23',
-        'GJ' => '24', 'gujarat' => '24',
-        'DD' => '26', 'DN' => '26', 'daman and diu' => '26', 'dadra and nagar haveli' => '26', 'dadra and nagar haveli and daman and diu' => '26',
-        'MH' => '27', 'maharashtra' => '27',
-        'KA' => '29', 'karnataka' => '29',
-        'GA' => '30', 'goa' => '30',
-        'LD' => '31', 'lakshadweep' => '31',
-        'KL' => '32', 'kerala' => '32',
-        'TN' => '33', 'tamil nadu' => '33',
-        'PY' => '34', 'puducherry' => '34', 'pondicherry' => '34',
-        'AN' => '35', 'andaman and nicobar islands' => '35',
-        'TS' => '36', 'TG' => '36', 'telangana' => '36',
-        'AP' => '37', 'andhra pradesh' => '37',
-        'LA' => '38', 'ladakh' => '38',
+        'JK' => '01',
+        'jammu and kashmir' => '01',
+        'jammu & kashmir' => '01',
+        'HP' => '02',
+        'himachal pradesh' => '02',
+        'PB' => '03',
+        'punjab' => '03',
+        'CH' => '04',
+        'chandigarh' => '04',
+        'UT' => '05',
+        'UK' => '05',
+        'uttarakhand' => '05',
+        'HR' => '06',
+        'haryana' => '06',
+        'DL' => '07',
+        'delhi' => '07',
+        'RJ' => '08',
+        'rajasthan' => '08',
+        'UP' => '09',
+        'uttar pradesh' => '09',
+        'BR' => '10',
+        'bihar' => '10',
+        'SK' => '11',
+        'sikkim' => '11',
+        'AR' => '12',
+        'arunachal pradesh' => '12',
+        'NL' => '13',
+        'nagaland' => '13',
+        'MN' => '14',
+        'manipur' => '14',
+        'MZ' => '15',
+        'mizoram' => '15',
+        'TR' => '16',
+        'tripura' => '16',
+        'ML' => '17',
+        'meghalaya' => '17',
+        'AS' => '18',
+        'assam' => '18',
+        'WB' => '19',
+        'west bengal' => '19',
+        'JH' => '20',
+        'jharkhand' => '20',
+        'OD' => '21',
+        'OR' => '21',
+        'odisha' => '21',
+        'orissa' => '21',
+        'CG' => '22',
+        'CT' => '22',
+        'chhattisgarh' => '22',
+        'MP' => '23',
+        'madhya pradesh' => '23',
+        'GJ' => '24',
+        'gujarat' => '24',
+        'DD' => '26',
+        'DN' => '26',
+        'daman and diu' => '26',
+        'dadra and nagar haveli' => '26',
+        'dadra and nagar haveli and daman and diu' => '26',
+        'MH' => '27',
+        'maharashtra' => '27',
+        'KA' => '29',
+        'karnataka' => '29',
+        'GA' => '30',
+        'goa' => '30',
+        'LD' => '31',
+        'lakshadweep' => '31',
+        'KL' => '32',
+        'kerala' => '32',
+        'TN' => '33',
+        'tamil nadu' => '33',
+        'PY' => '34',
+        'puducherry' => '34',
+        'pondicherry' => '34',
+        'AN' => '35',
+        'andaman and nicobar islands' => '35',
+        'TS' => '36',
+        'TG' => '36',
+        'telangana' => '36',
+        'AP' => '37',
+        'andhra pradesh' => '37',
+        'LA' => '38',
+        'ladakh' => '38',
     ];
 
     /** Org's own GST state code ("27" for Maharashtra). Prefers the GSTIN prefix
@@ -553,8 +623,11 @@ class ZohoBooksService
                     $it = $this->get('items/' . rawurlencode((string) $cached))['item'] ?? null;
                     if ($it) {
                         if (mb_strtolower((string) ($it['status'] ?? 'active')) === 'inactive') {
-                            try { $this->post('items/' . rawurlencode((string) $cached) . '/active', []); }
-                            catch (\Throwable $e) { Log::warning('Zoho item reactivate failed', ['item' => $cached, 'err' => $e->getMessage()]); }
+                            try {
+                                $this->post('items/' . rawurlencode((string) $cached) . '/active', []);
+                            } catch (\Throwable $e) {
+                                Log::warning('Zoho item reactivate failed', ['item' => $cached, 'err' => $e->getMessage()]);
+                            }
                         }
                         $itemId = (string) $cached;
                     } else {
@@ -621,8 +694,14 @@ class ZohoBooksService
         // right one by place of supply. Each is best-effort — a rate that isn't
         // configured in Zoho (or 0%) is simply skipped, never fails the item.
         if ($gstPct !== null && $gstPct > 0) {
-            try { $body['intra_state_tax_id'] = $this->resolveTaxId($gstPct, false); } catch (\Throwable $e) {}
-            try { $body['inter_state_tax_id'] = $this->resolveTaxId($gstPct, true); } catch (\Throwable $e) {}
+            try {
+                $body['intra_state_tax_id'] = $this->resolveTaxId($gstPct, false);
+            } catch (\Throwable $e) {
+            }
+            try {
+                $body['inter_state_tax_id'] = $this->resolveTaxId($gstPct, true);
+            } catch (\Throwable $e) {
+            }
         }
         if (!$product) return $body;
 

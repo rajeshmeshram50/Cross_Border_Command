@@ -358,9 +358,12 @@ class ProductController extends Controller
             'id'                    => 'nullable|integer|exists:products,id',
             'name'                  => 'required|string|max:100',
             'generic_name'          => 'nullable|string|max:255',
-            'description'           => 'nullable|string',
-            // Make / Brand / Specifications — no character cap (column widened to
-            // TEXT); description is likewise uncapped (already TEXT).
+            // Cap description at INPUT. The column is TEXT, but an uncapped
+            // description let a ~934 KB paste through, which the PI/PO PDFs chunk
+            // into ~8k table rows and blow dompdf's memory (2 GB OOM). 10000 chars
+            // is very generous for a real description, yet bounded for the
+            // renderers (~85 rows). Fix the source, not the templates.
+            'description'           => 'nullable|string|max:10000',
             'brand'                 => 'nullable|string',
             'segment_id'            => 'nullable|integer',
             'haz_type'              => 'nullable|string|max:20',

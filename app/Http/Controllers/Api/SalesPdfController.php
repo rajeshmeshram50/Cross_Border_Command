@@ -67,6 +67,7 @@ class SalesPdfController extends Controller
         // single render can approach the default 60s cap. Give it headroom so
         // the PDF always completes instead of 500-ing with a FatalError.
         @set_time_limit(180);
+        @ini_set('memory_limit', '1024M');
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             // Required for the <script type="text/php"> page-number block
@@ -522,6 +523,7 @@ class SalesPdfController extends Controller
         $this->assertRecordScope($record, $user, 'read');
 
         @set_time_limit(180);
+        @ini_set('memory_limit', '1024M');
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             ->setOption('isPhpEnabled', true);
@@ -575,6 +577,7 @@ class SalesPdfController extends Controller
         // single render can approach the default 60s cap. Give it headroom so
         // the PDF always completes instead of 500-ing with a FatalError.
         @set_time_limit(180);
+        @ini_set('memory_limit', '1024M');
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             ->setOption('isPhpEnabled', true);
@@ -605,6 +608,7 @@ class SalesPdfController extends Controller
         // single render can approach the default 60s cap. Give it headroom so
         // the PDF always completes instead of 500-ing with a FatalError.
         @set_time_limit(180);
+        @ini_set('memory_limit', '1024M');
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             ->setOption('isPhpEnabled', true);
@@ -755,6 +759,7 @@ class SalesPdfController extends Controller
         // single render can approach the default 60s cap. Give it headroom so
         // the PDF always completes instead of 500-ing with a FatalError.
         @set_time_limit(180);
+        @ini_set('memory_limit', '1024M');
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             ->setOption('isPhpEnabled', true);
@@ -902,6 +907,7 @@ class SalesPdfController extends Controller
         $vendor = $vendor ?: ($po->vendor_id ? \App\Models\Vendor::with('primaryAddress')->find($po->vendor_id) : null);
         $viewData = $this->buildPurchaseOrderViewData($po, $withSignature, $vendor);
         @set_time_limit(180);
+        @ini_set('memory_limit', '1024M');
         $pdf = Pdf::loadView('pdf.purchase-order', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true);
         $ref = $po->code ?: ('id-' . ($po->id ?? 'draft'));
         $name = 'PO-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $ref) . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
@@ -1009,6 +1015,7 @@ class SalesPdfController extends Controller
         $withSignature = $request->boolean('signature', true);
         $viewData = $this->buildPurchaseOrderViewData($po, $withSignature, $vendor);
         @set_time_limit(180);
+        @ini_set('memory_limit', '1024M');
         $pdf = Pdf::loadView('pdf.purchase-order', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true);
 
         $tmpDir = storage_path('app/tmp/sales-pdfs');
@@ -1076,6 +1083,7 @@ class SalesPdfController extends Controller
         $withSignature = $request->boolean('signature', true);
         $viewData = $this->buildDebitNoteViewData($dn, $withSignature);
         @set_time_limit(180);
+        @ini_set('memory_limit', '1024M');
         $pdf = Pdf::loadView('pdf.debit-note', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true);
 
         $tmpDir = storage_path('app/tmp/sales-pdfs');
@@ -1329,6 +1337,7 @@ class SalesPdfController extends Controller
     {
         $viewData = $this->buildDebitNoteViewData($dn, $withSignature);
         @set_time_limit(180);
+        @ini_set('memory_limit', '1024M');
         $pdf = Pdf::loadView('pdf.debit-note', $viewData)->setPaper('A4', 'portrait')->setOption('isPhpEnabled', true);
         $ref = $dn->code ?: ('id-' . ($dn->id ?? 'draft'));
         $name = 'DN-' . preg_replace('/[^A-Za-z0-9_-]/', '_', $ref) . ($withSignature ? '_signed' : '_unsigned') . '.pdf';
@@ -1697,6 +1706,7 @@ class SalesPdfController extends Controller
         // single render can approach the default 60s cap. Give it headroom so
         // the PDF always completes instead of 500-ing with a FatalError.
         @set_time_limit(180);
+        @ini_set('memory_limit', '1024M');
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             ->setOption('isPhpEnabled', true);
@@ -1834,10 +1844,13 @@ class SalesPdfController extends Controller
             }
         }
 
-        // DomPDF's pure-PHP renderer is slow on this heavy template (large
-        // nested tables + embedded images); a cold render can take several
-        // seconds. Give it headroom so it never 500s mid-render.
+        // DomPDF's pure-PHP renderer is slow AND memory-hungry on this heavy
+        // template (large nested tables + embedded images) — a cold render can
+        // take several seconds and blow past PHP's 512M default, fataling
+        // mid-render ("Allowed memory size … exhausted" in dompdf/Style.php).
+        // Give it real headroom on BOTH axes so a big PI never 500s.
         @set_time_limit(180);
+        @ini_set('memory_limit', '1024M');
         $pdf = Pdf::loadView('pdf.proforma-invoice', $viewData)
             ->setPaper('A4', 'portrait')
             // Required for the <script type="text/php"> page-number block at
@@ -2055,7 +2068,16 @@ class SalesPdfController extends Controller
             ];
         });
 
-        $subTotal      = (float) $q->sub_total;
+        /* Sub Total printed on the PDF is the PRE-TAX total (qty x rate), so the
+         * totals stack reads Sub Total + IGST/CGST/SGST + Shipping = Grand Total.
+         *
+         * It is DERIVED here rather than read from `$q->sub_total`, because that
+         * stored column holds the tax-INCLUSIVE sum (see
+         * QuotationController::aggregateTotals). Printing that with the tax rows
+         * beneath it made the GST look counted twice (CBC #184). Deriving also
+         * means documents saved before this fix print correctly — no backfill of
+         * the stored column is needed, and grand_total is untouched either way. */
+        $subTotal      = round($quotationProducts->sum(fn ($it) => $it['quantity'] * $it['rate']), 2);
         $shippingCost  = (float) $q->shipping;
         $grandTotal    = (float) $q->grand_total;
         $packagingCost = 0.0;

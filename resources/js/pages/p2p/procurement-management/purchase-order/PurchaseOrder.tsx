@@ -176,7 +176,7 @@ const BREF_STEPS = [
 ];
 
 type MoreState = { po: string; supName?: string; left: number; top: number; open: boolean };
-type SyncState = { id: number; po: string; supName?: string; busy: boolean; progress: number; attempt: number; failed: boolean };
+type SyncState = { id: number; po: string; supName?: string; busy: boolean; progress: number; attempt: number; failed: boolean; errorMsg?: string };
 
 export default function PurchaseOrder() {
   const toast = useToast();
@@ -315,11 +315,18 @@ export default function PurchaseOrder() {
   const openZohoConfirm = (r: PoRow) => {
     if (r.zoho.toLowerCase() === 'sync') { toast.success(`${r.po} is already synced with Zohobook`); return; }
     if (!r.id) return;
-    // Gate: the PO must be fully utilised (all payments recorded so the balance
-    // is cleared) before it can be pushed to Zoho Books. The backend enforces the
-    // same rule; surface it up-front here. (E-signature is no longer required.)
-    if (!r.fully_utilized) {
-      toast.warning('Utilise the full PO amount first', 'Record payments until the outstanding balance is cleared before syncing to Zoho Books.');
+    // Gate: the TDS must be deducted before the bill is pushed to Zoho Books — the
+    // bill folds the TDS in as a deduction, so it must be decided first. The
+    // backend enforces the same rule; surface it up-front here. (Full utilisation
+    // is NOT required — payments are synced separately, entry-wise.)
+    if (!r.tds_cut) {
+      toast.warning('Deduct the TDS first', 'Open the PO’s Payment Summary and deduct the TDS (use 0% if none applies) before syncing to Zoho Books.');
+      return;
+    }
+    // At least one payment must be recorded — the first payment is posted against
+    // the bill on sync. (Full utilisation is still NOT required.)
+    if (!((r.amount_paid ?? 0) > 0)) {
+      toast.warning('Record a payment first', 'Record at least one payment against this PO before syncing to Zoho Books — the first payment is posted against the bill on sync.');
       return;
     }
     setMore(null);
@@ -444,8 +451,9 @@ export default function PurchaseOrder() {
           setSync(s => (s ? { ...s, progress: 0 } : s));
           window.setTimeout(() => run(attempt + 1), 800);
         } else {
-          setSync(s => (s ? { ...s, busy: false, failed: true, progress: 0 } : s));
-          toast.error('Sync failed', e?.response?.data?.message || 'Please try again.');
+          const msg = e?.response?.data?.message;
+          setSync(s => (s ? { ...s, busy: false, failed: true, progress: 0, errorMsg: msg } : s));
+          toast.error('Sync failed', msg || 'Please try again.');
         }
       });
     };
@@ -735,7 +743,7 @@ export default function PurchaseOrder() {
                   <div className={`pocfm-ico${sync.failed ? ' pocfm-ico--fail' : ''}`}>{Ico.sync(26)}</div>
                   <div className="pocfm-t">{sync.failed ? 'Sync failed' : 'Sync with Zohobook?'}</div>
                   <div className="pocfm-msg">{sync.failed
-                    ? 'Something went wrong pushing this PO to Zohobook. You can try again.'
+                    ? (sync.errorMsg || 'Something went wrong pushing this PO to Zohobook. You can try again.')
                     : 'This will push the latest purchase order data to your Zohobook account and update its sync status.'}</div>
                 </>
               )}

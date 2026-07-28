@@ -52,6 +52,15 @@ class PoPaymentController extends Controller
                 'message' => 'TDS cannot be changed — a payment has already been recorded against this PO.',
             ], 422);
         }
+        // It also locks once the bill is synced to Zoho Books: the Zoho bill folds
+        // in the TDS as a deduction at sync time, so changing it here afterwards
+        // would desync the local net payable from the already-created Zoho bill.
+        if (!empty($order->zoho_bill_id)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'TDS cannot be changed — this PO’s bill is already synced to Zoho Books. Deduct/update the TDS before syncing.',
+            ], 422);
+        }
 
         /* TDS is computed on the BASE amount = Total PO − GST − Additional
          * Charges: the taxable value of the GOODS only.
@@ -258,10 +267,14 @@ class PoPaymentController extends Controller
 
         return [
             'po' => [
-                'id'        => $po->id,
-                'code'      => $po->code,
-                'pi_number' => $po->pi_number,
-                'status'    => $po->status,
+                'id'          => $po->id,
+                'code'        => $po->code,
+                'pi_number'   => $po->pi_number,
+                'status'      => $po->status,
+                // Zoho Books bill state — drives the "Sync Payment" button (a
+                // payment can only be posted once the bill exists in Zoho).
+                'zoho_synced'      => !empty($po->zoho_bill_id),
+                'zoho_bill_number' => $po->zoho_bill_number,
             ],
             'supplier' => $this->supplierBlock($po),
             'amounts'  => [
@@ -292,6 +305,10 @@ class PoPaymentController extends Controller
                 'attachment_name'   => $p->attachment_path ? basename($p->attachment_path) : null,
                 'balance_after'     => (float) $p->balance_after,
                 'status'            => $p->status,
+                // Per-entry Zoho Books state — drives the row-level "Sync" button.
+                // A payment is synced once its full amount is applied to the bill.
+                'zoho_applied'      => round((float) $p->zoho_applied_amount, 2),
+                'zoho_synced'       => !empty($p->zoho_payment_id) && ((float) $p->zoho_applied_amount + 0.005) >= (float) $p->amount,
                 // Which PO / SPI this payment was made against (+ ids) — backend trace.
                 // `type` = the document the payment is booked against: always 'po'
                 // here (po_payments); `spi` only traces the invoice it was for.

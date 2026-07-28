@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
@@ -201,17 +201,18 @@ const docHd = (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" strok
 // `name` overrides the raw option value for display — used by the supplier
 // field, whose option VALUE is the unique code (names can duplicate) but which
 // still shows the human name via meta.
-type DdOptMeta = { code?: string; name?: string; badge?: string; badgeTone?: 'own' | 'third' };
+type DdOptMeta = { code?: string; name?: string; badge?: string; badgeTone?: 'own' | 'third'; disabled?: boolean };
 const DdOptLabel = ({ o, meta }: { o: string; meta?: DdOptMeta }) => (
   meta ? (
     <span className="pof-dd__optlbl">
       {meta.code && <span className="pof-dd__optcode">{meta.code}:</span>}
       <span className="pof-dd__optname">{meta.name ?? o}</span>
       {meta.badge && <span className={`pof-dd__optbadge pof-dd__optbadge--${meta.badgeTone || 'own'}`}>{meta.badge}</span>}
+      {meta.disabled && <span className="pof-dd__optlock">Segment not mapped</span>}
     </span>
   ) : <span>{o}</span>
 );
-function Dd({ label, value, options, onChange, req, err, optMeta, searchable, tooltip }: { label?: string; value: string; options: string[]; onChange: (v: string) => void; req?: boolean; err?: string; optMeta?: Record<string, DdOptMeta>; searchable?: boolean; tooltip?: boolean }) {
+function Dd({ label, value, options, onChange, onDisabledSelect, req, err, optMeta, searchable, tooltip }: { label?: string; value: string; options: string[]; onChange: (v: string) => void; onDisabledSelect?: (v: string) => void; req?: boolean; err?: string; optMeta?: Record<string, DdOptMeta>; searchable?: boolean; tooltip?: boolean }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const ref = useRef<HTMLButtonElement | null>(null);
@@ -275,11 +276,15 @@ function Dd({ label, value, options, onChange, req, err, optMeta, searchable, to
           )}
           {shown.length === 0
             ? <div className="pof-dd-pop__opt" style={{ opacity: .6, cursor: 'default' }}>No match</div>
-            : shown.map(o => (
-              <div key={o} className={`pof-dd-pop__opt ${o === value ? 'is-sel' : ''}`} onClick={() => { onChange(o); setOpen(false); }}>
-                <DdOptLabel o={o} meta={optMeta?.[o]} /><Check c="pof-dd-pop__ck" />
-              </div>
-            ))}
+            : shown.map(o => {
+              const dis = !!optMeta?.[o]?.disabled;
+              return (
+                <div key={o} className={`pof-dd-pop__opt ${o === value ? 'is-sel' : ''} ${dis ? 'is-disabled' : ''}`} aria-disabled={dis}
+                  onClick={() => { if (dis) { onDisabledSelect?.(o); return; } onChange(o); setOpen(false); }}>
+                  <DdOptLabel o={o} meta={optMeta?.[o]} /><Check c="pof-dd-pop__ck" />
+                </div>
+              );
+            })}
         </div>,
         document.body
       )}
@@ -597,6 +602,12 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
         toast.warning('Already added', `“${opt.name}” is already on this PO. Each product can be added only once.`);
         return;
       }
+      // Segment gate (defensive backstop — the dropdown already freezes these):
+      // the supplier can only be ordered products in its own segment(s).
+      if (prodDisabled(opt)) {
+        toast.error('Segment not mapped to the supplier', `“${opt.name}”${opt.segment ? ` (${opt.segment})` : ''} isn't in this supplier's segment — map the supplier to this segment first.`);
+        return;
+      }
       setLine(id, { productId: opt.id, code: opt.code, name: opt.name, rate: String(opt.price), gst: opt.gst });
     } else setLine(id, { productId: null, code: '', name: '', rate: '', gst: 0 });
   };
@@ -604,6 +615,13 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   const reAddPi = (id: number, label: string) => {
     const p = piSet.find(x => piLabel(x) === label);
     if (!p) { setLine(id, blankLine(id)); return; }
+    // Defensive backstop — a PI product outside the supplier's segment can't be
+    // re-added (the dropdown already freezes it).
+    if (piDisabled(p)) {
+      const seg = piSegOf(p);
+      toast.error('Segment not mapped to the supplier', `“${label}”${seg ? ` (${seg})` : ''} isn't in this supplier's segment — map the supplier to this segment first.`);
+      return;
+    }
     setLine(id, { productId: p.productId, code: p.code, piName: p.piName, piQty: p.piQty, name: p.piName, qty: p.piQty, rate: p.rate, gst: p.gst });
   };
 
@@ -778,18 +796,37 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     () => new Set((sup.segments ?? []).map(s => s.trim().toLowerCase()).filter(Boolean)),
     [sup.segments],
   );
-  const segProdOpts = useMemo(
-    () => (supplierSegs.size === 0
-      ? prodOpts
-      : prodOpts.filter(o => o.segment && supplierSegs.has(o.segment.trim().toLowerCase()))),
-    [prodOpts, supplierSegs],
+  const gateBySegment = supplierSegs.size > 0;
+  // Whether a product is OUT of the supplier's segment(s). When gating, a product
+  // with no segment, or a segment the supplier doesn't hold, is frozen.
+  const prodDisabled = useCallback(
+    (o: ProdOpt) => gateBySegment && !(o.segment && supplierSegs.has(o.segment.trim().toLowerCase())),
+    [gateBySegment, supplierSegs],
   );
-  // Product dropdown meta — code prefix + segment badge on the right (QA #17).
+  // Show ALL products; the ones outside the supplier's segment are shown but
+  // FROZEN (disabled + a toast on click) rather than hidden — so the user sees
+  // them and learns why they can't be picked (QA: PO / SPI segment gating).
   const prodMeta = useMemo(() => {
     const m: Record<string, DdOptMeta> = {};
-    segProdOpts.forEach(o => { m[o.name] = { code: o.code || undefined, badge: o.segment || undefined }; });
+    prodOpts.forEach(o => { m[o.name] = { code: o.code || undefined, badge: o.segment || undefined, disabled: prodDisabled(o) }; });
     return m;
-  }, [segProdOpts]);
+  }, [prodOpts, prodDisabled]);
+  // Resolve a PI row's product segment from the product master (PI rows carry no
+  // segment of their own), so the With-Shipment PI re-pick dropdown can freeze a
+  // PI product that isn't in the supplier's segment — same gate as the free picker.
+  const piSegOf = useCallback((p: PiRow): string => {
+    const opt = prodOpts.find(o => (p.productId != null && o.id === p.productId) || (!!o.code && !!p.code && o.code === p.code));
+    return opt?.segment ?? '';
+  }, [prodOpts]);
+  const piDisabled = useCallback((p: PiRow): boolean => {
+    const seg = piSegOf(p);
+    return gateBySegment && !(seg && supplierSegs.has(seg.trim().toLowerCase()));
+  }, [piSegOf, gateBySegment, supplierSegs]);
+  const piMeta = useMemo(() => {
+    const m: Record<string, DdOptMeta> = {};
+    piSet.forEach(p => { const seg = piSegOf(p); m[piLabel(p)] = { badge: seg || undefined, disabled: piDisabled(p) }; });
+    return m;
+  }, [piSet, piSegOf, piDisabled]);
 
   // Segment cross-check: a PI/PO product whose segment isn't one the SELECTED
   // supplier deals in is flagged red + surfaced in a warning note, so the buyer
@@ -1340,7 +1377,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                               <td className="cpd-c">{i + 1}</td>
                               <td className="cpd-c"><span className="cpd-code" style={mismatch ? { color: '#dc2626' } : undefined}>{formatProductCode(r.code) || '—'}</span></td>
                               <td className="cpd-name">{(r.productId == null && !r.code && !r.piName)
-                                ? <div className="cpd-prodcell"><Dd value={PI_REPICK_PLACEHOLDER} options={[PI_REPICK_PLACEHOLDER, ...removedPi.map(piLabel)]} onChange={label => { if (label !== PI_REPICK_PLACEHOLDER) reAddPi(r.id, label); }} /></div>
+                                ? <div className="cpd-prodcell"><Dd value={PI_REPICK_PLACEHOLDER} optMeta={piMeta} options={[PI_REPICK_PLACEHOLDER, ...removedPi.map(piLabel)]} onChange={label => { if (label !== PI_REPICK_PLACEHOLDER) reAddPi(r.id, label); }} onDisabledSelect={(label) => { const p = piSet.find(x => piLabel(x) === label); const seg = p ? piSegOf(p) : ''; toast.error('Segment not mapped to the supplier', `“${label}”${seg ? ` (${seg})` : ''} isn't in this supplier's segment — map the supplier to this segment first.`); }} /></div>
                                 : <Tooltip label={r.piName} disabled={!r.piName} zIndex={2999999}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
                               <td className="cpd-c">{r.piQty || 0}</td>
                               <td><input className="cpd-in cpd-in--name" disabled={poView} value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} /></td>
@@ -1355,7 +1392,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                             <tr key={r.id} style={mismatchRowStyle} title={mismatch ? 'Product segment does not match the supplier segment' : undefined}>
                               <td className="cpd-c">{i + 1}</td>
                               <td className="cpd-c"><span className="cpd-code" style={mismatch ? { color: '#dc2626' } : undefined}>{formatProductCode(r.code) || '—'}</span></td>
-                              <td className="cpd-prodcell"><Dd tooltip value={r.name || PRODUCT_PLACEHOLDER} optMeta={prodMeta} options={[PRODUCT_PLACEHOLDER, ...segProdOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} /></td>
+                              <td className="cpd-prodcell"><Dd tooltip value={r.name || PRODUCT_PLACEHOLDER} optMeta={prodMeta} options={[PRODUCT_PLACEHOLDER, ...prodOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} onDisabledSelect={(name) => { const o = prodOpts.find(x => x.name === name); toast.error('Segment not mapped to the supplier', `“${name}”${o?.segment ? ` (${o.segment})` : ''} isn't in this supplier's segment — map the supplier to this segment first.`); }} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: numOnly(e.target.value) })} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
                               <TaxBodyCells c={c} intra={intra} />

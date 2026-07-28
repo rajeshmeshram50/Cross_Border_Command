@@ -43,11 +43,20 @@ class SpiPaymentController extends Controller
 
         $data = $request->validate(['tds_percentage' => 'required|numeric|min:0|max:100']);
 
-        // TDS is cut exactly ONCE per SPI — block any re-cut once it's done.
-        if ($inv->tds_cut) {
+        // TDS % stays editable until the FIRST payment is recorded OR the bill is
+        // synced to Zoho Books — re-saving just recomputes the deduction (mirrors
+        // PoPaymentController::saveTds). After a payment (would desync the paid
+        // balance) or a Zoho sync (the bill already carries the TDS), it locks.
+        if ($inv->spiPayments()->exists()) {
             return response()->json([
                 'status'  => false,
-                'message' => 'TDS is already deducted for this SPI — it cannot be changed.',
+                'message' => 'TDS cannot be changed — a payment has already been recorded against this invoice.',
+            ], 422);
+        }
+        if (!empty($inv->zoho_bill_id)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'TDS cannot be changed — this invoice’s bill is already synced to Zoho Books. Deduct/update the TDS before syncing.',
             ], 422);
         }
 
@@ -218,10 +227,14 @@ class SpiPaymentController extends Controller
 
         return [
             'po' => [
-                'id'        => $inv->id,
-                'code'      => $inv->code,
-                'pi_number' => $inv->pi_number,
-                'status'    => $inv->status,
+                'id'          => $inv->id,
+                'code'        => $inv->code,
+                'pi_number'   => $inv->pi_number,
+                'status'      => $inv->status,
+                // Zoho Books bill state — drives the "Sync Payment" button (a
+                // payment can only be posted once the bill exists in Zoho).
+                'zoho_synced'      => !empty($inv->zoho_bill_id),
+                'zoho_bill_number' => $inv->zoho_bill_number,
             ],
             'supplier' => $this->supplierBlock($inv),
             'amounts'  => [
@@ -252,6 +265,10 @@ class SpiPaymentController extends Controller
                 'attachment_name'   => $p->attachment_path ? basename($p->attachment_path) : null,
                 'balance_after'     => (float) $p->balance_after,
                 'status'            => $p->status,
+                // Per-entry Zoho Books state — drives the row-level "Sync" button.
+                // A payment is synced once its full amount is applied to the bill.
+                'zoho_applied'      => round((float) $p->zoho_applied_amount, 2),
+                'zoho_synced'       => !empty($p->zoho_payment_id) && ((float) $p->zoho_applied_amount + 0.005) >= (float) $p->amount,
                 // Which document this payment was made against (+ id) — backend trace.
                 // A Direct SPI payment is booked against its own SPI (no PO).
                 'source'            => [

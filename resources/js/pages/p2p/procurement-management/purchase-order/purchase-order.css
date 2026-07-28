@@ -493,6 +493,14 @@
 .pof-dd-pop--portal .pof-dd-pop__opt.is-sel{background:#e0f7fb;color:#0e7490;font-weight:800;}
 .pof-dd-pop--portal .pof-dd-pop__ck{flex-shrink:0;color:#0891b2;opacity:0;}
 .pof-dd-pop--portal .pof-dd-pop__opt.is-sel .pof-dd-pop__ck{opacity:1;}
+/* Frozen option — product whose segment isn't mapped to the supplier. Shown
+   but not selectable (a toast explains why on click). */
+.pom .pof-dd-pop__opt.is-disabled,
+.pof-dd-pop--portal .pof-dd-pop__opt.is-disabled{cursor:not-allowed;opacity:.55;}
+.pom .pof-dd-pop__opt.is-disabled:hover,
+.pof-dd-pop--portal .pof-dd-pop__opt.is-disabled:hover{background:#fef2f2;color:inherit;}
+.pof-dd__optlock{flex-shrink:0;margin-left:auto;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#b91c1c;background:#fee2e2;border:1px solid #fecaca;padding:2px 8px;border-radius:20px;white-space:nowrap;}
+[data-bs-theme="dark"] .pof-dd__optlock{color:#fca5a5;background:rgba(239,68,68,.16);border-color:rgba(248,113,113,.3);}
 [data-bs-theme="dark"] .pof-dd-pop--portal{background:#0f2731;border-color:#173947;color:#cfe3ea;}
 [data-bs-theme="dark"] .pof-dd-pop--portal .pof-dd-pop__opt{color:#cfe3ea;}
 /* Portalled field dropdown (PO Type / Document Type / Delivery Location …) renders
