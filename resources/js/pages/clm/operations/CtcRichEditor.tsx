@@ -1,9 +1,7 @@
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
-import Link from '@tiptap/extension-link';
 import { TextStyle, FontSize, Color, BackgroundColor } from '@tiptap/extension-text-style';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
@@ -80,10 +78,25 @@ export function useCtcEditor(opts: { value: string; onChange: (html: string) => 
   const editor = useEditor({
     editable,
     extensions: [
-      StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
-      Underline,
+      // StarterKit v3 BUNDLES link + underline, so configure link HERE (a second
+      // Link extension would be a duplicate and its config ignored). autolink/
+      // linkOnPaste OFF: they linkify any "word.word" text as a domain, which
+      // turned every {{customer.name}} / {{customer.company}} placeholder into a
+      // link. Manual links via the toolbar's 🔗 button still work.
+      StarterKit.configure({
+        heading: { levels: [1, 2, 3] },
+        // autolink/linkOnPaste OFF + shouldAutoLink hard-returns false so NOTHING
+        // is ever auto-linkified — placeholder tokens like {{customer.name}} were
+        // being turned into links because ".name/.company/.email/.zip" are real
+        // TLDs. Manual links via the toolbar 🔗 button still work.
+        link: {
+          openOnClick: false,
+          autolink: false,
+          linkOnPaste: false,
+          shouldAutoLink: () => false,
+        },
+      }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      Link.configure({ openOnClick: false, autolink: true }),
       TextStyle,
       FontSize,
       Color,
