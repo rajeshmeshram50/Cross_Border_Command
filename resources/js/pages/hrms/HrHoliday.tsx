@@ -285,27 +285,17 @@ export default function HrHoliday() {
               }
               .holiday-page .rec-list-scroll{ overflow-x: auto; }
 
-              /* table header — gradient lavender band, rounded top */
-              .holiday-page .rec-list-table thead tr{
-                background: linear-gradient(135deg,#f3eefe 0%, #ece5fd 100%);
-              }
-              .holiday-page .rec-list-table thead th{
-                font-family: 'DM Sans', sans-serif;
-                font-size: 10.5px;
-                font-weight: 800;
-                letter-spacing: .07em;
-                text-transform: uppercase;
-                color: #7c5cc4 !important;
-                background: transparent !important;
-                border-bottom: 1.5px solid #e4d9fb !important;
-                padding: 13px 8px;
-              }
-              .holiday-page .rec-list-table thead th:first-child{ border-top-left-radius: 14px; }
-              .holiday-page .rec-list-table thead th:last-child{ border-top-right-radius: 14px; }
+              /* Table header: NO overrides on purpose. It is inherited wholesale
+                 from .rec-list-table thead th (13px x 12px padding, 10.5px / 700
+                 micro-caps at 0.08em, soft grey gradient bar, 1px divider) so
+                 Holiday, Recruitment, Employee Onboarding and HR Employees all
+                 present an identical header. This page used to paint a lavender
+                 band with heavier, tighter type, which read as a different table
+                 system. Body cells keep the violet identity below. */
 
-              /* rows — breathing room, zebra, smooth violet hover with accent rail */
+              /* rows — zebra + smooth violet hover with accent rail. Padding is
+                 inherited (14px x 12px) so the cells line up with the header. */
               .holiday-page .rec-list-table tbody td{
-                padding: 15px 8px;
                 border-bottom: 1px solid #f4f0fc;
                 vertical-align: middle;
               }
@@ -352,13 +342,7 @@ export default function HrHoliday() {
                 background: linear-gradient(180deg, rgba(124,58,237,.06), transparent);
                 border-bottom-color: rgba(167,139,250,.16);
               }
-              [data-bs-theme="dark"] .holiday-page .rec-list-table thead tr{
-                background: linear-gradient(135deg, rgba(124,58,237,.24), rgba(124,58,237,.12));
-              }
-              [data-bs-theme="dark"] .holiday-page .rec-list-table thead th{
-                color: #c4b5fd !important;
-                border-bottom-color: rgba(167,139,250,.22) !important;
-              }
+              /* Dark header is inherited too — see the light-mode note above. */
               [data-bs-theme="dark"] .holiday-page .rec-list-table tbody td{ border-bottom-color: rgba(255,255,255,.05); }
               [data-bs-theme="dark"] .holiday-page .rec-list-table tbody tr:nth-child(even){ background: rgba(255,255,255,.02); }
               [data-bs-theme="dark"] .holiday-page .rec-list-table tbody tr:hover{
@@ -444,8 +428,8 @@ export default function HrHoliday() {
                     <table className="rec-list-table align-middle table-nowrap mb-0">
                       <thead>
                         <tr>
-                          <th className="ps-3 text-center" style={{ width: 60 }}>Sr No</th>
-                          <th style={{ width: 110 }}>
+                          <th scope="col" className="ps-3 text-center" style={{ width: 60 }}>Sr No</th>
+                          <th scope="col" style={{ width: 110 }}>
                             <span
                               role="button"
                               tabIndex={0}
@@ -461,12 +445,12 @@ export default function HrHoliday() {
                               />
                             </span>
                           </th>
-                          <th style={{ width: 300 }}>Holiday Name</th>
-                          <th className="text-center" style={{ width: 160 }}>Group</th>
-                          <th className="text-center" style={{ width: 125 }}>Date</th>
-                          <th className="text-center" style={{ width: 100 }}>Day</th>
-                          <th className="text-center" style={{ width: 130 }}>Type</th>
-                          <th className="text-center pe-3" style={{ width: 110 }}>Actions</th>
+                          <th scope="col" style={{ width: 300 }}>Holiday Name</th>
+                          <th scope="col" className="text-center" style={{ width: 160 }}>Group</th>
+                          <th scope="col" className="text-center" style={{ width: 125 }}>Date</th>
+                          <th scope="col" className="text-center" style={{ width: 100 }}>Day</th>
+                          <th scope="col" className="text-center" style={{ width: 130 }}>Type</th>
+                          <th scope="col" className="text-center pe-3" style={{ width: 110 }}>Actions</th>
                         </tr>
                       </thead>
                       <tbody>

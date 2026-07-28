@@ -3057,8 +3057,9 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
       modalClassName="onb-checklist-modal"
       backdrop="static"
       keyboard={false}
-      scrollable
     >
+      {/* No `scrollable` on the Modal: it would turn .modal-body into a second
+          scroll container on top of .onb-cl-body. The body is the only scroller. */}
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
         {/* Header */}
         <div className="onb-checklist-header">
