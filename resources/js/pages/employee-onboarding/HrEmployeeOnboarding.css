@@ -9,10 +9,15 @@
    weight which reads as fuzzy on 1440p+ and especially loses
    contrast in dark mode. Bump to 14px / 500, enable subpixel
    antialiasing, and lift contrast for dark mode. */
+/* The rows scroll INSIDE this wrapper (min-height:0 lets the flex child shrink
+   below its content), so the card keeps its full height, the sticky header
+   stays put and the pager below never leaves the card's bottom edge. */
 .onb-list-table {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  min-height: 0;
+  overflow-y: auto;
 }
 .onb-list-table table { font-size: 13px; }
 
@@ -59,6 +64,9 @@
   padding-right: 12px;
   vertical-align: middle;
 }
+/* Pager never shrinks — the table above it absorbs the height instead. */
+.onb-page .wl-pager { flex-shrink: 0; }
+
 .onb-list-table tbody tr { transition: background 120ms ease; }
 .onb-list-table tbody tr:hover { background: rgba(99,102,241,0.06); }
 .onb-list-table .onb-id-pill,
