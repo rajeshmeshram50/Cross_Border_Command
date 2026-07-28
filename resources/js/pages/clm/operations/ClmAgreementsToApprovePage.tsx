@@ -913,19 +913,22 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
               display: 'inline-flex', alignItems: 'center', gap: 11, cursor: 'pointer', margin: 0,
               padding: '10px 20px', borderRadius: 10, transition: 'all .2s',
               boxShadow: confirmedRead ? '0 8px 24px rgba(5,150,105,.28)' : '0 8px 24px rgba(8,145,178,.22)',
-              background: confirmedRead ? (t.dark ? 'rgba(16,185,129,.16)' : '#ecfdf5') : (t.dark ? 'rgba(6,182,212,.14)' : '#ecfeff'),
-              border: `1.5px solid ${confirmedRead ? (t.dark ? 'rgba(16,185,129,.4)' : '#a7f3d0') : (t.dark ? 'rgba(6,182,212,.3)' : '#a5f3fc')}`,
+              // The pill floats over the WHITE PDF paper (always white, even in
+              // dark mode), so it stays light-with-dark-text regardless of theme —
+              // dark-mode near-white text here would be invisible on the paper.
+              background: confirmedRead ? '#ecfdf5' : '#ecfeff',
+              border: `1.5px solid ${confirmedRead ? '#a7f3d0' : '#a5f3fc'}`,
             }}>
               <input type="checkbox" checked={confirmedRead} onChange={e => setConfirmedRead(e.target.checked)}
                 style={{
                   appearance: 'none', WebkitAppearance: 'none', width: 18, height: 18, borderRadius: 3,
                   cursor: 'pointer', flexShrink: 0, margin: 0, transition: 'all .15s',
                   border: '2px solid #10b981',
-                  background: confirmedRead ? '#059669' : (t.dark ? 'transparent' : '#fff'),
+                  background: confirmedRead ? '#059669' : '#fff',
                   backgroundImage: confirmedRead ? "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='20 6 9 17 4 12'/%3E%3C/svg%3E\")" : 'none',
                   backgroundSize: '12px 12px', backgroundPosition: 'center', backgroundRepeat: 'no-repeat',
                 }} />
-              <span style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.3, whiteSpace: 'nowrap', color: t.dark ? '#f1f5f9' : '#0f172a' }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.3, whiteSpace: 'nowrap', color: '#0f172a' }}>
                 I confirm that I have <strong style={{ fontWeight: 800 }}>read and understood the entire agreement</strong>.
               </span>
             </label>
