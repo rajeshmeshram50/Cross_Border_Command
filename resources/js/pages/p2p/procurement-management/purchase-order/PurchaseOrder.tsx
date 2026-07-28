@@ -323,6 +323,12 @@ export default function PurchaseOrder() {
       toast.warning('Deduct the TDS first', 'Open the PO’s Payment Summary and deduct the TDS (use 0% if none applies) before syncing to Zoho Books.');
       return;
     }
+    // At least one payment must be recorded — the first payment is posted against
+    // the bill on sync. (Full utilisation is still NOT required.)
+    if (!((r.amount_paid ?? 0) > 0)) {
+      toast.warning('Record a payment first', 'Record at least one payment against this PO before syncing to Zoho Books — the first payment is posted against the bill on sync.');
+      return;
+    }
     setMore(null);
     setSync({ id: r.id, po: r.po, supName: r.supName, busy: false, progress: 0, attempt: 0, failed: false });
   };

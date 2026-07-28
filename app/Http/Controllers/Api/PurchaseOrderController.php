@@ -270,10 +270,20 @@ class PurchaseOrderController extends Controller
                     'errors'  => ['tds' => ['TDS must be deducted before syncing.']],
                 ], 422);
             }
-            // NOTE: the bill sync no longer requires the PO to be fully utilised,
-            // and no longer posts payments — it creates the Zoho PO + bill only.
-            // Payments are posted separately via syncPayment() (which validates the
-            // bill exists first). This lets the PO/bill sync with an open balance.
+            // At least ONE payment must be recorded before the first Zoho sync — that
+            // payment is posted against the bill in the same action (see the auto-post
+            // below). Full utilisation is NOT required; any remaining payments are
+            // synced individually afterwards via the per-row / Sync-All buttons.
+            if (!$po->payments()->exists()) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Record at least one payment before syncing to Zoho Books — the first payment is posted against the bill on sync.',
+                    'errors'  => ['payment' => ['At least one payment must be recorded before syncing.']],
+                ], 422);
+            }
+            // NOTE: the bill sync does NOT require FULL utilisation — it creates the
+            // Zoho PO + bill and posts whatever payments exist (best-effort, below);
+            // the rest are synced individually via syncPayment().
 
             // Track what THIS run creates in Zoho so a mid-flow failure can be
             // fully reversed (all-or-nothing): PO created this run and the bill

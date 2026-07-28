@@ -333,10 +333,19 @@ class SupplierPurchaseInvoiceController extends Controller
                 'errors'  => ['tds' => ['TDS must be deducted before syncing.']],
             ], 422);
         }
-        // NOTE: the bill sync no longer requires the invoice to be fully utilised,
-        // and no longer posts payments — it creates the bill only. Payments are
-        // posted separately via syncPayment() (which validates the bill exists
-        // first). This lets the bill sync even with an outstanding balance.
+        // At least ONE payment must be recorded before the first Zoho sync — it's
+        // posted against the bill in the same action (auto-post below). Full
+        // utilisation is NOT required; remaining payments are synced individually.
+        if (!$spi->spiPayments()->exists()) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Record at least one payment before syncing to Zoho Books — the first payment is posted against the bill on sync.',
+                'errors'  => ['payment' => ['At least one payment must be recorded before syncing.']],
+            ], 422);
+        }
+        // NOTE: the bill sync does NOT require FULL utilisation — it creates the bill
+        // and posts whatever payments exist (best-effort, below); the rest are synced
+        // individually via syncPayment().
 
         // Track what THIS run creates in Zoho so a mid-flow failure can be fully
         // reversed (all-or-nothing): the bill (payments are posted separately now).
