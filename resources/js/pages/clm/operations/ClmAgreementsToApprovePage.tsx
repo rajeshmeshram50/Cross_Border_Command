@@ -707,17 +707,14 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
 
-  // "reachedEnd" = scrolled through every page. For a MULTI-page agreement that
-  // is a valid self-attest (they've seen it all). A SINGLE-page doc is trivially
-  // "reachedEnd" the instant it loads, so it must NOT auto-unlock — the reviewer
-  // still has to tick the consent box before acting.
+  // "reachedEnd" = scrolled through every page. Kept only to drive the reading-
+  // progress bar / next-page pulse — it no longer auto-unlocks the actions.
   const reachedEnd = numPages > 1 && maxSeen >= numPages;
-  // A long agreement (100s of pages) shouldn't force clicking through every page
-  // to unlock actions — the reviewer can self-attest with a checkbox instead.
-  // Actions unlock on EITHER reaching the last page (multi-page) OR ticking
-  // "I have read" (always required for a single-page doc).
+  // The read-confirmation is ALWAYS required: reaching the last page does NOT
+  // auto-unlock, so the consent box stays visible (even on the final page) until
+  // the reviewer explicitly ticks it. Only then do the actions unlock.
   const [confirmedRead, setConfirmedRead] = useState(false);
-  const unlocked = reachedEnd || confirmedRead;
+  const unlocked = confirmedRead;
 
   // Download the agreement PDF (the same blob we're previewing).
   const downloadPdf = () => {
@@ -907,10 +904,10 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
           )}
 
           {/* Consent pill — FLOATS over the document (no white strip), pinned to
-              the bottom-centre of the viewer. Only appears once the PDF has
-              actually loaded (not during the loading/error state) and stays until
-              every page has been scrolled through; ticking it unlocks the actions. */}
-          {!loading && !error && numPages > 0 && !reachedEnd && (
+              the bottom-centre of the viewer. Appears once the PDF has loaded and
+              stays visible on EVERY page (including the last) until the reviewer
+              ticks it — ticking is the only thing that unlocks the actions. */}
+          {!loading && !error && numPages > 0 && !confirmedRead && (
             <label style={{
               position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', zIndex: 6,
               display: 'inline-flex', alignItems: 'center', gap: 11, cursor: 'pointer', margin: 0,
@@ -944,8 +941,8 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button onClick={() => guard(onClarify)} disabled={submitting} style={{ ...actBtn('#8B5CF6', '#6D28D9'), opacity: submitting ? .55 : 1, cursor: submitting ? 'not-allowed' : 'pointer' }}>Raise Clarification</button>
-            <button onClick={() => guard(onReject)} disabled={submitting} style={{ ...actBtn('#ef4444', '#dc2626'), opacity: submitting ? .55 : 1, cursor: submitting ? 'not-allowed' : 'pointer' }}>Reject</button>
+            <button onClick={() => guard(onClarify)} disabled={submitting} style={{ ...actBtn('#8B5CF6', '#6D28D9'), opacity: submitting ? .55 : (unlocked ? 1 : .45), cursor: (submitting || !unlocked) ? 'not-allowed' : 'pointer' }}>Raise Clarification</button>
+            <button onClick={() => guard(onReject)} disabled={submitting} style={{ ...actBtn('#ef4444', '#dc2626'), opacity: submitting ? .55 : (unlocked ? 1 : .45), cursor: (submitting || !unlocked) ? 'not-allowed' : 'pointer' }}>Reject</button>
             <button onClick={() => guard(onApprove)} disabled={submitting} style={{ ...actBtn('#0891b2', '#0e7490'), cursor: submitting ? 'wait' : 'pointer' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{submitting
                 ? <><svg className="ata-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>Approving…</>

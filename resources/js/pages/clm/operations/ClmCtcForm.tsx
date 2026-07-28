@@ -926,7 +926,7 @@ function Stage1(p: {
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#7C3AED,#5B21B6)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg></div>
                     <div><div style={{ fontSize: 11.5, fontWeight: 800, color: t.dark ? '#ddd6fe' : '#3B0764' }}>Agreement Basics</div><div style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500 }}>Title &amp; type of this contract</div></div>
                   </div>
-                  <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 9, alignItems: 'end' }}>
+                  <div style={{ padding: '10px 14px', display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 9, alignItems: 'start' }}>
                     {/* 255-char limit enforced + surfaced WHILE typing (QA #43) —
                         maxLength hard-stops entry and the inline message shows the
                         moment the cap is hit, instead of only failing at Submit for
@@ -1601,15 +1601,31 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
       if (!alive) return;
       const norm = results.map((list, i) => list.length ? list : (cps[i].email ? [{ name: cps[i].name, email: cps[i].email, designation: 'Primary Contact', phone: cps[i].phone, is_primary: true }] : []));
       setContacts(norm);
+      // Pre-select ONE contact per counterparty (the primary, else the first) —
+      // single-select, so never more than one per party.
       const pre = new Set<string>();
-      norm.forEach((list, i) => list.forEach((c, j) => { if (c.is_primary || j === 0) pre.add(`${i}:${j}`); }));
+      norm.forEach((list, i) => {
+        if (!list.length) return;
+        const idx = list.findIndex(c => c.is_primary);
+        pre.add(`${i}:${idx >= 0 ? idx : 0}`);
+      });
       setSel(pre);
       setLoading(false);
     });
     return () => { alive = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggle = (k: string) => setSel(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  // Single-select PER counterparty: picking a contact for party `i` clears any
+  // other contact already chosen for that same party (only one recipient per
+  // counterparty). Clicking the already-selected one deselects it.
+  const selectOne = (i: number, j: number) => setSel(s => {
+    const n = new Set(s);
+    const k = `${i}:${j}`;
+    const already = n.has(k);
+    for (const key of Array.from(n)) { if (key.startsWith(`${i}:`)) n.delete(key); }
+    if (!already) n.add(k);
+    return n;
+  });
   const badgeTone = (badge: string) => badge === 'SUPPLIER' ? { fg: t.dark ? '#6ee7b7' : '#059669' } : badge === 'CONSIGNEE' ? { fg: t.dark ? '#67e8f9' : '#0891b2' } : { fg: t.dark ? '#c4b5fd' : '#7C3AED' };
   const submit = () => {
     const recipients = cps.map((cp, i) => {
@@ -1657,8 +1673,9 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
                         {list.map((c, j) => {
                           const k = `${i}:${j}`; const on = sel.has(k);
                           return (
-                            <div key={j} onClick={() => toggle(k)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, cursor: 'pointer', border: `1.5px solid ${on ? `${tone.fg}66` : (t.dark ? 'rgba(148,163,184,.18)' : '#EDE9FE')}`, background: on ? (t.dark ? 'rgba(124,58,237,.1)' : '#F7F4FF') : t.surface }}>
-                              <div style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, border: `2px solid ${on ? tone.fg : (t.dark ? 'rgba(148,163,184,.4)' : '#CBD5E1')}`, background: on ? `linear-gradient(135deg,${cp.grad})` : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{on && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>}</div>
+                            <div key={j} onClick={() => selectOne(i, j)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 11px', borderRadius: 10, cursor: 'pointer', border: `1.5px solid ${on ? `${tone.fg}66` : (t.dark ? 'rgba(148,163,184,.18)' : '#EDE9FE')}`, background: on ? (t.dark ? 'rgba(124,58,237,.1)' : '#F7F4FF') : t.surface }}>
+                              {/* Radio (circle) — single-select: only one contact per counterparty. */}
+                              <div style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, border: `2px solid ${on ? tone.fg : (t.dark ? 'rgba(148,163,184,.4)' : '#CBD5E1')}`, background: on ? `linear-gradient(135deg,${cp.grad})` : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{on && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#fff' }} />}</div>
                               <div style={{ width: 28, height: 28, borderRadius: 8, background: `linear-gradient(135deg,${cp.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9, fontWeight: 800, color: '#fff' }}>C{j + 1}</span></div>
                               <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 10.5, fontWeight: 600, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name || `Contact ${j + 1}`}</div><div style={{ fontSize: 8, color: t.textMuted, fontWeight: 600 }}>{c.designation || (c.is_primary ? 'Primary Contact' : 'Contact')}</div></div>
                               {c.email && <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={t.textMuted} strokeWidth="2" strokeLinecap="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 5L2 7" /></svg><span style={{ fontSize: 8.5, color: t.textMuted, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{c.email}</span></div>}
@@ -2266,12 +2283,16 @@ function Field({ t, label, green, error, children }: { t: OpsTokens; label: stri
       {/* Red ring hugs whatever control sits inside (input / select / date) so a
           single wrapper validates every field type uniformly. */}
       <div style={{ borderRadius: 9, boxShadow: error ? '0 0 0 1.5px #ef4444' : 'none' }}>{children}</div>
-      {error && (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 8.5, fontWeight: 700, color: '#ef4444' }}>
+      {/* The error line is ALWAYS in the layout (min-height reserved) so showing
+          or hiding it never changes the field's height — side-by-side fields
+          (Agreement Title vs Type) stay perfectly aligned and the section below
+          doesn't jump when validation toggles. */}
+      <span style={{ minHeight: 12, display: 'flex', alignItems: 'center', gap: 4, fontSize: 8.5, fontWeight: 700, color: '#ef4444', lineHeight: 1.2 }}>
+        {error && <>
           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
           {error}
-        </span>
-      )}
+        </>}
+      </span>
     </div>
   );
 }
