@@ -763,7 +763,10 @@ export default function HrEmployeeOnboarding() {
         <div className="p-3 d-flex flex-column" ref={scrollRef}>
           <div className="table-responsive onb-list-table flex-grow-1">
                   <table className="table align-middle table-nowrap mb-0">
-                    <thead className="table-light">
+                    {/* No .table-light — Bootstrap paints its fill via an inset
+                        box-shadow that covers the sticky header's own opaque
+                        background (see .onb-list-table thead th). */}
+                    <thead>
                       <tr>
                         <th scope="col" className="ps-3" style={{ width: 60 }}>Sr No</th>
                         <th scope="col">Employee</th>

@@ -15,21 +15,48 @@
   text-rendering: optimizeLegibility;
 }
 .onb-list-table table { font-size: 13px; }
+
+/* Header — an exact copy of the Recruitment list header
+   (.rec-list-table thead th in resources/css/recruitment.css): same micro-caps
+   type, 10.5px/700 at 0.08em, same soft vertical gradient bar, same 13px/12px
+   padding and 1px divider, so Onboarding, Recruitment and HR Employees read as
+   one table system. It used to run 11px/800 at 0.4px on a flat tint, which sat
+   noticeably heavier and looser than every other HRMS list.
+
+   Sticky lives on the th cells so the background paints over scrolled rows in
+   every browser. The fill must stay OPAQUE for that to work — .table-light was
+   dropped from the markup because Bootstrap paints its fill via an inset
+   box-shadow that would cover any background set here. */
 .onb-list-table thead th {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background-clip: padding-box;
+  padding: 13px 12px;
+  background-color: #f4f5f8;
+  background-image: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
   color: var(--vz-secondary-color);
-  padding-top: 10px;
-  padding-bottom: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom: 1px solid #ececf2;
   white-space: nowrap;
+  vertical-align: middle;
 }
+.onb-list-table thead th:first-child { border-top-left-radius: 14px; }
+.onb-list-table thead th:last-child  { border-top-right-radius: 14px; }
+/* Body keeps its denser 10px vertical rhythm (the rows carry 34px avatars and
+   progress bars), but takes the header's 12px horizontal padding so the column
+   text lines up with the header labels — Bootstrap's default cell padding is
+   8px, which left every heading sitting 4px right of its own column. */
 .onb-list-table tbody td {
   font-size: 13px;
   color: var(--vz-body-color);
   padding-top: 10px;
   padding-bottom: 10px;
+  padding-left: 12px;
+  padding-right: 12px;
   vertical-align: middle;
 }
 .onb-list-table tbody tr { transition: background 120ms ease; }
@@ -60,15 +87,20 @@
 [data-layout-mode="dark"] .onb-list-table tbody td .text-muted {
   color: rgba(241,245,249,0.62) !important;
 }
-/* Dark-mode header — match the Employee / Exit Management tables' blurple
-   gradient header instead of the near-invisible faint tint (Bug #38). The
-   !important beats Bootstrap's .table-light --bs-table-bg variable. */
+/* Dark-mode header — the same dark recipe as the Recruitment header, replacing
+   the blurple gradient this table used to carry (Bug #38 fixed the older
+   near-invisible tint by inventing a violet band; matching Recruitment solves
+   the same contrast problem without diverging from the other lists). The
+   fallback colour in the var() is required: an opaque fill is what stops
+   scrolled rows bleeding through the sticky header. */
 [data-bs-theme="dark"] .onb-list-table thead th,
 [data-layout-mode="dark"] .onb-list-table thead th {
-  background-color: #6355e0 !important;
-  background-image: linear-gradient(180deg, #7a6ef0 0%, #5a4ce2 100%) !important;
-  color: #ffffff !important;
-  border-bottom-color: rgba(255,255,255,0.12) !important;
+  background-color: var(--vz-card-bg, #1a1d29);
+  background-image: linear-gradient(180deg,
+    color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
+    var(--vz-card-bg, #1a1d29) 100%);
+  color: rgba(255,255,255,0.70);
+  border-bottom-color: var(--vz-border-color, #2c3242);
 }
 [data-bs-theme="dark"] .onb-list-table tbody tr:hover,
 [data-layout-mode="dark"] .onb-list-table tbody tr:hover {
