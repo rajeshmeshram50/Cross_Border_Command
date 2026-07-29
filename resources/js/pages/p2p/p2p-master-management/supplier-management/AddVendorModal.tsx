@@ -511,9 +511,6 @@ export default function AddVendorModal(props: {
    * a supplier with it leaves Step 2 empty. The modal only mounts while open,
    * so the fetch is gated on `true`. */
   const { ruledIds: ruledSegIds, typesById: segTypesById, loaded: segRulesLoaded } = useRuledSegments(true);
-  const unruledSegmentIds = segRulesLoaded
-    ? segmentOpts.map(o => o.value).filter(v => !ruledSegIds.has(v))
-    : [];
   /* Segment ids whose "+2" badge has been clicked open — those show the
    * individual Intl + Dom badges instead of the collapsed +2. */
   const [expandedSegBadges, setExpandedSegBadges] = useState<Set<string>>(new Set());
@@ -614,6 +611,14 @@ export default function AddVendorModal(props: {
   const [country,   setCountry]   = useState('');
   const [state,     setState]     = useState('');
   const [stateCode, setStateCode] = useState('');
+  /* Once this supplier is mapped to a Purchase Order its state is baked into that
+     PO's GST/tax, so the backend sends state_locked=true and we freeze Country +
+     State (changing either would desync the PO's tax classification). */
+  const [stateLocked, setStateLocked] = useState(false);
+  const lockToast = () => toast.warning(
+    'Can’t change this',
+    'This supplier is already used in a Purchase Order.',
+  );
   const [city,      setCity]      = useState('');
   const [pincode,   setPincode]   = useState('');
 
@@ -638,6 +643,14 @@ export default function AddVendorModal(props: {
     const name = (countryOpts.find(o => o.value === country)?.label ?? '').trim();
     return name === 'India' ? 'domestic' : 'international';
   }, [country, countryOpts]);
+  /* Segments with NO Document Control Panel rule at all — these stay disabled
+     ("No rule"). A segment that HAS a rule but for the wrong country doc-type
+     (e.g. an International-only segment on a domestic supplier) is left ENABLED
+     and instead blocked with a toast on select (see the segment onChange). */
+  const disabledSegmentIds = useMemo(() => {
+    if (!segRulesLoaded) return [] as string[];
+    return segmentOpts.map(o => o.value).filter(v => !ruledSegIds.has(v));
+  }, [segRulesLoaded, segmentOpts, ruledSegIds]);
   const [contactName, setContactName] = useState('');
   const [designation, setDesignation] = useState('');
   const [contactNo,   setContactNo]   = useState('');
@@ -1402,6 +1415,7 @@ export default function AddVendorModal(props: {
         const segIds: string[] = fromIds.length ? fromIds : (v.segment_id ? [String(v.segment_id)] : []);
         setSegment(segIds);
         setLockedSegments(Array.isArray((v as any).locked_segments) ? (v as any).locked_segments.map(String) : []);
+        setStateLocked(!!(v as any).state_locked);
         setSegReqKeys((v as any).segment_required_doc_keys && typeof (v as any).segment_required_doc_keys === 'object' ? (v as any).segment_required_doc_keys : {});
         setUploadedKeys(Array.isArray((v as any).uploaded_doc_keys) ? (v as any).uploaded_doc_keys : []);
         setComplianceBehaviour(numStr(v.compliance_behaviour_id));
@@ -1650,9 +1664,13 @@ export default function AddVendorModal(props: {
     // now blocks on the frontend and never wastes a /vendors/step/identity call.
     if (!registeredOffice.trim()) errs.registeredOffice = 'Registered Office Address is required';
     if (!country)                 errs.country          = 'Country is required';
-    if (!state)                   errs.state            = 'State is required';
-    if (!stateCode.trim())        errs.stateCode        = 'State Code is required';
-    else if (!/^\d{1,2}$/.test(stateCode.trim())) errs.stateCode = 'State Code must be a 1–2 digit GST code';
+    // State + State Code are GST (Indian) constructs — required only for a domestic
+    // supplier. An international (non-India) supplier has neither, so skip them.
+    if (supplierDocType === 'domestic') {
+      if (!state)            errs.state     = 'State is required';
+      if (!stateCode.trim()) errs.stateCode = 'State Code is required';
+      else if (!/^\d{1,2}$/.test(stateCode.trim())) errs.stateCode = 'State Code must be a 1–2 digit GST code';
+    }
     if (!city.trim())             errs.city             = 'City is required';
     if (Object.keys(errs).length) { flagErrors(errs); return false; }
 
@@ -1767,9 +1785,12 @@ export default function AddVendorModal(props: {
     const errs: Record<string, string> = {};
     if (!registeredOffice.trim())  errs.registeredOffice = 'Registered Office Address is required';
     if (!country)                  errs.country          = 'Country is required';
-    if (!state)                    errs.state            = 'State is required';
-    if (!stateCode.trim())         errs.stateCode        = 'State Code is required';
-    else if (!/^\d{1,2}$/.test(stateCode.trim())) errs.stateCode = 'State Code must be a 1–2 digit GST code';
+    // State + State Code are Indian GST constructs — domestic-only (see identity validation).
+    if (supplierDocType === 'domestic') {
+      if (!state)            errs.state     = 'State is required';
+      if (!stateCode.trim()) errs.stateCode = 'State Code is required';
+      else if (!/^\d{1,2}$/.test(stateCode.trim())) errs.stateCode = 'State Code must be a 1–2 digit GST code';
+    }
     if (!city.trim())              errs.city             = 'City is required';
     if (!contactName.trim())       errs.contactName      = 'Contact Person Name is required';
     if (!designation.trim())       errs.designation      = 'Designation is required';
@@ -3218,7 +3239,7 @@ export default function AddVendorModal(props: {
                           value={segment}
                           options={segmentOpts}
                           placeholder="Select Segment"
-                          disabledValues={unruledSegmentIds}
+                          disabledValues={disabledSegmentIds}
                           disabledHint="no document rule defined in the Document Control Panel yet"
                           renderBadges={(id) => {
                             const t = segTypesById.get(String(id));
@@ -3238,6 +3259,24 @@ export default function AddVendorModal(props: {
                             return dom();
                           }}
                           onChange={vs => {
+                            // Block ADDING a segment whose DCP rule doesn't cover this
+                            // supplier's country (e.g. an International-only segment on a
+                            // domestic India supplier). The segment stays visible/selectable
+                            // — the block is a toast + we don't add it, so the reason is clear.
+                            const added = vs.filter(s => !segment.includes(s));
+                            const badAdd = added.filter(s => {
+                              const t = segTypesById.get(String(s));
+                              return t && t.size > 0 && !t.has(supplierDocType);
+                            });
+                            if (badAdd.length) {
+                              const names = badAdd.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
+                              const label = supplierDocType === 'domestic' ? 'Domestic' : 'International';
+                              toast.error(
+                                'Segment not allowed',
+                                `${names.join(', ')} has no ${label} rule — this is a ${label} supplier. Add the ${label} rule in the Document Control Panel first.`,
+                              );
+                              vs = vs.filter(s => !badAdd.includes(s));
+                            }
                             // A segment can't be removed when (1) a PRODUCT on an issued PO
                             // or a Supplier Invoice belongs to it, or (2) it has an uploaded
                             // document not shared with any remaining segment. Block only those
@@ -3305,43 +3344,53 @@ export default function AddVendorModal(props: {
                   </div>
                   <div className="avm-grid-4">
                     <Field label="Country" required addNew onAdd={() => setQuickAdd('countries')} error={fieldErrors.country}>
-                      <SelectInput
-                        value={country}
-                        onChange={(v) => { setCountry(v); setState(''); setStateCode(''); clearFieldError('country'); }}
-                        placeholder="Select Country"
-                        options={countryOpts}
-                      />
+                      <LockField locked={stateLocked} onLockClick={lockToast}>
+                        <SelectInput
+                          value={country}
+                          onChange={(v) => { setCountry(v); setState(''); setStateCode(''); clearFieldError('country'); }}
+                          placeholder="Select Country"
+                          options={countryOpts}
+                          disabled={stateLocked}
+                        />
+                      </LockField>
                     </Field>
-                    <Field label="State" required error={fieldErrors.state}>
-                      <SelectInput
-                        value={state}
-                        onChange={(v) => {
-                          setState(v);
-                          // Auto-fill State Code from the master_state_codes row
-                          // whose state_id matches the chosen state. The
-                          // dropdown's `value` is the state's id since the
-                          // switch to ID-based master FK references.
-                          const sc = stateCodeRows.find(r => r.state_id === v)?.state_code ?? '';
-                          setStateCode(sc);
-                          clearFieldError('state');
-                          clearFieldError('stateCode');
-                        }}
-                        placeholder={country ? 'Select State' : 'Select country first'}
-                        options={stateOpts}
-                        disabled={!country}
-                      />
+                    <Field label="State" required={!(supplierDocType === 'international' && !!country)} error={fieldErrors.state}>
+                      <LockField locked={stateLocked} onLockClick={lockToast}>
+                        <SelectInput
+                          value={state}
+                          onChange={(v) => {
+                            setState(v);
+                            // Auto-fill State Code from the master_state_codes row
+                            // whose state_id matches the chosen state. The
+                            // dropdown's `value` is the state's id since the
+                            // switch to ID-based master FK references.
+                            const sc = stateCodeRows.find(r => r.state_id === v)?.state_code ?? '';
+                            setStateCode(sc);
+                            clearFieldError('state');
+                            clearFieldError('stateCode');
+                          }}
+                          placeholder={supplierDocType === 'international' && !!country ? 'Not applicable (international)' : (country ? 'Select State' : 'Select country first')}
+                          options={stateOpts}
+                          disabled={!country || stateLocked || (supplierDocType === 'international' && !!country)}
+                        />
+                      </LockField>
                     </Field>
-                    <Field label="State Code" required error={fieldErrors.stateCode}>
+                    <Field label="State Code" required={!(supplierDocType === 'international' && !!country)} error={fieldErrors.stateCode}>
                       {/* Derived from the selected State — read-only so it can't drift
-                          out of sync with the State (GST state code is fixed per state). */}
-                      <input
-                        className="avm-input avm-input-ro"
-                        placeholder="Auto-filled from State"
-                        value={stateCode}
-                        readOnly
-                        tabIndex={-1}
-                        title="GST state code — automatically set from the selected State"
-                      />
+                          out of sync with the State (GST state code is fixed per state).
+                          For a non-India (international) supplier there is no GST state
+                          code, so the field is disabled/greyed (GST doesn't apply). */}
+                      <LockField locked={stateLocked} onLockClick={lockToast}>
+                        <input
+                          className="avm-input avm-input-ro"
+                          placeholder={supplierDocType === 'international' && !!country ? 'Not applicable (international)' : 'Auto-filled from State'}
+                          value={stateCode}
+                          readOnly
+                          disabled={(supplierDocType === 'international' && !!country) || stateLocked}
+                          tabIndex={-1}
+                          title="GST state code — automatically set from the selected State"
+                        />
+                      </LockField>
                     </Field>
                     <Field label="City" required error={fieldErrors.city}>
                       <input
@@ -3361,16 +3410,19 @@ export default function AddVendorModal(props: {
                   {gstApplicable === 'Yes' && (
                     <div className="avm-grid-4">
                       <Field label="GST Number" required error={fieldErrors.gstNumber}>
-                        <input
-                          className="avm-input"
-                          placeholder="e.g. 27AADCI6120M1ZH"
-                          value={gstNumber}
-                          maxLength={15}
-                          onChange={e => {
-                            setGstNumber(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15));
-                            clearFieldError('gstNumber');
-                          }}
-                        />
+                        <LockField locked={stateLocked} onLockClick={lockToast}>
+                          <input
+                            className="avm-input"
+                            placeholder="e.g. 27AADCI6120M1ZH"
+                            value={gstNumber}
+                            maxLength={15}
+                            disabled={stateLocked}
+                            onChange={e => {
+                              setGstNumber(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15));
+                              clearFieldError('gstNumber');
+                            }}
+                          />
+                        </LockField>
                       </Field>
                     </div>
                   )}
@@ -4487,6 +4539,17 @@ function Field(props: {
           <i className="ri-error-warning-line" /> {props.error}
         </span>
       )}
+    </div>
+  );
+}
+
+/* Wraps a locked (read-only) field so a click still surfaces a toast — a truly
+   disabled input fires no click event, so an invisible catcher over it does. */
+function LockField({ locked, onLockClick, children }: { locked: boolean; onLockClick: () => void; children: React.ReactNode }) {
+  if (!locked) return <>{children}</>;
+  return (
+    <div className="avm-lockwrap" onClick={onLockClick} title="Locked — this supplier is mapped to a Purchase Order">
+      <div className="avm-lockwrap-inner">{children}</div>
     </div>
   );
 }
@@ -6538,6 +6601,20 @@ function AddProductMappingPopup(props: {
  * Scoped CSS — light + dark mode
  * ────────────────────────────────────────────────────────────────────── */
 export const SCOPED_CSS = `
+.avm-hint { font-size: 11px; font-weight: 600; color: #b45309; margin-top: 5px; line-height: 1.3; }
+.avm-lockwrap { position: relative; cursor: not-allowed; }
+.avm-lockwrap-inner { pointer-events: none; }
+/* Make a DISABLED / locked field clearly read-only (greyed + not-allowed cursor).
+   The base MasterSelect disabled style is too subtle (opacity .85), so a locked
+   Country/State on a PO-mapped supplier looked editable. */
+.avm-master-select .master-select-toggle:disabled,
+.avm-master-select .master-select-wrap.disabled .master-select-toggle {
+  background: #eef2f6 !important; color: #94a3b8 !important; opacity: 1 !important;
+  cursor: not-allowed !important; box-shadow: none !important;
+}
+.avm-input:disabled, .avm-input[disabled] {
+  background: #eef2f6 !important; color: #94a3b8 !important; cursor: not-allowed !important;
+}
 .avm-backdrop {
   position: fixed; inset: 0; z-index: 1090;
   background: rgba(40, 44, 52, .42);

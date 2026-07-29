@@ -100,6 +100,7 @@ function topPath(id: string): string {
   switch (id) {
     case 'dashboard':          return '/dashboard';
     case 'credentials-vault':  return '/credentials-vault';
+    case 'dev-tools':          return '/dev-tools';
     case 'project-navigator':  return '/project-navigator';
     case 'p2p':                return '/p2p';
     case 'gts':                return '/gts';
@@ -293,6 +294,8 @@ export default function IdimsHeader() {
       items.push({ id: 'payments', label: 'Payments', icon: IC.rupee });
       items.push({ id: 'master', label: 'Master', icon: IC.db });
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
+      // Dev Tools — permission-gated (super-admin bypasses, so always visible here).
+      if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
       return items;
     }
 
@@ -305,6 +308,8 @@ export default function IdimsHeader() {
       items.push({ id: 'master', label: 'Master', icon: IC.db });
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
       items.push({ id: 'my-plan', label: 'My Plan', icon: IC.card });
+      // Dev Tools — permission-gated (granted per user via the Permissions module).
+      if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
       return items;
     }
     if (can('credentials-vault')) items.push({ id: 'credentials-vault', label: 'Credentials Vault', icon: IC.lock });
@@ -329,6 +334,8 @@ export default function IdimsHeader() {
     if (role === 'branch_user') {
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
     }
+    // Dev Tools — kept LAST (permission-gated read-only Zoho inspector).
+    if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -928,6 +935,7 @@ const P2P_BG = ['#F5F3FF', '#F5F3FF', '#FFFBEB', '#F0FDFA'];
 /* ── Inline SVG icon set (named IC to avoid clashing with lucide imports) ── */
 const IC = {
   grid: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zm0 10h8v8h-8v-8zM3 13h8v8H3v-8z" /></svg>,
+  wrench: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2-2 2.6-2.6z" /></svg>,
   menu: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>,
   close: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
   lock: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6a5 5 0 0 0-10 0v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zm-9-2a3 3 0 0 1 6 0v2H9V6zm4 9.73V18h-2v-2.27a2 2 0 1 1 2 0z" /></svg>,
