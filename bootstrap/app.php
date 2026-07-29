@@ -24,6 +24,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'user.active' => \App\Http\Middleware\EnsureUserActive::class,
         ]);
+
+        // eSSL / ZKTeco terminals POST to /iclock/* over plain HTTP and cannot
+        // carry a CSRF token — exempt the device push path (it is tenant-guarded
+        // by device Serial in EsslDeviceController). See ESSL doc §17.
+        $middleware->validateCsrfTokens(except: [
+            'iclock/*',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

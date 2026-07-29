@@ -19,6 +19,8 @@ class AttendancePunch extends Model
         'attendance_id', 'employee_id',
         'punched_at', 'direction', 'label', 'method',
         'match_distance', 'ip', 'lat', 'lng', 'notes',
+        // eSSL device-import provenance (method='device').
+        'device_serial', 'device_user_id', 'raw_status',
     ];
 
     protected $casts = [

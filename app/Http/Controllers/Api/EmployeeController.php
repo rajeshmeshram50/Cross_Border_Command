@@ -1610,6 +1610,21 @@ class EmployeeController extends Controller
                 ->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))]))
             ->ignore($ignoreUserId);
 
+        // Attendance Number is the mapping key for eSSL biometric devices — a
+        // device User ID resolves to exactly one employee via this field, so it
+        // must be unique per tenant (mirrors the pan_number rule + the
+        // employees_attendance_number_client_unique DB index). Scoped to the
+        // creator's client_id so a clash in a DIFFERENT client can't block here.
+        // See docs/ESSL_ATTENDANCE_INTEGRATION.md §14.2.
+        $attNumRule = ['nullable', 'string', 'max:50'];
+        if ($request->filled('attendance_number')) {
+            $attNumClientId = optional($request->user())->client_id;
+            $attNumRule[] = Rule::unique('employees', 'attendance_number')
+                ->whereNull('deleted_at')
+                ->where(fn($q) => $attNumClientId ? $q->where('client_id', $attNumClientId) : $q)
+                ->ignore($employeeId);
+        }
+
         
         $isFinalStep   = (int) $request->input('wizard_step_completed', 0) >= 4;
         $payrollOn     = (bool) $request->input('enable_payroll', true);
@@ -1699,7 +1714,7 @@ class EmployeeController extends Controller
             'attendance_tracking'  => 'nullable|boolean',
             'shift'                => 'nullable|string|max:50',
             'weekly_off'           => 'nullable|string|max:100',
-            'attendance_number'    => 'nullable|string|max:50',
+            'attendance_number'    => $attNumRule,
             'time_tracking'        => 'nullable|string|max:50',
             'penalization_policy'  => 'nullable|string|max:100',
             'overtime'             => 'nullable|string|max:50',

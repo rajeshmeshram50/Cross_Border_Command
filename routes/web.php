@@ -31,6 +31,21 @@ Route::get('/o/{slug}', function (string $slug) {
     return redirect('/onboarding/' . $invite->token);
 })->middleware('throttle:30,1')->where('slug', '[A-Za-z0-9]+');
 
+// ── eSSL / ZKTeco biometric terminal push endpoints (ADMS / iclock) ──────────
+// The device hard-codes the /iclock/* path at the WEB ROOT (not /api) and
+// cannot send a Sanctum or CSRF token, so these are public — CSRF-exempt in
+// bootstrap/app.php — and guarded by the device Serial (SN) → device_terminals
+// registry inside the controller. MUST sit above the SPA catch-all below or the
+// fallback view would swallow them. See docs/ESSL_ATTENDANCE_INTEGRATION.md §17.
+// Rate-limited so a misbehaving/hostile source can't flood the public path.
+// A real terminal polls ~every 30s and pushes a handful of rows per punch, so
+// 120/min/IP is generous headroom.
+Route::middleware('throttle:120,1')->group(function () {
+    Route::match(['get', 'post'], '/iclock/cdata',      [\App\Http\Controllers\Api\EsslDeviceController::class, 'cdata']);
+    Route::get                   ('/iclock/getrequest', [\App\Http\Controllers\Api\EsslDeviceController::class, 'getrequest']);
+    Route::post                  ('/iclock/devicecmd',  [\App\Http\Controllers\Api\EsslDeviceController::class, 'devicecmd']);
+});
+
 // SPA Fallback - serve index.html for all non-API routes
 // This enables proper URL routing for React Router
 // The route order ensures API routes (handled in api.php) take precedence

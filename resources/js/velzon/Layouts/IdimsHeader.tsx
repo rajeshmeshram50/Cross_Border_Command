@@ -71,6 +71,7 @@ const LEAF_DESC: Record<string, string> = {
   'hr.exit': 'Exit & full-and-final processing.',
   'hr.payroll': 'Salary structures & payroll runs.',
   'hr.attendance': 'Face attendance & punch records.',
+  'hr.devices': 'Biometric device terminals (eSSL).',
   'hr.leave': 'Leave requests & balances.',
   'hr.leave_approvals': 'Approve or reject leave requests.',
   'hr.holiday': 'Company holiday calendar.',
@@ -140,6 +141,7 @@ function hrLeafPath(id: string): string {
     case 'hr.exit':            return '/hr/exit-management';
     case 'hr.onboarding':      return '/hr/employee-onboarding';
     case 'hr.attendance':      return '/hr/attendance';
+    case 'hr.devices':         return '/hr/devices';
     case 'hr.broadcast':       return '/hr/broadcast';
     case 'hr.doc_templates':   return '/hr/doc-templates';
     case 'hr.custom_fields':   return '/hr/custom-fields';
@@ -448,7 +450,11 @@ export default function IdimsHeader() {
   // same sign requests, so it rides on the Quotation Vs PI permission.
   const leafCanView = (leaf: Leaf): boolean => {
     if (isSuperAdmin) return true;
-    const slug = leaf.id === 'sales.sign_tracker' ? 'sales.quotation_vs_pi' : leaf.id;
+    // Biometric Devices has no permission slug of its own — it rides on the
+    // Attendance grant (same pattern as sales.sign_tracker).
+    const slug = leaf.id === 'sales.sign_tracker' ? 'sales.quotation_vs_pi'
+      : leaf.id === 'hr.devices' ? 'hr.attendance'
+      : leaf.id;
     return !!perms[slug]?.can_view;
   };
 

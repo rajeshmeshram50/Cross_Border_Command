@@ -105,6 +105,7 @@ const LEAF_DESC: Record<string, string> = {
   "hr.exit": "Exit & full-and-final processing.",
   "hr.payroll": "Salary structures & payroll runs.",
   "hr.attendance": "Face attendance & punch records.",
+  "hr.devices": "Biometric device terminals (eSSL).",
   "hr.leave": "Leave requests & balances.",
   "hr.leave_approvals": "Approve or reject leave requests.",
   "hr.holiday": "Company holiday calendar.",
@@ -166,6 +167,7 @@ const hrLeafLink = (leafId: string): string => {
     case "hr.exit":        return "/hr/exit-management";
     case "hr.onboarding":  return "/hr/employee-onboarding";
     case "hr.attendance":  return "/hr/attendance";
+    case "hr.devices":     return "/hr/devices";
     case "hr.broadcast":   return "/hr/broadcast";
     case "hr.doc_templates": return "/hr/doc-templates";
     case "hr.custom_fields": return "/hr/custom-fields";
@@ -368,7 +370,10 @@ const Navdata = () => {
     return HR_GROUPS
       .map((g) => {
         const childItems = g.children
-          .filter((c) => isSuperAdmin || perms[c.id]?.can_view)
+          // hr.devices rides on the hr.attendance grant (no separate permission
+          // leaf) — same pattern as sales.sign_tracker.
+          .filter((c) => isSuperAdmin || perms[c.id]?.can_view
+            || (c.id === 'hr.devices' && !!perms['hr.attendance']?.can_view))
           .map((c) => ({
             id: c.id,
             label: c.label,

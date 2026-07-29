@@ -914,6 +914,13 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get ('/attendance/employee/{employeeId}/summary',   [AttendanceController::class, 'employeeSummary']);
     Route::post('/attendance/face/clock-in',                   [AttendanceController::class, 'faceClockIn']);
     Route::post('/attendance/face/clock-out',                  [AttendanceController::class, 'faceClockOut']);
+    Route::post('/attendance/import',                          [AttendanceController::class, 'import']);
+
+    // Biometric terminal registry (eSSL / ZKTeco). The device push path itself
+    // is public (/iclock/* in routes/web.php); this manages which serials are
+    // trusted and which tenant/branch they map to.
+    Route::apiResource('device-terminals', \App\Http\Controllers\Api\DeviceTerminalController::class)
+        ->only(['index', 'store', 'update', 'destroy']);
 
 
     Route::get('/modules', [PermissionController::class, 'modules']);
