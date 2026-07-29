@@ -5,6 +5,7 @@ import {
 } from 'reactstrap';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
@@ -288,6 +289,7 @@ export default function BranchForm({ onBack, editId }: Props) {
   const isDark = theme === 'dark';
   const [form, setForm] = useState<FormState>(empty);
   const toast = useToast();
+  const confirm = useConfirm();
   const [saving, setSaving] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -319,12 +321,56 @@ export default function BranchForm({ onBack, editId }: Props) {
   // Always keep at least one row so the section renders an editable shift
   // straight away instead of an empty-state placeholder.
   const [shifts, setShifts] = useState<Shift[]>([blankShift()]);
+  // Per-row validation flags (only set on submit / touched). A row is only
+  // validated once the user starts filling it — a fully-blank row is optional
+  // and simply dropped on save.
+  type ShiftErr = { name?: boolean; start?: boolean; end?: boolean };
+  const [shiftErrors, setShiftErrors] = useState<Record<number, ShiftErr>>({});
   const addShift    = () => setShifts(s => [...s, blankShift()]);
-  const removeShift = (i: number) => setShifts(s => {
+  const dropShiftRow = (i: number) => setShifts(s => {
     const next = s.filter((_, j) => j !== i);
     return next.length ? next : [blankShift()];
   });
-  const updateShift = (i: number, key: keyof Shift, val: string) => setShifts(s => s.map((row, j) => j === i ? { ...row, [key]: val } : row));
+  const removeShift = async (i: number) => {
+    const sh = shifts[i];
+    const named = sh?.name.trim();
+    const ok = await confirm({
+      title: 'Remove shift?',
+      message: named
+        ? `Remove the "${named}" shift? Employees can no longer be assigned to it.`
+        : 'Remove this shift row?',
+      tone: 'danger',
+      confirmLabel: 'Remove',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
+    dropShiftRow(i);
+  };
+  const updateShift = (i: number, key: keyof Shift, val: string) => {
+    setShifts(s => s.map((row, j) => j === i ? { ...row, [key]: val } : row));
+    // Clear this field's error the moment the user fills it.
+    if (val) setShiftErrors(e => {
+      if (!e[i]?.[key]) return e;
+      const next = { ...e, [i]: { ...e[i], [key]: false } };
+      return next;
+    });
+  };
+  // Validate the repeater: any row the user has STARTED filling must have all
+  // three fields. Fully-blank rows are optional (dropped on save). Returns a
+  // map of row → missing fields, empty when everything is valid.
+  const validateShifts = (): Record<number, ShiftErr> => {
+    const errs: Record<number, ShiftErr> = {};
+    shifts.forEach((s, i) => {
+      const touched = !!(s.name.trim() || s.start || s.end);
+      if (!touched) return;
+      const e: ShiftErr = {};
+      if (!s.name.trim()) e.name = true;
+      if (!s.start)       e.start = true;
+      if (!s.end)         e.end = true;
+      if (e.name || e.start || e.end) errs[i] = e;
+    });
+    return errs;
+  };
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
   // Authorised-signatory image (signature + company stamp combined).
@@ -623,6 +669,14 @@ export default function BranchForm({ onBack, editId }: Props) {
       focusFirstError(errs);
       return;
     }
+    // Shift rows — each started row must have name + start + end.
+    const shErrs = validateShifts();
+    if (Object.keys(shErrs).length) {
+      setShiftErrors(shErrs);
+      toast.error('Incomplete shift', 'Each shift needs a name, start time and end time.');
+      return;
+    }
+    setShiftErrors({});
     setServerErrors({}); setSaving(true);
     try {
       const payload: Record<string, any> = { ...form };
@@ -710,7 +764,7 @@ export default function BranchForm({ onBack, editId }: Props) {
   const handleReset = () => {
     setForm(empty); setValidationErrors({}); touchedRef.current = {};
     setLogoFile(null); setLogoPreview(null);
-    setShifts([blankShift()]);
+    setShifts([blankShift()]); setShiftErrors({});
   };
 
   /* Form-shaped shimmer — fires while EITHER the edit-mode entity
@@ -1517,37 +1571,42 @@ export default function BranchForm({ onBack, editId }: Props) {
                 start/end time). These feed the Employee form's Shift dropdown,
                 so shifts stay per-branch instead of a hardcoded global list. */}
             <SectionHeader icon="ri-time-line" title="Shift Details" badge="B" />
-            <div className="mb-3">
+            <div className="mb-3" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '14px 16px', background: 'var(--vz-light, rgba(0,0,0,0.015))' }}>
               {shifts.map((sh, i) => (
-                <Row className="g-2 align-items-end mb-2" key={i}>
-                  <Col md={5}>
-                    {i === 0 && <Lbl>Shift Name</Lbl>}
+                // Everything on ONE line — name / start / end / delete, and the
+                // Add-Shift button beside delete on the last row.
+                <div key={i} style={{ display: 'flex', alignItems: 'flex-end', gap: 8, marginBottom: 8 }}>
+                  <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+                    {i === 0 && <Lbl>Shift Name <span style={{ color: '#dc2626' }}>*</span></Lbl>}
                     <Input style={css.input} placeholder="e.g. Morning Shift" value={sh.name}
+                      invalid={!!shiftErrors[i]?.name}
                       onChange={e => updateShift(i, 'name', e.target.value)} />
-                  </Col>
-                  <Col md={3}>
-                    {i === 0 && <Lbl>Start Time</Lbl>}
+                  </div>
+                  <div style={{ flex: '0 0 170px' }}>
+                    {i === 0 && <Lbl>Start Time <span style={{ color: '#dc2626' }}>*</span></Lbl>}
                     <MasterTimePicker value={sh.start} showNow={false}
+                      invalid={!!shiftErrors[i]?.start}
                       onChange={v => updateShift(i, 'start', v)} />
-                  </Col>
-                  <Col md={3}>
-                    {i === 0 && <Lbl>End Time</Lbl>}
+                  </div>
+                  <div style={{ flex: '0 0 170px' }}>
+                    {i === 0 && <Lbl>End Time <span style={{ color: '#dc2626' }}>*</span></Lbl>}
                     <MasterTimePicker value={sh.end} showNow={false}
+                      invalid={!!shiftErrors[i]?.end}
                       minTime={sh.start || undefined}
                       onChange={v => updateShift(i, 'end', v)} />
-                  </Col>
-                  <Col md={1} className="d-flex align-items-end">
-                    <button type="button" onClick={() => removeShift(i)} title="Remove shift"
-                      style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid rgba(220,38,38,0.35)', background: 'rgba(220,38,38,0.08)', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 15 }}>
-                      <i className="ri-delete-bin-line" />
+                  </div>
+                  <button type="button" onClick={() => removeShift(i)} title="Remove shift"
+                    style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid rgba(220,38,38,0.3)', background: 'rgba(220,38,38,0.06)', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 16 }}>
+                    <i className="ri-delete-bin-line" />
+                  </button>
+                  {i === shifts.length - 1 && (
+                    <button type="button" onClick={addShift} title="Add shift"
+                      style={{ height: 38, padding: '0 14px', borderRadius: 10, border: '1px dashed rgba(79,70,229,0.55)', background: 'rgba(79,70,229,0.06)', color: '#4F46E5', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <i className="ri-add-line" /> Add Shift
                     </button>
-                  </Col>
-                </Row>
+                  )}
+                </div>
               ))}
-              <button type="button" onClick={addShift}
-                style={{ marginTop: 4, padding: '6px 12px', borderRadius: 6, border: '1px dashed rgba(79,70,229,0.5)', background: 'rgba(79,70,229,0.06)', color: '#4F46E5', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <i className="ri-add-line" /> Add Shift
-              </button>
             </div>
 
             {/* ══ C: Limits ══ */}
