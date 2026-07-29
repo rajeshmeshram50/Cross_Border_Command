@@ -22,21 +22,23 @@ return new class extends Migration {
             return;
         }
 
-        // Pre-flight: abort with an actionable count if duplicate punch instants
-        // already exist (they'd block the unique index).
-        $dupes = DB::selectOne(
-            'SELECT count(*) AS c FROM (
-                SELECT employee_id, punched_at FROM attendance_punches
-                 WHERE deleted_at IS NULL
-                 GROUP BY employee_id, punched_at HAVING count(*) > 1
-             ) x'
+        // Auto-resolve duplicate punch instants so the unique index can build:
+        // soft-delete all but the lowest id in each (employee_id, punched_at)
+        // group (identical-instant punches are redundant). Logged + recoverable.
+        $extras = DB::select(
+            'SELECT p.id FROM attendance_punches p
+              WHERE p.deleted_at IS NULL
+                AND p.id > (
+                    SELECT MIN(p2.id) FROM attendance_punches p2
+                     WHERE p2.employee_id = p.employee_id
+                       AND p2.punched_at = p.punched_at
+                       AND p2.deleted_at IS NULL
+                )'
         );
-        if ($dupes && (int) $dupes->c > 0) {
-            throw new \RuntimeException(
-                "Cannot create attendance_punches_emp_instant_unique — {$dupes->c} duplicate "
-                . '(employee_id, punched_at) group(s) exist. De-duplicate them (keep one punch '
-                . 'per employee per instant), then re-run migrate.'
-            );
+        if (!empty($extras)) {
+            $ids = array_map(fn ($e) => $e->id, $extras);
+            \Illuminate\Support\Facades\Log::warning('[migration] soft-deleted ' . count($ids) . ' duplicate attendance_punch(es) before adding unique index', ['ids' => $ids]);
+            DB::table('attendance_punches')->whereIn('id', $ids)->update(['deleted_at' => now()]);
         }
 
         DB::statement(
