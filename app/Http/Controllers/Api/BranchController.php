@@ -161,6 +161,9 @@ class BranchController extends Controller
             'established_at' => 'nullable|date',
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
+            // Work shifts repeater — arrives as a JSON string on multipart
+            // uploads and as a real array on JSON requests; normalised below.
+            'shifts' => 'nullable',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             // Authorised-signatory image (signature + stamp combined).
@@ -231,6 +234,7 @@ class BranchController extends Controller
                 'established_at' => $request->established_at,
                 'status' => $request->status ?? 'active',
                 'notes' => $request->notes,
+                'shifts' => $this->normalizeShifts($request->input('shifts')),
                 'primary_color' => $request->primary_color,
                 'secondary_color' => $request->secondary_color,
                 'created_by' => $user->id,
@@ -458,6 +462,8 @@ class BranchController extends Controller
             'established_at' => 'nullable|date',
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
+            // Work shifts repeater — JSON string on multipart, array on JSON.
+            'shifts' => 'nullable',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             // Authorised-signatory image (signature + stamp combined).
@@ -508,6 +514,12 @@ class BranchController extends Controller
                 'max_users', 'established_at', 'status', 'notes',
                 'primary_color', 'secondary_color',
             ]));
+
+            // Shifts handled separately — the array cast would double-encode
+            // the JSON string that arrives on multipart uploads.
+            if ($request->has('shifts')) {
+                $branch->update(['shifts' => $this->normalizeShifts($request->input('shifts'))]);
+            }
 
             if ($request->hasFile('logo')) {
                 if ($branch->logo) {
@@ -690,6 +702,37 @@ class BranchController extends Controller
             $stored = substr($stored, strlen('storage/'));
         }
         return $stored;
+    }
+
+    /**
+     * Normalise the shifts repeater payload into a clean array of
+     * { name, start, end } rows. Accepts a JSON string (multipart uploads),
+     * an already-decoded array (JSON requests), or null. Blank-named rows
+     * are dropped so empty repeater rows never persist.
+     */
+    private function normalizeShifts($raw): array
+    {
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($raw)) {
+            return [];
+        }
+        return array_values(array_filter(array_map(function ($row) {
+            if (!is_array($row)) {
+                return null;
+            }
+            $name = trim((string) ($row['name'] ?? ''));
+            if ($name === '') {
+                return null;
+            }
+            return [
+                'name'  => $name,
+                'start' => (string) ($row['start'] ?? ''),
+                'end'   => (string) ($row['end'] ?? ''),
+            ];
+        }, $raw)));
     }
 
 

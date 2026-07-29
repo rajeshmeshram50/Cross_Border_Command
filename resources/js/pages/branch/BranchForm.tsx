@@ -8,6 +8,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
+import { MasterTimePicker } from '../../components/ui/MasterTimePicker';
 import { validatePhone } from '../../utils/validatePhone';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
@@ -311,6 +312,19 @@ export default function BranchForm({ onBack, editId }: Props) {
   // a new file is staged, or the saved /storage/... URL when editing.
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  // Branch-defined work shifts (repeater) — each { name, start, end }. These
+  // feed the Employee form's Shift dropdown, so each branch runs its own shifts.
+  type Shift = { name: string; start: string; end: string };
+  const blankShift = (): Shift => ({ name: '', start: '', end: '' });
+  // Always keep at least one row so the section renders an editable shift
+  // straight away instead of an empty-state placeholder.
+  const [shifts, setShifts] = useState<Shift[]>([blankShift()]);
+  const addShift    = () => setShifts(s => [...s, blankShift()]);
+  const removeShift = (i: number) => setShifts(s => {
+    const next = s.filter((_, j) => j !== i);
+    return next.length ? next : [blankShift()];
+  });
+  const updateShift = (i: number, key: keyof Shift, val: string) => setShifts(s => s.map((row, j) => j === i ? { ...row, [key]: val } : row));
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
   // Authorised-signatory image (signature + company stamp combined).
@@ -565,6 +579,14 @@ export default function BranchForm({ onBack, editId }: Props) {
       });
       setOriginalUserPassword(u?.password_plain || '');
       if (u?.password_plain) setShowPassword(true);
+      // Work shifts — cast to the { name, start, end } row shape defensively
+      // (backend may return null, a JSON string, or an array).
+      const rawShifts = typeof b.shifts === 'string'
+        ? (() => { try { return JSON.parse(b.shifts); } catch { return []; } })()
+        : b.shifts;
+      if (Array.isArray(rawShifts) && rawShifts.length) {
+        setShifts(rawShifts.map((s: any) => ({ name: s?.name || '', start: s?.start || '', end: s?.end || '' })));
+      }
       // Prefer the `logo_url` accessor (resolves to a public Storage URL)
       // over the raw `logo` path — otherwise the <img> tries to load
       // "branches/logos/foo.png" relative to the SPA root and 404s.
@@ -613,6 +635,12 @@ export default function BranchForm({ onBack, editId }: Props) {
       }
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null; });
       payload.max_users = parseInt(form.max_users) || 0;
+      // Work shifts (repeater) — drop blank rows, trim names. Sent as a JSON
+      // string on multipart (FormData stringifies arrays badly) and as a real
+      // array on the JSON path.
+      const cleanShifts = shifts
+        .filter(s => (s.name || '').trim())
+        .map(s => ({ name: s.name.trim(), start: s.start, end: s.end }));
 
       if (isEdit) {
         if (logoFile || profilePhotoFile || signatureFile) {
@@ -620,12 +648,13 @@ export default function BranchForm({ onBack, editId }: Props) {
           // so use POST + _method=PUT spoofing (same trick ClientForm uses).
           const fd = new FormData();
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
+          fd.append('shifts', JSON.stringify(cleanShifts));
           if (logoFile)         fd.append('logo', logoFile);
           if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
           if (signatureFile)    fd.append('signature_path', signatureFile);
           await api.post(`/branches/${editId}?_method=PUT`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
-          await api.put(`/branches/${editId}`, payload);
+          await api.put(`/branches/${editId}`, { ...payload, shifts: cleanShifts });
         }
         toast.success('Branch Updated', 'Branch details have been updated successfully');
       } else {
@@ -633,12 +662,13 @@ export default function BranchForm({ onBack, editId }: Props) {
         if (logoFile || profilePhotoFile || signatureFile) {
           const fd = new FormData();
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
+          fd.append('shifts', JSON.stringify(cleanShifts));
           if (logoFile)         fd.append('logo', logoFile);
           if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
           if (signatureFile)    fd.append('signature_path', signatureFile);
           createRes = await api.post('/branches', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
-          createRes = await api.post('/branches', payload);
+          createRes = await api.post('/branches', { ...payload, shifts: cleanShifts });
         }
         toast.success('Branch Created', 'New branch has been created with login credentials');
         // Surface the welcome-email outcome — if it couldn't be sent (e.g.
@@ -680,6 +710,7 @@ export default function BranchForm({ onBack, editId }: Props) {
   const handleReset = () => {
     setForm(empty); setValidationErrors({}); touchedRef.current = {};
     setLogoFile(null); setLogoPreview(null);
+    setShifts([blankShift()]);
   };
 
   /* Form-shaped shimmer — fires while EITHER the edit-mode entity
@@ -1481,8 +1512,46 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
             </Row>
 
-            {/* ══ B: Limits ══ */}
-            <SectionHeader icon="ri-group-line" title="Limits" badge="B" />
+            {/* ══ B: Shift Details ══ */}
+            {/* Repeater — each branch defines its own work shifts (name +
+                start/end time). These feed the Employee form's Shift dropdown,
+                so shifts stay per-branch instead of a hardcoded global list. */}
+            <SectionHeader icon="ri-time-line" title="Shift Details" badge="B" />
+            <div className="mb-3">
+              {shifts.map((sh, i) => (
+                <Row className="g-2 align-items-end mb-2" key={i}>
+                  <Col md={5}>
+                    {i === 0 && <Lbl>Shift Name</Lbl>}
+                    <Input style={css.input} placeholder="e.g. Morning Shift" value={sh.name}
+                      onChange={e => updateShift(i, 'name', e.target.value)} />
+                  </Col>
+                  <Col md={3}>
+                    {i === 0 && <Lbl>Start Time</Lbl>}
+                    <MasterTimePicker value={sh.start} showNow={false}
+                      onChange={v => updateShift(i, 'start', v)} />
+                  </Col>
+                  <Col md={3}>
+                    {i === 0 && <Lbl>End Time</Lbl>}
+                    <MasterTimePicker value={sh.end} showNow={false}
+                      minTime={sh.start || undefined}
+                      onChange={v => updateShift(i, 'end', v)} />
+                  </Col>
+                  <Col md={1} className="d-flex align-items-end">
+                    <button type="button" onClick={() => removeShift(i)} title="Remove shift"
+                      style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid rgba(220,38,38,0.35)', background: 'rgba(220,38,38,0.08)', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 15 }}>
+                      <i className="ri-delete-bin-line" />
+                    </button>
+                  </Col>
+                </Row>
+              ))}
+              <button type="button" onClick={addShift}
+                style={{ marginTop: 4, padding: '6px 12px', borderRadius: 6, border: '1px dashed rgba(79,70,229,0.5)', background: 'rgba(79,70,229,0.06)', color: '#4F46E5', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <i className="ri-add-line" /> Add Shift
+              </button>
+            </div>
+
+            {/* ══ C: Limits ══ */}
+            <SectionHeader icon="ri-group-line" title="Limits" badge="C" />
             <Row className="g-2 mb-3">
               <Col md={6}>
                 <Lbl>Max Users (0 = unlimited)</Lbl>
@@ -1511,10 +1580,10 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
             </Row>
 
-            {/* ══ C: Address ══ */}
+            {/* ══ D: Address ══ */}
             {/* Order: Street -> Country -> State -> City -> District -> Taluka -> Pincode.
                 Country drives the State dropdown (cascading from master data). */}
-            <SectionHeader icon="ri-map-pin-line" title="Address Details" badge="C" />
+            <SectionHeader icon="ri-map-pin-line" title="Address Details" badge="D" />
             <Row className="g-2 mb-3">
               <Col xs={12}>
                 <Lbl>Street Address</Lbl>
@@ -1564,7 +1633,7 @@ export default function BranchForm({ onBack, editId }: Props) {
             </Row>
 
             {/* ══ D: Legal & Registration ══ */}
-            <SectionHeader icon="ri-file-text-line" title="Legal & Registration" badge="D" />
+            <SectionHeader icon="ri-file-text-line" title="Legal & Registration" badge="E" />
             <Row className="g-2 mb-3">
               <Col md={4}>
                 <Lbl>GST Number</Lbl>
@@ -1642,7 +1711,7 @@ export default function BranchForm({ onBack, editId }: Props) {
             </Row>
 
             {/* ══ E: Branch User Credentials ══ */}
-            <SectionHeader icon="ri-user-line" title={isEdit ? 'Branch User Credentials' : 'Branch User Credentials (Required)'} badge="E" />
+            <SectionHeader icon="ri-user-line" title={isEdit ? 'Branch User Credentials' : 'Branch User Credentials (Required)'} badge="F" />
             <Row className="g-2 mb-3">
               <Col md={4}>
                 <Lbl>Full Name {!isEdit && <span className="text-danger">*</span>}</Lbl>
@@ -1795,7 +1864,7 @@ export default function BranchForm({ onBack, editId }: Props) {
             </Row>
 
             {/* ══ F: Notes ══ */}
-            <SectionHeader icon="ri-sticky-note-line" title="Notes" badge="F" />
+            <SectionHeader icon="ri-sticky-note-line" title="Notes" badge="G" />
             <Row className="g-2 mb-3">
               <Col xs={12}>
                 <Lbl>Internal Notes</Lbl>

@@ -49,6 +49,7 @@ class Branch extends Model
         'established_at',
         'status',
         'notes',
+        'shifts',
         'created_by',
     ];
 
@@ -59,6 +60,7 @@ class Branch extends Model
         return [
             'max_users' => 'integer',
             'established_at' => 'date',
+            'shifts' => 'array',
         ];
     }
 
