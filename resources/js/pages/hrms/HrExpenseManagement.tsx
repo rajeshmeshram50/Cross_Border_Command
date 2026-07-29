@@ -878,6 +878,7 @@ export default function HrExpenseManagement() {
             data={filteredAdvances}
             columns={advanceColumns}
             accent="violet"
+            autoFitRows
             minWidth={1500}
             loading={advanceLoading}
             searchValue={search}
@@ -899,6 +900,7 @@ export default function HrExpenseManagement() {
             data={filtered}
             columns={claimColumns}
             accent="violet"
+            autoFitRows
             minWidth={1150}
             loading={loading}
             searchValue={search}

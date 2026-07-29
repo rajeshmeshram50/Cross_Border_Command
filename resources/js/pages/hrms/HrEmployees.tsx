@@ -2460,7 +2460,6 @@ export default function HrEmployees() {
               minWidth={1500}
               fitToViewport
               autoFitRows
-              pageSizeOptions={[5, 10, 25, 50, 100]}
               loading={loadingEmployees || tabSwitching}
               tabs={[
                 { key: 'active',   label: 'Active Employees',   icon: 'ri-user-follow-line',   count: counts.activeTab },

@@ -1601,6 +1601,7 @@ export default function HrPayroll() {
               columns={processingColumns}
               serial={{ header: 'Sr. No.' }}
               accent="violet"
+              autoFitRows
               minWidth={1500}
               loading={loading}
               searchValue={q}
@@ -1654,6 +1655,7 @@ export default function HrPayroll() {
                 data={filtered}
                 columns={biometricColumns}
                 accent="violet"
+                autoFitRows
                 minWidth={1100}
                 loading={loading}
                 searchValue={q}
@@ -1700,6 +1702,7 @@ export default function HrPayroll() {
                 data={filtered}
                 columns={reportColumns}
                 accent="violet"
+                autoFitRows
                 minWidth={1900}
                 loading={loading}
                 searchValue={q}
@@ -1729,6 +1732,7 @@ export default function HrPayroll() {
                 data={roster}
                 columns={rosterColumns}
                 accent="violet"
+                autoFitRows
                 minWidth={1100}
                 loading={rosterLoading}
                 searchPlaceholder="Search employee, ID, department…"

@@ -623,7 +623,7 @@ export default function HrEmployeeOnboarding() {
       header: 'Employee',
       accessorKey: 'name',
       // wrap: the join date sits on a second line under the name.
-      meta: { width: '16%', wrap: true },
+      meta: { width: '15%', wrap: true },
       cell: info => {
         const r = info.row.original;
         return (
@@ -772,7 +772,7 @@ export default function HrEmployeeOnboarding() {
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { width: '12%', align: 'center', wrap: true },
+      meta: { width: '13%', align: 'center', wrap: true },
       cell: info => {
         const r = info.row.original;
         if (tab === 'completed') {
@@ -887,7 +887,6 @@ export default function HrEmployeeOnboarding() {
         minWidth={1500}
         fitToViewport
         autoFitRows
-        pageSizeOptions={[5, 10, 25, 50, 100]}
         loading={loadingRows}
         searchValue={q}
         onSearchChange={setQ}

@@ -391,6 +391,7 @@ export default function HrDocumentTemplates() {
             columns={columns}
             serial
             accent="violet"
+            autoFitRows
             minWidth={1250}
             loading={loading}
             searchValue={search}

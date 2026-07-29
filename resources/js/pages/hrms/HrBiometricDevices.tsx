@@ -308,6 +308,7 @@ export default function HrBiometricDevices() {
             columns={columns}
             serial
             accent="violet"
+            autoFitRows
             minWidth={1250}
             loading={loading}
             searchValue={search}

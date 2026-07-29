@@ -1507,12 +1507,17 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
         </div>
 
         {/* Shared list table (components/ui/DataTable) — same component the main
-            Recruitment list uses, so the modal's list reads identically. */}
+            Recruitment list uses, so the modal's list reads identically.
+            NOT autoFitRows (the one HRMS table without it): auto-fit measures
+            from the card top to the viewport bottom, which inside a modal body
+            would ask for more rows than the modal can show. Fixed page size
+            instead; the Rows-per-page selector still works. */}
         <DataTable<HiringRequestRow>
           data={filtered}
           columns={columns}
           accent="violet"
           minWidth={1500}
+          pageSize={8}
           searchValue={q}
           onSearchChange={setQ}
           searchPlaceholder="Search requests…"

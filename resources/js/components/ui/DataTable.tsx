@@ -111,7 +111,11 @@ export interface DataTableProps<T> {
 }
 
 const DEFAULT_PAGE_SIZE = 10;
-const DEFAULT_SIZE_OPTIONS = [5, 10, 15, 25, 50];
+/* Same set as My Workplace (SalesLeadWorksheet's ROWS_PER_PAGE_OPTIONS) and the
+ * shared WorklistPager default, so every list in the app offers the same
+ * rows-per-page choices. The auto-fit size is merged into the list at render
+ * time, so a computed 8 or 14 still appears as a selectable option. */
+const DEFAULT_SIZE_OPTIONS = [10, 25, 50];
 
 const alignToCss = (a?: DataTableAlign): 'left' | 'center' | 'right' =>
   a === 'center' ? 'center' : a === 'right' || a === 'end' ? 'right' : 'left';

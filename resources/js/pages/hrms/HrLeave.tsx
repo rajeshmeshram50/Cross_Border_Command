@@ -913,6 +913,7 @@ export default function HrLeave() {
               columns={columns}
               serial={{ header: 'SR.' }}
               accent="violet"
+              autoFitRows
               minWidth={1320}
               loading={requestsLoading}
               searchValue={search}

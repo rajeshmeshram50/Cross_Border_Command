@@ -496,6 +496,7 @@ export default function HrCustomFields() {
             columns={columns}
             serial
             accent="violet"
+            autoFitRows
             minWidth={1100}
             loading={loading}
             searchValue={search}

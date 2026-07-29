@@ -464,6 +464,7 @@ export default function HrHoliday() {
               columns={columns}
               serial
               accent="violet"
+              autoFitRows
               minWidth={1250}
               loading={loading}
               searchValue={search}
