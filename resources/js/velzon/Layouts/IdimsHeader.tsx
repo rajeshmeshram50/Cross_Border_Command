@@ -71,6 +71,7 @@ const LEAF_DESC: Record<string, string> = {
   'hr.exit': 'Exit & full-and-final processing.',
   'hr.payroll': 'Salary structures & payroll runs.',
   'hr.attendance': 'Face attendance & punch records.',
+  'hr.devices': 'Biometric device terminals (eSSL).',
   'hr.leave': 'Leave requests & balances.',
   'hr.leave_approvals': 'Approve or reject leave requests.',
   'hr.holiday': 'Company holiday calendar.',
@@ -141,6 +142,7 @@ function hrLeafPath(id: string): string {
     case 'hr.exit':            return '/hr/exit-management';
     case 'hr.onboarding':      return '/hr/employee-onboarding';
     case 'hr.attendance':      return '/hr/attendance';
+    case 'hr.devices':         return '/hr/devices';
     case 'hr.broadcast':       return '/hr/broadcast';
     case 'hr.doc_templates':   return '/hr/doc-templates';
     case 'hr.custom_fields':   return '/hr/custom-fields';
@@ -186,14 +188,7 @@ export default function IdimsHeader() {
   const { selectedBranch } = useBranchSwitcher();
   const dispatch = useDispatch();
 
-  /* Toggle dark/light through BOTH theme authorities at once. ThemeContext
-   * drives the CSS-var pages; Velzon's Redux `layoutModeType` drives the shell
-   * + `data-bs-theme`. Flipping only ThemeContext left Redux stale, so a later
-   * structural layout effect would re-dispatch changeLayoutMode(staleMode),
-   * revert data-bs-theme, and the ThemeContext MutationObserver would flip React
-   * state back — the rapid theme shake/flash (QA #56). Keeping them in lockstep
-   * removes the disagreement. changeLayoutMode is excluded from the shell
-   * effect's deps, so this dispatch does NOT fire a synthetic resize/reflow. */
+  
   const toggleThemeSynced = () => {
     const next = theme === 'light' ? 'dark' : 'light';
     dispatch(changeLayoutMode(next));
@@ -209,8 +204,6 @@ export default function IdimsHeader() {
   const [isFs, setIsFs] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileExpand, setMobileExpand] = useState<DD | null>(null);
-  // Overflow "More" menu — collapses nav items that don't fit on one row
-  // (instead of horizontal scrolling) into a dropdown.
   const [moreOpen, setMoreOpen] = useState(false);
   const [moreExpand, setMoreExpand] = useState<DD | null>(null);
   const [visibleCount, setVisibleCount] = useState(99);
@@ -218,15 +211,10 @@ export default function IdimsHeader() {
   const navGhostRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  /* ── Permission helpers (mirror LayoutMenuData) ── */
   const isSuperAdmin = user?.user_type === 'super_admin';
   const perms = user?.permissions || {};
   const planExpired = !!(user?.plan && (!user.plan.has_plan || user.plan.expired)) &&
     user?.user_type !== 'super_admin';
-
-  // Clock-In is an attendance action — only users with an actual employee
-  // record can punch in. Hidden for super-admin / client / branch logins
-  // (mirrors the `isEmployee` guard in components/App.tsx).
   const isEmployee = user?.user_type === 'employee' && !!user?.employee_id;
   const can = (slug: string) => isSuperAdmin || (!planExpired && !!perms[slug]?.can_view);
   const hasGroupView = (prefix: string) =>
@@ -235,9 +223,6 @@ export default function IdimsHeader() {
   /* ── Logo ── */
   const rawLogo = user?.branch_logo || user?.client_logo || null;
   const logoSrc = rawLogo ? resolveFileUrl(rawLogo) : logoFallback;
-  // Dark-mode logo: same file with a "-dark" suffix (a recoloured variant whose
-  // dark ink is turned light so it reads on the dark nav, no box). If that file
-  // doesn't exist for a tenant, onError flips to the original on a soft pill.
   const darkRaw = rawLogo && /\.(png|jpe?g|webp)$/i.test(rawLogo)
     ? rawLogo.replace(/\.(png|jpe?g|webp)$/i, '-dark.png')
     : null;
@@ -472,7 +457,11 @@ export default function IdimsHeader() {
   // same sign requests, so it rides on the Quotation Vs PI permission.
   const leafCanView = (leaf: Leaf): boolean => {
     if (isSuperAdmin) return true;
-    const slug = leaf.id === 'sales.sign_tracker' ? 'sales.quotation_vs_pi' : leaf.id;
+    // Biometric Devices has no permission slug of its own — it rides on the
+    // Attendance grant (same pattern as sales.sign_tracker).
+    const slug = leaf.id === 'sales.sign_tracker' ? 'sales.quotation_vs_pi'
+      : leaf.id === 'hr.devices' ? 'hr.attendance'
+      : leaf.id;
     return !!perms[slug]?.can_view;
   };
 

@@ -164,7 +164,10 @@ export const HR_GROUPS: MenuGroup[] = [
     children: [
       { id: 'hr.payroll', icon: 'IndianRupee', label: 'Payroll' },
       ...(FEATURE_FLAGS.hrAttendance
-        ? [{ id: 'hr.attendance', icon: 'CalendarCheck', label: 'Attendance' } as MenuItem]
+        ? [
+            { id: 'hr.attendance', icon: 'CalendarCheck', label: 'Attendance' } as MenuItem,
+            { id: 'hr.devices', icon: 'Fingerprint', label: 'Biometric Devices' } as MenuItem,
+          ]
         : []),
       { id: 'hr.leave', icon: 'CalendarOff', label: 'Leave' },
       { id: 'hr.holiday', icon: 'CalendarDays', label: 'Holiday' },

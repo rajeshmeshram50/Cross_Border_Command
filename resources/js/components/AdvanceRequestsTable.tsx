@@ -1,6 +1,6 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ShimmerTableRows } from './ui/Shimmer';
+import DataTable, { TruncCell, type DataTableColumn } from './ui/DataTable';
 import ProofOfPaymentCell from './ProofOfPaymentCell';
 import '../../css/recruitment.css';
 
@@ -112,88 +112,228 @@ function withAuthToken(url: string): string {
   return `${url}${sep}token=${encodeURIComponent(token)}`;
 }
 
+/* Column set for the shared <DataTable>. Exported so the HR Expense
+ * Management page can wrap its own tabs / search / pager around exactly these
+ * columns, while the employee-profile advance tab uses the component below.
+ * Widths sum to 100 (fixed layout): 4+8+13+11+14+8+8+9+8+8+5+7+9 → see below. */
+export function advanceRequestColumns({
+  accent = '#6366f1', fallbackName, fallbackInitials,
+  mode = 'mine', currentEmployeeId = null, canHrApprove = false, onAct,
+}: Omit<Props, 'rows' | 'loading'>): DataTableColumn<AdvanceRequestRow>[] {
+  return [
+    {
+      header: 'Adv ID',
+      id: 'advance_no',
+      accessorFn: (r: AdvanceRequestRow) => r.advance_no || `#${r.id}`,
+      meta: { width: '8%' },
+      cell: info => (
+        <span
+          className="font-monospace fw-semibold adv-id-badge"
+          style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#dceefe', color: '#0c63b0', letterSpacing: '0.02em' }}
+        >
+          {info.row.original.advance_no || `#${info.row.original.id}`}
+        </span>
+      ),
+    },
+    {
+      header: 'Employee',
+      id: 'employee',
+      accessorFn: (r: AdvanceRequestRow) => r.employee_name || fallbackName || `#${r.employee_id}`,
+      meta: { width: '13%' },
+      cell: info => {
+        const r = info.row.original;
+        const empName = r.employee_name || fallbackName || ('#' + r.employee_id);
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <div
+              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{
+                width: 24, height: 24, fontSize: 10,
+                background: `linear-gradient(135deg, ${accent}, ${accent}cc)`,
+                boxShadow: `0 2px 6px ${accent}40`,
+              }}
+            >
+              {initialsFromName(r.employee_name, fallbackInitials)}
+            </div>
+            <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
+              <span className="fw-semibold text-truncate">{empName}</span>
+              {r.employee_code && <small className="text-muted" style={{ fontSize: 10 }}>{r.employee_code}</small>}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Advance Type',
+      id: 'advance_type',
+      // "Other" carries the free-text detail, so sort/search see the full label.
+      accessorFn: (r: AdvanceRequestRow) => (r.advance_type === 'Other' && r.advance_type_other ? `Other · ${r.advance_type_other}` : r.advance_type),
+      meta: { width: '11%' },
+      cell: info => (
+        <span
+          className="d-inline-flex align-items-center gap-1 fw-semibold adv-type-badge"
+          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, background: '#ece6ff', color: '#5a3fd1', maxWidth: '100%' }}
+        >
+          <i className="ri-bank-card-line" />
+          <span className="text-truncate">{String(info.getValue() ?? '')}</span>
+        </span>
+      ),
+    },
+    {
+      header: 'Reason',
+      accessorKey: 'reason',
+      meta: { width: '14%' },
+      cell: info => <TruncCell value={info.getValue() as string} caseSensitive max={70} />,
+    },
+    {
+      header: 'Amount',
+      accessorKey: 'amount',
+      meta: { width: '9%', align: 'right' },
+      cell: info => <span className="fw-bold">₹{Number(info.row.original.amount || 0).toLocaleString('en-IN')}</span>,
+    },
+    {
+      header: 'Requested',
+      id: 'requested_date',
+      accessorFn: (r: AdvanceRequestRow) => (r.requested_date ? new Date(r.requested_date).getTime() : 0),
+      meta: { width: '9%' },
+      cell: info => <span className="text-muted">{fmtDate(info.row.original.requested_date)}</span>,
+    },
+    {
+      header: 'Recovery Start',
+      id: 'recovery_start',
+      accessorFn: (r: AdvanceRequestRow) => (r.recovery_start ? new Date(r.recovery_start).getTime() : 0),
+      meta: { width: '9%' },
+      cell: info => <span className="text-muted">{fmtDate(info.row.original.recovery_start)}</span>,
+    },
+    {
+      header: 'Recovery',
+      id: 'recovery_mode',
+      accessorFn: (r: AdvanceRequestRow) => RECOVERY_LABEL[r.recovery_mode] || r.recovery_mode,
+      meta: { width: '8%' },
+      cell: info => (
+        <span
+          className="d-inline-flex align-items-center fw-semibold adv-recovery-badge"
+          style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#d3f0ee', color: '#0a716a' }}
+        >
+          {String(info.getValue() ?? '')}
+        </span>
+      ),
+    },
+    {
+      /* Only EMI recoveries have a monthly figure; lump-sum/bi-monthly show —.
+         Sorts on the numeric EMI so the biggest deduction leads. */
+      header: 'Monthly EMI',
+      id: 'monthly_emi',
+      accessorFn: (r: AdvanceRequestRow) => (r.recovery_mode === 'emi' ? Number(r.monthly_emi || 0) : 0),
+      meta: { width: '9%' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <span className="text-muted">
+            {r.recovery_mode === 'emi'
+              ? `₹${Number(r.monthly_emi || 0).toLocaleString('en-IN')}${r.recovery_months ? ` × ${r.recovery_months} mo` : ''}`
+              : '—'}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Attachments</div>,
+      id: '__attachments',
+      enableSorting: false,
+      meta: { align: 'center', width: '7%' },
+      /* First receipt inline; extras collapse into a "+N more" popover so
+         multiple uploads never expand the row height. */
+      cell: info => (
+        <ProofOfPaymentCell
+          attachments={info.row.original.attachments}
+          withAuthToken={withAuthToken}
+          accent={{ bg: 'rgba(99,102,241,0.10)', fg: '#4338ca', border: 'rgba(99,102,241,0.25)' }}
+        />
+      ),
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      meta: { width: '8%', align: 'center' },
+      cell: info => {
+        const s = info.row.original.status;
+        const tone = STATUS_TONE[s];
+        return (
+          <span
+            className={`d-inline-flex align-items-center gap-1 fw-semibold adv-status-badge adv-status-badge--${s}`}
+            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: tone.bg, color: tone.fg }}
+          >
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: tone.dot }} />
+            {tone.label}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Action</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { align: 'center', width: '9%', wrap: true },
+      cell: info => (
+        <AdvanceActionCell
+          row={info.row.original}
+          mode={mode}
+          currentEmployeeId={currentEmployeeId}
+          canHrApprove={canHrApprove}
+          onAct={onAct}
+        />
+      ),
+    },
+  ];
+}
+
 export default function AdvanceRequestsTable({
   rows, loading,
   fallbackName, fallbackInitials, accent = '#6366f1',
   mode = 'mine', currentEmployeeId = null, canHrApprove = false,
   onAct,
 }: Props) {
+  const columns = useMemo(
+    () => advanceRequestColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct }),
+    [accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct],
+  );
   return (
     <>
       <style>{BADGE_DARK_CSS}</style>
-      <div className="table-responsive border rounded ep-att-scroll-wrap">
-        <table className="table align-middle table-nowrap ep-att-table mb-0">
-        <thead className="table-light">
-          <tr>
-            <th>Adv ID</th>
-            <th>Employee</th>
-            <th>Advance Type</th>
-            <th>Reason</th>
-            <th>Amount</th>
-            <th>Requested</th>
-            <th>Recovery Start</th>
-            <th>Recovery</th>
-            <th>Monthly EMI</th>
-            <th>Attachments</th>
-            <th>Status</th>
-            <th className="text-center">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {loading ? (
-            <ShimmerTableRows rows={5} cols={12} keyPrefix="adv-shim" />
-          ) : rows.length === 0 ? (
-            <tr>
-              <td colSpan={12} className="text-center py-5 text-muted">
-                <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                No advance requests to show.
-              </td>
-            </tr>
-          ) : rows.map(r => (
-            <AdvanceRequestRowView
-              key={r.id}
-              row={r}
-              accent={accent}
-              fallbackName={fallbackName}
-              fallbackInitials={fallbackInitials}
-              mode={mode}
-              currentEmployeeId={currentEmployeeId}
-              canHrApprove={canHrApprove}
-              onAct={onAct}
-            />
-          ))}
-        </tbody>
-      </table>
-      </div>
+      {/* Search/paging off: callers own their sub-tabs, filters and pager and
+          pass the page slice in. */}
+      <DataTable<AdvanceRequestRow>
+        data={rows}
+        columns={columns}
+        accent="violet"
+        minWidth={1500}
+        loading={!!loading}
+        searchable={false}
+        paginate={false}
+        emptyMessage={
+          <>
+            <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+            No advance requests to show.
+          </>
+        }
+      />
     </>
   );
 }
 
-function AdvanceRequestRowView({
-  row, accent, fallbackName, fallbackInitials,
-  mode, currentEmployeeId, canHrApprove, onAct,
+/** Action cell — inline manager/HR approve-reject when the viewer may act on
+ *  this row, plus the 3-dot audit-log popover. Owns the confirm-modal state,
+ *  so it has to be a component: one instance per row. */
+function AdvanceActionCell({
+  row: r, mode, currentEmployeeId, canHrApprove, onAct,
 }: {
   row: AdvanceRequestRow;
-  accent: string;
-  fallbackName?: string;
-  fallbackInitials?: string;
   mode: 'mine' | 'team' | 'hr';
   currentEmployeeId: number | null;
   canHrApprove: boolean;
   onAct?: Props['onAct'];
 }) {
-  const r = row;
-  const tone = STATUS_TONE[r.status];
-  const empName = r.employee_name || fallbackName || ('#' + r.employee_id);
-  const empInitials = initialsFromName(r.employee_name, fallbackInitials);
-  const typeLabel = r.advance_type === 'Other' && r.advance_type_other
-    ? `Other · ${r.advance_type_other}`
-    : r.advance_type;
-  const recoveryLabel = RECOVERY_LABEL[r.recovery_mode] || r.recovery_mode;
-  const emiSummary = r.recovery_mode === 'emi'
-    ? `₹${Number(r.monthly_emi || 0).toLocaleString('en-IN')}${r.recovery_months ? ` × ${r.recovery_months} mo` : ''}`
-    : '—';
-
   const [menuOpen, setMenuOpen] = useState(false);
   type Confirm = { stage: 'manager' | 'hr'; verdict: 'approve' | 'reject' };
   const [confirmAction, setConfirmAction] = useState<Confirm | null>(null);
@@ -213,171 +353,49 @@ function AdvanceRequestRowView({
     && r.hr_status === 'pending'
     && !!onAct;
 
-  return (
-    <tr>
-      <td>
-        <span
-          className="font-monospace fw-semibold adv-id-badge"
-          style={{
-            fontSize: 11, padding: '2px 9px', borderRadius: 999,
-            background: '#dceefe', color: '#0c63b0', letterSpacing: '0.02em',
-          }}
-        >
-          {r.advance_no || `#${r.id}`}
-        </span>
-      </td>
-      <td>
-        <div className="d-flex align-items-center gap-2">
-          <div
-            className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-            style={{
-              width: 24, height: 24, fontSize: 10,
-              background: `linear-gradient(135deg, ${accent}, ${accent}cc)`,
-              boxShadow: `0 2px 6px ${accent}40`,
-            }}
-          >
-            {empInitials}
-          </div>
-          <div className="d-flex flex-column" style={{ lineHeight: 1.15 }}>
-            <span className="fw-semibold">{empName}</span>
-            {r.employee_code && (
-              <small className="text-muted" style={{ fontSize: 10 }}>{r.employee_code}</small>
-            )}
-          </div>
-        </div>
-      </td>
-      <td>
-        <span
-          className="d-inline-flex align-items-center gap-1 fw-semibold adv-type-badge"
-          style={{
-            fontSize: 11, padding: '3px 9px', borderRadius: 999,
-            background: '#ece6ff', color: '#5a3fd1',
-          }}
-        >
-          <i className="ri-bank-card-line" />
-          {typeLabel}
-        </span>
-      </td>
-      <td style={{ maxWidth: 240 }}><div style={{ maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.reason}>{r.reason}</div></td>
-      <td className="fw-bold">₹{Number(r.amount || 0).toLocaleString('en-IN')}</td>
-      <td className="text-muted">{fmtDate(r.requested_date)}</td>
-      <td className="text-muted">{fmtDate(r.recovery_start)}</td>
-      <td>
-        <span
-          className="d-inline-flex align-items-center fw-semibold adv-recovery-badge"
-          style={{
-            fontSize: 11, padding: '2px 9px', borderRadius: 999,
-            background: '#d3f0ee', color: '#0a716a',
-          }}
-        >
-          {recoveryLabel}
-        </span>
-      </td>
-      <td className="text-muted">{emiSummary}</td>
-      <td>
-        {/* First receipt inline; any extras collapse into a "+N more" popover
-            so multiple uploads never expand the row height. */}
-        <ProofOfPaymentCell
-          attachments={r.attachments}
-          withAuthToken={withAuthToken}
-          accent={{ bg: 'rgba(99,102,241,0.10)', fg: '#4338ca', border: 'rgba(99,102,241,0.25)' }}
-        />
-      </td>
-      <td>
-        <span
-          className={`d-inline-flex align-items-center gap-1 fw-semibold adv-status-badge adv-status-badge--${r.status}`}
-          style={{
-            fontSize: 11, padding: '3px 10px', borderRadius: 999,
-            background: tone.bg, color: tone.fg,
-          }}
-        >
-          <span style={{ width: 5, height: 5, borderRadius: '50%', background: tone.dot }} />
-          {tone.label}
-        </span>
-      </td>
-      <td className="text-center">
-        <div className="d-inline-flex align-items-center gap-1">
-          {canManagerAct && (
-            <>
-              <button
-                type="button"
-                title="Approve"
-                onClick={() => { setConfirmAction({ stage: 'manager', verdict: 'approve' }); setComment(''); }}
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                style={{
-                  width: 28, height: 28, padding: 0,
-                  background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
-                  color: '#fff', border: 'none',
-                }}
-              >
-                <i className="ri-check-line" />
-              </button>
-              <button
-                type="button"
-                title="Reject"
-                onClick={() => { setConfirmAction({ stage: 'manager', verdict: 'reject' }); setComment(''); }}
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                style={{
-                  width: 28, height: 28, padding: 0,
-                  background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
-                  color: '#fff', border: 'none',
-                }}
-              >
-                <i className="ri-close-line" />
-              </button>
-            </>
-          )}
-          {canHrAct && (
-            <>
-              <button
-                type="button"
-                title="Approve"
-                onClick={() => { setConfirmAction({ stage: 'hr', verdict: 'approve' }); setComment(''); }}
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                style={{
-                  width: 28, height: 28, padding: 0,
-                  background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
-                  color: '#fff', border: 'none',
-                }}
-              >
-                <i className="ri-check-line" />
-              </button>
-              <button
-                type="button"
-                title="Reject"
-                onClick={() => { setConfirmAction({ stage: 'hr', verdict: 'reject' }); setComment(''); }}
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                style={{
-                  width: 28, height: 28, padding: 0,
-                  background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
-                  color: '#fff', border: 'none',
-                }}
-              >
-                <i className="ri-close-line" />
-              </button>
-            </>
-          )}
-          <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} row={r} />
-        </div>
+  const verdictBtn = (stage: 'manager' | 'hr', verdict: 'approve' | 'reject') => (
+    <button
+      type="button"
+      title={verdict === 'approve' ? 'Approve' : 'Reject'}
+      onClick={() => { setConfirmAction({ stage, verdict }); setComment(''); }}
+      className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+      style={{
+        width: 28, height: 28, padding: 0,
+        background: verdict === 'approve'
+          ? 'linear-gradient(135deg,#0ab39c,#02c8a7)'
+          : 'linear-gradient(135deg,#f06548,#ff7a5c)',
+        color: '#fff', border: 'none',
+      }}
+    >
+      <i className={verdict === 'approve' ? 'ri-check-line' : 'ri-close-line'} />
+    </button>
+  );
 
-        <AdvanceConfirmModal
-          target={confirmAction && onAct ? { row: r, action: confirmAction } : null}
-          comment={comment}
-          setComment={setComment}
-          onClose={() => setConfirmAction(null)}
-          onConfirm={async () => {
-            if (!confirmAction || !onAct) return;
-            const isApprove = confirmAction.verdict === 'approve';
-            const action: ActionKind =
-                confirmAction.stage === 'manager'
-                  ? (isApprove ? 'manager-approve' : 'manager-reject')
-                  : (isApprove ? 'hr-approve'      : 'hr-reject');
-            await onAct(r.id, action, comment.trim() || undefined);
-            setConfirmAction(null);
-          }}
-        />
-      </td>
-    </tr>
+  return (
+    <>
+      <div className="d-inline-flex align-items-center gap-1">
+        {canManagerAct && <>{verdictBtn('manager', 'approve')}{verdictBtn('manager', 'reject')}</>}
+        {canHrAct && <>{verdictBtn('hr', 'approve')}{verdictBtn('hr', 'reject')}</>}
+        <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} row={r} />
+      </div>
+
+      <AdvanceConfirmModal
+        target={confirmAction && onAct ? { row: r, action: confirmAction } : null}
+        comment={comment}
+        setComment={setComment}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={async () => {
+          if (!confirmAction || !onAct) return;
+          const isApprove = confirmAction.verdict === 'approve';
+          const action: ActionKind =
+              confirmAction.stage === 'manager'
+                ? (isApprove ? 'manager-approve' : 'manager-reject')
+                : (isApprove ? 'hr-approve'      : 'hr-reject');
+          await onAct(r.id, action, comment.trim() || undefined);
+          setConfirmAction(null);
+        }}
+      />
+    </>
   );
 }
 

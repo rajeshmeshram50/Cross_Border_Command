@@ -164,8 +164,24 @@ export function VersionHistoryModal({ t, code, workingId, versions, onClose }: {
 type TStatus = 'done' | 'rejected' | 'pending';
 type TStep = { title: string; desc: string; status: TStatus; by: string; date: string; icon: React.ReactNode };
 
-export function AgreementTimelineModal({ t, code, title, stage, versions, signers, onClose }: { t: OpsTokens; code: string; title: string; stage: number; versions: CtcVersion[]; signers: CtcSigner[]; onClose: () => void }) {
+export function AgreementTimelineModal({ t, code, title, stage, versions, signers, signatureRequestId, onClose }: { t: OpsTokens; code: string; title: string; stage: number; versions: CtcVersion[]; signers: CtcSigner[]; signatureRequestId?: number | null; onClose: () => void }) {
   useScrollLock(true);   // freeze background scroll while the modal is open
+  const toast = useToast();
+  // Zoho "Certificate of Completion" — downloadable once the agreement is fully
+  // signed / stored (the Zoho request completed). Uses the same endpoint as the
+  // signing tracker + CTC repository so the certificate is reachable from here too.
+  const [dlCert, setDlCert] = useState(false);
+  const downloadCertificate = async () => {
+    if (!signatureRequestId || dlCert) return;
+    setDlCert(true);
+    try {
+      const res = await api.get(`/clm/signature-requests/${signatureRequestId}/certificate`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
+      const a = document.createElement('a'); a.href = url; a.download = `${(code || 'agreement').replace(/[^a-z0-9\-_.]/gi, '_')}_certificate.pdf`; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch { toast.info('Not ready yet', 'The completion certificate will be available once all parties have signed.'); }
+    finally { setDlCert(false); }
+  };
   const last = (pred: (v: CtcVersion) => boolean) => [...versions].reverse().find(pred) || null;
   const v1 = versions.find(v => v.v === 1) || versions[0] || null;
   const approvedV = last(v => v.status === 'Approved');
@@ -218,13 +234,34 @@ export function AgreementTimelineModal({ t, code, title, stage, versions, signer
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,23,42,.55)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div onClick={e => e.stopPropagation()} style={{ width: 'min(560px,94vw)', maxHeight: '86vh', background: t.surface, borderRadius: 18, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.35)' : '#DDD6FE'}`, boxShadow: '0 24px 70px rgba(0,0,0,.4)', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'var(--font-sans)' }}>
+        {/* Self-contained spin keyframe so the certificate spinner rotates on
+            BOTH host pages (CTC list + Agreements Sent), not just where CTC_CSS
+            happens to define it. */}
+        <style>{'@keyframes ctcSpin{to{transform:rotate(360deg)}}'}</style>
         {/* header */}
         <div style={{ padding: '16px 18px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
             <div style={{ width: 38, height: 38, borderRadius: 11, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
             <div><div style={{ fontSize: 8, fontWeight: 800, color: 'rgba(255,255,255,.62)', letterSpacing: '.12em', textTransform: 'uppercase' }}>{code} · Approval Workflow</div><div style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: '-.3px' }}>Agreement Timeline</div><div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.7)', marginTop: 1 }}>{title}</div></div>
           </div>
-          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: 'rgba(255,255,255,.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {/* Download the Zoho completion certificate — always shown, but
+                DISABLED (greyed) until the agreement is fully signed. */}
+            {(() => {
+              const certReady = !!signatureRequestId && (!!signedAllV || !!storedV || stage >= 4);
+              return (
+                <button onClick={certReady ? downloadCertificate : undefined} disabled={!certReady || dlCert}
+                  title={certReady ? 'Download the Zoho completion certificate' : 'Available once all parties have signed'}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px', borderRadius: 9, border: '1px solid rgba(255,255,255,.32)', background: 'rgba(255,255,255,.16)', color: '#fff', fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: !certReady ? 'not-allowed' : (dlCert ? 'wait' : 'pointer'), whiteSpace: 'nowrap', opacity: certReady ? 1 : 0.5 }}>
+                  {dlCert
+                    ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'ctcSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                    : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg>}
+                  Download Certificate
+                </button>
+              );
+            })()}
+            <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: 'rgba(255,255,255,.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+          </div>
         </div>
         {/* progress */}
         <div style={{ padding: '12px 18px', flexShrink: 0, background: t.dark ? 'rgba(124,58,237,.08)' : 'linear-gradient(110deg,#F5F0FF,#EDE9FE)', borderBottom: `1px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#DDD6FE'}` }}>

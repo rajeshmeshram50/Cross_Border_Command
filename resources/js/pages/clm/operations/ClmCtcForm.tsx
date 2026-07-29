@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import PdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&url';
 import { useToast } from '../../../contexts/ToastContext';
+import { useAuth } from '../../../contexts/AuthContext';
 import api from '../../../api';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorkerUrl as unknown as string;
@@ -100,7 +101,18 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   const [hydrating, setHydrating] = useState(!!editing?.dbId);  // edit-mode initial fetch in progress
   // Page-shell header/footer config — lifted to the parent so it survives the
   // stage change and the Stage-2 preview can render the same logo/header/footer.
-  const [header, setHeader] = useState<HeaderConfig>(DEFAULT_HEADER);
+  // Pre-fill the header with the user's BRANCH (or client) logo + name so a fresh
+  // CTC already carries the tenant's branding by default; the user can still edit
+  // it via the Header Settings popover. (Same pattern as the Agreement / Trade Doc
+  // editors.)
+  const { user: authUser } = useAuth();
+  const brandedDefaults = useMemo(() => {
+    const headerLogoUrl = authUser?.branch_logo ?? authUser?.client_logo ?? null;
+    const headerLogoPath = headerLogoUrl ? (headerLogoUrl.match(/\/storage\/(.+)$/)?.[1] ?? null) : null;
+    const headerTitle = authUser?.branch_name ?? authUser?.client_name ?? DEFAULT_HEADER.title;
+    return { ...DEFAULT_HEADER, logo_path: headerLogoPath, logo_url: headerLogoUrl, title: headerTitle } as HeaderConfig;
+  }, [authUser?.branch_logo, authUser?.client_logo, authUser?.branch_name, authUser?.client_name]);
+  const [header, setHeader] = useState<HeaderConfig>(brandedDefaults);
   const [footer, setFooter] = useState<FooterConfig>(DEFAULT_FOOTER);
   // Note: the selected organization is intentionally NOT injected into the
   // document header title — the org name should not appear in the draft's
@@ -213,7 +225,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       if (r.org_name) setOrg({ id: 0, name: String(r.org_name), shortCode: String(r.org_short_code ?? '—'), state: String(r.org_state ?? '—'), country: String(r.org_country ?? 'India'), city: '', grad: ORG_GRADS[0], initials: orgInitials(String(r.org_name)), sub: [r.org_short_code, r.org_state].filter(Boolean).join(' · ') });
       const cpArr = (Array.isArray(r.counterparties) ? r.counterparties : []) as Record<string, unknown>[];
       setCps(cpArr.map((c, i) => ({ name: String(c.name ?? ''), initials: orgInitials(String(c.name ?? '')), country: String(c.country ?? ''), phone: String(c.phone ?? ''), email: String(c.email ?? ''), grad: ORG_GRADS[i % ORG_GRADS.length], badge: String(c.badge ?? ''), referred: String(c.referred ?? c.name ?? ''), sourceType: c.source_type ? String(c.source_type) : undefined, sourceId: (c.source_id as string | number | undefined) ?? undefined })));
-      if (r.header_config) setHeader({ ...DEFAULT_HEADER, ...(r.header_config as object) } as HeaderConfig);
+      if (r.header_config) setHeader({ ...brandedDefaults, ...(r.header_config as object) } as HeaderConfig);
       if (r.footer_config) setFooter({ ...DEFAULT_FOOTER, ...(r.footer_config as object) } as FooterConfig);
     }).catch(() => { if (alive) toast.error('Could not load', 'Failed to open this agreement for editing.'); })
       .finally(() => { if (alive) setHydrating(false); });
@@ -268,9 +280,11 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
         setSentForApproval(true);
         await refreshRecord(workingId);
         goStage(2);
-        // Toast LAST — after the record refresh + stage transition close the
-        // approval modal — so the success message never appears while the modal
-        // is still showing "Submitting…" (looked like it fired before completion).
+        // Toast LAST — after the record refresh AND after the stage transition has
+        // actually painted (one frame) — so the "Sent for approval" message can
+        // never appear while the approval modal is still showing "Submitting…"
+        // (which read as if it fired before the submit completed).
+        await new Promise(res => setTimeout(res, 60));
         toast.success('Sent for approval', `${agTitle} is back in the approval queue.`);
       } else {
         const res = await api.post('/clm/ctc-contracts', payload);
@@ -279,6 +293,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
         setWorkingId(newId);
         await refreshRecord(newId);
         goStage(2);
+        await new Promise(res => setTimeout(res, 60));
         toast.success('Sent for approval', `${agTitle} is now in the approval queue.`);
       }
       return true;
@@ -674,7 +689,15 @@ function Stage1(p: {
     if (endBeforeToday) { toast.error('Invalid end date', 'End date cannot be earlier than today.'); setMidStep(2); return false; }
     return true;
   };
-  const validateAll = (): boolean => validateStep1() && validateStep2();
+  // The document header must carry a company name AND a logo before the agreement
+  // can go out — both are pre-filled from the branch by default, so this only
+  // fails if the user cleared them (or the branch has no logo yet).
+  const validateHeader = (): boolean => {
+    if (!p.header.title?.trim()) { toast.error('Company name required', 'Add a company name in the document header (click “Edit Header”).'); setMidStep(3); return false; }
+    if (!p.header.logo_url)      { toast.error('Logo required', 'Add a logo in the document header (click “Edit Header” → Upload Logo).'); setMidStep(3); return false; }
+    return true;
+  };
+  const validateAll = (): boolean => validateStep1() && validateStep2() && validateHeader();
   // Stepping forward does no I/O — but the render it triggers is heavy (Step 3
   // mounts the editor with the entire agreement inside it), and that work blocks
   // the main thread. On a long document the click therefore looked like a no-op:
@@ -1788,6 +1811,21 @@ function ContractHistoryPanel({ t, draftCount, signedUrl, signatureRequestId, on
       setDownloading(false);
     }
   };
+  // Zoho "Certificate of Completion" (audit trail) — a separate artifact from the
+  // signed PDF, served by ClmSignatureController::viewCertificate. Available once
+  // the request is completed (i.e. we have a signature request id + signed copy).
+  const [dlCert, setDlCert] = useState(false);
+  const downloadCertificate = async () => {
+    if (!signatureRequestId || dlCert) return;
+    setDlCert(true);
+    try {
+      const res = await api.get(`/clm/signature-requests/${signatureRequestId}/certificate`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
+      const a = document.createElement('a'); a.href = url; a.download = 'completion-certificate.pdf'; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch { toast.info('Not ready yet', 'The completion certificate will be available once all parties have signed.'); }
+    finally { setDlCert(false); }
+  };
   const steps = [
     { title: 'Contract Stored', sub: 'Moved to Final Contract Repository' },
     { title: 'Agreement Signed', sub: 'All parties executed the agreement' },
@@ -1838,6 +1876,14 @@ function ContractHistoryPanel({ t, draftCount, signedUrl, signatureRequestId, on
             {downloading
               ? <><svg className="ctc-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Downloading…</span></>
               : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={signedUrl ? '#fff' : (t.dark ? '#94a3b8' : '#94A3B8')} strokeWidth="2.3" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg><span style={{ fontSize: 10, fontWeight: 800, color: signedUrl ? '#fff' : (t.dark ? '#94a3b8' : '#94A3B8') }}>{signedUrl ? 'Download Signed Copy' : 'Awaiting Signed Copy'}</span></>}
+          </button>
+          </Tooltip>
+          {/* Zoho completion certificate — available once signed */}
+          <Tooltip label={(signatureRequestId && signedUrl) ? '' : 'Available once all parties have signed'}>
+          <button onClick={downloadCertificate} disabled={!signatureRequestId || !signedUrl || dlCert} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px', borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0'}`, background: t.dark ? 'rgba(16,185,129,.10)' : '#ECFDF5', cursor: (!signatureRequestId || !signedUrl || dlCert) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (!signatureRequestId || !signedUrl) ? 0.6 : 1 }}>
+            {dlCert
+              ? <><svg className="ctc-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#6ee7b7' : '#047857'} strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg><span style={{ fontSize: 10, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#047857' }}>Downloading…</span></>
+              : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#6ee7b7' : '#047857'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg><span style={{ fontSize: 10, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#047857' }}>Download Certificate</span></>}
           </button>
           </Tooltip>
           {/* Back to the CTC list */}

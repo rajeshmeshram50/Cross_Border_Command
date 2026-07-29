@@ -125,11 +125,7 @@ export default function ClockIn() {
       setPickedLabel('Check In');
       return;
     }
-    if (today.next_direction === 'in') {
-      setPickedLabel(today.record.punches_count === 0 ? 'Check In' : 'Step In');
-    } else {
-      setPickedLabel('Step Out');
-    }
+    setPickedLabel(today.next_direction === 'in' ? 'Check In' : 'Check Out');
   }, [today?.next_direction, today?.record?.punches_count]);
 
   // Probe geolocation and update the visible status. Called on mount and
@@ -256,13 +252,10 @@ export default function ClockIn() {
     return total;
   }, [record0, punches0, nowTick]);
 
-  // Quick-pick label set — only show the legal ones for the next direction.
+  // Quick-pick label set — simplified to just Check In / Check Out.
   const quickLabels = useMemo<string[]>(() => {
-    if (nextDir0 === 'in') {
-      return punches0.length === 0 ? ['Check In'] : ['Step In', 'Lunch In', 'Meeting'];
-    }
-    return ['Step Out', 'Lunch Out', 'Meeting', 'Check Out'];
-  }, [nextDir0, punches0.length]);
+    return nextDir0 === 'in' ? ['Check In'] : ['Check Out'];
+  }, [nextDir0]);
 
   // Empty state for non-employee accounts (no Employee row linked).
   if (!hasLinkedEmployee) {

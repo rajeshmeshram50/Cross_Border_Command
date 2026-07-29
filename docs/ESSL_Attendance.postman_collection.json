@@ -1,0 +1,300 @@
+{
+  "info": {
+    "_postman_id": "essl-att-0000-4b1a-9c2e-000000000001",
+    "name": "ESSL Attendance — Cross_Border_Command",
+    "description": "All eSSL biometric attendance endpoints.\n\nSETUP:\n1. Set collection variables: base_url, email, password (Variables tab).\n2. Run '0. Auth > Login' once — it captures the Sanctum token into {{token}} automatically.\n3. Set terminal_id / serial / employee_id as needed.\n\nNOTE: /api/* routes are authenticated (Bearer {{token}}). The /iclock/* routes are PUBLIC (the device push path) and take NO token — they live at the web root, not under /api.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000" },
+    { "key": "email", "value": "durgeshurkude0@gmail.com" },
+    { "key": "password", "value": "" },
+    { "key": "token", "value": "" },
+    { "key": "terminal_id", "value": "5" },
+    { "key": "serial", "value": "NFZ8252004771" },
+    { "key": "employee_id", "value": "1" }
+  ],
+  "item": [
+    {
+      "name": "0. Auth",
+      "item": [
+        {
+          "name": "Login (captures token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let j = {}; try { j = pm.response.json(); } catch(e) {}",
+                  "let t = j.token || j.access_token || (j.data && (j.data.token || j.data.access_token));",
+                  "if (t) { pm.collectionVariables.set('token', t); console.log('token saved'); }",
+                  "else { console.log('No token in response — check email/password or org selection', j); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}" },
+            "url": { "raw": "{{base_url}}/api/login", "host": ["{{base_url}}"], "path": ["api", "login"] },
+            "description": "Returns a Sanctum token. NOTE: logging in wipes the user's previous tokens (so a connector token on the same account dies). The test script stores the token into {{token}}."
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Device Terminals (registry)",
+      "item": [
+        {
+          "name": "List terminals",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/device-terminals?search=",
+              "host": ["{{base_url}}"],
+              "path": ["api", "device-terminals"],
+              "query": [
+                { "key": "search", "value": "" },
+                { "key": "branch_id", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Register terminal",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"serial\": \"{{serial}}\",\n  \"name\": \"eSSL x2008 (front door)\",\n  \"branch_id\": 2,\n  \"timezone\": \"Asia/Kolkata\",\n  \"allowed_ips\": \"\",\n  \"is_active\": true\n}" },
+            "url": { "raw": "{{base_url}}/api/device-terminals", "host": ["{{base_url}}"], "path": ["api", "device-terminals"] },
+            "description": "serial must be unique. branch_id must belong to your client. allowed_ips blank = accept any IP."
+          }
+        },
+        {
+          "name": "Update terminal",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"serial\": \"{{serial}}\",\n  \"name\": \"eSSL x2008 (updated)\",\n  \"timezone\": \"Asia/Kolkata\",\n  \"allowed_ips\": \"192.168.1.85\",\n  \"is_active\": true\n}" },
+            "url": { "raw": "{{base_url}}/api/device-terminals/{{terminal_id}}", "host": ["{{base_url}}"], "path": ["api", "device-terminals", "{{terminal_id}}"] }
+          }
+        },
+        {
+          "name": "Delete terminal",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/device-terminals/{{terminal_id}}", "host": ["{{base_url}}"], "path": ["api", "device-terminals", "{{terminal_id}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Attendance Import (Mode A / B)",
+      "item": [
+        {
+          "name": "Import punches (JSON)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"device_terminal_id\": {{terminal_id}},\n  \"punches\": [\n    { \"user_id\": \"1212\", \"punched_at\": \"2026-07-28 09:05:00\", \"status\": \"0\" },\n    { \"user_id\": \"1212\", \"punched_at\": \"2026-07-28 18:20:00\", \"status\": \"1\" }\n  ]\n}" },
+            "url": { "raw": "{{base_url}}/api/attendance/import", "host": ["{{base_url}}"], "path": ["api", "attendance", "import"] },
+            "description": "user_id must equal an employee's attendance_number. device_terminal_id supplies branch/timezone/serial (omit it to use your client + Asia/Kolkata, with optional branch_id / timezone). Idempotent: re-sending the same rows is skipped. Response: {data:{imported, skipped_duplicates, unmatched_user_ids, errors, employees_affected, date_range}}."
+          }
+        },
+        {
+          "name": "Import punches (file upload)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": [] },
+                { "key": "device_terminal_id", "value": "{{terminal_id}}", "type": "text" }
+              ]
+            },
+            "url": { "raw": "{{base_url}}/api/attendance/import", "host": ["{{base_url}}"], "path": ["api", "attendance", "import"] },
+            "description": "Upload an eSSL AttLog (.dat/.txt) or CSV export. Tab OR comma delimited; a header row is auto-skipped. Pick the file in the 'file' field."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Attendance (view)",
+      "item": [
+        {
+          "name": "My today",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/attendance/today", "host": ["{{base_url}}"], "path": ["api", "attendance", "today"] },
+            "description": "The logged-in user's own attendance for today (drives the Face Clock-In screen)."
+          }
+        },
+        {
+          "name": "My history",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/attendance/my?per_page=30",
+              "host": ["{{base_url}}"],
+              "path": ["api", "attendance", "my"],
+              "query": [
+                { "key": "per_page", "value": "30" },
+                { "key": "from", "value": "2026-07-01", "disabled": true },
+                { "key": "to", "value": "2026-07-31", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Admin list",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/attendance", "host": ["{{base_url}}"], "path": ["api", "attendance"] },
+            "description": "Admin/HR only. Tenant + branch scoped."
+          }
+        },
+        {
+          "name": "Daily view (HR grid)",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/attendance/daily-view?date=2026-07-28&branch_id=2",
+              "host": ["{{base_url}}"],
+              "path": ["api", "attendance", "daily-view"],
+              "query": [
+                { "key": "date", "value": "2026-07-28" },
+                { "key": "branch_id", "value": "2" }
+              ]
+            },
+            "description": "Admin/HR only (a regular employee gets 'Use /api/attendance/my'). Shows every employee's punches for the date, with source badges (BIOMETRIC for device)."
+          }
+        },
+        {
+          "name": "Employee month summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": { "raw": "{{base_url}}/api/attendance/employee/{{employee_id}}/summary", "host": ["{{base_url}}"], "path": ["api", "attendance", "employee", "{{employee_id}}", "summary"], "description": "employee id or emp_code (e.g. EMP-001)." }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Device Push — /iclock (PUBLIC, no token)",
+      "item": [
+        {
+          "name": "Handshake (GET cdata)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/iclock/cdata?SN={{serial}}&options=all",
+              "host": ["{{base_url}}"],
+              "path": ["iclock", "cdata"],
+              "query": [
+                { "key": "SN", "value": "{{serial}}" },
+                { "key": "options", "value": "all" }
+              ]
+            },
+            "description": "ADMS handshake. Returns the plain-text options block. No auth — guarded by the SN registry."
+          }
+        },
+        {
+          "name": "Poll for commands (getrequest)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/iclock/getrequest?SN={{serial}}",
+              "host": ["{{base_url}}"],
+              "path": ["iclock", "getrequest"],
+              "query": [ { "key": "SN", "value": "{{serial}}" } ]
+            },
+            "description": "Device polls for queued commands. Returns 'OK'."
+          }
+        },
+        {
+          "name": "Push ATTLOG (POST cdata)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "text/plain" } ],
+            "body": { "mode": "raw", "raw": "1212\t2026-07-28 09:05:00\t0\t1\t0\n1212\t2026-07-28 18:20:00\t1\t1\t0\n" },
+            "url": {
+              "raw": "{{base_url}}/iclock/cdata?SN={{serial}}&table=ATTLOG",
+              "host": ["{{base_url}}"],
+              "path": ["iclock", "cdata"],
+              "query": [
+                { "key": "SN", "value": "{{serial}}" },
+                { "key": "table", "value": "ATTLOG" }
+              ]
+            },
+            "description": "The real device push. Body is TAB-delimited: PIN<TAB>YYYY-MM-DD HH:MM:SS<TAB>status<TAB>verify<TAB>workcode. Returns 'OK: <n>'. An unregistered/inactive/disallowed-IP serial is acked but NOT ingested."
+          }
+        },
+        {
+          "name": "Command result ack (devicecmd)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "text/plain" } ],
+            "body": { "mode": "raw", "raw": "" },
+            "url": {
+              "raw": "{{base_url}}/iclock/devicecmd?SN={{serial}}",
+              "host": ["{{base_url}}"],
+              "path": ["iclock", "devicecmd"],
+              "query": [ { "key": "SN", "value": "{{serial}}" } ]
+            },
+            "description": "Device posts command-execution results. Returns 'OK'."
+          }
+        }
+      ]
+    }
+  ]
+}

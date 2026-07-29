@@ -161,6 +161,9 @@ class BranchController extends Controller
             'established_at' => 'nullable|date',
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
+            // Work shifts repeater — arrives as a JSON string on multipart
+            // uploads and as a real array on JSON requests; normalised below.
+            'shifts' => 'nullable',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             // Authorised-signatory image (signature + stamp combined).
@@ -231,6 +234,7 @@ class BranchController extends Controller
                 'established_at' => $request->established_at,
                 'status' => $request->status ?? 'active',
                 'notes' => $request->notes,
+                'shifts' => $this->normalizeShifts($request->input('shifts')),
                 'primary_color' => $request->primary_color,
                 'secondary_color' => $request->secondary_color,
                 'created_by' => $user->id,
@@ -458,6 +462,8 @@ class BranchController extends Controller
             'established_at' => 'nullable|date',
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string',
+            // Work shifts repeater — JSON string on multipart, array on JSON.
+            'shifts' => 'nullable',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             // Authorised-signatory image (signature + stamp combined).
@@ -508,6 +514,12 @@ class BranchController extends Controller
                 'max_users', 'established_at', 'status', 'notes',
                 'primary_color', 'secondary_color',
             ]));
+
+            // Shifts handled separately — the array cast would double-encode
+            // the JSON string that arrives on multipart uploads.
+            if ($request->has('shifts')) {
+                $branch->update(['shifts' => $this->normalizeShifts($request->input('shifts'))]);
+            }
 
             if ($request->hasFile('logo')) {
                 if ($branch->logo) {
@@ -692,6 +704,37 @@ class BranchController extends Controller
         return $stored;
     }
 
+    /**
+     * Normalise the shifts repeater payload into a clean array of
+     * { name, start, end } rows. Accepts a JSON string (multipart uploads),
+     * an already-decoded array (JSON requests), or null. Blank-named rows
+     * are dropped so empty repeater rows never persist.
+     */
+    private function normalizeShifts($raw): array
+    {
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($raw)) {
+            return [];
+        }
+        return array_values(array_filter(array_map(function ($row) {
+            if (!is_array($row)) {
+                return null;
+            }
+            $name = trim((string) ($row['name'] ?? ''));
+            if ($name === '') {
+                return null;
+            }
+            return [
+                'name'  => $name,
+                'start' => (string) ($row['start'] ?? ''),
+                'end'   => (string) ($row['end'] ?? ''),
+            ];
+        }, $raw)));
+    }
+
 
 
     public function nextCode(Request $request)
@@ -705,6 +748,59 @@ class BranchController extends Controller
             'code'   => $this->peekNextBranchCode($clientId),
             'prefix' => 'BR-',
         ]);
+    }
+
+    /**
+     * Work-shift options for the Employee form's Shift dropdown.
+     *
+     * Resolves the branch the same way employee creation does:
+     *  - branch_user  → their own branch's shifts
+     *  - client_admin → the branch the BranchSwitcher points at (?branch_id);
+     *    with "All Branches" selected there is no single branch, so we return
+     *    the union of every branch's shifts (deduped by name).
+     *  - super_admin  → the requested branch_id.
+     *
+     * Response: { shifts: [{ name, start, end }, ...] }. Empty when nothing is
+     * configured — the frontend then falls back to its default list.
+     */
+    public function shiftOptions(Request $request)
+    {
+        $user = $request->user();
+        if (!$user || !$user->client_id) {
+            return response()->json(['shifts' => []]);
+        }
+
+        $branchId = $user->user_type === 'branch_user'
+            ? $user->branch_id
+            : ($request->integer('branch_id') ?: null);
+
+        $query = Branch::where('client_id', $user->client_id);
+        if ($branchId) {
+            // Ignore a branch_id that isn't this client's (no cross-tenant leak).
+            $query->where('id', $branchId);
+        }
+
+        $rows = $query->get(['id', 'shifts']);
+
+        // Flatten + dedupe by name (first occurrence wins) preserving order.
+        $seen = [];
+        $shifts = [];
+        foreach ($rows as $branch) {
+            foreach ((array) ($branch->shifts ?? []) as $s) {
+                $name = trim((string) ($s['name'] ?? ''));
+                if ($name === '') continue;
+                $key = mb_strtolower($name);
+                if (isset($seen[$key])) continue;
+                $seen[$key] = true;
+                $shifts[] = [
+                    'name'  => $name,
+                    'start' => (string) ($s['start'] ?? ''),
+                    'end'   => (string) ($s['end'] ?? ''),
+                ];
+            }
+        }
+
+        return response()->json(['shifts' => $shifts]);
     }
 
     private function allocateBranchCode($clientId): string

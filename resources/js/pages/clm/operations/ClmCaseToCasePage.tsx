@@ -127,7 +127,7 @@ export default function ClmCaseToCasePage() {
 
   // Version-history / timeline modals need the full record (versions +
   // signing recipients + stage), which the list rows don't carry — fetch on demand.
-  type CtcDetail = { code: string; title: string; dbId: number | null; stage: number; versions: CtcVersion[]; signers: CtcSigner[] };
+  type CtcDetail = { code: string; title: string; dbId: number | null; stage: number; versions: CtcVersion[]; signers: CtcSigner[]; signatureRequestId: number | null };
   const [verFor, setVerFor] = useState<CtcDetail | null>(null);
   const [tlFor, setTlFor] = useState<CtcDetail | null>(null);
   const openLifecycle = async (c: CtcContract, kind: 'version' | 'timeline') => {
@@ -141,6 +141,7 @@ export default function ClmCaseToCasePage() {
         code: String(r.code ?? c.id), title: String(r.title ?? c.title ?? ''), dbId: c.dbId, stage: Number(r.stage) || 1,
         versions: (Array.isArray(r.versions) ? r.versions : []) as CtcVersion[],
         signers: (Array.isArray(r.signing_recipients) ? r.signing_recipients : []) as CtcSigner[],
+        signatureRequestId: Number(r.signature_request_id) || null,
       };
       if (kind === 'version') setVerFor(detail); else setTlFor(detail);
     } catch { toast.error('Could not load', 'Failed to fetch the agreement history.'); }
@@ -174,6 +175,27 @@ export default function ClmCaseToCasePage() {
       toast.success('Download started', c.id);
     } catch { toast.error('Download failed', 'Could not download the contract.'); }
     finally { setDownloadingId(null); }
+  };
+
+  // Download the Zoho completion certificate. Only signed agreements have one —
+  // clicking it on an unsigned row explains (via a toast) why it isn't available.
+  const [certId, setCertId] = useState<string | null>(null);
+  const downloadCertificate = async (c: CtcContract) => {
+    if (c.status !== 'signed') { toast.info('Not signed yet', 'The completion certificate is available only after all parties have signed this agreement.'); return; }
+    if (!c.dbId || certId) return;
+    setCertId(c.id);
+    try {
+      const res = await api.get(`/clm/ctc-contracts/${c.dbId}`);
+      const r = (res.data?.data ?? res.data ?? {}) as Record<string, unknown>;
+      const srId = Number(r.signature_request_id) || null;
+      if (!srId) { toast.info('Not available', 'No signature record found for this agreement.'); return; }
+      const f = await api.get(`/clm/signature-requests/${srId}/certificate`, { responseType: 'blob' });
+      const u = URL.createObjectURL(new Blob([f.data as BlobPart], { type: 'application/pdf' }));
+      const a = document.createElement('a'); a.href = u; a.download = `${c.id}_certificate.pdf`; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(u);
+      toast.success('Certificate downloaded', c.id);
+    } catch { toast.error('Download failed', 'Could not download the completion certificate.'); }
+    finally { setCertId(null); }
   };
 
   const counts = useMemo(() => {
@@ -429,6 +451,9 @@ export default function ClmCaseToCasePage() {
                             )}
                             <ActBtn t={t} tone="blue" title="Version History" busy={verBusy} busyLabel="Loading…" disabled={frozen && !verBusy} onClick={() => openLifecycle(c, 'version')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="12 8 12 12 14 14" /><path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5" /></svg></ActBtn>
                             <ActBtn t={t} tone="amber" title="Agreement Timeline" busy={tlBusy} busyLabel="Loading…" disabled={frozen && !tlBusy} onClick={() => openLifecycle(c, 'timeline')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg></ActBtn>
+                            {/* Completion certificate — dimmed until signed; clicking an
+                                unsigned row toasts why it's not available. */}
+                            <ActBtn t={t} tone="teal" title={c.status === 'signed' ? 'Download completion certificate' : 'Available once all parties have signed'} busy={certId === c.id} busyLabel="Downloading…" disabled={frozen && certId !== c.id} softOff={c.status !== 'signed'} onClick={() => downloadCertificate(c)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg></ActBtn>
                           </div>
                             );
                           })()}
@@ -469,7 +494,7 @@ export default function ClmCaseToCasePage() {
       </div>
 
       {verFor && <VersionHistoryModal t={t} code={verFor.code} workingId={verFor.dbId} versions={verFor.versions} onClose={() => setVerFor(null)} />}
-      {tlFor && <AgreementTimelineModal t={t} code={tlFor.code} title={tlFor.title} stage={tlFor.stage} versions={tlFor.versions} signers={tlFor.signers} onClose={() => setTlFor(null)} />}
+      {tlFor && <AgreementTimelineModal t={t} code={tlFor.code} title={tlFor.title} stage={tlFor.stage} versions={tlFor.versions} signers={tlFor.signers} signatureRequestId={tlFor.signatureRequestId} onClose={() => setTlFor(null)} />}
 
       {/* All-counterparties popover (opened from the +N badge) */}
       {cpOpen && (
@@ -495,18 +520,22 @@ const ACT_TONES = {
   violet: { light: { bg: '#EDE9FE', border: '#C4B5FD', color: '#5B21B6' }, dark: { bg: 'rgba(124,58,237,.18)', border: 'rgba(124,58,237,.45)', color: '#c4b5fd' } },
   blue:   { light: { bg: '#DBEAFE', border: '#93C5FD', color: '#0369A1' }, dark: { bg: 'rgba(56,189,248,.16)',  border: 'rgba(56,189,248,.42)', color: '#7dd3fc' } },
   amber:  { light: { bg: '#FEF3C7', border: '#FCD34D', color: '#B45309' }, dark: { bg: 'rgba(245,158,11,.16)',  border: 'rgba(245,158,11,.42)', color: '#fcd34d' } },
+  teal:   { light: { bg: '#CCFBF1', border: '#5EEAD4', color: '#0F766E' }, dark: { bg: 'rgba(20,184,166,.16)',  border: 'rgba(20,184,166,.42)', color: '#5eead4' } },
 } as const;
 
-function ActBtn({ t, tone, title, onClick, children, busy, busyLabel, disabled }: { t: OpsTokens; tone: keyof typeof ACT_TONES; title: string; onClick: () => void; children: React.ReactNode; busy?: boolean; busyLabel?: string; disabled?: boolean }) {
+function ActBtn({ t, tone, title, onClick, children, busy, busyLabel, disabled, softOff }: { t: OpsTokens; tone: keyof typeof ACT_TONES; title: string; onClick: () => void; children: React.ReactNode; busy?: boolean; busyLabel?: string; disabled?: boolean; softOff?: boolean }) {
   const s = t.dark ? ACT_TONES[tone].dark : ACT_TONES[tone].light;
   // `busy`     → this button's own async op (spinner, wait cursor).
-  // `disabled` → frozen because ANOTHER action is loading (dimmed, no spinner).
+  // `disabled` → frozen because ANOTHER action is loading (dimmed, no click).
+  // `softOff`  → dimmed like disabled BUT the click STILL fires, so the handler
+  //              can explain (via a toast) why the action isn't available yet.
   const off = busy || disabled;
+  const dim = off || softOff;
   return (
     <Tooltip label={busy ? (busyLabel ?? 'Loading…') : (disabled ? 'Please wait…' : title)}>
-      <button onClick={onClick} aria-label={title} disabled={off} style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${s.border}`, background: s.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : disabled ? 'not-allowed' : 'pointer', color: s.color, opacity: busy ? 1 : disabled ? .4 : .85, flexShrink: 0, transition: 'all .15s' }}
-        onMouseEnter={e => { if (off) return; e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.15)'; }}
-        onMouseLeave={e => { if (off) return; e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
+      <button onClick={onClick} aria-label={title} disabled={off} style={{ width: 26, height: 26, borderRadius: 7, border: `1.5px solid ${s.border}`, background: s.bg, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'wait' : dim ? 'not-allowed' : 'pointer', color: s.color, opacity: busy ? 1 : dim ? .4 : .85, flexShrink: 0, transition: 'all .15s' }}
+        onMouseEnter={e => { if (dim) return; e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 3px 8px rgba(0,0,0,.15)'; }}
+        onMouseLeave={e => { if (dim) return; e.currentTarget.style.opacity = '.85'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}>
         {busy
           ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'ctcSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
           : children}

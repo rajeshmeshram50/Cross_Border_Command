@@ -110,6 +110,7 @@ import HrPayroll from '../pages/hrms/HrPayroll';
 import HrBroadcastCentre from '../pages/hrms/HrBroadcastCentre';
 import HrDocumentTemplates from '../pages/hrms/HrDocumentTemplates';
 import HrCustomFields from '../pages/hrms/HrCustomFields';
+import HrBiometricDevices from '../pages/hrms/HrBiometricDevices';
 import TemplateFormPage from '../pages/hrms/doc-templates/TemplateForm';
 import GenerateDocument from '../pages/hrms/doc-templates/GenerateDocument';
 const HrEmployeeOnboarding = lazy(() => import('../pages/employee-onboarding/HrEmployeeOnboarding'));
@@ -854,6 +855,7 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/hr/doc-templates/:id/edit" element={<TemplateFormPage />} />
               <Route path="/hr/doc-templates/:id/generate" element={<GenerateDocument />} />
               <Route path="/hr/custom-fields" element={<HrCustomFields />} />
+              <Route path="/hr/devices" element={<HrBiometricDevices />} />
               <Route path="/hr/employee-onboarding" element={<Suspense fallback={null}><HrEmployeeOnboarding /></Suspense>} />
               <Route path="/hr/employees/:id/permissions" element={<EmployeePermissionsWrapper />} />
               <Route path="/hr/employees/:id/profile" element={<EmployeeProfileWrapper />} />

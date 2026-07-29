@@ -1,0 +1,486 @@
+
+.dt-root {
+  /* ── violet: the Customer / Consignee palette, and the default ── */
+  --dt-a-50:  #faf5ff;
+  --dt-a-100: #f3e8ff;
+  --dt-a-150: #ede9fe;
+  --dt-a-200: #ddd6fe;
+  --dt-a-300: #c4b5fd;
+  --dt-a-400: #a78bfa;
+  --dt-a-500: #8b5cf6;
+  --dt-a-600: #7c3aed;
+  --dt-a-700: #6d28d9;
+  --dt-a-800: #5b21b6;
+  --dt-a-rgb: 124, 58, 237;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid var(--vz-border-color);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow:
+    0 2px 0 rgba(255, 255, 255, .85) inset,
+    0 8px 28px rgba(var(--dt-a-rgb), .10),
+    0 2px 8px rgba(0, 0, 0, .05);
+
+  /* Feeds the shared .tc-wl-* pager. */
+  --tcwl-border: var(--dt-a-200);
+  --tcwl-text:   var(--dt-a-700);
+  --tcwl-accent: var(--dt-a-600);
+  --tcwl-band:   linear-gradient(90deg, var(--dt-a-50) 0%, var(--dt-a-150) 40%, var(--dt-a-50) 100%);
+  --tcwl-range-bg: linear-gradient(135deg, var(--dt-a-500) 0%, var(--dt-a-600) 55%, var(--dt-a-800) 100%);
+  --tcwl-glow: rgba(var(--dt-a-rgb), .40);
+}
+
+/* `fitToViewport` gives the card an explicit pixel height (set inline by the
+   component); this makes the body the part that scrolls, not the page. */
+.dt-root.dt-fit { flex: none; }
+
+/* ── Accent families ───────────────────────────────────────────────────────── */
+.dt-root[data-accent="teal"] {
+  --dt-a-50:#f0fdfa; --dt-a-100:#ccfbf1; --dt-a-150:#cffafe; --dt-a-200:#a5e8f5;
+  --dt-a-300:#67e8f9; --dt-a-400:#22d3ee; --dt-a-500:#06b6d4; --dt-a-600:#0891b2;
+  --dt-a-700:#0e7490; --dt-a-800:#155e75; --dt-a-rgb: 8, 145, 178;
+}
+.dt-root[data-accent="blue"] {
+  --dt-a-50:#eff6ff; --dt-a-100:#dbeafe; --dt-a-150:#dbeafe; --dt-a-200:#bfdbfe;
+  --dt-a-300:#93c5fd; --dt-a-400:#60a5fa; --dt-a-500:#3b82f6; --dt-a-600:#2563eb;
+  --dt-a-700:#1d4ed8; --dt-a-800:#1e40af; --dt-a-rgb: 37, 99, 235;
+}
+.dt-root[data-accent="emerald"] {
+  --dt-a-50:#ecfdf5; --dt-a-100:#d1fae5; --dt-a-150:#d1fae5; --dt-a-200:#a7f3d0;
+  --dt-a-300:#6ee7b7; --dt-a-400:#34d399; --dt-a-500:#10b981; --dt-a-600:#059669;
+  --dt-a-700:#047857; --dt-a-800:#065f46; --dt-a-rgb: 5, 150, 105;
+}
+.dt-root[data-accent="amber"] {
+  --dt-a-50:#fffbeb; --dt-a-100:#fef3c7; --dt-a-150:#fef3c7; --dt-a-200:#fde68a;
+  --dt-a-300:#fcd34d; --dt-a-400:#fbbf24; --dt-a-500:#f59e0b; --dt-a-600:#d97706;
+  --dt-a-700:#b45309; --dt-a-800:#92400e; --dt-a-rgb: 217, 119, 6;
+}
+.dt-root[data-accent="rose"] {
+  --dt-a-50:#fff1f2; --dt-a-100:#ffe4e6; --dt-a-150:#ffe4e6; --dt-a-200:#fecdd3;
+  --dt-a-300:#fda4af; --dt-a-400:#fb7185; --dt-a-500:#f43f5e; --dt-a-600:#e11d48;
+  --dt-a-700:#be123c; --dt-a-800:#9f1239; --dt-a-rgb: 225, 29, 72;
+}
+.dt-root[data-accent="slate"] {
+  --dt-a-50:#f8fafc; --dt-a-100:#f1f5f9; --dt-a-150:#e2e8f0; --dt-a-200:#cbd5e1;
+  --dt-a-300:#94a3b8; --dt-a-400:#64748b; --dt-a-500:#475569; --dt-a-600:#334155;
+  --dt-a-700:#1e293b; --dt-a-800:#0f172a; --dt-a-rgb: 51, 65, 85;
+}
+
+/* ── Toolbar band: tabs + filter + search ─────────────────────────────────── */
+.dt-toolbar {
+  display: flex; align-items: center; gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  background: linear-gradient(110deg, var(--dt-a-50) 0%, var(--dt-a-100) 35%, var(--dt-a-150) 70%, var(--dt-a-200) 100%);
+  border-bottom: 1px solid var(--dt-a-200);
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+.dt-toolbar-actions { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* Pill rail. No fixed height — 34px tab + 4px padding = 42px, which lines the
+   rail up flush with the search field and the Filter button. */
+.dt-tabs {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(255, 255, 255, .55);
+  border: 1px solid rgba(var(--dt-a-rgb), .22);
+  border-radius: 11px;
+  padding: 4px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.dt-tab {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 0 14px; height: 34px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 12.5px; font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
+}
+.dt-tab i { font-size: 14px; }
+.dt-tab.off {
+  background: linear-gradient(135deg, var(--dt-a-50), var(--dt-a-150));
+  border: 1px solid rgba(var(--dt-a-rgb), .20);
+  color: var(--dt-a-700);
+}
+.dt-tab.off:hover {
+  background: linear-gradient(135deg, var(--dt-a-150), var(--dt-a-200));
+  border-color: rgba(var(--dt-a-rgb), .35);
+  color: var(--dt-a-800);
+}
+.dt-tab.on {
+  position: relative; overflow: hidden;
+  border: 0;
+  background: linear-gradient(135deg, var(--dt-a-400) 0%, var(--dt-a-500) 35%, var(--dt-a-600) 68%, var(--dt-a-800) 100%);
+  color: #fff;
+  box-shadow:
+    0 5px 14px rgba(var(--dt-a-rgb), .50),
+    0 1px 0 rgba(255, 255, 255, .40) inset,
+    0 -2px 6px rgba(var(--dt-a-rgb), .30) inset;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+}
+.dt-tab-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 18px; padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10px; font-weight: 800; line-height: 1;
+}
+.dt-tab.off .dt-tab-count { color: var(--dt-a-600); background: #fff; border: 1px solid var(--dt-a-200); }
+.dt-tab.on  .dt-tab-count { color: #fff; background: rgba(255, 255, 255, .24); border: 1px solid rgba(255, 255, 255, .40); }
+
+/* Filter button — same 42px height / 11px radius as the search field so the
+   toolbar reads as one row of controls. */
+.dt-filter-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  flex-shrink: 0;
+  height: 42px; padding: 0 16px;
+  border-radius: 11px;
+  font-family: inherit;
+  font-size: 12.5px; font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--dt-a-50), var(--dt-a-150));
+  border: 1.5px solid rgba(var(--dt-a-rgb), .28);
+  color: var(--dt-a-700);
+  transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
+}
+.dt-filter-btn:hover {
+  background: linear-gradient(135deg, var(--dt-a-150), var(--dt-a-200));
+  border-color: rgba(var(--dt-a-rgb), .42);
+  color: var(--dt-a-800);
+}
+/* Active state mirrors .dt-tab.on — a filtered table must be obvious at a
+   glance, otherwise it reads as missing data. */
+.dt-filter-btn.on {
+  border: 0;
+  background: linear-gradient(135deg, var(--dt-a-400) 0%, var(--dt-a-500) 35%, var(--dt-a-600) 68%, var(--dt-a-800) 100%);
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(var(--dt-a-rgb), .50), 0 1px 0 rgba(255, 255, 255, .40) inset;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+}
+.dt-filter-btn i { font-size: 14px; }
+.dt-filter-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .28);
+  border: 1px solid rgba(255, 255, 255, .45);
+  color: #fff;
+  font-size: 10.5px; font-weight: 800; line-height: 1;
+  text-shadow: none;
+}
+
+.dt-search {
+  position: relative;
+  flex: 1; min-width: 240px;
+  height: 42px;
+  display: flex; align-items: center;
+  padding: 0 8px 0 38px;
+  background: rgba(255, 255, 255, .80);
+  border: 1.5px solid rgba(var(--dt-a-rgb), .28);
+  border-radius: 11px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .95) inset;
+  transition: border-color .16s, box-shadow .16s;
+}
+.dt-search:focus-within {
+  border-color: var(--dt-a-400);
+  box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .18);
+}
+.dt-search-icon {
+  position: absolute; left: 14px;
+  color: var(--vz-secondary-color);
+  font-size: 16px;
+}
+.dt-search input {
+  flex: 1; border: 0; outline: 0; background: transparent;
+  font-family: inherit; font-size: 13px; font-weight: 500;
+  color: var(--vz-body-color);
+}
+.dt-search input::placeholder { color: var(--vz-secondary-color); }
+.dt-search-clear {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; flex-shrink: 0;
+  border: 0; border-radius: 50%;
+  background: rgba(var(--dt-a-rgb), .10);
+  color: var(--dt-a-700);
+  cursor: pointer;
+  font-size: 14px; line-height: 1;
+}
+.dt-search-clear:hover { background: rgba(var(--dt-a-rgb), .20); }
+
+/* ── Applied-filter chips bar ─────────────────────────────────────────────── */
+.dt-chipbar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 9px 14px;
+  background: rgba(var(--dt-a-rgb), .04);
+  border-bottom: 1px solid rgba(var(--dt-a-rgb), .12);
+  flex-shrink: 0;
+}
+.dt-chipbar-lbl { font-size: 11.5px; font-weight: 700; color: var(--dt-a-700); }
+.dt-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1.5px solid var(--dt-a-200);
+  color: var(--dt-a-700);
+  font-size: 11px; font-weight: 600;
+}
+.dt-chip button {
+  border: 0; background: none; padding: 0;
+  color: var(--dt-a-600);
+  font-size: 14px; font-weight: 800; line-height: 1;
+  cursor: pointer;
+}
+.dt-chip button:hover { color: var(--dt-a-800); }
+.dt-chipbar-clear {
+  border: 0; background: none; padding: 0;
+  font: inherit; font-size: 11.5px; font-weight: 700;
+  color: var(--dt-a-600); cursor: pointer; text-decoration: underline;
+}
+.dt-chipbar-clear:hover { color: var(--dt-a-800); }
+
+/* ── Table ────────────────────────────────────────────────────────────────── */
+.dt-table-wrap {
+  display: flex; flex-direction: column;
+  flex: 1; min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+/* min-width:0 is load-bearing: as a flex item this box would otherwise take its
+   min-content width from the table and refuse to shrink, so `overflow-x:auto`
+   would never engage and the table would push the card wide instead. */
+.dt-scroll {
+  flex: 1; min-height: 0; min-width: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dt-a-200) transparent;
+}
+.dt-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.dt-scroll::-webkit-scrollbar-track { background: transparent; }
+.dt-scroll::-webkit-scrollbar-thumb { background: var(--dt-a-200); border-radius: 8px; }
+.dt-scroll::-webkit-scrollbar-thumb:hover { background: var(--dt-a-300); }
+
+.dt-table {
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+}
+
+/* Header fill sits between --dt-a-500 and --dt-a-600 — a softer tint of the
+   same accent than the old flat --dt-a-700, which read as a heavy dark band
+   above the light rows. Kept above a-500 on purpose: any lighter and white
+   9.5px caps drop below ~4.5:1 contrast. The text-shadow keeps the small caps
+   crisp on the lighter fill. */
+.dt-table thead th {
+  position: sticky; top: 0; z-index: 3;
+  background: color-mix(in srgb, var(--dt-a-500) 60%, var(--dt-a-600));
+  color: #fff;
+  font-size: 9.5px; font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  padding: 9px;
+  line-height: 1.3;
+  border: 0;
+  vertical-align: middle;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .18);
+  /* Headers WRAP to a second line rather than clipping: an ellipsised th cut
+     labels down to "CUST CATEG" / "WHATSAP", which is worse than two lines. */
+  white-space: normal;
+}
+.dt-table thead tr {
+  background: linear-gradient(110deg, var(--dt-a-400) 0%, var(--dt-a-500) 55%, var(--dt-a-600) 100%);
+}
+.dt-th-inner { display: flex; align-items: center; gap: 4px; }
+
+/* Sortable header: whole cell is the hit target. Neutral arrows sit at low
+   opacity so the column reads as sortable without shouting. */
+.dt-table thead th.dt-sortable { cursor: pointer; user-select: none; }
+/* Hover DARKENS toward the accent's deep end — with the fainter base fill, a
+   lighter hover would wash the label out instead of reading as a hit target. */
+.dt-table thead th.dt-sortable:hover { background: var(--dt-a-700); }
+.dt-sort { font-size: 13px; opacity: .45; flex-shrink: 0; }
+.dt-sort.on { opacity: 1; }
+
+.dt-table tbody td {
+  padding: 7px 9px;
+  font-size: 11.5px; font-weight: 500;
+  color: var(--vz-body-color);
+  vertical-align: middle;
+  line-height: 1.45;
+  background: transparent;
+  border-bottom: 1px solid rgba(var(--dt-a-rgb), .08);
+  /* Fixed layout can't grow a column to fit content, so overflow is cut here
+     instead of widening the table. `.dt-wrap` (meta.wrap) opts a cell out. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dt-table tbody td.dt-wrap { white-space: normal; overflow: visible; text-overflow: clip; }
+.dt-table tbody tr { background: #fff; }
+.dt-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--dt-a-50) 55%, #fff); }
+.dt-table tbody tr:hover { background: var(--dt-a-50); }
+.dt-table tbody tr:last-child td { border-bottom: none; }
+.dt-table tbody tr.dt-clickable { cursor: pointer; }
+
+.dt-empty-row td { border-bottom: none; }
+.dt-empty {
+  padding: 34px 16px;
+  text-align: center;
+  font-size: 12.5px; font-weight: 600;
+  color: var(--vz-secondary-color);
+}
+.dt-empty-link {
+  background: none; border: 0; padding: 0;
+  font: inherit; font-weight: 700;
+  color: var(--dt-a-600); cursor: pointer; text-decoration: underline;
+}
+.dt-empty-link:hover { color: var(--dt-a-800); }
+.dt-shim-cell { padding: 10px 9px; }
+
+/* ── Cell helpers (TruncCell / IdCell / PillCell / ActionCell) ─────────────── */
+.dt-dash { color: var(--vz-secondary-color); }
+/* Same Sr No badge as the Customer list's .smc-srno — a filled accent square,
+   not plain grey text, so the row number reads as part of the table's chrome. */
+.dt-serial {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 7px;
+  background: linear-gradient(135deg, var(--dt-a-600), var(--dt-a-800));
+  color: #fff; font-weight: 800; font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 6px rgba(var(--dt-a-rgb), .30);
+}
+[data-bs-theme="dark"] .dt-serial { color: #e2e8f0; }
+.dt-trunc {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+/* Same chip as the Customer list's .smc-id-chip — mono face, soft accent tint,
+   6px radius. Codes (CUST-014, EMP-007, PO/25-26/0042) read as one family
+   across every list this way. */
+.dt-id-chip {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--dt-a-50) 70%, var(--dt-a-150));
+  border: 1px solid color-mix(in srgb, var(--dt-a-200) 75%, #fff);
+  color: var(--dt-a-700);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: .02em;
+}
+[data-bs-theme="dark"] .dt-id-chip {
+  background: rgba(var(--dt-a-rgb), .18);
+  border-color: rgba(var(--dt-a-rgb), .35);
+  color: var(--dt-a-300);
+}
+.dt-pill {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 10.5px; font-weight: 700;
+  line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: middle;
+}
+.dt-pill-neutral { background: rgba(100, 116, 139, .12); color: #475569; border-color: rgba(100, 116, 139, .28); }
+.dt-pill-success { background: rgba(34, 197, 94, .14);   color: #16a34a; border-color: rgba(34, 197, 94, .38); }
+.dt-pill-warning { background: rgba(245, 158, 11, .16);  color: #d97706; border-color: rgba(245, 158, 11, .40); }
+.dt-pill-danger  { background: rgba(239, 68, 68, .14);   color: #dc2626; border-color: rgba(239, 68, 68, .38); }
+.dt-pill-info    { background: rgba(59, 130, 246, .14);  color: #2563eb; border-color: rgba(59, 130, 246, .38); }
+.dt-pill-accent  { background: rgba(var(--dt-a-rgb), .14); color: var(--dt-a-700); border-color: rgba(var(--dt-a-rgb), .38); }
+
+.dt-act {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform .14s, box-shadow .14s, background .14s;
+}
+.dt-act i { font-size: 14px; line-height: 1; }
+.dt-act:hover:not(:disabled) { transform: translateY(-1px); }
+.dt-act:disabled { opacity: .45; cursor: not-allowed; }
+.dt-act-accent  { background: rgba(var(--dt-a-rgb), .12); border-color: rgba(var(--dt-a-rgb), .30); color: var(--dt-a-700); }
+.dt-act-success { background: rgba(34, 197, 94, .12);  border-color: rgba(34, 197, 94, .30);  color: #16a34a; }
+.dt-act-info    { background: rgba(59, 130, 246, .12); border-color: rgba(59, 130, 246, .30); color: #2563eb; }
+.dt-act-warning { background: rgba(245, 158, 11, .14); border-color: rgba(245, 158, 11, .32); color: #d97706; }
+.dt-act-danger  { background: rgba(239, 68, 68, .12);  border-color: rgba(239, 68, 68, .30);  color: #dc2626; }
+/* Actions column packs 2–4 of these; keep them evenly spaced without every
+   page having to wrap them in its own flex row. */
+.dt-table tbody td .dt-act + .dt-act { margin-left: 6px; }
+
+/* The shared pager bleeds into a 16px-padded host by default; this layout is
+   flush, so reset the bleed and let it sit inside the rounded card. */
+.dt-root .tc-wl-pag { margin: 0; flex-shrink: 0; }
+
+/* ── Dark mode ────────────────────────────────────────────────────────────── */
+[data-bs-theme="dark"] .dt-root {
+  border-color: rgba(var(--dt-a-rgb), .35);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .30);
+  --tcwl-border-dark: rgba(var(--dt-a-rgb), .35);
+  --tcwl-text-dark: var(--dt-a-300);
+  --tcwl-band-dark: linear-gradient(90deg, rgba(var(--dt-a-rgb), .08), rgba(var(--dt-a-rgb), .14), rgba(var(--dt-a-rgb), .08));
+}
+[data-bs-theme="dark"] .dt-toolbar {
+  background: linear-gradient(110deg, rgba(var(--dt-a-rgb), .10) 0%, rgba(var(--dt-a-rgb), .16) 60%, rgba(var(--dt-a-rgb), .10) 100%);
+  border-bottom-color: rgba(var(--dt-a-rgb), .30);
+}
+[data-bs-theme="dark"] .dt-tabs { background: rgba(255, 255, 255, .05); border-color: rgba(var(--dt-a-rgb), .30); }
+[data-bs-theme="dark"] .dt-tab.off {
+  background: rgba(var(--dt-a-rgb), .16);
+  border-color: rgba(var(--dt-a-rgb), .32);
+  color: var(--dt-a-300);
+}
+[data-bs-theme="dark"] .dt-tab.off:hover { background: rgba(var(--dt-a-rgb), .26); color: #fff; }
+[data-bs-theme="dark"] .dt-tab.off .dt-tab-count {
+  color: var(--dt-a-300); background: rgba(var(--dt-a-rgb), .18); border-color: rgba(var(--dt-a-rgb), .30);
+}
+[data-bs-theme="dark"] .dt-filter-btn {
+  background: rgba(var(--dt-a-rgb), .16);
+  border-color: rgba(var(--dt-a-rgb), .32);
+  color: var(--dt-a-300);
+}
+[data-bs-theme="dark"] .dt-search {
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(var(--dt-a-rgb), .32);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .dt-chipbar { background: rgba(var(--dt-a-rgb), .08); border-bottom-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .dt-chipbar-lbl { color: var(--dt-a-300); }
+[data-bs-theme="dark"] .dt-chip {
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(var(--dt-a-rgb), .32);
+  color: var(--dt-a-300);
+}
+[data-bs-theme="dark"] .dt-chip button { color: var(--dt-a-300); }
+[data-bs-theme="dark"] .dt-chipbar-clear,
+[data-bs-theme="dark"] .dt-empty-link { color: var(--dt-a-300); }
+[data-bs-theme="dark"] .dt-table tbody tr,
+[data-bs-theme="dark"] .dt-table tbody tr:nth-child(even) { background: var(--vz-card-bg); }
+[data-bs-theme="dark"] .dt-table tbody tr:hover { background: rgba(var(--dt-a-rgb), .12); }
+[data-bs-theme="dark"] .dt-table tbody td { border-bottom-color: rgba(255, 255, 255, .07); }
+[data-bs-theme="dark"] .dt-scroll { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
+[data-bs-theme="dark"] .dt-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); }
+
+/* ── Narrow screens: the toolbar stacks rather than squeezing the search ──── */
+@media (max-width: 760px) {
+  .dt-toolbar { gap: 10px; }
+  .dt-tabs, .dt-filter-btn { width: 100%; justify-content: center; }
+  .dt-search { flex: 1 1 100%; min-width: 0; }
+}
