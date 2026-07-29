@@ -634,6 +634,39 @@ export default function HrEmployees() {
     return opts;
   }, [holidayGroupOptions, mHolidayGroups, eHolidayList]);
   const [eShift, setEShift]                      = useState('');
+  // Shift options come from the branch's configured Shift Details (set in the
+  // Branch form). BranchSwitcher injects ?branch_id on this GET, so a branch
+  // user sees their branch's shifts and a client_admin sees the selected
+  // branch (or the union across branches when "All Branches" is active).
+  const [branchShiftOptions, setBranchShiftOptions] = useState<Array<{ value: string; label: string }>>([]);
+  useEffect(() => {
+    api.get('/branch-shifts')
+      .then(r => {
+        const list = Array.isArray(r.data?.shifts) ? r.data.shifts : [];
+        setBranchShiftOptions(list
+          .filter((s: any) => s?.name)
+          .map((s: any) => ({
+            value: s.name,
+            // Show the timing next to the name so the picker is self-explanatory.
+            label: s.start && s.end ? `${s.name} (${s.start}–${s.end})` : s.name,
+          })));
+      })
+      .catch(() => setBranchShiftOptions([]));
+  }, []);
+  // Effective dropdown: prefer branch-configured shifts; fall back to the
+  // built-in defaults only when the branch has none. Always include the
+  // employee's currently-saved shift so editing never blanks an old value.
+  const shiftSelectOptions = useMemo(() => {
+    const base = branchShiftOptions.length ? branchShiftOptions : SHIFT_OPTIONS;
+    if (eShift && !base.some(o => o.value === eShift)) {
+      // The saved shift isn't in the branch's configured list (e.g. an older
+      // hardcoded value). Keep it so editing doesn't blank it, but flag it as
+      // the current/legacy value so it's not mistaken for a branch shift.
+      const suffix = branchShiftOptions.length ? ' (current)' : '';
+      return [{ value: eShift, label: `${eShift}${suffix}` }, ...base];
+    }
+    return base;
+  }, [branchShiftOptions, eShift]);
   const [eWeeklyOff, setEWeeklyOff]              = useState('');
   const [eAttendanceNumber, setEAttendanceNumber]= useState('');
   const [eOvertime, setEOvertime]                = useState('');
@@ -3625,7 +3658,7 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Shift<span className="req">*</span></label>
-                      <MasterSelect value={eShift} onChange={(v) => { setEShift(v); clearEErr('shift'); }} options={SHIFT_OPTIONS} placeholder="Select shift" invalid={!!eErrors.shift} />
+                      <MasterSelect value={eShift} onChange={(v) => { setEShift(v); clearEErr('shift'); }} options={shiftSelectOptions} placeholder="Select shift" invalid={!!eErrors.shift} />
                       {eErrors.shift && <small className="emp-err">{eErrors.shift}</small>}
                     </Col>
                     <Col md={4}>

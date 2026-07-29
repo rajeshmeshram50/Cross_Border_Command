@@ -750,6 +750,59 @@ class BranchController extends Controller
         ]);
     }
 
+    /**
+     * Work-shift options for the Employee form's Shift dropdown.
+     *
+     * Resolves the branch the same way employee creation does:
+     *  - branch_user  → their own branch's shifts
+     *  - client_admin → the branch the BranchSwitcher points at (?branch_id);
+     *    with "All Branches" selected there is no single branch, so we return
+     *    the union of every branch's shifts (deduped by name).
+     *  - super_admin  → the requested branch_id.
+     *
+     * Response: { shifts: [{ name, start, end }, ...] }. Empty when nothing is
+     * configured — the frontend then falls back to its default list.
+     */
+    public function shiftOptions(Request $request)
+    {
+        $user = $request->user();
+        if (!$user || !$user->client_id) {
+            return response()->json(['shifts' => []]);
+        }
+
+        $branchId = $user->user_type === 'branch_user'
+            ? $user->branch_id
+            : ($request->integer('branch_id') ?: null);
+
+        $query = Branch::where('client_id', $user->client_id);
+        if ($branchId) {
+            // Ignore a branch_id that isn't this client's (no cross-tenant leak).
+            $query->where('id', $branchId);
+        }
+
+        $rows = $query->get(['id', 'shifts']);
+
+        // Flatten + dedupe by name (first occurrence wins) preserving order.
+        $seen = [];
+        $shifts = [];
+        foreach ($rows as $branch) {
+            foreach ((array) ($branch->shifts ?? []) as $s) {
+                $name = trim((string) ($s['name'] ?? ''));
+                if ($name === '') continue;
+                $key = mb_strtolower($name);
+                if (isset($seen[$key])) continue;
+                $seen[$key] = true;
+                $shifts[] = [
+                    'name'  => $name,
+                    'start' => (string) ($s['start'] ?? ''),
+                    'end'   => (string) ($s['end'] ?? ''),
+                ];
+            }
+        }
+
+        return response()->json(['shifts' => $shifts]);
+    }
+
     private function allocateBranchCode($clientId): string
     {
         $q = Branch::withTrashed()->where('client_id', $clientId)->lockForUpdate();

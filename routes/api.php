@@ -141,6 +141,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     Route::get('/branches/next-code', [BranchController::class, 'nextCode']);
 
+    // Work shifts for the active branch (BranchSwitcher injects ?branch_id) —
+    // feeds the Employee form's Shift dropdown.
+    Route::get('/branch-shifts', [BranchController::class, 'shiftOptions']);
+
     Route::get('/branches/form-bundle', [BranchController::class, 'formBundle']);
     Route::apiResource('branches', BranchController::class);
 
