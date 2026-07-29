@@ -1,0 +1,4 @@
+# Local, per-install — contains a real API token; never commit.
+config.ini
+cursor.txt
+__pycache__/

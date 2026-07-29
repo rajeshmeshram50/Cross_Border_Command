@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\AttendancePunch;
 use App\Models\Branch;  
-use App\Models\Employee;
+use App\Models\Employee; 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -26,10 +26,7 @@ class AttendanceController extends Controller
     }
  
     
-    private const KNOWN_LABELS = [
-        'Check In', 'Step Out', 'Step In', 'Lunch Out', 'Lunch In',
-        'Meeting', 'Check Out',
-    ];
+    private const KNOWN_LABELS = ['Check In', 'Check Out'];
 
     public function today(Request $request)
     {
@@ -75,7 +72,105 @@ class AttendanceController extends Controller
         return $this->facePunch($request, expected: 'out');
     }
 
-  
+    /**
+     * Bulk-import punches from an eSSL export file (AttLog .dat/.txt or CSV) or
+     * a JSON `punches` array — for devices without live push, or backfill.
+     * Reuses the same normaliser as the real-time /iclock receiver: map by
+     * attendance_number, device-local → UTC, alternate in/out by time,
+     * idempotent. Tenant is derived from the caller (never the file).
+     *
+     * Optionally attach the import to a registered terminal (device_terminal_id)
+     * to inherit its branch / timezone / serial; otherwise the caller's client
+     * (+ optional branch_id / timezone) is used.
+     *
+     * See docs/ESSL_ATTENDANCE_INTEGRATION.md §6 (Phase 2), §15.
+     */
+    public function import(Request $request, \App\Services\EsslAttendanceImporter $importer)
+    {
+        // Authorization: bulk-import can write attendance for ANY employee in the
+        // tenant, so restrict it to administrators (and the dedicated connector
+        // service account, which is provisioned as a client_admin). A regular
+        // employee must never be able to fabricate/alter attendance.
+        $user = $request->user();
+        if (!$user->isSuperAdmin() && $user->user_type !== 'client_admin') {
+            abort(403, 'Only administrators can import attendance.');
+        }
+
+        $data = $request->validate([
+            'file'               => 'nullable|file|max:5120',           // 5 MB
+            'punches'            => 'nullable|array',
+            'punches.*.user_id'  => 'required_with:punches|string',
+            'punches.*.punched_at' => 'required_with:punches|string',
+            'device_terminal_id' => 'nullable|integer',
+            'branch_id'          => 'nullable|integer',
+            'timezone'           => 'nullable|timezone',
+        ]);
+
+        $clientId = $user->client_id ?: $request->integer('client_id') ?: null;
+        abort_if(!$clientId, 422, 'A client must be resolved to import attendance.');
+
+        $branchId = $request->filled('branch_id') ? (int) $request->input('branch_id') : null;
+        $serial   = 'CSV-IMPORT';
+        $tz       = $data['timezone'] ?? 'Asia/Kolkata';
+
+        // Prefer a registered terminal's context when one is chosen.
+        if (!empty($data['device_terminal_id'])) {
+            $terminal = \App\Models\DeviceTerminal::where('client_id', $clientId)
+                ->findOrFail($data['device_terminal_id']);
+            $branchId = $terminal->branch_id;
+            $serial   = (string) $terminal->serial;
+            $tz       = $terminal->timezone ?: $tz;
+        }
+
+        // Rows come from an uploaded file OR an inline JSON array.
+        if ($request->hasFile('file')) {
+            $rows = $this->parseUploadedPunches((string) $request->file('file')->get());
+        } else {
+            $rows = array_map(fn ($p) => [
+                'user_id'    => (string) ($p['user_id'] ?? ''),
+                'punched_at' => (string) ($p['punched_at'] ?? ''),
+                'status'     => (string) ($p['status'] ?? ''),
+            ], $data['punches'] ?? []);
+        }
+
+        if (empty($rows)) {
+            return response()->json(['message' => 'No punch rows found. Expected tab/comma-delimited: UserID, DateTime, Status.'], 422);
+        }
+
+        $summary = $importer->importRows($rows, $clientId, $branchId, $serial, $tz);
+
+        return response()->json(['data' => $summary]);
+    }
+
+    /**
+     * Parse an eSSL export body — tab-delimited AttLog OR comma-delimited CSV,
+     * with or without a header row. Each data line yields UserID, DateTime and
+     * (optional) Status. Lines whose 2nd column isn't a date-ish value (e.g. a
+     * header) are skipped; the importer reports anything else it can't use.
+     */
+    private function parseUploadedPunches(string $body): array
+    {
+        $rows = [];
+        foreach (preg_split('/\r\n|\r|\n/', trim($body)) as $line) {
+            if (trim($line) === '') continue;
+            // Tab-delimited keeps the datetime's internal space intact; fall back
+            // to comma for CSV exports.
+            $f = str_contains($line, "\t") ? explode("\t", $line) : explode(',', $line);
+            if (count($f) < 2) continue;
+            $when = trim($f[1]);
+            // Skip header / junk: a real punch time contains both a digit and a
+            // date/time separator.
+            if (!preg_match('/\d/', $when) || !preg_match('/[-:\/]/', $when)) continue;
+            $rows[] = [
+                'user_id'    => trim($f[0]),
+                'punched_at' => $when,
+                'status'     => isset($f[2]) ? trim($f[2]) : '',
+            ];
+        }
+        return $rows;
+    }
+
+
     public function employeeSummary(Request $request, string $employeeId)
     {
         $user = $request->user();
@@ -325,6 +420,11 @@ class AttendanceController extends Controller
 
         $date = (string) $request->query('date', self::todayLocal());
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $date = self::todayLocal();
+        }
+        // Clamp to today — a future date would otherwise mark everyone "Absent"
+        // for a day that hasn't happened yet.
+        if ($date > self::todayLocal()) {
             $date = self::todayLocal();
         }
         $dateC      = \Carbon\Carbon::parse($date);
@@ -970,6 +1070,16 @@ class AttendanceController extends Controller
 
         $employee = $this->callerEmployee($request);
 
+        // A terminated / inactive employee (whose login still works) must not be
+        // able to keep clocking in — mirrors the enrolment guard in
+        // FaceBiometricController and the eligibility filter in dailyView.
+        if ($employee->isDisabled()) {
+            return response()->json([
+                'message'  => 'Your employee record is not active. Please contact HR.',
+                'inactive' => true,
+            ], 422);
+        }
+
         // Attendance cannot be marked before the employee's joining date (bug
         // #19). Covers both clock-in and clock-out since they share facePunch().
         if ($employee->date_of_joining) {
@@ -1003,29 +1113,14 @@ class AttendanceController extends Controller
 
         return DB::transaction(function () use ($request, $employee, $distance, $data, $expected) {
             $today = self::todayLocal();
+            $punchService = app(\App\Services\AttendancePunchService::class);
 
             // Lock the day's row so a double-tap on the SPA can't race two
             // punches into the same direction.
-            $attendance = Attendance::where('employee_id', $employee->id)
-                ->whereDate('attendance_date', $today)
-                ->lockForUpdate()
-                ->first();
-
-            if (!$attendance) {
-                $attendance = Attendance::create([
-                    'client_id'       => $employee->client_id,
-                    'branch_id'       => $employee->branch_id,
-                    'user_id'         => $employee->user_id,
-                    'employee_id'     => $employee->id,
-                    'attendance_date' => $today,
-                    'status'          => 'Present',
-                ]);
-            }
+            $attendance = $punchService->findOrCreateDay($employee, $today);
 
             // Resolve the actual next direction from history (server-truth).
-            $lastPunch = AttendancePunch::where('attendance_id', $attendance->id)
-                ->orderByDesc('punched_at')->first();
-            $nextDir = !$lastPunch ? 'in' : ($lastPunch->direction === 'in' ? 'out' : 'in');
+            $nextDir = $punchService->nextDirection($attendance);
 
             if ($expected !== $nextDir) {
                 return response()->json([
@@ -1037,21 +1132,17 @@ class AttendanceController extends Controller
                 ], 422);
             }
 
-            // Default the label by direction if the SPA didn't pick one.
+            // Default the label by direction if the SPA didn't pick one —
+            // simplified to just Check In / Check Out.
             $label = trim((string) ($data['label'] ?? ''));
             if ($label === '') {
-                if ($nextDir === 'in') {
-                    $label = $lastPunch ? 'Step In' : 'Check In';
-                } else {
-                    $label = 'Step Out';
-                }
+                $label = $nextDir === 'in' ? 'Check In' : 'Check Out';
             }
 
-            $now = now();
-            $punch = AttendancePunch::create([
-                'attendance_id'  => $attendance->id,
-                'employee_id'    => $employee->id,
-                'punched_at'     => $now,
+            // Persist the punch + recompute the daily summary via the shared
+            // service (identical mechanics to the eSSL device-import path).
+            $punch = $punchService->appendPunch($attendance, $employee, [
+                'punched_at'     => now(),
                 'direction'      => $nextDir,
                 'label'          => $label,
                 'method'         => 'face',
@@ -1060,10 +1151,6 @@ class AttendanceController extends Controller
                 'lat'            => $data['lat'] ?? null,
                 'lng'            => $data['lng'] ?? null,
             ]);
-
-            // Recompute the daily summary on the parent row so list views
-            // (HR, dashboards, reports) stay fast — no need to join punches.
-            $this->recomputeSummary($attendance);
 
             $attendance->load('punches');
             return response()->json([
@@ -1080,27 +1167,10 @@ class AttendanceController extends Controller
  
     private function recomputeSummary(Attendance $attendance): void
     {
-        $firstIn  = AttendancePunch::where('attendance_id', $attendance->id)
-            ->where('direction', 'in')
-            ->orderBy('punched_at')->first();
-        $lastOut  = AttendancePunch::where('attendance_id', $attendance->id)
-            ->where('direction', 'out')
-            ->orderByDesc('punched_at')->first();
-
-        $attendance->update([
-            'check_in_at'              => $firstIn?->punched_at,
-            'check_in_method'          => $firstIn?->method,
-            'check_in_match_distance'  => $firstIn?->match_distance,
-            'check_in_ip'              => $firstIn?->ip,
-            'check_in_lat'             => $firstIn?->lat,
-            'check_in_lng'             => $firstIn?->lng,
-            'check_out_at'             => $lastOut?->punched_at,
-            'check_out_method'         => $lastOut?->method,
-            'check_out_match_distance' => $lastOut?->match_distance,
-            'check_out_ip'             => $lastOut?->ip,
-            'check_out_lat'            => $lastOut?->lat,
-            'check_out_lng'            => $lastOut?->lng,
-        ]);
+        // Delegated to the shared service so the eSSL device-import path and
+        // the face clock-in recompute the daily summary identically.
+        // See docs/ESSL_ATTENDANCE_INTEGRATION.md §6 (Phase 0).
+        app(\App\Services\AttendancePunchService::class)->recomputeSummary($attendance);
     }
 
     

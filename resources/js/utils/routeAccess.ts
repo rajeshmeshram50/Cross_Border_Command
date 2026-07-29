@@ -53,6 +53,7 @@ const HR_LEAF: Record<string, string> = {
   '/hr/exit-management': 'hr.exit',
   '/hr/employee-onboarding': 'hr.onboarding',
   '/hr/attendance': 'hr.attendance',
+  '/hr/devices': 'hr.attendance',   // Biometric Devices rides on the attendance grant
   '/hr/leave': 'hr.leave',
   '/hr/leave-plans': 'hr.leave',
   '/hr/leave-approvals': 'hr.leave_approvals',
