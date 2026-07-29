@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Card, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import Tooltip from '../../components/ui/Tooltip';
-import WorklistPager from '../../components/ui/WorklistPager';
+import DataTable, { IdCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -14,7 +14,7 @@ import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import { VaultModal } from '../employee-onboarding/HrEmployeeOnboarding';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
-import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
+import { Shimmer } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
 import { resolveProbation } from '../../utils/probation';
 import '../../../css/recruitment.css';
@@ -2107,31 +2107,8 @@ export default function HrEmployees() {
     });
   }, [q, tab, deptFilter, statusFilter, apiRows]);
 
-  const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
-  useEffect(() => { setPage(1); }, [q, tab, deptFilter, statusFilter, apiRows, rowsPerPage]);
-  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
-  const pageRows = filtered.slice((page - 1) * rowsPerPage, page * rowsPerPage);
-
-  const listRootRef   = useRef<HTMLDivElement | null>(null);
-  const listScrollRef = useRef<HTMLDivElement | null>(null);
-  const [listFillH, setListFillH] = useState<number | undefined>(undefined);
-  useEffect(() => {
-    const recompute = () => {
-      const el = listScrollRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const fh = Math.max(320, window.innerHeight - top - 24);
-      setListFillH(prev => (prev === fh ? prev : fh));
-    };
-    recompute();
-    const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    if (listRootRef.current) ro.observe(listRootRef.current);
-    window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
-  }, [filtered.length]);
+  /* Paging, rows-per-page and the fit-to-viewport measuring all moved into
+     <DataTable> (components/ui/DataTable) — this page no longer tracks them. */
 
   const [exporting, setExporting] = useState(false);
   const handleExportEmployees = () => {
@@ -2170,6 +2147,222 @@ export default function HrEmployees() {
       setExporting(false);
     }
   };
+
+  /* Employee list columns for the shared <DataTable>. Every text/number column
+   * sorts (the header arrows); Ancillary Role and Actions don't, because one
+   * holds a variable-length chip set and the other only buttons.
+   *
+   * `meta.width` percentages MUST keep summing to 100 — the table runs in
+   * table-layout:fixed, so a short sum re-appears as slack in the last column.
+   * 4+16+8+8+9+8+7+8+7+8+17 = 100. Actions gets the biggest share because the
+   * Disabled tab shows six icon buttons plus the enable/disable switch. */
+  const employeeColumns = useMemo<DataTableColumn<EmployeeRow>[]>(() => [
+    {
+      header: 'Employee',
+      id: 'name',
+      accessorFn: (r: EmployeeRow) => r.name,
+      meta: { width: '16%' },
+      cell: info => {
+        const e = info.row.original;
+        return (
+          <div className="d-flex align-items-center gap-2">
+            {e.photoUrl ? (
+              <img
+                src={e.photoUrl}
+                alt={e.name}
+                className="rounded-circle flex-shrink-0"
+                style={{ width: 34, height: 34, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
+              />
+            ) : (
+              <div
+                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                style={{
+                  width: 34, height: 34, fontSize: 12,
+                  background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)`,
+                  boxShadow: `0 2px 6px ${e.accent}40`,
+                }}
+              >
+                {e.initials}
+              </div>
+            )}
+            <div className="min-w-0" style={{ flex: 1, minWidth: 0 }}>
+              <Tooltip label={e.name}>
+                <div className="fw-semibold fs-13 text-truncate">{e.name}</div>
+              </Tooltip>
+              <Tooltip label={e.email}>
+                <a
+                  href={`mailto:${e.email}`}
+                  onClick={ev => ev.stopPropagation()}
+                  className="text-muted text-decoration-none d-inline-flex align-items-center gap-1 fs-13 w-100"
+                  style={{ minWidth: 0 }}
+                >
+                  <i className="ri-mail-line fs-13 flex-shrink-0" />
+                  <span className="text-truncate" style={{ minWidth: 0 }}>{e.email}</span>
+                </a>
+              </Tooltip>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      /* Same code chip as the Customer list (DataTable's IdCell / .dt-id-chip)
+         instead of the old solid-violet pill, so employee codes read like every
+         other ID column in the app. */
+      header: 'Employee ID',
+      accessorKey: 'id',
+      meta: { width: '8%' },
+      cell: info => <IdCell value={info.getValue() as string} />,
+    },
+    {
+      header: 'Department',
+      accessorKey: 'department',
+      meta: { width: '8%' },
+      cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
+    },
+    {
+      header: 'Designation',
+      accessorKey: 'designation',
+      meta: { width: '9%' },
+      cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
+    },
+    {
+      header: 'Primary Role',
+      accessorKey: 'primaryRole',
+      meta: { width: '8%' },
+      cell: info => {
+        const t = tone(info.row.original.primaryRole, isDark);
+        return (
+          <span
+            className="d-inline-flex align-items-center fw-semibold hr-emp-row-pill"
+            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 999, background: t.bg, color: t.fg }}
+          >
+            {info.row.original.primaryRole}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'Ancillary Role',
+      id: 'ancillaryRoles',
+      enableSorting: false,
+      meta: { width: '7%' },
+      cell: info => <AncillaryRolesChip names={info.row.original.ancillaryRoles} />,
+    },
+    {
+      header: 'Manager',
+      accessorKey: 'manager',
+      meta: { width: '8%' },
+      cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
+    },
+    {
+      header: 'Profile %',
+      accessorKey: 'profile',
+      // wrap: the meter is a fixed 120px block with a badge floating above the
+      // bar, so the cell must not clip it.
+      meta: { width: '7%', wrap: true },
+      cell: info => {
+        const p = info.row.original.profile;
+        const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
+                  : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
+                  : p >= 60 ? { dark: '#f59e0b', light: '#fcd34d' }
+                  :           { dark: '#f06548', light: '#fda192' };
+        const badgeLeft = Math.max(11, Math.min(89, p));
+        return (
+          <div style={{ position: 'relative', width: 110, paddingTop: 30 }} title={`Profile ${p}% complete`}>
+            <div style={{ position: 'absolute', top: 0, left: `${badgeLeft}%`, transform: 'translateX(-50%)', textAlign: 'center' }}>
+              <div
+                className="d-flex align-items-center justify-content-center fw-bold"
+                style={{
+                  width: 26, height: 26, borderRadius: '50%',
+                  background: `linear-gradient(135deg, ${TIER.dark}, ${TIER.light})`,
+                  color: '#fff', fontSize: 9.5,
+                  boxShadow: `0 4px 10px ${TIER.dark}55`,
+                }}
+              >
+                {p}%
+              </div>
+              <div
+                style={{
+                  width: 0, height: 0, margin: '0 auto',
+                  borderLeft: '4px solid transparent',
+                  borderRight: '4px solid transparent',
+                  borderTop: `5px solid ${TIER.dark}`,
+                }}
+              />
+            </div>
+            <div style={{ width: '100%', height: 8, borderRadius: 999, background: '#e5e7eb', overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: `${p}%`, height: '100%', borderRadius: 999,
+                  background: `repeating-linear-gradient(-45deg, rgba(255,255,255,0.28) 0 4px, transparent 4px 8px), linear-gradient(90deg, ${TIER.dark}, ${TIER.light})`,
+                  transition: 'width .25s ease',
+                }}
+              />
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Onboarding',
+      accessorKey: 'onboarding',
+      meta: { width: '8%', align: 'center' },
+      cell: info => {
+        const status = info.row.original.onboarding;
+        const ob = ONBOARDING_TONES[status];
+        return (
+          <span
+            className="rounded-pill fw-semibold d-inline-flex align-items-center gap-1 hr-emp-row-pill hr-emp-onboarding-pill"
+            data-status={status}
+            style={{ background: ob.bg, color: ob.fg, fontSize: 11.5, padding: '4px 10px', border: 'none' }}
+          >
+            {status}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Actions</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { align: 'center', width: '17%', wrap: true },
+      cell: info => {
+        const e = info.row.original;
+        const rowDisabled = !e.enabled;
+        // EXITED employees (exit case completed → status Resigned/Terminated)
+        // are PERMANENTLY disabled and cannot be re-enabled here; a plain
+        // soft-disable (Inactive) stays reversible.
+        const exited = ['resigned', 'terminated'].includes(String((e as any)._raw?.status || '').toLowerCase());
+        return (
+          <div className="d-flex gap-1 justify-content-center align-items-center" onClick={ev => ev.stopPropagation()}>
+            <ActionBtn title="Edit"  icon="ri-pencil-line"   color="info"    onClick={() => openEditEmployee(e)} disabled={rowDisabled} />
+            <ActionBtn title="Asset" icon="ri-computer-line" color="primary" onClick={() => openAssignAssets(e)} disabled={rowDisabled} />
+            <ActionBtn
+              title={(e as any).faceRegistered ? 'Re-register Face (already enrolled)' : 'Register Face'}
+              icon="ri-user-smile-line"
+              color={(e as any).faceRegistered ? 'success' : 'secondary'}
+              badge={(e as any).faceRegistered ? 'dot' : undefined}
+              onClick={() => setFaceRegEmployeeId((e as any)._dbId)}
+              disabled={rowDisabled}
+            />
+            <ActionBtn title="Permissions" icon="ri-lock-2-line"    color="warning" onClick={() => openPermissions(e)} disabled={rowDisabled} />
+            <ActionBtn title="Documents"   icon="ri-file-text-line" color="success" onClick={() => openVault(e)}       disabled={rowDisabled} />
+            {tab === 'disabled' && (
+              <ActionBtn title="Delete permanently" icon="ri-delete-bin-line" color="danger" onClick={() => setConfirmDelete(e)} />
+            )}
+            <ToggleSwitch
+              initial={e.enabled}
+              locked={exited}
+              lockedTitle="This employee has exited (exit process completed) and cannot be re-enabled."
+              onRequestToggle={(next, commit) => requestToggle(e, next, commit)}
+            />
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [isDark, tab, openEditEmployee, openAssignAssets, openPermissions, openVault, requestToggle]);
 
   return (
     <>
@@ -2253,310 +2446,46 @@ export default function HrEmployees() {
               ))}
             </Row>
 
-            <div className="hr-emp-list-frame" ref={listRootRef}>
-            <div className="hr-emp-frame-filter p-3">
-              <div className="d-flex align-items-center gap-3 flex-wrap">
-                <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
-                  {([
-                    { key: 'active'   as const, label: 'Active Employees',   count: counts.activeTab,   icon: 'ri-user-follow-line',   variant: 'in-progress' },
-                    { key: 'disabled' as const, label: 'Disabled Employees', count: counts.disabledTab, icon: 'ri-user-unfollow-line', variant: 'cancelled' },
-                  ]).map(t => (
-                    <button
-                      key={t.key}
-                      type="button"
-                      onClick={() => {
-                        setTab(t.key);
-                        setStatusFilter(t.key === 'active' ? 'Active' : 'Disabled');
-                      }}
-                      className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
-                      style={{ flex: 1, justifyContent: 'center' }}
-                    >
-                      <i className={t.icon} />
-                      {t.label}
-                      <span className="badge">{t.count}</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="search-box rec-req-search" style={{ flex: '1 1 0', minWidth: 0 }}>
-                  <Input
-                    type="text"
-                    className="form-control"
-                    placeholder="Search name, ID, department, role…"
-                    value={q}
-                    onChange={e => setQ(e.target.value)}
-                  />
-                  <i className="ri-search-line search-icon"></i>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-3 d-flex flex-column" ref={listScrollRef} style={{ minHeight: listFillH }}>
-                <div className="table-responsive flex-grow-1" style={{ maxHeight: listFillH ? Math.max(280, listFillH - 64) : undefined, overflowY: 'auto' }}>
-                  <table className="table align-middle table-nowrap mb-0 hr-emp-table">
-                    {/* No .table-light — Bootstrap paints its fill with an inset
-                        box-shadow that would cover the header gradient (and reads
-                        as transparent under position:sticky). The header surface
-                        comes from .hr-emp-sticky-head in recruitment.css. */}
-                    <thead className="hr-emp-sticky-head">
-                      <tr>
-                        <th scope="col" className="ps-3 text-center" style={{ width: 56 }}>Sr No</th>
-                        <th scope="col">Employee</th>
-                        <th scope="col">Employee ID</th>
-                        <th scope="col">Department</th>
-                        <th scope="col">Designation</th>
-                        <th scope="col">Primary Role</th>
-                        <th scope="col">Ancillary Role</th>
-                        <th scope="col">Manager</th>
-                        <th scope="col">Profile %</th>
-                        <th scope="col">Onboarding</th>
-                        <th scope="col" className="text-center pe-3">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loadingEmployees || tabSwitching ? (
-                        <ShimmerTableRows rows={6} cols={11} keyPrefix="emp" />
-                      ) : filtered.length === 0 ? (
-                        <tr>
-                          <td colSpan={11} className="text-center py-5 text-muted">
-                            <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                            No employees match your filters
-                          </td>
-                        </tr>
-                      ) : pageRows.map((e, idx) => {
-                        const primary = tone(e.primaryRole, isDark);
-                        return (
-                          <tr
-                            key={(e as any)._dbId ?? e.id}
-                            onClick={tab === 'disabled'
-                              ? undefined
-                              : () => navigate(`/hr/employees/${encodeURIComponent(e.encryptedId || e.id)}/profile`, { state: { employee: e } })}
-                            style={{ cursor: tab === 'disabled' ? 'default' : 'pointer' }}
-                          >
-                            <td className="ps-3 text-center fs-13 hr-emp-srno">{(page - 1) * rowsPerPage + idx + 1}</td>
-                            <td>
-                              <div className="d-flex align-items-center gap-2">
-                                {e.photoUrl ? (
-                                  <img
-                                    src={e.photoUrl}
-                                    alt={e.name}
-                                    className="rounded-circle flex-shrink-0"
-                                    style={{ width: 34, height: 34, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
-                                  />
-                                ) : (
-                                  <div
-                                    className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                    style={{
-                                      width: 34, height: 34, fontSize: 12,
-                                      background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)`,
-                                      boxShadow: `0 2px 6px ${e.accent}40`,
-                                    }}
-                                  >
-                                    {e.initials}
-                                  </div>
-                                )}
-                                <div className="min-w-0" style={{ maxWidth: 220 }}>
-                                  <Tooltip label={e.name}>
-                                    <div className="fw-semibold fs-13 text-truncate">{e.name}</div>
-                                  </Tooltip>
-                                  <Tooltip label={e.email}>
-                                    <a
-                                      href={`mailto:${e.email}`}
-                                      onClick={ev => ev.stopPropagation()}
-                                      className="text-muted text-decoration-none d-inline-flex align-items-center gap-1 fs-13 w-100"
-                                      style={{ minWidth: 0 }}
-                                    >
-                                      <i className="ri-mail-line fs-13 flex-shrink-0" />
-                                      <span className="text-truncate" style={{ minWidth: 0 }}>{e.email}</span>
-                                    </a>
-                                  </Tooltip>
-                                </div>
-                              </div>
-                            </td>
-                            <td>
-                              <span
-                                className="d-inline-flex align-items-center fw-bold font-monospace hr-emp-id-pill"
-                                style={{
-                                  fontSize: 12,
-                                  padding: '4px 10px',
-                                  borderRadius: 999,
-                                  background: 'linear-gradient(135deg, rgba(124,92,252,0.28) 0%, rgba(124,92,252,0.50) 100%)',
-                                  color: '#2e1a8a',
-                                  border: '1px solid rgba(124,92,252,0.55)',
-                                  letterSpacing: '0.02em',
-                                }}
-                              >
-                                {e.id}
-                              </span>
-                            </td>
-                            <td className="fs-13" style={{ maxWidth: 160 }}>
-                              <Tooltip label={e.department || '—'}>
-                                <div className="text-truncate">{e.department}</div>
-                              </Tooltip>
-                            </td>
-                            <td className="fs-13" style={{ maxWidth: 180 }}>
-                              <Tooltip label={e.designation || '—'}>
-                                <div className="text-truncate">{e.designation}</div>
-                              </Tooltip>
-                            </td>
-                            <td>
-                              <span
-                                className="d-inline-flex align-items-center fw-semibold hr-emp-row-pill"
-                                style={{
-                                  fontSize: 11,
-                                  padding: '4px 10px',
-                                  borderRadius: 999,
-                                  background: primary.bg,
-                                  color: primary.fg,
-                                }}
-                              >
-                                {e.primaryRole}
-                              </span>
-                            </td>
-                            <td>
-                              <AncillaryRolesChip names={e.ancillaryRoles} />
-                            </td>
-                            <td className="fs-13" style={{ maxWidth: 180 }}>
-                              <Tooltip label={e.manager || '—'}>
-                                <div className="text-truncate">{e.manager}</div>
-                              </Tooltip>
-                            </td>
-                            <td>
-                              {(() => {
-                                const p = e.profile;
-                                const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
-                                          : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
-                                          : p >= 60 ? { dark: '#f59e0b', light: '#fcd34d' }
-                                          :           { dark: '#f06548', light: '#fda192' };
-                                const badgeLeft = Math.max(11, Math.min(89, p));
-                                return (
-                                  <div
-                                    style={{ position: 'relative', width: 120, paddingTop: 30 }}
-                                    title={`Profile ${p}% complete`}
-                                  >
-                                    <div
-                                      style={{
-                                        position: 'absolute',
-                                        top: 0,
-                                        left: `${badgeLeft}%`,
-                                        transform: 'translateX(-50%)',
-                                        textAlign: 'center',
-                                      }}
-                                    >
-                                      <div
-                                        className="d-flex align-items-center justify-content-center fw-bold"
-                                        style={{
-                                          width: 26, height: 26, borderRadius: '50%',
-                                          background: `linear-gradient(135deg, ${TIER.dark}, ${TIER.light})`,
-                                          color: '#fff', fontSize: 9.5,
-                                          boxShadow: `0 4px 10px ${TIER.dark}55`,
-                                        }}
-                                      >
-                                        {p}%
-                                      </div>
-                                      <div
-                                        style={{
-                                          width: 0, height: 0, margin: '0 auto',
-                                          borderLeft: '4px solid transparent',
-                                          borderRight: '4px solid transparent',
-                                          borderTop: `5px solid ${TIER.dark}`,
-                                        }}
-                                      />
-                                    </div>
-
-                                    <div
-                                      style={{
-                                        width: '100%', height: 8,
-                                        borderRadius: 999,
-                                        background: '#e5e7eb',
-                                        overflow: 'hidden',
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          width: `${p}%`, height: '100%',
-                                          borderRadius: 999,
-                                          background: `repeating-linear-gradient(-45deg, rgba(255,255,255,0.28) 0 4px, transparent 4px 8px), linear-gradient(90deg, ${TIER.dark}, ${TIER.light})`,
-                                          transition: 'width .25s ease',
-                                        }}
-                                      />
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </td>
-                            <td>
-                              {(() => {
-                                const ob = ONBOARDING_TONES[e.onboarding];
-                                return (
-                                  <span
-                                    className="rounded-pill fw-semibold d-inline-flex align-items-center gap-1 hr-emp-row-pill hr-emp-onboarding-pill"
-                                    data-status={e.onboarding}
-                                    style={{
-                                      background: ob.bg,
-                                      color: ob.fg,
-                                      fontSize: 11.5,
-                                      padding: '4px 10px',
-                                      border: 'none',
-                                    }}
-                                  >
-                                    {e.onboarding}
-                                  </span>
-                                );
-                              })()}
-                            </td>
-                            <td className="pe-3" onClick={(ev) => ev.stopPropagation()}>
-                              {(() => { const rowDisabled = !e.enabled; return (
-                              <div className="d-flex gap-1 justify-content-center align-items-center">
-                                <ActionBtn title="Edit"        icon="ri-pencil-line"      color="info"      onClick={() => openEditEmployee(e)} disabled={rowDisabled} />
-                                <ActionBtn title="Asset" icon="ri-computer-line"    color="primary"   onClick={() => openAssignAssets(e)} disabled={rowDisabled} />
-                                <ActionBtn
-                                  title={(e as any).faceRegistered ? 'Re-register Face (already enrolled)' : 'Register Face'}
-                                  icon="ri-user-smile-line"
-                                  color={(e as any).faceRegistered ? 'success' : 'secondary'}
-                                  badge={(e as any).faceRegistered ? 'dot' : undefined}
-                                  onClick={() => setFaceRegEmployeeId((e as any)._dbId)}
-                                  disabled={rowDisabled}
-                                />
-                                <ActionBtn title="Permissions" icon="ri-lock-2-line"      color="warning"   onClick={() => openPermissions(e)} disabled={rowDisabled} />
-                                <ActionBtn title="Documents"   icon="ri-file-text-line"   color="success"   onClick={() => openVault(e)} disabled={rowDisabled} />
-                                {tab === 'disabled' && (
-                                  <ActionBtn title="Delete permanently" icon="ri-delete-bin-line" color="danger" onClick={() => setConfirmDelete(e)} />
-                                )}
-                                {(() => {
-                                  // EXITED employees (exit case completed → status
-                                  // Resigned/Terminated) are PERMANENTLY disabled and
-                                  // cannot be re-enabled here. A plain soft-disable
-                                  // (Inactive) stays reversible.
-                                  const exited = ['resigned', 'terminated'].includes(String((e as any)._raw?.status || '').toLowerCase());
-                                  return (
-                                    <ToggleSwitch
-                                      initial={e.enabled}
-                                      locked={exited}
-                                      lockedTitle="This employee has exited (exit process completed) and cannot be re-enabled."
-                                      onRequestToggle={(next, commit) => requestToggle(e, next, commit)}
-                                    />
-                                  );
-                                })()}
-                              </div>
-                              ); })()}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                <WorklistPager
-                  total={filtered.length}
-                  page={page}
-                  pageSize={rowsPerPage}
-                  onPage={setPage}
-                  onPageSize={setRowsPerPage}
-                  pageSizeOptions={[5, 10, 25, 50, 100]}
-                />
-            </div>
-            </div>
+            {/* Shared list table (components/ui/DataTable) — tabs, search,
+                sortable headers, dynamic rows-per-page and the viewport-fit
+                page sizing all live in the component now, so this page only
+                declares its columns and hands over the filtered rows.
+                Search stays controlled here because `filtered` also feeds the
+                Excel export, which must respect the same query. */}
+            <DataTable<EmployeeRow>
+              data={filtered}
+              columns={employeeColumns}
+              serial
+              accent="violet"
+              minWidth={1500}
+              fitToViewport
+              autoFitRows
+              loading={loadingEmployees || tabSwitching}
+              tabs={[
+                { key: 'active',   label: 'Active Employees',   icon: 'ri-user-follow-line',   count: counts.activeTab },
+                { key: 'disabled', label: 'Disabled Employees', icon: 'ri-user-unfollow-line', count: counts.disabledTab },
+              ]}
+              activeTab={tab}
+              onTabChange={k => {
+                setTab(k as 'active' | 'disabled');
+                setStatusFilter(k === 'active' ? 'Active' : 'Disabled');
+              }}
+              searchValue={q}
+              onSearchChange={setQ}
+              searchPlaceholder="Search name, ID, department, role…"
+              emptyMessage={
+                <>
+                  <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  No employees match your filters
+                </>
+              }
+              /* Disabled employees have no profile page to open — their row
+                 stays non-clickable (the Actions column still works). */
+              onRowClick={tab === 'disabled' ? undefined : (e) => navigate(
+                `/hr/employees/${encodeURIComponent(e.encryptedId || e.id)}/profile`,
+                { state: { employee: e } },
+              )}
+            />
           </div>
         </Col>
       </Row>

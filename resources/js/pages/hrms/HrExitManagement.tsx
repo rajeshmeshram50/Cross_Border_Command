@@ -5,7 +5,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
-import WorklistPager from '../../components/ui/WorklistPager';
+import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import Tooltip from '../../components/ui/Tooltip';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
 import '../../../css/recruitment.css';
@@ -70,8 +70,7 @@ export default function HrExitManagement() {
   const [listLoading, setListLoading] = useState(true);
   const [tab, setTab]             = useState<'active' | 'in-progress' | 'exited'>('active');
   const [search, setSearch]       = useState('');
-  const [page, setPage]           = useState(1);
-  const [pageSize, setPageSize]   = useState(10);
+  /* Paging lives in <DataTable> now. */
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [processing, setProcessing] = useState<EmployeeRow | null>(null);
   const [vault, setVault] = useState<EmployeeRow | null>(null);
@@ -90,7 +89,6 @@ export default function HrExitManagement() {
   }, []);
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
-  useEffect(() => { setPage(1); }, [tab, search]);
 
   const counts = useMemo(() => {
     const total       = employees.length;
@@ -121,30 +119,200 @@ export default function HrExitManagement() {
       });
   }, [employees, tab, search]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage  = Math.min(page, pageCount);
-  const sliceFrom = (safePage - 1) * pageSize;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
-  const goto = (p: number) => setPage(Math.max(1, Math.min(pageCount, p)));
-
-  const listRootRef   = useRef<HTMLDivElement | null>(null);
-  const listScrollRef = useRef<HTMLDivElement | null>(null);
-  const [listFillH, setListFillH] = useState<number | undefined>(undefined);
-  useEffect(() => {
-    const recompute = () => {
-      const el = listScrollRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const fh = Math.max(320, window.innerHeight - top - 24);
-      setListFillH(prev => (prev === fh ? prev : fh));
-    };
-    recompute();
-    const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    if (listRootRef.current) ro.observe(listRootRef.current);
-    window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
-  }, [filtered.length]);
+  /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
+     4+17+8+9+10+8+7+11+9+8+9. */
+  const columns = useMemo<DataTableColumn<EmployeeRow>[]>(() => [
+    {
+      header: 'Employee',
+      accessorKey: 'name',
+      // wrap: the exit-state caption sits on a second line under the name.
+      meta: { width: '17%', wrap: true },
+      cell: info => {
+        const e = info.row.original;
+        const isScheduled = e.status === 'Active' && e.exitInitiated;
+        const noticeFromLabel = e.noticeStartIso
+          ? new Date(e.noticeStartIso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+          : '';
+        return (
+          <div className="d-flex align-items-center gap-2">
+            {e.photoUrl ? (
+              <img
+                src={e.photoUrl}
+                alt={e.name}
+                className="rounded-circle flex-shrink-0"
+                style={{ width: 26, height: 26, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
+              />
+            ) : (
+              <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                style={{ width: 26, height: 26, fontSize: 10.5, background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)` }}>
+                {e.initials}
+              </div>
+            )}
+            <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
+              <span className="fw-bold fs-13 text-truncate">{e.name}</span>
+              <span className="text-muted text-truncate" style={{ fontSize: 10.5, fontWeight: 500 }}>
+                {isScheduled ? (noticeFromLabel ? `Exit scheduled · notice ${noticeFromLabel}` : 'Exit scheduled')
+                  : e.status === 'Active' ? 'Active'
+                  : e.status === 'Exit In Progress' ? 'In Progress'
+                  : e.status === 'Exited' ? 'Exited' : 'Action Needed'}
+              </span>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Emp ID',
+      accessorKey: 'empId',
+      meta: { width: '8%' },
+      cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
+    },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: '9%' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: '10%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    {
+      header: 'Primary Role',
+      accessorKey: 'primaryRole',
+      meta: { width: '8%' },
+      cell: info => <span className="exit-role-chip exit-role-chip--primary">{String(info.getValue() ?? '')}</span>,
+    },
+    {
+      header: 'Ancillary Role',
+      id: 'ancillary',
+      enableSorting: false,
+      meta: { width: '7%' },
+      cell: info => {
+        const e = info.row.original;
+        return (
+          <AncillaryRolesChip
+            names={(e.ancillaryRoles && e.ancillaryRoles.length > 0) ? e.ancillaryRoles : (e.ancillaryRole ? [e.ancillaryRole] : [])}
+          />
+        );
+      },
+    },
+    {
+      header: 'Rep. Manager',
+      accessorKey: 'managerName',
+      meta: { width: '11%' },
+      cell: info => {
+        const e = info.row.original;
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{ width: 22, height: 22, fontSize: 9, background: `linear-gradient(135deg, ${e.managerAccent}, ${e.managerAccent}cc)` }}>
+              {e.managerInitials}
+            </div>
+            <span className="fs-13 text-truncate">{e.managerName}</span>
+          </div>
+        );
+      },
+    },
+    {
+      /* wrap: the meter is a fixed-width block with a badge floating above the
+         bar, so the cell must not clip it. */
+      header: 'Exit Readiness',
+      accessorKey: 'exitReadiness',
+      meta: { width: '9%', wrap: true },
+      cell: info => {
+        const p = info.row.original.exitReadiness;
+        const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
+                  : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
+                  : p >= 60 ? { dark: '#f59e0b', light: '#fcd34d' }
+                  :           { dark: '#f06548', light: '#fda192' };
+        const badgeLeft = Math.max(11, Math.min(89, p));
+        return (
+          <Tooltip label={`Exit readiness ${p}%`} position="top" themed>
+            <div style={{ position: 'relative', width: 110, paddingTop: 30 }}>
+              <div style={{ position: 'absolute', top: 0, left: `${badgeLeft}%`, transform: 'translateX(-50%)', textAlign: 'center' }}>
+                <div
+                  className="d-flex align-items-center justify-content-center fw-bold"
+                  style={{
+                    width: 26, height: 26, borderRadius: '50%',
+                    background: `linear-gradient(135deg, ${TIER.dark}, ${TIER.light})`,
+                    color: '#fff', fontSize: 9.5,
+                    boxShadow: `0 4px 10px ${TIER.dark}55`,
+                  }}
+                >
+                  {p}%
+                </div>
+                <div
+                  style={{
+                    width: 0, height: 0, margin: '0 auto',
+                    borderLeft: '4px solid transparent',
+                    borderRight: '4px solid transparent',
+                    borderTop: `5px solid ${TIER.dark}`,
+                  }}
+                />
+              </div>
+              <div style={{ width: '100%', height: 8, borderRadius: 999, background: '#e5e7eb', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    width: `${p}%`, height: '100%', borderRadius: 999,
+                    background: `repeating-linear-gradient(-45deg, rgba(255,255,255,0.28) 0 4px, transparent 4px 8px), linear-gradient(90deg, ${TIER.dark}, ${TIER.light})`,
+                    transition: 'width .25s ease',
+                  }}
+                />
+              </div>
+            </div>
+          </Tooltip>
+        );
+      },
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      meta: { width: '8%', align: 'center' },
+      cell: info => {
+        const e = info.row.original;
+        const statusColor = STATUS_COLOR[e.status];
+        return (
+          <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2`}>
+            {e.status}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Action</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { width: '9%', align: 'center', wrap: true },
+      cell: info => {
+        const e = info.row.original;
+        const isExited = e.status === 'Exited';
+        const isInProgress = e.status === 'Exit In Progress';
+        const isScheduled = e.status === 'Active' && e.exitInitiated;
+        const noticeFromLabel = e.noticeStartIso
+          ? new Date(e.noticeStartIso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+          : '';
+        if (isExited) {
+          return (
+            <Tooltip label="Open evidence vault" position="left" themed>
+              <button type="button" className="exit-action-btn exit-action-btn--vault" onClick={() => setVault(e)}>
+                <i className="ri-shield-check-line" />Evidence Vault
+              </button>
+            </Tooltip>
+          );
+        }
+        if (isInProgress || isScheduled) {
+          return (
+            <Tooltip label={isScheduled ? `Exit scheduled — notice starts ${noticeFromLabel || 'later'}. Continue editing.` : 'Continue exit process'} position="left" themed>
+              <button type="button" className="exit-action-btn exit-action-btn--continue" onClick={() => setProcessing(e)}>
+                <i className="ri-arrow-right-line" />Continue
+              </button>
+            </Tooltip>
+          );
+        }
+        return (
+          <Tooltip label="Initiate exit process" position="left" themed>
+            <button type="button" className="exit-action-btn exit-action-btn--initiate" onClick={() => setProcessing(e)}>
+              <i className="ri-logout-box-r-line" />Initiate Exit
+            </button>
+          </Tooltip>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], []);
 
 
   const KPI_CARDS = [
@@ -202,232 +370,35 @@ export default function HrExitManagement() {
               ))}
             </Row>
 
-            <Card className="border-0 shadow-none mb-0 bg-transparent">
-              <CardBody className="p-0">
-                <div className="rec-list-frame" ref={listRootRef}>
-                  <div className="rec-req-filter-row d-flex align-items-center gap-3 flex-wrap">
-                    <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
-                      {([
-                        { key: 'active' as const,      label: 'Active Employees',  count: counts.active + counts.missing, icon: 'ri-user-line',           variant: 'in-progress' },
-                        { key: 'in-progress' as const, label: 'Exit In Progress',  count: counts.inProgress,             icon: 'ri-time-line',            variant: 'in-progress' },
-                        { key: 'exited' as const,      label: 'Exited Employees',  count: counts.exited,                 icon: 'ri-checkbox-circle-line', variant: 'completed' },
-                      ]).map(t => (
-                        <button
-                          key={t.key}
-                          type="button"
-                          onClick={() => setTab(t.key)}
-                          className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
-                          style={{ flex: 1, justifyContent: 'center' }}
-                        >
-                          <i className={t.icon} />
-                          {t.label}
-                          <span className="badge">{t.count}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="rec-req-search search-box" style={{ flex: '1 1 0', minWidth: 0 }}>
-                      <Input type="text" className="form-control" placeholder="Search name, ID, department…" value={search} onChange={e => setSearch(e.target.value)} />
-                      <i className="ri-search-line search-icon"></i>
-                    </div>
-                  </div>
-
-                  <div className="d-flex flex-column" ref={listScrollRef} style={{ minHeight: listFillH }}>
-                  <div className="p-2 rec-list-scroll flex-grow-1">
-                    <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
-                      <thead>
-                        <tr>
-                          <th className="ps-3 text-center" style={{ width: 60 }}>Sr No</th>
-                          <th>Employee</th>
-                          <th>Emp ID</th>
-                          <th>Department</th>
-                          <th>Designation</th>
-                          <th>Primary Role</th>
-                          <th>Ancillary Role</th>
-                          <th>Rep. Manager</th>
-                          <th>Exit Readiness</th>
-                          <th>Status</th>
-                          <th className="text-center pe-3">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {listLoading ? (
-                          <ShimmerTableRows rows={6} cols={11} keyPrefix="exit-shim" />
-                        ) : filtered.length === 0 ? (
-                          <tr>
-                            <td colSpan={11} className="text-center py-5 text-muted">
-                              <i className="ri-user-search-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                              No employees match your filters
-                            </td>
-                          </tr>
-                        ) : visible.map((e, idx) => {
-                          const statusColor = STATUS_COLOR[e.status];
-                          const isExited = e.status === 'Exited';
-                          const isInProgress = e.status === 'Exit In Progress';
-                          const isScheduled = e.status === 'Active' && e.exitInitiated;
-                          const noticeFromLabel = e.noticeStartIso
-                            ? new Date(e.noticeStartIso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
-                            : '';
-                          return (
-                            <tr key={e.id}>
-                              <td className="ps-3 text-center fs-13 hr-exit-srno">{sliceFrom + idx + 1}</td>
-                              <td>
-                                <div className="d-flex align-items-center gap-2">
-                                  {e.photoUrl ? (
-                                    <img
-                                      src={e.photoUrl}
-                                      alt={e.name}
-                                      className="rounded-circle flex-shrink-0"
-                                      style={{ width: 26, height: 26, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
-                                    />
-                                  ) : (
-                                    <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                      style={{ width: 26, height: 26, fontSize: 10.5, background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)` }}>
-                                      {e.initials}
-                                    </div>
-                                  )}
-                                  <div className="d-flex flex-column" style={{ lineHeight: 1.15 }}>
-                                    <span className="fw-bold fs-13">{e.name}</span>
-                                    <span className="text-muted" style={{ fontSize: 10.5, fontWeight: 500 }}>
-                                      {isScheduled ? (noticeFromLabel ? `Exit scheduled · notice ${noticeFromLabel}` : 'Exit scheduled')
-                                        : e.status === 'Active' ? 'Active'
-                                        : e.status === 'Exit In Progress' ? 'In Progress'
-                                        : e.status === 'Exited' ? 'Exited' : 'Action Needed'}
-                                    </span>
-                                  </div>
-                                </div>
-                              </td>
-                              <td><span className="rec-id-pill">{e.empId}</span></td>
-                              <td className="fs-13">{e.department}</td>
-                              <td className="fs-13">{e.designation}</td>
-                              <td><span className="exit-role-chip exit-role-chip--primary">{e.primaryRole}</span></td>
-                              <td>
-                                <AncillaryRolesChip
-                                  names={
-                                    (e.ancillaryRoles && e.ancillaryRoles.length > 0)
-                                      ? e.ancillaryRoles
-                                      : (e.ancillaryRole ? [e.ancillaryRole] : [])
-                                  }
-                                />
-                              </td>
-                              <td>
-                                <div className="d-flex align-items-center gap-2">
-                                  <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                    style={{ width: 22, height: 22, fontSize: 9, background: `linear-gradient(135deg, ${e.managerAccent}, ${e.managerAccent}cc)` }}>
-                                    {e.managerInitials}
-                                  </div>
-                                  <span className="fs-13">{e.managerName}</span>
-                                </div>
-                              </td>
-                              <td>
-                                {(() => {
-                                  const p = e.exitReadiness;
-                                  const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
-                                            : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
-                                            : p >= 60 ? { dark: '#f59e0b', light: '#fcd34d' }
-                                            :           { dark: '#f06548', light: '#fda192' };
-                                  const badgeLeft = Math.max(11, Math.min(89, p));
-                                  return (
-                                    <Tooltip label={`Exit readiness ${p}%`} position="top" themed>
-                                    <div
-                                      style={{ position: 'relative', width: 120, paddingTop: 30 }}
-                                    >
-                                      <div
-                                        style={{
-                                          position: 'absolute',
-                                          top: 0,
-                                          left: `${badgeLeft}%`,
-                                          transform: 'translateX(-50%)',
-                                          textAlign: 'center',
-                                        }}
-                                      >
-                                        <div
-                                          className="d-flex align-items-center justify-content-center fw-bold"
-                                          style={{
-                                            width: 26, height: 26, borderRadius: '50%',
-                                            background: `linear-gradient(135deg, ${TIER.dark}, ${TIER.light})`,
-                                            color: '#fff', fontSize: 9.5,
-                                            boxShadow: `0 4px 10px ${TIER.dark}55`,
-                                          }}
-                                        >
-                                          {p}%
-                                        </div>
-                                        <div
-                                          style={{
-                                            width: 0, height: 0, margin: '0 auto',
-                                            borderLeft: '4px solid transparent',
-                                            borderRight: '4px solid transparent',
-                                            borderTop: `5px solid ${TIER.dark}`,
-                                          }}
-                                        />
-                                      </div>
-
-                                      <div
-                                        style={{
-                                          width: '100%', height: 8,
-                                          borderRadius: 999,
-                                          background: '#e5e7eb',
-                                          overflow: 'hidden',
-                                        }}
-                                      >
-                                        <div
-                                          style={{
-                                            width: `${p}%`, height: '100%',
-                                            borderRadius: 999,
-                                            background: `repeating-linear-gradient(-45deg, rgba(255,255,255,0.28) 0 4px, transparent 4px 8px), linear-gradient(90deg, ${TIER.dark}, ${TIER.light})`,
-                                            transition: 'width .25s ease',
-                                          }}
-                                        />
-                                      </div>
-                                    </div>
-                                    </Tooltip>
-                                  );
-                                })()}
-                              </td>
-                              <td>
-                                <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2`}>
-                                  {e.status}
-                                </span>
-                              </td>
-                              <td className="text-center pe-3">
-                                {isExited ? (
-                                  <Tooltip label="Open evidence vault" position="left" themed>
-                                    <button type="button" className="exit-action-btn exit-action-btn--vault" onClick={() => setVault(e)}>
-                                      <i className="ri-shield-check-line" />Evidence Vault
-                                    </button>
-                                  </Tooltip>
-                                ) : (isInProgress || isScheduled) ? (
-                                  <Tooltip label={isScheduled ? `Exit scheduled — notice starts ${noticeFromLabel || 'later'}. Continue editing.` : 'Continue exit process'} position="left" themed>
-                                    <button type="button" className="exit-action-btn exit-action-btn--continue"
-                                      onClick={() => setProcessing(e)}>
-                                      <i className="ri-arrow-right-line" />Continue
-                                    </button>
-                                  </Tooltip>
-                                ) : (
-                                  <Tooltip label="Initiate exit process" position="left" themed>
-                                    <button type="button" className="exit-action-btn exit-action-btn--initiate" onClick={() => setProcessing(e)}>
-                                      <i className="ri-logout-box-r-line" />Initiate Exit
-                                    </button>
-                                  </Tooltip>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <WorklistPager
-                    total={filtered.length}
-                    page={safePage}
-                    pageSize={pageSize}
-                    onPage={goto}
-                    onPageSize={(n) => { setPageSize(n); setPage(1); }}
-                  />
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
+            {/* Shared list table (components/ui/DataTable) — tabs, search,
+                sortable headers, the rows-per-page pager and the fit-to-viewport
+                sizing all live in the component now. */}
+            <DataTable<EmployeeRow>
+              data={filtered}
+              columns={columns}
+              serial
+              accent="violet"
+              minWidth={1500}
+              fitToViewport
+              autoFitRows
+              loading={listLoading}
+              searchValue={search}
+              onSearchChange={setSearch}
+              searchPlaceholder="Search name, ID, department…"
+              tabs={[
+                { key: 'active',      label: 'Active Employees', icon: 'ri-user-line',            count: counts.active + counts.missing },
+                { key: 'in-progress', label: 'Exit In Progress', icon: 'ri-time-line',            count: counts.inProgress },
+                { key: 'exited',      label: 'Exited Employees', icon: 'ri-checkbox-circle-line', count: counts.exited },
+              ]}
+              activeTab={tab}
+              onTabChange={k => setTab(k as typeof tab)}
+              emptyMessage={
+                <>
+                  <i className="ri-user-search-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  No employees match your filters
+                </>
+              }
+            />
           </div>
         </Col>
       </Row>
