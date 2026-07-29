@@ -21,6 +21,24 @@ return new class extends Migration {
         if (DB::getDriverName() !== 'pgsql') {
             return;
         }
+
+        // Pre-flight: abort with an actionable count if duplicate punch instants
+        // already exist (they'd block the unique index).
+        $dupes = DB::selectOne(
+            'SELECT count(*) AS c FROM (
+                SELECT employee_id, punched_at FROM attendance_punches
+                 WHERE deleted_at IS NULL
+                 GROUP BY employee_id, punched_at HAVING count(*) > 1
+             ) x'
+        );
+        if ($dupes && (int) $dupes->c > 0) {
+            throw new \RuntimeException(
+                "Cannot create attendance_punches_emp_instant_unique — {$dupes->c} duplicate "
+                . '(employee_id, punched_at) group(s) exist. De-duplicate them (keep one punch '
+                . 'per employee per instant), then re-run migrate.'
+            );
+        }
+
         DB::statement(
             'CREATE UNIQUE INDEX IF NOT EXISTS attendance_punches_emp_instant_unique '
             . 'ON attendance_punches (employee_id, punched_at) WHERE deleted_at IS NULL'

@@ -27,6 +27,29 @@ return new class extends Migration {
             return;
         }
 
+        // Pre-flight: a unique index cannot be built while duplicates exist.
+        // Detect them and abort with an ACTIONABLE list (which employees share a
+        // number) instead of a raw SQLSTATE 23505 that says only one key.
+        $dupes = DB::select(
+            "SELECT COALESCE(client_id, 0) AS client_id, attendance_number, count(*) AS c
+               FROM employees
+              WHERE attendance_number IS NOT NULL AND attendance_number <> '' AND deleted_at IS NULL
+              GROUP BY 1, 2 HAVING count(*) > 1
+              ORDER BY 1, 2"
+        );
+        if (!empty($dupes)) {
+            $lines = array_map(
+                fn ($d) => "  · client {$d->client_id}, attendance_number '{$d->attendance_number}' (x{$d->c})",
+                $dupes
+            );
+            throw new \RuntimeException(
+                "Cannot create employees_attendance_number_client_unique — duplicate Attendance "
+                . "Numbers exist. Each employee's Attendance Number must be unique per client. "
+                . "Resolve these (clear or renumber the duplicates), then re-run migrate:\n"
+                . implode("\n", $lines)
+            );
+        }
+
         DB::statement(
             'CREATE UNIQUE INDEX IF NOT EXISTS employees_attendance_number_client_unique '
             . 'ON employees (COALESCE(client_id, 0), attendance_number) '
