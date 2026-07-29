@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardBody, Col, Row, Input } from 'reactstrap';
+import { Col, Row } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
 import { MasterSelect } from '../../components/ui/MasterSelect';
-import WorklistPager from '../../components/ui/WorklistPager';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import { TemplateRow, EmployeeCategory, RoleType, DocStatus, ROLE_TYPES } from './doc-templates/TemplateForm';
 import '../../../css/recruitment.css';
 
@@ -92,16 +91,7 @@ export default function HrDocumentTemplates() {
       });
   }, [rows, category, roleType, triggerFilter, statusFilter, search]);
 
-  // Pagination — same WorklistPager (dynamic rows-per-page) the recruitment
-  // table uses, so the lists behave consistently across the app.
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage  = Math.min(page, pageCount);
-  const sliceFrom = (safePage - 1) * pageSize;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
-  // Reset to page 1 whenever the filter set changes.
-  useEffect(() => { setPage(1); }, [category, roleType, triggerFilter, statusFilter, search]);
+  /* Paging lives in <DataTable> (components/ui/DataTable) now. */
 
   const handleDelete = (row: TemplateRow) => setDeleteTarget(row);
 
@@ -142,6 +132,112 @@ export default function HrDocumentTemplates() {
     // shortcut, which never actually produced a usable document.
     navigate(`/hr/doc-templates/${row.id}/generate`);
   };
+
+  /* Columns for the shared <DataTable>. Widths sum to 100 (the table runs in
+     table-layout:fixed): 5+9+24+8+14+11+15+14. */
+  const columns = useMemo<DataTableColumn<TemplateRow>[]>(() => [
+    {
+      header: 'Code',
+      accessorKey: 'code',
+      meta: { width: '9%' },
+      cell: info => (
+        <span className="dtm-code-pill" style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 6, fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700, background: '#fef3c7', color: '#a16207' }}>
+          {String(info.getValue() ?? '')}
+        </span>
+      ),
+    },
+    {
+      header: 'Template Name',
+      accessorKey: 'name',
+      // wrap: the name can carry an "Approval" sub-pill on a second line.
+      meta: { width: '24%', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <>
+            <div className="dtm-tpl-name" style={{ fontWeight: 700 }}>{r.name}</div>
+            {r.requires_manager_approval && (
+              <div className="d-flex gap-1 mt-1">
+                <span className="dtm-approval-pill" style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 700 }}>
+                  <i className="ri-error-warning-line" /> Approval
+                </span>
+              </div>
+            )}
+          </>
+        );
+      },
+    },
+    {
+      header: 'Version',
+      accessorKey: 'version',
+      meta: { width: '8%', align: 'center' },
+      cell: info => (
+        <span className="dtm-version-pill" style={{ padding: '2px 8px', borderRadius: 6, background: '#f3f4f6', color: '#374151', fontSize: 11.5, fontWeight: 700 }}>
+          {String(info.getValue() ?? '')}
+        </span>
+      ),
+    },
+    {
+      header: 'Auto-Trigger',
+      id: 'trigger',
+      accessorFn: (r: TemplateRow) => r.trigger_point?.module_name ?? '',
+      meta: { width: '14%' },
+      cell: info => (
+        <span className="dtm-trigger-pill" style={{ padding: '3px 8px', borderRadius: 6, background: '#e0e7ff', color: '#4338ca', fontSize: 11.5, fontWeight: 600 }}>
+          {info.row.original.trigger_point?.module_name || '—'}
+        </span>
+      ),
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      meta: { width: '11%' },
+      cell: info => {
+        const r = info.row.original;
+        const t = STATUS_TONES[r.status] || STATUS_TONES.Draft;
+        return (
+          <span className={`dtm-status-pill dtm-status-${r.status}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 9px', borderRadius: 999, background: t.bg, color: t.fg, fontSize: 11.5, fontWeight: 700 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: t.dot, display: 'inline-block' }} />{r.status}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Generate</div>,
+      id: '__generate',
+      enableSorting: false,
+      meta: { align: 'center', width: '15%' },
+      cell: info => (
+        <button type="button" onClick={() => handleGenerate(info.row.original)}
+          style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+          <i className="ri-play-fill" /> Generate Document
+        </button>
+      ),
+    },
+    {
+      header: () => <div className="text-center">Actions</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { align: 'center', width: '14%' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="d-flex gap-1 justify-content-center">
+            {/* Edit (opens the template editor), Deprecate/Activate, Delete. */}
+            <ActionBtn icon="ri-pencil-line" tone="info" onClick={() => navigate(`/hr/doc-templates/${r.id}/edit`)} title="Edit" />
+            <ActionBtn
+              icon={r.status === 'Active' ? 'ri-forbid-2-line' : 'ri-checkbox-circle-line'}
+              tone={r.status === 'Active' ? 'danger' : 'success'}
+              onClick={() => handleToggleStatus(r)}
+              title={r.status === 'Active' ? 'Deprecate' : 'Activate'}
+            />
+            <ActionBtn icon="ri-delete-bin-line" tone="danger" onClick={() => handleDelete(r)} title="Delete" />
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [navigate]);
 
   // KPI strip
   const KPI = [
@@ -286,133 +382,61 @@ export default function HrDocumentTemplates() {
             })}
           </div>
 
-          {/* Filters + table share ONE card (Bug #15) so the search/filters
-              read as controls for the table below, not a detached strip. */}
-          <Card style={{ borderRadius: 12 }}>
-            <CardBody style={{ padding: 0 }}>
-              <div className="d-flex flex-wrap gap-3 align-items-center dtm-filter-bar" style={{ padding: 12, borderBottom: '1px solid var(--vz-border-color)' }}>
-              <div className="rec-req-search search-box" style={{ flex: '1 1 260px', minWidth: 260 }}>
-                <Input type="text" className="form-control" placeholder="Search templates…" value={search} onChange={e => setSearch(e.target.value)} />
-                <i className="ri-search-line search-icon" />
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                <span className="dtm-filter-label" style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Trigger</span>
-                <div style={{ minWidth: 180 }}>
-                  <MasterSelect
-                    value={triggerFilter}
-                    onChange={setTriggerFilter}
-                    options={[{ value: '', label: 'All' }, ...triggerPoints.map(t => ({ value: String(t.id), label: t.module_name }))]}
-                    placeholder="All"
-                  />
+          {/* Shared list table (components/ui/DataTable) — the Trigger/Status
+              filters and the result count ride in its toolbar, so the filters
+              still read as controls for the table rather than a detached strip
+              (Bug #15). Sortable headers and the rows-per-page pager come free. */}
+          <DataTable<TemplateRow>
+            data={filtered}
+            columns={columns}
+            serial
+            accent="violet"
+            minWidth={1250}
+            loading={loading}
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search templates…"
+            emptyMessage={
+              <>
+                <i className="ri-inbox-line" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
+                No templates yet for {category} · {roleType}. Click <strong>+ Add Template</strong> to create one.
+              </>
+            }
+            toolbarActions={
+              <>
+                <div className="d-flex align-items-center gap-2">
+                  <span className="dtm-filter-label" style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Trigger</span>
+                  <div style={{ minWidth: 170 }}>
+                    <MasterSelect
+                      value={triggerFilter}
+                      onChange={setTriggerFilter}
+                      options={[{ value: '', label: 'All' }, ...triggerPoints.map(t => ({ value: String(t.id), label: t.module_name }))]}
+                      placeholder="All"
+                    />
+                  </div>
                 </div>
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                <span className="dtm-filter-label" style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Status</span>
-                <div style={{ minWidth: 160 }}>
-                  <MasterSelect
-                    value={statusFilter}
-                    onChange={setStatusFilter}
-                    options={[
-                      { value: '', label: 'All' },
-                      { value: 'Active', label: 'Active' },
-                      { value: 'Draft', label: 'Draft' },
-                      { value: 'Deprecated', label: 'Deprecated' },
-                    ]}
-                    placeholder="All"
-                  />
+                <div className="d-flex align-items-center gap-2">
+                  <span className="dtm-filter-label" style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Status</span>
+                  <div style={{ minWidth: 150 }}>
+                    <MasterSelect
+                      value={statusFilter}
+                      onChange={setStatusFilter}
+                      options={[
+                        { value: '', label: 'All' },
+                        { value: 'Active', label: 'Active' },
+                        { value: 'Draft', label: 'Draft' },
+                        { value: 'Deprecated', label: 'Deprecated' },
+                      ]}
+                      placeholder="All"
+                    />
+                  </div>
                 </div>
-              </div>
-              <div className="ms-auto">
-                <span style={{ fontSize: 11.5, fontWeight: 700, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', padding: '5px 12px', borderRadius: 999 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 700, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', padding: '5px 12px', borderRadius: 999, whiteSpace: 'nowrap' }}>
                   {filtered.length} {filtered.length === 1 ? 'template' : 'templates'}
                 </span>
-              </div>
-              </div>
-
-              {/* Table */}
-              <div className="table-responsive">
-                <table className="table align-middle mb-0 dtm-table" style={{ fontSize: 13 }}>
-                  {/* No .table-light — Bootstrap paints its fill with an inset
-                      box-shadow that would cover the header gradient. Header
-                      typography/surface comes from .dtm-thead th in the style
-                      block below, matching the Recruitment list header. */}
-                  <thead className="dtm-thead">
-                    <tr>
-                      <th style={{ width: 44 }}>Sr No</th>
-                      <th>Code</th>
-                      <th>Template Name</th>
-                      <th>Version</th>
-                      <th>Auto-Trigger</th>
-                      <th>Status</th>
-                      <th>Generate</th>
-                      <th style={{ width: 200 }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <ShimmerTableRows rows={5} cols={8} />
-                    ) : filtered.length === 0 ? (
-                      <tr><td colSpan={8} className="dtm-empty" style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>
-                        <i className="ri-inbox-line" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
-                        No templates yet for {category} · {roleType}. Click <strong>+ Add Template</strong> to create one.
-                      </td></tr>
-                    ) : (
-                      visible.map((r, i) => {
-                        const tone = STATUS_TONES[r.status] || STATUS_TONES.Draft;
-                        return (
-                          <tr key={r.id}>
-                            <td style={{ padding: '10px 12px' }}>{sliceFrom + i + 1}</td>
-                            <td>
-                              <span className="dtm-code-pill" style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 6, fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700, background: '#fef3c7', color: '#a16207' }}>{r.code}</span>
-                            </td>
-                            <td>
-                              <div className="dtm-tpl-name" style={{ fontWeight: 700, color: '#1f2937' }}>{r.name}</div>
-                              {r.requires_manager_approval && (
-                                <div className="d-flex gap-1 mt-1">
-                                  <span className="dtm-approval-pill" style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 700 }}><i className="ri-error-warning-line" /> Approval</span>
-                                </div>
-                              )}
-                            </td>
-                            <td><span className="dtm-version-pill" style={{ padding: '2px 8px', borderRadius: 6, background: '#f3f4f6', color: '#374151', fontSize: 11.5, fontWeight: 700 }}>{r.version}</span></td>
-                            <td><span className="dtm-trigger-pill" style={{ padding: '3px 8px', borderRadius: 6, background: '#e0e7ff', color: '#4338ca', fontSize: 11.5, fontWeight: 600 }}>{r.trigger_point?.module_name || '—'}</span></td>
-                            <td>
-                              <span className={`dtm-status-pill dtm-status-${r.status}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 9px', borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 11.5, fontWeight: 700 }}>
-                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: tone.dot, display: 'inline-block' }} />{r.status}
-                              </span>
-                            </td>
-                            <td>
-                              <button type="button" onClick={() => handleGenerate(r)}
-                                style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                <i className="ri-play-fill" /> Generate Document
-                              </button>
-                            </td>
-                            <td>
-                              <div className="d-flex gap-1">
-                                {/* Action column: Edit (opens the template editor),
-                                    Deprecate/Activate, and Delete. */}
-                                <ActionBtn icon="ri-pencil-line"  tone="info"    onClick={() => navigate(`/hr/doc-templates/${r.id}/edit`)} title="Edit" />
-                                <ActionBtn icon={r.status === 'Active' ? 'ri-forbid-2-line' : 'ri-checkbox-circle-line'} tone={r.status === 'Active' ? 'danger' : 'success'} onClick={() => handleToggleStatus(r)} title={r.status === 'Active' ? 'Deprecate' : 'Activate'} />
-                                <ActionBtn icon="ri-delete-bin-line" tone="danger" onClick={() => handleDelete(r)} title="Delete" />
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {/* Pagination — same WorklistPager (dynamic rows-per-page) as the
-                  recruitment table. */}
-              <WorklistPager
-                total={filtered.length}
-                page={safePage}
-                pageSize={pageSize}
-                onPage={setPage}
-                onPageSize={(n) => { setPageSize(n); setPage(1); }}
-              />
-            </CardBody>
-          </Card>
+              </>
+            }
+          />
         </div>
       </Col>
 

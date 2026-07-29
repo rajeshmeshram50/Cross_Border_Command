@@ -5,7 +5,7 @@ import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/mast
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
-import WorklistPager from '../../components/ui/WorklistPager';
+import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
@@ -311,10 +311,8 @@ export default function HrRecruitment() {
   const [loadingRecruitments, setLoadingRecruitments] = useState(true);
   const [tab, setTab] = useState<RecruitmentStatus>('In Progress');
   const [q, setQ] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  /* Paging lives in <DataTable> now. */
 
-  useEffect(() => { setPage(1); }, [tab, q]);
 
   type CandidateStats = {
     total: number;
@@ -410,10 +408,6 @@ export default function HrRecruitment() {
       });
   }, [recruitments, tab, q]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage  = Math.min(page, pageCount);
-  const sliceFrom = (safePage - 1) * pageSize;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
 
   const [createOpen, setCreateOpen]                 = useState(false);
   const [createMode, setCreateMode]                 = useState<'add' | 'edit'>('add');
@@ -426,26 +420,190 @@ export default function HrRecruitment() {
   const [hiringRefreshKey, setHiringRefreshKey]     = useState(0);
   const [createPrefillFromHr, setCreatePrefillFromHr] = useState<any | null>(null);
 
-  const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
-
-  const rootRef   = useRef<HTMLDivElement | null>(null);
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [fillH, setFillH] = useState<number | undefined>(undefined);
-  useEffect(() => {
-    const recompute = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const top = el.getBoundingClientRect().top;
-      const fh = Math.max(320, window.innerHeight - top - 24);
-      setFillH(prev => (prev === fh ? prev : fh));
-    };
-    recompute();
-    const raf = requestAnimationFrame(recompute);
-    const ro = new ResizeObserver(recompute);
-    if (rootRef.current) ro.observe(rootRef.current);
-    window.addEventListener('resize', recompute);
-    return () => { ro.disconnect(); window.removeEventListener('resize', recompute); cancelAnimationFrame(raf); };
-  }, [filtered.length]);
+  /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
+     4+6+13+8+9+8+5+6+7+6+11+10+7 = 100 — Start Date and Deadline share the
+     remaining space. */
+  const columns = useMemo<DataTableColumn<RecruitmentRow>[]>(() => [
+    {
+      header: 'REC ID',
+      id: 'code',
+      accessorFn: (r: RecruitmentRow) => r.code || r.id,
+      sortingFn: (a, b, id) => String(a.getValue(id)).localeCompare(String(b.getValue(id)), undefined, { numeric: true, sensitivity: 'base' }),
+      meta: { width: '6%' },
+      cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
+    },
+    {
+      header: 'Job Title',
+      accessorKey: 'jobTitle',
+      meta: { width: '13%' },
+      cell: info => (
+        <Tooltip label={info.row.original.jobTitle}>
+          <span className="fw-bold fs-13" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', maxWidth: '100%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', verticalAlign: 'middle' }}>
+            {info.row.original.jobTitle}
+          </span>
+        </Tooltip>
+      ),
+    },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: '8%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: '9%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    {
+      header: 'Employment',
+      accessorKey: 'employmentType',
+      meta: { width: '8%' },
+      cell: info => {
+        const et = EMPLOY_TYPE_TONES[info.row.original.employmentType];
+        return <span className="rec-pill" style={{ background: et.bg, color: et.fg }}>{info.row.original.employmentType}</span>;
+      },
+    },
+    {
+      header: () => <div className="text-center">Openings</div>,
+      accessorKey: 'openings',
+      meta: { width: '5%', align: 'center' },
+      cell: info => <span className="rec-num">{String(info.getValue() ?? '')}</span>,
+    },
+    {
+      header: () => <div className="text-center">Experience</div>,
+      accessorKey: 'experience',
+      meta: { width: '6%', align: 'center' },
+      cell: info => <span className="text-muted fs-13">{String(info.getValue() ?? '')}</span>,
+    },
+    {
+      header: 'Work Mode',
+      accessorKey: 'workMode',
+      meta: { width: '7%' },
+      cell: info => {
+        const wm = WORK_MODE_TONES[info.row.original.workMode];
+        return <span className="rec-pill" style={{ background: wm.bg, color: wm.fg }}>{info.row.original.workMode}</span>;
+      },
+    },
+    {
+      header: 'Priority',
+      accessorKey: 'priority',
+      meta: { width: '6%' },
+      cell: info => {
+        const pri = PRIORITY_TONES[info.row.original.priority];
+        return <span className="rec-pill" style={{ background: pri.bg, color: pri.fg }}>{info.row.original.priority}</span>;
+      },
+    },
+    {
+      header: 'Hiring Manager',
+      accessorKey: 'hiringManagerName',
+      meta: { width: '11%' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <div
+              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${r.hiringManagerAccent}, ${r.hiringManagerAccent}cc)` }}
+            >
+              {r.hiringManagerInitials}
+            </div>
+            <span className="fs-13 text-truncate">{r.hiringManagerRole ? `${r.hiringManagerRole} – ` : ''}{r.hiringManagerName}</span>
+            {(r.hiringManagerState === 'disabled' || r.hiringManagerState === 'inactive') && (
+              <span className={`rec-mgr-flag rec-mgr-flag--${r.hiringManagerState}`}>{r.hiringManagerState === 'disabled' ? 'Disabled' : 'Inactive'}</span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Assigned HR',
+      accessorKey: 'assignedHrName',
+      meta: { width: '10%' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <div
+              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${r.assignedHrAccent}, ${r.assignedHrAccent}cc)` }}
+            >
+              {r.assignedHrInitials}
+            </div>
+            <span className="fs-13 text-truncate">{r.assignedHrName}</span>
+            {(r.assignedHrState === 'disabled' || r.assignedHrState === 'inactive') && (
+              <span className={`rec-mgr-flag rec-mgr-flag--${r.assignedHrState}`}>{r.assignedHrState === 'disabled' ? 'Disabled' : 'Inactive'}</span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      /* Both date columns sort on the raw value so the order is chronological,
+         not alphabetical on the dd-Mon-yyyy label. */
+      header: 'Start Date',
+      accessorKey: 'startDate',
+      meta: { width: '6%' },
+      cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.startDate)}</span>,
+    },
+    {
+      header: 'Deadline',
+      accessorKey: 'deadline',
+      meta: { width: '6%' },
+      cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.deadline)}</span>,
+    },
+    {
+      header: () => <div className="text-center">Action</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { width: '9%', align: 'center', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="d-flex gap-1 justify-content-center align-items-center">
+            <ActionBtn
+              title={
+                r.status === 'Cancelled' ? 'Cannot edit — recruitment is cancelled'
+                : r.status === 'Completed' ? 'Cannot edit — recruitment is completed'
+                : 'Edit Recruitment'
+              }
+              icon="ri-pencil-line"
+              color="info"
+              disabled={r.status === 'Cancelled' || r.status === 'Completed'}
+              onClick={() => { setCreateMode('edit'); setCreateEditingId(r.id); setCreateOpen(true); }}
+            />
+            <ActionBtn
+              title={
+                r.status === 'Cancelled' ? 'Cancelled — no candidates can be added'
+                : r.status === 'Expired' ? 'Recruitment expired — candidates unavailable'
+                : 'View Candidates'
+              }
+              icon="ri-team-line"
+              color="primary"
+              disabled={r.status === 'Cancelled' || r.status === 'Expired'}
+              onClick={() => navigate(`/hr/recruitment/${r.id}/candidates`)}
+            />
+            <ActionBtn
+              title={
+                r.status === 'Cancelled' ? 'Already Cancelled'
+                : r.status === 'Completed' ? 'Already Completed'
+                : r.status === 'Expired' ? 'Recruitment expired — cannot complete'
+                : 'Mark Recruitment Completed'
+              }
+              icon="ri-checkbox-circle-line"
+              color="success"
+              disabled={r.status === 'Cancelled' || r.status === 'Completed' || r.status === 'Expired'}
+              onClick={() => { setCancelInitialAction('complete'); setCancelTarget(r); }}
+            />
+            <ActionBtn
+              title={
+                r.status === 'Cancelled' ? 'Already Cancelled'
+                : r.status === 'Completed' ? 'Already Completed'
+                : r.status === 'Expired' ? 'Recruitment expired — cannot cancel'
+                : 'Cancel Recruitment'
+              }
+              icon="ri-forbid-2-line"
+              color="danger"
+              disabled={r.status === 'Cancelled' || r.status === 'Completed' || r.status === 'Expired'}
+              onClick={() => { setCancelInitialAction('cancel'); setCancelTarget(r); }}
+            />
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [navigate]);
 
   return (
     <>
@@ -506,195 +664,36 @@ export default function HrRecruitment() {
               ))}
             </Row>
 
-            <Card className="border-0 shadow-none mb-0 bg-transparent">
-              <CardBody className="p-0">
-                <div className="rec-list-frame" ref={rootRef}>
-                  <div className="rec-req-filter-row d-flex align-items-center gap-3 flex-wrap">
-                    <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
-                      {([
-                        { key: 'In Progress' as const, label: 'In Progress', count: counts.tabs['In Progress'], icon: 'ri-time-line',           variant: 'in-progress' },
-                        { key: 'Completed'   as const, label: 'Completed',   count: counts.tabs.Completed,     icon: 'ri-checkbox-circle-line',variant: 'completed'   },
-                        { key: 'Cancelled'   as const, label: 'Cancelled',   count: counts.tabs.Cancelled,     icon: 'ri-close-circle-line',   variant: 'cancelled'   },
-                        { key: 'Expired'     as const, label: 'Expired',     count: counts.tabs.Expired,       icon: 'ri-alarm-warning-line',  variant: 'cancelled'   },
-                      ]).map(t => (
-                        <button
-                          key={t.key}
-                          type="button"
-                          onClick={() => setTab(t.key)}
-                          className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
-                          style={{ flex: 1, justifyContent: 'center' }}
-                        >
-                          <i className={t.icon} />
-                          {t.label}
-                          <span className="badge">{t.count}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="rec-req-search search-box" style={{ flex: '1 1 0', minWidth: 0 }}>
-                      <Input
-                        type="text"
-                        className="form-control"
-                        placeholder="Search ID, job title, HR…"
-                        value={q}
-                        onChange={e => setQ(e.target.value)}
-                      />
-                      <i className="ri-search-line search-icon"></i>
-                    </div>
-                  </div>
-                  <div className="d-flex flex-column" ref={scrollRef} style={{ minHeight: fillH }}>
-                  <div className="p-2 rec-list-scroll flex-grow-1">
-                  <table className="rec-list-table align-middle table-nowrap mb-0">
-                    <thead>
-                      <tr>
-                        <th scope="col" className="ps-3 text-center" style={{ width: 60 }}>Sr No</th>
-                        <th scope="col" style={{ width: 90 }}>REC ID</th>
-                        <th scope="col">Job Title</th>
-                        <th scope="col" style={{ width: 110 }}>Department</th>
-                        <th scope="col" style={{ width: 130 }}>Designation</th>
-                        <th scope="col" style={{ width: 110 }}>Employment</th>
-                        <th scope="col" className="text-center" style={{ width: 80 }}>Openings</th>
-                        <th scope="col" className="text-center" style={{ width: 100 }}>Experience</th>
-                        <th scope="col" style={{ width: 100 }}>Work Mode</th>
-                        <th scope="col" style={{ width: 90 }}>Priority</th>
-                        <th scope="col">Hiring Manager</th>
-                        <th scope="col">Assigned HR</th>
-                        <th scope="col" style={{ width: 110 }}>Start Date</th>
-                        <th scope="col" style={{ width: 120 }}>Deadline</th>
-                        <th scope="col" className="text-center pe-3" style={{ width: 110 }}>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loadingRecruitments ? (
-                        <ShimmerTableRows rows={6} cols={15} keyPrefix="rec" />
-                      ) : visible.length === 0 ? (
-                        <tr>
-                          <td colSpan={15} className="text-center py-5 text-muted">
-                            <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                            No recruitments match your filters
-                          </td>
-                        </tr>
-                      ) : visible.map((r, idx) => {
-                        const pri = PRIORITY_TONES[r.priority];
-                        const wm  = WORK_MODE_TONES[r.workMode];
-                        const et  = EMPLOY_TYPE_TONES[r.employmentType];
-                        return (
-                          <tr key={r.id}>
-                            <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
-                            <td><span className="rec-id-pill">{r.code || r.id}</span></td>
-                            <td className="fw-bold fs-13" style={{ maxWidth: 220 }}>
-                              <Tooltip label={r.jobTitle}>
-                                <span style={{ color: 'var(--vz-heading-color, var(--vz-body-color))', maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', verticalAlign: 'middle' }}>{r.jobTitle}</span>
-                              </Tooltip>
-                            </td>
-                            <td className="fs-13">{r.department}</td>
-                            <td className="fs-13">{r.designation}</td>
-                            <td>
-                              <span className="rec-pill" style={{ background: et.bg, color: et.fg }}>
-                                {r.employmentType}
-                              </span>
-                            </td>
-                            <td className="text-center"><span className="rec-num">{r.openings}</span></td>
-                            <td className="fs-13 text-center"><span className="text-muted">{r.experience}</span></td>
-                            <td><span className="rec-pill" style={{ background: wm.bg, color: wm.fg }}>{r.workMode}</span></td>
-                            <td><span className="rec-pill" style={{ background: pri.bg, color: pri.fg }}>{r.priority}</span></td>
-                            <td>
-                              <div className="d-flex align-items-center gap-2">
-                                <div
-                                  className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                  style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${r.hiringManagerAccent}, ${r.hiringManagerAccent}cc)` }}
-                                >
-                                  {r.hiringManagerInitials}
-                                </div>
-                                <span className="fs-13">{r.hiringManagerRole ? `${r.hiringManagerRole} – ` : ''}{r.hiringManagerName}</span>
-                                {(r.hiringManagerState === 'disabled' || r.hiringManagerState === 'inactive') && (
-                                  <span className={`rec-mgr-flag rec-mgr-flag--${r.hiringManagerState}`}>{r.hiringManagerState === 'disabled' ? 'Disabled' : 'Inactive'}</span>
-                                )}
-                              </div>
-                            </td>
-                            <td>
-                              <div className="d-flex align-items-center gap-2">
-                                <div
-                                  className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                  style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${r.assignedHrAccent}, ${r.assignedHrAccent}cc)` }}
-                                >
-                                  {r.assignedHrInitials}
-                                </div>
-                                <span className="fs-13">{r.assignedHrName}</span>
-                                {(r.assignedHrState === 'disabled' || r.assignedHrState === 'inactive') && (
-                                  <span className={`rec-mgr-flag rec-mgr-flag--${r.assignedHrState}`}>{r.assignedHrState === 'disabled' ? 'Disabled' : 'Inactive'}</span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="fs-13"><span className="rec-date">{formatDate(r.startDate)}</span></td>
-                            <td className="fs-13"><span className="rec-date">{formatDate(r.deadline)}</span></td>
-                            <td className="pe-3">
-                              <div className="d-flex gap-1 justify-content-center align-items-center">
-                                <ActionBtn
-                                  title={
-                                    r.status === 'Cancelled' ? 'Cannot edit — recruitment is cancelled'
-                                    : r.status === 'Completed' ? 'Cannot edit — recruitment is completed'
-                                    : 'Edit Recruitment'
-                                  }
-                                  icon="ri-pencil-line"
-                                  color="info"
-                                  disabled={r.status === 'Cancelled' || r.status === 'Completed'}
-                                  onClick={() => { setCreateMode('edit'); setCreateEditingId(r.id); setCreateOpen(true); }}
-                                />
-                                <ActionBtn
-                                  title={
-                                    r.status === 'Cancelled' ? 'Cancelled — no candidates can be added'
-                                    : r.status === 'Expired' ? 'Recruitment expired — candidates unavailable'
-                                    : 'View Candidates'
-                                  }
-                                  icon="ri-team-line"
-                                  color="primary"
-                                  disabled={r.status === 'Cancelled' || r.status === 'Expired'}
-                                  onClick={() => navigate(`/hr/recruitment/${r.id}/candidates`)}
-                                />
-                                <ActionBtn
-                                  title={
-                                    r.status === 'Cancelled' ? 'Already Cancelled'
-                                    : r.status === 'Completed' ? 'Already Completed'
-                                    : r.status === 'Expired' ? 'Recruitment expired — cannot complete'
-                                    : 'Mark Recruitment Completed'
-                                  }
-                                  icon="ri-checkbox-circle-line"
-                                  color="success"
-                                  disabled={r.status === 'Cancelled' || r.status === 'Completed' || r.status === 'Expired'}
-                                  onClick={() => { setCancelInitialAction('complete'); setCancelTarget(r); }}
-                                />
-                                <ActionBtn
-                                  title={
-                                    r.status === 'Cancelled' ? 'Already Cancelled'
-                                    : r.status === 'Completed' ? 'Already Completed'
-                                    : r.status === 'Expired' ? 'Recruitment expired — cannot cancel'
-                                    : 'Cancel Recruitment'
-                                  }
-                                  icon="ri-forbid-2-line"
-                                  color="danger"
-                                  disabled={r.status === 'Cancelled' || r.status === 'Completed' || r.status === 'Expired'}
-                                  onClick={() => { setCancelInitialAction('cancel'); setCancelTarget(r); }}
-                                />
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  </div>
-
-                  <WorklistPager
-                    total={filtered.length}
-                    page={safePage}
-                    pageSize={pageSize}
-                    onPage={goto}
-                    onPageSize={(n) => { setPageSize(n); setPage(1); }}
-                  />
-                  </div>
-                </div>
-              </CardBody>
-            </Card>
+            {/* Shared list table (components/ui/DataTable) — status tabs,
+                search, sortable headers, the rows-per-page pager and the
+                fit-to-viewport sizing all live in the component now. */}
+            <DataTable<RecruitmentRow>
+              data={filtered}
+              columns={columns}
+              serial
+              accent="violet"
+              minWidth={1800}
+              fitToViewport
+              autoFitRows
+              loading={loadingRecruitments}
+              searchValue={q}
+              onSearchChange={setQ}
+              searchPlaceholder="Search ID, job title, HR…"
+              tabs={[
+                { key: 'In Progress', label: 'In Progress', icon: 'ri-time-line',            count: counts.tabs['In Progress'] },
+                { key: 'Completed',   label: 'Completed',   icon: 'ri-checkbox-circle-line', count: counts.tabs.Completed },
+                { key: 'Cancelled',   label: 'Cancelled',   icon: 'ri-close-circle-line',    count: counts.tabs.Cancelled },
+                { key: 'Expired',     label: 'Expired',     icon: 'ri-alarm-warning-line',   count: counts.tabs.Expired },
+              ]}
+              activeTab={tab}
+              onTabChange={k => setTab(k as RecruitmentStatus)}
+              emptyMessage={
+                <>
+                  <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  No recruitments match your filters
+                </>
+              }
+            />
           </div>
         </Col>
       </Row>
@@ -1268,8 +1267,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
   const [urgencyFilter, setUrgencyFilter] = useState<string>('All');
   const [q, setQ] = useState('');
 
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  /* Paging lives in <DataTable> now. */
 
   const [requests, setRequests] = useState<HiringRequestRow[]>([]);
   const [linkedHrIds, setLinkedHrIds] = useState<Set<number>>(new Set());
@@ -1305,8 +1303,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
 
   const [viewing, setViewing] = useState<HiringRequestRow | null>(null);
 
-  useEffect(() => { if (!isOpen) { setStatusFilter('All'); setUrgencyFilter('All'); setQ(''); setViewing(null); setPage(1); setTab('pending'); } }, [isOpen]);
-  useEffect(() => { setPage(1); }, [statusFilter, urgencyFilter, q, tab]);
+  useEffect(() => { if (!isOpen) { setStatusFilter('All'); setUrgencyFilter('All'); setQ(''); setViewing(null); setTab('pending'); } }, [isOpen]);
 
   const stats = useMemo(() => {
     const total              = requests.length;
@@ -1350,11 +1347,120 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
   const createdCount  = useMemo(() => requests.filter(r =>  linkedHrIds.has(Number(r.id)) && r.status !== 'Rejected').length, [requests, linkedHrIds]);
   const rejectedCount = useMemo(() => requests.filter(r => r.status === 'Rejected').length, [requests, linkedHrIds]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage  = Math.min(page, pageCount);
-  const sliceFrom = (safePage - 1) * pageSize;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
-  const goto = (p: number) => setPage(Math.max(1, Math.min(pageCount, p)));
+  /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
+     8+20+10+13+6+9+8+9+8+9. */
+  const columns = useMemo<DataTableColumn<HiringRequestRow>[]>(() => [
+    {
+      header: 'REQ ID',
+      id: 'code',
+      accessorFn: (r: HiringRequestRow) => r.code || r.id,
+      sortingFn: (a, b, id) => String(a.getValue(id)).localeCompare(String(b.getValue(id)), undefined, { numeric: true, sensitivity: 'base' }),
+      meta: { width: '8%' },
+      cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
+    },
+    {
+      header: 'Position',
+      accessorKey: 'position',
+      // wrap: the type / work-mode mini-chips trail the title.
+      meta: { width: '20%', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <>
+            <span className="fw-bold fs-13">{r.position}</span>
+            <span className="rec-mini-chip" style={{ background: '#eef2f6', color: '#475569', ['--pill-fg' as string]: '#64748b' } as React.CSSProperties}>{r.positionType}</span>
+            <span
+              className="rec-mini-chip"
+              style={{
+                background: WORK_MODE_TONES[r.positionMode]?.bg || '#eef2f6',
+                color: WORK_MODE_TONES[r.positionMode]?.fg || '#475569',
+                ['--pill-fg' as string]: WORK_MODE_TONES[r.positionMode]?.fg || '#64748b',
+              } as React.CSSProperties}
+            >
+              {r.positionMode}
+            </span>
+          </>
+        );
+      },
+    },
+    { header: 'Department', accessorKey: 'department', meta: { width: '10%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    {
+      header: 'Requested By',
+      accessorKey: 'requestedByName',
+      meta: { width: '13%' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <div
+              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${r.requestedByAccent}, ${r.requestedByAccent}cc)` }}
+            >
+              {r.requestedByInitials}
+            </div>
+            <span className="fs-13 text-truncate">{r.requestedByName}</span>
+          </div>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Openings</div>,
+      accessorKey: 'openings',
+      meta: { width: '6%', align: 'center' },
+      cell: info => <span className="rec-num">{String(info.getValue() ?? '')}</span>,
+    },
+    { header: 'Request Type', accessorKey: 'requestType', meta: { width: '9%' }, cell: info => <span className="fs-13">{String(info.getValue() ?? '')}</span> },
+    {
+      header: 'Urgency',
+      accessorKey: 'urgency',
+      meta: { width: '8%' },
+      cell: info => {
+        const u = REQUEST_URGENCY_TONES[info.row.original.urgency];
+        return <span className="rec-pill" style={{ background: u.bg, color: u.fg, ['--pill-fg' as string]: u.fg } as React.CSSProperties}>{info.row.original.urgency}</span>;
+      },
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      meta: { width: '9%', align: 'center' },
+      cell: info => {
+        const statusColor = REQUEST_STATUS_COLOR[info.row.original.status];
+        return (
+          <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
+            {info.row.original.status}
+          </span>
+        );
+      },
+    },
+    { header: 'Req Date',    accessorKey: 'requestDate',    meta: { width: '8%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.requestDate)}</span> },
+    { header: 'Target Join', accessorKey: 'targetJoinDate', meta: { width: '9%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.targetJoinDate)}</span> },
+    {
+      header: () => <div className="text-center">Actions</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { width: '9%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="rec-row-actions justify-content-center">
+            <Tooltip label="View">
+              <button type="button" className="rec-act rec-act-view rec-act--icon" onClick={() => setViewing(r)} aria-label="View">
+                <i className="ri-eye-line" />
+              </button>
+            </Tooltip>
+            {tab === 'pending' && (
+              <Tooltip label="Create Recruitment">
+                <button type="button" className="rec-act rec-act-create rec-act--icon" onClick={() => onCreateRecruitment(r)} aria-label="Create Recruitment">
+                  <i className="ri-user-search-line" />
+                </button>
+              </Tooltip>
+            )}
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [tab, onCreateRecruitment]);
 
 
   return (
@@ -1400,157 +1506,37 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
           ))}
         </div>
 
-        {/* Tabs use the same rec-tab-track / rec-tab styling as the main
-            Recruitment list table for a consistent look across the module. */}
-        <div className="rec-req-filter-row d-flex align-items-center gap-3 flex-wrap" style={{ padding: '8px 18px 12px' }}>
-          <div className="rec-tab-track" style={{ marginBottom: 0, flex: '1 1 0', minWidth: 0 }}>
-            {([
-              { key: 'pending',  label: 'Pending Hiring Requests', icon: 'ri-time-line',         count: pendingCount,  variant: 'in-progress' },
-              { key: 'created',  label: 'Recruitment Created',     icon: 'ri-user-search-line',  count: createdCount,  variant: 'completed'   },
-              { key: 'rejected', label: 'Rejected',                icon: 'ri-close-circle-line', count: rejectedCount, variant: 'cancelled'   },
-            ] as const).map(t => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setTab(t.key)}
-                className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
-                style={{ flex: 1, justifyContent: 'center' }}
-              >
-                <i className={t.icon} />
-                {t.label}
-                <span className="badge">{t.count}</span>
-              </button>
-            ))}
-          </div>
-          <div className="rec-req-search search-box" style={{ flex: '0 1 340px', minWidth: 200 }}>
-            <Input
-              type="text"
-              className="form-control"
-              placeholder="Search requests…"
-              value={q}
-              onChange={e => setQ(e.target.value)}
-            />
-            <i className="ri-search-line search-icon"></i>
-          </div>
-        </div>
-
-        <div
-          className="rec-req-table-wrap"
-          style={{ maxHeight: '50vh', minHeight: 'calc(48px + 56px * 5)', overflowY: 'auto' }}
-        >
-          <table className="rec-req-table table align-middle table-nowrap mb-0">
-            <thead>
-              <tr>
-                <th className="ps-4">REQ ID</th>
-                <th>Position</th>
-                <th>Department</th>
-                <th>Requested By</th>
-                <th className="text-center">Openings</th>
-                <th>Request Type</th>
-                <th>Urgency</th>
-                <th>Status</th>
-                <th>Req Date</th>
-                <th>Target Join</th>
-                <th className="pe-4 text-center">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={11} className="text-center py-5 text-muted">
-                    <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
-                    {requests.length === 0
-                      ? 'No hiring requests yet — managers raise these from their Employee Profile > Hiring Requests tab.'
-                      : tabRequests.length === 0
-                        ? (tab === 'created'
-                            ? 'No hiring requests have been promoted into a recruitment yet.'
-                            : tab === 'rejected'
-                              ? 'No hiring requests have been rejected.'
-                              : 'Every hiring request has been moved into a recruitment.')
-                        : 'No requests match your filters'}
-                  </td>
-                </tr>
-              ) : visible.map(r => {
-                const u = REQUEST_URGENCY_TONES[r.urgency];
-                const statusColor = REQUEST_STATUS_COLOR[r.status];
-                return (
-                  <tr key={r.id}>
-                    <td className="ps-4"><span className="rec-id-pill">{r.code || r.id}</span></td>
-                    <td>
-                      <span className="fw-bold fs-13">{r.position}</span>
-                      <span className="rec-mini-chip" style={{ background: '#eef2f6', color: '#475569', ['--pill-fg' as string]: '#64748b' } as React.CSSProperties}>{r.positionType}</span>
-                      <span
-                        className="rec-mini-chip"
-                        style={{
-                          background: WORK_MODE_TONES[r.positionMode]?.bg || '#eef2f6',
-                          color: WORK_MODE_TONES[r.positionMode]?.fg || '#475569',
-                          ['--pill-fg' as string]: WORK_MODE_TONES[r.positionMode]?.fg || '#64748b',
-                        } as React.CSSProperties}
-                      >
-                        {r.positionMode}
-                      </span>
-                    </td>
-                    <td className="fs-13">{r.department}</td>
-                    <td>
-                      <div className="d-flex align-items-center gap-2">
-                        <div
-                          className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                          style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${r.requestedByAccent}, ${r.requestedByAccent}cc)` }}
-                        >
-                          {r.requestedByInitials}
-                        </div>
-                        <span className="fs-13">{r.requestedByName}</span>
-                      </div>
-                    </td>
-                    <td className="text-center"><span className="rec-num">{r.openings}</span></td>
-                    <td className="fs-13">{r.requestType}</td>
-                    <td><span className="rec-pill" style={{ background: u.bg, color: u.fg, ['--pill-fg' as string]: u.fg } as React.CSSProperties}>{r.urgency}</span></td>
-                    <td>
-                      <span className={`badge rounded-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="fs-13"><span className="rec-date">{formatDate(r.requestDate)}</span></td>
-                    <td className="fs-13"><span className="rec-date">{formatDate(r.targetJoinDate)}</span></td>
-                    <td className="pe-4">
-                      <div className="rec-row-actions">
-                        <Tooltip label="View">
-                          <button
-                            type="button"
-                            className="rec-act rec-act-view rec-act--icon"
-                            onClick={() => setViewing(r)}
-                            aria-label="View"
-                          >
-                            <i className="ri-eye-line" />
-                          </button>
-                        </Tooltip>
-                        {tab === 'pending' && (
-                          <Tooltip label="Create Recruitment">
-                            <button
-                              type="button"
-                              className="rec-act rec-act-create rec-act--icon"
-                              onClick={() => onCreateRecruitment(r)}
-                              aria-label="Create Recruitment"
-                            >
-                              <i className="ri-user-search-line" />
-                            </button>
-                          </Tooltip>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        <WorklistPager
-          total={filtered.length}
-          page={safePage}
-          pageSize={pageSize}
-          onPage={goto}
-          onPageSize={(n) => { setPageSize(n); setPage(1); }}
+        {/* Shared list table (components/ui/DataTable) — same component the main
+            Recruitment list uses, so the modal's list reads identically. */}
+        <DataTable<HiringRequestRow>
+          data={filtered}
+          columns={columns}
+          accent="violet"
+          minWidth={1500}
+          searchValue={q}
+          onSearchChange={setQ}
+          searchPlaceholder="Search requests…"
+          tabs={[
+            { key: 'pending',  label: 'Pending Hiring Requests', icon: 'ri-time-line',         count: pendingCount },
+            { key: 'created',  label: 'Recruitment Created',     icon: 'ri-user-search-line',  count: createdCount },
+            { key: 'rejected', label: 'Rejected',                icon: 'ri-close-circle-line', count: rejectedCount },
+          ]}
+          activeTab={tab}
+          onTabChange={k => setTab(k as typeof tab)}
+          emptyMessage={
+            <>
+              <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
+              {requests.length === 0
+                ? 'No hiring requests yet — managers raise these from their Employee Profile > Hiring Requests tab.'
+                : tabRequests.length === 0
+                  ? (tab === 'created'
+                      ? 'No hiring requests have been promoted into a recruitment yet.'
+                      : tab === 'rejected'
+                        ? 'No hiring requests have been rejected.'
+                        : 'Every hiring request has been moved into a recruitment.')
+                  : 'No requests match your filters'}
+            </>
+          }
         />
 
         

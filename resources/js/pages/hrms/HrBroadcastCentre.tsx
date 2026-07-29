@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardBody, Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
+import { Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import Tooltip from '../../components/ui/Tooltip';
-import WorklistPager from '../../components/ui/WorklistPager';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import '../../../css/recruitment.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -97,8 +96,7 @@ export default function HrBroadcastCentre() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<string>('All');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  /* Paging lives in <DataTable> now. */
 
   // Modal state
   const [createOpen, setCreateOpen] = useState(false);
@@ -126,7 +124,6 @@ export default function HrBroadcastCentre() {
   };
   useEffect(() => { fetchAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
-  useEffect(() => { setPage(1); }, [search, typeFilter, statusFilter]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -143,11 +140,127 @@ export default function HrBroadcastCentre() {
       });
   }, [rows, search, typeFilter, statusFilter]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage  = Math.min(page, pageCount);
-  const sliceFrom = (safePage - 1) * pageSize;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
-  const goto = (p: number) => setPage(Math.max(1, Math.min(pageCount, p)));
+  /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
+     5+10+26+9+9+16+12+13. */
+  const columns = useMemo<DataTableColumn<AnnRow>[]>(() => [
+    {
+      header: 'ANN ID',
+      id: 'code',
+      accessorFn: (r: AnnRow) => r.code || `ANN-${r.id}`,
+      sortingFn: (a, b, id) => String(a.getValue(id)).localeCompare(String(b.getValue(id)), undefined, { numeric: true, sensitivity: 'base' }),
+      meta: { width: '10%' },
+      cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
+    },
+    {
+      header: 'Announcement Title',
+      accessorKey: 'title',
+      // wrap: an attachment link sits on a second line under the title.
+      meta: { width: '26%', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <>
+            <div className="fw-bold fs-13">{r.title}</div>
+            {r.attachment_url && (
+              <a href={r.attachment_url} target="_blank" rel="noreferrer" className="d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: 11.5, color: '#0c63b0' }}>
+                <i className="ri-attachment-line" />{r.attachment_original_name || 'attachment'}
+              </a>
+            )}
+          </>
+        );
+      },
+    },
+    {
+      /* `--pill-fg` carries the badge hue to the dark-mode CSS so it can swap
+         the harsh light-pastel fill for a translucent same-hue chip (matching
+         the ANN-ID pill). Light mode keeps the inline bg/fg untouched. */
+      header: 'Type',
+      accessorKey: 'type',
+      meta: { width: '9%', align: 'center' },
+      cell: info => {
+        const tt = TYPE_TONES[info.row.original.type];
+        return <span className="rec-pill" style={{ background: tt.bg, color: tt.fg, ['--pill-fg' as any]: tt.fg }}>{info.row.original.type}</span>;
+      },
+    },
+    {
+      header: 'Priority',
+      accessorKey: 'priority',
+      meta: { width: '9%', align: 'center' },
+      cell: info => {
+        const pp = PRIORITY_TONES[info.row.original.priority];
+        return <span className="rec-pill" style={{ background: pp.bg, color: pp.fg, ['--pill-fg' as any]: pp.fg }}>{info.row.original.priority}</span>;
+      },
+    },
+    {
+      header: 'Audience',
+      id: 'audience',
+      enableSorting: false,
+      meta: { width: '16%', wrap: true },
+      cell: info => <AudienceCell row={info.row.original} />,
+    },
+    {
+      /* Sorts on the real timestamp: published rows by publish_at, drafts by
+         created_at, so the column orders chronologically rather than by the
+         dd-Mon-yyyy text. */
+      header: 'Publish Date',
+      id: 'publish_at',
+      accessorFn: (r: AnnRow) => {
+        const raw = r.publish_at || (r.status === 'Draft' ? null : r.created_at);
+        return raw ? new Date(raw).getTime() : 0;
+      },
+      meta: { width: '12%' },
+      cell: info => {
+        const r = info.row.original;
+        return <span className="rec-date">{r.publish_at ? formatDate(r.publish_at) : (r.status === 'Draft' ? '—' : formatDate(r.created_at))}</span>;
+      },
+    },
+    {
+      header: () => <div className="text-center">Actions</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { width: '13%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="rec-row-actions justify-content-center">
+            {/* Draft rows are meant to be finished before publishing, so they
+                show an Edit (pencil) icon; published rows show View (eye).
+                Both open the same wizard. */}
+            <Tooltip label={r.status === 'Draft' ? 'Edit' : 'View'}>
+              <button
+                type="button"
+                className={`rec-act ${r.status === 'Draft' ? 'rec-act-edit' : 'rec-act-view'} rec-act--icon`}
+                aria-label={r.status === 'Draft' ? 'Edit' : 'View'}
+                onClick={() => { setEditingRow(r); setCreateOpen(true); }}
+              >
+                <i className={r.status === 'Draft' ? 'ri-pencil-line' : 'ri-eye-line'} />
+              </button>
+            </Tooltip>
+            {r.status === 'Draft' && (
+              <Tooltip label={publishingId === r.id ? 'Publishing…' : 'Publish Now'}>
+                <button type="button" className="rec-act rec-act-approve rec-act--icon" aria-label="Publish Now" disabled={publishingId === r.id} onClick={() => handlePublishNow(r)}>
+                  {publishingId === r.id
+                    ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                    : <i className="ri-send-plane-line" />}
+                </button>
+              </Tooltip>
+            )}
+            {/* Delete is only offered for Drafts — once an announcement is
+                published it's a record of what went out and must not be
+                removed; published rows show View only. */}
+            {r.status === 'Draft' && (
+              <Tooltip label="Delete">
+                <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" onClick={() => handleDelete(r)}>
+                  <i className="ri-delete-bin-line" />
+                </button>
+              </Tooltip>
+            )}
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [publishingId]);
 
   // High-priority count isn't in the /stats payload (which is grouped by
   // status), so derive it from the loaded list — rows holds every
@@ -280,134 +393,37 @@ export default function HrBroadcastCentre() {
             </Row>
 
             {/* Filters + table */}
-            <Card className="border-0 shadow-none mb-0 bg-transparent">
-              <CardBody className="p-0">
-                <div className="rec-list-frame">
-                  <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
-                    <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220 }}>
-                      <Input type="text" className="form-control" placeholder="Search announcements…" value={search} onChange={e => setSearch(e.target.value)} />
-                      <i className="ri-search-line search-icon"></i>
-                    </div>
-                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Type</span>
-                    <div style={{ minWidth: 130 }}>
-                      <MasterSelect value={typeFilter} onChange={setTypeFilter} options={[{ value: 'All', label: 'All Types' }, { value: 'General', label: 'General' }, { value: 'Policy', label: 'Policy' }, { value: 'Urgent', label: 'Urgent' }]} placeholder="All Types" />
-                    </div>
-                    <button type="button" className="rec-btn-primary ms-auto" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
-                      <i className="ri-add-line" />New Announcement
-                    </button>
+            {/* Shared list table (components/ui/DataTable) — search, sortable
+                headers and the rows-per-page pager come from the component; the
+                Type filter and New Announcement ride in its toolbar. */}
+            <DataTable<AnnRow>
+              data={filtered}
+              columns={columns}
+              serial
+              accent="violet"
+              minWidth={1250}
+              loading={loading}
+              searchValue={search}
+              onSearchChange={setSearch}
+              searchPlaceholder="Search announcements…"
+              emptyMessage={
+                <>
+                  <i className="ri-send-plane-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  {rows.length === 0 ? 'No announcements yet — click New Announcement to add one' : 'No announcements match your filters'}
+                </>
+              }
+              toolbarActions={
+                <>
+                  <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Type</span>
+                  <div style={{ minWidth: 130 }}>
+                    <MasterSelect value={typeFilter} onChange={setTypeFilter} options={[{ value: 'All', label: 'All Types' }, { value: 'General', label: 'General' }, { value: 'Policy', label: 'Policy' }, { value: 'Urgent', label: 'Urgent' }]} placeholder="All Types" />
                   </div>
-
-                  <div className="rec-list-scroll">
-                    <table className="rec-list-table align-middle table-nowrap mb-0">
-                      <thead>
-                        <tr>
-                          <th className="ps-3 text-center" style={{ width: 60 }}>Sr No</th>
-                          <th style={{ width: 100 }}>ANN ID</th>
-                          <th>Announcement Title</th>
-                          <th style={{ width: 100 }}>Type</th>
-                          <th style={{ width: 100 }}>Priority</th>
-                          <th>Audience</th>
-                          <th style={{ width: 130 }}>Publish Date</th>
-                          <th className="text-center pe-3" style={{ width: 180 }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {loading ? (
-                          <ShimmerTableRows rows={5} cols={9} />
-                        ) : visible.length === 0 ? (
-                          <tr><td colSpan={8} className="text-center py-5 text-muted">
-                            <i className="ri-send-plane-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                            {rows.length === 0 ? 'No announcements yet — click New Announcement to add one' : 'No announcements match your filters'}
-                          </td></tr>
-                        ) : visible.map((r, idx) => {
-                          const tt = TYPE_TONES[r.type];
-                          const pp = PRIORITY_TONES[r.priority];
-                          return (
-                            <tr key={r.id}>
-                              <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
-                              <td><span className="rec-id-pill">{r.code || `ANN-${r.id}`}</span></td>
-                              <td>
-                                <div className="fw-bold fs-13">{r.title}</div>
-                                {r.attachment_url && (
-                                  <a href={r.attachment_url} target="_blank" rel="noreferrer" className="d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: 11.5, color: '#0c63b0' }}>
-                                    <i className="ri-attachment-line" />{r.attachment_original_name || 'attachment'}
-                                  </a>
-                                )}
-                              </td>
-                              {/* `--pill-fg` carries the badge hue to the dark-mode
-                                  CSS so it can swap the harsh light-pastel fill for a
-                                  translucent same-hue chip (matching the ANN-ID pill).
-                                  Light mode keeps the inline bg/fg untouched. */}
-                              <td><span className="rec-pill" style={{ background: tt.bg, color: tt.fg, ['--pill-fg' as any]: tt.fg }}>{r.type}</span></td>
-                              <td><span className="rec-pill" style={{ background: pp.bg, color: pp.fg, ['--pill-fg' as any]: pp.fg }}>{r.priority}</span></td>
-                              <td className="fs-13">
-                                <AudienceCell row={r} />
-                              </td>
-                              <td className="fs-13"><span className="rec-date">{r.publish_at ? formatDate(r.publish_at) : (r.status === 'Draft' ? '—' : formatDate(r.created_at))}</span></td>
-                              <td className="pe-3 text-center">
-                                {/* text-center on the cell centres the action
-                                    icons under the centered "Actions" header —
-                                    rec-row-actions is display:inline-flex, so its
-                                    own justify-content-center can't position the
-                                    block; the cell's text-align does. */}
-                                <div className="rec-row-actions justify-content-center">
-                                  {/* Polished portal tooltips (matching the rest of the
-                                      app) replace the slow native `title` attribute, which
-                                      had a ~1s browser delay and plain OS styling — so the
-                                      icons read as "no tooltip" on a quick hover. */}
-                                  {/* Draft rows are meant to be finished before
-                                      publishing, so show an Edit (pencil) icon;
-                                      published rows show a View (eye) icon. Both
-                                      open the same wizard. */}
-                                  <Tooltip label={r.status === 'Draft' ? 'Edit' : 'View'}>
-                                    <button
-                                      type="button"
-                                      className={`rec-act ${r.status === 'Draft' ? 'rec-act-edit' : 'rec-act-view'} rec-act--icon`}
-                                      aria-label={r.status === 'Draft' ? 'Edit' : 'View'}
-                                      onClick={() => { setEditingRow(r); setCreateOpen(true); }}
-                                    >
-                                      <i className={r.status === 'Draft' ? 'ri-pencil-line' : 'ri-eye-line'} />
-                                    </button>
-                                  </Tooltip>
-                                  {r.status === 'Draft' && (
-                                    <Tooltip label={publishingId === r.id ? 'Publishing…' : 'Publish Now'}>
-                                      <button type="button" className="rec-act rec-act-approve rec-act--icon" aria-label="Publish Now" disabled={publishingId === r.id} onClick={() => handlePublishNow(r)}>
-                                        {publishingId === r.id
-                                          ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
-                                          : <i className="ri-send-plane-line" />}
-                                      </button>
-                                    </Tooltip>
-                                  )}
-                                  {/* Delete is only offered for Drafts — once an
-                                      announcement is published it's a record of what
-                                      went out and must not be removed; published rows
-                                      show View only. */}
-                                  {r.status === 'Draft' && (
-                                    <Tooltip label="Delete">
-                                      <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" onClick={() => handleDelete(r)}>
-                                        <i className="ri-delete-bin-line" />
-                                      </button>
-                                    </Tooltip>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <WorklistPager
-                    total={filtered.length}
-                    page={safePage}
-                    pageSize={pageSize}
-                    onPage={goto}
-                    onPageSize={(n) => { setPageSize(n); setPage(1); }}
-                  />
-                </div>
-              </CardBody>
-            </Card>
+                  <button type="button" className="rec-btn-primary" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
+                    <i className="ri-add-line" />New Announcement
+                  </button>
+                </>
+              }
+            />
           </div>
         </Col>
       </Row>

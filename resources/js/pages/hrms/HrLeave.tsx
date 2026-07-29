@@ -5,7 +5,7 @@ import { LFM_CSS } from '../sales/opportunity-pipeline/LeadFilterModal';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
-import WorklistPager from '../../components/ui/WorklistPager';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -409,8 +409,7 @@ export default function HrLeave() {
   const [department, setDepartment] = useState<string>('All');
   const [type,    setType]    = useState<string>('All');
   const [payroll, setPayroll] = useState<string>('All');
-  const [page,    setPage]    = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  /* Paging lives in <DataTable> now. */
   // Filter modal (Department / Type / Payroll live inside it now) — same
   // two-pane shell the Customers list uses, via the shared LFM_CSS sheet.
   const [filterOpen, setFilterOpen] = useState(false);
@@ -529,11 +528,131 @@ export default function HrLeave() {
     });
   }, [requests, search, status, type, payroll, department]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage  = Math.min(Math.max(1, page), pageCount);
-  const sliceFrom = (safePage - 1) * pageSize;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
-  const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
+  /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
+     4+19+9+7+17+15+9+11+9. */
+  const columns = useMemo<DataTableColumn<LeaveRequest>[]>(() => [
+    {
+      header: 'Employee',
+      id: 'employee',
+      accessorFn: (r: LeaveRequest) => r.empName,
+      // wrap: code · role sits on a second line under the name.
+      meta: { width: '19%', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <div
+              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)` }}
+            >
+              {r.empInitials}
+            </div>
+            <div className="min-w-0">
+              <div className="fw-semibold fs-13 text-truncate">{r.empName}</div>
+              <div className="text-muted text-truncate" style={{ fontSize: 11.5 }}>{r.empCode} · {r.empRole}</div>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Type',
+      accessorKey: 'typeName',
+      meta: { width: '9%' },
+      cell: info => {
+        const t = TYPE_TONE[info.row.original.type];
+        return (
+          <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: t.bg, ['--lvp-fg' as string]: t.fg, ['--lvp-accent' as string]: t.fg } as CSSProperties}>
+            {info.row.original.typeName}
+          </span>
+        );
+      },
+    },
+    { header: 'Duration', accessorKey: 'durationLabel', meta: { width: '7%' }, cell: info => <span className="fs-13">{String(info.getValue() ?? '')}</span> },
+    {
+      /* Sorts on the ISO from-date so the column is chronological, not
+         alphabetical on "05-Aug-2026 → 07-Aug-2026". */
+      header: 'Date Range',
+      id: 'fromDate',
+      accessorFn: (r: LeaveRequest) => r.fromDate,
+      meta: { width: '17%', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <>
+            <div className="fs-13 fw-semibold"><span className="rec-date">{formatRange(r.fromDate, r.toDate)}</span></div>
+            <div className="text-muted" style={{ fontSize: 11 }}>Applied: {formatDate(r.appliedOn)}</div>
+          </>
+        );
+      },
+    },
+    {
+      header: 'Approval Chain',
+      id: 'chain',
+      enableSorting: false,
+      meta: { width: '15%', wrap: true },
+      cell: info => <ChainDots row={info.row.original} />,
+    },
+    {
+      header: 'Payroll',
+      accessorKey: 'payroll',
+      meta: { width: '9%' },
+      cell: info => {
+        const t = PAYROLL_TONE[info.row.original.payroll];
+        return (
+          <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: t.bg, ['--lvp-fg' as string]: t.fg, ['--lvp-accent' as string]: t.fg } as CSSProperties}>
+            {info.row.original.payroll}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'Status',
+      accessorKey: 'stage',
+      // wrap: pending rows carry a stage note under the pill.
+      meta: { width: '11%', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        const t = STAGE_TONE[r.stage];
+        const isPending = r.stage.startsWith('Pending');
+        return (
+          <>
+            <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: t.bg, ['--lvp-fg' as string]: t.fg, ['--lvp-accent' as string]: t.dot } as CSSProperties}>
+              {r.stage}
+            </span>
+            {isPending && r.stageNote && (
+              <div className="text-muted" style={{ fontSize: 11, marginTop: 3 }}>{r.stageNote}</div>
+            )}
+          </>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Action</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { width: '9%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="d-flex gap-1 justify-content-center align-items-center">
+            <ActionBtn title="View details" icon="ri-eye-line" tone="info" onClick={() => openDetail(r)} />
+            {/* Approve / Reject appear ONLY when it's the viewer's turn in the
+                manager→HR chain (server-computed canActNow). HR therefore can't
+                act while it sits at the manager level, and a manager-rejected
+                request (now in the Rejected tab) shows View-only. */}
+            {canApprove && r.canActNow && (
+              <>
+                <ActionBtn title="Approve" icon="ri-check-line" tone="success" onClick={() => setConfirmAction({ row: r, action: 'approve' })} />
+                <ActionBtn title="Reject"  icon="ri-close-line" tone="danger"  onClick={() => setConfirmAction({ row: r, action: 'reject' })} />
+              </>
+            )}
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [canApprove]);
 
   const DEPT_OPTIONS = [
     { value: 'All', label: 'All Departments' },
@@ -785,245 +904,38 @@ export default function HrLeave() {
               </div>
             )}
 
-            <Card className="border-0 shadow-none mb-0 bg-transparent">
-              <CardBody className="p-0">
-                <div className="rec-list-frame">
-                  <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
-                    {/* Tabs — moved into the list container, left-aligned. */}
-                    <div className="rec-tab-track mb-0">
-                      {([
-                        { key: 'All',      label: 'All Leaves',      count: counts.tabs.All,      icon: 'ri-stack-line',          variant: 'in-progress' },
-                        { key: 'Pending',  label: 'Pending',         count: counts.tabs.Pending,  icon: 'ri-time-line',           variant: 'in-progress' },
-                        { key: 'Approved', label: 'Approved',        count: counts.tabs.Approved, icon: 'ri-checkbox-circle-line',variant: 'completed'   },
-                        { key: 'Rejected', label: 'Rejected',        count: counts.tabs.Rejected, icon: 'ri-close-circle-line',   variant: 'cancelled'   },
-                        { key: 'Cancelled', label: 'Cancelled',      count: counts.tabs.Cancelled, icon: 'ri-forbid-line',        variant: 'cancelled'   },
-                      ] as const).map(t => (
-                        <button
-                          key={t.key}
-                          type="button"
-                          onClick={() => { setStatus(t.key); setPage(1); }}
-                          className={`rec-tab ${status === t.key ? `is-active ${t.variant}` : ''}`}
-                        >
-                          <i className={t.icon} />
-                          {t.label}
-                          <span className="badge">{t.count}</span>
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Search — grows to fill the space between the tabs and the Filter button. */}
-                    <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220 }}>
-                      <Input
-                        type="text"
-                        className="form-control"
-                        placeholder="Search name, ID, type…"
-                        value={search}
-                        onChange={e => { setSearch(e.target.value); setPage(1); }}
-                      />
-                      <i className="ri-search-line search-icon" />
-                    </div>
-
-                    {/* Filter button — right corner. Opens the two-pane filter
-                        modal (Department / Type / Payroll), matching the
-                        Customers list's filter popup. */}
-                    <button
-                      type="button"
-                      onClick={() => setFilterOpen(true)}
-                      className="btn d-inline-flex align-items-center gap-1 fw-semibold rounded-pill px-3"
-                      style={{
-                        fontSize: 13,
-                        border: '1px solid var(--vz-border-color)',
-                        background: activeFilterCount > 0 ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'var(--vz-card-bg)',
-                        color: activeFilterCount > 0 ? '#fff' : 'var(--vz-body-color)',
-                      }}
-                    >
-                      <i className="ri-equalizer-line" />
-                      Filter
-                      {activeFilterCount > 0 && (
-                        <span className="badge bg-white text-dark ms-1">{activeFilterCount}</span>
-                      )}
-                    </button>
-                  </div>
-
-
-                  <div className="rec-list-scroll">
-                    {(() => {
-                      // Only rows it's actually the viewer's turn to act on are
-                      // bulk-selectable — pending AND canActNow. This keeps the
-                      // manager→HR hierarchy: HR can see a manager-level request
-                      // but can't select (and so can't bulk-approve) it until the
-                      // reporting manager has approved and it advances to HR.
-                      const visiblePending = visible.filter(r => isPendingRow(r) && r.canActNow);
-                      const visiblePendingIds = visiblePending.map(r => r.id);
-                      const selectedVisible = visiblePendingIds.filter(id => selectedIds.has(id)).length;
-                      const allVisibleChecked = visiblePending.length > 0 && selectedVisible === visiblePending.length;
-                      const someVisibleChecked = selectedVisible > 0 && selectedVisible < visiblePending.length;
-                      const togglePageSelection = () => {
-                        setSelectedIds(prev => {
-                          const next = new Set(prev);
-                          if (allVisibleChecked) {
-                            visiblePendingIds.forEach(id => next.delete(id));
-                          } else {
-                            visiblePendingIds.forEach(id => next.add(id));
-                          }
-                          return next;
-                        });
-                      };
-                      // table-layout: fixed → the <th> widths below are
-                      // authoritative. With the browser default (auto) the
-                      // columns are sized from cell CONTENT, so the narrow
-                      // shimmer placeholders produced one set of widths and the
-                      // real rows another — the table visibly reflowed the
-                      // moment data landed (QA #96). min-width is the sum of
-                      // the column widths; .rec-list-scroll scrolls sideways
-                      // below that instead of squeezing the columns.
-                      return (
-                    <table
-                      className="rec-list-table align-middle table-nowrap mb-0 lv-req-table"
-                      style={{ tableLayout: 'fixed', minWidth: 1320 }}
-                    >
-                      <thead>
-                        <tr>
-                          <th scope="col" className="ps-3 text-center" style={{ width: 50 }}>SR.</th>
-                          <th scope="col" style={{ width: 240 }}>Employee</th>
-                          <th scope="col" style={{ width: 100 }}>Type</th>
-                          <th scope="col" style={{ width: 80 }}>Duration</th>
-                          <th scope="col" style={{ width: 220 }}>Date Range</th>
-                          <th scope="col" style={{ width: 200 }}>Approval Chain</th>
-                          <th scope="col" style={{ width: 120 }}>Payroll</th>
-                          <th scope="col" style={{ width: 180 }}>Status</th>
-                          <th scope="col" className="text-center pe-3" style={{ width: 130 }}>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {requestsLoading ? (
-                          Array.from({ length: pageSize }).map((_, i) => (
-                            <tr key={`sk-${i}`}>
-                              <td className="text-center"><Shimmer width={18} height={12} /></td>
-                              <td>
-                                <div className="d-flex align-items-center gap-2">
-                                  <Shimmer width={30} height={30} radius={999} />
-                                  <div className="flex-grow-1">
-                                    <Shimmer height={12} width="70%" />
-                                    <Shimmer height={10} width="40%" style={{ marginTop: 4 }} />
-                                  </div>
-                                </div>
-                              </td>
-                              <td><Shimmer height={20} width={70} radius={999} /></td>
-                              <td><Shimmer height={12} width={40} /></td>
-                              <td><Shimmer height={12} width={150} /></td>
-                              <td><Shimmer height={24} width={120} radius={999} /></td>
-                              <td><Shimmer height={20} width={70} radius={999} /></td>
-                              <td><Shimmer height={20} width={90} radius={999} /></td>
-                              <td className="text-center"><Shimmer height={26} width={90} radius={6} /></td>
-                            </tr>
-                          ))
-                        ) : visible.length === 0 ? (
-                          <tr>
-                            <td colSpan={9} className="text-center py-5 text-muted">
-                              <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                              No leave requests match your filters
-                            </td>
-                          </tr>
-                        ) : visible.map((r, idx) => {
-                          const tone = STAGE_TONE[r.stage];
-                          const tType = TYPE_TONE[r.type];
-                          const tPay = PAYROLL_TONE[r.payroll];
-                          const isPending = r.stage.startsWith('Pending');
-                          return (
-                            <tr key={r.id}>
-                              <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
-                              <td>
-                                <div className="d-flex align-items-center gap-2">
-                                  <div
-                                    className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                    style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)` }}
-                                  >
-                                    {r.empInitials}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <div className="fw-semibold fs-13">{r.empName}</div>
-                                    <div className="text-muted" style={{ fontSize: 11.5 }}>{r.empCode} · {r.empRole}</div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td>
-                                <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: tType.bg, ['--lvp-fg' as string]: tType.fg, ['--lvp-accent' as string]: tType.fg } as CSSProperties}>
-                                  {r.typeName}
-                                </span>
-                              </td>
-                              <td className="fs-13">{r.durationLabel}</td>
-                              <td>
-                                <div className="fs-13 fw-semibold"><span className="rec-date">{formatRange(r.fromDate, r.toDate)}</span></div>
-                                <div className="text-muted" style={{ fontSize: 11 }}>Applied: {formatDate(r.appliedOn)}</div>
-                              </td>
-                              <td>
-                                <ChainDots row={r} />
-                              </td>
-                              <td>
-                                <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: tPay.bg, ['--lvp-fg' as string]: tPay.fg, ['--lvp-accent' as string]: tPay.fg } as CSSProperties}>
-                                  {r.payroll}
-                                </span>
-                              </td>
-                              <td>
-                                <span className="rec-pill lv-tone-pill" style={{ ['--lvp-bg' as string]: tone.bg, ['--lvp-fg' as string]: tone.fg, ['--lvp-accent' as string]: tone.dot } as CSSProperties}>
-                                  {r.stage}
-                                </span>
-                                {isPending && r.stageNote && (
-                                  <div className="text-muted" style={{ fontSize: 11, marginTop: 3 }}>{r.stageNote}</div>
-                                )}
-                              </td>
-                              <td className="pe-3">
-                                <div className="d-flex gap-1 justify-content-center align-items-center">
-                                  <ActionBtn
-                                    title="View details"
-                                    icon="ri-eye-line"
-                                    tone="info"
-                                    onClick={() => openDetail(r)}
-                                  />
-                                  {/* Approve / Reject appear ONLY when it's the
-                                      viewer's turn in the manager→HR chain
-                                      (server-computed canActNow). HR therefore
-                                      can't act while it sits at the manager
-                                      level, and a manager-rejected request
-                                      (now in the Rejected tab) shows View-only. */}
-                                  {canApprove && r.canActNow && (
-                                    <>
-                                  <ActionBtn
-                                    title="Approve"
-                                    icon="ri-check-line"
-                                    tone="success"
-                                    onClick={() => setConfirmAction({ row: r, action: 'approve' })}
-                                  />
-                                  <ActionBtn
-                                    title="Reject"
-                                    icon="ri-close-line"
-                                    tone="danger"
-                                    onClick={() => setConfirmAction({ row: r, action: 'reject' })}
-                                  />
-                                    </>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                      );
-                    })()}
-                  </div>
-
-                  <WorklistPager
-                    total={filtered.length}
-                    page={safePage}
-                    pageSize={pageSize}
-                    onPage={goto}
-                    onPageSize={(n) => { setPageSize(n); setPage(1); }}
-                  />
-                </div>
-              </CardBody>
-            </Card>
+            {/* Shared list table (components/ui/DataTable) — status tabs,
+                search, sortable headers and the rows-per-page pager all come
+                from the component; the Filter button (Department / Type /
+                Payroll modal) rides in its toolbar. */}
+            <DataTable<LeaveRequest>
+              data={filtered}
+              columns={columns}
+              serial={{ header: 'SR.' }}
+              accent="violet"
+              minWidth={1320}
+              loading={requestsLoading}
+              searchValue={search}
+              onSearchChange={setSearch}
+              searchPlaceholder="Search name, ID, type…"
+              tabs={[
+                { key: 'All',       label: 'All Leaves', icon: 'ri-stack-line',           count: counts.tabs.All },
+                { key: 'Pending',   label: 'Pending',    icon: 'ri-time-line',            count: counts.tabs.Pending },
+                { key: 'Approved',  label: 'Approved',   icon: 'ri-checkbox-circle-line', count: counts.tabs.Approved },
+                { key: 'Rejected',  label: 'Rejected',   icon: 'ri-close-circle-line',    count: counts.tabs.Rejected },
+                { key: 'Cancelled', label: 'Cancelled',  icon: 'ri-forbid-line',          count: counts.tabs.Cancelled },
+              ]}
+              activeTab={status}
+              onTabChange={k => setStatus(k as typeof status)}
+              activeFilterCount={activeFilterCount}
+              onFilterClick={() => setFilterOpen(true)}
+              emptyMessage={
+                <>
+                  <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  No leave requests match your filters
+                </>
+              }
+            />
           </div>
         </Col>
       </Row>
@@ -1036,7 +948,7 @@ export default function HrLeave() {
         deptOptions={DEPT_OPTIONS}
         typeOptions={TYPE_OPTIONS}
         payrollOptions={PAYROLL_OPTIONS}
-        onApply={(f) => { setDepartment(f.department); setType(f.type); setPayroll(f.payroll); setPage(1); }}
+        onApply={(f) => { setDepartment(f.department); setType(f.type); setPayroll(f.payroll); }}
       />
       <HolidayListModal open={holidaysOpen} onClose={() => setHolidaysOpen(false)} />
       <ConfirmActionModal

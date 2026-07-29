@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Card, CardBody, Col, Row, Input } from 'reactstrap';
+import { Col, Row } from 'reactstrap';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
 import { MasterSelect } from '../../components/ui/MasterSelect';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import Tooltip from '../../components/ui/Tooltip';
-import WorklistPager from '../../components/ui/WorklistPager';
+import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import CustomFieldModal, { CustomFieldFormPayload } from './doc-templates/CustomFieldModal';
 import '../../../css/recruitment.css';
@@ -123,15 +122,105 @@ export default function HrCustomFields() {
       });
   }, [rows, typeFilter, search]);
 
-  // Client-side pagination — same WorklistPager (dynamic rows-per-page) the
-  // recruitment table uses.
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  useEffect(() => { setPage(1); }, [search, typeFilter, rows]);
-  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
-  const safePage = Math.min(page, totalPages);
-  const pageRows = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+  /* Paging lives in <DataTable> now (components/ui/DataTable). */
+
+  const columns = useMemo<DataTableColumn<CustomFieldRow>[]>(() => [
+    {
+      header: 'Field Name',
+      accessorKey: 'name',
+      meta: { width: '19%' },
+      cell: info => (
+        <Tooltip label={info.row.original.name} disabled={info.row.original.name.length <= 30}>
+          <span style={{ fontWeight: 700, cursor: 'default' }}>{truncate(info.row.original.name)}</span>
+        </Tooltip>
+      ),
+    },
+    {
+      header: 'Variable',
+      id: 'variable',
+      accessorFn: (r: CustomFieldRow) => `{{${r.name}}}`,
+      meta: { width: '17%' },
+      cell: info => (
+        <Tooltip label={`{{${info.row.original.name}}}`} disabled={info.row.original.name.length <= 30}>
+          <span className="cf-var-chip" style={{ display: 'inline-block', cursor: 'default', padding: '3px 9px', borderRadius: 6, fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700, background: '#ede9fe', color: '#6d28d9' }}>
+            {`{{${truncate(info.row.original.name)}}}`}
+          </span>
+        </Tooltip>
+      ),
+    },
+    {
+      header: 'Type',
+      accessorKey: 'type',
+      meta: { width: '10%' },
+      cell: info => {
+        const t = info.row.original.type;
+        const tn = TYPE_TONES[t];
+        return (
+          <span className={`cf-type-chip cf-type-${t}`} style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, background: tn.bg, color: tn.fg, fontSize: 11.5, fontWeight: 700, border: `1px solid ${tn.border}` }}>
+            {tn.label}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'Description',
+      accessorKey: 'description',
+      meta: { width: '23%' },
+      cell: info => <TruncCell value={info.getValue() as string} caseSensitive max={80} className="cf-row-desc" />,
+    },
+    {
+      /* Sorts on the real reference COUNT, not the rendered label — sorting the
+         text would order "+3 more" strings alphabetically, which tells the user
+         nothing about how widely a field is used. */
+      header: 'Used In',
+      id: 'used_in',
+      accessorFn: (r: CustomFieldRow) => (r.used_in?.length ?? 0),
+      meta: { width: '17%' },
+      cell: info => {
+        const r = info.row.original;
+        const used = r.used_in || [];
+        // Prefer real scan results; fall back to the user's free-text hint so
+        // newly-created fields aren't blank.
+        const usedLabel = used.length > 0
+          ? used.map(t => t.name || t.code || `#${t.id}`).slice(0, 3).join(', ')
+            + (used.length > 3 ? ` +${used.length - 3}` : '')
+          : (r.used_in_hint || '—');
+        const usedFromHint = used.length === 0 && !!r.used_in_hint;
+        return (
+          <span
+            className={`cf-row-used${used.length === 0 ? '' : ' is-all'}`}
+            title={
+              used.length > 0 ? used.map(t => t.name || t.code).join(', ')
+              : usedFromHint ? `Hint — no template references {{${r.name}}} yet`
+              : ''
+            }
+            style={{
+              color: used.length > 0 ? '#1d4ed8' : (usedFromHint ? '#6b7280' : '#9ca3af'),
+              fontSize: 12.5,
+              fontWeight: used.length > 0 ? 700 : 500,
+              fontStyle: usedFromHint ? 'italic' : 'normal',
+            }}
+          >
+            {usedLabel}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Actions</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { align: 'center', width: '10%' },
+      cell: info => (
+        <div className="d-flex gap-1 justify-content-center">
+          <ActionBtn icon="ri-pencil-line" tone="info"
+            onClick={() => { setPrefillName(''); setEditing(info.row.original); setModalOpen(true); }} title="Edit" />
+          <ActionBtn icon="ri-delete-bin-line" tone="danger"
+            onClick={() => setDeleteTarget(info.row.original)} title="Delete" />
+        </div>
+      ),
+    },
+  ], []);
 
   const handleSave = async (payload: CustomFieldFormPayload) => {
     try {
@@ -390,15 +479,36 @@ export default function HrCustomFields() {
             ))}
           </div>
 
-          {/* Filters + Add button */}
-          <Card className="mb-3 cf-filter-card" style={{ borderRadius: 12 }}>
-            <CardBody className="d-flex flex-wrap gap-3 align-items-center" style={{ padding: 12 }}>
-              <div className="rec-req-search search-box" style={{ flex: '1 1 260px', minWidth: 260 }}>
-                <Input type="text" className="form-control" placeholder="Search fields…" value={search} onChange={e => setSearch(e.target.value)} />
-                <i className="ri-search-line search-icon" />
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                <span style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Type</span>
+          {/* Info banner */}
+          <div className="cf-info-banner" style={{ borderRadius: 10, background: '#f5f3ff', border: '1px solid #ddd6fe', padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, color: '#4c1d95' }}>
+            <i className="ri-information-line cf-info-icon" style={{ fontSize: 18, color: '#7c3aed', flexShrink: 0 }} />
+            <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+              Custom Fields are variables you define here that <strong>are not available in employee data</strong>. When a document template includes <code className="cf-info-code" style={{ background: '#ede9fe', color: '#6d28d9', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{'{{YourField}}'}</code>, the system will ask you to fill this value manually at generation time.
+            </div>
+          </div>
+
+          {/* Shared list table — search, sortable headers and the dynamic
+              rows-per-page pager come from components/ui/DataTable. The Type
+              filter and the Add button ride in its toolbar, which is why the
+              separate filter card above is gone. */}
+          <DataTable<CustomFieldRow>
+            data={filtered}
+            columns={columns}
+            serial
+            accent="violet"
+            minWidth={1100}
+            loading={loading}
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search fields…"
+            emptyMessage={
+              <>
+                <i className="ri-inbox-line" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
+                No custom fields match these filters. Click <strong>+ Add Custom Field</strong> to create one.
+              </>
+            }
+            toolbarActions={
+              <>
                 <div style={{ minWidth: 160 }}>
                   <MasterSelect
                     value={typeFilter}
@@ -413,129 +523,14 @@ export default function HrCustomFields() {
                     placeholder="All Types"
                   />
                 </div>
-              </div>
-              <button type="button"
-                onClick={() => { setEditing(null); setPrefillName(''); setModalOpen(true); }}
-                className="ms-auto"
-                style={{ padding: '8px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)' }}>
-                <i className="ri-add-line me-1" /> Add Custom Field
-              </button>
-            </CardBody>
-          </Card>
-
-          {/* Info banner */}
-          <div className="cf-info-banner" style={{ borderRadius: 10, background: '#f5f3ff', border: '1px solid #ddd6fe', padding: '10px 14px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, color: '#4c1d95' }}>
-            <i className="ri-information-line cf-info-icon" style={{ fontSize: 18, color: '#7c3aed', flexShrink: 0 }} />
-            <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
-              Custom Fields are variables you define here that <strong>are not available in employee data</strong>. When a document template includes <code className="cf-info-code" style={{ background: '#ede9fe', color: '#6d28d9', padding: '1px 6px', borderRadius: 4, fontWeight: 700 }}>{'{{YourField}}'}</code>, the system will ask you to fill this value manually at generation time.
-            </div>
-          </div>
-
-          {/* Table */}
-          <Card className="cf-table-card" style={{ borderRadius: 12 }}>
-            <CardBody style={{ padding: 0 }}>
-              <div className="table-responsive">
-                {/* table-layout: fixed → column widths are driven by these
-                    header widths, NOT by row content, so switching the Type
-                    filter can't reflow the columns and shift the headers. */}
-                <table className="table align-middle mb-0 cf-table" style={{ fontSize: 13, tableLayout: 'fixed', width: '100%' }}>
-                  {/* Header typography/surface comes from .cf-table thead th in
-                      the style block above — the same recipe as the Recruitment
-                      list header. The inline font/background that used to live
-                      here made this table the odd one out across HRMS. */}
-                  <thead>
-                    <tr>
-                      <th style={{ width: 60 }}>Sr No</th>
-                      <th style={{ width: '19%' }}>Field Name</th>
-                      <th style={{ width: '17%' }}>Variable</th>
-                      <th style={{ width: 110 }}>Type</th>
-                      <th>Description</th>
-                      <th style={{ width: '17%' }}>Used In</th>
-                      <th style={{ width: 100 }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <ShimmerTableRows rows={5} cols={7} />
-                    ) : filtered.length === 0 ? (
-                      <tr><td colSpan={7} style={{ padding: 32, textAlign: 'center', color: '#9ca3af' }}>
-                        <i className="ri-inbox-line" style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
-                        No custom fields match these filters. Click <strong>+ Add Custom Field</strong> to create one.
-                      </td></tr>
-                    ) : (
-                      pageRows.map((r, i) => {
-                        const tone = TYPE_TONES[r.type];
-                        const used = r.used_in || [];
-                        // Prefer real scan results; fall back to the user's
-                        // free-text hint so newly-created fields aren't blank.
-                        const usedLabel = used.length > 0
-                          ? used.map(t => t.name || t.code || `#${t.id}`).slice(0, 3).join(', ')
-                            + (used.length > 3 ? ` +${used.length - 3}` : '')
-                          : (r.used_in_hint || '—');
-                        const usedFromHint = used.length === 0 && !!r.used_in_hint;
-                        return (
-                          <tr key={r.id}>
-                            <td className="cf-row-num" style={{ padding: '10px 12px', color: '#6b7280' }}>{(safePage - 1) * pageSize + i + 1}</td>
-                            <td className="cf-row-name" style={{ fontWeight: 700, color: '#1f2937' }}>
-                              <Tooltip label={r.name} disabled={r.name.length <= 30}>
-                                <span style={{ cursor: 'default' }}>{truncate(r.name)}</span>
-                              </Tooltip>
-                            </td>
-                            <td>
-                              <Tooltip label={`{{${r.name}}}`} disabled={r.name.length <= 30}>
-                                <span className="cf-var-chip" style={{ display: 'inline-block', cursor: 'default', padding: '3px 9px', borderRadius: 6, fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700, background: '#ede9fe', color: '#6d28d9' }}>
-                                  {`{{${truncate(r.name)}}}`}
-                                </span>
-                              </Tooltip>
-                            </td>
-                            <td>
-                              <span className={`cf-type-chip cf-type-${r.type}`} style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, background: tone.bg, color: tone.fg, fontSize: 11.5, fontWeight: 700, border: `1px solid ${tone.border}` }}>
-                                {tone.label}
-                              </span>
-                            </td>
-                            <td className="cf-row-desc" style={{ color: '#374151' }}>{r.description || '—'}</td>
-                            <td>
-                              <span className={`cf-row-used${used.length === 0 ? '' : ' is-all'}`}
-                                title={
-                                  used.length > 0 ? used.map(t => t.name || t.code).join(', ')
-                                  : usedFromHint ? `Hint — no template references {{${r.name}}} yet`
-                                  : ''
-                                }
-                                style={{
-                                  color: used.length > 0 ? '#1d4ed8' : (usedFromHint ? '#6b7280' : '#9ca3af'),
-                                  fontSize: 12.5,
-                                  fontWeight: used.length > 0 ? 700 : 500,
-                                  fontStyle: usedFromHint ? 'italic' : 'normal',
-                                }}>
-                                {usedLabel}
-                              </span>
-                            </td>
-                            <td>
-                              <div className="d-flex gap-1">
-                                <ActionBtn icon="ri-pencil-line" tone="info"
-                                  onClick={() => { setPrefillName(''); setEditing(r); setModalOpen(true); }} title="Edit" />
-                                <ActionBtn icon="ri-delete-bin-line" tone="danger"
-                                  onClick={() => setDeleteTarget(r)} title="Delete" />
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              {/* Pagination — same WorklistPager (dynamic rows-per-page) as the
-                  recruitment table. */}
-              <WorklistPager
-                total={filtered.length}
-                page={safePage}
-                pageSize={pageSize}
-                onPage={setPage}
-                onPageSize={(n) => { setPageSize(n); setPage(1); }}
-              />
-            </CardBody>
-          </Card>
+                <button type="button"
+                  onClick={() => { setEditing(null); setPrefillName(''); setModalOpen(true); }}
+                  style={{ padding: '8px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', whiteSpace: 'nowrap' }}>
+                  <i className="ri-add-line me-1" /> Add Custom Field
+                </button>
+              </>
+            }
+          />
         </div>
 
         {modalOpen && (

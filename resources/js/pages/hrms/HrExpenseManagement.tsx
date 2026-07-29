@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Card, CardBody, Col, Row } from 'reactstrap';
+import { Col, Row } from 'reactstrap';
 import * as XLSX from 'xlsx';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import ExpenseClaimsTable, { type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
-import AdvanceRequestsTable, { type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
+import { expenseClaimColumns, type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
+import { advanceRequestColumns, type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
-import WorklistPager from '../../components/ui/WorklistPager';
+import DataTable from '../../components/ui/DataTable';
 import { useChartTheme } from '../../hooks/useChartTheme';
 import '../../../css/expense.css';
 
@@ -140,8 +140,6 @@ export default function HrExpenseManagement() {
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
   const [analyticsOpen, setAnalyticsOpen] = useState(true);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   useEffect(() => {
@@ -369,13 +367,9 @@ export default function HrExpenseManagement() {
     return true;
   });
 
+  /* Still needed by the Export handlers — they export what the filters select,
+     not just the visible page. Paging itself is <DataTable>'s job now. */
   const activeRows = module === 'advance' ? filteredAdvances : filtered;
-  const pageCount  = Math.max(1, Math.ceil(activeRows.length / pageSize));
-  const safePage   = Math.min(page, pageCount);
-  const sliceFrom  = (safePage - 1) * pageSize;
-  const visibleClaims   = filtered.slice(sliceFrom, sliceFrom + pageSize);
-  const visibleAdvances = filteredAdvances.slice(sliceFrom, sliceFrom + pageSize);
-  useEffect(() => { setPage(1); }, [module, filter, search, dateFilter]);
 
   const [exportOpen, setExportOpen] = useState(false);
   // Self-contained export dropdown — portalled to <body> so it isn't clipped by
@@ -528,6 +522,60 @@ export default function HrExpenseManagement() {
     else if (fmt === 'pdf') exportPdf();
     else exportCsv();
   };
+
+  /* ── Shared <DataTable> config ──────────────────────────────────────────
+     Status tabs, the All-Dates picker and Export are identical for Claims and
+     Advances, so they're built once here and handed to whichever table the
+     module toggle is showing. */
+  const statusTabs = useMemo(() => {
+    const c = module === 'advance' ? advanceCounts : counts;
+    return [
+      { key: 'all',      label: module === 'advance' ? 'All Advances' : 'All Claims', icon: 'ri-stack-line',           count: c.all },
+      { key: 'pending',  label: 'Pending Review',                                     icon: 'ri-time-line',            count: c.pending },
+      { key: 'approved', label: 'Approved',                                           icon: 'ri-checkbox-circle-line', count: c.approved },
+      { key: 'rejected', label: 'Rejected',                                           icon: 'ri-close-circle-line',    count: c.rejected },
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [module, counts.all, counts.pending, counts.approved, counts.rejected,
+      advanceCounts.all, advanceCounts.pending, advanceCounts.approved, advanceCounts.rejected]);
+
+  const expenseToolbarActions = (
+    <>
+      <div className="hrexp-hero-select" style={{ minWidth: 150 }}>
+        <MasterSelect
+          value={dateFilter}
+          onChange={(v) => setDateFilter((v as DateFilter) || 'all')}
+          options={(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(k => ({ value: k, label: DATE_FILTER_LABELS[k] }))}
+          placeholder="All Dates"
+        />
+      </div>
+      <button
+        ref={exportBtnRef}
+        type="button"
+        className="hrexp-cta rounded-pill"
+        onClick={toggleExport}
+        aria-haspopup="true"
+        aria-expanded={exportOpen}
+      >
+        <i className="ri-download-2-line me-2" style={{ fontSize: 16 }} />
+        Export
+        <i className="ri-arrow-down-s-line ms-1" style={{ fontSize: 16 }} />
+      </button>
+    </>
+  );
+
+  /* Columns come from the shared row components, so an expense row looks the
+     same here and on the employee profile's Expense tab. */
+  const claimColumns = useMemo(
+    () => expenseClaimColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [canHrApprove, user?.employee_id],
+  );
+  const advanceColumns = useMemo(
+    () => advanceRequestColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct: onActAdvance }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [canHrApprove, user?.employee_id],
+  );
 
   return (
     <>
@@ -819,110 +867,55 @@ export default function HrExpenseManagement() {
           )}
         </div>
 
-        {/* Tabs, search and the claims table share ONE card (Bug #30) so the
-            filters read as controls for the table below — matching the Employee
-            Onboarding layout instead of a detached toolbar card. */}
-        <Card className="border-0" style={{ borderRadius: 14 }}>
-          <CardBody>
-            {/* One toolbar row: status tabs (left) + search + All Dates + Export. */}
-            <Row className="g-2 align-items-center mb-3">
-              <Col xs={12}>
-                <div className="d-flex align-items-center gap-2 flex-wrap hrexp-toolbar">
-                  <div className="rec-tab-track mb-0">
-                    {(() => {
-                      const c = module === 'advance' ? advanceCounts : counts;
-                      const allLabel = module === 'advance' ? 'All Advances' : 'All Claims';
-                      return [
-                        { key: 'all'      as StatusFilter, label: allLabel,         count: c.all,      icon: 'ri-stack-line',           variant: 'in-progress' },
-                        { key: 'pending'  as StatusFilter, label: 'Pending Review', count: c.pending,  icon: 'ri-time-line',            variant: 'in-progress' },
-                        { key: 'approved' as StatusFilter, label: 'Approved',       count: c.approved, icon: 'ri-checkbox-circle-line', variant: 'completed' },
-                        { key: 'rejected' as StatusFilter, label: 'Rejected',       count: c.rejected, icon: 'ri-close-circle-line',    variant: 'cancelled' },
-                      ];
-                    })().map(t => (
-                      <button
-                        key={t.key}
-                        type="button"
-                        onClick={() => setFilter(t.key)}
-                        className={`rec-tab ${filter === t.key ? `is-active ${t.variant}` : ''}`}
-                      >
-                        <i className={t.icon} />
-                        {t.label}
-                        <span className="badge">{t.count}</span>
-                      </button>
-                    ))}
-                  </div>
-                  {/* Search + All-Dates + Export travel together as one cluster
-                      that flex-grows to fill the row. It never wraps internally,
-                      so Export can't drop onto its own line below the search —
-                      instead the search input (min-width:0) shrinks/grows with
-                      the viewport. On phones the cluster stacks (see expense.css). */}
-                  <div className="d-flex align-items-center gap-2 hrexp-controls">
-                    <div className="rec-req-search search-box" style={{ flex: '1 1 auto', minWidth: 0 }}>
-                      <input
-                        type="text"
-                        className="form-control"
-                        placeholder="Search employee, claim no, category, vendor…"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                      />
-                      <i className="ri-search-line search-icon" />
-                    </div>
-                    <div className="hrexp-hero-select" style={{ minWidth: 150 }}>
-                      <MasterSelect
-                        value={dateFilter}
-                        onChange={(v) => setDateFilter((v as DateFilter) || 'all')}
-                        options={(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(k => ({ value: k, label: DATE_FILTER_LABELS[k] }))}
-                        placeholder="All Dates"
-                      />
-                    </div>
-                    <button
-                      ref={exportBtnRef}
-                      type="button"
-                      className="hrexp-cta rounded-pill"
-                      onClick={toggleExport}
-                      aria-haspopup="true"
-                      aria-expanded={exportOpen}
-                    >
-                      <i className="ri-download-2-line me-2" style={{ fontSize: 16 }} />
-                      Export
-                      <i className="ri-arrow-down-s-line ms-1" style={{ fontSize: 16 }} />
-                    </button>
-                  </div>
-                </div>
-              </Col>
-            </Row>
-
-            <div>
-            {module === 'advance' ? (
-              <AdvanceRequestsTable
-                rows={visibleAdvances}
-                loading={advanceLoading}
-                mode="hr"
-                canHrApprove={canHrApprove}
-                currentEmployeeId={user?.employee_id ?? null}
-                onAct={onActAdvance}
-              />
-            ) : (
-              <ExpenseClaimsTable
-                rows={visibleClaims}
-                loading={loading}
-                mode="hr"
-                canHrApprove={canHrApprove}
-                currentEmployeeId={user?.employee_id ?? null}
-                onAct={onAct}
-              />
-            )}
-
-            <WorklistPager
-              total={activeRows.length}
-              page={safePage}
-              pageSize={pageSize}
-              onPage={setPage}
-              onPageSize={(n) => { setPageSize(n); setPage(1); }}
-            />
-            </div>
-          </CardBody>
-        </Card>
+        {/* Shared list table (components/ui/DataTable) — status tabs, search
+            and the rows-per-page pager are the component's now, so the toolbar
+            still reads as controls for the table below (Bug #30) and the header
+            columns gained sorting. The All-Dates picker and Export button ride
+            in its toolbar. Advances and Claims are two different row shapes, so
+            each gets its own instance with its own column set. */}
+        {module === 'advance' ? (
+          <DataTable<AdvanceRequestRow>
+            data={filteredAdvances}
+            columns={advanceColumns}
+            accent="violet"
+            minWidth={1500}
+            loading={advanceLoading}
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search employee, advance no, type, reason…"
+            tabs={statusTabs}
+            activeTab={filter}
+            onTabChange={k => setFilter(k as StatusFilter)}
+            toolbarActions={expenseToolbarActions}
+            emptyMessage={
+              <>
+                <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                No advance requests to show.
+              </>
+            }
+          />
+        ) : (
+          <DataTable<ExpenseClaimRow>
+            data={filtered}
+            columns={claimColumns}
+            accent="violet"
+            minWidth={1150}
+            loading={loading}
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search employee, claim no, category, vendor…"
+            tabs={statusTabs}
+            activeTab={filter}
+            onTabChange={k => setFilter(k as StatusFilter)}
+            toolbarActions={expenseToolbarActions}
+            emptyMessage={
+              <>
+                <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                No claims to show.
+              </>
+            }
+          />
+        )}
       </div>
     </>
   );

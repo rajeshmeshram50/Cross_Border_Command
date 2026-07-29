@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
-  Card, CardBody, CardHeader, Col, Row, Button, Input, Label, Spinner,
-  Table, Badge, Modal, ModalBody, ModalFooter, Form, FormFeedback,
+  Col, Row, Button, Input, Label, Spinner,
+  Badge, Modal, ModalBody, ModalFooter, Form, FormFeedback,
 } from 'reactstrap';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import Swal from 'sweetalert2';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
+import DataTable, { IdCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 
 interface Terminal {
   id: number;
@@ -91,6 +92,82 @@ export default function HrBiometricDevices() {
     setErrors({});
     setModalOpen(true);
   };
+
+  /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
+     5+15+14+14+12+11+9+12+8. */
+  const columns = useMemo<DataTableColumn<Terminal>[]>(() => [
+    {
+      header: 'Name',
+      accessorKey: 'name',
+      meta: { width: '15%' },
+      cell: info => {
+        const v = info.getValue() as string | null;
+        return v ? <strong>{v}</strong> : <span className="text-muted">—</span>;
+      },
+    },
+    {
+      header: 'Serial No.',
+      accessorKey: 'serial',
+      meta: { width: '14%' },
+      cell: info => <IdCell value={info.getValue() as string} />,
+    },
+    {
+      header: 'Branch',
+      id: 'branch',
+      accessorFn: (t: Terminal) => t.branch?.name ?? '',
+      meta: { width: '14%' },
+      cell: info => <TruncCell value={info.row.original.branch?.name} caseSensitive />,
+    },
+    { header: 'Timezone', accessorKey: 'timezone', meta: { width: '12%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    {
+      header: 'Allowed IPs',
+      accessorKey: 'allowed_ips',
+      meta: { width: '11%' },
+      cell: info => {
+        const v = info.getValue() as string | null;
+        // "Any" is a real state, not missing data — an empty list accepts every IP.
+        return v ? <TruncCell value={v} caseSensitive /> : <span title="Any IP accepted">Any</span>;
+      },
+    },
+    {
+      header: 'Status',
+      id: 'status',
+      accessorFn: (t: Terminal) => (t.is_active ? 'Active' : 'Inactive'),
+      meta: { width: '9%', align: 'center' },
+      cell: info => (
+        <Badge color={info.row.original.is_active ? 'success' : 'secondary'} pill className="text-uppercase">
+          {info.row.original.is_active ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
+    },
+    {
+      /* Sorts on the raw timestamp, not the formatted string — "Never" and
+         locale-formatted dates would sort alphabetically otherwise. Nulls sort
+         last so live devices lead. */
+      header: 'Last Seen',
+      id: 'last_seen',
+      accessorFn: (t: Terminal) => (t.last_seen_at ? new Date(t.last_seen_at).getTime() : 0),
+      meta: { width: '12%' },
+      cell: info => <span className="text-muted">{fmtSeen(info.row.original.last_seen_at)}</span>,
+    },
+    {
+      header: () => <div className="text-center">Actions</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { align: 'center', width: '8%' },
+      cell: info => (
+        <div className="d-flex gap-1 justify-content-center">
+          <Button size="sm" color="soft-primary" onClick={() => openEdit(info.row.original)} title="Edit">
+            <i className="ri-pencil-line"></i>
+          </Button>
+          <Button size="sm" color="soft-danger" onClick={() => handleDelete(info.row.original)} title="Remove">
+            <i className="ri-delete-bin-line"></i>
+          </Button>
+        </div>
+      ),
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], []);
 
   const openEdit = (t: Terminal) => {
     setEditId(t.id);
@@ -222,96 +299,50 @@ export default function HrBiometricDevices() {
 
       <Row>
         <Col xs={12}>
-          <Card className="shadow-sm">
-            <CardHeader className="bg-light-subtle border-bottom">
-              <Row className="g-2 align-items-center">
-                <Col md={5}>
-                  <div className="d-flex align-items-center gap-2">
-                    <i className="ri-fingerprint-line fs-4 text-primary"></i>
-                    <div>
-                      <h5 className="mb-0">eSSL / Biometric Terminals</h5>
-                      <small className="text-muted">Register a device Serial No. and bind it to a branch. Enroll each employee on the device with User ID = their Attendance Number.</small>
-                    </div>
-                  </div>
-                </Col>
-                <Col md={3}>
-                  <div className="search-box">
-                    <Input
-                      type="text"
-                      placeholder="Search serial or name…"
-                      value={search}
-                      onChange={e => setSearch(e.target.value)}
-                    />
-                  </div>
-                </Col>
-                <Col md={4} className="text-md-end d-flex gap-2 justify-content-md-end">
-                  <Button color="soft-primary" className="btn-label waves-effect rounded-pill" onClick={openImport}>
-                    <i className="ri-upload-2-line label-icon align-middle fs-16 me-2"></i>
-                    Import Punches
-                  </Button>
-                  <Button color="primary" className="btn-label waves-effect waves-light rounded-pill" onClick={openNew}>
-                    <i className="ri-add-line label-icon align-middle fs-16 me-2"></i>
-                    Add Device
-                  </Button>
-                </Col>
-              </Row>
-            </CardHeader>
-
-            <CardBody>
-              {loading ? (
-                <div className="text-center py-5"><Spinner color="primary" /></div>
-              ) : items.length === 0 ? (
-                <div className="text-center py-5">
-                  <i className="ri-fingerprint-line display-5 text-muted"></i>
-                  <p className="text-muted mt-2">No biometric devices registered yet</p>
-                </div>
-              ) : (
-                <div className="table-responsive">
-                  <Table className="align-middle table-nowrap mb-0">
-                    <thead className="table-light">
-                      <tr>
-                        <th style={{ width: 60 }}>Sr No</th>
-                        <th>Name</th>
-                        <th>Serial No.</th>
-                        <th>Branch</th>
-                        <th>Timezone</th>
-                        <th>Allowed IPs</th>
-                        <th style={{ width: 100 }}>Status</th>
-                        <th>Last Seen</th>
-                        <th style={{ width: 130 }} className="text-end">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((t, i) => (
-                        <tr key={t.id}>
-                          <td className="text-muted">{i + 1}</td>
-                          <td><strong>{t.name || '—'}</strong></td>
-                          <td><code className="text-muted">{t.serial}</code></td>
-                          <td className="text-muted">{t.branch?.name || '—'}</td>
-                          <td className="text-muted">{t.timezone}</td>
-                          <td className="text-muted">{t.allowed_ips || <span title="Any IP accepted">Any</span>}</td>
-                          <td>
-                            <Badge color={t.is_active ? 'success' : 'secondary'} pill className="text-uppercase">
-                              {t.is_active ? 'Active' : 'Inactive'}
-                            </Badge>
-                          </td>
-                          <td className="text-muted">{fmtSeen(t.last_seen_at)}</td>
-                          <td className="text-end">
-                            <Button size="sm" color="soft-primary" className="me-1" onClick={() => openEdit(t)} title="Edit">
-                              <i className="ri-pencil-line"></i>
-                            </Button>
-                            <Button size="sm" color="soft-danger" onClick={() => handleDelete(t)} title="Remove">
-                              <i className="ri-delete-bin-line"></i>
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </Table>
-                </div>
-              )}
-            </CardBody>
-          </Card>
+          {/* Shared list table (components/ui/DataTable) — the search box,
+              sortable headers and the rows-per-page pager come from the
+              component; the Import/Add buttons ride in its toolbar. Search
+              stays controlled because /device-terminals filters server-side. */}
+          <DataTable<Terminal>
+            data={items}
+            columns={columns}
+            serial
+            accent="violet"
+            minWidth={1250}
+            loading={loading}
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search serial or name…"
+            emptyMessage={
+              <>
+                <i className="ri-fingerprint-line display-6 d-block mb-2" style={{ opacity: .4 }} />
+                No biometric devices registered yet
+              </>
+            }
+            toolbarActions={
+              <>
+                <Button color="soft-primary" className="btn-label waves-effect rounded-pill" onClick={openImport}>
+                  <i className="ri-upload-2-line label-icon align-middle fs-16 me-2"></i>
+                  Import Punches
+                </Button>
+                <Button color="primary" className="btn-label waves-effect waves-light rounded-pill" onClick={openNew}>
+                  <i className="ri-add-line label-icon align-middle fs-16 me-2"></i>
+                  Add Device
+                </Button>
+              </>
+            }
+          >
+            {/* Kept from the old CardHeader — the enrollment rule (device User
+                ID must equal the employee's Attendance Number) is the one thing
+                users get wrong, so it stays visible above the rows. */}
+            <div className="d-flex align-items-center gap-2 px-3 py-2" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+              <i className="ri-fingerprint-line fs-4 text-primary"></i>
+              <div>
+                <h5 className="mb-0" style={{ fontSize: 14 }}>eSSL / Biometric Terminals</h5>
+                <small className="text-muted">Register a device Serial No. and bind it to a branch. Enroll each employee on the device with User ID = their Attendance Number.</small>
+              </div>
+            </div>
+          </DataTable>
         </Col>
       </Row>
 

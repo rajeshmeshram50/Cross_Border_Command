@@ -8,8 +8,8 @@ import PayrollRunModal, { type PayrollRunIssue } from '../../components/PayrollR
 import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
 import PaymentDisbursementModal from '../../components/PaymentDisbursementModal';
 import { useToast } from '../../contexts/ToastContext';
-import { ShimmerTableRows, Shimmer } from '../../components/ui/Shimmer';
-import WorklistPager from '../../components/ui/WorklistPager';
+import { Shimmer } from '../../components/ui/Shimmer';
+import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import api from '../../api';
 import '../../../css/recruitment.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
@@ -411,10 +411,8 @@ export default function HrPayroll() {
     [rows],
   );
 
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  /* Paging lives in <DataTable> now. */
 
-  useEffect(() => { setPage(1); }, [q, deptFilter, statusFilter, cycleKey, tab]);
 
   const [loading, setLoading] = useState(true);
 
@@ -841,20 +839,386 @@ export default function HrPayroll() {
       });
   }, [rows, q, deptFilter, statusFilter]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage  = Math.min(page, pageCount);
-  const sliceFrom = (safePage - 1) * pageSize;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
-  const goto = (p: number) => setPage(Math.min(Math.max(1, p), pageCount));
+  /* ── Column sets for the shared <DataTable> ──────────────────────────────
+     One per tab, since each tab shows a different projection of the same
+     payroll rows (and Salary Setup shows the roster instead). Widths in each
+     set sum to 100 — the tables run in table-layout:fixed. */
+  const processingColumns = useMemo<DataTableColumn<PayrollRow>[]>(() => [
+    {
+      header: 'Employee',
+      accessorKey: 'name',
+      // wrap: monthly CTC sits on a second line under the name.
+      meta: { width: '20%', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <div
+              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{
+                width: 34, height: 34, fontSize: 12,
+                background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
+                boxShadow: `0 2px 6px ${r.accent}40`,
+              }}
+            >
+              {r.initials}
+            </div>
+            <div className="min-w-0">
+              <div className="fw-semibold fs-13 text-truncate">{r.name}</div>
+              <div className="text-muted" style={{ fontSize: 11.5 }}>CTC ₹{fmtINR(r.ctc)}/mo</div>
+            </div>
+          </div>
+        );
+      },
+    },
+    { header: 'Emp ID', accessorKey: 'empId', meta: { width: '9%' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: '11%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: '12%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Earnings',   accessorKey: 'earnings',   meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold" style={{ color: '#108548' }}>₹{fmtINR(info.row.original.earnings)}</span> },
+    { header: 'Deductions', accessorKey: 'deductions', meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold" style={{ color: '#b1401d' }}>−₹{fmtINR(info.row.original.deductions)}</span> },
+    { header: 'Net Pay',    accessorKey: 'netPay',     meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-bold">₹{fmtINR(info.row.original.netPay)}</span> },
+    {
+      /* Att. = days actually PRESENT per the attendance record (not paid_days,
+         which also counts paid leave/holidays). Denominator is the cycle's
+         working days, so full attendance reads green. (#36) */
+      header: () => <div className="text-center">Att.</div>,
+      accessorKey: 'present',
+      meta: { width: '6%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        const wd = periodMeta?.working_days || 26;
+        const low = r.present < wd;
+        return (
+          <span className="onb-role-pill pay-att-badge" data-att={low ? 'low' : 'ok'} style={low ? { background: '#fde8c4', color: '#a4661c' } : undefined}>
+            {r.present}/{wd}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      meta: { width: '9%', align: 'center' },
+      cell: info => {
+        const tone = toneFor(info.row.original.status);
+        return (
+          <span className="onb-pill" style={{ background: tone.bg, color: tone.fg }}>
+            <span className="d" style={{ background: tone.dot }} />
+            {info.row.original.status}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Action</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { width: '6%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="d-flex align-items-center justify-content-center gap-2">
+            <button type="button" className="onb-edit-btn" title="View Payslip" onClick={() => openPayslip(r)}>
+              <i className="ri-eye-line" style={{ fontSize: 14 }} />
+            </button>
+            <button
+              type="button"
+              className="onb-edit-btn"
+              title="Download payslip PDF"
+              disabled={pdfBusyId === r.id}
+              onClick={() => downloadPayslipPdf(r)}
+            >
+              {pdfBusyId === r.id
+                ? <Spinner size="sm" style={{ width: 14, height: 14 }} />
+                : <i className="ri-download-2-line" style={{ fontSize: 14 }} />}
+            </button>
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [periodMeta?.working_days, pdfBusyId]);
 
-  // Salary Setup renders the `roster` array (not `filtered`), so it needs its
-  // own slice off the same shared page/pageSize state — page resets on tab
-  // switch, so reusing the state is safe (only one tab is ever visible).
-  const rosterPageCount = Math.max(1, Math.ceil(roster.length / pageSize));
-  const rosterSafePage  = Math.min(page, rosterPageCount);
-  const rosterSliceFrom = (rosterSafePage - 1) * pageSize;
-  const rosterVisible   = roster.slice(rosterSliceFrom, rosterSliceFrom + pageSize);
-  const rosterGoto = (p: number) => setPage(Math.min(Math.max(1, p), rosterPageCount));
+  const biometricColumns = useMemo<DataTableColumn<PayrollRow>[]>(() => [
+    {
+      header: 'Employee',
+      accessorKey: 'name',
+      meta: { width: '28%', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <div
+              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)` }}
+            >
+              {r.initials}
+            </div>
+            <div className="min-w-0">
+              <div className="fw-semibold fs-13 text-truncate">{r.name}</div>
+              <div className="text-muted" style={{ fontSize: 11 }}>{r.empId}</div>
+            </div>
+          </div>
+        );
+      },
+    },
+    { header: () => <div className="text-center">Present</div>, accessorKey: 'present', meta: { width: '11%', align: 'center' }, cell: info => <span className="fs-13 fw-bold">{info.row.original.present}</span> },
+    {
+      header: () => <div className="text-center">Absent</div>,
+      accessorKey: 'absent',
+      meta: { width: '11%', align: 'center' },
+      cell: info => <span className="fs-13 fw-bold" style={{ color: info.row.original.absent ? '#b1401d' : 'var(--vz-secondary-color)' }}>{info.row.original.absent}</span>,
+    },
+    {
+      header: () => <div className="text-center">Late Marks</div>,
+      accessorKey: 'lateMarks',
+      meta: { width: '12%', align: 'center' },
+      cell: info => <span className="fs-13 fw-semibold" style={{ color: info.row.original.lateMarks ? '#a06f00' : 'var(--vz-secondary-color)' }}>{info.row.original.lateMarks}</span>,
+    },
+    {
+      header: () => <div className="text-center">Missing Punch</div>,
+      accessorKey: 'missingPunch',
+      meta: { width: '13%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <span
+            className="onb-pill"
+            style={r.missingPunch
+              ? { background: '#fde7e3', color: '#b1401d', fontSize: 11 }
+              : { background: '#eef2f6', color: '#5b6478', fontSize: 11 }}
+          >
+            {r.missingPunch}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Att. Status</div>,
+      accessorKey: 'attSource',
+      meta: { width: '13%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        const sourceTone =
+          r.attSource === 'Biometric' ? { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' } :
+          r.attSource === 'Review'    ? { bg: '#fdf3d6', fg: '#a06f00', dot: '#f59e0b' } :
+                                        { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' };
+        return (
+          <span className="onb-pill" style={{ background: sourceTone.bg, color: sourceTone.fg, fontSize: 11 }}>
+            <span className="d" style={{ background: sourceTone.dot }} />
+            {r.attSource}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Mismatch</div>,
+      accessorKey: 'mismatch',
+      meta: { width: '12%', align: 'center' },
+      cell: info => {
+        const m = info.row.original.mismatch;
+        return m ? <span style={{ color: '#b1401d', fontWeight: 600 }} className="fs-13">{m}</span> : <span className="text-muted">—</span>;
+      },
+    },
+  ], []);
+
+  const reportColumns = useMemo<DataTableColumn<PayrollRow>[]>(() => {
+    const dim = (n: number) => n === 0
+      ? <span className="text-muted">—</span>
+      : <span style={{ color: '#b1401d' }}>−₹{fmtINR(n)}</span>;
+    // Derived per row and reused by both the deductions total and Net Payable.
+    const totalDeductionsOf = (r: PayrollRow) => r.pfEmp + r.esi + r.pt + r.tds + r.lopDeducted + r.advanceRec;
+    return [
+      { header: 'Emp ID', accessorKey: 'empId', meta: { width: '8%' }, cell: info => <span style={{ color: '#5a3fd1', fontWeight: 600, fontSize: 12.5 }}>{String(info.getValue() ?? '')}</span> },
+      {
+        header: 'Employee',
+        accessorKey: 'name',
+        meta: { width: '14%' },
+        cell: info => {
+          const r = info.row.original;
+          return (
+            <div className="d-flex align-items-center gap-2">
+              <div
+                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)` }}
+              >
+                {r.initials}
+              </div>
+              <div className="fw-semibold fs-13 text-truncate">{r.name}</div>
+            </div>
+          );
+        },
+      },
+      { header: 'Gross Earnings',   accessorKey: 'earnings',    meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold">₹{fmtINR(info.row.original.earnings)}</span> },
+      { header: 'PF (Emp)',         accessorKey: 'pfEmp',       meta: { width: '7%', align: 'right' }, cell: info => <span className="fs-13" style={{ color: '#5a3fd1' }}>₹{fmtINR(info.row.original.pfEmp)}</span> },
+      { header: 'ESI',              accessorKey: 'esi',         meta: { width: '6%', align: 'right' }, cell: info => <span className="fs-13">{info.row.original.esi === 0 ? <span className="text-muted">₹0</span> : `₹${fmtINR(info.row.original.esi)}`}</span> },
+      { header: 'PT',               accessorKey: 'pt',          meta: { width: '6%', align: 'right' }, cell: info => <span className="fs-13">₹{fmtINR(info.row.original.pt)}</span> },
+      {
+        header: 'TDS',
+        accessorKey: 'tds',
+        meta: { width: '6%', align: 'right' },
+        cell: info => <span className="fs-13" style={{ color: info.row.original.tds ? '#a06f00' : 'var(--vz-secondary-color)' }}>{info.row.original.tds === 0 ? '₹0' : `₹${fmtINR(info.row.original.tds)}`}</span>,
+      },
+      { header: 'LOP Deducted', accessorKey: 'lopDeducted', meta: { width: '8%', align: 'right' }, cell: info => <span className="fs-13">{dim(info.row.original.lopDeducted)}</span> },
+      { header: 'Advance Rec.', accessorKey: 'advanceRec',  meta: { width: '8%', align: 'right' }, cell: info => <span className="fs-13">{dim(info.row.original.advanceRec)}</span> },
+      {
+        header: 'Total Deductions',
+        id: 'totalDeductions',
+        accessorFn: (r: PayrollRow) => totalDeductionsOf(r),
+        meta: { width: '9%', align: 'right' },
+        cell: info => <span className="fs-13" style={{ color: '#b1401d', fontWeight: 600 }}>−₹{fmtINR(totalDeductionsOf(info.row.original))}</span>,
+      },
+      {
+        header: 'Net Payable',
+        id: 'netPayable',
+        accessorFn: (r: PayrollRow) => r.earnings - totalDeductionsOf(r),
+        meta: { width: '9%', align: 'right' },
+        cell: info => <span className="fs-13 fw-bold" style={{ color: '#108548' }}>₹{fmtINR(info.row.original.earnings - totalDeductionsOf(info.row.original))}</span>,
+      },
+      {
+        header: () => <div className="text-center">Status</div>,
+        accessorKey: 'status',
+        meta: { width: '5%', align: 'center' },
+        cell: info => {
+          const tone = toneFor(info.row.original.status);
+          return (
+            <span className="onb-pill" style={{ background: tone.bg, color: tone.fg, fontSize: 11 }}>
+              <span className="d" style={{ background: tone.dot }} />
+              {info.row.original.status}
+            </span>
+          );
+        },
+      },
+      {
+        header: () => <div className="text-center">Payslip</div>,
+        id: '__payslip',
+        enableSorting: false,
+        meta: { width: '5%', align: 'center' },
+        cell: info => {
+          const r = info.row.original;
+          // A payslip cannot be generated until the payroll status is resolved —
+          // On Hold / Pending Review slips are blocked.
+          const payslipBlocked = r.status === 'On Hold' || r.status === 'Pending Review';
+          return (
+            <button
+              type="button"
+              className="onb-vault-btn"
+              title={payslipBlocked ? `Payslip unavailable while status is ${r.status}` : 'Download payslip'}
+              disabled={payslipBlocked}
+              style={payslipBlocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+              onClick={() => { if (!payslipBlocked) openPayslip(r); }}
+            >
+              <i className={`${payslipBlocked ? 'ri-lock-line' : 'ri-file-download-line'}`} style={{ fontSize: 14 }} />
+              Payslip
+            </button>
+          );
+        },
+      },
+    ];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const rosterColumns = useMemo<DataTableColumn<SalaryEmployeeLite>[]>(() => [
+    {
+      header: 'Employee',
+      accessorKey: 'name',
+      meta: { width: '30%' },
+      cell: info => {
+        const emp = info.row.original;
+        const accent = '#7c5cfc';
+        const initials = (emp.name || 'NA').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{ width: 32, height: 32, fontSize: 11, background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}>
+              {initials}
+            </div>
+            <div className="fw-semibold fs-13 text-truncate">{emp.name}</div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Emp ID',
+      id: 'emp_code',
+      accessorFn: (e: SalaryEmployeeLite) => e.emp_code || `EMP-${e.employee_id}`,
+      meta: { width: '12%' },
+      cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span>,
+    },
+    { header: 'Department', accessorKey: 'department', meta: { width: '16%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    {
+      header: 'Monthly Gross',
+      accessorKey: 'monthly_gross',
+      meta: { width: '15%', align: 'right' },
+      cell: info => {
+        const emp = info.row.original;
+        return (
+          <span className="fs-13 fw-bold">
+            {emp.monthly_gross ? `₹${fmtINR(emp.monthly_gross)}` : <span className="text-muted">₹0</span>}
+            {emp.version ? <span className="text-muted ms-1" style={{ fontSize: 10.5 }}>v{emp.version}</span> : null}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Source</div>,
+      accessorKey: 'source',
+      meta: { width: '13%', align: 'center' },
+      cell: info => {
+        const emp = info.row.original;
+        const sourceTone = emp.source === 'structure'
+          ? { bg: '#d6f4e3', fg: '#108548', label: 'Structure' }
+          : emp.source === 'annual_salary'
+            ? { bg: '#fdf3d6', fg: '#a06f00', label: 'Annual (fallback)' }
+            : { bg: '#fde7e3', fg: '#b1401d', label: 'Not set' };
+        return <span className="onb-pill" style={{ background: sourceTone.bg, color: sourceTone.fg, fontSize: 11 }}>{sourceTone.label}</span>;
+      },
+    },
+    {
+      header: () => <div className="text-center">PF</div>,
+      accessorKey: 'pf_eligible',
+      meta: { width: '6%', align: 'center' },
+      cell: info => info.row.original.pf_eligible ? <i className="ri-check-line text-success" /> : <span className="text-muted">—</span>,
+    },
+    {
+      header: () => <div className="text-center">Action</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { width: '8%', align: 'center' },
+      cell: info => {
+        const emp = info.row.original;
+        return (
+          <button type="button" className="onb-vault-btn" onClick={() => setSalaryEmp(emp)}>
+            <i className={`me-1 ${emp.has_structure ? 'ri-edit-line' : 'ri-add-line'}`} style={{ fontSize: 13 }} />
+            {emp.has_structure ? 'Revise' : 'Set Salary'}
+          </button>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], []);
+
+  /* Department / Status pickers + result count — shared by the three tabs that
+     list payroll rows (Salary Setup renders the roster and has no filters). */
+  const payrollToolbarActions = (
+    <>
+      <div className="d-flex align-items-center gap-2">
+        <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
+        <div style={{ minWidth: 160 }}>
+          <MasterSelect value={deptFilter} onChange={setDeptFilter} options={deptOptions} placeholder="All" />
+        </div>
+      </div>
+      <div className="d-flex align-items-center gap-2">
+        <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Status</span>
+        <div style={{ minWidth: 160 }}>
+          <MasterSelect value={statusFilter} onChange={(v) => setStatusFilter(v as 'All' | RowStatus)} options={STATUS_OPTIONS} placeholder="All" />
+        </div>
+      </div>
+      <div className="text-muted" style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: 'nowrap' }}>
+        {filtered.length} results
+      </div>
+    </>
+  );
 
   const cycleStripRef = useRef<HTMLDivElement | null>(null);
   const scrollCycle = (dir: 'prev' | 'next') => {
@@ -1227,165 +1591,29 @@ export default function HrPayroll() {
         </Col>
       </Row>
 
-      <Card>
-        <CardBody>
-          {tab !== 'salary' && (
-          <Row className="g-2 align-items-center mb-3">
-            <Col md={5} sm={12}>
-              <div className="rec-req-search search-box">
-                <Input
-                  type="text"
-                  className="form-control"
-                  placeholder="Search name, ID, department…"
-                  value={q}
-                  onChange={e => setQ(e.target.value)}
-                />
-                <i className="ri-search-line search-icon"></i>
-              </div>
-            </Col>
-            <Col md={7} sm={12} className="d-flex justify-content-md-end gap-3 flex-wrap align-items-center">
-              <div className="d-flex align-items-center gap-2">
-                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Department</span>
-                <div style={{ minWidth: 170 }}>
-                  <MasterSelect
-                    value={deptFilter}
-                    onChange={setDeptFilter}
-                    options={deptOptions}
-                    placeholder="All"
-                  />
-                </div>
-              </div>
-              <div className="d-flex align-items-center gap-2">
-                <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 11, letterSpacing: '0.06em' }}>Status</span>
-                <div style={{ minWidth: 170 }}>
-                  <MasterSelect
-                    value={statusFilter}
-                    onChange={(v) => setStatusFilter(v as 'All' | RowStatus)}
-                    options={STATUS_OPTIONS}
-                    placeholder="All"
-                  />
-                </div>
-              </div>
-              <div className="text-muted" style={{ fontSize: 12.5, fontWeight: 600 }}>
-                {filtered.length} results
-              </div>
-            </Col>
-          </Row>
-          )}
-
-          {tab === 'processing' && (
-            <div className="table-responsive table-card rounded p-2">
-              <table className="rec-list-table align-middle table-nowrap mb-0">
-                <thead>
-                  <tr>
-                    <th scope="col" className="ps-3" style={{ width: 60 }}>Sr. No.</th>
-                    <th scope="col">Employee</th>
-                    <th scope="col">Emp ID</th>
-                    <th scope="col">Department</th>
-                    <th scope="col">Designation</th>
-                    <th scope="col" className="text-end">Earnings</th>
-                    <th scope="col" className="text-end">Deductions</th>
-                    <th scope="col" className="text-end">Net Pay</th>
-                    <th scope="col" className="text-center">Att.</th>
-                    <th scope="col">Status</th>
-                    <th scope="col" className="pe-3 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <ShimmerTableRows rows={6} cols={11} keyPrefix="shim-proc" />
-                  ) : filtered.length === 0 ? (
-                    <tr>
-                      <td colSpan={11} className="text-center py-5 text-muted">
-                        <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                        No payroll records match your filters
-                      </td>
-                    </tr>
-                  ) : visible.map((r, idx) => {
-                    const tone = toneFor(r.status);
-                    return (
-                      <tr key={r.id}>
-                        <td className="ps-3 fw-semibold text-muted">{sliceFrom + idx + 1}</td>
-                        <td>
-                          <div className="d-flex align-items-center gap-2">
-                            <div
-                              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                              style={{
-                                width: 34, height: 34, fontSize: 12,
-                                background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
-                                boxShadow: `0 2px 6px ${r.accent}40`,
-                              }}
-                            >
-                              {r.initials}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="fw-semibold fs-13">{r.name}</div>
-                              <div className="text-muted" style={{ fontSize: 11.5 }}>CTC ₹{fmtINR(r.ctc)}/mo</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td>
-                          <span className="onb-id-pill">{r.empId}</span>
-                        </td>
-                        <td className="fs-13">{r.department}</td>
-                        <td className="fs-13">{r.designation}</td>
-                        <td className="text-end fs-13 fw-semibold" style={{ color: '#108548' }}>₹{fmtINR(r.earnings)}</td>
-                        <td className="text-end fs-13 fw-semibold" style={{ color: '#b1401d' }}>−₹{fmtINR(r.deductions)}</td>
-                        <td className="text-end fs-13 fw-bold">₹{fmtINR(r.netPay)}</td>
-                        <td className="text-center">
-                          {/* Att. = days actually PRESENT per the attendance
-                              record (not paid_days, which also counts paid
-                              leave/holidays). Denominator is the cycle's
-                              working days, so full attendance reads green. (#36) */}
-                          {(() => {
-                            const wd = periodMeta?.working_days || 26;
-                            const low = r.present < wd;
-                            return (
-                              <span
-                                className="onb-role-pill pay-att-badge"
-                                data-att={low ? 'low' : 'ok'}
-                                style={low ? { background: '#fde8c4', color: '#a4661c' } : undefined}
-                              >
-                                {r.present}/{wd}
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        <td>
-                          <span className="onb-pill" style={{ background: tone.bg, color: tone.fg }}>
-                            <span className="d" style={{ background: tone.dot }} />
-                            {r.status}
-                          </span>
-                        </td>
-                        <td className="pe-3 text-center">
-                          <div className="d-flex align-items-center justify-content-center gap-2">
-                            <button
-                              type="button"
-                              className="onb-edit-btn"
-                              title="View Payslip"
-                              onClick={() => openPayslip(r)}
-                            >
-                              <i className="ri-eye-line" style={{ fontSize: 14 }} />
-                            </button>
-                            <button
-                              type="button"
-                              className="onb-edit-btn"
-                              title="Download payslip PDF"
-                              disabled={pdfBusyId === r.id}
-                              onClick={() => downloadPayslipPdf(r)}
-                            >
-                              {pdfBusyId === r.id
-                                ? <Spinner size="sm" style={{ width: 14, height: 14 }} />
-                                : <i className="ri-download-2-line" style={{ fontSize: 14 }} />}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+      {/* Shared list tables (components/ui/DataTable) — search, the
+          Department / Status pickers, sortable headers and the rows-per-page
+          pager all come from the component; one instance per tab. The old
+          wrapping Card is gone: DataTable brings its own card chrome. */}
+      {tab === 'processing' && (
+            <DataTable<PayrollRow>
+              data={filtered}
+              columns={processingColumns}
+              serial={{ header: 'Sr. No.' }}
+              accent="violet"
+              minWidth={1500}
+              loading={loading}
+              searchValue={q}
+              onSearchChange={setQ}
+              searchPlaceholder="Search name, ID, department…"
+              toolbarActions={payrollToolbarActions}
+              emptyMessage={
+                <>
+                  <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  No payroll records match your filters
+                </>
+              }
+            />
           )}
 
           {tab === 'biometric' && (
@@ -1422,94 +1650,23 @@ export default function HrPayroll() {
                 ))}
               </Row>
 
-              <div className="table-responsive table-card rounded p-2">
-                <table className="rec-list-table align-middle table-nowrap mb-0">
-                  <thead>
-                    <tr>
-                      <th scope="col" className="ps-3">Employee</th>
-                      <th scope="col" className="text-center">Present</th>
-                      <th scope="col" className="text-center">Absent</th>
-                      <th scope="col" className="text-center">Late Marks</th>
-                      <th scope="col" className="text-center">Missing Punch</th>
-                      <th scope="col" className="text-center">Att. Status</th>
-                      <th scope="col" className="pe-3 text-center">Mismatch</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <ShimmerTableRows rows={6} cols={7} keyPrefix="shim-bio" />
-                    ) : visible.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="text-center py-5 text-muted">
-                          <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                          No biometric records match your filters
-                        </td>
-                      </tr>
-                    ) : visible.map(r => {
-                      const sourceTone =
-                        r.attSource === 'Biometric' ? { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' } :
-                        r.attSource === 'Review'    ? { bg: '#fdf3d6', fg: '#a06f00', dot: '#f59e0b' } :
-                                                      { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' };
-                      return (
-                        <tr key={r.id}>
-                          <td className="ps-3">
-                            <div className="d-flex align-items-center gap-2">
-                              <div
-                                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                style={{
-                                  width: 30, height: 30, fontSize: 11,
-                                  background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
-                                }}
-                              >
-                                {r.initials}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="fw-semibold fs-13">{r.name}</div>
-                                <div className="text-muted" style={{ fontSize: 11 }}>{r.empId}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="text-center fs-13 fw-bold">{r.present}</td>
-                          <td className="text-center fs-13 fw-bold" style={{ color: r.absent ? '#b1401d' : 'var(--vz-secondary-color)' }}>
-                            {r.absent}
-                          </td>
-                          <td className="text-center fs-13 fw-semibold" style={{ color: r.lateMarks ? '#a06f00' : 'var(--vz-secondary-color)' }}>
-                            {r.lateMarks}
-                          </td>
-                          <td className="text-center">
-                            <span
-                              className="onb-pill"
-                              style={
-                                r.missingPunch
-                                  ? { background: '#fde7e3', color: '#b1401d', fontSize: 11 }
-                                  : { background: '#eef2f6', color: '#5b6478', fontSize: 11 }
-                              }
-                            >
-                              {r.missingPunch}
-                            </span>
-                          </td>
-                          <td className="text-center">
-                            <span
-                              className="onb-pill"
-                              style={{ background: sourceTone.bg, color: sourceTone.fg, fontSize: 11 }}
-                            >
-                              <span className="d" style={{ background: sourceTone.dot }} />
-                              {r.attSource}
-                            </span>
-                          </td>
-                          <td className="pe-3 text-center fs-13">
-                            {r.mismatch ? (
-                              <span style={{ color: '#b1401d', fontWeight: 600 }}>{r.mismatch}</span>
-                            ) : (
-                              <span className="text-muted">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable<PayrollRow>
+                data={filtered}
+                columns={biometricColumns}
+                accent="violet"
+                minWidth={1100}
+                loading={loading}
+                searchValue={q}
+                onSearchChange={setQ}
+                searchPlaceholder="Search name, ID, department…"
+                toolbarActions={payrollToolbarActions}
+                emptyMessage={
+                  <>
+                    <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                    No biometric records match your filters
+                  </>
+                }
+              />
             </>
           )}
 
@@ -1539,104 +1696,23 @@ export default function HrPayroll() {
                 ))}
               </Row>
 
-              <div className="table-responsive table-card rounded p-2">
-                <table className="rec-list-table align-middle table-nowrap mb-0">
-                  <thead>
-                    <tr>
-                      <th scope="col" className="ps-3">Emp ID</th>
-                      <th scope="col">Employee</th>
-                      <th scope="col" className="text-end">Gross Earnings</th>
-                      <th scope="col" className="text-end">PF (Emp)</th>
-                      <th scope="col" className="text-end">ESI</th>
-                      <th scope="col" className="text-end">PT</th>
-                      <th scope="col" className="text-end">TDS</th>
-                      <th scope="col" className="text-end">LOP Deducted</th>
-                      <th scope="col" className="text-end">Advance Rec.</th>
-                      <th scope="col" className="text-end">Total Deductions</th>
-                      <th scope="col" className="text-end">Net Payable</th>
-                      <th scope="col" className="text-center">Status</th>
-                      <th scope="col" className="pe-3 text-center">Payslip</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {loading ? (
-                      <ShimmerTableRows rows={6} cols={13} keyPrefix="shim-rep" />
-                    ) : visible.length === 0 ? (
-                      <tr>
-                        <td colSpan={13} className="text-center py-5 text-muted">
-                          <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                          No salary records match your filters
-                        </td>
-                      </tr>
-                    ) : visible.map(r => {
-                      const totalDeductions = r.pfEmp + r.esi + r.pt + r.tds + r.lopDeducted + r.advanceRec;
-                      const netPayable      = r.earnings - totalDeductions;
-                      const tone            = toneFor(r.status);
-                      // A payslip can't be generated until the payroll status is
-                      // resolved — On Hold / Pending Review slips are blocked.
-                      const payslipBlocked  = r.status === 'On Hold' || r.status === 'Pending Review';
-                      const dim = (n: number) => n === 0
-                        ? <span className="text-muted">—</span>
-                        : <span style={{ color: '#b1401d' }}>−₹{fmtINR(n)}</span>;
-                      return (
-                        <tr key={r.id}>
-                          <td className="ps-3">
-                            <span style={{ color: '#5a3fd1', fontWeight: 600, fontSize: 12.5 }}>{r.empId}</span>
-                          </td>
-                          <td>
-                            <div className="d-flex align-items-center gap-2">
-                              <div
-                                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                style={{
-                                  width: 30, height: 30, fontSize: 11,
-                                  background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
-                                }}
-                              >
-                                {r.initials}
-                              </div>
-                              <div className="fw-semibold fs-13">{r.name}</div>
-                            </div>
-                          </td>
-                          <td className="text-end fs-13 fw-semibold">₹{fmtINR(r.earnings)}</td>
-                          <td className="text-end fs-13" style={{ color: '#5a3fd1' }}>₹{fmtINR(r.pfEmp)}</td>
-                          <td className="text-end fs-13">{r.esi === 0 ? <span className="text-muted">₹0</span> : `₹${fmtINR(r.esi)}`}</td>
-                          <td className="text-end fs-13">₹{fmtINR(r.pt)}</td>
-                          <td className="text-end fs-13" style={{ color: r.tds ? '#a06f00' : 'var(--vz-secondary-color)' }}>
-                            {r.tds === 0 ? '₹0' : `₹${fmtINR(r.tds)}`}
-                          </td>
-                          <td className="text-end fs-13">{dim(r.lopDeducted)}</td>
-                          <td className="text-end fs-13">{dim(r.advanceRec)}</td>
-                          <td className="text-end fs-13" style={{ color: '#b1401d', fontWeight: 600 }}>
-                            −₹{fmtINR(totalDeductions)}
-                          </td>
-                          <td className="text-end fs-13 fw-bold" style={{ color: '#108548' }}>
-                            ₹{fmtINR(netPayable)}
-                          </td>
-                          <td className="text-center">
-                            <span className="onb-pill" style={{ background: tone.bg, color: tone.fg, fontSize: 11 }}>
-                              <span className="d" style={{ background: tone.dot }} />
-                              {r.status}
-                            </span>
-                          </td>
-                          <td className="pe-3 text-center">
-                            <button
-                              type="button"
-                              className="onb-vault-btn"
-                              title={payslipBlocked ? `Payslip unavailable while status is ${r.status}` : 'Download payslip'}
-                              disabled={payslipBlocked}
-                              style={payslipBlocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-                              onClick={() => { if (!payslipBlocked) openPayslip(r); }}
-                            >
-                              <i className={`${payslipBlocked ? 'ri-lock-line' : 'ri-file-download-line'}`} style={{ fontSize: 14 }} />
-                              Payslip
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable<PayrollRow>
+                data={filtered}
+                columns={reportColumns}
+                accent="violet"
+                minWidth={1900}
+                loading={loading}
+                searchValue={q}
+                onSearchChange={setQ}
+                searchPlaceholder="Search name, ID, department…"
+                toolbarActions={payrollToolbarActions}
+                emptyMessage={
+                  <>
+                    <i className="ri-search-eye-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                    No salary records match your filters
+                  </>
+                }
+              />
             </>
           )}
 
@@ -1646,79 +1722,26 @@ export default function HrPayroll() {
                 <i className="ri-information-line" style={{ fontSize: 15 }} />
                 Set each employee's salary here. Employees without a structure (or annual salary) show ₹0 and are held during payroll.
               </div>
-              <div className="table-responsive table-card rounded p-2">
-                <table className="rec-list-table align-middle table-nowrap mb-0">
-                  <thead>
-                    <tr>
-                      <th className="ps-3">Employee</th>
-                      <th>Emp ID</th>
-                      <th>Department</th>
-                      <th className="text-end">Monthly Gross</th>
-                      <th className="text-center">Source</th>
-                      <th className="text-center">PF</th>
-                      <th className="pe-3 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rosterLoading ? (
-                      <ShimmerTableRows rows={6} cols={7} keyPrefix="shim-sal" />
-                    ) : roster.length === 0 ? (
-                      <tr><td colSpan={7} className="text-center py-5 text-muted">
-                        <i className="ri-team-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                        No employees found for this branch
-                      </td></tr>
-                    ) : rosterVisible.map(emp => {
-                      const accent = '#7c5cfc';
-                      const initials = (emp.name || 'NA').split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
-                      const sourceTone = emp.source === 'structure'
-                        ? { bg: '#d6f4e3', fg: '#108548', label: 'Structure' }
-                        : emp.source === 'annual_salary'
-                          ? { bg: '#fdf3d6', fg: '#a06f00', label: 'Annual (fallback)' }
-                          : { bg: '#fde7e3', fg: '#b1401d', label: 'Not set' };
-                      return (
-                        <tr key={emp.employee_id}>
-                          <td className="ps-3">
-                            <div className="d-flex align-items-center gap-2">
-                              <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                style={{ width: 32, height: 32, fontSize: 11, background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}>
-                                {initials}
-                              </div>
-                              <div className="fw-semibold fs-13">{emp.name}</div>
-                            </div>
-                          </td>
-                          <td><span className="onb-id-pill">{emp.emp_code || `EMP-${emp.employee_id}`}</span></td>
-                          <td className="fs-13">{emp.department || '—'}</td>
-                          <td className="text-end fs-13 fw-bold">
-                            {emp.monthly_gross ? `₹${fmtINR(emp.monthly_gross)}` : <span className="text-muted">₹0</span>}
-                            {emp.version ? <span className="text-muted ms-1" style={{ fontSize: 10.5 }}>v{emp.version}</span> : null}
-                          </td>
-                          <td className="text-center">
-                            <span className="onb-pill" style={{ background: sourceTone.bg, color: sourceTone.fg, fontSize: 11 }}>{sourceTone.label}</span>
-                          </td>
-                          <td className="text-center fs-13">{emp.pf_eligible ? <i className="ri-check-line text-success" /> : <span className="text-muted">—</span>}</td>
-                          <td className="pe-3 text-center">
-                            <button type="button" className="onb-vault-btn" onClick={() => setSalaryEmp(emp)}>
-                              <i className={`me-1 ${emp.has_structure ? 'ri-edit-line' : 'ri-add-line'}`} style={{ fontSize: 13 }} />
-                              {emp.has_structure ? 'Revise' : 'Set Salary'}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              {/* Roster, not `filtered` — Salary Setup lists every employee in
+                  the branch regardless of the payroll filters, so this table
+                  gets its own client-side search from the component. */}
+              <DataTable<SalaryEmployeeLite>
+                data={roster}
+                columns={rosterColumns}
+                accent="violet"
+                minWidth={1100}
+                loading={rosterLoading}
+                searchPlaceholder="Search employee, ID, department…"
+                emptyMessage={
+                  <>
+                    <i className="ri-team-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                    No employees found for this branch
+                  </>
+                }
+              />
             </>
           )}
 
-          {tab !== 'salary' && (
-            <WorklistPager total={filtered.length} page={safePage} pageSize={pageSize} onPage={goto} onPageSize={(n) => { setPageSize(n); setPage(1); }} />
-          )}
-          {tab === 'salary' && (
-            <WorklistPager total={roster.length} page={rosterSafePage} pageSize={pageSize} onPage={rosterGoto} onPageSize={(n) => { setPageSize(n); setPage(1); }} />
-          )}
-        </CardBody>
-      </Card>
       </div>
 
       <PaymentDisbursementModal

@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Card, CardBody, Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
+import { Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
 import * as XLSX from 'xlsx';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import Tooltip from '../../components/ui/Tooltip';
-import WorklistPager from '../../components/ui/WorklistPager';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import '../../../css/recruitment.css';
 
 type HolidayType = 'Public' | 'Restricted' | 'Company' | 'Regional' | 'Optional';
@@ -84,8 +83,7 @@ export default function HrHoliday() {
   const [yearFilter, setYearFilter] = useState('All');
   const [groupFilter, setGroupFilter] = useState('All');
 
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  /* Paging lives in <DataTable> now. */
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<HolidayRow | null>(null);
@@ -117,7 +115,6 @@ export default function HrHoliday() {
   const refreshAll = () => { fetchGroups(); fetchHolidays(); };
 
   useEffect(() => { refreshAll(); }, []);
-  useEffect(() => { setPage(1); }, [search, typeFilter, yearFilter, groupFilter]);
 
   const years = useMemo(() => {
     const set = new Set<string>();
@@ -135,7 +132,6 @@ export default function HrHoliday() {
     [groups],
   );
 
-  const [idSort, setIdSort] = useState<'asc' | 'desc' | null>(null);
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows.filter(r => {
@@ -151,22 +147,111 @@ export default function HrHoliday() {
     });
   }, [rows, search, typeFilter, yearFilter, groupFilter]);
 
-  // Holiday ID column sort — natural alphanumeric on the displayed code,
-  // toggled none → asc → desc → none from the header arrow. Count/pagination
-  // stay on `filtered` (sorting doesn't change the row count).
-  const sorted = useMemo(() => {
-    if (!idSort) return filtered;
-    const codeOf = (r: typeof filtered[number]) => r.code || `HOL-${r.id}`;
-    const arr = [...filtered].sort((a, b) =>
-      codeOf(a).localeCompare(codeOf(b), undefined, { numeric: true, sensitivity: 'base' }));
-    return idSort === 'desc' ? arr.reverse() : arr;
-  }, [filtered, idSort]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage  = Math.min(page, pageCount);
-  const sliceFrom = (safePage - 1) * pageSize;
-  const visible   = sorted.slice(sliceFrom, sliceFrom + pageSize);
-  const goto = (p: number) => setPage(Math.max(1, Math.min(pageCount, p)));
+  /* Columns for the shared <DataTable>. The hand-rolled Holiday-ID sort header
+     is gone — every column sorts from its own header arrow now. Widths sum to
+     100 (fixed layout): 5+11+29+14+11+9+12+9. */
+  const columns = useMemo<DataTableColumn<HolidayRow>[]>(() => [
+    {
+      header: 'Holiday ID',
+      id: 'code',
+      accessorFn: (r: HolidayRow) => r.code || `HOL-${r.id}`,
+      // Natural alphanumeric so HOL-2 sorts before HOL-10.
+      sortingFn: (a, b, id) => String(a.getValue(id)).localeCompare(String(b.getValue(id)), undefined, { numeric: true, sensitivity: 'base' }),
+      meta: { width: '11%' },
+      cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
+    },
+    {
+      header: 'Holiday Name',
+      accessorKey: 'name',
+      // wrap: the description rides on a second line under the name.
+      meta: { width: '29%', wrap: true },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <>
+            <div className="fw-bold fs-13">{r.name}</div>
+            {r.description && (
+              r.description.length > 50 ? (
+                <Tooltip label={r.description}>
+                  <div className="text-muted" style={{ fontSize: 11.5, width: 'fit-content' }}>{r.description.slice(0, 50)}…</div>
+                </Tooltip>
+              ) : (
+                <div className="text-muted" style={{ fontSize: 11.5 }}>{r.description}</div>
+              )
+            )}
+          </>
+        );
+      },
+    },
+    {
+      header: 'Group',
+      id: 'group',
+      accessorFn: (r: HolidayRow) => (r.holiday_group_id ? (r.group?.name || groupName(r.holiday_group_id)) : ''),
+      meta: { width: '14%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        return r.holiday_group_id
+          ? <span className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7' }}>{r.group?.name || groupName(r.holiday_group_id)}</span>
+          : <span className="text-muted">Ungrouped</span>;
+      },
+    },
+    {
+      /* Sorts on the ISO date string (already sortable as text) rather than the
+         dd-Mon-yyyy label. */
+      header: 'Date',
+      accessorKey: 'date',
+      meta: { width: '11%', align: 'center' },
+      cell: info => <span className="rec-date">{formatDate(info.row.original.date)}</span>,
+    },
+    {
+      header: 'Day',
+      id: 'day',
+      accessorFn: (r: HolidayRow) => weekdayName(r.date),
+      meta: { width: '9%', align: 'center' },
+      cell: info => <span className="text-muted">{weekdayName(info.row.original.date)}</span>,
+    },
+    {
+      header: 'Type',
+      accessorKey: 'type',
+      meta: { width: '12%', align: 'center' },
+      cell: info => {
+        const t = info.row.original.type;
+        const tone = TYPE_TONES[t] || TYPE_TONES.Public;
+        return <span className="rec-pill" style={{ background: tone.bg, color: tone.fg, ['--pill-fg' as any]: tone.fg }}>{t}</span>;
+      },
+    },
+    {
+      header: () => <div className="text-center">Actions</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { width: '9%', align: 'center' },
+      cell: info => {
+        const r = info.row.original;
+        /* Edit always allowed (the change auto-propagates to the group's
+           employees). Delete is blocked while the holiday's group is assigned
+           to employees — they depend on this date. */
+        const delLocked = r.holiday_group_id != null && inUseGroupIds.has(r.holiday_group_id);
+        return (
+          <div className="rec-row-actions justify-content-center">
+            <Tooltip label="Edit">
+              <button type="button" className="rec-act rec-act-view rec-act--icon" aria-label="Edit"
+                onClick={() => { setEditingRow(r); setCreateOpen(true); }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+              </button>
+            </Tooltip>
+            <Tooltip label={delLocked ? 'Group is assigned to employees — can’t delete' : 'Delete'}>
+              <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" aria-disabled={delLocked}
+                onClick={() => { if (delLocked) return; handleDelete(r); }}
+                style={delLocked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+              </button>
+            </Tooltip>
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [inUseGroupIds, groups]);
 
   const targetGroupId =groupFilter !== 'All' ? Number(groupFilter) : null;
 
@@ -370,166 +455,71 @@ export default function HrHoliday() {
               </div>
             </div>
 
-            <Card className="border-0 shadow-none mb-0 bg-transparent">
-              <CardBody className="p-0">
-                <div className="rec-list-frame">
-                  <div className="rec-req-filter-row d-flex align-items-center gap-2 flex-wrap">
-                    <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 200 }}>
-                      <Input type="text" className="form-control" placeholder="Search holidays…" value={search} onChange={e => setSearch(e.target.value)} />
-                      <i className="ri-search-line search-icon"></i>
-                    </div>
-                    <div className="hol-filter d-flex align-items-center gap-2">
-                      <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Group</span>
-                      <div className="hol-filter-sel" style={{ minWidth: 170 }}>
-                        <MasterSelect value={groupFilter} onChange={setGroupFilter}
-                          options={[{ value: 'All', label: 'All Groups' }, ...groups.map(g => ({ value: String(g.id), label: g.name }))]} placeholder="All Groups" />
-                      </div>
-                    </div>
-                    <div className="hol-filter d-flex align-items-center gap-2">
-                      <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Type</span>
-                      <div className="hol-filter-sel" style={{ minWidth: 140 }}>
-                        <MasterSelect value={typeFilter} onChange={setTypeFilter}
-                          options={[{ value: 'All', label: 'All Types' }, ...TYPE_OPTIONS]} placeholder="All Types" />
-                      </div>
-                    </div>
-                    <div className="hol-filter d-flex align-items-center gap-2">
-                      <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Year</span>
-                      <div className="hol-filter-sel" style={{ minWidth: 100 }}>
-                        <MasterSelect value={yearFilter} onChange={setYearFilter}
-                          options={[{ value: 'All', label: 'All Years' }, ...years.map(y => ({ value: y, label: y }))]} placeholder="All Years" />
-                      </div>
-                    </div>
-
-                    <div className="hol-actions d-flex align-items-center gap-2 ms-auto">
-                      <Tooltip label="Download Excel template">
-                        <button type="button" className="rec-btn-ghost" onClick={downloadTemplate}>
-                          <i className="ri-download-2-line" />Template
-                        </button>
-                      </Tooltip>
-                      <button type="button" className="rec-btn-ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
-                        {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
-                      </button>
-                      {/* Groups — moved beside "Add Holiday" and highlighted so it's
-                          clear this is where you create/manage holiday groups first. */}
-                      <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
-                        <button type="button" className="rec-btn-ghost hol-groups-btn" onClick={() => setManageGroupsOpen(true)}
-                          style={{ background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)', border: '1px solid #c4b5fd', color: '#6d28d9', fontWeight: 700 }}>
-                          <i className="ri-folder-add-line" />Groups
-                        </button>
-                      </Tooltip>
-                      <button type="button" className="rec-btn-primary" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
-                        <i className="ri-add-line" />Add Holiday
-                      </button>
+            {/* Shared list table (components/ui/DataTable) — search, sortable
+                headers and the rows-per-page pager live in the component; the
+                Group/Type/Year pickers and the Template / Import / Groups / Add
+                buttons ride in its toolbar. */}
+            <DataTable<HolidayRow>
+              data={filtered}
+              columns={columns}
+              serial
+              accent="violet"
+              minWidth={1250}
+              loading={loading}
+              searchValue={search}
+              onSearchChange={setSearch}
+              searchPlaceholder="Search holidays…"
+              emptyMessage={
+                <>
+                  <i className="ri-calendar-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  {rows.length === 0 ? 'No holidays yet — click Add Holiday or Import Excel to get started' : 'No holidays match your filters'}
+                </>
+              }
+              toolbarActions={
+                <>
+                  <div className="hol-filter d-flex align-items-center gap-2">
+                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Group</span>
+                    <div className="hol-filter-sel" style={{ minWidth: 160 }}>
+                      <MasterSelect value={groupFilter} onChange={setGroupFilter}
+                        options={[{ value: 'All', label: 'All Groups' }, ...groups.map(g => ({ value: String(g.id), label: g.name }))]} placeholder="All Groups" />
                     </div>
                   </div>
-
-
-                  <div className="rec-list-scroll">
-                    <table className="rec-list-table align-middle table-nowrap mb-0">
-                      <thead>
-                        <tr>
-                          <th scope="col" className="ps-3 text-center" style={{ width: 60 }}>Sr No</th>
-                          <th scope="col" style={{ width: 110 }}>
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              onClick={() => setIdSort(s => (s === 'asc' ? 'desc' : s === 'desc' ? null : 'asc'))}
-                              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIdSort(s => (s === 'asc' ? 'desc' : s === 'desc' ? null : 'asc')); } }}
-                              style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, userSelect: 'none' }}
-                              title="Sort by Holiday ID"
-                            >
-                              Holiday ID
-                              <i
-                                className={idSort === 'asc' ? 'ri-arrow-up-line' : idSort === 'desc' ? 'ri-arrow-down-line' : 'ri-arrow-up-down-line'}
-                                style={{ fontSize: 13, opacity: idSort ? 1 : 0.45 }}
-                              />
-                            </span>
-                          </th>
-                          <th scope="col" style={{ width: 300 }}>Holiday Name</th>
-                          <th scope="col" className="text-center" style={{ width: 160 }}>Group</th>
-                          <th scope="col" className="text-center" style={{ width: 125 }}>Date</th>
-                          <th scope="col" className="text-center" style={{ width: 100 }}>Day</th>
-                          <th scope="col" className="text-center" style={{ width: 130 }}>Type</th>
-                          <th scope="col" className="text-center pe-3" style={{ width: 110 }}>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {loading ? (
-                          <ShimmerTableRows rows={5} cols={8} />
-                        ) : visible.length === 0 ? (
-                          <tr><td colSpan={8} className="text-center py-5 text-muted">
-                            <i className="ri-calendar-2-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                            {rows.length === 0 ? 'No holidays yet — click Add Holiday or Import Excel to get started' : 'No holidays match your filters'}
-                          </td></tr>
-                        ) : visible.map((r, idx) => {
-                          const tone = TYPE_TONES[r.type] || TYPE_TONES.Public;
-                          return (
-                            <tr key={r.id}>
-                              <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
-                              <td><span className="rec-id-pill">{r.code || `HOL-${r.id}`}</span></td>
-                              <td>
-                                <div className="fw-bold fs-13">{r.name}</div>
-                                {r.description && (
-                                  r.description.length > 50 ? (
-                                    <Tooltip label={r.description}>
-                                      <div className="text-muted" style={{ fontSize: 11.5, width: 'fit-content' }}>{r.description.slice(0, 50)}…</div>
-                                    </Tooltip>
-                                  ) : (
-                                    <div className="text-muted" style={{ fontSize: 11.5 }}>{r.description}</div>
-                                  )
-                                )}
-                              </td>
-                              <td className="fs-13 text-center">
-                                {r.holiday_group_id
-                                  ? <span className="rec-pill" style={{ background: 'rgba(56,189,248,0.16)', color: '#0284c7' }}>{r.group?.name || groupName(r.holiday_group_id)}</span>
-                                  : <span className="text-muted">Ungrouped</span>}
-                              </td>
-                              <td className="fs-13 text-center"><span className="rec-date">{formatDate(r.date)}</span></td>
-                              <td className="fs-13 text-muted text-center">{weekdayName(r.date)}</td>
-                              <td className="text-center"><span className="rec-pill" style={{ background: tone.bg, color: tone.fg, ['--pill-fg' as any]: tone.fg }}>{r.type}</span></td>
-                              <td className="pe-3 text-center">
-                                {/* Edit always allowed (change auto-propagates to the
-                                    group's employees). Delete is blocked while the
-                                    holiday's group is assigned to employees — they
-                                    depend on this date. */}
-                                {(() => {
-                                  const delLocked = r.holiday_group_id != null && inUseGroupIds.has(r.holiday_group_id);
-                                  return (
-                                    <div className="rec-row-actions justify-content-center">
-                                      <Tooltip label="Edit">
-                                        <button type="button" className="rec-act rec-act-view rec-act--icon" aria-label="Edit"
-                                          onClick={() => { setEditingRow(r); setCreateOpen(true); }}>
-                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                                        </button>
-                                      </Tooltip>
-                                      <Tooltip label={delLocked ? 'Group is assigned to employees — can’t delete' : 'Delete'}>
-                                        <button type="button" className="rec-act rec-act-reject rec-act--icon" aria-label="Delete" aria-disabled={delLocked}
-                                          onClick={() => { if (delLocked) return; handleDelete(r); }}
-                                          style={delLocked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}>
-                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
-                                        </button>
-                                      </Tooltip>
-                                    </div>
-                                  );
-                                })()}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                  <div className="hol-filter d-flex align-items-center gap-2">
+                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Type</span>
+                    <div className="hol-filter-sel" style={{ minWidth: 130 }}>
+                      <MasterSelect value={typeFilter} onChange={setTypeFilter}
+                        options={[{ value: 'All', label: 'All Types' }, ...TYPE_OPTIONS]} placeholder="All Types" />
+                    </div>
                   </div>
-
-                  <WorklistPager
-                    total={filtered.length}
-                    page={safePage}
-                    pageSize={pageSize}
-                    onPage={goto}
-                    onPageSize={(n) => { setPageSize(n); setPage(1); }}
-                  />
-                </div>
-              </CardBody>
-            </Card>
+                  <div className="hol-filter d-flex align-items-center gap-2">
+                    <span className="text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}>Year</span>
+                    <div className="hol-filter-sel" style={{ minWidth: 95 }}>
+                      <MasterSelect value={yearFilter} onChange={setYearFilter}
+                        options={[{ value: 'All', label: 'All Years' }, ...years.map(y => ({ value: y, label: y }))]} placeholder="All Years" />
+                    </div>
+                  </div>
+                  <Tooltip label="Download Excel template">
+                    <button type="button" className="rec-btn-ghost" onClick={downloadTemplate}>
+                      <i className="ri-download-2-line" />Template
+                    </button>
+                  </Tooltip>
+                  <button type="button" className="rec-btn-ghost" onClick={() => fileRef.current?.click()} disabled={importing}>
+                    {importing ? <Spinner size="sm" /> : <i className="ri-file-excel-2-line" />}Import Excel
+                  </button>
+                  {/* Groups sits beside "Add Holiday" and is highlighted so it's
+                      clear this is where you create groups first. */}
+                  <Tooltip label="Create & manage holiday groups — add a group here first, then assign holidays to it">
+                    <button type="button" className="rec-btn-ghost hol-groups-btn" onClick={() => setManageGroupsOpen(true)}
+                      style={{ background: 'linear-gradient(135deg,#ede9fe,#ddd6fe)', border: '1px solid #c4b5fd', color: '#6d28d9', fontWeight: 700 }}>
+                      <i className="ri-folder-add-line" />Groups
+                    </button>
+                  </Tooltip>
+                  <button type="button" className="rec-btn-primary" onClick={() => { setEditingRow(null); setCreateOpen(true); }}>
+                    <i className="ri-add-line" />Add Holiday
+                  </button>
+                </>
+              }
+            />
           </div>
         </Col>
       </Row>
