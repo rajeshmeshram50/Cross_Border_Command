@@ -6,7 +6,7 @@ import api from '../../api';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
 import { MasterSelect } from '../../components/ui/MasterSelect';
-import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { TemplateRow, EmployeeCategory, RoleType, DocStatus, ROLE_TYPES } from './doc-templates/TemplateForm';
 import '../../../css/recruitment.css';
 
@@ -418,24 +418,14 @@ export default function HrDocumentTemplates() {
   );
 }
 
+/* Thin adapter over the shared <ActionCell> (components/ui/DataTable) so the
+   Actions column here is the Customer list's button — bordered pale tint that
+   inverts to a solid gradient of the same hue on hover. The local flat-pastel
+   version had no hover identity. `primary`/`dark` map onto the table's accent
+   so callers don't have to change. */
 function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primary' | 'info' | 'success' | 'danger' | 'dark'; onClick: () => void; title: string }) {
-  const palette: Record<string, { bg: string; fg: string }> = {
-    primary: { bg: '#ede9fe', fg: '#6d28d9' },
-    info:    { bg: '#dbeafe', fg: '#1d4ed8' },
-    success: { bg: '#dcfce7', fg: '#15803d' },
-    danger:  { bg: '#fee2e2', fg: '#b91c1c' },
-    dark:    { bg: '#e5e7eb', fg: '#374151' },
-  };
-  const c = palette[tone];
-  return (
-    <Tooltip label={title}>
-      <button type="button" onClick={onClick} aria-label={title}
-        className={`dtm-act-btn dtm-act-${tone}`}
-        style={{ width: 30, height: 30, borderRadius: 8, border: 0, background: c.bg, color: c.fg, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-        <i className={icon} />
-      </button>
-    </Tooltip>
-  );
+  const mapped = tone === 'primary' || tone === 'dark' ? 'accent' : tone;
+  return <ActionCell title={title} icon={icon} tone={mapped} onClick={onClick} />;
 }
 
 /* Dark-theme overrides for this page. Light styles stay inline; these rules
@@ -554,16 +544,8 @@ function DtmDarkStyles() {
         background: rgba(248,113,113,0.18) !important; color: #fca5a5 !important;
       }
 
-      [data-bs-theme="dark"] .dtm-page .dtm-act-primary,
-      [data-layout-mode="dark"] .dtm-page .dtm-act-primary{ background: rgba(167,139,250,0.18) !important; color: #c4b5fd !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-act-info,
-      [data-layout-mode="dark"] .dtm-page .dtm-act-info{ background: rgba(96,165,250,0.18) !important; color: #93c5fd !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-act-success,
-      [data-layout-mode="dark"] .dtm-page .dtm-act-success{ background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-act-danger,
-      [data-layout-mode="dark"] .dtm-page .dtm-act-danger{ background: rgba(248,113,113,0.18) !important; color: #fca5a5 !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-act-dark,
-      [data-layout-mode="dark"] .dtm-page .dtm-act-dark{ background: rgba(148,163,184,0.18) !important; color: #cbd5e1 !important; border: 1px solid rgba(148,163,184,0.32) !important; }
+      /* .dtm-act-* dark rules removed — the Actions column renders the shared
+         <ActionCell> (.dt-act), which carries its own light + dark styling. */
       /* Add Template button — hover feedback (BUG-039). Applies in both themes. */
       .dtm-page .dtm-add-tpl-btn:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 7px 20px rgba(99,102,241,0.45) !important; }
       .dtm-page .dtm-add-tpl-btn:active { transform: translateY(0); }
