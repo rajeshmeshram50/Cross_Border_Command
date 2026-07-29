@@ -50,6 +50,10 @@ export default function ClmInsertTableModal({ open, onClose, onInsert }: Props) 
       setRows(3); setCols(3);
       setHeaderBg('#0d9488'); setHeaderFg('#ffffff');
       setStriped(false);
+      // Also clear the "Inserting…" spinner — handleInsert closes the modal
+      // without resetting it, so re-opening the same instance was stuck showing
+      // "Inserting…" with the button disabled.
+      setInserting(false);
     }
   }, [open]);
 

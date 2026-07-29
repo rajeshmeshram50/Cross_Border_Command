@@ -210,6 +210,7 @@ function pinError(v: string, country?: string): string | undefined {
   if (domestic) {
     return PIN_DOMESTIC_RE.test(s) ? undefined : 'PIN Code must be exactly 6 digits';
   }
+  if (s.length < 3)  return 'Zip Code must be at least 3 characters';
   if (s.length > 12) return 'Zip Code must be 12 characters or fewer';
   return ZIP_INTL_RE.test(s)
     ? undefined
