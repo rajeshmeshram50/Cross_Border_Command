@@ -280,10 +280,14 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
 
         <div className="smd-deal-row">
           <Field label="BUYING PLAN">
+            {/* A buying plan is a forward-looking target, so past dates are not
+                allowed — only today or later. minDate is a local ISO date so it
+                compares cleanly with the picker's value. */}
             <MasterDatePicker
               value={buyingPlan}
               onChange={setBuyingPlan}
               placeholder="dd-mm-yyyy"
+              minDate={(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })()}
             />
           </Field>
           <Field label="ORDER VALUE">
