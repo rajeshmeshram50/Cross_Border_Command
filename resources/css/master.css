@@ -46,7 +46,11 @@
 [data-bs-theme="dark"] .dsn-extras .dsn-kpi,
 [data-layout-mode="dark"] .dsn-extras .dsn-kpi,
 [data-bs-theme="dark"] .role-extras .role-kpi,
-[data-layout-mode="dark"] .role-extras .role-kpi {
+[data-layout-mode="dark"] .role-extras .role-kpi,
+/* .kpi-card joined this list when its light-mode fill became a hardcoded
+   #ffffff — without a dark rule it would have stayed white on a dark page. */
+[data-bs-theme="dark"] .kpi-extras .kpi-card,
+[data-layout-mode="dark"] .kpi-extras .kpi-card {
   background: linear-gradient(180deg,
     color-mix(in srgb, var(--vz-card-bg) 78%, #ffffff) 0%,
     color-mix(in srgb, var(--vz-card-bg) 95%, #ffffff) 100%);
@@ -105,7 +109,8 @@
    Matches the Department Master reference design. */
 .dsn-extras .dsn-kpi {
   position: relative;
-  background: var(--vz-card-bg);
+  /* White in light mode, same reasoning as .role-kpi / .dsn-hier-row. */
+  background: #ffffff;
   border: 1px solid var(--vz-border-color);
   border-radius: 10px;
   padding: 14px 16px;
@@ -205,7 +210,10 @@
   padding: 10px 12px;
   border: 1px solid var(--vz-border-color);
   border-radius: 12px;
-  background: var(--vz-card-bg);
+  /* Plain white in light mode — var(--vz-card-bg) picks up the theme preset's
+     tinted card surface, which read grey against the white table below. The
+     dark-mode override near the top of this file still applies. */
+  background: #ffffff;
   margin-bottom: 12px;
 }
 @media (max-width: 575px) {
@@ -410,7 +418,8 @@
 @media (max-width: 575px)  { .kpi-extras .kpi-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } }
 .kpi-extras .kpi-card {
   position: relative;
-  background: var(--vz-card-bg);
+  /* White in light mode, matching .role-kpi / .dsn-kpi. */
+  background: #ffffff;
   border: 1px solid var(--vz-border-color);
   border-radius: 10px;
   padding: 14px 16px;
