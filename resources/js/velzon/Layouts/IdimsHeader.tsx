@@ -264,6 +264,58 @@ export default function IdimsHeader() {
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
 
+  /* Freeze the page behind an open mega-dropdown. The panel and its backdrop are
+     position:fixed inside the sticky shell, so they are NOT descendants of the
+     real scroller (.main-content in Layouts/index.tsx) — Chrome declines to
+     chain the wheel out to it, Edge/Firefox scroll it anyway, which slides the
+     page under a viewport-anchored panel (bug #4, cross-browser).
+
+     Two layers, because neither alone covers every engine:
+       1. overflow:hidden on every scrollable box between the panel and the page
+          — kills scrollbar drags and keyboard scrolling (space / PageDown).
+       2. a capture-phase, non-passive wheel/touchmove blocker — Edge still
+          scrolls a locked box in some cases, and preventDefault here is the one
+          thing every engine honours. Events inside the panel are exempt so a
+          tall menu (CLM) can still scroll its own content.
+     The padding-right swap replaces the width each hidden scrollbar gives back,
+     so locking doesn't shift the page sideways. */
+  useEffect(() => {
+    if (!openDD) return;
+
+    const targets = [
+      document.querySelector('.main-content') as HTMLElement | null,
+      document.getElementById('layout-wrapper'),
+      document.body,
+      document.documentElement,
+    ].filter((el): el is HTMLElement => !!el);
+
+    const restore = targets.map(el => {
+      const gutter = el.offsetWidth - el.clientWidth;
+      const prev = { el, overflowY: el.style.overflowY, paddingRight: el.style.paddingRight };
+      el.style.overflowY = 'hidden';
+      if (gutter > 0) el.style.paddingRight = `${gutter}px`;
+      return prev;
+    });
+
+    const block = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('.idims-dropdown, .idims-mobile-panel')) return;
+      e.preventDefault();
+    };
+    const opts: AddEventListenerOptions = { passive: false, capture: true };
+    document.addEventListener('wheel', block, opts);
+    document.addEventListener('touchmove', block, opts);
+
+    return () => {
+      document.removeEventListener('wheel', block, opts);
+      document.removeEventListener('touchmove', block, opts);
+      restore.forEach(({ el, overflowY, paddingRight }) => {
+        el.style.overflowY = overflowY;
+        el.style.paddingRight = paddingRight;
+      });
+    };
+  }, [openDD]);
+
   // Close every open header popover (mega-menu, branch, profile, search, more).
   // Any in-header control that isn't the popover's own toggle should call this
   // first — the outside-click handler doesn't fire for clicks INSIDE the
@@ -1239,7 +1291,11 @@ const IDIMS_CSS = `
 .idims-dd-topbar { height: 4px; flex-shrink: 0; background: linear-gradient(90deg,#7C3AED 0%,#A78BFA 28%,#0EA5E9 52%,#38BDF8 68%,#0D9488 84%,#2DD4BF 100%); }
 /* flex:1 + min-height:0 lets the content scroll within the height-capped panel
    so a tall mega-menu (CLM) never spills below the viewport and gets clipped. */
-.idims-dd-inner { padding: 8px 12px 14px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+/* scrollbar-width/color: Firefox ignores the ::-webkit-scrollbar rules below and
+   would otherwise draw a ~15px native bar, eating column width and making the
+   panel look differently sized than in Chrome. */
+.idims-dd-inner { padding: 8px 12px 14px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #D7DBEA transparent; }
+.idims-dark .idims-dd-inner { scrollbar-color: #3A4150 transparent; }
 .idims-dd-inner::-webkit-scrollbar { width: 9px; }
 .idims-dd-inner::-webkit-scrollbar-track { background: transparent; }
 .idims-dd-inner::-webkit-scrollbar-thumb { background: #D7DBEA; border-radius: 8px; border: 2px solid #fff; background-clip: padding-box; }
