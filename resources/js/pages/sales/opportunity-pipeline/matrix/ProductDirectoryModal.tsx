@@ -37,12 +37,15 @@ type DirectoryRow = {
   target_price:     string | number | null;
   notes:            string | null;
   /* Stage 3 sourcing decision — 'required' / 'not_required', null until set.
-     No longer gates unmapping (see used_in_documents). */
+     Non-null ⇒ unmap is locked (product has entered the procurement flow). */
   sourcing_status:  string | null;
   /* Codes of the live Quotations / PIs on this opportunity that still quote
      this product. Non-empty ⇒ unmap is locked until the product is removed
      from those documents. Absent on older API responses ⇒ treated as free. */
   used_in_documents?: string[] | null;
+  /* True once a price has been shared for this product (Stage 4) ⇒ unmap
+     locked. Absent on older API responses ⇒ treated as not shared. */
+  has_shared_price?: boolean | null;
 };
 
 type ProductOpt = {
@@ -685,18 +688,25 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                             </svg>
                           </button>
                         </Tooltip>
-                        {/* Unmap is locked while the product is still quoted on a
-                            live Quotation / PI for this opportunity. Removing the
-                            line from those documents unlocks it again — the server
-                            enforces the same rule in destroyLeadProduct. */}
+                        {/* Unmap is locked when EITHER (a) the product is still
+                            quoted on a live Quotation / PI, OR (b) a sourcing
+                            decision has been set for it (Sourcing Required /
+                            Not Required). Only products still "not set" in
+                            Product Sourcing may be unmapped. The server enforces
+                            the same rules in destroyLeadProduct. */}
                         {(() => {
                           const usedIn = r.used_in_documents ?? [];
-                          const locked = usedIn.length > 0;
+                          const sourced = !!r.sourcing_status; // 'required' | 'not_required'
+                          const priceShared = !!r.has_shared_price;
+                          const locked = usedIn.length > 0 || sourced || priceShared;
+                          const lockMsg = usedIn.length > 0
+                            ? `Can't unmap — still on ${usedIn.join(', ')}. Remove it there first.`
+                            : priceShared
+                              ? "Can't unmap — a price has already been shared for this product."
+                              : "Can't unmap — a sourcing decision has been set. Unmapping is only allowed before sourcing.";
                           return (
                         <Tooltip
-                          label={locked
-                            ? `Can't unmap — still on ${usedIn.join(', ')}. Remove it there first.`
-                            : 'Unmap'}
+                          label={locked ? lockMsg : 'Unmap'}
                           themed
                         >
                           {/* aria-disabled (not disabled) so the tooltip still
