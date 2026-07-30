@@ -318,7 +318,10 @@ export default function AddProductModal(props: {
     return [...optGst].sort((a, b) => pct(a) - pct(b));
   }, [optGst]);
   const gstPctStr = gstPctNum ? `${gstPctNum.toFixed(2)}%` : '';
-  const canMapSupplier = gstPctNum > 0;
+  // A supplier can be mapped once a GST RATE is chosen for the product — a 0% rate
+  // is a valid selection (QA #52). Gating on gstPctNum > 0 wrongly blocked 0%-GST
+  // products, since a chosen 0% rate and "no rate" both read as gstPctNum === 0.
+  const canMapSupplier = !!gstId;
   const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
   const totalPrice = +(basePriceNum + gstAmt).toFixed(2);
 
@@ -603,9 +606,10 @@ export default function AddProductModal(props: {
 
   const saveVendorDraft = async () => {
     // Belt to the button/auto-open guards: never persist a mapping without a
-    // product GST % (the inherited rate the GST amount + total depend on).
+    // product GST RATE selected (the inherited rate the GST amount + total depend
+    // on). A 0% rate is valid (QA #52) — only an unselected rate is blocked.
     if (!canMapSupplier) {
-      toast.error('GST % required', 'Set a GST % on this product (Sales Config step) before you can map a supplier.');
+      toast.error('GST rate required', 'Select a GST rate for this product (Sales Config step) before you can map a supplier — 0% is allowed.');
       return;
     }
     const missing: string[] = [];
@@ -2167,10 +2171,10 @@ export default function AddProductModal(props: {
                   type="button"
                   className="apm-sup-map"
                   disabled={!canMapSupplier || saving}
-                  title={canMapSupplier ? undefined : 'Set a GST % on this product (Sales Config) before mapping a supplier.'}
+                  title={canMapSupplier ? undefined : 'Select a GST rate for this product (Sales Config) before mapping a supplier.'}
                   onClick={() => {
                     if (!canMapSupplier) {
-                      toast.error('GST % required', 'Set a GST % on this product (Sales Config step) before you can map a supplier.');
+                      toast.error('GST rate required', 'Select a GST rate for this product (Sales Config step) before you can map a supplier — 0% is allowed.');
                       return;
                     }
                     setVendorDraftOpen(true);

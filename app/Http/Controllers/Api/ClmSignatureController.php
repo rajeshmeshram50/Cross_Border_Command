@@ -122,6 +122,34 @@ class ClmSignatureController extends Controller
         abort(422, "Unsupported model_name: {$modelName}");
     }
 
+    /**
+     * Turn a raw send-flow exception into a clean, user-facing message. Zoho Sign
+     * failures bubble up as "Zoho Sign API error: <raw JSON body>" — that raw
+     * third-party payload must never reach the UI (QA #10). Detect the common
+     * "already sent / signed / processed" case and otherwise return a generic
+     * clean message. Non-Zoho errors keep their own (developer) message.
+     */
+    private function cleanSendError(\Throwable $e, string $fallback): string
+    {
+        $raw = $e->getMessage();
+        $marker = 'Zoho Sign API error:';
+        if (!str_contains($raw, $marker)) {
+            return $fallback . ': ' . $raw;
+        }
+        $body    = trim((string) substr($raw, strpos($raw, $marker) + strlen($marker)));
+        $decoded = json_decode($body, true);
+        $zohoMsg = is_array($decoded) ? (string) ($decoded['message'] ?? '') : '';
+        $low     = strtolower($zohoMsg . ' ' . $body);
+        if (str_contains($low, 'already') || str_contains($low, 'processed')
+            || str_contains($low, 'signed') || str_contains($low, 'completed')
+            || str_contains($low, 'in progress') || str_contains($low, 'duplicate')) {
+            return 'This document has already been signed or is being processed in another tab or session. Refresh the page to see its current status.';
+        }
+        return $zohoMsg !== ''
+            ? ('The e-signature service could not process this request: ' . $zohoMsg)
+            : 'The e-signature service could not process this request right now. Please try again in a moment.';
+    }
+
 
 
     public function send(Request $request)
@@ -477,7 +505,7 @@ class ClmSignatureController extends Controller
                 'trace'   => $e->getTraceAsString(),
                 'request' => $request->except(['signers']),
             ]);
-            return response()->json(['status' => false, 'message' => 'Failed to send documents: ' . $e->getMessage()], 500);
+            return response()->json(['status' => false, 'message' => $this->cleanSendError($e, 'Failed to send documents')], 500);
         } finally {
             foreach ($tempPaths as $p) {
                 @unlink($p);
@@ -858,7 +886,7 @@ class ClmSignatureController extends Controller
                 'trace'   => $e->getTraceAsString(),
                 'request' => $request->all(),
             ]);
-            return response()->json(['status' => false, 'message' => 'Failed to send agreement: ' . $e->getMessage()], 500);
+            return response()->json(['status' => false, 'message' => $this->cleanSendError($e, 'Failed to send agreement')], 500);
         } finally {
             foreach ($tempPaths as $p) {
                 @unlink($p);
@@ -1084,7 +1112,7 @@ class ClmSignatureController extends Controller
             ]]);
         } catch (\Throwable $e) {
             Log::error('CTC send failed', ['error' => $e->getMessage(), 'contract' => $data['contract_id'] ?? null]);
-            return response()->json(['status' => false, 'message' => 'Failed to send for signature: ' . $e->getMessage()], 500);
+            return response()->json(['status' => false, 'message' => $this->cleanSendError($e, 'Failed to send for signature')], 500);
         } finally {
             foreach ($tempPaths as $p) @unlink($p);
         }
@@ -1661,7 +1689,7 @@ class ClmSignatureController extends Controller
                 'trace'   => $e->getTraceAsString(),
                 'request' => $request->all(),
             ]);
-            return response()->json(['status' => false, 'message' => 'Failed to send document for signature: ' . $e->getMessage()], 500);
+            return response()->json(['status' => false, 'message' => $this->cleanSendError($e, 'Failed to send document for signature')], 500);
         } finally {
             @unlink($tempPath);
         }

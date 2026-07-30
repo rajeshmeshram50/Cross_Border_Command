@@ -3268,10 +3268,15 @@ export default function AddVendorModal(props: {
                             // domestic India supplier). The segment stays visible/selectable
                             // — the block is a toast + we don't add it, so the reason is clear.
                             const added = vs.filter(s => !segment.includes(s));
-                            const badAdd = added.filter(s => {
+                            // Only enforce the trade-type match once a COUNTRY is chosen —
+                            // without a country the supplier's trade type is undetermined, so
+                            // the segment must not be pre-judged as international (QA: empty
+                            // form wrongly said "International supplier"). Mirrors the save
+                            // validation's `&& country` guard.
+                            const badAdd = country ? added.filter(s => {
                               const t = segTypesById.get(String(s));
                               return t && t.size > 0 && !t.has(supplierDocType);
-                            });
+                            }) : [];
                             if (badAdd.length) {
                               const names = badAdd.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
                               const label = supplierDocType === 'domestic' ? 'Domestic' : 'International';
