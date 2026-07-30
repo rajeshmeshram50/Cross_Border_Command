@@ -878,7 +878,12 @@ export default function HrExpenseManagement() {
             data={filteredAdvances}
             columns={advanceColumns}
             accent="violet"
+            /* Same sizing as My Workplace: autoFitRows picks the rows-per-page
+               from the space available, fitToViewport pins the card to the fold
+               so the footer sits at the bottom instead of floating up under a
+               short result set. */
             autoFitRows
+            fitToViewport
             minWidth={1500}
             loading={advanceLoading}
             searchValue={search}
@@ -901,6 +906,7 @@ export default function HrExpenseManagement() {
             columns={claimColumns}
             accent="violet"
             autoFitRows
+            fitToViewport
             minWidth={1150}
             loading={loading}
             searchValue={search}
