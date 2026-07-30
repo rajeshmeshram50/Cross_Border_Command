@@ -385,7 +385,22 @@
 .dt-table tbody tr:last-child td { border-bottom: none; }
 .dt-table tbody tr.dt-clickable { cursor: pointer; }
 
-.dt-empty-row td { border-bottom: none; }
+/* Empty state fills the whole body area instead of leaving a short white strip
+   above a bare card — with fitToViewport the card keeps its viewport height, so
+   a content-sized empty row reads as a broken layout. height:100% on the table
+   hands the slack to its only row; the cell then centres the message.
+   Non-fitted tables have no definite body height, so they keep sizing to the
+   message as before. */
+.dt-table.dt-table-empty,
+.dt-table.dt-table-empty tbody { height: 100%; }
+.dt-empty-row td {
+  border-bottom: none;
+  height: 100%;
+  vertical-align: middle;
+}
+/* No row-hover tint: the empty row is the whole panel, not a data row. */
+.dt-table tbody tr.dt-empty-row,
+.dt-table tbody tr.dt-empty-row:hover { background: #fff; }
 .dt-empty {
   padding: 34px 16px;
   text-align: center;
@@ -558,6 +573,10 @@
 [data-layout-mode="dark"] .dt-table tbody tr:nth-child(even) { background: var(--vz-card-bg); }
 [data-bs-theme="dark"] .dt-table tbody tr:hover,
 [data-layout-mode="dark"] .dt-table tbody tr:hover { background: rgba(var(--dt-a-rgb), .12); }
+[data-bs-theme="dark"] .dt-table tbody tr.dt-empty-row,
+[data-layout-mode="dark"] .dt-table tbody tr.dt-empty-row,
+[data-bs-theme="dark"] .dt-table tbody tr.dt-empty-row:hover,
+[data-layout-mode="dark"] .dt-table tbody tr.dt-empty-row:hover { background: var(--vz-card-bg); }
 [data-bs-theme="dark"] .dt-table tbody td,
 [data-layout-mode="dark"] .dt-table tbody td { border-bottom-color: rgba(255, 255, 255, .07); }
 [data-bs-theme="dark"] .dt-scroll,
