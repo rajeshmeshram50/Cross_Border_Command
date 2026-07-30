@@ -319,7 +319,10 @@ export default function PurchaseOrder() {
     // bill folds the TDS in as a deduction, so it must be decided first. The
     // backend enforces the same rule; surface it up-front here. (Full utilisation
     // is NOT required — payments are synced separately, entry-wise.)
-    if (!r.tds_cut) {
+    // International POs carry no GST/TDS, so the "deduct TDS first" gate doesn't
+    // apply — only the "record a payment first" rule below remains.
+    const isIntl = r.doc === 'International';
+    if (!isIntl && !r.tds_cut) {
       toast.warning('Deduct the TDS first', 'Open the PO’s Payment Summary and deduct the TDS (use 0% if none applies) before syncing to Zoho Books.');
       return;
     }

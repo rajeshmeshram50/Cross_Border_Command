@@ -94,8 +94,10 @@ class PoPaymentController extends Controller
 
         // TDS must be cut once (Payment Details → Save) BEFORE any payment can be
         // recorded — from the PO or the SPI screen. Blocks "Update PO Payment"
-        // until the deduction is confirmed.
-        if (!$order->tds_cut) {
+        // until the deduction is confirmed. International POs are exempt: GST/TDS
+        // don't apply, so a payment can be recorded without cutting TDS first.
+        $isIntl = strtolower((string) $order->document_type) === 'international';
+        if (!$isIntl && !$order->tds_cut) {
             return response()->json([
                 'status'  => false,
                 'message' => 'Please cut the TDS first — save the TDS deduction in Payment Details before recording a payment.',
@@ -275,6 +277,10 @@ class PoPaymentController extends Controller
                 // payment can only be posted once the bill exists in Zoho).
                 'zoho_synced'      => !empty($po->zoho_bill_id),
                 'zoho_bill_number' => $po->zoho_bill_number,
+                // International POs carry no GST/TDS: the popup freezes the TDS
+                // deduction, disables the GST breakdown, and drops the "cut TDS
+                // first" gate for both payments and Zoho sync.
+                'is_international'  => strtolower((string) $po->document_type) === 'international',
             ],
             'supplier' => $this->supplierBlock($po),
             'amounts'  => [

@@ -326,7 +326,10 @@ class SupplierPurchaseInvoiceController extends Controller
         // cut here guarantees the bill always carries the correct net payable.
         // (Deducting 0% is valid when no TDS applies. With-PO invoices are handled
         // above by delegating to the PO sync, which enforces the PO's TDS cut.)
-        if (!$spi->tds_cut) {
+        // International invoices are exempt: GST/TDS don't apply, so the only sync
+        // pre-condition that remains is "at least one payment" (below).
+        $isIntl = strtolower((string) $spi->document_type) === 'international';
+        if (!$isIntl && !$spi->tds_cut) {
             return response()->json([
                 'status'  => false,
                 'message' => 'Deduct the TDS before syncing to Zoho Books — the bill amount depends on it. Open this invoice’s Payment Summary and deduct the TDS (use 0% if none applies), then sync.',
@@ -417,6 +420,10 @@ class SupplierPurchaseInvoiceController extends Controller
                 Log::warning('Zoho SPI payment posting during bill sync failed (bill kept; retry via Sync buttons)', ['spi' => $spi->id, 'err' => $e->getMessage()]);
             }
             $paidNote = ($pay['pushed'] ?? 0) > 0 ? (' Posted ₹' . number_format($pay['applied'], 2) . ' payment(s).') : '';
+
+            // Attach the invoice's uploaded document to its new Zoho bill (best-effort,
+            // inline). Idempotent — stamps zoho_doc_attached_at and never re-appends.
+            $this->attachDirectSpiDoc($spi->fresh());
 
             return response()->json([
                 'status'  => true,
@@ -531,6 +538,8 @@ class SupplierPurchaseInvoiceController extends Controller
                     'errors'  => ['account' => ['No Bank/Cash account exists in the Zoho organization.']],
                 ], 422);
             }
+            // Push this invoice's uploaded document to its Zoho bill too (best-effort).
+            $this->attachDirectSpiDoc($spi->fresh());
             if (($pay['pushed'] ?? 0) <= 0) {
                 return response()->json([
                     'status'  => true,
@@ -550,6 +559,73 @@ class SupplierPurchaseInvoiceController extends Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
         } finally {
             $lock->release();
+        }
+    }
+
+    /**
+     * Manually push THIS invoice's uploaded document to Zoho Books — the linked PO's
+     * purchase order + bill for a With-PO invoice, or the invoice's own bill for a
+     * Direct invoice. Covers the case where the bill is already synced but the
+     * document hasn't landed yet. Runs the job in-request for immediate feedback.
+     */
+    public function syncAttachment(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        $spi = SupplierPurchaseInvoice::findOrFail($id);
+        $this->assertScope($spi, $user, 'write');
+
+        if (empty($spi->attachment_path)) {
+            return response()->json(['status' => false, 'message' => 'This invoice has no uploaded document to attach.'], 422);
+        }
+        // Confirm the Zoho target exists: the PO for a With-PO invoice, or this
+        // invoice's own bill for a Direct invoice.
+        if ($spi->purchase_order_id) {
+            $po = PurchaseOrder::find($spi->purchase_order_id);
+            if (!$po || empty($po->zoho_purchaseorder_id)) {
+                return response()->json(['status' => false, 'message' => 'Sync the linked PO to Zoho Books first — its purchase order must exist before the invoice document can be attached to it.'], 422);
+            }
+        } elseif (empty($spi->zoho_bill_id)) {
+            return response()->json(['status' => false, 'message' => 'Sync this invoice to Zoho Books first — its bill must exist before the document can be attached to it.'], 422);
+        }
+        if (!empty($spi->zoho_doc_attached_at)) {
+            return response()->json(['status' => true, 'message' => 'This invoice document is already attached in Zoho Books.', 'data' => $this->shapeListRow($spi->fresh())]);
+        }
+
+        try {
+            \App\Jobs\AttachSpiDocumentToZoho::dispatchSync($spi->id); // run NOW, in-request
+        } catch (\Throwable $e) {
+            Log::warning('SPI document attach failed', ['spi' => $spi->id, 'err' => $e->getMessage()]);
+            return response()->json(['status' => false, 'message' => 'Could not attach the invoice document to Zoho Books: ' . $e->getMessage()], 422);
+        }
+
+        $fresh = $spi->fresh();
+        if (empty($fresh->zoho_doc_attached_at)) {
+            return response()->json(['status' => false, 'message' => 'The invoice document could not be attached — check the Zoho Books connection and try again.'], 422);
+        }
+        return response()->json([
+            'status'  => true,
+            'message' => $spi->purchase_order_id
+                ? 'Invoice document attached to the Zoho purchase order and bill.'
+                : 'Invoice document attached to the Zoho bill.',
+            'data'    => $this->shapeListRow($fresh),
+        ]);
+    }
+
+    /**
+     * Attach a DIRECT invoice's uploaded document to its own Zoho bill — inline &
+     * best-effort, used from the bill/payment sync so a failure never breaks the
+     * sync. Idempotent (the job stamps zoho_doc_attached_at). No-op for With-PO
+     * invoices (those are handled by PurchaseOrderController::attachSpiDocsToZoho).
+     */
+    private function attachDirectSpiDoc(?SupplierPurchaseInvoice $spi): void
+    {
+        if (!$spi || $spi->purchase_order_id) return;
+        if (empty($spi->attachment_path) || empty($spi->zoho_bill_id) || !empty($spi->zoho_doc_attached_at)) return;
+        try {
+            \App\Jobs\AttachSpiDocumentToZoho::dispatchSync($spi->id);
+        } catch (\Throwable $e) {
+            Log::warning('Direct SPI doc attach failed (best-effort)', ['spi' => $spi->id, 'err' => $e->getMessage()]);
         }
     }
 
@@ -942,15 +1018,24 @@ class SupplierPurchaseInvoiceController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
+        // Derive each supplier's trade type from its primary address country:
+        // India = domestic, anything else = international (drives the badge in the
+        // Map-SPI supplier dropdown).
+        $indiaId = DB::table('master_countries')->whereRaw('LOWER(name) = ?', ['india'])->value('id');
         $rows = Vendor::query()
             ->forUser($user, $request->integer('branch_id') ?: null)
+            ->with('primaryAddress:id,vendor_id,country_id')
             ->orderBy('company_name')
             ->get(['id', 'vendor_code', 'company_name', 'legal_name'])
-            ->map(fn ($v) => [
-                'id' => $v->id,
-                'code' => $v->vendor_code,
-                'name' => $v->company_name ?: $v->legal_name,
-            ]);
+            ->map(function ($v) use ($indiaId) {
+                $cid = optional($v->primaryAddress)->country_id;
+                return [
+                    'id' => $v->id,
+                    'code' => $v->vendor_code,
+                    'name' => $v->company_name ?: $v->legal_name,
+                    'document_type' => $cid ? (((int) $cid === (int) $indiaId) ? 'domestic' : 'international') : 'domestic',
+                ];
+            });
         return response()->json(['status' => true, 'data' => $rows]);
     }
 
@@ -1420,6 +1505,9 @@ class SupplierPurchaseInvoiceController extends Controller
             'zoho' => $spi->zoho_status === 'Sync' ? 'sync' : 'not',
             'zohoBill' => $spi->zoho_bill_number,       // Zoho Books bill no. once synced
             'zohoPdf' => $spi->zoho_pdf_path ? true : false,
+            // This invoice's uploaded document already pushed to the Zoho PO/Bill —
+            // hides the "Sync Attachment" button once done.
+            'docAttached' => !empty($spi->zoho_doc_attached_at),
             'status' => $spi->status,
             // This SPI's payable amount fully utilised — gates the Zoho sync button.
             'po_fully_utilized' => $this->spiSyncUtilized($spi),

@@ -85,8 +85,11 @@ class SpiPaymentController extends Controller
         if (!$user) abort(401);
         $inv = $this->findScoped($spi, $user, 'write');
 
-        // TDS must be cut once before any payment can be recorded.
-        if (!$inv->tds_cut) {
+        // TDS must be cut once before any payment can be recorded. International
+        // invoices are exempt — GST/TDS don't apply, so a payment can be recorded
+        // without cutting TDS first.
+        $isIntl = strtolower((string) $inv->document_type) === 'international';
+        if (!$isIntl && !$inv->tds_cut) {
             return response()->json([
                 'status'  => false,
                 'message' => 'Please deduct the TDS first — save the TDS deduction in Payment Details before recording a payment.',
@@ -235,6 +238,10 @@ class SpiPaymentController extends Controller
                 // payment can only be posted once the bill exists in Zoho).
                 'zoho_synced'      => !empty($inv->zoho_bill_id),
                 'zoho_bill_number' => $inv->zoho_bill_number,
+                // International invoices carry no GST/TDS: the popup freezes the TDS
+                // deduction, disables the GST breakdown, and drops the "cut TDS
+                // first" gate for both payments and Zoho sync.
+                'is_international'  => strtolower((string) $inv->document_type) === 'international',
             ],
             'supplier' => $this->supplierBlock($inv),
             'amounts'  => [
