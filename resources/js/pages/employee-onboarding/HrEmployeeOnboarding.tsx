@@ -188,6 +188,15 @@ const DOC_ACCEPTED_MIMES = ['application/pdf', 'image/jpeg', 'image/jpg', 'image
 const DOC_ACCEPTED_EXTS  = ['pdf', 'jpg', 'jpeg', 'png', 'webp'] as const;
 const DOC_ACCEPT_ATTR    = DOC_ACCEPTED_MIMES.join(',');
 
+/* Uploaded file names ride in the document row's meta line, and a long one
+ * (scanner output like "Quotation-QT_2026-27_10-unsigned-final-v3….pdf") pushes
+ * the status pill and the View / Replace / Delete buttons out of the row. Cut at
+ * 90 characters; callers pair this with a tooltip so the full name is still
+ * readable on hover. */
+const MAX_DOC_NAME_CHARS = 90;
+const truncateDocName = (name: string): string =>
+  name.length > MAX_DOC_NAME_CHARS ? `${name.slice(0, MAX_DOC_NAME_CHARS)}…` : name;
+
 /**
  * Map the wizard's progress + employee status to one of the existing
  * OnboardStatus pill values. The page already styles all of these — we
@@ -648,7 +657,10 @@ export default function HrEmployeeOnboarding() {
               </div>
             )}
             <div className="min-w-0">
-              <div className="text-truncate" style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{r.name}</div>
+              {/* Long names clip to the column width — hover shows the full one. */}
+              <Tooltip label={r.name} maxWidth={360}>
+                <div className="text-truncate" style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{r.name}</div>
+              </Tooltip>
               <div className="text-muted" style={{ fontSize: 11.5 }}>{r.joinDate}</div>
             </div>
           </div>
@@ -700,7 +712,9 @@ export default function HrEmployeeOnboarding() {
             >
               {r.managerInitials}
             </div>
-            <span style={{ fontSize: 13 }} className="text-truncate">{r.managerName}</span>
+            <Tooltip label={r.managerName} maxWidth={360}>
+              <span style={{ fontSize: 13 }} className="text-truncate">{r.managerName}</span>
+            </Tooltip>
           </div>
         );
       },
@@ -1965,7 +1979,9 @@ export function VaultModal({
                           </div>
                           <div className="vault-doc-meta">
                             <div className="vault-doc-name">{doc.name}</div>
-                            <div className="vault-doc-desc">{doc.desc}</div>
+                            {/* desc is the uploaded file name when there is one —
+                                same 90-char cut as the Document Management row. */}
+                            <div className="vault-doc-desc" title={doc.desc}>{truncateDocName(doc.desc)}</div>
                           </div>
                           {doc.category && (
                             <span
@@ -6464,7 +6480,12 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     </h6>
                     <p className="onb-doc-row-sub">
                       {d.sub}
-                      {srv?.original_name && <> · <strong>{srv.original_name}</strong></>}
+                      {/* Uploaded file name — capped at 90 chars, and the sub
+                          line is nowrap + ellipsis in CSS so it can never wrap
+                          onto a second row. Full name on hover via `title`. */}
+                      {srv?.original_name && (
+                        <> · <strong title={srv.original_name}>{truncateDocName(srv.original_name)}</strong></>
+                      )}
                       {srv?.rejection_reason && <> · <span style={{ color: '#b1401d' }}>Reason: {srv.rejection_reason}</span></>}
                     </p>
                   </div>

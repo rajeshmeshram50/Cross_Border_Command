@@ -307,7 +307,11 @@
 @media (max-width: 575px)  { .role-extras .role-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; } }
 .role-extras .role-kpi {
   position: relative;
-  background: var(--vz-card-bg);
+  /* Plain white in light mode — matches the generic .mp-kpi-tile strip every
+     other master renders. var(--vz-card-bg) picks up the theme preset's tinted
+     card surface, which read as grey next to the white table below. The
+     dark-mode block near the top of this file still overrides it. */
+  background: #ffffff;
   border: 1px solid var(--vz-border-color);
   border-radius: 12px;
   padding: 14px 16px;
@@ -371,107 +375,9 @@
   background: color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff);
   border-color: color-mix(in srgb, var(--vz-border-color) 60%, #ffffff);
 }
-/* Filter tabs — refined segmented control: subtle cream track with
-   depth, white "lifted" active pill with crisp elevation + thin ring. */
-.role-extras .role-tabs {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  margin-bottom: 12px;
-  padding: 4px;
-  background: color-mix(in srgb, var(--vz-body-color) 8%, var(--vz-card-bg));
-  border: 1px solid color-mix(in srgb, var(--vz-body-color) 6%, transparent);
-  border-radius: 999px;
-  flex-wrap: wrap;
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.04);
-}
-[data-bs-theme="dark"] .role-extras .role-tabs,
-[data-layout-mode="dark"] .role-extras .role-tabs {
-  background: color-mix(in srgb, #ffffff 6%, var(--vz-card-bg));
-  border-color: color-mix(in srgb, #ffffff 8%, transparent);
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.20);
-}
-.role-extras .role-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 16px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: 500;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--vz-secondary-color);
-  cursor: pointer;
-  transition: background .18s ease, color .18s ease, box-shadow .18s ease, transform .18s ease;
-  white-space: nowrap;
-}
-.role-extras .role-tab:hover:not(.active) {
-  color: var(--vz-heading-color, var(--vz-body-color));
-  background: color-mix(in srgb, var(--vz-body-color) 4%, transparent);
-}
-.role-extras .role-tab.active,
-.role-extras button.role-tab.active {
-  /* Premium indigo gradient with a slow, gentle halo breath —
-     attention without harsh flicker. Text stays crisp. */
-  background: linear-gradient(135deg, #4338ca 0%, #6366f1 50%, #818cf8 100%);
-  color: #ffffff !important;
-  font-weight: 600;
-  border-color: #4338ca;
-  animation: role-tab-breathe 3s ease-in-out infinite;
-}
-.role-extras .role-tab.active > span:not(.role-tab-count),
-.role-extras button.role-tab.active > span:not(.role-tab-count) {
-  color: #ffffff !important;
-}
-@keyframes role-tab-breathe {
-  0%, 100% {
-    box-shadow:
-      0 6px 18px rgba(99,102,241,0.45),
-      0 2px 5px rgba(99,102,241,0.28),
-      0 0 0 2px rgba(99,102,241,0.10),
-      inset 0 1px 0 rgba(255,255,255,0.24),
-      inset 0 -1px 0 rgba(0,0,0,0.10);
-  }
-  50% {
-    box-shadow:
-      0 8px 22px rgba(99,102,241,0.55),
-      0 2px 6px rgba(99,102,241,0.32),
-      0 0 0 6px rgba(99,102,241,0.18),
-      inset 0 1px 0 rgba(255,255,255,0.30),
-      inset 0 -1px 0 rgba(0,0,0,0.10);
-  }
-}
-[data-bs-theme="dark"] .role-extras .role-tab.active,
-[data-layout-mode="dark"] .role-extras .role-tab.active {
-  background: linear-gradient(135deg, #3450b0 0%, #4267e7 50%, #6691e7 100%);
-  color: #ffffff !important;
-  border-color: #6691e7;
-  box-shadow:
-    0 6px 18px rgba(64,103,231,0.55),
-    0 2px 6px rgba(0,0,0,0.30),
-    inset 0 1px 0 rgba(255,255,255,0.22),
-    inset 0 -1px 0 rgba(0,0,0,0.20);
-}
-.role-extras .role-tab-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  padding: 0 7px;
-  height: 17px;
-  border-radius: 999px;
-  font-size: 10.5px;
-  font-weight: 700;
-  background: color-mix(in srgb, var(--vz-body-color) 12%, transparent);
-  color: var(--vz-secondary-color);
-  font-variant-numeric: tabular-nums;
-}
-.role-extras .role-tab.active .role-tab-count {
-  background: rgba(255,255,255,0.95);
-  color: #4338ca;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.12);
-}
+/* The Roles filter tabs (.role-tabs / .role-tab) are gone: the All / Primary /
+   Ancillary rail moved into the shared DataTable toolbar, which brings its own
+   pill styling (.dt-tab). */
 
 /* ---------------------------------------------------------------------
    7. Roles — inline filter group

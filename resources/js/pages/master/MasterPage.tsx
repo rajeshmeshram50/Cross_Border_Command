@@ -340,6 +340,19 @@ function MasterPageInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [records, searchInput, cfg, refData, dsnStatusFilter, dsnLevelFilter, dsnDeptFilter, dpStatusFilter, dpParentFilter, roleStatusFilter, roleTypeFilter, roleDeptFilter, roleTab, kpiRoleFilter, kpiTargetFilter, kpiPriorityFilter]);
 
+  /* Roles master — the All / Primary / Ancillary rail that rides in the table
+     toolbar. Counts come from the unfiltered record set, so each tab always
+     shows its own total rather than a count of the current view. Type matching
+     mirrors the filter in filteredRecords above. */
+  const roleTabs = useMemo(() => {
+    const isAncillary = (rt: string) => /ancillary|auxiliary|operational|administrative|functional/i.test(rt);
+    return [
+      { key: 'all',       label: 'All Roles',       icon: 'ri-shield-line', count: records.length },
+      { key: 'primary',   label: 'Primary Roles',   icon: 'ri-star-fill',   count: records.filter(r => /primary/i.test(String(r.role_type ?? ''))).length },
+      { key: 'ancillary', label: 'Ancillary Roles', icon: 'ri-time-line',   count: records.filter(r => isAncillary(String(r.role_type ?? ''))).length },
+    ];
+  }, [records]);
+
   // Effective ref-data passed to renderField. For self-referential refs (e.g.
   // Designation's "Reports To" → Designations) we want the dropdown to reflect
   // the user's *current* records (so a freshly-added designation appears as a
@@ -1610,6 +1623,9 @@ function MasterPageInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cfg, ownershipCols, refData, caps, records]);
 
+  /** Chars of a creator name the "Created By" pill shows before ellipsising. */
+  const CREATOR_NAME_MAX = 11;
+
   const renderOwnership = (key: string, row: any): React.ReactNode => {
     if (key === '__client') {
       const name = row.client_name;
@@ -1639,25 +1655,43 @@ function MasterPageInner({
         userType === 'client_admin' || userType === 'client_user' ? { bg: '#dbeafe', fg: '#1d4ed8', kind: 'client' as const } :
         userType === 'branch_user' ? { bg: '#ccfbf1', fg: '#0d9488', kind: 'branch' as const } :
         { bg: '#f1f5f9', fg: '#475569', kind: 'other' as const };
+      /* The pill is nowrap, so a long creator name (an org name like "INORBVICT
+         HEALTHCARE INDIA PRIVATE LIMITED") ran past the column and over
+         Employees. Cut at 11 characters; the full name is on hover. */
+      const shortName = String(name).length > CREATOR_NAME_MAX
+        ? `${String(name).slice(0, CREATOR_NAME_MAX)}…`
+        : String(name);
+      const pill = (
+        <span
+          className={`mp-creator-pill mp-creator-${tone.kind}`}
+          style={{
+            display: 'inline-block',
+            padding: '3px 10px',
+            borderRadius: 999,
+            background: tone.bg,
+            color: tone.fg,
+            fontSize: 11.5,
+            fontWeight: 700,
+            lineHeight: 1.3,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {shortName}
+        </span>
+      );
       return (
-        <div className="d-flex flex-column align-items-start" style={{ gap: 3 }}>
-          <span
-            className={`mp-creator-pill mp-creator-${tone.kind}`}
-            style={{
-              display: 'inline-block',
-              padding: '3px 10px',
-              borderRadius: 999,
-              background: tone.bg,
-              color: tone.fg,
-              fontSize: 11.5,
-              fontWeight: 700,
-              lineHeight: 1.3,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {name}
-          </span>
-          {scope && <span className="text-muted mp-creator-sub" style={{ fontSize: 10.5 }}>{scope}</span>}
+        <div className="d-flex flex-column align-items-start" style={{ gap: 3, maxWidth: '100%' }}>
+          {shortName === name ? pill : <Tooltip label={name} maxWidth={320}>{pill}</Tooltip>}
+          {/* Same clipping for the scope caption — it carries the same long name. */}
+          {scope && (
+            <span
+              className="text-muted mp-creator-sub"
+              title={scope}
+              style={{ fontSize: 10.5, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            >
+              {scope}
+            </span>
+          )}
         </div>
       );
     }
@@ -2003,13 +2037,10 @@ function MasterPageInner({
           filteredCount={filteredRecords.length}
         />
       )}
-      {/* Roles-only: KPI strip + filter chip tabs. */}
+      {/* Roles-only: KPI strip. The All / Primary / Ancillary tabs moved into the
+          table toolbar below (DataTable's `tabs` rail, left of the search). */}
       {cfg.slug === 'roles' && (
-        <RolesExtras
-          records={records}
-          activeTab={roleTab}
-          setActiveTab={setRoleTab}
-        />
+        <RolesExtras records={records} />
       )}
       {/* KPI-master only: KPI count cards. */}
       {cfg.slug === 'kpis' && (
@@ -2033,6 +2064,11 @@ function MasterPageInner({
         searchValue={searchInput}
         onSearchChange={setSearchInput}
         searchPlaceholder={`Search ${cfg.title.toLowerCase()}...`}
+        {...(cfg.slug === 'roles' ? {
+          tabs: roleTabs,
+          activeTab: roleTab,
+          onTabChange: (k: string) => setRoleTab(k as typeof roleTab),
+        } : {})}
         emptyMessage={
           <>
             <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
@@ -3305,15 +3341,9 @@ function DepartmentInlineFilters({
  * Assigned / Inactive) + filter chip tabs (All / Primary / Ancillary).
  * Renders only inside the Roles master.
  * ────────────────────────────────────────────────────────────────────────── */
-function RolesExtras({
-  records,
-  activeTab,
-  setActiveTab,
-}: {
-  records: any[];
-  activeTab: 'all' | 'primary' | 'ancillary';
-  setActiveTab: (t: 'all' | 'primary' | 'ancillary') => void;
-}) {
+/* KPI strip for the Roles master. The All / Primary / Ancillary tabs used to
+   live here too; they now ride in the DataTable toolbar (see `roleTabs`). */
+function RolesExtras({ records }: { records: any[] }) {
   const total = records.length;
   const primaryCount = records.filter(r => /primary/i.test(String(r.role_type ?? ''))).length;
   const ancillaryCount = records.filter(r => /ancillary|auxiliary|operational|administrative|functional/i.test(String(r.role_type ?? ''))).length;
@@ -3330,12 +3360,6 @@ function RolesExtras({
     { key: 'active',    label: 'Active',          icon: 'ri-checkbox-circle-fill', deep: '#089d7a', bright: '#34d4ad', accent: 'linear-gradient(135deg,#089d7a 0%,#34d4ad 100%)', tint: 'rgba(52,212,173,0.12)', value: activeCount },
     { key: 'assigned',  label: 'Assigned',        icon: 'ri-user-3-fill',          deep: '#1e6dd6', bright: '#5fc8ff', accent: 'linear-gradient(135deg,#1e6dd6 0%,#5fc8ff 100%)', tint: 'rgba(95,200,255,0.14)', value: assignedCount },
     { key: 'inactive',  label: 'Inactive',        icon: 'ri-forbid-fill',          deep: '#d63a5e', bright: '#ff8b9b', accent: 'linear-gradient(135deg,#d63a5e 0%,#ff8b9b 100%)', tint: 'rgba(255,139,155,0.12)', value: inactiveCount },
-  ];
-
-  const TABS: { key: 'all' | 'primary' | 'ancillary'; label: string; count: number; icon: string; bright: string }[] = [
-    { key: 'all',       label: 'All Roles',       count: total,          icon: 'ri-shield-line',     bright: '#6691e7' },
-    { key: 'primary',   label: 'Primary Roles',   count: primaryCount,   icon: 'ri-star-fill',       bright: '#7c5cfc' },
-    { key: 'ancillary', label: 'Ancillary Roles', count: ancillaryCount, icon: 'ri-time-line',       bright: '#f7b84b' },
   ];
 
   return (
@@ -3373,25 +3397,6 @@ function RolesExtras({
         ))}
       </div>
 
-      {/* Filter tabs — clean segmented control: white "lifted" active tab. */}
-      <div className="role-tabs">
-        {TABS.map(t => {
-          const active = activeTab === t.key;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              className={`role-tab${active ? ' active' : ''}`}
-              onClick={() => setActiveTab(t.key)}
-              style={active ? { color: '#ffffff' } : undefined}
-            >
-              <i className={t.icon} style={{ fontSize: 13, color: active ? '#ffffff' : t.bright }} />
-              <span style={active ? { color: '#ffffff' } : undefined}>{t.label}</span>
-              <span className="role-tab-count">{t.count}</span>
-            </button>
-          );
-        })}
-      </div>
     </div>
   );
 }

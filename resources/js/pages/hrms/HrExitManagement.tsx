@@ -149,7 +149,10 @@ export default function HrExitManagement() {
               </div>
             )}
             <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
-              <span className="fw-bold fs-13 text-truncate">{e.name}</span>
+              {/* Long names clip to the column width — hover shows the full one. */}
+              <Tooltip label={e.name} maxWidth={360}>
+                <span className="fw-bold fs-13 text-truncate">{e.name}</span>
+              </Tooltip>
               <span className="text-muted text-truncate" style={{ fontSize: 10.5, fontWeight: 500 }}>
                 {isScheduled ? (noticeFromLabel ? `Exit scheduled · notice ${noticeFromLabel}` : 'Exit scheduled')
                   : e.status === 'Active' ? 'Active'
@@ -201,7 +204,9 @@ export default function HrExitManagement() {
               style={{ width: 22, height: 22, fontSize: 9, background: `linear-gradient(135deg, ${e.managerAccent}, ${e.managerAccent}cc)` }}>
               {e.managerInitials}
             </div>
-            <span className="fs-13 text-truncate">{e.managerName}</span>
+            <Tooltip label={e.managerName} maxWidth={360}>
+              <span className="fs-13 text-truncate">{e.managerName}</span>
+            </Tooltip>
           </div>
         );
       },
