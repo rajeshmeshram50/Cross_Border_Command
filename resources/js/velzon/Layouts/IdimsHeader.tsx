@@ -100,6 +100,7 @@ function topPath(id: string): string {
   switch (id) {
     case 'dashboard':          return '/dashboard';
     case 'credentials-vault':  return '/credentials-vault';
+    case 'dev-tools':          return '/dev-tools';
     case 'project-navigator':  return '/project-navigator';
     case 'p2p':                return '/p2p';
     case 'gts':                return '/gts';
@@ -263,6 +264,58 @@ export default function IdimsHeader() {
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
 
+  /* Freeze the page behind an open mega-dropdown. The panel and its backdrop are
+     position:fixed inside the sticky shell, so they are NOT descendants of the
+     real scroller (.main-content in Layouts/index.tsx) — Chrome declines to
+     chain the wheel out to it, Edge/Firefox scroll it anyway, which slides the
+     page under a viewport-anchored panel (bug #4, cross-browser).
+
+     Two layers, because neither alone covers every engine:
+       1. overflow:hidden on every scrollable box between the panel and the page
+          — kills scrollbar drags and keyboard scrolling (space / PageDown).
+       2. a capture-phase, non-passive wheel/touchmove blocker — Edge still
+          scrolls a locked box in some cases, and preventDefault here is the one
+          thing every engine honours. Events inside the panel are exempt so a
+          tall menu (CLM) can still scroll its own content.
+     The padding-right swap replaces the width each hidden scrollbar gives back,
+     so locking doesn't shift the page sideways. */
+  useEffect(() => {
+    if (!openDD) return;
+
+    const targets = [
+      document.querySelector('.main-content') as HTMLElement | null,
+      document.getElementById('layout-wrapper'),
+      document.body,
+      document.documentElement,
+    ].filter((el): el is HTMLElement => !!el);
+
+    const restore = targets.map(el => {
+      const gutter = el.offsetWidth - el.clientWidth;
+      const prev = { el, overflowY: el.style.overflowY, paddingRight: el.style.paddingRight };
+      el.style.overflowY = 'hidden';
+      if (gutter > 0) el.style.paddingRight = `${gutter}px`;
+      return prev;
+    });
+
+    const block = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.('.idims-dropdown, .idims-mobile-panel')) return;
+      e.preventDefault();
+    };
+    const opts: AddEventListenerOptions = { passive: false, capture: true };
+    document.addEventListener('wheel', block, opts);
+    document.addEventListener('touchmove', block, opts);
+
+    return () => {
+      document.removeEventListener('wheel', block, opts);
+      document.removeEventListener('touchmove', block, opts);
+      restore.forEach(({ el, overflowY, paddingRight }) => {
+        el.style.overflowY = overflowY;
+        el.style.paddingRight = paddingRight;
+      });
+    };
+  }, [openDD]);
+
   // Close every open header popover (mega-menu, branch, profile, search, more).
   // Any in-header control that isn't the popover's own toggle should call this
   // first — the outside-click handler doesn't fire for clicks INSIDE the
@@ -293,6 +346,8 @@ export default function IdimsHeader() {
       items.push({ id: 'payments', label: 'Payments', icon: IC.rupee });
       items.push({ id: 'master', label: 'Master', icon: IC.db });
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
+      // Dev Tools — permission-gated (super-admin bypasses, so always visible here).
+      if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
       return items;
     }
 
@@ -305,6 +360,8 @@ export default function IdimsHeader() {
       items.push({ id: 'master', label: 'Master', icon: IC.db });
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
       items.push({ id: 'my-plan', label: 'My Plan', icon: IC.card });
+      // Dev Tools — permission-gated (granted per user via the Permissions module).
+      if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
       return items;
     }
     if (can('credentials-vault')) items.push({ id: 'credentials-vault', label: 'Credentials Vault', icon: IC.lock });
@@ -329,6 +386,8 @@ export default function IdimsHeader() {
     if (role === 'branch_user') {
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
     }
+    // Dev Tools — kept LAST (permission-gated read-only Zoho inspector).
+    if (can('dev-tools')) items.push({ id: 'dev-tools', label: 'Dev Tools', icon: IC.wrench });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
@@ -928,6 +987,7 @@ const P2P_BG = ['#F5F3FF', '#F5F3FF', '#FFFBEB', '#F0FDFA'];
 /* ── Inline SVG icon set (named IC to avoid clashing with lucide imports) ── */
 const IC = {
   grid: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M3 3h8v8H3V3zm10 0h8v8h-8V3zm0 10h8v8h-8v-8zM3 13h8v8H3v-8z" /></svg>,
+  wrench: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2-2 2.6-2.6z" /></svg>,
   menu: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>,
   close: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
   lock: <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6a5 5 0 0 0-10 0v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zm-9-2a3 3 0 0 1 6 0v2H9V6zm4 9.73V18h-2v-2.27a2 2 0 1 1 2 0z" /></svg>,
@@ -1231,7 +1291,11 @@ const IDIMS_CSS = `
 .idims-dd-topbar { height: 4px; flex-shrink: 0; background: linear-gradient(90deg,#7C3AED 0%,#A78BFA 28%,#0EA5E9 52%,#38BDF8 68%,#0D9488 84%,#2DD4BF 100%); }
 /* flex:1 + min-height:0 lets the content scroll within the height-capped panel
    so a tall mega-menu (CLM) never spills below the viewport and gets clipped. */
-.idims-dd-inner { padding: 8px 12px 14px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+/* scrollbar-width/color: Firefox ignores the ::-webkit-scrollbar rules below and
+   would otherwise draw a ~15px native bar, eating column width and making the
+   panel look differently sized than in Chrome. */
+.idims-dd-inner { padding: 8px 12px 14px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #D7DBEA transparent; }
+.idims-dark .idims-dd-inner { scrollbar-color: #3A4150 transparent; }
 .idims-dd-inner::-webkit-scrollbar { width: 9px; }
 .idims-dd-inner::-webkit-scrollbar-track { background: transparent; }
 .idims-dd-inner::-webkit-scrollbar-thumb { background: #D7DBEA; border-radius: 8px; border: 2px solid #fff; background-clip: padding-box; }

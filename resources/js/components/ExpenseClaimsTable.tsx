@@ -1,6 +1,6 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { ShimmerTableRows } from './ui/Shimmer';
+import DataTable, { TruncCell, type DataTableColumn } from './ui/DataTable';
 import ProofOfPaymentCell from './ProofOfPaymentCell';
 // Reuses the polished confirmation-modal CSS classes already shipping with
 // the recruitment / candidate flows (cand-confirm-modal, cand-confirm-head,
@@ -133,56 +133,258 @@ function withAuthToken(url: string): string {
   return `${url}${sep}token=${encodeURIComponent(token)}`;
 }
 
+/* Column set for the shared <DataTable>. Exported so the HR Expense
+ * Management page can compose its own tabs / search / pager around exactly
+ * these columns while the employee-profile tab keeps using the wrapper
+ * component below — one definition of an expense row, two layouts.
+ * Widths sum to 100 (fixed layout): 5+9+16+13+18+11+10+9+9. */
+export function expenseClaimColumns({
+  accent = '#7c5cfc', fallbackName, fallbackInitials,
+  mode = 'mine', currentEmployeeId = null, canHrApprove = false, onAct,
+}: Omit<Props, 'rows' | 'loading'>): DataTableColumn<ExpenseClaimRow>[] {
+  return [
+    {
+      header: 'Exp ID',
+      id: 'claim_no',
+      accessorFn: (c: ExpenseClaimRow) => c.claim_no || `#${c.id}`,
+      meta: { width: '9%' },
+      cell: info => (
+        <span
+          className="font-monospace fw-semibold exp-id-badge"
+          style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#ece6ff', color: '#5a3fd1', letterSpacing: '0.02em' }}
+        >
+          {info.row.original.claim_no || `#${info.row.original.id}`}
+        </span>
+      ),
+    },
+    {
+      header: 'Employee',
+      id: 'employee',
+      accessorFn: (c: ExpenseClaimRow) => c.employee_name || fallbackName || `#${c.employee_id}`,
+      meta: { width: '16%' },
+      cell: info => {
+        const c = info.row.original;
+        const empName = c.employee_name || fallbackName || ('#' + c.employee_id);
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <div
+              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{
+                width: 24, height: 24, fontSize: 10,
+                background: `linear-gradient(135deg, ${accent}, ${accent}cc)`,
+                boxShadow: `0 2px 6px ${accent}40`,
+              }}
+            >
+              {initialsFromName(c.employee_name, fallbackInitials)}
+            </div>
+            <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
+              <span className="fw-semibold text-truncate">{empName}</span>
+              {c.employee_code && <small className="text-muted" style={{ fontSize: 10 }}>{c.employee_code}</small>}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Category',
+      id: 'category',
+      accessorFn: (c: ExpenseClaimRow) => c.category_name ?? '',
+      meta: { width: '13%' },
+      cell: info => (
+        <span
+          className="d-inline-flex align-items-center gap-1 fw-semibold exp-cat-badge"
+          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, background: '#eef2f6', color: '#5b6478', maxWidth: '100%' }}
+        >
+          <i className="ri-price-tag-3-line" />
+          <span className="text-truncate">{info.row.original.category_name || '—'}</span>
+        </span>
+      ),
+    },
+    {
+      header: 'Description',
+      accessorKey: 'title',
+      meta: { width: '18%' },
+      cell: info => <TruncCell value={info.getValue() as string} caseSensitive max={70} />,
+    },
+    {
+      /* Sorts on the real date, not the dd-Mon-yyyy label — the formatted
+         string would order 01-Dec before 02-Jan. */
+      header: 'Expense Date',
+      id: 'expense_date',
+      accessorFn: (c: ExpenseClaimRow) => (c.expense_date ? new Date(c.expense_date).getTime() : 0),
+      meta: { width: '11%' },
+      cell: info => <span className="text-muted">{fmtDate(info.row.original.expense_date)}</span>,
+    },
+    {
+      header: 'Amount',
+      accessorKey: 'amount',
+      meta: { width: '10%', align: 'right' },
+      cell: info => <span className="fw-bold">₹{Number(info.row.original.amount || 0).toLocaleString('en-IN')}</span>,
+    },
+    {
+      header: () => <div className="text-center">Proof of Payment</div>,
+      id: '__proof',
+      enableSorting: false,
+      meta: { align: 'center', width: '9%' },
+      /* Only the first receipt shows in the cell; extras collapse into a
+         "+N more" popover so multiple uploads can't expand the row height. */
+      cell: info => (
+        <ProofOfPaymentCell
+          attachments={info.row.original.attachments}
+          withAuthToken={withAuthToken}
+          accent={{ bg: 'rgba(239,68,68,0.10)', fg: '#dc2626', border: 'rgba(239,68,68,0.25)' }}
+        />
+      ),
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      meta: { width: '9%', align: 'center' },
+      cell: info => {
+        const s = info.row.original.status;
+        const tone = STATUS_TONE[s];
+        return (
+          <span
+            className={`d-inline-flex align-items-center gap-1 fw-semibold exp-status-badge exp-status-badge--${s}`}
+            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: tone.bg, color: tone.fg }}
+          >
+            {tone.label}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Action</div>,
+      id: '__actions',
+      enableSorting: false,
+      meta: { align: 'center', width: '9%', wrap: true },
+      cell: info => (
+        <ExpenseActionCell
+          claim={info.row.original}
+          mode={mode}
+          currentEmployeeId={currentEmployeeId}
+          canHrApprove={canHrApprove}
+          onAct={onAct}
+        />
+      ),
+    },
+  ];
+}
+
 export default function ExpenseClaimsTable({
   rows, loading,
   fallbackName, fallbackInitials, accent = '#7c5cfc',
   mode = 'mine', currentEmployeeId = null, canHrApprove = false,
   onAct,
 }: Props) {
+  const columns = useMemo(
+    () => expenseClaimColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct }),
+    [accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct],
+  );
   return (
     <>
       <style>{BADGE_DARK_CSS}</style>
-      <div className="table-responsive border rounded ep-att-scroll-wrap">
-        <table className="table align-middle table-nowrap ep-att-table exp-claims-table mb-0">
-          <thead className="table-light">
-            <tr>
-              <th>Exp ID</th>
-              <th>Employee</th>
-              <th>Category</th>
-              <th>Description</th>
-              <th>Expense Date</th>
-              <th className="exp-col-amount">Amount</th>
-              <th>Proof of Payment</th>
-              <th className="exp-col-status">Status</th>
-              <th className="text-center">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <ShimmerTableRows rows={5} cols={9} />
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="text-center py-5 text-muted">
-                  <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                  No claims to show.
-                </td>
-              </tr>
-            ) : rows.map(c => (
-              <ExpenseClaimRowView
-                key={c.id}
-                claim={c}
-                accent={accent}
-                fallbackName={fallbackName}
-                fallbackInitials={fallbackInitials}
-                mode={mode}
-                currentEmployeeId={currentEmployeeId}
-                canHrApprove={canHrApprove}
-                onAct={onAct}
-              />
-            ))}
-          </tbody>
-        </table>
+      {/* Search and paging stay OFF here: the callers (employee profile expense
+          tab) already own the sub-tabs, filter chips and their own
+          WorklistPager, and hand this component the page slice. */}
+      <DataTable<ExpenseClaimRow>
+        data={rows}
+        columns={columns}
+        accent="violet"
+        minWidth={1150}
+        loading={!!loading}
+        searchable={false}
+        paginate={false}
+        emptyMessage={
+          <>
+            <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+            No claims to show.
+          </>
+        }
+      />
+    </>
+  );
+}
+
+/** The Action cell — inline manager/HR approve-reject (when the viewer is
+ *  allowed to act on this row) plus the 3-dot audit-log popover. It owns the
+ *  confirm-modal state, which is why it's a component rather than inline JSX:
+ *  each row needs its own. */
+function ExpenseActionCell({
+  claim: c, mode, currentEmployeeId, canHrApprove, onAct,
+}: {
+  claim: ExpenseClaimRow;
+  mode: 'mine' | 'team' | 'hr';
+  currentEmployeeId: number | null;
+  canHrApprove: boolean;
+  onAct?: Props['onAct'];
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Confirmation modal for both approve & reject. The action shape carries
+  // both the verdict and the stage so we can render a contextual title +
+  // submit colour, and so the same dispatcher hits the right backend route.
+  type Confirm = { stage: 'manager' | 'hr'; verdict: 'approve' | 'reject' };
+  const [confirmAction, setConfirmAction] = useState<Confirm | null>(null);
+  const [comment, setComment] = useState('');
+
+  const canManagerAct =
+    mode === 'team'
+    && c.manager_status === 'pending'
+    && currentEmployeeId !== null
+    && c.manager_id === currentEmployeeId
+    && !!onAct;
+
+  const canHrAct =
+    mode === 'hr'
+    && canHrApprove
+    && c.manager_status === 'approved'
+    && c.hr_status === 'pending'
+    && !!onAct;
+
+  const verdictBtn = (stage: 'manager' | 'hr', verdict: 'approve' | 'reject') => (
+    <button
+      type="button"
+      data-tooltip={verdict === 'approve' ? 'Approve' : 'Reject'}
+      data-tooltip-pos="left"
+      aria-label={verdict === 'approve' ? 'Approve' : 'Reject'}
+      onClick={() => { setConfirmAction({ stage, verdict }); setComment(''); }}
+      className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+      style={{
+        width: 28, height: 28, padding: 0,
+        background: verdict === 'approve'
+          ? 'linear-gradient(135deg,#0ab39c,#02c8a7)'
+          : 'linear-gradient(135deg,#f06548,#ff7a5c)',
+        color: '#fff', border: 'none',
+      }}
+    >
+      <i className={verdict === 'approve' ? 'ri-check-line' : 'ri-close-line'} />
+    </button>
+  );
+
+  return (
+    <>
+      <div className="d-inline-flex align-items-center gap-1">
+        {canManagerAct && <>{verdictBtn('manager', 'approve')}{verdictBtn('manager', 'reject')}</>}
+        {canHrAct && <>{verdictBtn('hr', 'approve')}{verdictBtn('hr', 'reject')}</>}
+        <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} claim={c} />
       </div>
+
+      <ExpenseConfirmModal
+        target={confirmAction && onAct ? { claim: c, action: confirmAction } : null}
+        comment={comment}
+        setComment={setComment}
+        onClose={() => setConfirmAction(null)}
+        onConfirm={async () => {
+          if (!confirmAction || !onAct) return;
+          const isApprove = confirmAction.verdict === 'approve';
+          const action: ActionKind =
+              confirmAction.stage === 'manager'
+                ? (isApprove ? 'manager-approve' : 'manager-reject')
+                : (isApprove ? 'hr-approve'      : 'hr-reject');
+          await onAct(c.id, action, comment.trim() || undefined);
+          setConfirmAction(null);
+        }}
+      />
     </>
   );
 }

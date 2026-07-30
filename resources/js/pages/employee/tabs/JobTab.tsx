@@ -65,7 +65,7 @@ export default function JobTab() {
             </div>
             <div className="px-3 py-3">
               <Row className="g-4">
-                <Col md={3}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">{empDetail?.legal_entity?.entity_name || '—'}</div></Col>
+                <Col md={3}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">{empDetail?.legal_entity?.name || '—'}</div></Col>
                 <Col md={3}><div className="ep-field-label">Department</div><div className="ep-field-value">{empDetail?.department?.name || employee?.department || '—'}</div></Col>
                 <Col md={3}><div className="ep-field-label">Location</div><div className="ep-field-value">{empDetail?.location || '—'}</div></Col>
                 <Col md={3}>

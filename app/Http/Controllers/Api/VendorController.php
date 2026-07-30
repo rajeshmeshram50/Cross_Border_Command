@@ -175,6 +175,11 @@ class VendorController extends Controller
             ->where(fn ($q) => $q->where('client_id', $vendor->client_id)->orWhereNull('client_id'))
             ->pluck('id')->map(fn ($i) => (string) $i)->values()->all();
 
+        // Once this supplier is mapped to a Purchase Order, its STATE is baked into
+        // that PO's GST/tax classification (intra vs inter-state). Changing it later
+        // would desync the PO, so the form locks the State field. True = has a PO.
+        $data['state_locked'] = \App\Models\PurchaseOrder::where('vendor_id', $vendor->id)->exists();
+
         // Data for the removal guard's unique-document check (condition 2). Keyed
         // by segment ID (the vendor form keys segments by id): each segment's
         // required doc keys (category|code) + the keys actually uploaded.

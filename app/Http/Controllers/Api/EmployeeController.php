@@ -45,7 +45,9 @@ class EmployeeController extends Controller
         // exclude HR/Intern) can filter employees by their primary role.
         'primaryRole:id,name,role_category,role_type',
         'ancillaryRole:id,name',
-        'legalEntity:id,entity_name,city,state_id,country_id',
+        // Legal entity = the employing BRANCH (holds the GST/PAN/CIN + banks).
+        // `city`/`country` back the read-only "Location" beside the picker.
+        'legalEntity:id,name,code,city,state,country',
         'workCountry:id,name',
         'nationalityCountry:id,name',
         'country:id,name',
@@ -1676,7 +1678,21 @@ class EmployeeController extends Controller
             'perm_address_line2' => array_merge(['nullable', 'string', 'max:255'], $noTags),
             'perm_pincode'      => 'nullable|string|max:20',
 
-            'legal_entity_id' => 'nullable|integer',
+            // Legal entity = one of THIS client's branches (see Employee::legalEntity).
+            // Scoped so a crafted id can't attach an employee to another tenant's
+            // branch. The client id comes from resolveOwnership, not straight off
+            // the user: a super_admin has client_id === null, and passing null into
+            // the predicate would match nothing and reject every branch.
+            'legal_entity_id' => [
+                'nullable', 'integer',
+                Rule::exists('branches', 'id')->where(function ($q) use ($request) {
+                    [$ownerClientId] = $this->resolveOwnership($request);
+                    if ($ownerClientId !== null) {
+                        $q->where('client_id', $ownerClientId);
+                    }
+                    $q->whereNull('deleted_at');
+                }),
+            ],
             'location'        => array_merge(['nullable', 'string', 'max:191'], $noTags),
             // Department + designation arrive in step 2 of the wizard, so
             // they're nullable here — the frontend per-step validator gates

@@ -1811,6 +1811,21 @@ function ContractHistoryPanel({ t, draftCount, signedUrl, signatureRequestId, on
       setDownloading(false);
     }
   };
+  // Zoho "Certificate of Completion" (audit trail) — a separate artifact from the
+  // signed PDF, served by ClmSignatureController::viewCertificate. Available once
+  // the request is completed (i.e. we have a signature request id + signed copy).
+  const [dlCert, setDlCert] = useState(false);
+  const downloadCertificate = async () => {
+    if (!signatureRequestId || dlCert) return;
+    setDlCert(true);
+    try {
+      const res = await api.get(`/clm/signature-requests/${signatureRequestId}/certificate`, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
+      const a = document.createElement('a'); a.href = url; a.download = 'completion-certificate.pdf'; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch { toast.info('Not ready yet', 'The completion certificate will be available once all parties have signed.'); }
+    finally { setDlCert(false); }
+  };
   const steps = [
     { title: 'Contract Stored', sub: 'Moved to Final Contract Repository' },
     { title: 'Agreement Signed', sub: 'All parties executed the agreement' },
@@ -1861,6 +1876,14 @@ function ContractHistoryPanel({ t, draftCount, signedUrl, signatureRequestId, on
             {downloading
               ? <><svg className="ctc-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>Downloading…</span></>
               : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={signedUrl ? '#fff' : (t.dark ? '#94a3b8' : '#94A3B8')} strokeWidth="2.3" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg><span style={{ fontSize: 10, fontWeight: 800, color: signedUrl ? '#fff' : (t.dark ? '#94a3b8' : '#94A3B8') }}>{signedUrl ? 'Download Signed Copy' : 'Awaiting Signed Copy'}</span></>}
+          </button>
+          </Tooltip>
+          {/* Zoho completion certificate — available once signed */}
+          <Tooltip label={(signatureRequestId && signedUrl) ? '' : 'Available once all parties have signed'}>
+          <button onClick={downloadCertificate} disabled={!signatureRequestId || !signedUrl || dlCert} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, padding: '10px', borderRadius: 10, border: `1.5px solid ${t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0'}`, background: t.dark ? 'rgba(16,185,129,.10)' : '#ECFDF5', cursor: (!signatureRequestId || !signedUrl || dlCert) ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: (!signatureRequestId || !signedUrl) ? 0.6 : 1 }}>
+            {dlCert
+              ? <><svg className="ctc-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#6ee7b7' : '#047857'} strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg><span style={{ fontSize: 10, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#047857' }}>Downloading…</span></>
+              : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#6ee7b7' : '#047857'} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg><span style={{ fontSize: 10, fontWeight: 800, color: t.dark ? '#6ee7b7' : '#047857' }}>Download Certificate</span></>}
           </button>
           </Tooltip>
           {/* Back to the CTC list */}

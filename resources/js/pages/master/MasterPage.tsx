@@ -8,9 +8,10 @@ import {
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import MasterPlaceholder from '../MasterPlaceholder';
-import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
+import DataTable from '../../components/ui/DataTable';
+import InlineSublist from '../../components/ui/InlineSublist';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
-import { ShimmerTable, ShimmerStatCards } from '../../components/ui/Shimmer';
+import { ShimmerStatCards } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import {
@@ -126,12 +127,6 @@ function MasterPageInner({
   // alone can't drive re-renders — this lightweight controlled state powers
   // the "Calendar vs If Joining" style branches in the Leave Plan form.
   const [radioValues, setRadioValues] = useState<Record<string, string>>({});
-
-  // "Manage Banks" — legal_entities-only focused modal that lets the user view
-  // and edit just the bank accounts attached to a row, without opening the
-  // full entity edit form.
-  const [banksMgrOpen, setBanksMgrOpen] = useState(false);
-  const [banksMgrTarget, setBanksMgrTarget] = useState<any | null>(null);
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const clearFieldError = (name: string) => {
@@ -416,7 +411,8 @@ function MasterPageInner({
     setEditingId(row.id);
     setViewOnly(readonly);
     // Hydrate sublist state from the row — backend returns child arrays inline
-    // (e.g. legal_entities → row.banks), so the form pre-fills with existing items.
+    // (e.g. row.banks for a bank-accounts sublist), so the form pre-fills with
+    // any existing items.
     const init: Record<string, any[]> = {};
     for (const f of cfg.fields) {
       if (f.t === 'sublist' && f.n) {
@@ -1365,18 +1361,12 @@ function MasterPageInner({
     );
   };
 
-  // Columns for TableContainer (TanStack Table). Built dynamically from cfg.cols + ownershipCols
-  // so every master automatically gets the same look as the Clients table (Clients.tsx).
+  // Columns for the shared <DataTable> (TanStack Table). Built dynamically from
+  // cfg.cols + ownershipCols so every master renders the same table.
+  // No Sr No column here — DataTable's `serial` prop prepends it and numbers the
+  // row's VISIBLE position, which stays 1..n when a column is sorted.
   const columns = useMemo(() => {
-    const cols: any[] = [
-      {
-        // Sr No reads cleanest centered — narrow numeric column.
-        header: 'Sr No',
-        accessorKey: '__index',
-        meta: { align: 'center' },
-        cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
-      },
-    ];
+    const cols: any[] = [];
     cfg.cols.forEach((colName, idx) => {
       // Only the 'level' rating tile is visually centered as a square
       // badge — everything else (status pill, code chip, plain text)
@@ -1390,7 +1380,7 @@ function MasterPageInner({
             {cfg.colL[idx] || colName}
           </div>
         ),
-        // Accessor: resolve ref labels upfront so TableContainer's global filter can search them.
+        // Accessor: resolve ref labels upfront so sorting/search see the label.
         accessorFn: (row: any) => {
           const f = cfg.fields.find(ff => ff.n === colName);
           if (f?.ref) return resolveRefLabel(f.ref, f.refL, row[colName]);
@@ -1596,14 +1586,6 @@ function MasterPageInner({
               disabled={blockedByRank || isSystemRow || inUseRow}
               onClick={() => handleDeleteClick(info.row.original)}
             />}
-            {cfg.slug === 'legal_entities' && caps.edit && (
-              <ActionBtn
-                title="Manage Bank Accounts"
-                icon="ri-bank-line"
-                color="primary"
-                onClick={() => { setBanksMgrTarget(info.row.original); setBanksMgrOpen(true); }}
-              />
-            )}
             {cfg.slug === 'departments' ? (
               <ActionBtn
                 title="Employee Tree"
@@ -1717,9 +1699,9 @@ function MasterPageInner({
   return (
     <>
       {/* ───── Shared visual polish for every master ──────────────────────────
-          KPI hover, table row hover, badge refinements, action-button focus
-          ring, and dark-mode-aware overrides. Scoped via the .mp-kpi-tile /
-          .master-scroll-wrap class names so it only affects this surface. */}
+          The page header strip, KPI tile hover, the toolbar Add button, badge
+          refinements and their dark-mode overrides. Scoped via the .mp-*
+          class names so nothing leaks off this surface. */}
       <style>{`
         /* KPI tile lift + indigo glow on hover */
         .mp-kpi-tile { transition: transform 180ms ease, box-shadow 220ms ease, border-color 180ms ease; cursor: default; }
@@ -1734,54 +1716,81 @@ function MasterPageInner({
           border-color: rgba(139,92,246,0.55) !important;
         }
 
-        /* Table — smoother row hover + cleaner header */
-        .master-scroll-wrap table thead.table-light th {
-          background: rgba(99,102,241,0.06);
-          color: var(--vz-secondary-color);
-          font-size: 11px;
-          font-weight: 800;
-          letter-spacing: 0.4px;
-          text-transform: uppercase;
-          padding-top: 12px;
-          padding-bottom: 12px;
-          border-bottom: 1px solid var(--vz-border-color);
+        /* ── Page header strip ────────────────────────────────────────────────
+           Ported from the Supplier Management header (.sup-fig .cstrip in
+           pages/p2p/p2p-master-management/supplier-management/
+           supplier-management.css) so every master opens with the same 58px
+           violet strip as the Supplier list. Values are that file's verbatim —
+           only the class prefix changed. */
+        .mp-cstrip {
+          position: relative; overflow: hidden;
+          display: flex; align-items: center; justify-content: space-between;
+          min-height: 58px; padding: 0 20px;
+          border: 1px solid #c4b5fd; border-radius: 16px;
+          background: linear-gradient(110deg,#faf5ff 0%,#f3e8ff 25%,#ede9fe 55%,#ddd6fe 85%,#c4b5fd 100%);
+          box-shadow: 0 2px 0 rgba(255,255,255,.85) inset, 0 8px 28px rgba(139,92,246,.2), 0 2px 8px rgba(0,0,0,.06);
         }
-        .master-scroll-wrap table tbody tr { transition: background 120ms ease; }
-        .master-scroll-wrap table tbody tr:hover {
-          background: rgba(99,102,241,0.06) !important;
+        .mp-cstrip__accent { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: linear-gradient(180deg,#a78bfa,#7c3aed,#5b21b6); border-radius: 16px 0 0 16px; }
+        .mp-cstrip__glow { position: absolute; inset: 0; pointer-events: none; background-image: radial-gradient(ellipse at 10% 50%,rgba(196,181,253,.45) 0%,transparent 50%), radial-gradient(ellipse at 90% 50%,rgba(167,139,250,.25) 0%,transparent 55%); }
+        .mp-cstrip__sheen { position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none; background: linear-gradient(180deg,rgba(255,255,255,.5),transparent); border-radius: 16px 16px 0 0; }
+        .mp-cstrip__left { display: flex; align-items: center; gap: 13px; z-index: 1; padding-left: 10px; min-width: 0; }
+        .mp-cstrip__avatar-wrap { position: relative; flex-shrink: 0; }
+        .mp-cstrip__avatar {
+          width: 38px; height: 38px; border-radius: 12px;
+          display: flex; align-items: center; justify-content: center;
+          color: #fff; font-size: 18px;
+          background: linear-gradient(135deg,#8b5cf6 0%,#7c3aed 55%,#5b21b6 100%);
+          box-shadow: 0 0 0 3px rgba(139,92,246,.25), 0 4px 14px rgba(124,58,237,.45);
         }
-        [data-bs-theme="dark"] .master-scroll-wrap table thead.table-light th,
-        [data-layout-mode="dark"] .master-scroll-wrap table thead.table-light th {
-          background: rgba(99,102,241,0.14);
-          color: rgba(255,255,255,0.70);
+        .mp-cstrip__dot { position: absolute; bottom: -1px; right: -1px; width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg,#4ade80,#22c55e); border: 2px solid #f3e8ff; box-shadow: 0 2px 4px rgba(34,197,94,.4); }
+        .mp-cstrip__title { font-size: 14.5px; font-weight: 700; color: #3b0764; letter-spacing: -.3px; line-height: 1.2; }
+        .mp-cstrip__sub { font-size: 10px; font-weight: 500; color: #6d28d9; opacity: .85; margin-top: 2px; line-height: 1.3; }
+        .mp-cstrip__right { display: flex; align-items: center; gap: 7px; z-index: 1; flex-shrink: 0; }
+        .mp-cstrip__back {
+          display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+          height: 34px; padding: 0 14px; border-radius: 12px;
+          border: 1px solid rgba(124,58,237,.35); background: rgba(255,255,255,.75);
+          color: #6d28d9; font-family: inherit; font-size: 12px; font-weight: 700;
+          white-space: nowrap; cursor: pointer;
+          transition: background .15s ease, border-color .15s ease, transform .15s ease;
         }
-        [data-bs-theme="dark"] .master-scroll-wrap table tbody tr:hover,
-        [data-layout-mode="dark"] .master-scroll-wrap table tbody tr:hover {
-          background: rgba(99,102,241,0.14) !important;
+        .mp-cstrip__back:hover { background: #fff; border-color: #a78bfa; transform: translateY(-1px); }
+        .mp-cstrip__back i { font-size: 14px; }
+        @media (max-width: 640px) {
+          .mp-cstrip { flex-direction: column; align-items: flex-start; gap: 10px; padding: 12px 16px; }
         }
+        [data-bs-theme="dark"] .mp-cstrip,
+        [data-layout-mode="dark"] .mp-cstrip { background: #34216b; border-color: rgba(167,139,250,.28); box-shadow: 0 8px 28px rgba(0,0,0,.4); }
+        [data-bs-theme="dark"] .mp-cstrip__glow, [data-layout-mode="dark"] .mp-cstrip__glow,
+        [data-bs-theme="dark"] .mp-cstrip__sheen, [data-layout-mode="dark"] .mp-cstrip__sheen { display: none; }
+        [data-bs-theme="dark"] .mp-cstrip__title, [data-layout-mode="dark"] .mp-cstrip__title { color: #f3e8ff; }
+        [data-bs-theme="dark"] .mp-cstrip__sub, [data-layout-mode="dark"] .mp-cstrip__sub { color: #c4b5fd; }
+        [data-bs-theme="dark"] .mp-cstrip__back, [data-layout-mode="dark"] .mp-cstrip__back { background: rgba(255,255,255,.08); color: #ddd6fe; }
+        [data-bs-theme="dark"] .mp-cstrip__back:hover, [data-layout-mode="dark"] .mp-cstrip__back:hover { background: rgba(255,255,255,.16); }
 
-        /* Status / created-by badges — softer Velzon "subtle" treatment.
-           Targets the Badge component when the page renders it as
-           bg-success-subtle / bg-danger-subtle / etc. Boosts contrast in
-           dark mode without changing the markup. */
+        /* "Add <master>" — rides in the DataTable toolbar (right end). Same
+           gradient pill the search row used to carry. */
+        .mp-add-btn {
+          display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+          height: 34px; padding: 0 18px; border: 0; border-radius: 999px;
+          background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%);
+          color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 600;
+          white-space: nowrap; cursor: pointer;
+          box-shadow: 0 5px 16px rgba(124,58,237,0.40), 0 2px 5px rgba(91,33,182,0.25);
+          transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+        }
+        .mp-add-btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
+        .mp-add-btn i { font-size: 15px; }
+
+        /* Status / created-by badges — softer Velzon "subtle" treatment inside
+           the table body. */
         .mp-kpi-tile + * .badge,
-        .master-scroll-wrap .badge {
+        .dt-table .badge {
           font-weight: 700;
           letter-spacing: 0.2px;
           padding: 5px 10px;
           border-radius: 999px;
           font-size: 11px;
-        }
-
-        /* Add-button hover lift — the rounded-pill "Add X" button on every master */
-        .mp-shell-add .btn,
-        .master-scroll-wrap ~ .row .btn-label,
-        .row .btn-label.rounded-pill {
-          transition: transform 140ms ease, box-shadow 200ms ease;
-        }
-        .row .btn-label.rounded-pill:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 8px 18px rgba(99,102,241,0.30);
         }
 
         /* Search box — give the resting + hover border real contrast so the
@@ -1856,153 +1865,79 @@ function MasterPageInner({
          * The first-column renderer already adds a hover tooltip for its
          * truncated value; for other columns, browsers show the title
          * attribute on hover when it's present. */
-        .master-list-card .table tbody td,
-        .master-list-card .table thead th { vertical-align: middle; }
-        .master-list-card .table tbody td {
-          max-width: 260px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        /* Action / status / pill columns stay nowrap with no width clamp
-         * so the buttons and badges aren't truncated. */
-        .master-list-card .table tbody td:has(.btn),
-        .master-list-card .table tbody td:has(.badge),
-        .master-list-card .table tbody td:has(.mp-status-active),
-        .master-list-card .table tbody td:has(.mp-status-inactive) {
-          max-width: none;
+        /* Cells holding a button / badge / status pill must not clip it —
+           DataTable's td truncates text by default. */
+        .dt-table tbody td:has(.btn),
+        .dt-table tbody td:has(.badge),
+        .dt-table tbody td:has(.mp-status-active),
+        .dt-table tbody td:has(.mp-status-inactive) {
           overflow: visible;
         }
       `}</style>
 
 
-      {/* Page title — EVERY master (now including Departments) uses the same
-          rich client-style [icon|title+subtitle][Back] strip for a consistent
-          look across all master pages. */}
-      {true && (
-      <Row>
-        <Col xs={12}>
-          {true ? (
-            <div
-              className="dsn-page-strip d-sm-flex align-items-center justify-content-between flex-wrap gap-3 mb-3"
-              style={{
-                padding: '16px 20px',
-              }}
-            >
-              <div className="d-flex align-items-center gap-3 min-w-0">
-                <span
-                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                  style={{
-                    position: 'relative',
-                    width: 46, height: 46,
-                    // Violet gradient icon with a green status dot — mirrors the
-                    // Clients header (.cl-cstrip-icon).
-                    background: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
-                    boxShadow: '0 4px 14px rgba(91,33,182,0.40), 0 0 0 3px rgba(124,58,237,0.10)',
-                  }}
-                >
-                  <i className={cfg.icon} style={{ color: '#ffffff', fontSize: 21 }} />
-                  <span
-                    style={{
-                      position: 'absolute', bottom: -2, right: -2,
-                      width: 11, height: 11, borderRadius: '50%',
-                      background: '#22c55e', border: '2px solid #ffffff',
-                      boxShadow: '0 0 0 1px rgba(34,197,94,0.25), 0 2px 5px rgba(34,197,94,0.45)',
-                    }}
-                  />
-                </span>
-                <div className="min-w-0">
-                  <h4 className="mb-0 fw-bold" style={{ color: 'var(--vz-heading-color, #2e1065)', letterSpacing: '0.01em' }}>
-                    {cfg.slug === 'roles' ? 'Role Master'
-                      : cfg.slug === 'kpis' ? 'KPI Master'
-                      : cfg.slug === 'assets' ? 'Asset Master'
-                      : cfg.slug === 'legal_entities' ? 'Legal Entities'
-                      : cfg.slug === 'haz_class' ? 'Hazard Classifications'
-                      : cfg.slug === 'uom' ? 'Units of Measurement'
-                      : cfg.slug === 'hsn_codes' ? 'HSN Codes'
-                      : cfg.slug === 'gst_percentage' ? 'GST Percentages'
-                      : cfg.slug === 'packaging_material' ? 'Packaging Materials'
-                      : cfg.slug === 'conditions' ? 'Product Conditions'
-                      : cfg.slug === 'segments' ? 'Segments'
-                      : cfg.slug === 'departments' ? 'Department Master'
-                      : cfg.title}
-                  </h4>
-                  <p className="mb-0 text-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
-                    {cfg.slug === 'roles'
-                      ? 'Manage all employee roles, role types, and role structure for workforce assignment'
-                      : cfg.slug === 'kpis'
-                      ? 'Define performance targets, role assignments and tracking criteria for KPIs'
-                      : cfg.slug === 'assets'
-                      ? 'Track company equipment, vendors, warranties and depreciation across the organisation'
-                      : cfg.slug === 'legal_entities'
-                      ? 'Manage all legal entities — entity details, logo, bank accounts & address'
-                      : cfg.slug === 'haz_class'
-                      ? 'Manage GHS/UN hazard classes used to tag products requiring special handling'
-                      : cfg.slug === 'uom'
-                      ? 'Manage units (Kg, Box, Pcs) used on product & shipment records'
-                      : cfg.slug === 'hsn_codes'
-                      ? 'Manage 8-digit HSN commodity codes used for GST & customs filings'
-                      : cfg.slug === 'gst_percentage'
-                      ? 'Manage GST slabs (0%, 5%, 12%, 18%, 28%) applied to products & invoices'
-                      : cfg.slug === 'packaging_material'
-                      ? 'Manage packaging materials (carton, drum, sack) used for product shipments'
-                      : cfg.slug === 'conditions'
-                      ? 'Manage storage & handling states (Organic, Fresh, Frozen) for products'
-                      : cfg.slug === 'segments'
-                      ? 'Manage business segments (Dry Fruits, Pharma, etc.) used to classify orders & products'
-                      : cfg.slug === 'departments'
-                      ? 'Manage department hierarchy, heads & configuration across the organisation'
-                      : `Manage ${cfg.title.toLowerCase()} records`}
-                  </p>
-                </div>
-              </div>
-              <div className="d-flex align-items-center gap-2 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={() => navigate('/master')}
-                  title="Back to Master list"
-                  className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill"
-                  style={{
-                    height: 38,
-                    padding: '0 18px',
-                    background: 'color-mix(in srgb, #7c3aed 8%, #ffffff)',
-                    color: '#6d28d9',
-                    border: '1px solid color-mix(in srgb, #7c3aed 30%, transparent)',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'background 0.18s ease',
-                    whiteSpace: 'nowrap',
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #7c3aed 14%, #ffffff)'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #7c3aed 8%, #ffffff)'; }}
-                >
-                  <i className="ri-arrow-left-line" style={{ fontSize: 15 }}></i>
-                  Back to Master list
-                </button>
-                {/* Add button moved to the search/filter row (right corner) for
-                    every master — see the search Row below. */}
-              </div>
+      {/* Page header — the Supplier Management strip (.sup-fig .cstrip in
+          p2p/.../supplier-management.css): violet gradient wash, accent rail,
+          glow + sheen, 38px icon tile with an online dot, action on the right.
+          Every master renders it, so all ~50 pages open identically. */}
+      <div className="mp-cstrip mb-3">
+        <span className="mp-cstrip__accent" />
+        <span className="mp-cstrip__glow" />
+        <span className="mp-cstrip__sheen" />
+        <div className="mp-cstrip__left">
+          <div className="mp-cstrip__avatar-wrap">
+            <div className="mp-cstrip__avatar"><i className={cfg.icon} /></div>
+            <span className="mp-cstrip__dot" />
+          </div>
+          <div className="min-w-0">
+            <div className="mp-cstrip__title">
+              {cfg.slug === 'roles' ? 'Role Master'
+                : cfg.slug === 'kpis' ? 'KPI Master'
+                : cfg.slug === 'assets' ? 'Asset Master'
+                : cfg.slug === 'haz_class' ? 'Hazard Classifications'
+                : cfg.slug === 'uom' ? 'Units of Measurement'
+                : cfg.slug === 'hsn_codes' ? 'HSN Codes'
+                : cfg.slug === 'gst_percentage' ? 'GST Percentages'
+                : cfg.slug === 'packaging_material' ? 'Packaging Materials'
+                : cfg.slug === 'conditions' ? 'Product Conditions'
+                : cfg.slug === 'segments' ? 'Segments'
+                : cfg.slug === 'departments' ? 'Department Master'
+                : cfg.title}
             </div>
-          ) : (
-            <div className="frm-cstrip mb-3">
-              <span className="frm-cstrip-accent" />
-              <div className="frm-cstrip-left">
-                <div className="frm-cstrip-icon"><i className={cfg.icon} /></div>
-                <div className="min-w-0">
-                  <div className="frm-cstrip-title">{cfg.title}</div>
-                  <div className="frm-cstrip-sub">Manage {singular} records</div>
-                </div>
-              </div>
-              <button type="button" className="frm-cstrip-back" onClick={() => navigate('/master')}>
-                <i className="ri-arrow-left-line" />
-                Back to Master list
-              </button>
+            <div className="mp-cstrip__sub">
+              {cfg.slug === 'roles'
+                ? 'Manage all employee roles, role types, and role structure for workforce assignment'
+                : cfg.slug === 'kpis'
+                ? 'Define performance targets, role assignments and tracking criteria for KPIs'
+                : cfg.slug === 'assets'
+                ? 'Track company equipment, vendors, warranties and depreciation across the organisation'
+                : cfg.slug === 'haz_class'
+                ? 'Manage GHS/UN hazard classes used to tag products requiring special handling'
+                : cfg.slug === 'uom'
+                ? 'Manage units (Kg, Box, Pcs) used on product & shipment records'
+                : cfg.slug === 'hsn_codes'
+                ? 'Manage 8-digit HSN commodity codes used for GST & customs filings'
+                : cfg.slug === 'gst_percentage'
+                ? 'Manage GST slabs (0%, 5%, 12%, 18%, 28%) applied to products & invoices'
+                : cfg.slug === 'packaging_material'
+                ? 'Manage packaging materials (carton, drum, sack) used for product shipments'
+                : cfg.slug === 'conditions'
+                ? 'Manage storage & handling states (Organic, Fresh, Frozen) for products'
+                : cfg.slug === 'segments'
+                ? 'Manage business segments (Dry Fruits, Pharma, etc.) used to classify orders & products'
+                : cfg.slug === 'departments'
+                ? 'Manage department hierarchy, heads & configuration across the organisation'
+                : `Manage ${cfg.title.toLowerCase()} records`}
             </div>
-          )}
-        </Col>
-      </Row>
-      )}
+          </div>
+        </div>
+        <div className="mp-cstrip__right">
+          <button type="button" className="mp-cstrip__back" onClick={() => navigate('/master')} title="Back to Master list">
+            <i className="ri-arrow-left-line" />
+            Back to Master list
+          </button>
+        </div>
+      </div>
 
       {/* "What you are doing here" guide — fully retired. Departments now uses
           the same rich client-style header + search-row Add as every other
@@ -2061,150 +1996,104 @@ function MasterPageInner({
         </div>
       )}
 
-      {/* Main card — search + Add New row, then table */}
-      <Row>
-        <Col xs={12}>
-          <Card className={`shadow-sm master-list-card ${(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities') ? 'master-page-card' : ''}`} style={{ borderRadius: 16 }}>
-            <CardBody>
-              {/* Designations-only: KPI strip + hierarchy chips. */}
-              {cfg.slug === 'designations' && (
-                <DesignationExtras
-                  records={records}
-                  filteredCount={filteredRecords.length}
-                />
-              )}
-              {/* Roles-only: KPI strip + filter chip tabs. */}
-              {cfg.slug === 'roles' && (
-                <RolesExtras
-                  records={records}
-                  activeTab={roleTab}
-                  setActiveTab={setRoleTab}
-                />
-              )}
-              {/* KPI-master only: KPI count cards. */}
-              {cfg.slug === 'kpis' && (
-                <KpiExtras records={records} />
-              )}
+      {/* Designations-only: KPI strip + hierarchy chips. */}
+      {cfg.slug === 'designations' && (
+        <DesignationExtras
+          records={records}
+          filteredCount={filteredRecords.length}
+        />
+      )}
+      {/* Roles-only: KPI strip + filter chip tabs. */}
+      {cfg.slug === 'roles' && (
+        <RolesExtras
+          records={records}
+          activeTab={roleTab}
+          setActiveTab={setRoleTab}
+        />
+      )}
+      {/* KPI-master only: KPI count cards. */}
+      {cfg.slug === 'kpis' && (
+        <KpiExtras records={records} />
+      )}
 
-              {/* Search bar (left) + filters/Add button on the right. */}
-              <Row className="g-2 align-items-center mb-3">
-                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities' || cfg.slug === 'departments') ? 4 : 6} sm={12}>
-                  <div className="search-box">
-                    <Input
-                      type="text"
-                      className="form-control"
-                      placeholder={`Search ${cfg.title.toLowerCase()}...`}
-                      value={searchInput}
-                      onChange={e => setSearchInput(e.target.value)}
-                    />
-                    <i className="ri-search-line search-icon"></i>
-                  </div>
-                </Col>
-                <Col md={(cfg.slug === 'designations' || cfg.slug === 'roles' || cfg.slug === 'kpis' || cfg.slug === 'assets' || cfg.slug === 'legal_entities' || cfg.slug === 'departments') ? 8 : 6} sm={12} className="d-flex justify-content-md-end align-items-center flex-wrap" style={{ gap: 12 }}>
-                  {cfg.slug === 'designations' && (
-                    <DesignationInlineFilters
-                      refData={refData}
-                      statusFilter={dsnStatusFilter}
-                      setStatusFilter={setDsnStatusFilter}
-                      levelFilter={dsnLevelFilter}
-                      setLevelFilter={setDsnLevelFilter}
-                      deptFilter={dsnDeptFilter}
-                      setDeptFilter={setDsnDeptFilter}
-                    />
-                  )}
-                  {cfg.slug === 'departments' && (
-                    <DepartmentInlineFilters
-                      records={records}
-                      statusFilter={dpStatusFilter}
-                      setStatusFilter={setDpStatusFilter}
-                      parentFilter={dpParentFilter}
-                      setParentFilter={setDpParentFilter}
-                    />
-                  )}
-                  {cfg.slug === 'roles' && (
-                    <RolesInlineFilters
-                      refData={refData}
-                      typeFilter={roleTypeFilter}
-                      setTypeFilter={setRoleTypeFilter}
-                      statusFilter={roleStatusFilter}
-                      setStatusFilter={setRoleStatusFilter}
-                      deptFilter={roleDeptFilter}
-                      setDeptFilter={setRoleDeptFilter}
-                    />
-                  )}
-                  {cfg.slug === 'kpis' && (
-                    <KpiInlineFilters
-                      refData={refData}
-                      roleFilter={kpiRoleFilter}
-                      setRoleFilter={setKpiRoleFilter}
-                      targetFilter={kpiTargetFilter}
-                      setTargetFilter={setKpiTargetFilter}
-                      priorityFilter={kpiPriorityFilter}
-                      setPriorityFilter={setKpiPriorityFilter}
-                    />
-                  )}
-                  {/* Add button — lives in this search/filter row (right corner)
-                      for EVERY master (Departments included). Violet gradient
-                      pill matches the client-style page header. */}
-                  {caps.add && (
-                    <button
-                      type="button"
-                      onClick={openAdd}
-                      className="d-inline-flex align-items-center justify-content-center gap-2 rounded-pill border-0"
-                      style={{
-                        height: 38,
-                        padding: '0 20px',
-                        background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%)',
-                        color: '#ffffff',
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                        boxShadow: '0 5px 16px rgba(124,58,237,0.40), 0 2px 5px rgba(91,33,182,0.25)',
-                        transition: 'transform .18s ease, box-shadow .18s ease, filter .18s ease',
-                      }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(1.05)'; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLButtonElement).style.filter = 'none'; }}
-                    >
-                      <i className="ri-add-line" style={{ fontSize: 16 }}></i>
-                      Add {singular}
-                    </button>
-                  )}
-                </Col>
-              </Row>
-
-              {loading ? (
-                /* Skeleton placeholder while the master rows + reference
-                   data are in flight. Same shape as the real table
-                   (header strip + 7 rows) so the layout doesn't jump
-                   when the data lands. `cols` mirrors the visible
-                   column count (config cols + sr-no + actions). */
-                <ShimmerTable rows={7} cols={Math.max(4, (columns?.length ?? 6))} />
-              ) : (
-                <>
-                  <TableContainer
-                    columns={columns}
-                    data={filteredRecords}
-                    isGlobalFilter={false}
-                    customPageSize={10}
-                    worklistPagination
-                    tableClass="align-middle table-nowrap mb-0"
-                    theadClass="table-light"
-                    divClass="table-responsive border rounded master-scroll-wrap"
-                    SearchPlaceholder={`Search ${cfg.title.toLowerCase()}...`}
-                  />
-                  {records.length === 0 && (
-                    <div className="text-center py-5">
-                      <i className="ri-inbox-line display-5 text-muted"></i>
-                      <p className="text-muted mt-2">No records found</p>
-                    </div>
-                  )}
-                </>
-              )}
-            </CardBody>
-          </Card>
-        </Col>
-      </Row>
+      {/* Shared list table (components/ui/DataTable) — the same component the
+          rest of the app uses: search, sortable headers, the rows-per-page
+          footer and the fit-the-viewport row sizing all live in the component.
+          Each master's inline filters and its Add button ride in the toolbar,
+          which is where the old search Row used to put them. */}
+      <DataTable<any>
+        data={filteredRecords}
+        columns={columns}
+        serial
+        accent="violet"
+        minWidth={1100}
+        fitToViewport
+        autoFitRows
+        loading={loading}
+        searchValue={searchInput}
+        onSearchChange={setSearchInput}
+        searchPlaceholder={`Search ${cfg.title.toLowerCase()}...`}
+        emptyMessage={
+          <>
+            <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+            {records.length === 0
+              ? `No ${cfg.title.toLowerCase()} yet${caps.add ? ` — click Add ${singular} to create the first one` : ''}`
+              : `No ${cfg.title.toLowerCase()} match your search`}
+          </>
+        }
+        toolbarActions={
+          <>
+            {cfg.slug === 'designations' && (
+              <DesignationInlineFilters
+                refData={refData}
+                statusFilter={dsnStatusFilter}
+                setStatusFilter={setDsnStatusFilter}
+                levelFilter={dsnLevelFilter}
+                setLevelFilter={setDsnLevelFilter}
+                deptFilter={dsnDeptFilter}
+                setDeptFilter={setDsnDeptFilter}
+              />
+            )}
+            {cfg.slug === 'departments' && (
+              <DepartmentInlineFilters
+                records={records}
+                statusFilter={dpStatusFilter}
+                setStatusFilter={setDpStatusFilter}
+                parentFilter={dpParentFilter}
+                setParentFilter={setDpParentFilter}
+              />
+            )}
+            {cfg.slug === 'roles' && (
+              <RolesInlineFilters
+                refData={refData}
+                typeFilter={roleTypeFilter}
+                setTypeFilter={setRoleTypeFilter}
+                statusFilter={roleStatusFilter}
+                setStatusFilter={setRoleStatusFilter}
+                deptFilter={roleDeptFilter}
+                setDeptFilter={setRoleDeptFilter}
+              />
+            )}
+            {cfg.slug === 'kpis' && (
+              <KpiInlineFilters
+                refData={refData}
+                roleFilter={kpiRoleFilter}
+                setRoleFilter={setKpiRoleFilter}
+                targetFilter={kpiTargetFilter}
+                setTargetFilter={setKpiTargetFilter}
+                priorityFilter={kpiPriorityFilter}
+                setPriorityFilter={setKpiPriorityFilter}
+              />
+            )}
+            {caps.add && (
+              <button type="button" className="mp-add-btn" onClick={openAdd}>
+                <i className="ri-add-line" />
+                Add {singular}
+              </button>
+            )}
+          </>
+        }
+      />
 
       {/* Add / Edit modal */}
       <MasterFormStyles />
@@ -2400,457 +2289,12 @@ function MasterPageInner({
         department={treeTarget}
       />
 
-      <BanksManagerModal
-        open={banksMgrOpen}
-        onClose={() => { setBanksMgrOpen(false); setBanksMgrTarget(null); }}
-        entity={banksMgrTarget}
-        bankField={cfg.fields.find(f => f.t === 'sublist' && f.n === 'banks') || null}
-        onSaved={(updatedRow) => {
-          setRecords(prev => prev.map(r => r.id === updatedRow.id ? updatedRow : r));
-          setBanksMgrTarget(updatedRow);
-        }}
-      />
-
     </>
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────
- * Inline sublist — replaces the previous modal-over-modal approach.
- * Renders existing items as cards plus an inline editor panel that
- * expands below the cards when adding/editing. No nested popups, and
- * multiple items can still be added one after another.
- * ──────────────────────────────────────────────────────────────────── */
-function InlineSublist({
-  field,
-  value,
-  onChange,
-  viewOnly,
-}: {
-  field: FieldDef;
-  value: any[];
-  onChange: (next: any[]) => void;
-  viewOnly: boolean;
-}) {
-  // editingIdx: null = panel closed; -1 = adding new; 0+ = editing that index.
-  const [editingIdx, setEditingIdx] = useState<number | null>(null);
-  // Draft mirrors the in-progress item while the panel is open.
-  const [draft, setDraft] = useState<Record<string, any>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  if (!field.subFields) return null;
-
-  const fmtVal = (v: any): string => {
-    if (v == null || v === '') return '';
-    if (typeof v === 'boolean') return v ? 'Yes' : 'No';
-    return String(v);
-  };
-  const lines = (item: any): string => {
-    const parts: string[] = [];
-    for (const fname of (field.subCardLines || [])) {
-      const v = fmtVal(item[fname]);
-      if (v !== '') parts.push(v);
-    }
-    return parts.join(' · ');
-  };
-
-  const openAdd = () => {
-    setEditingIdx(-1);
-    setDraft({});
-    setErrors({});
-  };
-  const openEdit = (idx: number) => {
-    setEditingIdx(idx);
-    // Clone item; normalise is_primary back to Yes/No string for the select.
-    const item = value[idx] || {};
-    const init: Record<string, any> = { ...item };
-    if (field.subPrimaryFlagField) {
-      const flag = item[field.subPrimaryFlagField];
-      init[field.subPrimaryFlagField] = (flag === true || flag === 'Yes' || flag === 1) ? 'Yes' : 'No';
-    }
-    setDraft(init);
-    setErrors({});
-  };
-  const closePanel = () => {
-    setEditingIdx(null);
-    setDraft({});
-    setErrors({});
-  };
-  const deleteItem = (idx: number) => {
-    onChange(value.filter((_, i) => i !== idx));
-    if (editingIdx === idx) closePanel();
-  };
-
-  const handleSubmit = () => {
-    if (!field.subFields) return;
-    const errs: Record<string, string> = {};
-    const payload: Record<string, any> = {};
-
-    for (const sf of field.subFields) {
-      const raw = draft[sf.n];
-      const str = raw == null ? '' : String(raw).trim();
-      if (sf.r && !str) errs[sf.n] = `${sf.l} is required`;
-      // Format check — only when a value is present (required handled above).
-      else if (str && sf.pattern && !new RegExp(sf.pattern).test(str)) {
-        errs[sf.n] = sf.patternMessage || `${sf.l} is invalid`;
-      }
-      if (sf.n === field.subPrimaryFlagField) {
-        payload[sf.n] = str === 'Yes' || str === 'true' || str === '1' || raw === true;
-      } else if (sf.t === 'number') {
-        payload[sf.n] = str === '' ? null : Number(str);
-      } else {
-        payload[sf.n] = str === '' ? null : str;
-      }
-    }
-
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs);
-      return;
-    }
-
-    // Preserve existing id when editing so backend syncs in place.
-    if (editingIdx != null && editingIdx >= 0) {
-      const existing = value[editingIdx];
-      if (existing?.id) payload.id = existing.id;
-      const next = [...value];
-      next[editingIdx] = { ...existing, ...payload };
-      onChange(next);
-    } else {
-      onChange([...value, payload]);
-    }
-    closePanel();
-  };
-
-  const updateDraft = (name: string, val: any) => {
-    setDraft(prev => ({ ...prev, [name]: val }));
-    if (errors[name]) {
-      setErrors(prev => {
-        const n = { ...prev };
-        delete n[name];
-        return n;
-      });
-    }
-  };
-
-  return (
-    <div className="sublist-wrap">
-      {value.map((item, idx) => {
-        if (editingIdx === idx) {
-          // While being edited inline, the row collapses into a "currently editing" hint;
-          // the actual fields render in the editor panel below.
-          return (
-            <div key={idx} className="sublist-card sublist-card-editing">
-              <i className="ri-pencil-line" style={{ color: '#405189', fontSize: 14 }} />
-              <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--vz-secondary-color)' }}>
-                Editing {field.subSingular?.toLowerCase() || 'item'} #{idx + 1} below…
-              </span>
-            </div>
-          );
-        }
-        const title = item[field.subCardTitleField || ''] || `Item ${idx + 1}`;
-        const subtitle = item[field.subCardSubtitleField || ''] || '';
-        const isPrimary = !!(field.subPrimaryFlagField &&
-          (item[field.subPrimaryFlagField] === true ||
-           item[field.subPrimaryFlagField] === 'Yes' ||
-           item[field.subPrimaryFlagField] === 1));
-        return (
-          <div className="sublist-card" key={idx}>
-            <div className="d-flex align-items-start gap-3 flex-grow-1 min-w-0">
-              <span className="sublist-card-icon">
-                <i className="ri-bank-line" />
-              </span>
-              <div className="flex-grow-1 min-w-0">
-                <div className="d-flex align-items-center gap-2 flex-wrap">
-                  <span className="sublist-card-title">{title}</span>
-                  {isPrimary && (
-                    <span className="sublist-card-primary">
-                      <i className="ri-star-fill" />PRIMARY
-                    </span>
-                  )}
-                </div>
-                {subtitle && <div className="sublist-card-subtitle">{subtitle}</div>}
-                {lines(item) && <div className="sublist-card-lines">{lines(item)}</div>}
-              </div>
-            </div>
-            {!viewOnly && (
-              <div className="d-flex align-items-center gap-1 flex-shrink-0">
-                <button
-                  type="button"
-                  className="sublist-card-action"
-                  title={`Edit ${field.subSingular || 'item'}`}
-                  onClick={() => openEdit(idx)}
-                >
-                  <i className="ri-pencil-line" />
-                </button>
-                <button
-                  type="button"
-                  className="sublist-card-action danger"
-                  title={`Delete ${field.subSingular || 'item'}`}
-                  onClick={() => deleteItem(idx)}
-                >
-                  <i className="ri-delete-bin-line" />
-                </button>
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* Inline editor panel — shown when adding or editing. Lives in the same
-          parent modal, no nested popup. */}
-      {!viewOnly && editingIdx != null && (
-        <div className="sublist-editor">
-          <div className="sublist-editor-head">
-            <span className="sublist-editor-title">
-              <i className={editingIdx === -1 ? 'ri-add-line' : 'ri-pencil-line'} />
-              {editingIdx === -1 ? 'Add' : 'Edit'} {field.subSingular || 'Item'}
-            </span>
-          </div>
-          <Row className="g-2">
-            {field.subFields.map((sf, sfIdx) => {
-              const err = errors[sf.n];
-              const val = draft[sf.n] ?? '';
-              if (sf.t === 'select') {
-                const options = normalizeOpts(sf.opts);
-                return (
-                  <Col md={6} key={sf.n || `sf-${sfIdx}`}>
-                    <Label className="d-flex align-items-center gap-2">
-                      <span>{sf.l}{sf.r && <span className="req-star">*</span>}</span>
-                    </Label>
-                    <div className="master-field sel">
-                      <i className="ri-list-check-2 master-field-icon" />
-                      <MasterSelect
-                        value={String(val)}
-                        options={options}
-                        placeholder={sf.p || 'Select…'}
-                        invalid={!!err}
-                        onChange={(v) => updateDraft(sf.n, v)}
-                      />
-                    </div>
-                    {err && <FormFeedback style={{ display: 'block', fontSize: 11.5, marginTop: 4 }}>{err}</FormFeedback>}
-                  </Col>
-                );
-              }
-              return (
-                <Col md={6} key={sf.n || `sf-${sfIdx}`}>
-                  <Label className="d-flex align-items-center gap-2">
-                    <span>{sf.l}{sf.r && <span className="req-star">*</span>}</span>
-                  </Label>
-                  <div className="master-field">
-                    <i className="ri-edit-box-line master-field-icon" />
-                    <Input
-                      type={sf.t === 'number' ? 'number' : 'text'}
-                      placeholder={sf.p}
-                      value={String(val)}
-                      inputMode={sf.t === 'number' ? 'numeric' : undefined}
-                      onKeyDown={(e) => {
-                        /* Block scientific-notation keys on integer
-                         * number sub-fields so "e/E/+/-/." can't slip
-                         * into the value and submit as NaN. */
-                        if (sf.t === 'number' && ['e', 'E', '+', '-', '.', ','].includes(e.key)) {
-                          e.preventDefault();
-                        }
-                      }}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        const v = sf.t === 'number' ? raw.replace(/[^\d]/g, '') : raw;
-                        updateDraft(sf.n, v);
-                      }}
-                      invalid={!!err}
-                    />
-                  </div>
-                  {err && <FormFeedback style={{ display: 'block', fontSize: 11.5, marginTop: 4 }}>{err}</FormFeedback>}
-                </Col>
-              );
-            })}
-          </Row>
-          <div className="sublist-editor-actions">
-            <button type="button" className="sublist-editor-cancel" onClick={closePanel}>
-              <i className="ri-close-line" /> Cancel
-            </button>
-            <button type="button" className="sublist-editor-save" onClick={handleSubmit}>
-              <i className="ri-check-line" />
-              {editingIdx === -1 ? `Add ${field.subSingular || 'Item'}` : 'Update'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* +Add button — hidden while the editor panel is open to avoid the
-          accidental "two new items in flight" state. */}
-      {!viewOnly && editingIdx == null && (
-        <button
-          type="button"
-          className="sublist-add-btn"
-          onClick={openAdd}
-        >
-          <i className="ri-add-line" />
-          Add {field.subSingular || 'Item'}
-        </button>
-      )}
-    </div>
-  );
-}
 
 
-/* ────────────────────────────────────────────────────────────────────
- * Banks Manager modal — focused view of just the bank accounts for one
- * legal entity. Opens from the bank-icon action button in the row. Lets
- * the user inspect existing banks and add/edit/remove them without
- * touching the rest of the entity form.
- * ──────────────────────────────────────────────────────────────────── */
-function BanksManagerModal({
-  open,
-  onClose,
-  entity,
-  bankField,
-  onSaved,
-}: {
-  open: boolean;
-  onClose: () => void;
-  entity: any | null;
-  bankField: FieldDef | null;
-  onSaved: (updatedRow: any) => void;
-}) {
-  const toast = useToast();
-  const [banks, setBanks] = useState<any[]>([]);
-  const [saving, setSaving] = useState(false);
-
-  // Re-hydrate every time a different entity is opened.
-  useEffect(() => {
-    if (entity) {
-      setBanks(Array.isArray(entity.banks) ? entity.banks : []);
-    } else {
-      setBanks([]);
-    }
-  }, [entity]);
-
-  // Auto-persist — every add/edit/delete in the InlineSublist immediately
-  // PUTs the full banks array back to the server. The user gets a single,
-  // consistent place ("the cards") that always reflects DB state — no extra
-  // outer "Save" button required and no chance of leaving unsaved changes.
-  const persistBanks = async (nextBanks: any[]) => {
-    if (!entity) return;
-    setSaving(true);
-    try {
-      const payload: Record<string, any> = {};
-      const fields = [
-        'entity_name', 'legal_name', 'cin', 'date_of_incorporation',
-        'type_of_business', 'sector', 'nature_of_business', 'country_id',
-        'address_line1', 'address_line2', 'city', 'state_id', 'zip_code',
-        'currency_id', 'financial_year', 'status',
-      ];
-      for (const k of fields) {
-        if (entity[k] != null) payload[k] = entity[k];
-      }
-      payload.banks = nextBanks;
-
-      const { data } = await api.put(`/master/legal_entities/${entity.id}`, payload);
-      // Re-sync from the server response so newly-created banks pick up their ids.
-      setBanks(Array.isArray(data.banks) ? data.banks : []);
-      onSaved(data);
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Could not save bank details';
-      toast.error('Error', msg);
-      // Revert local state to last server-confirmed banks.
-      setBanks(Array.isArray(entity.banks) ? entity.banks : []);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!entity || !bankField) return null;
-
-  const entityLabel = entity.entity_name || entity.legal_name || `#${entity.id}`;
-
-  return (
-    <Modal isOpen={open} toggle={() => { if (!saving) onClose(); }} centered size="lg" backdrop="static">
-      <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--vz-border-color)' }}>
-        <div className="d-flex align-items-start justify-content-between gap-3">
-          <div className="d-flex align-items-center gap-3 min-w-0">
-            <span
-              className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
-              style={{
-                width: 40, height: 40,
-                borderRadius: 10,
-                background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
-                color: '#ffffff',
-                boxShadow: '0 4px 10px rgba(64,81,137,0.28), inset 0 1px 0 rgba(255,255,255,0.18)',
-              }}
-            >
-              <i className="ri-bank-line" style={{ fontSize: 18 }} />
-            </span>
-            <div className="min-w-0">
-              <h5 className="mb-0 fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
-                Bank Accounts
-              </h5>
-              <small className="text-muted" style={{ fontSize: 12 }}>{entityLabel}</small>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => { if (!saving) onClose(); }}
-            aria-label="Close"
-            disabled={saving}
-            className="d-inline-flex align-items-center justify-content-center"
-            style={{
-              width: 30, height: 30,
-              borderRadius: 8,
-              border: '1px solid var(--vz-border-color)',
-              background: 'var(--vz-card-bg)',
-              color: 'var(--vz-secondary-color)',
-              cursor: saving ? 'not-allowed' : 'pointer',
-              flexShrink: 0,
-              opacity: saving ? 0.5 : 1,
-            }}
-          >
-            <i className="ri-close-line" style={{ fontSize: 15 }} />
-          </button>
-        </div>
-      </div>
-      <ModalBody className="px-4 py-3" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-        {bankField.subDesc && (
-          <div className="text-muted mb-3" style={{ fontSize: 12.5 }}>{bankField.subDesc}</div>
-        )}
-        <InlineSublist
-          field={bankField}
-          value={banks}
-          viewOnly={saving}
-          onChange={(next) => {
-            // Optimistic update so the new card shows immediately, then persist.
-            setBanks(next);
-            persistBanks(next);
-          }}
-        />
-      </ModalBody>
-      <ModalFooter className="px-4 py-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
-        <small className="d-inline-flex align-items-center gap-2" style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)' }}>
-          {saving ? (
-            <>
-              <Spinner size="sm" style={{ width: 12, height: 12 }} />
-              <span>Saving…</span>
-            </>
-          ) : (
-            <>
-              <i className="ri-checkbox-circle-fill" style={{ color: '#0ab39c', fontSize: 13 }} />
-              <span>{banks.length} bank account{banks.length === 1 ? '' : 's'} · changes auto-save</span>
-            </>
-          )}
-        </small>
-        <Button
-          type="button"
-          color="primary"
-          onClick={onClose}
-          disabled={saving}
-          className="d-inline-flex align-items-center gap-2"
-        >
-          <i className="ri-check-line" />
-          Done
-        </Button>
-      </ModalFooter>
-    </Modal>
-  );
-}
 
 /* ────────────────────────────────────────────────────────────────────
  * Employee Tree modal — opens from the Department master's row action

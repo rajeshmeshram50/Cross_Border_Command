@@ -375,7 +375,7 @@ export default function PayrollTab() {
                     </div>
                     <div className="px-3 py-3 flex-grow-1">
                       <Row className="g-3">
-                        <Col md={4}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">{empDetail?.legal_entity?.entity_name || '—'}</div></Col>
+                        <Col md={4}><div className="ep-field-label">Legal Entity</div><div className="ep-field-value">{empDetail?.legal_entity?.name || '—'}</div></Col>
                         <Col md={4}><div className="ep-field-label">Remuneration Type</div><div className="ep-field-value">{empDetail?.salary_frequency || '—'}</div></Col>
                         <Col md={4}><div className="ep-field-label">Pay Cycle</div><div className="ep-field-value">Monthly</div></Col>
                         <Col md={4}><div className="ep-field-label">Payroll Status</div><div className="ep-field-value">{empDetail?.enable_payroll ? 'Active' : 'Inactive'}</div></Col>

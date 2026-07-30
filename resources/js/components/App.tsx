@@ -121,6 +121,7 @@ import ClockIn from '../pages/ClockIn';
 import ModuleStubPage from '../pages/ModuleStubPage';
 import P2pBulkSourcing from '../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing';
 import PurchaseOrder from '../pages/p2p/procurement-management/purchase-order/PurchaseOrder';
+const DevTools = lazy(() => import('../pages/dev-tools/DevTools'));
 import SupplierPurchaseInvoice from '../pages/p2p/purchase-management/supplier-purchase-invoice/SupplierPurchaseInvoice';
 import DebitNote from '../pages/p2p/purchase-management/debit-note/DebitNote';
 import MyTeam from '../pages/MyTeam';
@@ -781,6 +782,7 @@ function DashboardRoutes({ user }: { user: any }) {
                   stub until their real pages are built. */}
               <Route path="/p2p" element={<SalesP2PSummary />} />
               <Route path="/credentials-vault" element={<ModuleStubPage />} />
+              <Route path="/dev-tools" element={<DevTools />} />
               <Route path="/project-navigator" element={<ModuleStubPage />} />
               <Route path="/gts" element={<ModuleStubPage />} />
               <Route path="/inventory" element={<ModuleStubPage />} />

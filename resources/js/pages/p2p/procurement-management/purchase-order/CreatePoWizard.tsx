@@ -1380,10 +1380,10 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                                 ? <div className="cpd-prodcell"><Dd value={PI_REPICK_PLACEHOLDER} optMeta={piMeta} options={[PI_REPICK_PLACEHOLDER, ...removedPi.map(piLabel)]} onChange={label => { if (label !== PI_REPICK_PLACEHOLDER) reAddPi(r.id, label); }} onDisabledSelect={(label) => { const p = piSet.find(x => piLabel(x) === label); const seg = p ? piSegOf(p) : ''; toast.error('Segment not mapped to the supplier', `“${label}”${seg ? ` (${seg})` : ''} isn't in this supplier's segment — map the supplier to this segment first.`); }} /></div>
                                 : <Tooltip label={r.piName} disabled={!r.piName} zIndex={2999999}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
                               <td className="cpd-c">{r.piQty || 0}</td>
-                              <td><input className="cpd-in cpd-in--name" disabled={poView} value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} /></td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: capQty(numOnly(e.target.value), r.piQty) })} /></td>
+                              <td><input className="cpd-in cpd-in--name" disabled={poView || mismatch} value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: capQty(numOnly(e.target.value), r.piQty) })} /></td>
                               <td className={`cpd-c cpd-miss ${c.miss > 0 ? 'is-short' : ''}`}>{c.miss}</td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
                               <td className="cpd-c">{!poView && <Tooltip label="Remove product" themed zIndex={2999999}><button type="button" className="cpd-del" onClick={() => removeLine(r.id)}>✕</button></Tooltip>}</td>
@@ -1393,8 +1393,8 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                               <td className="cpd-c">{i + 1}</td>
                               <td className="cpd-c"><span className="cpd-code" style={mismatch ? { color: '#dc2626' } : undefined}>{formatProductCode(r.code) || '—'}</span></td>
                               <td className="cpd-prodcell"><Dd tooltip value={r.name || PRODUCT_PLACEHOLDER} optMeta={prodMeta} options={[PRODUCT_PLACEHOLDER, ...prodOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} onDisabledSelect={(name) => { const o = prodOpts.find(x => x.name === name); toast.error('Segment not mapped to the supplier', `“${name}”${o?.segment ? ` (${o.segment})` : ''} isn't in this supplier's segment — map the supplier to this segment first.`); }} /></td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: numOnly(e.target.value) })} /></td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: numOnly(e.target.value) })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
                               <TaxBodyCells c={c} intra={intra} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
                               <td className="cpd-c">{!poView && <Tooltip label="Remove product" themed zIndex={2999999}><button type="button" className="cpd-del" onClick={() => removeLine(r.id)}>✕</button></Tooltip>}</td>

@@ -182,12 +182,58 @@
           box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
         }
 
-        /* Action buttons in row */
-        .onb-edit-btn { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--vz-border-color); background: #fff; color: #6b7280; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all .15s ease; }
-        .onb-edit-btn:hover { border-color: #a78bfa; color: #7c5cfc; background: #faf6ff; }
-        [data-bs-theme="dark"] .onb-edit-btn { background: var(--vz-secondary-bg); }
+        /* ── Row action buttons — same recipe as the Supplier list
+              (.sup-fig .sl-act-btn--edit / .sl-evault-btn in
+              p2p-master-management/supplier-management.css), so an icon action
+              and a labelled action read the same in both modules. Copied rather
+              than imported because those rules are scoped under `.sup-fig`.
+
+              min-width/flex-shrink are load-bearing: inside the Action cell's
+              flex row the square was being squeezed to a sliver, which read as
+              a broken icon rather than a button. ── */
+        .onb-edit-btn {
+          width: 34px; min-width: 34px; height: 34px; flex-shrink: 0; padding: 0;
+          display: inline-flex; align-items: center; justify-content: center;
+          border-radius: 8px;
+          border: 1px solid #DDD6FE;
+          background: linear-gradient(135deg, #faf8ff, #f1ebfe);
+          color: #7c3aed;
+          box-shadow: 0 1px 3px rgba(124,58,237,.12), 0 1px 0 rgba(255,255,255,.7) inset;
+          cursor: pointer;
+          transition: transform .14s, box-shadow .14s, background .14s, color .14s, border-color .14s;
+        }
+        .onb-edit-btn:hover {
+          transform: translateY(-1px);
+          background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+          color: #fff; border-color: transparent;
+          box-shadow: 0 5px 13px rgba(124,58,237,.45), 0 1px 0 rgba(255,255,255,.3) inset;
+        }
+        [data-bs-theme="dark"] .onb-edit-btn { color: #c4b5fd; background: rgba(124,58,237,.18); border-color: rgba(167,139,250,.38); box-shadow: none; }
+        [data-bs-theme="dark"] .onb-edit-btn:hover { background: linear-gradient(135deg,#8b5cf6,#7c3aed); color: #fff; border-color: transparent; box-shadow: 0 5px 13px rgba(124,58,237,.5); }
+
         .onb-init-btn { padding: 7px 14px; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: #fff; border: none; background: linear-gradient(135deg,#7c5cfc,#5a3fd1); box-shadow: 0 3px 8px rgba(91,63,209,0.24); cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
         .onb-init-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(91,63,209,0.32); }
+        /* In-row variant — the Supplier list's Evidence Vault pill: 34px tall,
+           4-stop violet gradient with a lit top edge (the ::before sheen) and a
+           text-shadow so the label stays crisp on the gradient. */
+        .onb-init-btn.is-compact {
+          position: relative; overflow: hidden;
+          height: 34px; width: auto; flex-shrink: 0;
+          gap: 8px; padding: 0 17px;
+          font-family: inherit; font-size: 12px; font-weight: 700; letter-spacing: .012em;
+          color: #fff; border: none; border-radius: 9px;
+          background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 38%, #7c3aed 70%, #6d28d9 100%);
+          box-shadow: 0 4px 12px rgba(124,58,237,.4), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(91,33,182,.3) inset;
+          text-shadow: 0 1px 2px rgba(76,29,149,.4);
+          justify-content: center;
+        }
+        .onb-init-btn.is-compact::before {
+          content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+          background: linear-gradient(180deg, rgba(255,255,255,.28), transparent);
+          pointer-events: none;
+        }
+        .onb-init-btn.is-compact > * { position: relative; z-index: 1; }
+        .onb-init-btn.is-compact:hover { transform: translateY(-1px); box-shadow: 0 7px 18px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.4) inset; }
         .onb-vault-btn { padding: 6px 13px; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: #0a716a; border: 1px solid #b6e4dd; background: #e6f7f4; cursor: pointer; transition: all .15s ease; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
         .onb-vault-btn:hover { background: #d3f0ee; border-color: #8ad3c7; }
         [data-bs-theme="dark"] .onb-vault-btn { background: rgba(10,113,106,0.18); border-color: rgba(10,179,156,0.40); color: #4dd4be; }

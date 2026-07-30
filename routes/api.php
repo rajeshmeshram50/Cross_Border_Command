@@ -141,6 +141,14 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     Route::get('/branches/next-code', [BranchController::class, 'nextCode']);
 
+    // Work shifts for the active branch (BranchSwitcher injects ?branch_id) —
+    // feeds the Employee form's Shift dropdown.
+    Route::get('/branch-shifts', [BranchController::class, 'shiftOptions']);
+
+    // Legal-entity options (= the client's branches, since a branch holds the
+    // GST/PAN/CIN and bank accounts) for the Employee + Onboarding forms.
+    Route::get('/branch-legal-entities', [BranchController::class, 'legalEntityOptions']);
+
     Route::get('/branches/form-bundle', [BranchController::class, 'formBundle']);
     Route::apiResource('branches', BranchController::class);
 
@@ -560,6 +568,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::delete('/p2p/purchase-orders/{id}',                    [PurchaseOrderController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/sync',               [PurchaseOrderController::class, 'sync'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/sync-payment',       [PurchaseOrderController::class, 'syncPayment'])->whereNumber('id');
+
+    // Dev Tools — read-only Zoho Books data inspector (admin-only; gated inside).
+    Route::get   ('/dev-tools/zoho/{type}',                       [\App\Http\Controllers\Api\DevToolsController::class, 'zoho'])
+        ->whereIn('type', ['items', 'vendors', 'purchase-orders', 'vendor-credits', 'bills', 'payments']);
     Route::get   ('/p2p/purchase-orders/{id}/attachment-status',  [PurchaseOrderController::class, 'attachmentStatus'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/reattach',           [PurchaseOrderController::class, 'reattach'])->whereNumber('id');
     Route::post  ('/p2p/purchase-orders/{id}/send-for-signature', [PurchaseOrderController::class, 'sendForSignature'])->whereNumber('id');

@@ -2223,11 +2223,12 @@ type ProductRow = {
 };
 
 function calcRow(p: ProductRow) {
-  const sub = p.qty * p.rate;
-  const taxAmt = sub * (p.taxPct / 100);
+  const sub = p.qty * p.rate;                    // Sub Total (per line) = QTY × Product Rate
+  const taxUnit = p.rate * (p.taxPct / 100);     // per-UNIT tax — shown in the row's Tax Amount column
+  const taxAmt = taxUnit * p.qty;                // per-LINE tax = Tax Amount × QTY — feeds the Total Tax & Amount
   const rateWithTax = p.rate * (1 + p.taxPct / 100);
-  const amount = sub + taxAmt;
-  return { sub, taxAmt, rateWithTax, amount };
+  const amount = sub + taxAmt;                   // = QTY × Rate with Tax
+  return { sub, taxUnit, taxAmt, rateWithTax, amount };
 }
 
 /* ── Domestic GST place-of-supply ────────────────────────────────────────
@@ -2271,7 +2272,7 @@ const DEFAULT_HOME_STATE_CODE = '27';
  * keystroke that overflowed rather than after a failed save. Anything longer
  * belongs in the T&C master and gets referenced from there. */
 const TERMS_MAX_LEN = 8000;
-const TERMS_LIMIT_MSG = `Character limit is ${TERMS_MAX_LEN}. To add more terms & conditions, navigate to the Terms & Conditions master.`;
+const TERMS_LIMIT_MSG = `Limit is ${TERMS_MAX_LEN} characters. Add more against the segment in the T&C master.`;
 
 /* Intra-state (CGST + SGST) only when the customer's GST state code equals our
  * own; anything else is inter-state (IGST).
@@ -2292,7 +2293,13 @@ const isIntraState = (stateCodeLabel: string, homeStateCode: string): boolean =>
   return party === home;
 };
 
-type TaxSplit = { cgstP: number; sgstP: number; igstP: number; cgstA: number; sgstA: number; igstA: number };
+type TaxSplit = {
+  cgstP: number; sgstP: number; igstP: number;
+  // Per-LINE amounts (qty × rate × pct) — used by the summary tax breakdown.
+  cgstA: number; sgstA: number; igstA: number;
+  // Per-UNIT amounts (rate × pct) — shown in the product ROW so Total = Amount × QTY.
+  cgstAU: number; sgstAU: number; igstAU: number;
+};
 function splitTax(p: ProductRow, intra: boolean): TaxSplit {
   const base = p.qty * p.rate;
   const gst = p.taxPct;
@@ -2304,6 +2311,9 @@ function splitTax(p: ProductRow, intra: boolean): TaxSplit {
     cgstA: base * cgstP / 100,
     sgstA: base * sgstP / 100,
     igstA: base * igstP / 100,
+    cgstAU: p.rate * cgstP / 100,
+    sgstAU: p.rate * sgstP / 100,
+    igstAU: p.rate * igstP / 100,
   };
 }
 
@@ -5002,18 +5012,18 @@ function ProductsStep(props: {
                   <td>{p.qty}</td>
                   <td>{p.rate.toFixed(2)}</td>
                   {isIntl ? (
-                    <><td>{p.taxPct}</td><td>{c.taxAmt.toFixed(2)}</td></>
+                    <><td>{p.taxPct}</td><td>{c.taxUnit.toFixed(2)}</td></>
                   ) : intra ? (
                     <>
                       <td>{t.cgstP}</td>
                       <td>{t.sgstP}</td>
-                      <td>{t.cgstA.toFixed(2)}</td>
-                      <td>{t.sgstA.toFixed(2)}</td>
+                      <td>{t.cgstAU.toFixed(2)}</td>
+                      <td>{t.sgstAU.toFixed(2)}</td>
                     </>
                   ) : (
                     <>
                       <td>{t.igstP}</td>
-                      <td>{t.igstA.toFixed(2)}</td>
+                      <td>{t.igstAU.toFixed(2)}</td>
                     </>
                   )}
                   <td>{c.rateWithTax.toFixed(2)}</td>
@@ -5074,10 +5084,10 @@ function ProductsStep(props: {
                     title={title} value={String(val)} /></td>
                 );
                 const taxCells = isIntl
-                  ? <>{pctCell(0, 'International documents are tax-free — Tax % is locked at 0%.')}{cell(dc.taxAmt)}</>
+                  ? <>{pctCell(0, 'International documents are tax-free — Tax % is locked at 0%.')}{cell(dc.taxUnit)}</>
                   : intra
-                    ? <>{pctCell(dt.cgstP)}{pctCell(dt.sgstP)}{cell(dt.cgstA)}{cell(dt.sgstA)}</>
-                    : <>{pctCell(dt.igstP)}{cell(dt.igstA)}</>;
+                    ? <>{pctCell(dt.cgstP)}{pctCell(dt.sgstP)}{cell(dt.cgstAU)}{cell(dt.sgstAU)}</>
+                    : <>{pctCell(dt.igstP)}{cell(dt.igstAU)}</>;
                 return <>{taxCells}{cell(dc.rateWithTax)}{cell(dc.amount)}</>;
               })()}
               <td>

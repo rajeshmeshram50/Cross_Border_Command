@@ -10,6 +10,12 @@ import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from './Supplier
 import { ShimmerTable, ShimmerClmMaster } from '../../../../components/ui/Shimmer';
 import Tooltip from '../../../../components/ui/Tooltip';
 import WorklistPager from '../../../../components/ui/WorklistPager';
+import PartyFilterModal, {
+  applyPartyFilters,
+  countPartyFilterValues,
+  type FacetKey,
+  type PartyFilters,
+} from '../../../sales/core-masters/PartyFilterModal';
 import {
   readVendorMasterBundle,
   writeVendorMasterBundle,
@@ -129,6 +135,12 @@ export default function Vendors() {
 
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [search, setSearch] = useState('');
+  /* Facet filters — same two-pane PartyFilterModal the Customer list uses.
+     Suppliers use Trade Type (Domestic/International) + Segment + Country
+     (no WhatsApp facet — the supplier row doesn't carry a whatsapp flag). */
+  const [filters, setFilters] = useState<PartyFilters>({});
+  const [filterOpen, setFilterOpen] = useState(false);
+  const SUPPLIER_FACETS: FacetKey[] = ['type', 'segment', 'country'];
   const [tab, setTab] = useState<SupplierTab>('all');
   const [addOpen, setAddOpen] = useState(false);
   /* Edit vs Add — same modal, just seeded with an existing vendor id.
@@ -341,7 +353,7 @@ export default function Vendors() {
   useEffect(() => { void refresh(); }, [refresh]);
   /* Reset to page 1 whenever the tab or search changes so the user never
      lands on an out-of-range page after the result set shrinks. */
-  useEffect(() => { setPage(1); }, [tab, search]);
+  useEffect(() => { setPage(1); }, [tab, search, filters]);
 
   /* Dynamic rows-per-page — pick the count that fits between the table's top
      and the bottom of the viewport, so the page fills the screen and the rest
@@ -421,10 +433,18 @@ useEffect(() => {
 }, [allowed]);
  
 
+  const activeFilterCount = countPartyFilterValues(filters);
   const filtered = useMemo(() => {
     const lo = search.trim().toLowerCase();
     const inTab = (v: Vendor) => tab === 'all' ? true : tab === 'fresh' ? v.opportunityCount === 0 : v.opportunityCount > 0;
-    return vendors
+    // Facet filter first (Trade Type / Segment / Country), across every tab —
+    // applyPartyFilters reads `segment` as a comma-joined string, so normalise the
+    // supplier's segments into one. The spread keeps every original vendor field.
+    const facet = applyPartyFilters(
+      vendors.map(v => ({ ...v, segment: (v.segments && v.segments.length ? v.segments.join(', ') : (v.segment ?? '')) })),
+      filters,
+    );
+    return facet
       .filter(inTab)
       .filter(v => !lo
         || v.code.toLowerCase().includes(lo)
@@ -435,7 +455,16 @@ useEffect(() => {
         || v.city.toLowerCase().includes(lo)
         || v.state.toLowerCase().includes(lo)
         || (v.stateCode ?? '').toLowerCase().includes(lo));
-  }, [vendors, search, tab]);
+  }, [vendors, search, tab, filters]);
+
+  /* Active-filter chips shown under the toolbar — each removable. */
+  const filterChips = useMemo(() => {
+    const chips: { label: string; onRemove: () => void }[] = [];
+    if (filters.region) chips.push({ label: filters.region === 'domestic' ? 'Domestic' : 'International', onRemove: () => setFilters(f => ({ ...f, region: undefined })) });
+    (filters.segments ?? []).forEach(s => chips.push({ label: s, onRemove: () => setFilters(f => ({ ...f, segments: (f.segments ?? []).filter(x => x !== s) })) }));
+    (filters.countries ?? []).forEach(c => chips.push({ label: c, onRemove: () => setFilters(f => ({ ...f, countries: (f.countries ?? []).filter(x => x !== c) })) }));
+    return chips;
+  }, [filters]);
 
   /* Client-side pagination math — page size is the dynamic `rpp`. */
   const total = filtered.length;
@@ -600,6 +629,15 @@ useEffect(() => {
                   <span>Recurring Suppliers</span>
                 </button>
               </div>
+              <button
+                type="button"
+                className={`sl-filter-btn ${activeFilterCount > 0 ? 'on' : ''}`}
+                onClick={() => setFilterOpen(true)}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="6" x2="20" y2="6" /><line x1="7" y1="12" x2="17" y2="12" /><line x1="10" y1="18" x2="14" y2="18" /></svg>
+                Filter
+                {activeFilterCount > 0 && <span className="sl-filter-badge">{activeFilterCount}</span>}
+              </button>
               <div className="sl-search">
                 <svg className="sl-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                 <input
@@ -616,10 +654,24 @@ useEffect(() => {
               </div>
             </div>
 
+            {/* Active filter chips + Clear all — mirrors the Customer list. */}
+            {filterChips.length > 0 && (
+              <div className="sl-filterbar">
+                <span className="sl-filterbar-lbl">Filters:</span>
+                {filterChips.map((chip, i) => (
+                  <span key={i} className="sl-filterchip">
+                    {chip.label}
+                    <button type="button" onClick={chip.onRemove} aria-label={`Remove ${chip.label}`}>×</button>
+                  </span>
+                ))}
+                <button type="button" className="sl-filterbar-clear" onClick={() => setFilters({})}>Clear all</button>
+              </div>
+            )}
+
             {/* Table — purple Figma table wired to the real /vendors data.
                 Pagination is client-side (10 rows/page). */}
             {loading ? (
-              <div className="p-3"><ShimmerTable rows={8} cols={11} /></div>
+              <div className="p-3"><ShimmerTable rows={8} cols={13} /></div>
             ) : (
               <>
                 <div className="sl-table-scroll" ref={scrollRef} style={fillH ? { minHeight: fillH } : undefined}>
@@ -629,10 +681,11 @@ useEffect(() => {
                         <th>Sr No</th>
                         <th>Supplier Code</th>
                         <th>Supplier Name</th>
-                        <th>Supplier Type</th>
+                        <th>Category</th>
                         <th>Segment</th>
                         <th>Supplier State</th>
                         <th>Country</th>
+                        <th>Supplier Type</th>
                         <th>Contact Person</th>
                         <th>Contact No</th>
                         <th className="sl-th-email">Email</th>
@@ -642,7 +695,7 @@ useEffect(() => {
                     </thead>
                     <tbody>
                       {pageRows.length === 0 ? (
-                        <tr><td colSpan={12} className="sl-empty">No suppliers found.</td></tr>
+                        <tr><td colSpan={13} className="sl-empty">No suppliers found.</td></tr>
                       ) : pageRows.map((v, i) => {
                         const kind = typeKind(v.type);
                         const hasWa = !!v.phone && v.phone !== '—';
@@ -677,6 +730,11 @@ useEffect(() => {
                             </td>
                             <td><span className="sl-state">{v.state}{v.stateCode ? <> (<strong>{v.stateCode}</strong>)</> : ''}</span></td>
                             <td><span className="sl-country">{v.country || '—'}</span></td>
+                            <td>
+                              {v.country
+                                ? <span className={`sl-trade sl-trade--${(v.country ?? '').trim() === 'India' ? 'dom' : 'intl'}`}>{(v.country ?? '').trim() === 'India' ? 'Domestic' : 'International'}</span>
+                                : <span className="sl-country">—</span>}
+                            </td>
                             <td>
                               <span className="sl-contact-wrap">
                                 <Tooltip label={v.contactName}><span className="sl-contact sl-trunc">{v.contactName}</span></Tooltip>
@@ -857,6 +915,19 @@ useEffect(() => {
         open={!!vaultTarget}
         supplier={vaultTarget}
         onClose={() => setVaultTarget(null)}
+      />
+
+      {/* Facet filter — the same two-pane modal the Customer list uses. */}
+      <PartyFilterModal
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        onApply={setFilters}
+        initial={filters}
+        rows={vendors.map(v => ({ ...v, segment: (v.segments && v.segments.length ? v.segments.join(', ') : (v.segment ?? '')) }))}
+        facets={SUPPLIER_FACETS}
+        title="Filter Suppliers"
+        typeLabel="Supplier Type"
+        theme="purple"
       />
     </>
   );

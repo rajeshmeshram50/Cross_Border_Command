@@ -380,7 +380,21 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
         else toast.error('Email failed', msg || 'Please try again.');
       }));
   };
-  const viewCoo = (d: TradeDoc) => toast.info(`Certificate of Origin — ${d.name}`, 'Coming in a later phase');
+  /* Download the Zoho "Certificate of Completion" (audit trail) for a signed
+   * document — the same artifact the other signing trackers expose, served by
+   * ClmSignatureController::viewCertificate. `sigId` = the signature request id. */
+  const downloadCertificate = (sigId: number, name: string) => {
+    const key = `cert:${sigId}`;
+    if (isBusy(key)) return;
+    runBusy(key, api.get(`/clm/signature-requests/${sigId}/certificate`, { responseType: 'blob' })
+      .then(res => {
+        const url = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
+        const a = document.createElement('a'); a.href = url; a.download = `${(name || 'document').replace(/[^a-z0-9\-_.]/gi, '_')}_certificate.pdf`; document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+        toast.success('Certificate downloaded', name);
+      })
+      .catch(() => toast.error('Download failed', 'Could not download the completion certificate.')));
+  };
 
   return (
     <>
@@ -426,8 +440,8 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
                     <Tooltip label="View signed PDF" themed zIndex={2999999}>
                       <button className="cptd-lbtn cptd-lbtn--icon cptd-lbtn--signed" type="button" aria-label="View signed PDF" disabled={isBusy(`view:${d.id}:s`)} onClick={() => viewDoc(d, true)}>{isBusy(`view:${d.id}:s`) ? I.spin : I.doc}</button>
                     </Tooltip>
-                    <Tooltip label="Certificate of Origin" themed zIndex={2999999}>
-                      <button className="cptd-lbtn cptd-lbtn--icon cptd-lbtn--coo" type="button" aria-label="Certificate of Origin" onClick={() => viewCoo(d)}>{I.cert}</button>
+                    <Tooltip label={sig?.id ? 'Download completion certificate' : 'Certificate not available yet'} themed zIndex={2999999}>
+                      <button className="cptd-lbtn cptd-lbtn--icon cptd-lbtn--coo" type="button" aria-label="Download completion certificate" disabled={!sig?.id || isBusy(`cert:${sig.id}`)} onClick={() => sig?.id && downloadCertificate(sig.id, d.name)}>{isBusy(`cert:${sig?.id ?? 0}`) ? I.spin : I.cert}</button>
                     </Tooltip>
                   </>
                 ) : (

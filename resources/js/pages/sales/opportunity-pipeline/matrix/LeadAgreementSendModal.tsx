@@ -170,6 +170,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
    * Same Buyer / Consignee / Both split (or a flat list when buyer ==
    * consignee), classified by each agreement's `party` field. */
   const [agrPartyTab, setAgrPartyTab] = useState<'all' | 'buyer' | 'consignee' | 'both'>('all');
+  /* Table pagination — 5 rows per page for both the Trade Documents and the
+   * Agreements tables (matches the Evidence Vault pager). */
+  const [tdPage, setTdPage] = useState(1);
+  const [agrPage, setAgrPage] = useState(1);
   const [previewingId, setPreviewingId] = useState<number | null>(null);
   /* Applicable-party "+N" popover — click the badge to see the full list of
    * parties (mirrors the segment "+N" popovers on the customer/consignee
@@ -340,6 +344,15 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   // Human label of the active party sub-tab, for empty-state messages.
   const partyLabel = agrPartyTab === 'buyer' ? 'Customer' : agrPartyTab === 'consignee' ? 'Consignee' : 'Customer + Consignee';
 
+  // Agreements table pagination — 5 rows per page (Evidence Vault style).
+  // Header checkbox / bulk selection still span the full list; only display pages.
+  const AGR_PER_PAGE = 5;
+  const agrTotalPages = Math.max(1, Math.ceil(activeAgreements.length / AGR_PER_PAGE));
+  const agrSafePage = Math.min(agrPage, agrTotalPages);
+  const pagedAgreements = activeAgreements.slice((agrSafePage - 1) * AGR_PER_PAGE, agrSafePage * AGR_PER_PAGE);
+  const agrFirst = activeAgreements.length === 0 ? 0 : (agrSafePage - 1) * AGR_PER_PAGE + 1;
+  const agrLast = Math.min(agrSafePage * AGR_PER_PAGE, activeAgreements.length);
+
   // Header-checkbox state for the active tab — checked when every
   // matching-party row is already in the selection, indeterminate
   // when only some are, disabled when there's nothing sendable.
@@ -477,6 +490,11 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
     else if (tdBuckets.consignee.length) setTdTab('consignee');
     else                                 setTdTab('both');
   }, [open, view, buyerEqualsConsignee, tdBuckets.buyer.length, tdBuckets.consignee.length]);
+
+  // Reset to page 1 whenever the visible row set changes (tab / segment /
+  // tier / open) so the pager never lands on an out-of-range page.
+  useEffect(() => { setTdPage(1); }, [tdTab, activeSegId, open]);
+  useEffect(() => { setAgrPage(1); }, [agrPartyTab, activeSegId, tierTab, open]);
 
   // Segment tabs for the active tier tab.
   const visibleSegments = useMemo(
@@ -881,6 +899,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
               <div className="lasm-empty">No trade documents configured for this lead's PI segments yet.</div>
             ) : (() => {
               const rows = tdBuckets[tdTab];
+              // Paginate 5 per page (Evidence Vault style). Select-all still
+              // operates on the full group, only the display is paged.
+              const TD_PER_PAGE = 5;
+              const tdTotalPages = Math.max(1, Math.ceil(rows.length / TD_PER_PAGE));
+              const tdSafePage = Math.min(tdPage, tdTotalPages);
+              const pagedTd = rows.slice((tdSafePage - 1) * TD_PER_PAGE, tdSafePage * TD_PER_PAGE);
+              const tdFirst = rows.length === 0 ? 0 : (tdSafePage - 1) * TD_PER_PAGE + 1;
+              const tdLast = Math.min(tdSafePage * TD_PER_PAGE, rows.length);
               // Already out-for / back-from signature → not re-sendable. Mirrors
               // the per-row `tdSent` check below so "select all" can't pick up a
               // doc that's already been sent and queue it for a second send.
@@ -969,7 +995,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                         </tr>
                       </thead>
                       <tbody>
-                        {rows.map((td, i) => {
+                        {pagedTd.map((td, i) => {
                           const tdSig       = td.signature_request;
                           const tdSigStatus = tdSig?.status ?? null;
                           // Only inprogress / completed are locked. A declined,
@@ -993,7 +1019,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 onChange={() => td.db_id != null && toggleOne(td.db_id)}
                               />
                             </td>
-                            <td>{i + 1}</td>
+                            <td>{(tdSafePage - 1) * TD_PER_PAGE + i + 1}</td>
                             <td>
                               <div className="lasm-doc-name">{td.title || td.name}</div>
                               <div className="lasm-doc-sub">{td.reference}</div>
@@ -1091,6 +1117,27 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                         })}
                       </tbody>
                     </table>
+
+                    {/* Pagination — 5 rows per page, Evidence Vault style. */}
+                    {rows.length > TD_PER_PAGE && (
+                      <div className="lasm-pager">
+                        <div className="lasm-pager-info">Showing {tdFirst}–{tdLast} of {rows.length}</div>
+                        <div className="lasm-pager-ctrls">
+                          <button type="button" className="lasm-pager-btn" disabled={tdSafePage <= 1} onClick={() => setTdPage(p => Math.max(1, p - 1))} aria-label="Previous page">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="15 18 9 12 15 6"/></svg>
+                          </button>
+                          {Array.from({ length: tdTotalPages }).map((_, idx) => {
+                            const n = idx + 1;
+                            return (
+                              <button key={n} type="button" className={`lasm-pager-num ${n === tdSafePage ? 'active' : ''}`} onClick={() => setTdPage(n)}>{n}</button>
+                            );
+                          })}
+                          <button type="button" className="lasm-pager-btn" disabled={tdSafePage >= tdTotalPages} onClick={() => setTdPage(p => Math.min(tdTotalPages, p + 1))} aria-label="Next page">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="9 18 15 12 9 6"/></svg>
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Bulk send bar — one Zoho request for every checked doc,
                         all signed by the active tab's party. */}
@@ -1261,7 +1308,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                           </span>
                         )}
                       </td></tr>
-                    ) : activeAgreements.map((a, idx) => {
+                    ) : pagedAgreements.map((a, idx) => {
                       const sig = a.signature_request;
                       const sigStatus = sig?.status ?? 'draft';
                       // Only inprogress / completed lock the row; a declined /
@@ -1291,7 +1338,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               onChange={() => toggleSelect(a)}
                             />
                           </td>
-                          <td>{idx + 1}</td>
+                          <td>{(agrSafePage - 1) * AGR_PER_PAGE + idx + 1}</td>
                           <td>
                             <div className="lasm-doc-name">{a.title}</div>
                             <div className="lasm-doc-sub">{a.agreement_type || '—'}</div>
@@ -1423,6 +1470,26 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     })}
                   </tbody>
                 </table>
+                {/* Pagination — 5 rows per page, Evidence Vault style. */}
+                {activeAgreements.length > AGR_PER_PAGE && (
+                  <div className="lasm-pager">
+                    <div className="lasm-pager-info">Showing {agrFirst}–{agrLast} of {activeAgreements.length}</div>
+                    <div className="lasm-pager-ctrls">
+                      <button type="button" className="lasm-pager-btn" disabled={agrSafePage <= 1} onClick={() => setAgrPage(p => Math.max(1, p - 1))} aria-label="Previous page">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="15 18 9 12 15 6"/></svg>
+                      </button>
+                      {Array.from({ length: agrTotalPages }).map((_, idx) => {
+                        const n = idx + 1;
+                        return (
+                          <button key={n} type="button" className={`lasm-pager-num ${n === agrSafePage ? 'active' : ''}`} onClick={() => setAgrPage(n)}>{n}</button>
+                        );
+                      })}
+                      <button type="button" className="lasm-pager-btn" disabled={agrSafePage >= agrTotalPages} onClick={() => setAgrPage(p => Math.min(agrTotalPages, p + 1))} aria-label="Next page">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="9 18 15 12 9 6"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Bulk send sticky footer — only visible when ≥1 row is
@@ -1747,6 +1814,24 @@ const LASM_CSS = `
 .lasm-td-panel { margin: 16px 22px 18px; border: 1px solid #eceef3; border-radius: 14px; overflow: auto; background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.04), 0 8px 18px rgba(15,23,42,.05); flex: 1 1 0; min-height: 0; }
 .lasm-td-head { display: flex; align-items: center; gap: 7px; padding: 9px 12px; background: #f5f3ff; color: #4c1d95; font-size: 11.5px; font-weight: 800; letter-spacing: .02em; border-bottom: 1px solid #e2e8f0; }
 .lasm-td-empty { padding: 14px 12px; color: #94a3b8; font-size: 11.5px; font-style: italic; }
+/* Table pager — mirrors the Evidence Vault's lev-pager look. */
+.lasm-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 14px; border-top: 1px solid #ECEEF3; background: #FBFCFE; }
+.lasm-pager-info { font-size: 12px; font-weight: 600; color: #64748B; }
+.lasm-pager-ctrls { display: inline-flex; align-items: center; gap: 6px; }
+.lasm-pager-btn, .lasm-pager-num {
+  min-width: 30px; height: 30px; padding: 0 8px; border-radius: 8px; cursor: pointer;
+  background: #fff; border: 1px solid #E2E8F0; color: #475569;
+  font-family: inherit; font-size: 12.5px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; transition: all .14s ease;
+}
+.lasm-pager-btn svg { width: 14px; height: 14px; }
+.lasm-pager-btn:hover:not(:disabled), .lasm-pager-num:hover:not(.active) { background: #F5F3FF; border-color: #ddd6fe; color: #6d28d9; }
+.lasm-pager-btn:disabled { opacity: .45; cursor: not-allowed; }
+.lasm-pager-num.active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color: #6d28d9; color: #fff; box-shadow: 0 3px 8px rgba(124,58,237,.30); }
+[data-bs-theme="dark"] .lasm-pager { background: rgba(148,163,184,.06); border-top-color: rgba(148,163,184,.18); }
+[data-bs-theme="dark"] .lasm-pager-info { color: #94a3b8; }
+[data-bs-theme="dark"] .lasm-pager-btn, [data-bs-theme="dark"] .lasm-pager-num { background: #1e293b; border-color: rgba(148,163,184,.30); color: #cbd5e1; }
+[data-bs-theme="dark"] .lasm-pager-num.active { background: linear-gradient(135deg, #6d28d9 0%, #7c3aed 100%); border-color: #6d28d9; color: #fff; }
 .lasm-td-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 .lasm-td-table thead th { position: sticky; top: 0; z-index: 1; text-align: left; padding: 14px 18px; font-size: 10.5px; font-weight: 800; letter-spacing: .10em; text-transform: uppercase; white-space: nowrap; color: #fff; background: linear-gradient(180deg, #4c1d95 0%, #6d28d9 100%); }
 .lasm-td-table tbody td { padding: 14px 18px; font-size: 13px; color: #1e293b; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
