@@ -289,7 +289,8 @@ export default function DocGenerateModal({
               <div className="dgm-section-title mt-3 d-flex align-items-center justify-content-between">
                 <span><i className="ri-eye-line me-1" /> Preview</span>
                 <button type="button" className="dgm-refresh" onClick={refreshPreview} disabled={previewing}>
-                  <i className="ri-refresh-line me-1" />{previewing ? 'Rendering…' : 'Refresh preview'}
+                  <i className={`${previewing ? 'ri-loader-4-line dgm-spin' : 'ri-refresh-line'} me-1`} />
+                  {previewing ? 'Rendering…' : 'Refresh preview'}
                 </button>
               </div>
               <div className="dgm-preview-stage">
@@ -309,13 +310,18 @@ export default function DocGenerateModal({
           <button type="button" className="dgm-btn dgm-btn-ghost" onClick={onClose} disabled={busy}>
             Cancel
           </button>
+          {/* Both actions swap their icon for a spinning loader while in flight —
+              the label alone ("Saving…" / "Sending…") read as a dead button on a
+              slow render/upload, and Send had no busy affordance at all. */}
           <div className="d-flex gap-2">
             <button type="button" className="dgm-btn dgm-btn-outline" onClick={onDownload} disabled={busy || !isActive || loading}
               title="Save this generated document (counts toward Generated) and download the DOCX">
-              <i className="ri-save-3-line me-1" />{saving ? 'Saving…' : 'Save Generated'}
+              <i className={`${saving ? 'ri-loader-4-line dgm-spin' : 'ri-save-3-line'} me-1`} />
+              {saving ? 'Saving…' : 'Save Generated'}
             </button>
             <button type="button" className="dgm-btn dgm-btn-primary" onClick={onSend} disabled={busy || !isActive || loading}>
-              <i className="ri-quill-pen-line me-1" />{sending ? 'Sending…' : 'Send for Signature'}
+              <i className={`${sending ? 'ri-loader-4-line dgm-spin' : 'ri-quill-pen-line'} me-1`} />
+              {sending ? 'Sending…' : 'Send for Signature'}
             </button>
           </div>
         </div>
@@ -444,6 +450,16 @@ function ScopedStyles() {
       }
       .dgm-btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; }
       .dgm-btn:disabled { opacity: 0.55; cursor: default; }
+      /* Busy spinner for the footer actions + Refresh preview. display:inline-block
+         is required — a bare <i> is inline, and transforms don't apply to inline
+         boxes, so the icon would sit still. */
+      .dgm-spin { display: inline-block; animation: dgm-spin 0.8s linear infinite; }
+      @keyframes dgm-spin { to { transform: rotate(360deg); } }
+      /* Honour a reduced-motion preference: keep the swapped loader icon, drop
+         the rotation. */
+      @media (prefers-reduced-motion: reduce) {
+        .dgm-spin { animation: none; }
+      }
       .dgm-btn-ghost { background: #fff; border: 1px solid #d1d5db; color: #374151; }
       .dgm-btn-outline { background: #fff; border: 2px solid #7c3aed; color: #7c3aed; }
       .dgm-btn-primary { border: 0; color: #fff; background: linear-gradient(135deg,#6366f1,#8b5cf6); box-shadow: 0 4px 12px rgba(99,102,241,0.30); }

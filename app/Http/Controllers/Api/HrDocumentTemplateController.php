@@ -1013,7 +1013,9 @@ class HrDocumentTemplateController extends Controller
         $req = fn() => $isUpdate || $isDraft ? 'nullable' : 'required';
 
         return $request->validate([
-            'name'              => [$req(), 'string', 'max:191'],
+            // 100, not the column's 191: an over-long name breaks the template
+            // card + list layouts. Mirrors TEMPLATE_NAME_MAX in TemplateForm.tsx.
+            'name'              => [$req(), 'string', 'max:100'],
             'description'       => 'nullable|string',
             'employee_category' => ['nullable', Rule::in(self::CATEGORIES)],
             'role_type'         => ['nullable', Rule::in(self::ROLE_TYPES)],
@@ -1072,6 +1074,10 @@ class HrDocumentTemplateController extends Controller
             'footer_config.page_number_format'    => ['nullable', Rule::in(['N', 'Page N', 'Page N of M', 'N / M'])],
 
             'status' => ['nullable', Rule::in(self::STATUSES)],
+        ], [
+            // Match the wording the form shows, so an API-side rejection reads
+            // the same as the inline message.
+            'name.max' => 'Template Name cannot exceed 100 characters.',
         ]);
     }
 

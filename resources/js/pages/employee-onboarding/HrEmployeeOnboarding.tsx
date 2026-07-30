@@ -7864,7 +7864,9 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
                     : runActive ? 'Awaiting Sign'
                     : run       ? 'Resend'
                     :             'Send for Signature';
-                  const sendIcon = (isSending || (!runActive && !fieldsReady)) ? 'ri-loader-4-line'
+                  /* onb-spin: the loader icon has to actually rotate — a static
+                     spinner glyph next to "Sending…" read as a stuck button. */
+                  const sendIcon = (isSending || (!runActive && !fieldsReady)) ? 'ri-loader-4-line onb-spin'
                     : runActive ? 'ri-time-line'
                     : 'ri-send-plane-line';
                   return (

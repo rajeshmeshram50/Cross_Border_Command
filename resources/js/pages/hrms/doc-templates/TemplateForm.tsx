@@ -84,6 +84,11 @@ const STEPS = [
   { key: 3, label: 'Template Design',       sub: 'Content + placeholders' },
 ];
 
+/** Max length of a template name. Enforced on the input, in validateStep and by
+ *  the API (`max:100` on HrDocumentTemplateController's store/update rules) —
+ *  long names were breaking the template card and list layouts. */
+const TEMPLATE_NAME_MAX = 100;
+
 // ── Form ─────────────────────────────────────────────────────────────────────
 export default function TemplateFormPage() {
   const toast = useToast();
@@ -277,6 +282,10 @@ export default function TemplateFormPage() {
     const e: Record<string, string> = {};
     if (s === 1) {
       if (!name.trim()) e.name = 'Template name is required';
+      // Backstop for the maxLength on the input — a paste can still land a
+      // longer value in some browsers, and an over-long name breaks the card
+      // and list layouts downstream.
+      else if (name.trim().length > TEMPLATE_NAME_MAX) e.name = `Template Name cannot exceed ${TEMPLATE_NAME_MAX} characters.`;
       if (!category) e.employee_category = 'Required';
       if (!roleType) e.role_type = 'Required';
     }
@@ -782,11 +791,20 @@ function Step1(props: {
             <div style={sectionLabel}>3. Basic Information</div>
             <div className="mb-3">
               <label className="tpl-field-label" style={fieldLabel}>Template Name <span style={req}>*</span></label>
-              <input type="text" value={props.name} onChange={e => props.setName(e.target.value)}
+              {/* Hard-capped at 100 chars: maxLength blocks typing past it, and
+                  the slice covers a paste that overshoots. */}
+              <input type="text" value={props.name}
+                onChange={e => props.setName(e.target.value.slice(0, TEMPLATE_NAME_MAX))}
+                maxLength={TEMPLATE_NAME_MAX}
                 placeholder="e.g. Internship Offer Letter (November)"
                 className="tpl-input"
                 style={inputStyle(!!props.errors.name)} />
-              {props.errors.name && <div style={errMsg}>{props.errors.name}</div>}
+              <div className="d-flex align-items-center justify-content-between gap-2">
+                <div>{props.errors.name && <div style={errMsg}>{props.errors.name}</div>}</div>
+                <div className="tpl-hint" style={{ fontSize: 11, color: props.name.length >= TEMPLATE_NAME_MAX ? '#dc2626' : '#9ca3af', marginTop: 4 }}>
+                  {props.name.length}/{TEMPLATE_NAME_MAX}
+                </div>
+              </div>
             </div>
             <div className="mb-3">
               <label className="tpl-field-label" style={fieldLabel}>Template Code</label>
