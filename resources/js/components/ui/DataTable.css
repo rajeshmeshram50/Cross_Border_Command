@@ -114,7 +114,13 @@
   border: 1px solid var(--vz-border-color);
   border-radius: 10px;
   padding: 4px;
-  flex-shrink: 0;
+  /* Shrinkable (was flex-shrink: 0) with min-width: 0, so as the window narrows
+     the rail gives up width and wraps its own tabs onto a second line INSIDE the
+     rail. Before, an unshrinkable rail forced the whole search + actions group
+     onto another toolbar row the moment the tabs got wide — the tab rail on a
+     4-tab table (Expense Claims) is ~600px on its own. */
+  flex: 0 1 auto;
+  min-width: 0;
   flex-wrap: wrap;
 }
 .dt-tab {
@@ -233,7 +239,9 @@
    a second line even when there was room for everything. */
 .dt-search {
   position: relative;
-  flex: 1 1 180px; min-width: 150px;
+  /* Elastic across the whole range: it absorbs every pixel the tabs and actions
+     don't need, down to 150px before the toolbar starts stacking. */
+  flex: 1 1 240px; min-width: 150px; max-width: 100%;
   height: 42px;
   display: flex; align-items: center;
   padding: 0 8px 0 38px;
@@ -589,16 +597,23 @@
    Filter button, filter selects and a primary action. It degrades in a fixed
    order so the row never breaks in a surprising place:
 
-     wide          tabs · search · [filters + action]
-     ≤1400px       tabs                                  ← search drops to its
+     wide          tabs · search · [filters + action]     ← one row; the search
+                                                            absorbs the slack and
+                                                            the tab rail wraps
+                                                            internally if needed
+     ≤1100px       tabs                                  ← search drops to its
                    search · [filters + action]              own line, with the
                                                             filters beside it
      ≤760px        each block on its own full-width line
 
    The alternative — letting the flex row wrap on its own — put the filters and
    the primary action on line 2 while the search field stretched across line 1,
-   which read as a broken layout. */
-@media (max-width: 1400px) {
+   which read as a broken layout.
+
+   1100, not 1400: with a shrinkable .dt-tabs the single row survives much
+   further down, and forcing the split at 1400 cost a whole toolbar row on any
+   1366-wide laptop even when everything fit. */
+@media (max-width: 1100px) {
   /* Tabs take the first line; search + actions share the second. */
   .dt-tabs { flex: 1 1 100%; }
   .dt-search { flex: 1 1 220px; }
