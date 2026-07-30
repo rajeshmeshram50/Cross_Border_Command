@@ -207,6 +207,15 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
          : vault.company_dd;
   }, [vault, tab]);
 
+  /* Tab count badges show only MANDATORY documents — optional docs are still
+   * listed in the table but are not counted (requirement === 'M' is mandatory). */
+  const mandatoryCount = (key: TabKey): number => {
+    const list = key === 'owner-kyc'      ? vault?.owner_kyc
+               : key === 'trade-licenses' ? vault?.trade_licenses
+               : vault?.company_dd;
+    return (list ?? []).filter(d => d.requirement === 'M').length;
+  };
+
 
   /* Export All → a single ZIP with four folders (Due Diligence / KYC
    * Documents / Trade License / Trade Documents). Every uploaded file in
@@ -381,7 +390,7 @@ export default function LeadEvidenceVaultModal({ open, target, onClose, consigne
               <button key={t.key} type="button" className={`lev-tab ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
                 <TabSvg name={t.icon} />
                 {t.label}
-                <span className="lev-tab-count">{(vault?.[t.countKey] as number) ?? 0}</span>
+                <span className="lev-tab-count">{mandatoryCount(t.key)}</span>
               </button>
             ))}
           </div>

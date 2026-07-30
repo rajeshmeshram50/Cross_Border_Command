@@ -125,6 +125,10 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   // Convert-to-PI confirmation popup state (target row + previewed PI code).
   const [convertTarget, setConvertTarget] = useState<QuotationRow | null>(null);
   const [convertPreviewCode, setConvertPreviewCode] = useState<string | null>(null);
+  // Dedicated "converting to PI" flag. Kept SEPARATE from `actingId` (the
+  // document view/download busy state) so the convert flow drives ONLY the
+  // modal's own converting spinner — not the "Opening document…" page overlay.
+  const [converting, setConverting] = useState(false);
   // Conversion-blocked popup (lead already has a PI): the quotation tried
   // + the existing PI row that blocks it.
   const [convertBlocked, setConvertBlocked] = useState<{ fromQt: string; pi: PIRow } | null>(null);
@@ -354,7 +358,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   const confirmConvert = async () => {
     const q = convertTarget;
     if (!q || !q.id) return;
-    setActingId(q.id);
+    setConverting(true);
     try {
       const { data } = await api.post<{ status: boolean; data?: { code?: string } }>(
         `/sales/proforma-invoices/from-quotation/${q.id}`,
@@ -380,7 +384,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
       await fetchAll(true);
       setConvertTarget(null);   // close the confirm modal
     } finally {
-      setActingId(null);
+      setConverting(false);
     }
   };
 
@@ -1099,7 +1103,7 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
         newPiCode={convertPreviewCode}
         piDate={formatDmy(new Date())}
         quotationValue={convertTarget ? `${ccyCode(convertTarget.currency)} ${fmtNum(convertTarget.grand_total)}` : '—'}
-        converting={!!convertTarget?.id && actingId === convertTarget.id}
+        converting={converting}
         onCancel={() => { if (actingId === null) setConvertTarget(null); }}
         onConfirm={() => void confirmConvert()}
       />
@@ -1270,11 +1274,17 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
   // spinner so the user can see the PDF is opening / downloading.
   const [pdfBusy, setPdfBusy] = useState<{ id: number; download: boolean } | null>(null);
 
+  // Block closing (X / Close button / Escape) while a PDF is opening or
+  // downloading — on the server the fetch can take a moment, and letting the
+  // popup close mid-flight leaves the in-flight request acting on an unmounted
+  // modal. The close controls disable until the PDF settles.
+  const guardedClose = () => { if (!pdfBusy) onClose(); };
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !pdfBusy) onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, pdfBusy]);
 
   /* Lock background page scroll while the popup is open. */
   useEffect(() => {
@@ -1328,6 +1338,9 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
   const asOf = formatDmy(today);
 
   const pdf = async (entryId: number, download: boolean) => {
+    // Ignore new clicks while a PDF is already opening/downloading — one at a
+    // time keeps the busy state (and the close guard) unambiguous.
+    if (pdfBusy) return;
     setActingId(entryId);
     setPdfBusy({ id: entryId, download });
     try {
@@ -1421,7 +1434,7 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
           <div className="s5-ps-head-right">
             <span className="s5-ps-pill"><span className="s5-ps-pill-dot" />{latest.length} Products</span>
             <span className="s5-ps-asof"><span className="s5-ps-asof-lbl">As of Date</span><span className="s5-ps-asof-val">{asOf}</span></span>
-            <button type="button" className="s5-ps-x" onClick={onClose} aria-label="Close">×</button>
+            <button type="button" className="s5-ps-x" onClick={guardedClose} disabled={!!pdfBusy} aria-label="Close" title={pdfBusy ? 'Please wait — the PDF is still opening' : 'Close'} style={pdfBusy ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}>×</button>
           </div>
         </div>
 
@@ -1509,11 +1522,11 @@ function PriceSummaryModal({ leadId, onClose }: { leadId: number | null; onClose
         <div className="s5-ps-foot">
           <div className="s5-ps-foot-note"><span className="s5-ps-foot-dot" />Showing latest price per product · Updated today</div>
           <div className="s5-ps-foot-btns">
-            <button type="button" className="s5-ps-export" disabled={loading || latest.length === 0} onClick={onExportReport}>
+            <button type="button" className="s5-ps-export" disabled={loading || latest.length === 0 || !!pdfBusy} onClick={onExportReport}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Export Report
             </button>
-            <button type="button" className="s5-ps-close-btn" onClick={onClose}>Close</button>
+            <button type="button" className="s5-ps-close-btn" onClick={guardedClose} disabled={!!pdfBusy} title={pdfBusy ? 'Please wait — the PDF is still opening' : undefined}>Close</button>
           </div>
         </div>
       </div>

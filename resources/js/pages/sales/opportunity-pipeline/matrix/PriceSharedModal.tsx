@@ -37,6 +37,9 @@ type ProductRow = {
   currency:         string;
   quantity:         string | number | null;
   target_price:     string | number | null;
+  /* Stage 3 sourcing decision — 'required' / 'not_required', null until set.
+     Only products WITH a decision are eligible for a shared price. */
+  sourcing_status:  string | null;
 };
 
 type SharedPriceRow = {
@@ -132,7 +135,10 @@ export default function PriceSharedModal({ open, leadId, onClose, onChanged }: P
     }
     setLoadingRows(true);
     api.get<{ status: boolean; data: ProductRow[] }>(`/sales/leads/${leadId}/products`)
-      .then(({ data }) => setRows(data.data ?? []))
+      // Only products that have been given a sourcing decision (Sourcing
+      // Required / Not Required) are eligible to be priced. Products still
+      // "not set" in Product Sourcing are hidden here until a status is chosen.
+      .then(({ data }) => setRows((data.data ?? []).filter(r => !!r.sourcing_status)))
       .catch(() => toast.error('Load failed', 'Could not load mapped products'))
       .finally(() => setLoadingRows(false));
   }, [open, leadId, toast]);
