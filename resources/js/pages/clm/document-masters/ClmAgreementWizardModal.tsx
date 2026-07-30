@@ -10,7 +10,6 @@ import { MasterMultiSelect } from '../../master/masterFormKit';
 import Tooltip from '../../../components/ui/Tooltip';
 import { SimpleDescModal } from '../shared/clmCommon';
 import ClmInsertTableModal from './ClmInsertTableModal';
-import ClmInsertHrModal from './ClmInsertHrModal';
 import ClmInsertPlaceholderModal from './ClmInsertPlaceholderModal';
 import ClmClauseInsertPanel from './ClmClauseInsertPanel';
 import HeaderFooterPanel, {
@@ -141,14 +140,17 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   // replacing the old contentEditable + document.execCommand which froze the tab
   // when formatting large (200-300 page) agreements. HTML in / HTML out, so the
   // backend contract (content = HTML string) is unchanged.
-  const agr: CtcEditor = useCtcEditor({ value: content, onChange: setContent });
+  // Unsaved-changes flag — set on every editor edit/insert, cleared on load and
+  // on a successful save. Download is blocked while dirty so the user never
+  // downloads a stale (last-saved) version of edits they can still see.
+  const [dirty, setDirty] = useState(false);
+  const agr: CtcEditor = useCtcEditor({ value: content, onChange: (html) => { setContent(html); setDirty(true); } });
   const [placeholderOpen, setPlaceholderOpen] = useState(false);
   const [clauseOpen, setClauseOpen]           = useState(false);
   /* Insert Table / Insert HR — same pattern Trade Doc uses. Caret is
    * stashed via stashSelection() before opening so the generated HTML
    * lands at the user's last in-editor caret, not the editor's start. */
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
-  const [hrPickerOpen, setHrPickerOpen]       = useState(false);
 
   // Editor state — the TipTap engine lives in `agr` (above); these drive the
   // font-size / block-format dropdowns only.
@@ -284,7 +286,11 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
    * existing row so we have an id to scope the upload/download to. */
   const downloadDocx = async () => {
     if (!editingId) {
-      toast.error('Save first', 'Save the agreement before downloading as DOCX.');
+      toast.error('Save draft first', 'Save the agreement draft before downloading as DOCX.');
+      return;
+    }
+    if (dirty) {
+      toast.warning('Save your changes', 'You have unsaved edits — save the agreement before downloading.');
       return;
     }
     if (downloadingDocx) return;
@@ -390,6 +396,8 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       setHeaderConfig(brandedDefaults.header);
       setFooterConfig(brandedDefaults.footer);
     }
+    // Fresh load — no unsaved changes yet (the editor re-seed doesn't fire onChange).
+    setDirty(false);
   }, [open, existing, brandedDefaults]);
 
   // TipTap owns its own selection, so the old manual caret-tracking listener is
@@ -552,6 +560,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       } else {
         await api.post('/clm/agreement-library', payload);
       }
+      setDirty(false);   // saved — download now reflects the current content
       const elapsed = Date.now() - _saveStart;
       if (elapsed < 500) await new Promise(res => setTimeout(res, 500 - elapsed));
       toast.success(editingId ? 'Updated' : 'Added', payload.title);
@@ -861,7 +870,6 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                 onOpenPlaceholder={() => { stashSelection(); setPlaceholderOpen(true); setClauseOpen(false); }}
                 onOpenClauseLibrary={() => { setClauseOpen(o => !o); setPlaceholderOpen(false); }}
                 onOpenTablePicker={() => { stashSelection(); setTablePickerOpen(true); }}
-                onOpenHrPicker={() => { stashSelection(); setHrPickerOpen(true); }}
                 clauseOpen={clauseOpen}
                 onCloseClauseLibrary={() => setClauseOpen(false)}
                 onInsertClause={(html) => { insertHtmlAtCaret(html); setClauseOpen(false); }}
@@ -941,16 +949,6 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
           onClose={() => setTablePickerOpen(false)}
           onInsert={(html) => { insertHtmlAtCaret(html); setTablePickerOpen(false); }}
         />
-
-        {/* Insert Horizontal Line picker — replaces the toolbar's plain
-            HR button with the styled-line picker (colour, height, style)
-            so PDF output renders a deliberate separator instead of the
-            1px grey line dompdf falls back to. */}
-        <ClmInsertHrModal
-          open={hrPickerOpen}
-          onClose={() => setHrPickerOpen(false)}
-          onInsert={(html) => { insertHtmlAtCaret(html); setHrPickerOpen(false); }}
-        />
       </div>
     </div>,
     document.body,
@@ -984,7 +982,6 @@ function AgrEditor({
   onOpenClauseLibrary,
   onCloseClauseLibrary,
   onOpenTablePicker,
-  onOpenHrPicker,
   clauseOpen,
   onInsertClause,
   editingId,
@@ -1016,7 +1013,6 @@ function AgrEditor({
   onOpenClauseLibrary: () => void;
   onCloseClauseLibrary: () => void;
   onOpenTablePicker: () => void;
-  onOpenHrPicker: () => void;
   clauseOpen: boolean;
   onInsertClause: (html: string) => void;
   editingId: number | null;
@@ -1179,16 +1175,6 @@ function AgrEditor({
         <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('outdent')} title="Outdent">⇤</button>
         <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('indent')}  title="Indent">⇥</button>
         <span className="agw-toolbar-sep" />
-        {/* Insert HR opens the styled-line picker (colour / height /
-            style) instead of dropping a plain <hr> — same UX as the
-            Trade Doc modal. The previous selection is stashed before
-            the modal opens so the insertion lands where the caret was. */}
-        <button
-          type="button" className="agw-toolbar-btn"
-          title="Insert horizontal line"
-          onMouseDown={e => { e.preventDefault(); stashSelection(); }}
-          onClick={onOpenHrPicker}
-        >—</button>
         <button type="button" className="agw-toolbar-btn" onClick={() => exec('undo')} title="Undo">↶</button>
         <button type="button" className="agw-toolbar-btn" onClick={() => exec('redo')} title="Redo">↷</button>
         <button type="button" className="agw-toolbar-btn" onClick={() => exec('removeFormat')} title="Clear formatting">🅣</button>
@@ -1798,6 +1784,12 @@ const AGW_CSS = `
 .agw-editor pre { background: #f0fdff; border: 1px solid #cffafe; border-radius: 6px; padding: 10px 12px; margin: .6em 0; font-family: 'Geist Mono', ui-monospace, monospace; font-size: 12.5px; color: #0e7490; overflow-x: auto; }
 .agw-editor hr { border: 0; border-top: 1px dashed #94a3b8; margin: 14px 0; }
 .agw-editor a { color: #0891b2; text-decoration: underline; }
+/* Tables — FIXED column layout + full width so inserted / pasted / Word-uploaded
+   tables render evenly (a long unbreakable string in one cell wraps instead of
+   widening its column and shoving the rest sideways). Mirrors the Trade Doc
+   editor so the two behave identically. */
+.agw-editor table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+.agw-editor td, .agw-editor th { overflow-wrap: break-word; word-break: break-word; }
 .agw-toolbar-color { overflow: hidden; font-weight: 800; }
 
 .agw-clause-panel { position: absolute; top: 0; right: 0; bottom: 0; width: min(320px, 70%); background: #fff; border-left: 1px solid rgba(6,182,212,.22); box-shadow: -8px 0 24px rgba(15,23,42,.10); display: flex; flex-direction: column; animation: agwClauseSlide .22s ease both; z-index: 5; }
@@ -1962,6 +1954,10 @@ const AGW_CSS = `
  * blocks are dropped along with the markup they targeted. */
 [data-bs-theme="dark"] .agw-select { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2367e8f9' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>"); }
 [data-bs-theme="dark"] .agw-editor-shell { background: #0f172a; border-color: rgba(6,182,212,.22); }
+/* The scroll container behind the document page was a hardcoded white (#fff)
+   with no dark override — it showed as a white strip on the right / behind the
+   page in dark mode. Match the editor canvas. */
+[data-bs-theme="dark"] .agw-editor-scroll { background: #0f172a; }
 [data-bs-theme="dark"] .agw-toolbar { background: rgba(8,145,178,.06); border-bottom-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .agw-toolbar-sel, [data-bs-theme="dark"] .agw-toolbar-btn { background: #1e293b; border-color: rgba(6,182,212,.22); color: #cbd5e1; }
 [data-bs-theme="dark"] .agw-toolbar-btn:hover { background: rgba(8,145,178,.14); color: #67e8f9; border-color: rgba(103,232,249,.45); }
@@ -1969,6 +1965,17 @@ const AGW_CSS = `
 [data-bs-theme="dark"] .agw-toolbar-sep { background: rgba(255,255,255,.10); }
 [data-bs-theme="dark"] .agw-editor { background: #0f172a; color: #e2e8f0; }
 [data-bs-theme="dark"] .agw-editor h1, [data-bs-theme="dark"] .agw-editor h2, [data-bs-theme="dark"] .agw-editor h3 { color: #cffafe; }
+/* Dark-mode tables — a bare border="1" (from uploaded Word docs) is invisible
+   on the dark canvas, so give cells a visible slate border + header fill.
+   Insert-Table rows carry their own inline colours, which still win over these. */
+[data-bs-theme="dark"] .agw-editor table,
+[data-bs-theme="dark"] .agw-editor td,
+[data-bs-theme="dark"] .agw-editor th { border: 1px solid #475569; }
+[data-bs-theme="dark"] .agw-editor th { background: #1e293b; color: #e2e8f0; }
+[data-bs-theme="dark"] .agw-editor code,
+[data-bs-theme="dark"] .agw-editor pre { background: #14232f; border-color: rgba(6,182,212,.25); color: #a5f3fc; }
+[data-bs-theme="dark"] .agw-editor blockquote { border-left-color: #0e7490; color: #94a3b8; }
+[data-bs-theme="dark"] .agw-editor a { color: #38bdf8; }
 [data-bs-theme="dark"] .agw-editor-foot { background: rgba(8,145,178,.10); border-top-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .agw-editor-foot-hint { color: #67e8f9; }
 [data-bs-theme="dark"] .agw-editor-foot-tag { background: rgba(8,145,178,.18); color: #cffafe; border-color: rgba(6,182,212,.35); }

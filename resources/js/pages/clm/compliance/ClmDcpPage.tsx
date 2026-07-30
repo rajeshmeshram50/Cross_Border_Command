@@ -841,7 +841,7 @@ function SegmentRuleModal(props: {
                   <span className="clm-req">*</span>
                 </div>
                 <div style={{ padding: '10px 12px' }}>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div className="dcp-doctype-row" style={{ display: 'flex', gap: 8 }}>
                     {(['domestic','international'] as const).map(v => {
                       const on  = docType === v;
                       const dom = v === 'domestic';
@@ -1242,6 +1242,25 @@ const DCP_PAGE_CSS = `
 [data-bs-theme="dark"] .dcp-doc-idx  { color: #64748b; }
 [data-bs-theme="dark"] .dcp-foot-text { color: #67e8f9; }
 [data-bs-theme="dark"] .dcp-foot-text b { color: #e2e8f0; }
+
+/* ── Small-screen responsiveness for the Add/Edit Segment Rule modal ──
+   The 2-step stepper strip is a non-wrapping flex row whose tiles have fixed
+   content, so it overflowed / overlapped on narrow screens. Shrink the tiles,
+   drop the sub-captions + step badge, and let the Document-Type cards stack. */
+@media (max-width: 680px) {
+  .dcp-stage-strip { padding: 8px 12px !important; gap: 4px !important; flex-wrap: nowrap !important; }
+  .dcp-stage-tile { padding: 7px 10px !important; gap: 7px !important; min-width: 0 !important; }
+  .dcp-stage-tile-sub { display: none !important; }
+  .dcp-stage-tile-title { font-size: 11px !important; }
+  .dcp-step-badge { display: none !important; }
+  /* Domestic / International cards stack vertically so their text doesn't cramp. */
+  .dcp-doctype-row { flex-direction: column !important; }
+  .dcp-doctype-row > .dcp-radio-label { width: 100% !important; }
+}
+@media (max-width: 460px) {
+  .dcp-stage-tile-title { font-size: 10px !important; }
+  .dcp-stage-strip { padding: 7px 9px !important; }
+}
 `;
 
 /* ─── DocListPopup — opens when a count or total cell is clicked ─── */

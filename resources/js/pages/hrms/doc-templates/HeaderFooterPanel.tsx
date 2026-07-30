@@ -127,10 +127,16 @@ export default function HeaderFooterPanel({
   const [openZone, setOpenZone] = useState<'header' | 'footer' | null>(null);
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement | null>(null);
+  // True while a header logo is being uploaded — drives the spinner on the
+  // Replace/Upload Logo button and disables Update so the popover can't close
+  // (losing the file) before the upload finishes.
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const uploadLogo = async (file: File) => {
     const fd = new FormData();
     fd.append('logo', file);
+    setUploadingLogo(true);
+    const started = Date.now();
     try {
       const { data } = await api.post(uploadLogoEndpoint, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -139,6 +145,12 @@ export default function HeaderFooterPanel({
       toast.success('Logo uploaded', 'Header now uses this image.');
     } catch (err: any) {
       toast.error('Upload failed', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      // Keep the loader on screen for at least ~600ms so a fast (local) upload
+      // doesn't just flash — the spinner + blocked controls stay perceptible.
+      const elapsed = Date.now() - started;
+      if (elapsed < 600) await new Promise(res => setTimeout(res, 600 - elapsed));
+      setUploadingLogo(false);
     }
   };
 
@@ -361,6 +373,7 @@ export default function HeaderFooterPanel({
           setHeader={setHeader}
           onClose={() => setOpenZone(null)}
           onChooseLogo={() => fileRef.current?.click()}
+          uploading={uploadingLogo}
         />
       )}
 
@@ -444,17 +457,21 @@ export default function HeaderFooterPanel({
 
 /* ── Header editor (popover) ───────────────────────────────────────────────── */
 function HeaderEditor({
-  header, setHeader, onClose, onChooseLogo,
+  header, setHeader, onClose, onChooseLogo, uploading = false,
 }: {
   header: HeaderConfig;
   setHeader: (next: HeaderConfig) => void;
   onClose: () => void;
   onChooseLogo: () => void;
+  uploading?: boolean;
 }) {
+  // While the logo image is uploading, block every other control (and closing)
+  // so no action can fire mid-upload — only the Uploading… spinner stays.
+  const guardedClose = () => { if (!uploading) onClose(); };
   return (
-    <PopoverFrame onClose={onClose}>
-      <PopoverHeader title="Header Settings" onClose={onClose} />
-      <div className="row g-3" style={{ padding: 14 }}>
+    <PopoverFrame onClose={guardedClose}>
+      <PopoverHeader title="Header Settings" onClose={guardedClose} />
+      <div className="row g-3" style={{ padding: 14, ...(uploading ? { pointerEvents: 'none', opacity: 0.55 } : null) }}>
         <div className="col-md-6">
           <div className="d-flex align-items-center justify-content-between mb-1">
             <label className="tpl-popover-label" style={{ ...labelStyle, marginBottom: 0 }}>Title <span style={{ fontWeight: 600, color: '#9ca3af' }}>(multi-line)</span></label>
@@ -485,10 +502,12 @@ function HeaderEditor({
         <div className="col-md-6">
           <label className="tpl-popover-label" style={labelStyle}>Logo</label>
           <div className="d-flex align-items-center gap-2">
-            <button type="button" onClick={onChooseLogo}
+            <button type="button" onClick={onChooseLogo} disabled={uploading}
               className="tpl-logo-upload"
-              style={{ padding: '7px 12px', background: '#6366f1', color: '#fff', border: 0, borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>
-              <i className="ri-upload-2-line me-1" />{header.logo_url ? 'Replace Logo' : 'Upload Logo'}
+              style={{ padding: '7px 12px', background: '#6366f1', color: '#fff', border: 0, borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: uploading ? 'wait' : 'pointer', opacity: uploading ? 0.7 : 1 }}>
+              {uploading
+                ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" style={{ width: 13, height: 13, borderWidth: 2 }} />Uploading…</>
+                : <><i className="ri-upload-2-line me-1" />{header.logo_url ? 'Replace Logo' : 'Upload Logo'}</>}
             </button>
             {header.logo_url && (
               <button type="button" onClick={() => setHeader({ ...header, logo_path: null, logo_url: null })}
@@ -569,7 +588,9 @@ function HeaderEditor({
         </div>
       </div>
       <div className="tpl-popover-foot">
-        <button type="button" className="tpl-popover-update" onClick={onClose}>
+        <button type="button" className="tpl-popover-update" onClick={guardedClose} disabled={uploading}
+          style={uploading ? { opacity: 0.55, cursor: 'wait' } : undefined}
+          title={uploading ? 'Please wait — the logo is still uploading' : undefined}>
           <i className="ri-check-line me-1" />Update
         </button>
       </div>

@@ -297,14 +297,25 @@ const IHR_CSS = `
 }
 .ihr-btn-primary:hover { filter: brightness(1.05); }
 
-[data-bs-theme="dark"] .ihr-shell { background: var(--vz-card-bg); }
+/* Dark mode — mirror the Insert Table modal's explicit slate palette (not the
+   raw --vz vars, which rendered an inconsistent/washed-out shade here) so the
+   two picker modals look identical in dark mode. */
+[data-bs-theme="dark"] .ihr-shell {
+  background: #1e293b;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, .55), 0 0 0 1px rgba(6,182,212,.18);
+}
+[data-bs-theme="dark"] .ihr-body { background: #172033; }
 [data-bs-theme="dark"] .ihr-input,
 [data-bs-theme="dark"] .ihr-color-input {
-  background: var(--vz-secondary-bg); color: var(--vz-body-color); border-color: var(--vz-border-color);
+  background: #0f172a; color: #e2e8f0; border-color: rgba(6,182,212,.25);
 }
-[data-bs-theme="dark"] .ihr-preview-wrap { background: var(--vz-secondary-bg); border-color: var(--vz-border-color); }
-[data-bs-theme="dark"] .ihr-chip { background: var(--vz-card-bg); color: var(--vz-body-color); border-color: var(--vz-border-color); }
-[data-bs-theme="dark"] .ihr-chip.is-on { background: #0d9488; color: #fff; }
-[data-bs-theme="dark"] .ihr-foot { background: var(--vz-secondary-bg); border-top-color: var(--vz-border-color); }
-[data-bs-theme="dark"] .ihr-btn-cancel { background: var(--vz-card-bg); color: var(--vz-body-color); border-color: var(--vz-border-color); }
+[data-bs-theme="dark"] .ihr-preview-wrap { background: #0f172a; border-color: rgba(6,182,212,.22); }
+[data-bs-theme="dark"] .ihr-chip { background: #0f172a; color: #cbd5e1; border-color: rgba(148,163,184,.30); }
+[data-bs-theme="dark"] .ihr-chip.is-on { background: #0d9488; color: #fff; border-color: #0d9488; }
+[data-bs-theme="dark"] .ihr-foot { background: #1e293b; border-top-color: rgba(6,182,212,.18); }
+[data-bs-theme="dark"] .ihr-btn-cancel { background: #0f172a; color: #cbd5e1; border-color: rgba(148,163,184,.30); }
+[data-bs-theme="dark"] .ihr-btn-cancel:hover { background: #1e293b; }
+/* Labels + preview label washed out at #6b7280 on the dark panel — lift to teal. */
+[data-bs-theme="dark"] .ihr-lbl,
+[data-bs-theme="dark"] .ihr-preview-label { color: #67e8f9; }
 `;

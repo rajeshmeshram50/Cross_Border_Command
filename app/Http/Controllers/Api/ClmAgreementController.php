@@ -342,6 +342,18 @@ class ClmAgreementController extends Controller
             'footer_config'  => 'nullable|array',
         ]);
         $data['updated_by'] = $user->id;
+        // If the editor content was edited and saved, the previously-uploaded
+        // Word file no longer matches it. downloadDocx() prefers that stored
+        // file, so it would keep serving the OLD document. Drop the docx_path
+        // here (only when the content actually changed) so the download
+        // regenerates from the edited HTML the user sees in the editor.
+        if (array_key_exists('content', $data) && $data['content'] !== null && $data['content'] !== $row->content) {
+            if ($row->docx_path) {
+                try { Storage::disk('public')->delete($row->docx_path); } catch (\Throwable $e) { /* ignore */ }
+            }
+            $data['docx_path'] = null;
+            $data['docx_original_name'] = null;
+        }
         $row->update($data);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
@@ -1033,15 +1045,30 @@ class ClmAgreementController extends Controller
         // cloud disk (Azure Blob, used on the server) Storage::path() returns an
         // unreadable path, so ZipArchive/PhpWord silently fail and the editor
         // goes blank. ->get() works on both local and cloud disks.
-        $html = $row->content;
+        $html = null;
+        $convFailed = false;
         $tmpDocx = tempnam(sys_get_temp_dir(), 'docxconv_') . '.docx';
         try {
             file_put_contents($tmpDocx, Storage::disk('public')->get($path));
-            $html = $this->docxToHtml($tmpDocx) ?: $row->content;
+            $html = $this->docxToHtml($tmpDocx);
         } catch (\Throwable $e) {
-            // ignore — keep the previous HTML if parsing failed
+            $convFailed = true;
         } finally {
             @unlink($tmpDocx);
+        }
+
+        // If nothing readable came out, DON'T silently keep the old content —
+        // tell the user so they know the upload didn't take. The usual cause is
+        // an older .doc (binary) file, which the converter can't read; a .docx
+        // that yielded no text is rejected too.
+        if ($convFailed || trim(strip_tags((string) $html)) === '') {
+            Storage::disk('public')->delete($path);
+            return response()->json([
+                'status'  => false,
+                'message' => $ext === 'doc'
+                    ? 'This looks like an older .doc file, which can\'t be read. Open it in Word and use "Save As → Word Document (.docx)", then upload the .docx.'
+                    : 'We couldn\'t read any content from this Word file. Make sure it\'s a valid .docx that contains text, then try again.',
+            ], 422);
         }
 
         // Reject a document whose text is over the render cap: it could never be
