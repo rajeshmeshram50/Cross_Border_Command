@@ -608,15 +608,29 @@ class ClmTradeDocumentController extends Controller
         // cloud disk (Azure Blob, used on the server) Storage::path() returns an
         // unreadable path, so ZipArchive/PhpWord silently fail and the editor
         // goes blank. ->get() works on both local and cloud disks.
-        $html = $row->content;
+        $html = null;
+        $convFailed = false;
         $tmpDocx = tempnam(sys_get_temp_dir(), 'docxconv_') . '.docx';
         try {
             file_put_contents($tmpDocx, Storage::disk('public')->get($path));
-            $html = $this->docxToHtml($tmpDocx) ?: $row->content;
+            $html = $this->docxToHtml($tmpDocx);
         } catch (\Throwable $e) {
-            // ignore — keep the previous HTML if parsing failed
+            $convFailed = true;
         } finally {
             @unlink($tmpDocx);
+        }
+
+        // If nothing readable came out, DON'T silently keep the old content —
+        // tell the user so they know the upload didn't take. The usual cause is
+        // an older .doc (binary) file, which the converter can't read.
+        if ($convFailed || trim(strip_tags((string) $html)) === '') {
+            Storage::disk('public')->delete($path);
+            return response()->json([
+                'status'  => false,
+                'message' => $ext === 'doc'
+                    ? 'This looks like an older .doc file, which can\'t be read. Open it in Word and use "Save As → Word Document (.docx)", then upload the .docx.'
+                    : 'We couldn\'t read any content from this Word file. Make sure it\'s a valid .docx that contains text, then try again.',
+            ], 422);
         }
 
         // Reject a document whose text is over the render cap: it could never be

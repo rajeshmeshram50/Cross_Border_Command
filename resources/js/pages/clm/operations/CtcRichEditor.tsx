@@ -109,10 +109,14 @@ export function useCtcEditor(opts: { value: string; onChange: (html: string) => 
         // being turned into links because ".name/.company/.email/.zip" are real
         // TLDs. Manual links via the toolbar 🔗 button still work.
         link: {
-          openOnClick: false,
+          // Manual links (toolbar 🔗) open in a NEW TAB when clicked so the
+          // editor isn't navigated away. autolink/linkOnPaste stay OFF so
+          // placeholder tokens like {{customer.name}} are never linkified.
+          openOnClick: true,
           autolink: false,
           linkOnPaste: false,
           shouldAutoLink: () => false,
+          HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' },
         },
       }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
@@ -180,9 +184,25 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
   if (!editor) return null;
 
   const applyLink = () => {
-    const url = linkUrl.trim();
-    if (url) editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
-    else editor.chain().focus().extendMarkRange('link').unsetLink().run();
+    const raw = linkUrl.trim();
+    if (!raw) {
+      // Empty → remove the link from the current selection.
+      editor.chain().focus().extendMarkRange('link').unsetLink().run();
+      setLinkOpen(false); setLinkUrl('');
+      return;
+    }
+    // Add a protocol so "www.x.com" / "x.com" become valid, openable hrefs.
+    const url = /^(https?:\/\/|mailto:|tel:)/i.test(raw) ? raw : `https://${raw}`;
+    const { from, to } = editor.state.selection;
+    if (from === to) {
+      // No text selected — insert the URL itself as clickable linked text so
+      // the link actually shows in the draft instead of applying to nothing.
+      editor.chain().focus()
+        .insertContent(`<a href="${url.replace(/"/g, '&quot;')}" target="_blank" rel="noopener noreferrer">${raw.replace(/</g, '&lt;')}</a> `)
+        .run();
+    } else {
+      editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    }
     setLinkOpen(false); setLinkUrl('');
   };
 

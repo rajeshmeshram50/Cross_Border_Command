@@ -68,7 +68,10 @@
     <style>
       /* PAGE MARGINS — proper left/right padding */
       @page {
-        margin-bottom: 70px;
+        /* Reserve a taller bottom band. dompdf overflows tall TABLE rows past
+           the bottom margin, so the extra clearance (plus the opaque footer
+           band painted in the page_text script) keeps content off the footer. */
+        margin-bottom: 92px;
         margin-top: 25px;
         margin-left: 25px;
         margin-right: 25px;
@@ -323,7 +326,28 @@
         $color = array(0.42, 0.45, 0.5);
 
         $pageWidth   = $pdf->get_width();
+        $pageHeight  = $pdf->get_height();
         $sideMargin  = 28;
+
+        // ── Opaque footer band (EVERY page) ──
+        // dompdf lets a tall table row spill past the @page bottom margin and
+        // onto the footer. Paint a solid band (the footer's own background
+        // colour) across the bottom of EVERY page BEFORE the text so any spill
+        // is covered and the footer always reads cleanly. Height (48pt) sits
+        // inside the 92px @page reservation, so it never hides real body
+        // content. page_script (not a direct draw) is required so the band
+        // repeats on every page, not just the last one.
+        $fb = ltrim("{{ $footerBg }}", "#");
+        if (strlen($fb) === 3) { $fb = $fb[0].$fb[0].$fb[1].$fb[1].$fb[2].$fb[2]; }
+        if (strlen($fb) !== 6) { $fb = "ffffff"; }
+        $bandR = round(hexdec(substr($fb,0,2))/255, 4);
+        $bandG = round(hexdec(substr($fb,2,2))/255, 4);
+        $bandB = round(hexdec(substr($fb,4,2))/255, 4);
+        $pdf->page_script(
+          '$bandH = 48; $w = $pdf->get_width(); $h = $pdf->get_height();'
+          . '$pdf->filled_rectangle(0, $h - $bandH, $w, $bandH, array(' . $bandR . ', ' . $bandG . ', ' . $bandB . '));'
+          . '$pdf->line(0, $h - $bandH, $w, $h - $bandH, array(0.90, 0.91, 0.93), 0.75);'
+        );
         // Footer baseline — 28pt above the page bottom edge, matching the
         // Proforma Invoice footer (proforma-invoice.blade.php draws its
         // "Page X of Y" at get_height() - 28) so CTC, customer, consignee &
