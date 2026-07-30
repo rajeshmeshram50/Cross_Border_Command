@@ -278,13 +278,16 @@ export default function DataTable<T extends object>({
 
   const rows = table.getRowModel().rows;
   const colCount = table.getVisibleFlatColumns().length;
+  const isEmpty = !loading && rows.length === 0;
   const fitRows = useCallback(() => {
     const el = rootRef.current;
     if (!el || !autoFitRows || manualSize !== null) return;
     const top = el.getBoundingClientRect().top;
     const h = Math.max(240, window.innerHeight - top - 15);
     const px = (sel: string) => (el.querySelector(sel) as HTMLElement | null)?.offsetHeight || 0;
-    const rowH = px('.dt-table tbody tr') || 44;
+    // Skip the empty-state row: it stretches to fill the body, so measuring it
+    // as "one row" would collapse the page size to the 5-row floor.
+    const rowH = px('.dt-table tbody tr:not(.dt-empty-row)') || 44;
     const avail = h - px('.dt-toolbar') - px('.dt-chipbar') - px('.dt-table thead') - px('.tc-wl-pag') - 8;
     setAutoSize(Math.max(5, Math.floor(avail / rowH)));
   }, [autoFitRows, manualSize]);
@@ -431,7 +434,7 @@ export default function DataTable<T extends object>({
       <div className="dt-table-wrap">
         <div className="dt-scroll">
           <table
-            className="dt-table"
+            className={`dt-table ${isEmpty ? 'dt-table-empty' : ''}`}
             style={{ minWidth, tableLayout: anyWidth ? 'fixed' : 'auto' }}
           >
             <thead>

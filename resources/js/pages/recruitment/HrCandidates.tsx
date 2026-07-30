@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Card, CardBody, Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
+import { Col, Row, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
-import WorklistPager from '../../components/ui/WorklistPager';
-import { ShimmerTableRows } from '../../components/ui/Shimmer';
+import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import '../../../css/recruitment.css';
 
 type CandidateStatus =
@@ -96,11 +95,12 @@ export default function HrCandidates() {
   const [tab, setTab]                 = useState<'all' | 'final' | 'selected' | 'rejected'>('final');
   const [search, setSearch]           = useState('');
 
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing]     = useState<CandidateRow | null>(null);
+  /* Rejected candidates open the same form in read-only mode — the profile is
+     still worth reading (why they applied, salary, CV) but nothing is editable
+     once the candidate is out of the pipeline. */
+  const [viewOnly, setViewOnly]   = useState(false);
   const [sampleOpen, setSampleOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -162,16 +162,169 @@ export default function HrCandidates() {
       });
   }, [candidates, tab, search]);
 
-  useEffect(() => { setPage(1); }, [tab, search]);
-
   const recClosed = ['Cancelled', 'Completed', 'Expired'].includes(recruitment?.status || '');
   const recClosedMsg = `Cannot add candidates — this recruitment is ${(recruitment?.status || '').toLowerCase()}`;
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const safePage  = Math.min(page, pageCount);
-  const sliceFrom = (safePage - 1) * pageSize;
-  const visible   = filtered.slice(sliceFrom, sliceFrom + pageSize);
-  const goto = (p: number) => setPage(Math.max(1, Math.min(pageCount, p)));
+  /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
+     16+13+9+5+8+8+7+8+7+9+10. */
+  const columns = useMemo<DataTableColumn<CandidateRow>[]>(() => [
+    {
+      header: 'Name',
+      accessorKey: 'name',
+      meta: { width: '16%' },
+      cell: info => {
+        const c = info.row.original;
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+              style={{ width: 26, height: 26, fontSize: 10.5, background: `linear-gradient(135deg, ${c.accent}, ${c.accent}cc)` }}>
+              {c.initials}
+            </div>
+            <span className="fw-bold fs-13 text-truncate" title={c.name}>{c.name}</span>
+            {c.recruitment_code && <span className="rec-id-pill flex-shrink-0" style={{ fontSize: 10, padding: '2px 7px' }}>{c.recruitment_code}</span>}
+          </div>
+        );
+      },
+    },
+    {
+      header: 'Email',
+      accessorKey: 'email',
+      meta: { width: '13%' },
+      cell: info => <TruncCell value={info.getValue() as string} caseSensitive className="text-muted" />,
+    },
+    {
+      header: 'Mobile',
+      accessorKey: 'mobile',
+      meta: { width: '9%' },
+      cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
+    },
+    {
+      header: 'Exp (Y)',
+      accessorKey: 'experience_years',
+      meta: { width: '5%', align: 'center' },
+      cell: info => <span className="fs-13">{(info.getValue() as number) ?? 0}</span>,
+    },
+    {
+      header: 'Current Sal',
+      accessorKey: 'current_salary_lpa',
+      meta: { width: '8%', align: 'center' },
+      cell: info => {
+        const v = info.getValue() as number | null;
+        return v != null ? <span className="fs-13 fw-semibold">{v} L</span> : <span className="dt-dash">—</span>;
+      },
+    },
+    {
+      header: 'Expected',
+      accessorKey: 'expected_salary_lpa',
+      meta: { width: '8%', align: 'center' },
+      cell: info => {
+        const v = info.getValue() as number | null;
+        return v != null ? <span className="fs-13 fw-semibold">{v} L</span> : <span className="dt-dash">—</span>;
+      },
+    },
+    {
+      header: 'Notice',
+      accessorKey: 'notice_period',
+      meta: { width: '7%' },
+      cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
+    },
+    {
+      header: 'Source',
+      accessorKey: 'source',
+      meta: { width: '8%' },
+      cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
+    },
+    {
+      header: 'CV',
+      id: '__cv',
+      enableSorting: false,
+      /* wrap: the Upload / Download chip is wider than the column, and a
+         clipped cell renders the td's own text-overflow ellipsis next to it. */
+      meta: { width: '7%', align: 'center', wrap: true },
+      cell: info => (
+        <CvCell
+          candidate={info.row.original}
+          onUploaded={(updated) => setCandidates(prev => prev.map(r => r.id === updated.id ? updated : r))}
+        />
+      ),
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      meta: { width: '9%', align: 'center' },
+      cell: info => {
+        const c = info.row.original;
+        const statusColor = CANDIDATE_STATUS_COLOR[c.status];
+        return (
+          <span className={`badge rounded-pill rec-status-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
+            {c.status}
+          </span>
+        );
+      },
+    },
+    {
+      header: 'Actions',
+      id: '__actions',
+      enableSorting: false,
+      meta: { width: '10%', align: 'center', wrap: true },
+      cell: info => {
+        const c = info.row.original;
+        return (
+          <div className="rec-row-actions justify-content-center">
+            {c.status === 'Rejected' && (
+              <Tooltip label="View Candidate">
+                <button
+                  type="button"
+                  className="rec-act rec-act-view rec-act--icon"
+                  aria-label="View Candidate"
+                  onClick={() => { setEditing(c); setViewOnly(true); setModalOpen(true); }}
+                >
+                  <i className="ri-eye-line" />
+                </button>
+              </Tooltip>
+            )}
+            {c.status !== 'Rejected' && (
+              <Tooltip label="Edit Candidate">
+                <button
+                  type="button"
+                  className="rec-act rec-act-view rec-act--icon"
+                  aria-label="Edit Candidate"
+                  onClick={() => { setEditing(c); setViewOnly(false); setModalOpen(true); }}
+                >
+                  <i className="ri-pencil-line" />
+                </button>
+              </Tooltip>
+            )}
+            {c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected' && (
+              <Tooltip label="Mark Selected">
+                <button
+                  type="button"
+                  className="rec-act rec-act-approve rec-act--icon"
+                  aria-label="Mark Selected"
+                  onClick={() => setConfirming({ row: c, mode: 'select' })}
+                >
+                  <i className="ri-check-line" />
+                </button>
+              </Tooltip>
+            )}
+            {c.status !== 'Rejected' && (
+              <Tooltip label="Mark Rejected">
+                <button
+                  type="button"
+                  className="rec-act rec-act-reject rec-act--icon"
+                  aria-label="Mark Rejected"
+                  onClick={() => setConfirming({ row: c, mode: 'reject' })}
+                >
+                  <i className="ri-close-line" />
+                </button>
+              </Tooltip>
+            )}
+          </div>
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], []);
 
   const KPI_CARDS = [
     { key: 'total',       label: 'Total',        value: totals.total,        icon: 'ri-team-line',            gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
@@ -240,7 +393,7 @@ export default function HrCandidates() {
                 <button type="button" className="cand-pill-btn cand-pill-btn--green" title="Export candidates" onClick={() => setExportOpen(true)}>
                   <i className="ri-external-link-line" />Export
                 </button>
-                <button type="button" className="cand-pill-btn cand-pill-btn--primary" disabled={recClosed} title={recClosed ? recClosedMsg : 'Add a candidate'} onClick={() => { setEditing(null); setModalOpen(true); }}>
+                <button type="button" className="cand-pill-btn cand-pill-btn--primary" disabled={recClosed} title={recClosed ? recClosedMsg : 'Add a candidate'} onClick={() => { setEditing(null); setViewOnly(false); setModalOpen(true); }}>
                   <i className="ri-add-line" />Add Candidate
                 </button>
               </div>
@@ -339,154 +492,41 @@ export default function HrCandidates() {
               ))}
             </Row>
 
-            <Card className="border-0 shadow-none mb-0 bg-transparent">
-              <CardBody className="p-0">
-                <div className="rec-list-frame">
-                  <div className="cand-toolbar d-flex align-items-center gap-2 flex-wrap p-2 border-bottom">
-                    <div className="rec-tab-track">
-                      {([
-                        { key: 'final' as const,    label: 'Final Round Selected', count: totals.finalRound,                icon: 'ri-user-search-line',     variant: 'in-progress' },
-                        { key: 'selected' as const, label: 'Selected Candidates',  count: totals.selected + totals.offered, icon: 'ri-checkbox-circle-line', variant: 'completed' },
-                        { key: 'rejected' as const, label: 'Rejected Candidates',  count: totals.rejected,                  icon: 'ri-close-circle-line',    variant: 'cancelled' },
-                      ]).map(t => (
-                        <button
-                          key={t.key}
-                          type="button"
-                          onClick={() => setTab(t.key)}
-                          className={`rec-tab ${tab === t.key ? `is-active ${t.variant}` : ''}`}
-                        >
-                          <i className={t.icon} />
-                          {t.label}
-                          <span className="badge">{t.count}</span>
-                        </button>
-                      ))}
-                    </div>
-                    <div className="rec-req-search search-box" style={{ flex: 1, minWidth: 220 }}>
-                      <Input type="text" className="form-control" placeholder="Search name, email, mobile…" value={search} onChange={e => setSearch(e.target.value)} />
-                      <i className="ri-search-line search-icon"></i>
-                    </div>
-                    <span className="cand-result-chip">
-                      <i className="ri-filter-3-line" />
-                      {filtered.length} result{filtered.length === 1 ? '' : 's'}
-                    </span>
-                  </div>
-                  <div className="p-2 rec-list-scroll">
-                  <table className="rec-list-table cand-page-table align-middle table-nowrap mb-0">
-                    <thead>
-                      <tr>
-                        <th className="ps-3 text-center" style={{ width: 56 }}>Sr No</th>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Mobile</th>
-                        <th className="text-center">Exp (Y)</th>
-                        <th className="text-center">Current Sal</th>
-                        <th className="text-center">Expected</th>
-                        <th>Notice</th>
-                        <th>Source</th>
-                        <th className="text-center">CV</th>
-                        <th>Status</th>
-                        <th className="text-center pe-3" style={{ width: 130 }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {loading ? (
-                        <ShimmerTableRows rows={6} cols={12} />
-                      ) : filtered.length === 0 ? (
-                        <tr>
-                          <td colSpan={12} className="text-center py-5 text-muted">
-                            <i className="ri-user-search-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                            No candidates match your filters
-                          </td>
-                        </tr>
-                      ) : visible.map((c, idx) => {
-                        const statusColor = CANDIDATE_STATUS_COLOR[c.status];
-                        return (
-                          <tr key={c.id}>
-                            <td className="ps-3 text-center text-muted fs-13">{sliceFrom + idx + 1}</td>
-                            <td>
-                              <div className="d-flex align-items-center gap-2" style={{ maxWidth: 240 }}>
-                                <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                                  style={{ width: 26, height: 26, fontSize: 10.5, background: `linear-gradient(135deg, ${c.accent}, ${c.accent}cc)` }}>
-                                  {c.initials}
-                                </div>
-                                <span className="fw-bold fs-13" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }} title={c.name}>{c.name}</span>
-                                {c.recruitment_code && <span className="rec-id-pill flex-shrink-0" style={{ fontSize: 10, padding: '2px 7px' }}>{c.recruitment_code}</span>}
-                              </div>
-                            </td>
-                            <td className="fs-13 text-muted">{c.email || '—'}</td>
-                            <td className="fs-13">{c.mobile || '—'}</td>
-                            <td className="text-center fs-13">{c.experience_years ?? 0}</td>
-                            <td className="text-center fs-13"><span className="fw-semibold">{c.current_salary_lpa != null ? `${c.current_salary_lpa} L` : '—'}</span></td>
-                            <td className="text-center fs-13"><span className="fw-semibold">{c.expected_salary_lpa != null ? `${c.expected_salary_lpa} L` : '—'}</span></td>
-                            <td className="fs-13">{c.notice_period || '—'}</td>
-                            <td className="fs-13">{c.source || '—'}</td>
-                            <td className="text-center">
-                              <CvCell
-                                candidate={c}
-                                onUploaded={(updated) => setCandidates(prev => prev.map(r => r.id === updated.id ? updated : r))}
-                              />
-                            </td>
-                            <td>
-                              <span className={`badge rounded-pill rec-status-pill bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
-                                {c.status}
-                              </span>
-                            </td>
-                            <td className="pe-3">
-                              <div className="rec-row-actions justify-content-center">
-                                {c.status !== 'Rejected' && (
-                                  <Tooltip label="Edit Candidate">
-                                    <button
-                                      type="button"
-                                      className="rec-act rec-act-view rec-act--icon"
-                                      aria-label="Edit Candidate"
-                                      onClick={() => { setEditing(c); setModalOpen(true); }}
-                                    >
-                                      <i className="ri-pencil-line" />
-                                    </button>
-                                  </Tooltip>
-                                )}
-                                {c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected' && (
-                                  <Tooltip label="Mark Selected">
-                                    <button
-                                      type="button"
-                                      className="rec-act rec-act-approve rec-act--icon"
-                                      aria-label="Mark Selected"
-                                      onClick={() => setConfirming({ row: c, mode: 'select' })}
-                                    >
-                                      <i className="ri-check-line" />
-                                    </button>
-                                  </Tooltip>
-                                )}
-                                {c.status !== 'Rejected' && (
-                                  <Tooltip label="Mark Rejected">
-                                    <button
-                                      type="button"
-                                      className="rec-act rec-act-reject rec-act--icon"
-                                      aria-label="Mark Rejected"
-                                      onClick={() => setConfirming({ row: c, mode: 'reject' })}
-                                    >
-                                      <i className="ri-close-line" />
-                                    </button>
-                                  </Tooltip>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                  <WorklistPager
-                    total={filtered.length}
-                    page={safePage}
-                    pageSize={pageSize}
-                    onPage={goto}
-                    onPageSize={(n) => { setPageSize(n); setPage(1); }}
-                  />
-                </div>
-              </CardBody>
-            </Card>
+            {/* Shared list table (components/ui/DataTable) — tabs, search,
+                sortable headers, the rows-per-page pager and the fit-to-viewport
+                sizing all live in the component now. */}
+            <DataTable<CandidateRow>
+              data={filtered}
+              columns={columns}
+              serial
+              accent="violet"
+              minWidth={1500}
+              fitToViewport
+              autoFitRows
+              loading={loading}
+              searchValue={search}
+              onSearchChange={setSearch}
+              searchPlaceholder="Search name, email, mobile…"
+              tabs={[
+                { key: 'final',    label: 'Final Round Selected', icon: 'ri-user-search-line',     count: totals.finalRound },
+                { key: 'selected', label: 'Selected Candidates',  icon: 'ri-checkbox-circle-line', count: totals.selected + totals.offered },
+                { key: 'rejected', label: 'Rejected Candidates',  icon: 'ri-close-circle-line',    count: totals.rejected },
+              ]}
+              activeTab={tab}
+              onTabChange={k => setTab(k as typeof tab)}
+              toolbarActions={
+                <span className="cand-result-chip">
+                  <i className="ri-filter-3-line" />
+                  {filtered.length} result{filtered.length === 1 ? '' : 's'}
+                </span>
+              }
+              emptyMessage={
+                <>
+                  <i className="ri-user-search-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  No candidates match your filters
+                </>
+              }
+            />
           </div>
         </Col>
       </Row>
@@ -494,8 +534,9 @@ export default function HrCandidates() {
       <CandidateFormModal
         open={modalOpen}
         editing={editing}
+        readOnly={viewOnly}
         recruitmentId={recruitmentId ? Number(recruitmentId) : null}
-        onClose={() => { setModalOpen(false); setEditing(null); }}
+        onClose={() => { setModalOpen(false); setEditing(null); setViewOnly(false); }}
         onSaved={(row) => {
           setCandidates(prev => {
             const idx = prev.findIndex(r => r.id === row.id);
@@ -1032,13 +1073,16 @@ function Field({ label, value }: { label: string; value: any }) {
 }
 
 function CandidateFormModal({
-  open, editing, recruitmentId, onClose, onSaved,
+  open, editing, recruitmentId, onClose, onSaved, readOnly = false,
 }: {
   open: boolean;
   editing: CandidateRow | null;
   recruitmentId: number | null;
   onClose: () => void;
   onSaved: (row: CandidateRow) => void;
+  /** Read-only profile view (rejected candidates): every field is locked, the
+   *  CV picker is replaced by a download link and Submit is not rendered. */
+  readOnly?: boolean;
 }) {
   const toast = useToast();
 
@@ -1271,11 +1315,11 @@ function CandidateFormModal({
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
               <span style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <i className="ri-user-add-line" style={{ fontSize: 16 }} />
+                <i className={readOnly ? 'ri-eye-line' : 'ri-user-add-line'} style={{ fontSize: 16 }} />
               </span>
               <div>
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>Candidate Details</h5>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>{editing ? 'Update applicant profile' : 'Register a new applicant profile in the pipeline'}</div>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>{readOnly ? 'View applicant profile — read only' : editing ? 'Update applicant profile' : 'Register a new applicant profile in the pipeline'}</div>
               </div>
             </div>
             <button
@@ -1302,12 +1346,12 @@ function CandidateFormModal({
               <Row className="g-2">
                 <Col md={4}>
                   <label className="rec-form-label">Name<span className="req">*</span></label>
-                  <input type="text" className={`rec-input${errors.name ? ' is-invalid' : ''}`} placeholder="Full name" value={name} onChange={e => setName(e.target.value.replace(/[^a-zA-Z .'\-]/g, ''))} />
+                  <input type="text" className={`rec-input${errors.name ? ' is-invalid' : ''}`} placeholder="Full name" value={name} disabled={readOnly} onChange={e => setName(e.target.value.replace(/[^a-zA-Z .'\-]/g, ''))} />
                   {errors.name && <div className="rec-error"><i className="ri-error-warning-line" />{errors.name}</div>}
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Email<span className="req">*</span></label>
-                  <input type="email" className={`rec-input${errors.email ? ' is-invalid' : ''}`} placeholder="name@email.com" value={email} onChange={e => setEmail(e.target.value)} />
+                  <input type="email" className={`rec-input${errors.email ? ' is-invalid' : ''}`} placeholder="name@email.com" value={email} disabled={readOnly} onChange={e => setEmail(e.target.value)} />
                   {errors.email && <div className="rec-error"><i className="ri-error-warning-line" />{errors.email}</div>}
                 </Col>
                 <Col md={4}>
@@ -1319,31 +1363,32 @@ function CandidateFormModal({
                     value={mobile}
                     inputMode="numeric"
                     maxLength={15}
+                    disabled={readOnly}
                     onChange={e => setMobile(e.target.value.replace(/\D/g, '').slice(0, 15))}
                   />
                   {errors.mobile && <div className="rec-error"><i className="ri-error-warning-line" />{errors.mobile}</div>}
                 </Col>
                 <Col md={6}>
                   <label className="rec-form-label">Current Address</label>
-                  <input type="text" className="rec-input" placeholder="Full residential address" value={address} onChange={e => setAddress(e.target.value)} />
+                  <input type="text" className="rec-input" placeholder="Full residential address" value={address} disabled={readOnly} onChange={e => setAddress(e.target.value)} />
                 </Col>
                 <Col md={6}>
                   <label className="rec-form-label">Qualification<span className="req">*</span></label>
-                  <input type="text" className={`rec-input${errors.qualification ? ' is-invalid' : ''}`} placeholder="e.g. B.Tech Computer Science" value={qualification} onChange={e => setQualification(e.target.value)} />
+                  <input type="text" className={`rec-input${errors.qualification ? ' is-invalid' : ''}`} placeholder="e.g. B.Tech Computer Science" value={qualification} disabled={readOnly} onChange={e => setQualification(e.target.value)} />
                   {errors.qualification && <div className="rec-error"><i className="ri-error-warning-line" />{errors.qualification}</div>}
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Experience (Years)<span className="req">*</span></label>
-                  <input type="number" min={0} step={0.5} className={`rec-input${errors.experience_years ? ' is-invalid' : ''}`} value={experience} onChange={e => setExperience(e.target.value)} />
+                  <input type="number" min={0} step={0.5} className={`rec-input${errors.experience_years ? ' is-invalid' : ''}`} value={experience} disabled={readOnly} onChange={e => setExperience(e.target.value)} />
                   {errors.experience_years && <div className="rec-error"><i className="ri-error-warning-line" />{errors.experience_years}</div>}
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Mode of Transport</label>
-                  <MasterSelect value={transport} onChange={setTransport} options={TRANSPORT_MODES.map(m => ({ value: m, label: m }))} placeholder="— Select —" />
+                  <MasterSelect value={transport} onChange={setTransport} options={TRANSPORT_MODES.map(m => ({ value: m, label: m }))} placeholder="— Select —" disabled={readOnly} />
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Distance (KM)<span className="req">*</span></label>
-                  <input type="number" min={0} step={0.1} className={`rec-input${errors.distance_km ? ' is-invalid' : ''}`} placeholder="e.g. 12" value={distance} onChange={e => setDistance(e.target.value)} />
+                  <input type="number" min={0} step={0.1} className={`rec-input${errors.distance_km ? ' is-invalid' : ''}`} placeholder="e.g. 12" value={distance} disabled={readOnly} onChange={e => setDistance(e.target.value)} />
                   {errors.distance_km && <div className="rec-error"><i className="ri-error-warning-line" />{errors.distance_km}</div>}
                 </Col>
               </Row>
@@ -1362,6 +1407,7 @@ function CandidateFormModal({
                     className={`rec-input${errors.current_salary_lpa ? ' is-invalid' : ''}`}
                     placeholder="e.g. 10"
                     value={currentSalary}
+                    disabled={readOnly}
                     onChange={e => {
                       let v = e.target.value;
                       if (v && Number(v) < 0) v = '';
@@ -1380,6 +1426,7 @@ function CandidateFormModal({
                     className={`rec-input${errors.expected_salary_lpa ? ' is-invalid' : ''}`}
                     placeholder="e.g. 15"
                     value={expectedSalary}
+                    disabled={readOnly}
                     onChange={e => {
                       let v = e.target.value;
                       if (v && Number(v) < 0) v = '';
@@ -1393,7 +1440,7 @@ function CandidateFormModal({
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Notice Period</label>
-                  <MasterSelect value={noticePeriod} onChange={setNoticePeriod} options={NOTICE_PERIODS.map(m => ({ value: m, label: m }))} placeholder="— Select —" />
+                  <MasterSelect value={noticePeriod} onChange={setNoticePeriod} options={NOTICE_PERIODS.map(m => ({ value: m, label: m }))} placeholder="— Select —" disabled={readOnly} />
                 </Col>
               </Row>
             </div>
@@ -1416,6 +1463,7 @@ function CandidateFormModal({
                     }}
                     options={SOURCES.map(s => ({ value: s, label: s }))}
                     placeholder="— Select —"
+                    disabled={readOnly}
                   />
                   {errors.source && <div className="rec-error"><i className="ri-error-warning-line" />{errors.source}</div>}
                   {source === 'Referral' && (
@@ -1427,6 +1475,7 @@ function CandidateFormModal({
                         options={employeeOpts}
                         placeholder={employeeOpts.length === 0 ? 'Loading employees…' : '— Select employee —'}
                         invalid={!!errors.referred_by_id}
+                        disabled={readOnly}
                       />
                       {errors.referred_by_id && <div className="rec-error"><i className="ri-error-warning-line" />{errors.referred_by_id}</div>}
                     </div>
@@ -1439,7 +1488,11 @@ function CandidateFormModal({
                     <span className="cand-step cand-step-4">4</span>
                     <p className="rec-form-section-title">Attachment Details</p>
                   </div>
-                  <label className="rec-form-label">Attach CV<span className="req">*</span></label>
+                  <label className="rec-form-label">{readOnly ? 'CV' : <>Attach CV<span className="req">*</span></>}</label>
+                  {readOnly && !existingCvUrl && (
+                    <div className="text-muted fs-13">No CV on file</div>
+                  )}
+                  {!readOnly && (
                   <label className="cand-cv-drop" style={errors.cv ? { borderColor: '#f06548' } : undefined}>
                     <input
                       type="file"
@@ -1470,6 +1523,7 @@ function CandidateFormModal({
                       <span>PDF, DOC, DOCX · Max 2 MB</span>
                     </span>
                   </label>
+                  )}
                   {!cvFile && existingCvUrl && editing && (
                     <button
                       type="button"
@@ -1498,16 +1552,27 @@ function CandidateFormModal({
                     <span className="cand-step cand-step-5">5</span>
                     <p className="rec-form-section-title">Recruitment Status</p>
                   </div>
-                  <label className="rec-form-label">Candidate Status<span className="req">*</span></label>
-                  <MasterSelect
-                    value={status}
-                    onChange={(v) => setStatus(v as CandidateStatus)}
-                    options={[
-                      { value: 'Final Interview', label: 'Final Round Selected' },
-                      { value: 'Selected',        label: 'Selected' },
-                    ]}
-                    placeholder="— Select —"
-                  />
+                  <label className="rec-form-label">Candidate Status{!readOnly && <span className="req">*</span>}</label>
+                  {/* The picker only offers the two forward stages, so a
+                      Rejected / On Hold row would fall back to the placeholder —
+                      show the stored status as a pill in read-only mode. */}
+                  {readOnly ? (
+                    <div>
+                      <span className={`badge rounded-pill rec-status-pill bg-${CANDIDATE_STATUS_COLOR[(status || 'Applied') as CandidateStatus]}-subtle text-${CANDIDATE_STATUS_COLOR[(status || 'Applied') as CandidateStatus]} fw-semibold px-3 py-2 fs-13`}>
+                        {status || '—'}
+                      </span>
+                    </div>
+                  ) : (
+                    <MasterSelect
+                      value={status}
+                      onChange={(v) => setStatus(v as CandidateStatus)}
+                      options={[
+                        { value: 'Final Interview', label: 'Final Round Selected' },
+                        { value: 'Selected',        label: 'Selected' },
+                      ]}
+                      placeholder="— Select —"
+                    />
+                  )}
                   {errors.status && <div className="rec-error"><i className="ri-error-warning-line" />{errors.status}</div>}
                 </div>
               </Col>
@@ -1516,15 +1581,23 @@ function CandidateFormModal({
         </div>
 
         <div className="rec-form-footer">
-          <span className="hint"><i className="ri-information-line align-bottom" /> All fields marked <span style={{ color: '#f06548', fontWeight: 700 }}>*</span> are required</span>
-          <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>
-              <i className="ri-close-line" />Close
-            </button>
-            <button type="button" className="rec-btn-primary" onClick={handleSubmit} disabled={saving}>
-              {saving ? (<><Spinner size="sm" style={{ width: 14, height: 14 }} /><span>Saving…</span></>) : (<><i className="ri-check-line" />Submit</>)}
-            </button>
-          </div>
+          <span className="hint">
+            {readOnly
+              ? <><i className="ri-lock-line align-bottom" /> Read-only — this candidate is out of the pipeline</>
+              : <><i className="ri-information-line align-bottom" /> All fields marked <span style={{ color: '#f06548', fontWeight: 700 }}>*</span> are required</>}
+          </span>
+          {/* Read-only has nothing to submit, so the header ✕ is the only close
+              affordance — a footer Close next to it would be a second one. */}
+          {!readOnly && (
+            <div className="d-flex gap-2">
+              <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>
+                <i className="ri-close-line" />Close
+              </button>
+              <button type="button" className="rec-btn-primary" onClick={handleSubmit} disabled={saving}>
+                {saving ? (<><Spinner size="sm" style={{ width: 14, height: 14 }} /><span>Saving…</span></>) : (<><i className="ri-check-line" />Submit</>)}
+              </button>
+            </div>
+          )}
         </div>
       </ModalBody>
     </Modal>
