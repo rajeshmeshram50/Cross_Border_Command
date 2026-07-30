@@ -1,5 +1,9 @@
 
-.dt-root {
+/* Accent palette. Shared by the table card and by .dt-tabrail — a standalone
+   tab rail a page can drop outside the table (e.g. a header-strip toggle) and
+   still get pixel-identical pills. */
+.dt-root,
+.dt-tabrail {
   /* ── violet: the Customer / Consignee palette, and the default ── */
   --dt-a-50:  #faf5ff;
   --dt-a-100: #f3e8ff;
@@ -12,12 +16,13 @@
   --dt-a-700: #6d28d9;
   --dt-a-800: #5b21b6;
   --dt-a-rgb: 124, 58, 237;
+}
 
+.dt-root {
   position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--vz-card-bg, #fff);
   border: 1px solid var(--vz-border-color);
   border-radius: 16px;
   overflow: hidden;
@@ -40,32 +45,38 @@
 .dt-root.dt-fit { flex: none; }
 
 /* ── Accent families ───────────────────────────────────────────────────────── */
-.dt-root[data-accent="teal"] {
+.dt-root[data-accent="teal"],
+.dt-tabrail[data-accent="teal"] {
   --dt-a-50:#f0fdfa; --dt-a-100:#ccfbf1; --dt-a-150:#cffafe; --dt-a-200:#a5e8f5;
   --dt-a-300:#67e8f9; --dt-a-400:#22d3ee; --dt-a-500:#06b6d4; --dt-a-600:#0891b2;
   --dt-a-700:#0e7490; --dt-a-800:#155e75; --dt-a-rgb: 8, 145, 178;
 }
-.dt-root[data-accent="blue"] {
+.dt-root[data-accent="blue"],
+.dt-tabrail[data-accent="blue"] {
   --dt-a-50:#eff6ff; --dt-a-100:#dbeafe; --dt-a-150:#dbeafe; --dt-a-200:#bfdbfe;
   --dt-a-300:#93c5fd; --dt-a-400:#60a5fa; --dt-a-500:#3b82f6; --dt-a-600:#2563eb;
   --dt-a-700:#1d4ed8; --dt-a-800:#1e40af; --dt-a-rgb: 37, 99, 235;
 }
-.dt-root[data-accent="emerald"] {
+.dt-root[data-accent="emerald"],
+.dt-tabrail[data-accent="emerald"] {
   --dt-a-50:#ecfdf5; --dt-a-100:#d1fae5; --dt-a-150:#d1fae5; --dt-a-200:#a7f3d0;
   --dt-a-300:#6ee7b7; --dt-a-400:#34d399; --dt-a-500:#10b981; --dt-a-600:#059669;
   --dt-a-700:#047857; --dt-a-800:#065f46; --dt-a-rgb: 5, 150, 105;
 }
-.dt-root[data-accent="amber"] {
+.dt-root[data-accent="amber"],
+.dt-tabrail[data-accent="amber"] {
   --dt-a-50:#fffbeb; --dt-a-100:#fef3c7; --dt-a-150:#fef3c7; --dt-a-200:#fde68a;
   --dt-a-300:#fcd34d; --dt-a-400:#fbbf24; --dt-a-500:#f59e0b; --dt-a-600:#d97706;
   --dt-a-700:#b45309; --dt-a-800:#92400e; --dt-a-rgb: 217, 119, 6;
 }
-.dt-root[data-accent="rose"] {
+.dt-root[data-accent="rose"],
+.dt-tabrail[data-accent="rose"] {
   --dt-a-50:#fff1f2; --dt-a-100:#ffe4e6; --dt-a-150:#ffe4e6; --dt-a-200:#fecdd3;
   --dt-a-300:#fda4af; --dt-a-400:#fb7185; --dt-a-500:#f43f5e; --dt-a-600:#e11d48;
   --dt-a-700:#be123c; --dt-a-800:#9f1239; --dt-a-rgb: 225, 29, 72;
 }
-.dt-root[data-accent="slate"] {
+.dt-root[data-accent="slate"],
+.dt-tabrail[data-accent="slate"] {
   --dt-a-50:#f8fafc; --dt-a-100:#f1f5f9; --dt-a-150:#e2e8f0; --dt-a-200:#cbd5e1;
   --dt-a-300:#94a3b8; --dt-a-400:#64748b; --dt-a-500:#475569; --dt-a-600:#334155;
   --dt-a-700:#1e293b; --dt-a-800:#0f172a; --dt-a-rgb: 51, 65, 85;
@@ -73,7 +84,7 @@
 
 /* ── Toolbar band: tabs + filter + search ─────────────────────────────────── */
 .dt-toolbar {
-  display: flex; align-items: center; gap: 14px;
+  display: flex; align-items: center; gap: 10px 12px;
   flex-wrap: wrap;
   padding: 12px 14px;
   background: linear-gradient(110deg, var(--dt-a-50) 0%, var(--dt-a-100) 35%, var(--dt-a-150) 70%, var(--dt-a-200) 100%);
@@ -82,50 +93,50 @@
   z-index: 1;
   flex-shrink: 0;
 }
-.dt-toolbar-actions { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
-
-/* Pill rail. No fixed height — 34px tab + 4px padding = 42px, which lines the
-   rail up flush with the search field and the Filter button. */
-.dt-tabs {
+/* Pinned right and never squeezed — the filters + primary action keep their
+   size, and the search field (the only elastic item) gives up width instead.
+   margin-left:auto also keeps them hard right when the row has slack. */
+.dt-toolbar-actions {
   display: inline-flex; align-items: center; gap: 8px;
-  background: rgba(255, 255, 255, .55);
-  border: 1px solid rgba(var(--dt-a-rgb), .22);
-  border-radius: 11px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ── Tab rail ───────────────────────────────────────────────────────────────
+   The Expense-module toggle recipe (Expense Claims / Advance Requests): a
+   recessed track holding transparent tabs, with the active one filled by an
+   accent gradient. Reads as ONE grouped switch rather than a row of separate
+   buttons — which is what a tab strip is. The active fill uses the accent vars,
+   so a teal- or blue-accented table gets its own hue. */
+.dt-tabs {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--vz-secondary-bg);
+  border: 1px solid var(--vz-border-color);
+  border-radius: 10px;
   padding: 4px;
   flex-shrink: 0;
   flex-wrap: wrap;
 }
 .dt-tab {
-  display: inline-flex; align-items: center; gap: 7px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   padding: 0 14px; height: 34px;
-  border-radius: 8px;
+  border: 0; border-radius: 8px;
+  background: transparent;
   font-family: inherit;
-  font-size: 12.5px; font-weight: 700;
+  font-size: 12.5px; font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  transition: background .16s, color .16s, box-shadow .16s, border-color .16s;
+  transition: background .16s, color .16s, box-shadow .16s;
 }
 .dt-tab i { font-size: 14px; }
-.dt-tab.off {
-  background: linear-gradient(135deg, var(--dt-a-50), var(--dt-a-150));
-  border: 1px solid rgba(var(--dt-a-rgb), .20);
-  color: var(--dt-a-700);
-}
-.dt-tab.off:hover {
-  background: linear-gradient(135deg, var(--dt-a-150), var(--dt-a-200));
-  border-color: rgba(var(--dt-a-rgb), .35);
-  color: var(--dt-a-800);
-}
+.dt-tab-emoji { font-size: 13px; line-height: 1; }
+.dt-tab.off { background: transparent; color: var(--vz-secondary-color); }
+.dt-tab.off:hover { background: var(--vz-card-bg); color: var(--vz-heading-color, var(--vz-body-color)); }
 .dt-tab.on {
-  position: relative; overflow: hidden;
-  border: 0;
-  background: linear-gradient(135deg, var(--dt-a-400) 0%, var(--dt-a-500) 35%, var(--dt-a-600) 68%, var(--dt-a-800) 100%);
+  background: linear-gradient(135deg, var(--dt-a-500), var(--dt-a-400));
   color: #fff;
-  box-shadow:
-    0 5px 14px rgba(var(--dt-a-rgb), .50),
-    0 1px 0 rgba(255, 255, 255, .40) inset,
-    0 -2px 6px rgba(var(--dt-a-rgb), .30) inset;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(var(--dt-a-rgb), .25);
 }
 .dt-tab-count {
   display: inline-flex; align-items: center; justify-content: center;
@@ -133,8 +144,8 @@
   border-radius: 999px;
   font-size: 10px; font-weight: 800; line-height: 1;
 }
-.dt-tab.off .dt-tab-count { color: var(--dt-a-600); background: #fff; border: 1px solid var(--dt-a-200); }
-.dt-tab.on  .dt-tab-count { color: #fff; background: rgba(255, 255, 255, .24); border: 1px solid rgba(255, 255, 255, .40); }
+.dt-tab.off .dt-tab-count { color: var(--vz-secondary-color); background: var(--vz-light); }
+.dt-tab.on  .dt-tab-count { color: #fff; background: rgba(255, 255, 255, .22); }
 
 /* Filter button — same 42px height / 11px radius as the search field so the
    toolbar reads as one row of controls. */
@@ -178,9 +189,51 @@
   text-shadow: none;
 }
 
+/* ── Selects dropped into the toolbar (Trigger, Status, Department, All Dates…)
+   Pages pass these through `toolbarActions` as MasterSelects, whose default
+   skin is a white 38px box with a grey hairline — on the toolbar's tinted band
+   that read as barely-there, so the control was easy to miss entirely. Match
+   the search field instead: same 42px height, 11px radius, translucent white
+   fill and accent border, so the whole toolbar reads as one row of controls. */
+.dt-toolbar .master-select-toggle {
+  height: 42px;
+  border-radius: 11px;
+  border: 1.5px solid rgba(var(--dt-a-rgb), .28);
+  background: rgba(255, 255, 255, .80);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .95) inset;
+  font-weight: 600;
+}
+.dt-toolbar .master-select-toggle:hover:not(:disabled) {
+  border-color: rgba(var(--dt-a-rgb), .45);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .95) inset, 0 2px 6px rgba(var(--dt-a-rgb), .10);
+}
+.dt-toolbar .master-select-wrap.show .master-select-toggle {
+  border-color: var(--dt-a-400);
+  box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .18);
+}
+/* The little all-caps label in front of each select ("TRIGGER", "STATUS") —
+   pages set it to a pale grey that disappears on the tinted band. */
+.dt-toolbar .dt-toolbar-actions .dtm-filter-label,
+.dt-toolbar .dtm-filter-label {
+  color: var(--dt-a-700) !important;
+  font-weight: 800;
+}
+[data-bs-theme="dark"] .dt-toolbar .master-select-toggle,
+[data-layout-mode="dark"] .dt-toolbar .master-select-toggle {
+  background: rgba(255, 255, 255, .06);
+  border-color: rgba(var(--dt-a-rgb), .32);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .dt-toolbar .dtm-filter-label,
+[data-layout-mode="dark"] .dt-toolbar .dtm-filter-label { color: var(--dt-a-300) !important; }
+
+/* The toolbar's only elastic item: it grows into free space and, more
+   importantly, SHRINKS so the filters and the primary action stay on the same
+   row. `min-width: 240px` used to hold the field wide enough to push those onto
+   a second line even when there was room for everything. */
 .dt-search {
   position: relative;
-  flex: 1; min-width: 240px;
+  flex: 1 1 180px; min-width: 150px;
   height: 42px;
   display: flex; align-items: center;
   padding: 0 8px 0 38px;
@@ -359,7 +412,8 @@
   font-variant-numeric: tabular-nums;
   box-shadow: 0 2px 6px rgba(var(--dt-a-rgb), .30);
 }
-[data-bs-theme="dark"] .dt-serial { color: #e2e8f0; }
+[data-bs-theme="dark"] .dt-serial,
+[data-layout-mode="dark"] .dt-serial { color: #e2e8f0; }
 .dt-trunc {
   display: inline-block;
   max-width: 100%;
@@ -382,7 +436,8 @@
   font-size: 11px; font-weight: 600;
   letter-spacing: .02em;
 }
-[data-bs-theme="dark"] .dt-id-chip {
+[data-bs-theme="dark"] .dt-id-chip,
+[data-layout-mode="dark"] .dt-id-chip {
   background: rgba(var(--dt-a-rgb), .18);
   border-color: rgba(var(--dt-a-rgb), .35);
   color: var(--dt-a-300);
@@ -405,82 +460,204 @@
 .dt-pill-info    { background: rgba(59, 130, 246, .14);  color: #2563eb; border-color: rgba(59, 130, 246, .38); }
 .dt-pill-accent  { background: rgba(var(--dt-a-rgb), .14); color: var(--dt-a-700); border-color: rgba(var(--dt-a-rgb), .38); }
 
+/* ── Action-column buttons ───────────────────────────────────────────────────
+   The Customer list's recipe (.smc-act / .smc-act-edit|map|vault in
+   sales/core-masters/customer/SalesCustomers.css): a 28px square with a 1.5px
+   coloured border over a pale two-stop tint of the same hue, which on hover
+   inverts to a solid gradient of that hue with a white glyph, a coloured glow
+   and a lift+scale. The flat low-alpha tints used before had no hover identity
+   — you could not tell Edit from Delete until you read the icon. */
 .dt-act {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px;
-  border-radius: 7px;
-  border: 1px solid transparent;
+  width: 28px; height: 28px;
+  border-radius: 8px;
+  padding: 0;
+  flex-shrink: 0;
+  border: 1.5px solid;
   cursor: pointer;
-  transition: transform .14s, box-shadow .14s, background .14s;
+  transition: all .18s cubic-bezier(.22, 1, .36, 1);
 }
 .dt-act i { font-size: 14px; line-height: 1; }
-.dt-act:hover:not(:disabled) { transform: translateY(-1px); }
+.dt-act svg { width: 14px; height: 14px; }
 .dt-act:disabled { opacity: .45; cursor: not-allowed; }
-.dt-act-accent  { background: rgba(var(--dt-a-rgb), .12); border-color: rgba(var(--dt-a-rgb), .30); color: var(--dt-a-700); }
-.dt-act-success { background: rgba(34, 197, 94, .12);  border-color: rgba(34, 197, 94, .30);  color: #16a34a; }
-.dt-act-info    { background: rgba(59, 130, 246, .12); border-color: rgba(59, 130, 246, .30); color: #2563eb; }
-.dt-act-warning { background: rgba(245, 158, 11, .14); border-color: rgba(245, 158, 11, .32); color: #d97706; }
-.dt-act-danger  { background: rgba(239, 68, 68, .12);  border-color: rgba(239, 68, 68, .30);  color: #dc2626; }
+
+.dt-act-accent  { border-color: var(--dt-a-300); background: linear-gradient(135deg, var(--dt-a-50), var(--dt-a-150)); color: var(--dt-a-600); }
+.dt-act-info    { border-color: #93c5fd; background: linear-gradient(135deg, #eff6ff, #dbeafe); color: #1d4ed8; }
+.dt-act-success { border-color: #6ee7b7; background: linear-gradient(135deg, #ecfdf5, #d1fae5); color: #047857; }
+.dt-act-warning { border-color: #fcd34d; background: linear-gradient(135deg, #fffbeb, #fef3c7); color: #b45309; }
+.dt-act-danger  { border-color: #fca5a5; background: linear-gradient(135deg, #fef2f2, #fee2e2); color: #b91c1c; }
+
+.dt-act:hover:not(:disabled) { color: #fff; border-color: transparent; transform: translateY(-2px) scale(1.08); }
+.dt-act-accent:hover:not(:disabled)  { background: linear-gradient(135deg, var(--dt-a-500), var(--dt-a-700)); box-shadow: 0 4px 14px rgba(var(--dt-a-rgb), .45); }
+.dt-act-info:hover:not(:disabled)    { background: linear-gradient(135deg, #3b82f6, #1d4ed8); box-shadow: 0 4px 14px rgba(29, 78, 216, .40); }
+.dt-act-success:hover:not(:disabled) { background: linear-gradient(135deg, #34d399, #059669); box-shadow: 0 4px 14px rgba(5, 150, 105, .40); }
+.dt-act-warning:hover:not(:disabled) { background: linear-gradient(135deg, #fbbf24, #b45309); box-shadow: 0 4px 14px rgba(180, 83, 9, .40); }
+.dt-act-danger:hover:not(:disabled)  { background: linear-gradient(135deg, #f87171, #b91c1c); box-shadow: 0 4px 14px rgba(185, 28, 28, .40); }
+
 /* Actions column packs 2–4 of these; keep them evenly spaced without every
    page having to wrap them in its own flex row. */
-.dt-table tbody td .dt-act + .dt-act { margin-left: 6px; }
+.dt-table tbody td .dt-act + .dt-act { margin-left: 4px; }
 
 /* The shared pager bleeds into a 16px-padded host by default; this layout is
    flush, so reset the bleed and let it sit inside the rounded card. */
 .dt-root .tc-wl-pag { margin: 0; flex-shrink: 0; }
 
 /* ── Dark mode ────────────────────────────────────────────────────────────── */
-[data-bs-theme="dark"] .dt-root {
+[data-bs-theme="dark"] .dt-root,
+[data-layout-mode="dark"] .dt-root {
   border-color: rgba(var(--dt-a-rgb), .35);
   box-shadow: 0 6px 18px rgba(0, 0, 0, .30);
   --tcwl-border-dark: rgba(var(--dt-a-rgb), .35);
   --tcwl-text-dark: var(--dt-a-300);
   --tcwl-band-dark: linear-gradient(90deg, rgba(var(--dt-a-rgb), .08), rgba(var(--dt-a-rgb), .14), rgba(var(--dt-a-rgb), .08));
 }
-[data-bs-theme="dark"] .dt-toolbar {
+[data-bs-theme="dark"] .dt-toolbar,
+[data-layout-mode="dark"] .dt-toolbar {
   background: linear-gradient(110deg, rgba(var(--dt-a-rgb), .10) 0%, rgba(var(--dt-a-rgb), .16) 60%, rgba(var(--dt-a-rgb), .10) 100%);
   border-bottom-color: rgba(var(--dt-a-rgb), .30);
 }
-[data-bs-theme="dark"] .dt-tabs { background: rgba(255, 255, 255, .05); border-color: rgba(var(--dt-a-rgb), .30); }
-[data-bs-theme="dark"] .dt-tab.off {
+[data-bs-theme="dark"] .dt-tabs,
+[data-layout-mode="dark"] .dt-tabs { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .10); }
+[data-bs-theme="dark"] .dt-tab.off,
+[data-layout-mode="dark"] .dt-tab.off { color: var(--vz-secondary-color); }
+[data-bs-theme="dark"] .dt-tab.off:hover,
+[data-layout-mode="dark"] .dt-tab.off:hover { background: rgba(255, 255, 255, .07); color: #fff; }
+[data-bs-theme="dark"] .dt-tab.off .dt-tab-count,
+[data-layout-mode="dark"] .dt-tab.off .dt-tab-count { color: var(--vz-secondary-color); background: rgba(255, 255, 255, .08); }
+[data-bs-theme="dark"] .dt-filter-btn,
+[data-layout-mode="dark"] .dt-filter-btn {
   background: rgba(var(--dt-a-rgb), .16);
   border-color: rgba(var(--dt-a-rgb), .32);
   color: var(--dt-a-300);
 }
-[data-bs-theme="dark"] .dt-tab.off:hover { background: rgba(var(--dt-a-rgb), .26); color: #fff; }
-[data-bs-theme="dark"] .dt-tab.off .dt-tab-count {
-  color: var(--dt-a-300); background: rgba(var(--dt-a-rgb), .18); border-color: rgba(var(--dt-a-rgb), .30);
-}
-[data-bs-theme="dark"] .dt-filter-btn {
-  background: rgba(var(--dt-a-rgb), .16);
-  border-color: rgba(var(--dt-a-rgb), .32);
-  color: var(--dt-a-300);
-}
-[data-bs-theme="dark"] .dt-search {
+[data-bs-theme="dark"] .dt-search,
+[data-layout-mode="dark"] .dt-search {
   background: rgba(255, 255, 255, .06);
   border-color: rgba(var(--dt-a-rgb), .32);
   box-shadow: none;
 }
-[data-bs-theme="dark"] .dt-chipbar { background: rgba(var(--dt-a-rgb), .08); border-bottom-color: rgba(var(--dt-a-rgb), .22); }
-[data-bs-theme="dark"] .dt-chipbar-lbl { color: var(--dt-a-300); }
-[data-bs-theme="dark"] .dt-chip {
+[data-bs-theme="dark"] .dt-chipbar,
+[data-layout-mode="dark"] .dt-chipbar { background: rgba(var(--dt-a-rgb), .08); border-bottom-color: rgba(var(--dt-a-rgb), .22); }
+[data-bs-theme="dark"] .dt-chipbar-lbl,
+[data-layout-mode="dark"] .dt-chipbar-lbl { color: var(--dt-a-300); }
+[data-bs-theme="dark"] .dt-chip,
+[data-layout-mode="dark"] .dt-chip {
   background: rgba(255, 255, 255, .06);
   border-color: rgba(var(--dt-a-rgb), .32);
   color: var(--dt-a-300);
 }
-[data-bs-theme="dark"] .dt-chip button { color: var(--dt-a-300); }
+[data-bs-theme="dark"] .dt-chip button,
+[data-layout-mode="dark"] .dt-chip button { color: var(--dt-a-300); }
 [data-bs-theme="dark"] .dt-chipbar-clear,
-[data-bs-theme="dark"] .dt-empty-link { color: var(--dt-a-300); }
+[data-layout-mode="dark"] .dt-chipbar-clear,
+[data-bs-theme="dark"] .dt-empty-link,
+[data-layout-mode="dark"] .dt-empty-link { color: var(--dt-a-300); }
 [data-bs-theme="dark"] .dt-table tbody tr,
-[data-bs-theme="dark"] .dt-table tbody tr:nth-child(even) { background: var(--vz-card-bg); }
-[data-bs-theme="dark"] .dt-table tbody tr:hover { background: rgba(var(--dt-a-rgb), .12); }
-[data-bs-theme="dark"] .dt-table tbody td { border-bottom-color: rgba(255, 255, 255, .07); }
-[data-bs-theme="dark"] .dt-scroll { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
-[data-bs-theme="dark"] .dt-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); }
+[data-layout-mode="dark"] .dt-table tbody tr,
+[data-bs-theme="dark"] .dt-table tbody tr:nth-child(even),
+[data-layout-mode="dark"] .dt-table tbody tr:nth-child(even) { background: var(--vz-card-bg); }
+[data-bs-theme="dark"] .dt-table tbody tr:hover,
+[data-layout-mode="dark"] .dt-table tbody tr:hover { background: rgba(var(--dt-a-rgb), .12); }
+[data-bs-theme="dark"] .dt-table tbody td,
+[data-layout-mode="dark"] .dt-table tbody td { border-bottom-color: rgba(255, 255, 255, .07); }
+[data-bs-theme="dark"] .dt-scroll,
+[data-layout-mode="dark"] .dt-scroll { scrollbar-color: rgba(255, 255, 255, .22) transparent; }
+[data-bs-theme="dark"] .dt-scroll::-webkit-scrollbar-thumb,
+[data-layout-mode="dark"] .dt-scroll::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); }
 
-/* ── Narrow screens: the toolbar stacks rather than squeezing the search ──── */
+/* ── Responsive toolbar ──────────────────────────────────────────────────────
+   The toolbar can hold a lot: a tab rail (up to six tabs), the search field, a
+   Filter button, filter selects and a primary action. It degrades in a fixed
+   order so the row never breaks in a surprising place:
+
+     wide          tabs · search · [filters + action]
+     ≤1400px       tabs                                  ← search drops to its
+                   search · [filters + action]              own line, with the
+                                                            filters beside it
+     ≤760px        each block on its own full-width line
+
+   The alternative — letting the flex row wrap on its own — put the filters and
+   the primary action on line 2 while the search field stretched across line 1,
+   which read as a broken layout. */
+@media (max-width: 1400px) {
+  /* Tabs take the first line; search + actions share the second. */
+  .dt-tabs { flex: 1 1 100%; }
+  .dt-search { flex: 1 1 220px; }
+}
 @media (max-width: 760px) {
   .dt-toolbar { gap: 10px; }
   .dt-tabs, .dt-filter-btn { width: 100%; justify-content: center; }
   .dt-search { flex: 1 1 100%; min-width: 0; }
+  /* Stop pinning right — a lone right-aligned button under a full-width search
+     looks detached; centre the group instead. */
+  .dt-toolbar-actions { width: 100%; margin-left: 0; justify-content: center; flex-wrap: wrap; }
 }
+
+/* ── Dark mode, part 2 ───────────────────────────────────────────────────────
+   Everything below was still rendering light-mode values on a dark page:
+
+   1. The .tc-wl-* pager. Its dark rules live in resources/css/app.css and are
+      keyed ONLY on [data-bs-theme="dark"], so under the Velzon customizer's
+      [data-layout-mode="dark"] the footer stayed a pale lavender band. Mirrored
+      here, scoped to .dt-root so pages that still use the old pager keep their
+      current behaviour.
+   2. The cell pills / action buttons, whose light pastel fills carry dark text
+      (#475569, #16a34a …) — legible on white, muddy on a dark row.
+   ── */
+[data-layout-mode="dark"] .dt-root .tc-wl-pag {
+  background: var(--tcwl-band-dark, linear-gradient(90deg, rgba(124, 58, 237, .08), rgba(124, 58, 237, .14), rgba(124, 58, 237, .08)));
+  border-top-color: var(--tcwl-border-dark, rgba(167, 139, 250, .30));
+}
+[data-layout-mode="dark"] .dt-root .tc-wl-info,
+[data-layout-mode="dark"] .dt-root .tc-wl-rows {
+  background: rgba(255, 255, 255, .06);
+  border-color: var(--tcwl-border-dark, rgba(167, 139, 250, .30));
+  color: var(--tcwl-text-dark, #c4b5fd);
+}
+[data-layout-mode="dark"] .dt-root .tc-wl-info .tc-wl-hl { color: #ddd6fe; }
+[data-layout-mode="dark"] .dt-root .tc-wl-rows select { color: #ddd6fe; background: transparent; }
+[data-layout-mode="dark"] .dt-root .tc-wl-rows select option { background-color: #1f1b3a; color: #ddd6fe; }
+[data-layout-mode="dark"] .dt-root .tc-wl-btn {
+  background: rgba(var(--dt-a-rgb), .18);
+  border-color: rgba(var(--dt-a-rgb), .42);
+  color: #ddd6fe;
+}
+[data-layout-mode="dark"] .dt-root .tc-wl-btn:hover:not(:disabled) {
+  background: rgba(var(--dt-a-rgb), .30);
+  border-color: var(--dt-a-400);
+  color: #fff;
+}
+
+/* Status / type pills — brighter text on a slightly stronger tint. */
+[data-bs-theme="dark"] .dt-pill-neutral,
+[data-layout-mode="dark"] .dt-pill-neutral { background: rgba(148, 163, 184, .18); color: #cbd5e1; border-color: rgba(148, 163, 184, .32); }
+[data-bs-theme="dark"] .dt-pill-success,
+[data-layout-mode="dark"] .dt-pill-success { background: rgba(34, 197, 94, .18);  color: #6ee7b7; border-color: rgba(34, 197, 94, .34); }
+[data-bs-theme="dark"] .dt-pill-warning,
+[data-layout-mode="dark"] .dt-pill-warning { background: rgba(245, 158, 11, .20); color: #fcd34d; border-color: rgba(245, 158, 11, .36); }
+[data-bs-theme="dark"] .dt-pill-danger,
+[data-layout-mode="dark"] .dt-pill-danger  { background: rgba(239, 68, 68, .18);  color: #fda4af; border-color: rgba(239, 68, 68, .34); }
+[data-bs-theme="dark"] .dt-pill-info,
+[data-layout-mode="dark"] .dt-pill-info    { background: rgba(59, 130, 246, .18); color: #93c5fd; border-color: rgba(59, 130, 246, .34); }
+[data-bs-theme="dark"] .dt-pill-accent,
+[data-layout-mode="dark"] .dt-pill-accent  { background: rgba(var(--dt-a-rgb), .22); color: var(--dt-a-300); border-color: rgba(var(--dt-a-rgb), .38); }
+
+/* Icon action buttons — the Customer list's dark treatment: the pale gradient
+   becomes a translucent wash of the same hue with a light glyph. Hover keeps the
+   solid gradient from light mode (it reads well on either surface). */
+[data-bs-theme="dark"] .dt-act-accent,
+[data-layout-mode="dark"] .dt-act-accent  { background: rgba(var(--dt-a-rgb), .12); border-color: rgba(var(--dt-a-rgb), .35); color: var(--dt-a-300); }
+[data-bs-theme="dark"] .dt-act-success,
+[data-layout-mode="dark"] .dt-act-success { background: rgba(16, 185, 129, .10); border-color: rgba(52, 211, 153, .35); color: #6ee7b7; }
+[data-bs-theme="dark"] .dt-act-info,
+[data-layout-mode="dark"] .dt-act-info    { background: rgba(59, 130, 246, .10); border-color: rgba(96, 165, 250, .35); color: #93c5fd; }
+[data-bs-theme="dark"] .dt-act-warning,
+[data-layout-mode="dark"] .dt-act-warning { background: rgba(245, 158, 11, .12); border-color: rgba(251, 191, 36, .35);  color: #fcd34d; }
+[data-bs-theme="dark"] .dt-act-danger,
+[data-layout-mode="dark"] .dt-act-danger  { background: rgba(239, 68, 68, .10);  border-color: rgba(248, 113, 113, .35); color: #fca5a5; }
+
+/* The card's light-mode inset highlight reads as a white hairline on dark. */
+[data-bs-theme="dark"] .dt-root,
+[data-layout-mode="dark"] .dt-root { box-shadow: 0 6px 18px rgba(0, 0, 0, .30); }
+/* Standalone tab rails (a header-strip toggle) sit on the page, not the card. */
+[data-layout-mode="dark"] .dt-tabrail .dt-tabs { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .10); }

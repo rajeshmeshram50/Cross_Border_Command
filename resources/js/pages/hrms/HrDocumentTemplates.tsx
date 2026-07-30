@@ -6,7 +6,7 @@ import api from '../../api';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
 import { MasterSelect } from '../../components/ui/MasterSelect';
-import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { TemplateRow, EmployeeCategory, RoleType, DocStatus, ROLE_TYPES } from './doc-templates/TemplateForm';
 import '../../../css/recruitment.css';
 
@@ -41,7 +41,6 @@ export default function HrDocumentTemplates() {
   const [roleType, setRoleType] = useState<RoleType>(ROLE_TYPES[5].value); // 'Intern / Trainee'
   const [search, setSearch] = useState('');
   const [triggerFilter, setTriggerFilter] = useState('');
-  const [statusFilter, setStatusFilter]   = useState('');
 
   // Lookups — used to populate the trigger filter dropdown
   const [triggerPoints, setTriggerPoints] = useState<Array<{ id: number; module_name: string }>>([]);
@@ -80,7 +79,6 @@ export default function HrDocumentTemplates() {
       .filter(r => r.employee_category === category)
       .filter(r => r.role_type === roleType)
       .filter(r => !triggerFilter || String(r.trigger_point_id) === triggerFilter)
-      .filter(r => !statusFilter || r.status === statusFilter)
       .filter(r => {
         if (!needle) return true;
         return (
@@ -89,7 +87,29 @@ export default function HrDocumentTemplates() {
           (r.description || '').toLowerCase().includes(needle)
         );
       });
-  }, [rows, category, roleType, triggerFilter, statusFilter, search]);
+  }, [rows, category, roleType, triggerFilter, search]);
+
+  /* Per-level counts for the Level tab badges. Everything EXCEPT the level
+     itself is applied, so the active tab's badge equals the visible row count
+     (what the standalone "N templates" pill used to say) while the other tabs
+     preview what you'd get by switching. */
+  const levelCounts = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const base = rows
+      .filter(r => r.employee_category === category)
+      .filter(r => !triggerFilter || String(r.trigger_point_id) === triggerFilter)
+      .filter(r => {
+        if (!needle) return true;
+        return (
+          (r.name || '').toLowerCase().includes(needle) ||
+          (r.code || '').toLowerCase().includes(needle) ||
+          (r.description || '').toLowerCase().includes(needle)
+        );
+      });
+    const out: Record<string, number> = {};
+    base.forEach(r => { out[r.role_type] = (out[r.role_type] || 0) + 1; });
+    return out;
+  }, [rows, category, triggerFilter, search]);
 
   /* Paging lives in <DataTable> (components/ui/DataTable) now. */
 
@@ -197,7 +217,7 @@ export default function HrDocumentTemplates() {
         const t = STATUS_TONES[r.status] || STATUS_TONES.Draft;
         return (
           <span className={`dtm-status-pill dtm-status-${r.status}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 9px', borderRadius: 999, background: t.bg, color: t.fg, fontSize: 11.5, fontWeight: 700 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: t.dot, display: 'inline-block' }} />{r.status}
+           {r.status}
           </span>
         );
       },
@@ -267,10 +287,35 @@ export default function HrDocumentTemplates() {
                 <div className="frm-cstrip-sub">Role-based document templates — versions, variables &amp; approval flows</div>
               </div>
             </div>
-            <button type="button" className="dtm-add-tpl-btn flex-shrink-0" onClick={() => navigate('/hr/doc-templates/new')}
-              style={{ padding: '8px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease' }}>
-              <i className="ri-add-line me-1" /> Add Template
-            </button>
+            {/* Category tabs live in the header strip — the page's top-level
+               split, so it belongs beside the title rather than in a strip of
+               its own (Add Template moved down to the table toolbar with the
+               rest of the list's controls). No emoji: the icons added colour
+               noise and the labels stand on their own.
+               Renders the shared .dt-tabrail / .dt-tabs / .dt-tab classes from
+               components/ui/DataTable.css — the SAME markup and CSS as the
+               Level tabs in the table toolbar below, so the two strips are
+               identical by construction and can never drift apart. */}
+            <div className="dt-tabrail flex-shrink-0" data-accent="violet">
+              <div className="dt-tabs" role="tablist">
+                {CATEGORIES.map(c => {
+                  const on = category === c.key;
+                  return (
+                    <button
+                      key={c.key}
+                      type="button"
+                      role="tab"
+                      aria-selected={on}
+                      className={`dt-tab ${on ? 'on' : 'off'}`}
+                      onClick={() => setCategory(c.key)}
+                    >
+                      {c.label}
+                      <span className="dt-tab-count">{stats.by_category?.[c.key] || 0}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           {/* KPI strip — surfaces the count totals first so users see scale
@@ -294,106 +339,32 @@ export default function HrDocumentTemplates() {
             ))}
           </div>
 
-          {/* Category top tabs — matches the Active/Disabled tab-strip pattern
-              used on HrEmployees: a single container with transparent inactive
-              tabs and a purple-gradient active tab. */}
-          <div
-            className="d-flex mb-3 dtm-cat-tabbar"
-            style={{
-              background: 'var(--vz-secondary-bg)',
-              border: '1px solid var(--vz-border-color)',
-              borderRadius: 10,
-              padding: 4,
-              gap: 4,
-            }}
-          >
-            {CATEGORIES.map(c => {
-              const on = category === c.key;
-              const cnt = stats.by_category?.[c.key] || 0;
-              return (
-                <button
-                  key={c.key}
-                  type="button"
-                  onClick={() => setCategory(c.key)}
-                  className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold dtm-cat-tab-btn"
-                  style={{
-                    borderRadius: 8,
-                    padding: '8px 14px',
-                    fontSize: 13,
-                    background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
-                    color: on ? '#fff' : 'var(--vz-secondary-color)',
-                    border: 'none',
-                    boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
-                  }}
-                >
-                  <span style={{ fontSize: 16, lineHeight: 1 }}>{c.icon}</span>
-                  {c.label}
-                  <span
-                    className="badge rounded-pill"
-                    style={{
-                      fontSize: 11,
-                      background: on ? 'rgba(255,255,255,0.22)' : 'var(--vz-light)',
-                      color: on ? '#fff' : 'var(--vz-secondary-color)',
-                    }}
-                  >
-                    {cnt}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Designation level chips — same tab-strip housing as the category
-              row above, just denser. Inactive chips keep their role color as
-              an icon tint; active chip gets the purple-gradient fill. */}
-          <div
-            className="d-flex flex-wrap mb-3 dtm-role-tabbar"
-            style={{
-              background: 'var(--vz-secondary-bg)',
-              border: '1px solid var(--vz-border-color)',
-              borderRadius: 10,
-              padding: 4,
-              gap: 4,
-            }}
-          >
-            {ROLE_TYPES.map(r => {
-              const on = roleType === r.value;
-              return (
-                <button
-                  key={r.value}
-                  type="button"
-                  onClick={() => setRoleType(r.value)}
-                  className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold dtm-role-chip"
-                  style={{
-                    borderRadius: 8,
-                    padding: '6px 12px',
-                    fontSize: 12.5,
-                    minWidth: 120,
-                    background: on ? 'linear-gradient(135deg,#7c5cfc,#a78bfa)' : 'transparent',
-                    color: on ? '#fff' : 'var(--vz-secondary-color)',
-                    border: 'none',
-                    boxShadow: on ? '0 4px 12px rgba(124,92,252,0.25)' : 'none',
-                  }}
-                >
-                  <span style={{ fontSize: 14, lineHeight: 1 }}>{r.icon}</span>
-                  {r.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Shared list table (components/ui/DataTable) — the Trigger/Status
-              filters and the result count ride in its toolbar, so the filters
-              still read as controls for the table rather than a detached strip
-              (Bug #15). Sortable headers and the rows-per-page pager come free. */}
+          {/* Shared list table (components/ui/DataTable) — the designation LEVEL
+              tabs now ride in its toolbar next to the search box (they select
+              which slice of the chosen category you're looking at, so they
+              belong to the table, not to a strip above it), together with the
+              Trigger filter and Add Template (Bug #15). Sortable headers and the
+              rows-per-page pager come free.
+              The level tabs pass no `icon`: the per-level emoji added colour
+              noise across six tabs and the label alone is unambiguous. Each
+              carries its own count badge instead. */}
           <DataTable<TemplateRow>
             data={filtered}
             columns={columns}
             serial
             accent="violet"
+            /* fitToViewport + autoFitRows = the My Workplace behaviour: the card
+               stretches to the bottom of the viewport with the pager pinned to
+               its lower edge, and the page size is whatever number of rows fits
+               that height. Without it a short result set left the card floating
+               mid-screen above a band of empty page. */
+            fitToViewport
             autoFitRows
             minWidth={1250}
             loading={loading}
+            tabs={ROLE_TYPES.map(r => ({ key: r.value, label: r.label, count: levelCounts[r.value] || 0 }))}
+            activeTab={roleType}
+            onTabChange={k => setRoleType(k as RoleType)}
             searchValue={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search templates…"
@@ -416,25 +387,18 @@ export default function HrDocumentTemplates() {
                     />
                   </div>
                 </div>
-                <div className="d-flex align-items-center gap-2">
-                  <span className="dtm-filter-label" style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Status</span>
-                  <div style={{ minWidth: 150 }}>
-                    <MasterSelect
-                      value={statusFilter}
-                      onChange={setStatusFilter}
-                      options={[
-                        { value: '', label: 'All' },
-                        { value: 'Active', label: 'Active' },
-                        { value: 'Draft', label: 'Draft' },
-                        { value: 'Deprecated', label: 'Deprecated' },
-                      ]}
-                      placeholder="All"
-                    />
-                  </div>
-                </div>
-                <span style={{ fontSize: 11.5, fontWeight: 700, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', padding: '5px 12px', borderRadius: 999, whiteSpace: 'nowrap' }}>
-                  {filtered.length} {filtered.length === 1 ? 'template' : 'templates'}
-                </span>
+                {/* Status picker removed — the Status column sorts from its own
+                    header now, and the KPI tiles above already break the totals
+                    down by Active / Draft / Deprecated.
+                    The standalone "N templates" pill is gone too: that number is
+                    the active Level tab's badge, so it was saying the same thing
+                    twice. */}
+                {/* Add Template sits at the right end of the toolbar — the list's
+                    primary action next to the list's own controls. */}
+                <button type="button" className="dtm-add-tpl-btn flex-shrink-0" onClick={() => navigate('/hr/doc-templates/new')}
+                  style={{ padding: '8px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease' }}>
+                  <i className="ri-add-line me-1" /> Add Template
+                </button>
               </>
             }
           />
@@ -454,24 +418,14 @@ export default function HrDocumentTemplates() {
   );
 }
 
+/* Thin adapter over the shared <ActionCell> (components/ui/DataTable) so the
+   Actions column here is the Customer list's button — bordered pale tint that
+   inverts to a solid gradient of the same hue on hover. The local flat-pastel
+   version had no hover identity. `primary`/`dark` map onto the table's accent
+   so callers don't have to change. */
 function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primary' | 'info' | 'success' | 'danger' | 'dark'; onClick: () => void; title: string }) {
-  const palette: Record<string, { bg: string; fg: string }> = {
-    primary: { bg: '#ede9fe', fg: '#6d28d9' },
-    info:    { bg: '#dbeafe', fg: '#1d4ed8' },
-    success: { bg: '#dcfce7', fg: '#15803d' },
-    danger:  { bg: '#fee2e2', fg: '#b91c1c' },
-    dark:    { bg: '#e5e7eb', fg: '#374151' },
-  };
-  const c = palette[tone];
-  return (
-    <Tooltip label={title}>
-      <button type="button" onClick={onClick} aria-label={title}
-        className={`dtm-act-btn dtm-act-${tone}`}
-        style={{ width: 30, height: 30, borderRadius: 8, border: 0, background: c.bg, color: c.fg, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-        <i className={icon} />
-      </button>
-    </Tooltip>
-  );
+  const mapped = tone === 'primary' || tone === 'dark' ? 'accent' : tone;
+  return <ActionCell title={title} icon={icon} tone={mapped} onClick={onClick} />;
 }
 
 /* Dark-theme overrides for this page. Light styles stay inline; these rules
@@ -480,18 +434,9 @@ function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primar
 function DtmDarkStyles() {
   return (
     <style>{`
-      /* Tab-strip rows (category + role) — hover state on inactive tabs only;
-         active tab already carries its own gradient + shadow so leave it. */
-      .dtm-page .dtm-cat-tab-btn:not([style*="linear-gradient"]):hover,
-      .dtm-page .dtm-role-chip:not([style*="linear-gradient"]):hover {
-        background: var(--vz-card-bg) !important;
-        color: var(--vz-heading-color, var(--vz-body-color)) !important;
-      }
-      [data-bs-theme="dark"] .dtm-page .dtm-cat-tab-btn:not([style*="linear-gradient"]):hover,
-      [data-bs-theme="dark"] .dtm-page .dtm-role-chip:not([style*="linear-gradient"]):hover {
-        background: rgba(255,255,255,0.06) !important;
-        color: #fff !important;
-      }
+      /* Category tab strip lives inline (Expense-module recipe) and the Level
+         tabs are the DataTable toolbar's own pill rail, so neither needs page
+         CSS here. */
 
       /* KPI tile hover — gentle lift + shadow so the cards feel clickable
          even though they are currently informational. */
@@ -504,24 +449,31 @@ function DtmDarkStyles() {
         box-shadow: 0 10px 22px rgba(15,23,42,0.10);
         border-color: rgba(124,92,252,0.45) !important;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-kpi-tile:hover {
+      [data-bs-theme="dark"] .dtm-page .dtm-kpi-tile:hover,
+      [data-layout-mode="dark"] .dtm-page .dtm-kpi-tile:hover{
         box-shadow: 0 10px 22px rgba(0,0,0,0.45);
         border-color: rgba(167,139,250,0.55) !important;
       }
 
-      [data-bs-theme="dark"] .dtm-page .dtm-header-icon {
+      [data-bs-theme="dark"] .dtm-page .dtm-header-icon,
+      [data-layout-mode="dark"] .dtm-page .dtm-header-icon{
         background: linear-gradient(135deg, rgba(99,102,241,0.25), rgba(139,92,246,0.25)) !important;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-active-badge {
+      [data-bs-theme="dark"] .dtm-page .dtm-active-badge,
+      [data-layout-mode="dark"] .dtm-page .dtm-active-badge{
         background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-kpi-tile {
+      [data-bs-theme="dark"] .dtm-page .dtm-kpi-tile,
+      [data-layout-mode="dark"] .dtm-page .dtm-kpi-tile{
         background: var(--vz-card-bg) !important;
         border-color: var(--vz-border-color) !important;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-kpi-num { color: rgba(255,255,255,0.95) !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-kpi-label { color: rgba(255,255,255,0.55) !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-filter-label { color: rgba(255,255,255,0.5) !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-kpi-num,
+      [data-layout-mode="dark"] .dtm-page .dtm-kpi-num{ color: rgba(255,255,255,0.95) !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-kpi-label,
+      [data-layout-mode="dark"] .dtm-page .dtm-kpi-label{ color: rgba(255,255,255,0.55) !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-filter-label,
+      [data-layout-mode="dark"] .dtm-page .dtm-filter-label{ color: rgba(255,255,255,0.5) !important; }
 
       /* Header — an exact copy of the Recruitment list header
          (.rec-list-table thead th): 10.5px / 700 micro-caps at 0.08em, soft
@@ -544,6 +496,7 @@ function DtmDarkStyles() {
       }
       /* Dark header — same recipe as the Recruitment list header. */
       [data-bs-theme="dark"] .dtm-page .dtm-thead th,
+      [data-layout-mode="dark"] .dtm-page .dtm-thead th,
       [data-layout-mode="dark"] .dtm-page .dtm-thead th {
         background: linear-gradient(180deg,
           color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
@@ -552,40 +505,47 @@ function DtmDarkStyles() {
         border-bottom-color: var(--vz-border-color, #2c3242) !important;
         box-shadow: none;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-table tbody td {
+      [data-bs-theme="dark"] .dtm-page .dtm-table tbody td,
+      [data-layout-mode="dark"] .dtm-page .dtm-table tbody td{
         border-bottom-color: var(--vz-border-color) !important;
         color: var(--vz-body-color);
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-tpl-name { color: rgba(255,255,255,0.95) !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-empty { color: rgba(255,255,255,0.5) !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-tpl-name,
+      [data-layout-mode="dark"] .dtm-page .dtm-tpl-name{ color: rgba(255,255,255,0.95) !important; }
+      [data-bs-theme="dark"] .dtm-page .dtm-empty,
+      [data-layout-mode="dark"] .dtm-page .dtm-empty{ color: rgba(255,255,255,0.5) !important; }
 
-      [data-bs-theme="dark"] .dtm-page .dtm-code-pill {
+      [data-bs-theme="dark"] .dtm-page .dtm-code-pill,
+      [data-layout-mode="dark"] .dtm-page .dtm-code-pill{
         background: rgba(251,191,36,0.18) !important; color: #fbbf24 !important;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-approval-pill {
+      [data-bs-theme="dark"] .dtm-page .dtm-approval-pill,
+      [data-layout-mode="dark"] .dtm-page .dtm-approval-pill{
         background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-version-pill {
+      [data-bs-theme="dark"] .dtm-page .dtm-version-pill,
+      [data-layout-mode="dark"] .dtm-page .dtm-version-pill{
         background: var(--vz-secondary-bg) !important; color: var(--vz-body-color) !important;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-trigger-pill {
+      [data-bs-theme="dark"] .dtm-page .dtm-trigger-pill,
+      [data-layout-mode="dark"] .dtm-page .dtm-trigger-pill{
         background: rgba(124,92,252,0.20) !important; color: #c4b5fd !important;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-status-Draft {
+      [data-bs-theme="dark"] .dtm-page .dtm-status-Draft,
+      [data-layout-mode="dark"] .dtm-page .dtm-status-Draft{
         background: rgba(245,158,11,0.18) !important; color: #fbbf24 !important;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-status-Active {
+      [data-bs-theme="dark"] .dtm-page .dtm-status-Active,
+      [data-layout-mode="dark"] .dtm-page .dtm-status-Active{
         background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important;
       }
-      [data-bs-theme="dark"] .dtm-page .dtm-status-Deprecated {
+      [data-bs-theme="dark"] .dtm-page .dtm-status-Deprecated,
+      [data-layout-mode="dark"] .dtm-page .dtm-status-Deprecated{
         background: rgba(248,113,113,0.18) !important; color: #fca5a5 !important;
       }
 
-      [data-bs-theme="dark"] .dtm-page .dtm-act-primary { background: rgba(167,139,250,0.18) !important; color: #c4b5fd !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-act-info    { background: rgba(96,165,250,0.18) !important; color: #93c5fd !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-act-success { background: rgba(34,197,94,0.18) !important; color: #6ee7b7 !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-act-danger  { background: rgba(248,113,113,0.18) !important; color: #fca5a5 !important; }
-      [data-bs-theme="dark"] .dtm-page .dtm-act-dark    { background: rgba(148,163,184,0.18) !important; color: #cbd5e1 !important; border: 1px solid rgba(148,163,184,0.32) !important; }
+      /* .dtm-act-* dark rules removed — the Actions column renders the shared
+         <ActionCell> (.dt-act), which carries its own light + dark styling. */
       /* Add Template button — hover feedback (BUG-039). Applies in both themes. */
       .dtm-page .dtm-add-tpl-btn:hover { transform: translateY(-1px); filter: brightness(1.06); box-shadow: 0 7px 20px rgba(99,102,241,0.45) !important; }
       .dtm-page .dtm-add-tpl-btn:active { transform: translateY(0); }

@@ -35,9 +35,14 @@ export type DataTableColumn<T> = ColumnDef<T, any> & { meta?: DataTableColumnMet
 export interface DataTableTab {
   key: string;
   label: string;
+  /** Remix icon class ('ri-group-line') or a plain emoji ('💻') — both render. */
   icon?: string;
   count?: number;
 }
+
+/** Icon classes are rendered as <i>, anything else (an emoji) as text — some
+ *  masters label their tabs with emoji rather than an icon font. */
+const isIconClass = (icon: string) => /^(ri|bx|mdi|fa|las|la|uil)[-\s]/.test(icon);
 
 export interface DataTableChip {
   label: string;
@@ -362,7 +367,7 @@ export default function DataTable<T extends object>({
                     className={`dt-tab ${on ? 'on' : 'off'}`}
                     onClick={() => onTabChange?.(t.key)}
                   >
-                    {t.icon && <i className={t.icon} />}
+                    {t.icon && (isIconClass(t.icon) ? <i className={t.icon} /> : <span className="dt-tab-emoji">{t.icon}</span>)}
                     {t.label}
                     {t.count !== undefined && <span className="dt-tab-count">{t.count}</span>}
                   </button>
