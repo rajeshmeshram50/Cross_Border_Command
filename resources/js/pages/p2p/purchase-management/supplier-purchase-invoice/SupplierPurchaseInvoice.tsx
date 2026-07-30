@@ -30,6 +30,7 @@ interface SpiRow {
   totalPo: number; netPayable: number; totalPaid: number; balance: number;
   attach: string | null; zoho: 'sync' | 'not';
   po_fully_utilized?: boolean;   // linked PO fully paid — gates the Zoho sync
+  docAttached?: boolean;         // uploaded invoice doc already pushed to the Zoho PO/Bill
 }
 
 // State for the Zoho-sync confirm + speedometer modal (mirrors the PO screen).
@@ -176,6 +177,26 @@ export default function SupplierPurchaseInvoice() {
 
   // The invoice whose Zoho-sync confirm + speedometer modal is open.
   const [sync, setSync] = useState<SyncState | null>(null);
+
+  // Push THIS invoice's uploaded document to the linked PO's Zoho PO + Bill
+  // attachment section (alongside the PO PDF). Available once the PO is synced but
+  // before a payment exists — the bill/payment syncs queue this automatically, so
+  // this button is the manual fallback for a PO synced before the invoice existed.
+  const [attaching, setAttaching] = useState<number | null>(null);
+  const syncAttachment = async (r: SpiRow) => {
+    setMenu(null);
+    if (!r.id || attaching) return;
+    setAttaching(r.id);
+    try {
+      const res = await api.post(`/p2p/supplier-purchase-invoices/${r.id}/sync-attachment`);
+      toast.success('Attachment synced', res?.data?.message ?? `${r.spiNo}'s document was attached to the Zoho purchase order.`);
+      reload();
+    } catch (e: any) {
+      toast.error('Attachment sync failed', e?.response?.data?.message ?? 'Could not attach the invoice document to Zoho Books.');
+    } finally {
+      setAttaching(null);
+    }
+  };
 
   // Open the sync confirm dialog. Full utilisation is NOT required — payments are
   // synced separately (entry-wise). The bill-sync rules (TDS must be deducted;
@@ -440,6 +461,15 @@ export default function SupplierPurchaseInvoice() {
                       {r.zoho === 'sync'
                         ? <Tooltip label="Already synced to Zohobook"><button type="button" className="spi-zohobtn is-synced"><IcoSync size={13} /> Synced</button></Tooltip>
                         : <Tooltip label={withPo ? 'Sync the linked PO — creates its bill and posts all payments' : 'Sync this invoice to Zohobook'}><button type="button" className="spi-zohobtn" onClick={() => syncRow(r)}><IcoSync size={13} /> Zoho Sync</button></Tooltip>}
+                      {/* Invoice synced (bill exists) with a file not yet in Zoho → offer to push it.
+                          With-PO attaches to the PO + bill; Direct attaches to its own bill. */}
+                      {r.zoho === 'sync' && !!r.attach && !r.docAttached && (
+                        <Tooltip label={withPo ? "Attach this invoice's document to the Zoho purchase order & bill" : "Attach this invoice's document to the Zoho bill"}>
+                          <button type="button" className="spi-zohobtn" disabled={attaching === r.id} onClick={() => void syncAttachment(r)}>
+                            <IcoClip /> {attaching === r.id ? 'Attaching…' : 'Sync Attachment'}
+                          </button>
+                        </Tooltip>
+                      )}
                       <Tooltip label="View invoice"><button type="button" className="spi-iconbtn" onClick={() => { setEditId(r.id); setMapCtx(null); setDetailOpen(true); }}><IcoEye /></button></Tooltip>
                       <Tooltip label="Record payment"><button type="button" className="spi-iconbtn" onClick={() => openPoPayment(r)}><IcoRupee /></button></Tooltip>
                       <Tooltip label="More actions"><button type="button" className="spi-iconbtn" onClick={e => openMenu(e, r)}><IcoMore /></button></Tooltip>

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ClmSegment;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Models\SupplierPurchaseInvoice;
 use App\Models\Vendor;
 use App\Models\ShipmentOrder;
 use App\Services\ZohoBooksService;
@@ -246,6 +247,10 @@ class PurchaseOrderController extends Controller
             // (syncPayment). A PO that has a Zoho PO but no bill yet (a mid-flow
             // failure) falls through to create the bill below.
             if (!empty($po->zoho_purchaseorder_id) && !empty($po->zoho_bill_id)) {
+                // Already synced, but an invoice raised AFTER the sync may still need
+                // its document pushed onto the Zoho PO/Bill — do that here so clicking
+                // "Zoho Sync" on a newly created invoice attaches it (best-effort).
+                $this->attachSpiDocsToZoho($po, $user);
                 return response()->json([
                     'status' => true,
                     'message' => 'This PO is already synced with Zoho Books (bill ' . ($po->zoho_bill_number ?: $po->zoho_bill_id) . '). Use “Sync Payment” to post its payments.',
@@ -263,7 +268,10 @@ class PurchaseOrderController extends Controller
             // TDS is cut would omit it and never reflect the TDS in Zoho. Requiring
             // the cut here guarantees the bill always carries the correct net payable.
             // (Deducting 0% is valid when no TDS applies — same as the payment flow.)
-            if (!$po->tds_cut) {
+            // International POs are exempt: GST/TDS don't apply, so the only sync
+            // pre-condition that remains is "at least one payment" (below).
+            $isIntl = strtolower((string) $po->document_type) === 'international';
+            if (!$isIntl && !$po->tds_cut) {
                 return response()->json([
                     'status'  => false,
                     'message' => 'Deduct the TDS before syncing to Zoho Books — the bill amount depends on it. Open the PO’s Payment Summary and deduct the TDS (use 0% if none applies), then sync.',
@@ -394,6 +402,10 @@ class PurchaseOrderController extends Controller
                 }
                 $paidNote = ($pay['pushed'] ?? 0) > 0 ? (', posted ₹' . number_format($pay['applied'], 2) . ' payment(s)') : '';
 
+                // Stamp + queue the linked invoices' uploaded documents to attach to
+                // the Zoho PO + Bill (alongside the PO PDF). Best-effort, off-request.
+                $this->attachSpiDocsToZoho($po->fresh(), $user);
+
                 return response()->json([
                     'status' => true,
                     'message' => 'Synced to Zoho Books — PO + bill ' . $billNumber . $paidNote . '.',
@@ -491,6 +503,10 @@ class PurchaseOrderController extends Controller
                     'errors'  => ['account' => ['No Bank/Cash account exists in the Zoho organization.']],
                 ], 422);
             }
+            // A payment sync is also the moment to push any invoice documents raised
+            // AFTER the PO was first synced (their attach jobs never ran at PO-sync
+            // time). Best-effort; only un-attached invoices with a file get a job.
+            $this->attachSpiDocsToZoho($po->fresh(), $user);
             if (($pay['pushed'] ?? 0) <= 0) {
                 return response()->json([
                     'status'  => true,
@@ -510,6 +526,46 @@ class PurchaseOrderController extends Controller
             return response()->json(['status' => false, 'message' => $e->getMessage()], 422);
         } finally {
             $lock->release();
+        }
+    }
+
+    /**
+     * Stamp every With-PO invoice on this synced PO with the shared bill (so their
+     * list rows reflect the sync from EITHER the PO or the SPI screen), and queue
+     * each invoice's uploaded document to attach to the Zoho PO + Bill — alongside
+     * the PO's own PDF. Best-effort: only invoices that carry a file and haven't
+     * been attached yet get a job, so re-running never duplicates.
+     */
+    private function attachSpiDocsToZoho(PurchaseOrder $po, $user): void
+    {
+        if (empty($po->zoho_purchaseorder_id)) return;
+        $spis = SupplierPurchaseInvoice::where('purchase_order_id', $po->id)
+            ->whereNull('deleted_at')
+            ->get(['id', 'attachment_path', 'zoho_doc_attached_at', 'zoho_status']);
+        foreach ($spis as $spi) {
+            // Reflect the shared bill on the invoice row (mirrors the SPI screen's
+            // own stamping), so a PO-screen sync also flips its invoices to "Sync".
+            if (!empty($po->zoho_bill_id) && $spi->zoho_status !== 'Sync') {
+                SupplierPurchaseInvoice::where('id', $spi->id)->update([
+                    'zoho_status'      => 'Sync',
+                    'zoho_bill_id'     => $po->zoho_bill_id,
+                    'zoho_bill_number' => $po->zoho_bill_number,
+                    'zoho_synced_at'   => now(),
+                    'zoho_error'       => null,
+                    'updated_by'       => $user?->id,
+                ]);
+            }
+            if (!empty($spi->attachment_path) && empty($spi->zoho_doc_attached_at)) {
+                // Run inline (best-effort) so the invoice document lands on the Zoho
+                // PO/Bill as part of THIS sync — no dependency on a running queue.
+                // Idempotent (stamps zoho_doc_attached_at) and swallows its own
+                // errors so a Zoho attach hiccup never breaks the bill/payment sync.
+                try {
+                    \App\Jobs\AttachSpiDocumentToZoho::dispatchSync((int) $spi->id);
+                } catch (\Throwable $e) {
+                    Log::warning('SPI doc attach during PO sync failed (best-effort)', ['spi' => $spi->id, 'err' => $e->getMessage()]);
+                }
+            }
         }
     }
 
@@ -1186,15 +1242,27 @@ class PurchaseOrderController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
+        // India country id (once) → decide each supplier's document type: a supplier
+        // whose primary address country is India is DOMESTIC, any other country is
+        // INTERNATIONAL. This drives the Stage-1 gate (the PO's Document Type must
+        // match the supplier's).
+        $indiaId = DB::table('master_countries')->whereRaw('LOWER(name) = ?', ['india'])->value('id');
         $rows = Vendor::query()
             ->forUser($user, $request->integer('branch_id') ?: null)
+            ->with('primaryAddress:id,vendor_id,country_id')
             ->orderBy('company_name')
             ->get(['id', 'vendor_code', 'company_name', 'legal_name'])
-            ->map(fn($v) => [
-                'id' => $v->id,
-                'code' => $v->vendor_code,
-                'name' => $v->company_name ?: $v->legal_name,
-            ]);
+            ->map(function ($v) use ($indiaId) {
+                $cid = optional($v->primaryAddress)->country_id;
+                // No country yet → treat as domestic (the pre-onboarding default).
+                $docType = $cid ? (((int) $cid === (int) $indiaId) ? 'domestic' : 'international') : 'domestic';
+                return [
+                    'id' => $v->id,
+                    'code' => $v->vendor_code,
+                    'name' => $v->company_name ?: $v->legal_name,
+                    'document_type' => $docType,
+                ];
+            });
         return response()->json(['status' => true, 'data' => $rows]);
     }
 

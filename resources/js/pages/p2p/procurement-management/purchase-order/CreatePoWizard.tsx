@@ -36,7 +36,7 @@ type PoRow = {
 type Shipment = { id: number; code: string; customer: string; consignee?: string | null; opportunity_id?: number | null; opportunity_code?: string | null; proforma_invoice_id?: number | null; pi_number?: string | null };
 type Warehouse = { id: number; name: string; code?: string; type?: string };
 type Currency = { id: number; code: string };
-type SupplierOpt = { id: number; code: string; name: string };
+type SupplierOpt = { id: number; code: string; name: string; document_type?: 'domestic' | 'international' };
 type SupplierRec = {
   code: string; type: string; name: string; legal: string; addr: string;
   country: string; state: string; stateCode: string; city: string; contact: string;
@@ -156,12 +156,26 @@ const capQty = (v: string, piQty: string): string => {
 // Tax columns — CGST+SGST (intra-state) or a single IGST (inter-state). Shared
 // by the products table's header and each body row so the two never drift.
 type TaxComputed = { cgstP: number; sgstP: number; igstP: number; cgstA: number; sgstA: number; igstA: number };
-const TaxHeadCells = ({ intra }: { intra: boolean }) => (intra
-  ? <><th className="cpd-c">CGST (%)</th><th className="cpd-c">SGST (%)</th><th className="cpd-r">CGST Amount</th><th className="cpd-r">SGST Amount</th></>
-  : <><th className="cpd-c">IGST (%)</th><th className="cpd-r">IGST Amount</th></>);
-const TaxBodyCells = ({ c, intra }: { c: TaxComputed; intra: boolean }) => (intra
-  ? <><td className="cpd-c">{c.cgstP}%</td><td className="cpd-c">{c.sgstP}%</td><td className="cpd-r">{money2(c.cgstA)}</td><td className="cpd-r">{money2(c.sgstA)}</td></>
-  : <><td className="cpd-c">{c.igstP}%</td><td className="cpd-r">{money2(c.igstA)}</td></>);
+const TaxHeadCells = ({ intra, intl }: { intra: boolean; intl?: boolean }) => (intl
+  // International supplier → GST doesn't apply, so just one Tax % + Tax Amount
+  // pair (like the PI), both 0 — not the CGST/SGST or IGST split.
+  ? <><th className="cpd-c">Tax (%)</th><th className="cpd-r">Tax Amount</th></>
+  : intra
+    ? <><th className="cpd-c">CGST (%)</th><th className="cpd-c">SGST (%)</th><th className="cpd-r">CGST Amount</th><th className="cpd-r">SGST Amount</th></>
+    : <><th className="cpd-c">IGST (%)</th><th className="cpd-r">IGST Amount</th></>);
+
+// Turn a raw backend/DB error into a friendly message. A Postgres numeric
+// overflow (22003, decimal(14,2) → max ~1 trillion) means a quantity, rate or
+// charge is too big — surface that instead of the SQL dump.
+const poSaveError = (msg?: string, fallback = 'Please review the form and try again.'): string =>
+  (msg && /22003|numeric field overflow|numeric value out of range/i.test(msg))
+    ? 'A value is too large to save — a quantity, rate, or charge exceeds the maximum allowed (about 1 trillion). Please reduce the amounts and try again.'
+    : (msg || fallback);
+const TaxBodyCells = ({ c, intra, intl }: { c: TaxComputed; intra: boolean; intl?: boolean }) => (intl
+  ? <><td className="cpd-c">{c.igstP}%</td><td className="cpd-r">{money2(c.igstA)}</td></>
+  : intra
+    ? <><td className="cpd-c">{c.cgstP}%</td><td className="cpd-c">{c.sgstP}%</td><td className="cpd-r">{money2(c.cgstA)}</td><td className="cpd-r">{money2(c.sgstA)}</td></>
+    : <><td className="cpd-c">{c.igstP}%</td><td className="cpd-r">{money2(c.igstA)}</td></>);
 
 const CPO_STAGES = [
   { t: 'PO Link Supplier Details', d: 'Confirm the supplier for this PO' },
@@ -201,14 +215,14 @@ const docHd = (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" strok
 // `name` overrides the raw option value for display — used by the supplier
 // field, whose option VALUE is the unique code (names can duplicate) but which
 // still shows the human name via meta.
-type DdOptMeta = { code?: string; name?: string; badge?: string; badgeTone?: 'own' | 'third'; disabled?: boolean };
+type DdOptMeta = { code?: string; name?: string; badge?: string; badgeTone?: 'own' | 'third'; disabled?: boolean; disabledLabel?: string };
 const DdOptLabel = ({ o, meta }: { o: string; meta?: DdOptMeta }) => (
   meta ? (
     <span className="pof-dd__optlbl">
       {meta.code && <span className="pof-dd__optcode">{meta.code}:</span>}
       <span className="pof-dd__optname">{meta.name ?? o}</span>
       {meta.badge && <span className={`pof-dd__optbadge pof-dd__optbadge--${meta.badgeTone || 'own'}`}>{meta.badge}</span>}
-      {meta.disabled && <span className="pof-dd__optlock">Segment not mapped</span>}
+      {meta.disabled && <span className="pof-dd__optlock">{meta.disabledLabel ?? 'Segment not mapped'}</span>}
     </span>
   ) : <span>{o}</span>
 );
@@ -548,9 +562,21 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     : Object.keys(CPO_SUPPLIERS);
   // Keyed by CODE (the option value); `name` drives the visible label so
   // duplicate-named suppliers still read as "S-011: test", "S-019: test".
+  // Each supplier carries a DOM / INT badge (its Document Type, from its country).
+  // Any supplier is selectable — picking one DRIVES the PO's Document Type (see
+  // pickSupplier), so the two always stay in sync.
   const supMeta = useMemo(() => {
     const m: Record<string, DdOptMeta> = {};
-    suppliers.forEach(s => { if (s.code) m[s.code] = { code: s.code, name: s.name || s.code }; });
+    suppliers.forEach(s => {
+      if (!s.code) return;
+      const dt = s.document_type ?? 'domestic';
+      m[s.code] = {
+        code: s.code,
+        name: s.name || s.code,
+        badge: dt === 'international' ? 'INT' : 'DOM',
+        badgeTone: dt === 'international' ? 'third' : 'own',
+      };
+    });
     return m;
   }, [suppliers]);
   // Pull a vendor's real 5-parameter compliance breakdown for the legal-status card.
@@ -569,6 +595,14 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     if (s) {
       setSupName(s.name);
       setVendorId(s.id);
+      // The supplier drives the PO's Document Type: a Domestic (India) supplier
+      // makes it "Domestics", an international one makes it "International".
+      const supDoc = s.document_type === 'international' ? 'International' : 'Domestics';
+      if (po.docType !== supDoc) {
+        setPoF('docType', supDoc);
+        clearErr('docType');
+        toast.info('Document Type updated', `Set to ${supDoc} to match ${s.code}.`);
+      }
       setSupLoading(true);
       loadSupplierLegal(s.id);
       api.get(`/p2p/purchase-orders/suppliers/${s.id}`).then(r => {
@@ -712,8 +746,12 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   //     each = gst/2 (e.g. 10% GST → 5% CGST + 5% SGST).
   //   • Inter-state (any other state code) → a single IGST = the full gst %.
   const intra = isIntraState(sup.stateCode);
+  // GST is an Indian tax — it does NOT apply to an international supplier. For an
+  // International PO every product's tax %/amount is forced to 0 (the columns still
+  // show, just at 0). Domestic keeps the product's real GST rate.
+  const isIntlPo = po.docType === 'International';
   const compute = (r: PoLine) => {
-    const gst = num(r.gst);
+    const gst = isIntlPo ? 0 : num(r.gst);
     const base = num(r.qty) * num(r.rate);
     const cgstP = intra ? gst / 2 : 0;
     const sgstP = intra ? gst / 2 : 0;
@@ -870,7 +908,9 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   const withShip = poMode === 'with';
   // Stage-2 products table column count (for full-width colSpan cells) — depends
   // on the layout (with/without shipment) and the tax split (CGST+SGST vs IGST).
-  const colCount = withShip ? (intra ? 14 : 12) : (intra ? 11 : 9);
+  // International = 2 tax columns (Tax %, Tax Amount), same count as inter-state.
+  const taxCols = isIntlPo ? 2 : (intra ? 4 : 2);
+  const colCount = (withShip ? 10 : 7) + taxCols;
 
   // With-Shipment product rules: rows are constrained to the PI product set.
   //  • removedPi        — PI products not currently on a linked row (available to re-add)
@@ -893,7 +933,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
       .map(r => ({
         product_id: r.productId, product_code: r.code || null,
         pi_product_name: r.piName || null, pi_quantity: r.piQty === '' ? null : num(r.piQty),
-        product_name: r.name || null, quantity: num(r.qty), rate: num(r.rate), gst_pct: num(r.gst),
+        product_name: r.name || null, quantity: num(r.qty), rate: num(r.rate), gst_pct: isIntlPo ? 0 : num(r.gst),
       }));
     return {
       code: poCode || null,
@@ -948,7 +988,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
         onSaved();
       })
       .catch((e: { response?: { data?: { message?: string } } }) => {
-        toast.error('Save failed', e?.response?.data?.message ?? 'Please review the form and try again.');
+        toast.error('Save failed', poSaveError(e?.response?.data?.message));
       })
       .finally(() => setSaving(false));
   };
@@ -998,6 +1038,23 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     return false;
   };
 
+  // The money columns are decimal(14,2) — they cap just under ₹1 trillion. Catch
+  // an overflow HERE (grand total, any charge, any line cost) so the user gets a
+  // clear toast at the stage instead of a raw DB "numeric out of range" at save.
+  const AMOUNT_MAX = 1e12; // 10^12 — a decimal(14,2) value must stay below this
+  const validateAmounts = (): boolean => {
+    const vals = [
+      summary.grand, summary.prod, summary.cgst, summary.sgst, summary.igst, summary.addl,
+      num(charges.ship), num(charges.pack), num(charges.other),
+      ...rows.map(r => compute(r).cost),
+    ];
+    if (vals.some(v => Math.abs(v) >= AMOUNT_MAX)) {
+      toast.error('Amount too large', 'PO amount cannot be more than 1 trillion.');
+      return false;
+    }
+    return true;
+  };
+
   // After a validation fail, scroll the first highlighted field into view so
   // the user lands on what needs fixing (mirrors SpiDetail). The 60ms delay
   // lets React paint the is-error / .invalid classes before we query the DOM.
@@ -1016,6 +1073,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     // segment mismatch before it can be left.
     if (stage >= 2 && !validateHasProducts()) return;
     if (stage >= 2 && !validateSegments()) return;
+    if (stage >= 2 && !validateAmounts()) return;
     // Stage 2 must be "saved" (Save Details) before advancing so the buyer has
     // reviewed the missing-quantity check. Edit/view auto-reveals it, so only a
     // fresh create is actually gated here (QA #11).
@@ -1037,7 +1095,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
       persistPo()
         .then(() => { toast.success(savedPoId ? 'Purchase Order saved' : 'Purchase Order created'); setStage(4); })
         .catch((e: { response?: { data?: { message?: string } } }) => {
-          toast.error('Save failed', e?.response?.data?.message ?? 'Please review the form and try again.');
+          toast.error('Save failed', poSaveError(e?.response?.data?.message));
         })
         .finally(() => setSaving(false));
       return;
@@ -1217,7 +1275,22 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                     <div className="pof-grid pof-grid--4">
                       {(<>
                         <Dd label="PO Type" req err={errs.poType} value={po.poType} options={PO_TYPES} onChange={v => { if (v !== PO_TYPES[0]) { toast.info('Coming soon', `${v} PO type is currently in development. Only ${PO_TYPES[0]} is available.`); return; } setPoF('poType', v); }} />
-                        <Dd label="Document Type" req err={errs.docType} value={po.docType} options={DOC_TYPES} onChange={v => setPoF('docType', v)} />
+                        {/* Document Type is fixed once the PO exists — it defines the
+                            PO's domestic/international nature (tax, GST, currency) and
+                            is tied to the chosen supplier, so it's read-only in edit. */}
+                        {isEdit
+                          ? <ReadField label="Document Type" value={po.docType} />
+                          : <Dd label="Document Type" req err={errs.docType} value={po.docType} options={DOC_TYPES} onChange={v => {
+                              setPoF('docType', v);
+                              // If the already-selected supplier no longer matches the new
+                              // Document Type, clear it so a mismatch can't slip through.
+                              const newDoc = v === 'International' ? 'international' : 'domestic';
+                              const s = suppliers.find(x => x.code === supSel);
+                              if (s && (s.document_type ?? 'domestic') !== newDoc) {
+                                pickSupplier(SUPPLIER_PLACEHOLDER);
+                                toast.warning('Supplier cleared', `${s.code} is a ${s.document_type === 'international' ? 'International' : 'Domestic'} supplier — it doesn’t match the ${v} document type. Please select a matching supplier.`);
+                              }
+                            }} />}
                         <Dd label="Mode of Transport" req err={errs.transport} value={po.transport} options={TRANSPORTS} onChange={v => setPoF('transport', v)} />
                         <Frozen label="PO Date" req value={po.poDate ? formatDmy(po.poDate) : todayDisp} />
                         <DateField label="Expected Delivery Date" req err={errs.edd} value={po.edd} onChange={v => setPoF('edd', v)} minDate={isEdit ? undefined : todayIso} />
@@ -1226,7 +1299,8 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         <Toggle label="Physical Inspection Required" on={po.inspection} onToggle={() => setPoF('inspection', !po.inspection)} />
                         {po.docType === 'International' && (<>
                           <Dd label="Currency" value={po.currency} options={currencies.length ? currencies.map(c => c.code) : CURRENCIES} onChange={v => { setPoF('currency', v); setCurrencyId(currencies.find(c => c.code === v)?.id ?? null); }} />
-                          <Field label="Exchange Rate" value={po.exRate} onChange={v => setPoF('exRate', v)} ph="e.g. 83.25" />
+                          {/* Exchange Rate — integer only (digits, no decimal). */}
+                          <Field label="Exchange Rate" value={po.exRate} onChange={v => setPoF('exRate', v.replace(/[^0-9]/g, ''))} ph="e.g. 83" />
                           <Dd label="INCO Term" value={po.inco} options={INCO} onChange={v => setPoF('inco', v)} />
                           <Field label="Port of Loading" value={po.portLoad} onChange={v => setPoF('portLoad', v)} ph="e.g. Nhava Sheva" />
                           <Field label="Port of Discharge" value={po.portDischarge} onChange={v => setPoF('portDischarge', v)} ph="e.g. Jebel Ali" />
@@ -1293,6 +1367,9 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         </div></div>
                       </div>
 
+                      {/* GST is an Indian construct — hide GST Scrutiny for an
+                          international supplier (Document Type = International). */}
+                      {po.docType !== 'International' && (
                       <div className="pof-sub">
                         <div className="pof-sub__hd"><div className="pof-sub__ico">{fileIco}</div><div className="pof-sub__t">GST Scrutiny Details</div><span className="pof-sub__n">5 Fields</span>{!supLoading && scrutinyOld && <span className="pof-scrutiny-badge"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg> Scrutiny Overdue</span>}</div>
                         <div className="pof-sub__bd">
@@ -1305,6 +1382,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                           <ReadField label="Prev. Invoice / Remarks" value={sup.remarks} full loading={supLoading} />
                         </div></div>
                       </div>
+                      )}
                     </div>
                   </Box>
                 </div>
@@ -1343,7 +1421,10 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                           stay auto (undefined) so they flex to fill the row. Column
                           count/order mirrors the thead + TaxHeadCells below. */}
                       {(() => {
-                        const tax = intra ? [76, 76, 116, 116] : [76, 116];
+                        // International renders 2 tax columns (Tax %, Tax Amount) — same
+                        // as inter-state — even when intra is true, so match the colgroup
+                        // to the ACTUAL columns or the widths shift and leave a gap.
+                        const tax = (!isIntlPo && intra) ? [76, 76, 116, 116] : [76, 116];
                         const widths: (number | undefined)[] = withShip
                           ? [48, 110, undefined, 90, undefined, 96, 96, 100, ...tax, 124, 46]
                           : [48, 110, undefined, 96, 100, ...tax, 124, 46];
@@ -1357,11 +1438,11 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         {withShip ? (<>
                           <th className="cpd-c">Sr. No</th><th>Product Code</th><th>Product Name (PI)</th><th className="cpd-c">Quantity (PI)</th>
                           <th>Product Name (PO)</th><th className="cpd-c">Quantity (PO)</th><th className="cpd-c">Missing Qty</th><th>Product Rate</th>
-                          <TaxHeadCells intra={intra} />
+                          <TaxHeadCells intra={intra} intl={isIntlPo} />
                           <th className="cpd-r">Product Cost</th><th className="cpd-c"> </th>
                         </>) : (<>
                           <th className="cpd-c">Sr. No</th><th>Product Code</th><th>Product Name (PO)</th><th className="cpd-c">Quantity (PO)</th><th>Product Rate</th>
-                          <TaxHeadCells intra={intra} />
+                          <TaxHeadCells intra={intra} intl={isIntlPo} />
                           <th className="cpd-r">Product Cost</th><th className="cpd-c"> </th>
                         </>)}
                       </tr></thead>
@@ -1384,7 +1465,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                               <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: capQty(numOnly(e.target.value), r.piQty) })} /></td>
                               <td className={`cpd-c cpd-miss ${c.miss > 0 ? 'is-short' : ''}`}>{c.miss}</td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
-                              <TaxBodyCells c={c} intra={intra} />
+                              <TaxBodyCells c={c} intra={intra} intl={isIntlPo} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
                               <td className="cpd-c">{!poView && <Tooltip label="Remove product" themed zIndex={2999999}><button type="button" className="cpd-del" onClick={() => removeLine(r.id)}>✕</button></Tooltip>}</td>
                             </tr>
@@ -1395,7 +1476,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                               <td className="cpd-prodcell"><Dd tooltip value={r.name || PRODUCT_PLACEHOLDER} optMeta={prodMeta} options={[PRODUCT_PLACEHOLDER, ...prodOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} onDisabledSelect={(name) => { const o = prodOpts.find(x => x.name === name); toast.error('Segment not mapped to the supplier', `“${name}”${o?.segment ? ` (${o.segment})` : ''} isn't in this supplier's segment — map the supplier to this segment first.`); }} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: numOnly(e.target.value) })} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
-                              <TaxBodyCells c={c} intra={intra} />
+                              <TaxBodyCells c={c} intra={intra} intl={isIntlPo} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
                               <td className="cpd-c">{!poView && <Tooltip label="Remove product" themed zIndex={2999999}><button type="button" className="cpd-del" onClick={() => removeLine(r.id)}>✕</button></Tooltip>}</td>
                             </tr>
@@ -1422,7 +1503,9 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                     </div>
                     <div className="cpd-totbox">
                       <div className="cpd-totrow"><div className="cpd-totrow__k">Total Product Cost</div><div className="cpd-totrow__v">{money2(summary.prod)}</div></div>
-                      {intra ? (<>
+                      {isIntlPo ? (
+                        <div className="cpd-totrow"><div className="cpd-totrow__k">Total Tax Amount</div><div className="cpd-totrow__v">{money2(summary.igst)}</div></div>
+                      ) : intra ? (<>
                         <div className="cpd-totrow"><div className="cpd-totrow__k">Total CGST Amount</div><div className="cpd-totrow__v">{money2(summary.cgst)}</div></div>
                         <div className="cpd-totrow"><div className="cpd-totrow__k">Total SGST Amount</div><div className="cpd-totrow__v">{money2(summary.sgst)}</div></div>
                       </>) : (
@@ -1444,6 +1527,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                       if (savingDetails || poView) return;
                       if (!validateHasProducts()) return;
                       if (!validateSegments()) return;
+                      if (!validateAmounts()) return;
                       setSavingDetails(true);
                       try {
                         // Only an existing PO can be written to — a new one is
@@ -1452,7 +1536,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         setShowMissing(true);
                         toast.success('Product details saved');
                       } catch (e: any) {
-                        toast.error('Save failed', e?.response?.data?.message ?? 'Could not save the product details.');
+                        toast.error('Save failed', poSaveError(e?.response?.data?.message, 'Could not save the product details.'));
                       } finally {
                         setSavingDetails(false);
                       }
@@ -1488,7 +1572,10 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                 <Box label="Terms" title="PO Terms & Conditions" sub="Define the terms & conditions for this purchase order" ico={fileIco}>
                   <div className="cpd-terms">
                     <label className="cpd-terms__lbl" htmlFor="cpoTermsTA">Terms &amp; Condition</label>
-                    <textarea id="cpoTermsTA" className="cpd-terms__ta" disabled={poView} placeholder="Enter purchase order terms & conditions…" value={terms} onChange={e => setTerms(e.target.value)} />
+                    <textarea id="cpoTermsTA" className="cpd-terms__ta" disabled={poView} maxLength={10000} placeholder="Enter purchase order terms & conditions…" value={terms} onChange={e => setTerms(e.target.value)} />
+                    <div className="cpd-terms__count" style={{ marginTop: 6, textAlign: 'right', fontSize: 11, fontWeight: 600, color: terms.length >= 10000 ? '#dc2626' : '#64748b' }}>
+                      {terms.length} / 10000 characters
+                    </div>
                   </div>
                 </Box>
                 </div>
@@ -1632,10 +1719,12 @@ function PrevSummary(props: {
           <F l="Registered Office Address" v={sup.addr} full /><F l="Country" v={sup.country} /><F l="State" v={sup.state} /><F l="State Code" v={sup.stateCode} />
           <F l="City" v={sup.city} /><F l="Contact Person Name" v={sup.contact} /><F l="Designation" v={sup.desig} /><F l="Contact Number" v={sup.phone} /><F l="Email ID" v={sup.email} />
         </div></div>
+        {po.docType !== 'International' && (
         <div><div className="cposum-grp__t">GST Scrutiny Details</div><div className="cposum-grid">
           <F l="Scrutiny Date" v={formatDmy(sup.scrutiny)} /><F l="GST Number" v={sup.gstNo} /><F l="GST Status" v={sup.gstStatus} /><F l="Last Filing Date" v={formatDmy(sup.filing)} />
           <F l="Prev. Invoice / Remarks" v={sup.remarks} full />
         </div></div>
+        )}
       </div>
     </div>
   );
@@ -1652,9 +1741,11 @@ function PrevSummary(props: {
         </div>
         <div><div className="cposum-grp__t">Cost Summary</div><div className="cposum-grid">
           <F l="Total Product Cost" v={money2(summary.prod)} />
-          {isIntraState(sup.stateCode)
-            ? <><F l="Total CGST Amount" v={money2(summary.cgst)} /><F l="Total SGST Amount" v={money2(summary.sgst)} /></>
-            : <F l="Total IGST Amount" v={money2(summary.igst)} />}
+          {po.docType === 'International'
+            ? <F l="Total Tax Amount" v={money2(summary.igst)} />
+            : isIntraState(sup.stateCode)
+              ? <><F l="Total CGST Amount" v={money2(summary.cgst)} /><F l="Total SGST Amount" v={money2(summary.sgst)} /></>
+              : <F l="Total IGST Amount" v={money2(summary.igst)} />}
           <F l="Additional Charges" v={money2(summary.addl)} /><F l="Grand Total" v={money2(summary.grand)} />
         </div></div>
       </div>

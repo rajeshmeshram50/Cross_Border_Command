@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../api';
+import WorklistPager from '../../components/ui/WorklistPager';
 import { useAuth } from '../../contexts/AuthContext';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import '../developers/shipment-360.css';
@@ -122,6 +123,8 @@ export default function DevTools() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState('');
+  const [page, setPage] = useState(1);
+  const [rpp, setRpp] = useState(10);
 
   const tab = useMemo(() => TABS.find(t => t.key === active) ?? TABS[0], [active]);
   const cols = useMemo<Col[]>(
@@ -139,7 +142,7 @@ export default function DevTools() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { setQ(''); load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [active]);
+  useEffect(() => { setQ(''); setPage(1); load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [active]);
 
   // Simple client-side filter over the visible values.
   const filtered = useMemo(() => {
@@ -147,6 +150,12 @@ export default function DevTools() {
     if (!needle) return rows;
     return rows.filter(r => Object.values(r).some(v => v != null && String(v).toLowerCase().includes(needle)));
   }, [rows, q]);
+
+  // Client-side pagination over the filtered rows.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / rpp));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = filtered.slice((safePage - 1) * rpp, safePage * rpp);
+  const srBase = (safePage - 1) * rpp;
 
   const cell = (row: Row, c: Col) => {
     const v = row[c.key];
@@ -200,7 +209,7 @@ export default function DevTools() {
           </div>
           <div className="s360-search">
             <IcoSearch />
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search ${tab.label.toLowerCase()}…`} />
+            <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder={`Search ${tab.label.toLowerCase()}…`} />
           </div>
         </div>
 
@@ -219,15 +228,26 @@ export default function DevTools() {
                 <tr><td className="rvtbl-empty" colSpan={cols.length + 1} style={{ color: '#dc2626' }}>{error}</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td className="rvtbl-empty" colSpan={cols.length + 1}>No {tab.label.toLowerCase()} synced to Zoho Books yet.</td></tr>
-              ) : filtered.map((row, i) => (
-                <tr className="rvtbl-row" key={i}>
-                  <td className="rvtbl-sr">{i + 1}</td>
+              ) : pageRows.map((row, i) => (
+                <tr className="rvtbl-row" key={srBase + i}>
+                  <td className="rvtbl-sr">{srBase + i + 1}</td>
                   {cols.map(c => <td key={c.key} className={c.kind ? '' : 'rvtbl-txt'}>{cell(row, c)}</td>)}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+
+        {!loading && !error && filtered.length > 0 && (
+          <WorklistPager
+            total={filtered.length}
+            page={safePage}
+            pageSize={rpp}
+            onPage={setPage}
+            onPageSize={n => { setRpp(n); setPage(1); }}
+            pageSizeOptions={[10, 25, 50, 100]}
+          />
+        )}
       </div>
     </div>
   );
@@ -237,4 +257,6 @@ const EXTRA = `
 .s360m .dvt-pdf{text-decoration:none;cursor:pointer;}
 .s360m .dvt-spin{animation:dvt-spin .9s linear infinite;transform-origin:center;}
 @keyframes dvt-spin{to{transform:rotate(360deg);}}
+.s360m .rvtbl tbody td{padding-top:14px;padding-bottom:14px;}
+.s360m .rvtbl tbody tr.rvtbl-row{height:52px;}
 `;

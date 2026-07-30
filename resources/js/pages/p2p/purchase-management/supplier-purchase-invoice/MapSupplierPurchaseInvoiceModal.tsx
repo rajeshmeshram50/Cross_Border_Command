@@ -19,7 +19,7 @@ type Choice = 'with' | 'without' | null;
 type LoadState = 'idle' | 'loading' | 'error' | 'ready';
 
 type PoOption = { id: number; code: string; supplier: string; has_shipment: boolean };
-type SupplierOption = { id: number; name: string; code: string };
+type SupplierOption = { id: number; name: string; code: string; docType?: 'domestic' | 'international' };
 
 /* Axios aborts a request (via AbortController) with a CanceledError — those are
    expected on unmount/reload and must not surface to the user as a load error. */
@@ -77,8 +77,8 @@ export default function MapSupplierPurchaseInvoiceModal({
     setSupState('loading');
     try {
       const r = await api.get('/p2p/supplier-purchase-invoices/suppliers', { signal: ctrl.signal });
-      const rows = (r.data?.data ?? []) as Array<{ id: number; name: string; code?: string | null }>;
-      setSuppliers(rows.map(x => ({ id: x.id, name: x.name, code: x.code ?? '' })));
+      const rows = (r.data?.data ?? []) as Array<{ id: number; name: string; code?: string | null; document_type?: string }>;
+      setSuppliers(rows.map(x => ({ id: x.id, name: x.name, code: x.code ?? '', docType: x.document_type === 'international' ? 'international' : 'domestic' })));
       setSupState('ready');
     } catch (e) {
       if (!isCanceled(e)) setSupState('error');
@@ -184,7 +184,7 @@ export default function MapSupplierPurchaseInvoiceModal({
                   value={supplierId}
                   placeholder={supPlaceholder}
                   disabled={supState === 'loading'}
-                  options={suppliers.slice().sort((a, b) => (parseInt(String(b.code).replace(/\D/g, ''), 10) || 0) - (parseInt(String(a.code).replace(/\D/g, ''), 10) || 0)).map(s => ({ value: String(s.id), label: s.code ? `${s.code} — ${s.name}` : s.name }))}
+                  options={suppliers.slice().sort((a, b) => (parseInt(String(b.code).replace(/\D/g, ''), 10) || 0) - (parseInt(String(a.code).replace(/\D/g, ''), 10) || 0)).map(s => ({ value: String(s.id), label: s.code ? `${s.code} — ${s.name}` : s.name, trade: s.docType }))}
                   onChange={setSupplierId}
                 />
                 {supState === 'error' && (
@@ -213,7 +213,7 @@ export default function MapSupplierPurchaseInvoiceModal({
 
 /* ── Custom dropdown (matches the PO wizard's Dd — styled panel, not a native
       <select>, so the open list looks consistent across browsers). ── */
-type DdOption = { value: string; label: string; badge?: 'with' | 'without' };
+type DdOption = { value: string; label: string; badge?: 'with' | 'without'; trade?: 'domestic' | 'international' };
 
 function ModalSelect({ value, options, onChange, placeholder, disabled }: {
   value: string;
@@ -289,6 +289,7 @@ function ModalSelect({ value, options, onChange, placeholder, disabled }: {
               >
                 <span className="spi-mdl-dd-opt-lbl">{o.label}</span>
                 {o.badge && <span className={`spi-mdl-shipbadge ${o.badge === 'with' ? 'is-with' : 'is-without'}`}>{o.badge === 'with' ? 'With Shipment' : 'Without Shipment'}</span>}
+                {o.trade && <span className={`spi-mdl-tradebadge ${o.trade === 'international' ? 'is-intl' : 'is-dom'}`}>{o.trade === 'international' ? 'International' : 'Domestic'}</span>}
                 <span className="spi-mdl-dd-opt-ck"><IcoCheckSm /></span>
               </div>
             ))}
