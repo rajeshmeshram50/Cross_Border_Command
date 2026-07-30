@@ -2271,7 +2271,7 @@ const DEFAULT_HOME_STATE_CODE = '27';
  * keystroke that overflowed rather than after a failed save. Anything longer
  * belongs in the T&C master and gets referenced from there. */
 const TERMS_MAX_LEN = 8000;
-const TERMS_LIMIT_MSG = `Character limit is ${TERMS_MAX_LEN}. To add more terms & conditions, navigate to the Terms & Conditions master.`;
+const TERMS_LIMIT_MSG = `Limit is ${TERMS_MAX_LEN} characters. Add more against the segment in the T&C master.`;
 
 /* Intra-state (CGST + SGST) only when the customer's GST state code equals our
  * own; anything else is inter-state (IGST).
