@@ -136,6 +136,7 @@ export default function HeaderFooterPanel({
     const fd = new FormData();
     fd.append('logo', file);
     setUploadingLogo(true);
+    const started = Date.now();
     try {
       const { data } = await api.post(uploadLogoEndpoint, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -145,6 +146,10 @@ export default function HeaderFooterPanel({
     } catch (err: any) {
       toast.error('Upload failed', err?.response?.data?.message || 'Please try again.');
     } finally {
+      // Keep the loader on screen for at least ~600ms so a fast (local) upload
+      // doesn't just flash — the spinner + blocked controls stay perceptible.
+      const elapsed = Date.now() - started;
+      if (elapsed < 600) await new Promise(res => setTimeout(res, 600 - elapsed));
       setUploadingLogo(false);
     }
   };
