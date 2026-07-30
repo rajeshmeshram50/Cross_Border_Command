@@ -42,23 +42,6 @@
     inset 0 1px 0 rgba(255,255,255,0.10),
     inset 0 -1px 0 rgba(0,0,0,0.20);
 }
-/* Premium dark-mode glass for the table card — same glossy treatment. */
-[data-bs-theme="dark"] .master-page-card,
-[data-layout-mode="dark"] .master-page-card {
-  background:
-    radial-gradient(140% 160% at 0% 0%, rgba(102,145,231,0.10) 0%, transparent 55%),
-    radial-gradient(140% 160% at 100% 100%, rgba(124,92,252,0.08) 0%, transparent 55%),
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--vz-card-bg) 92%, #ffffff) 0%,
-      var(--vz-card-bg) 100%);
-  border: 1px solid color-mix(in srgb, #6691e7 16%, var(--vz-border-color));
-  box-shadow:
-    0 14px 36px rgba(0,0,0,0.32),
-    0 2px 6px rgba(0,0,0,0.18),
-    0 0 0 1px rgba(255,255,255,0.02),
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    inset 0 -1px 0 rgba(0,0,0,0.18);
-}
 /* Premium dark-mode KPI cards — glossy gradient + inset highlight. */
 [data-bs-theme="dark"] .dsn-extras .dsn-kpi,
 [data-layout-mode="dark"] .dsn-extras .dsn-kpi,
@@ -95,32 +78,9 @@
     inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
-/* ---------------------------------------------------------------------
-   2. Master table — sticky header + scrollbar styling
-   --------------------------------------------------------------------- */
-.master-scroll-wrap {
-  max-height: 445px;
-  overflow-y: auto;
-}
-.master-scroll-wrap thead {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  /* Opaque backing so body rows can't bleed THROUGH the translucent th tint
-     when scrolled under the sticky header (header/row overlap fix). */
-  background: var(--vz-card-bg, #ffffff);
-}
-/* Belt-and-suspenders: each sticky header cell also carries an opaque-ish base
-   so there's no see-through gap at the very top while scrolling. */
-.master-scroll-wrap thead th {
-  position: sticky;
-  top: 0;
-  background-color: var(--vz-card-bg, #ffffff);
-}
-.master-scroll-wrap::-webkit-scrollbar { width: 8px; }
-.master-scroll-wrap::-webkit-scrollbar-track { background: transparent; }
-.master-scroll-wrap::-webkit-scrollbar-thumb { background: var(--vz-border-color); border-radius: 8px; }
-.master-scroll-wrap::-webkit-scrollbar-thumb:hover { background: var(--vz-secondary-color); }
+/* Section 2 (the .master-scroll-wrap sticky-header + scrollbar rules) is gone:
+   every master now renders components/ui/DataTable, which owns its own scroll
+   container, sticky header and scrollbar styling. */
 
 /* ---------------------------------------------------------------------
    3. Designations — KPI strip (compact, responsive)
