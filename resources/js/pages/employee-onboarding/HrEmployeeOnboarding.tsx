@@ -3284,7 +3284,11 @@ function InitiateOnboardingModal({
   const [mDepts, setMDepts]               = useState<{ id: number; name: string }[]>([]);
   const [mDesignations, setMDesignations] = useState<{ id: number; name: string }[]>([]);
   const [mRoles, setMRoles]               = useState<{ id: number; name: string }[]>([]);
-  const [mLegalEntities, setMLegalEntities] = useState<{ id: number; entity_name: string; city?: string | null }[]>([]);
+  /* Legal entities = the client's BRANCHES — the branch carries the GST/PAN/CIN
+     and bank accounts, so that is what an employee is hired into. `location`
+     (city + country) is composed server-side so every form that offers this
+     picker fills the Location field identically. */
+  const [mLegalEntities, setMLegalEntities] = useState<{ id: number; name: string; city?: string | null; country?: string | null; location?: string }[]>([]);
   const [managerOpts, setManagerOpts]       = useState<{ value: string; label: string; deptId?: string; isHod?: boolean }[]>([]);
   // Leave plans need to come from the API (admin-defined per branch) — the
   // Add Employee form stores the plan id as the saved value, so a hardcoded
@@ -3309,7 +3313,10 @@ function InitiateOnboardingModal({
       api.get('/master/departments').then(r => { if (!cancelled) setMDepts(Array.isArray(r.data) ? r.data : []); }),
       api.get('/master/designations').then(r => { if (!cancelled) setMDesignations(Array.isArray(r.data) ? r.data : []); }),
       api.get('/master/roles').then(r => { if (!cancelled) setMRoles(Array.isArray(r.data) ? r.data : []); }),
-      api.get('/master/legal_entities').then(r => { if (!cancelled) setMLegalEntities(Array.isArray(r.data) ? r.data : []); }),
+      // Branches, not the legal-entities master — see the mLegalEntities note.
+      api.get('/branch-legal-entities')
+        .then(r => { if (!cancelled) setMLegalEntities(Array.isArray(r.data?.legal_entities) ? r.data.legal_entities : []); })
+        .catch(() => { if (!cancelled) setMLegalEntities([]); }),
       api.get('/employees/managers').then(r => {
         if (cancelled) return;
         const merged = [
@@ -3356,7 +3363,12 @@ function InitiateOnboardingModal({
     return h ? String(h.id) : '';
   })();
   const roleOpts        = mRoles.map(r => ({ value: String(r.id), label: r.name }));
-  const legalEntityOpts = mLegalEntities.map(le => ({ value: String(le.id), label: le.entity_name }));
+  /* Legal Entity is auto-fetched, not picked: an onboardee is always hired into
+     the branch the form is filled under. `autoLegalEntity` is the single branch
+     the API returned (a branch_user, or a client_admin with one branch selected
+     in the switcher); with "All Branches" there is no single answer and the
+     field stays empty until a branch is chosen. */
+  const autoLegalEntity = mLegalEntities.length === 1 ? mLegalEntities[0] : null;
 
   // ── Asset pickers (Step 3) ─────────────────────────────────────────
   // Three independent lists — Laptop / Mobile / Other. We fetch the
@@ -3545,6 +3557,25 @@ useEffect(() => {
       .filter(Boolean).join(' ').trim() || emp.name || ''
   );
 }, [isOpen, emp?.id, emp?.raw]);
+
+  /* Auto-fetch the Legal Entity + its Location once the branch resolves. Only
+     when EMPTY, so re-opening an onboardee keeps their saved entity instead of
+     being rewritten to the active branch. */
+  useEffect(() => {
+    if (!autoLegalEntity || s1.legal_entity_id) return;
+    setS1(p => ({
+      ...p,
+      legal_entity_id: String(autoLegalEntity.id),
+      location: autoLegalEntity.location || autoLegalEntity.city || '',
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLegalEntity, s1.legal_entity_id]);
+  // Read-only label for the field. Falls back to the employee row so an
+  // onboardee whose branch isn't in this user's scoped list still shows a name.
+  const legalEntityLabel =
+    mLegalEntities.find(le => String(le.id) === String(s1.legal_entity_id))?.name
+    || (emp?.raw as any)?.legal_entity?.name
+    || '';
 
   // ── Form validation state ──────────────────────────────────────────
 const [s1Errors, setS1Errors] = useState<Record<string, string>>({});
@@ -3757,7 +3788,8 @@ const validateStage1 = (): boolean => {
   else if (s1.ancillary_role_id && String(s1.ancillary_role_id) === String(s1.primary_role_id)) errors.primary_role_id = 'The Primary role cannot also be the Ancillary role.';
 
   // Organisational Details — Legal Entity + Reporting Manager are required.
-  if (!s1.legal_entity_id?.toString().trim()) errors.legal_entity_id = 'Legal entity is required';
+  // Auto-fetched — empty only when no single branch resolved ("All Branches").
+  if (!s1.legal_entity_id?.toString().trim()) errors.legal_entity_id = 'Pick a branch in the branch switcher — the legal entity is taken from it';
   if (!s1.reporting_manager?.toString().trim()) errors.reporting_manager = 'Reporting manager is required';
   else if (hodDesignationId && String(s1.designation_id) === hodDesignationId
            && !String(s1.reporting_manager).startsWith('branch_user:'))
@@ -4841,36 +4873,30 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
                 <p className="onb-init-subgroup">Organisational Details</p>
                 <Row className="g-3">
+                  {/* Legal Entity + Location are both auto-fetched from the
+                      branch this onboardee is being hired into — no picker.
+                      Editing either created free-text drift between the branch
+                      record and the employee row, which then failed validation
+                      on save. */}
                   <Col md={4} data-field="legal_entity_id">
-                    <label className="onb-init-label">Legal Entity<span className="req">*</span></label>
-                    <MasterSelect
-                      options={legalEntityOpts}
-                      loading={mastersLoading}
-                      placeholder="Select entity"
-                      value={s1.legal_entity_id}
-                      invalid={!!s1Errors.legal_entity_id}
-                      onChange={(v) => {
-                        // Always overwrite Location with the entity's city —
-                        // Location is now a derived, read-only field. Users
-                        // change the Legal Entity to change the office.
-                        const ent = mLegalEntities.find(le => String(le.id) === String(v));
-                        setS1(p => ({ ...p, legal_entity_id: v, location: ent?.city || '' }));
-                        setS1Errors(p => ({ ...p, legal_entity_id: '' }));
-                      }}
+                    <label className="onb-init-label">Legal Entity <span className="auto">AUTO</span></label>
+                    <input
+                      className="onb-init-input is-autofilled"
+                      readOnly
+                      value={legalEntityLabel}
+                      placeholder={mastersLoading ? 'Loading…' : 'Select a branch to auto-fetch'}
+                      title="The branch this employee is hired into — switch branch to change it"
                     />
                     {s1Errors.legal_entity_id && <div className="onb-error-msg">{s1Errors.legal_entity_id}</div>}
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Location <span className="auto">AUTO</span></label>
-                    {/* Auto-filled from the selected Legal Entity's city
-                        and locked. Editing it created a free-text drift
-                        between the entity record and the employee row,
-                        which then failed PG validation on save. */}
                     <input
                       className="onb-init-input is-autofilled"
                       readOnly
                       value={s1.location}
-                      placeholder={s1.legal_entity_id ? '—' : 'Select a Legal Entity first'}
+                      placeholder={s1.legal_entity_id ? '—' : 'Auto-fetched with the legal entity'}
+                      title="The legal entity's city and country"
                     />
                   </Col>
                   <Col md={4} data-field="reporting_manager"><label className="onb-init-label">Reporting Manager<span className="req">*</span></label><MasterSelect options={reportingMgrOpts} loading={mastersLoading} placeholder="Select manager" value={s1.reporting_manager} invalid={!!s1Errors.reporting_manager} onChange={(v) => { const mgr = managerOpts.find(m => m.value === v); setS1(p => ({ ...p, reporting_manager: v, department_id: (mgr && mgr.deptId) ? mgr.deptId : p.department_id })); setS1Errors(p => ({ ...p, reporting_manager: '', department_id: '' })); }} />{s1Errors.reporting_manager && <div className="onb-error-msg">{s1Errors.reporting_manager}</div>}</Col>

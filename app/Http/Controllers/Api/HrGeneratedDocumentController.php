@@ -233,9 +233,13 @@ class HrGeneratedDocumentController extends Controller
             ? trim(((string) ($manager->first_name ?? '')) . ' ' . ((string) ($manager->last_name ?? '')))
             : '';
 
-        $companyName = $emp->legalEntity?->legal_entity_name
-            ?? $emp->branch?->client?->org_name
-            ?? '';
+        // Legal entity = the employing branch. This previously read
+        // `legal_entity_name`, a column that never existed on the old
+        // master_legal_entities table either, so CompanyName always silently
+        // fell through to the client org name.
+        $companyName = $emp->legalEntity?->name
+            ?: $emp->branch?->client?->org_name
+            ?: '';
 
         $tokens = [
             // Basic

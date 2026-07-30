@@ -164,6 +164,8 @@ class BranchController extends Controller
             // Work shifts repeater — arrives as a JSON string on multipart
             // uploads and as a real array on JSON requests; normalised below.
             'shifts' => 'nullable',
+            // Bank accounts repeater (Legal & Registration) — same transport.
+            'bank_accounts' => 'nullable',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             // Authorised-signatory image (signature + stamp combined).
@@ -235,6 +237,7 @@ class BranchController extends Controller
                 'status' => $request->status ?? 'active',
                 'notes' => $request->notes,
                 'shifts' => $this->normalizeShifts($request->input('shifts')),
+                'bank_accounts' => $this->normalizeBankAccounts($request->input('bank_accounts')),
                 'primary_color' => $request->primary_color,
                 'secondary_color' => $request->secondary_color,
                 'created_by' => $user->id,
@@ -464,6 +467,8 @@ class BranchController extends Controller
             'notes' => 'nullable|string',
             // Work shifts repeater — JSON string on multipart, array on JSON.
             'shifts' => 'nullable',
+            // Bank accounts repeater (Legal & Registration) — same transport.
+            'bank_accounts' => 'nullable',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
             'profile_photo' => 'nullable|image|mimes:jpg,jpeg,png|max:2048',
             // Authorised-signatory image (signature + stamp combined).
@@ -515,10 +520,13 @@ class BranchController extends Controller
                 'primary_color', 'secondary_color',
             ]));
 
-            // Shifts handled separately — the array cast would double-encode
-            // the JSON string that arrives on multipart uploads.
+            // Shifts / bank accounts handled separately — the array cast would
+            // double-encode the JSON string that arrives on multipart uploads.
             if ($request->has('shifts')) {
                 $branch->update(['shifts' => $this->normalizeShifts($request->input('shifts'))]);
+            }
+            if ($request->has('bank_accounts')) {
+                $branch->update(['bank_accounts' => $this->normalizeBankAccounts($request->input('bank_accounts'))]);
             }
 
             if ($request->hasFile('logo')) {
@@ -735,7 +743,124 @@ class BranchController extends Controller
         }, $raw)));
     }
 
+    /**
+     * Normalise the bank-accounts repeater into clean
+     * { bank_name, branch_name, account_number, ifsc_code, account_type,
+     *   is_primary } rows. Same transport handling as normalizeShifts()
+     * (JSON string on multipart, array on JSON, null when absent).
+     *
+     * A row with no bank name is dropped — the inline editor requires one, so
+     * a nameless row can only be junk. IFSC is upper-cased to match the Legal
+     * Entities master. Only the FIRST row flagged primary keeps the flag, so
+     * the data can't end up with two primary accounts.
+     */
+    private function normalizeBankAccounts($raw): array
+    {
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            $raw = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($raw)) {
+            return [];
+        }
 
+        $primarySeen = false;
+
+        return array_values(array_filter(array_map(function ($row) use (&$primarySeen) {
+            if (!is_array($row)) {
+                return null;
+            }
+            $bankName = trim((string) ($row['bank_name'] ?? ''));
+            if ($bankName === '') {
+                return null;
+            }
+
+            $flag = $row['is_primary'] ?? false;
+            $isPrimary = $flag === true || $flag === 1 || $flag === '1'
+                || (is_string($flag) && strcasecmp($flag, 'yes') === 0)
+                || (is_string($flag) && strcasecmp($flag, 'true') === 0);
+            if ($isPrimary && $primarySeen) {
+                $isPrimary = false;
+            } elseif ($isPrimary) {
+                $primarySeen = true;
+            }
+
+            return [
+                'bank_name'      => $bankName,
+                'branch_name'    => trim((string) ($row['branch_name'] ?? '')),
+                'account_number' => trim((string) ($row['account_number'] ?? '')),
+                'ifsc_code'      => strtoupper(trim((string) ($row['ifsc_code'] ?? ''))),
+                'account_type'   => trim((string) ($row['account_type'] ?? '')),
+                'is_primary'     => $isPrimary,
+            ];
+        }, $raw)));
+    }
+
+
+
+    /**
+     * Legal-entity options for the Employee / Onboarding forms.
+     *
+     * The branch IS the registered legal entity for a tenant — it carries the
+     * GST, PAN, CIN, IEC and bank accounts — so the "Legal Entity" dropdown
+     * lists branch names and the read-only "Location" beside it is the branch's
+     * own city + country. `location` is pre-composed here so every consumer
+     * (Employee form, HR onboarding, public onboarding) shows the same string.
+     *
+     * Branch resolution mirrors shiftOptions(): a branch_user only ever sees
+     * their own branch; a client_admin sees the BranchSwitcher's branch, or all
+     * of the client's branches when "All Branches" is selected.
+     *
+     * Deliberately not behind the Branches module permission — it's a form
+     * lookup, and HR staff who can add an employee may not be able to manage
+     * branches.
+     */
+    public function legalEntityOptions(Request $request)
+    {
+        $user = $request->user();
+        if (!$user || !$user->client_id) {
+            return response()->json(['legal_entities' => []]);
+        }
+
+        $branchId = $user->user_type === 'branch_user'
+            ? $user->branch_id
+            : ($request->integer('branch_id') ?: null);
+
+        $query = Branch::where('client_id', $user->client_id);
+        if ($branchId) {
+            // Ignore a branch_id that isn't this client's (no cross-tenant leak).
+            $query->where('id', $branchId);
+        }
+
+        $rows = $query->orderBy('name')->get(['id', 'name', 'code', 'city', 'state', 'country']);
+
+        return response()->json([
+            'legal_entities' => $rows->map(fn (Branch $b) => [
+                'id'       => $b->id,
+                'name'     => $b->name,
+                'code'     => $b->code,
+                'city'     => $b->city,
+                'state'    => $b->state,
+                'country'  => $b->country,
+                'location' => self::composeBranchLocation($b),
+            ])->values(),
+        ]);
+    }
+
+    /**
+     * The employee "Location" string for a branch: "Pune, India". Skips blanks
+     * so a branch with no city doesn't render a leading comma.
+     */
+    public static function composeBranchLocation(?Branch $branch): string
+    {
+        if (!$branch) {
+            return '';
+        }
+        return implode(', ', array_filter([
+            trim((string) $branch->city),
+            trim((string) $branch->country),
+        ], fn ($v) => $v !== ''));
+    }
 
     public function nextCode(Request $request)
     {

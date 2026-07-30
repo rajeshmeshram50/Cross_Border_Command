@@ -16,7 +16,10 @@ interface InvitePreview {
 }
 
 interface MasterOption { id: number; name: string; country_id?: number }
-interface LegalEntityOption { id: number; entity_name: string; city?: string | null }
+/* Legal entities are the client's BRANCHES (the branch holds the GST/PAN/CIN and
+   bank accounts). The onboarding bundle keeps the `entity_name` label key and
+   adds `location` — the branch's city + country — for the Location field. */
+interface LegalEntityOption { id: number; entity_name: string; city?: string | null; country?: string | null; location?: string }
 
 type StepNum = 1 | 2 | 3;
 
@@ -244,7 +247,18 @@ export default function PublicOnboarding() {
     .filter(d => d?.name !== 'Director / CEO')
     .map(d => ({ value: String(d.id), label: d.name }));
   const roleOpts        = roles.map(r => ({ value: String(r.id), label: r.name }));
-  const legalEntityOpts = legalEntities.map(l => ({ value: String(l.id), label: l.entity_name }));
+  /* The bundle returns the inviting branch (just that one when the invite names
+     a branch), so the candidate never picks a legal entity — it's shown
+     read-only and its city + country fill Location. */
+  const autoLegalEntity = legalEntities.length === 1 ? legalEntities[0] : null;
+  const legalEntityLabel =
+    legalEntities.find(l => String(l.id) === String(legalEntityId))?.entity_name || '';
+  useEffect(() => {
+    if (!autoLegalEntity || legalEntityId) return;
+    setLegalEntityId(String(autoLegalEntity.id));
+    setLocation(autoLegalEntity.location || autoLegalEntity.city || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLegalEntity, legalEntityId]);
   // Backend enum is (Male, Female, Other) — keep options aligned so the
   // submit doesn't fail validation. "Prefer not to say" was rejected server-
   // side and surfaced as a generic "invalid" error.
@@ -1940,26 +1954,29 @@ export default function PublicOnboarding() {
                   <MasterSelect value={primaryRoleId} onChange={setPrimaryRoleId} options={roleOpts} placeholder="Select role" />
                 </div>
               </div>
+              {/* Legal Entity + Location are fixed by the invite — the hiring
+                  branch decides them, so both are read-only here. */}
               <div className="onb-hrow">
                 <label className="emp-label">Legal Entity</label>
                 <div className="onb-hrow-input">
-                  <MasterSelect value={legalEntityId} onChange={v => {
-                    setLegalEntityId(v);
-                    const ent = legalEntities.find(le => String(le.id) === String(v));
-                    setLocation(ent?.city || '');
-                  }} options={legalEntityOpts} placeholder="Select entity" />
+                  <input
+                    className="emp-input is-readonly"
+                    value={legalEntityLabel}
+                    placeholder="Set by your employer"
+                    readOnly
+                    disabled
+                  />
                 </div>
               </div>
               <div className="onb-hrow">
                 <label className="emp-label">Location</label>
                 <div className="onb-hrow-input">
                   <input
-                    className={`emp-input${legalEntityId ? ' is-readonly' : ''}`}
+                    className="emp-input is-readonly"
                     value={location}
-                    onChange={e => setLocation(e.target.value)}
-                    placeholder={legalEntityId ? 'Set by legal entity' : 'Select a legal entity'}
-                    disabled={!!legalEntityId}
-                    readOnly={!!legalEntityId}
+                    placeholder="Set by your employer"
+                    readOnly
+                    disabled
                   />
                 </div>
               </div>
