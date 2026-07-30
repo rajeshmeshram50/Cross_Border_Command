@@ -8,7 +8,6 @@ import { MasterMultiSelect } from '../../master/masterFormKit';
 import { SimpleNameModal, useScrollLock } from '../shared/clmCommon';
 import ClmInsertPlaceholderModal from './ClmInsertPlaceholderModal';
 import ClmInsertTableModal from './ClmInsertTableModal';
-import ClmInsertHrModal from './ClmInsertHrModal';
 import ClmClauseInsertPanel from './ClmClauseInsertPanel';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
@@ -155,11 +154,15 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
 
   // Step 2 fields
   const [content, setContent] = useState('');
+  // Unsaved-changes flag — set on every editor edit/insert, cleared on load and
+  // on a successful save. Download/Export are blocked while dirty so the user
+  // never downloads a stale (last-saved) version of edits they can still see.
+  const [dirty, setDirty] = useState(false);
   // Rich-text engine — TipTap (same as the CTC / Agreement editors), replacing
   // the old contentEditable + document.execCommand that froze the tab when
   // formatting large (200-300 page) trade documents. HTML in / HTML out, so the
   // backend contract (content = HTML string) is unchanged.
-  const ted: CtcEditor = useCtcEditor({ value: content, onChange: setContent });
+  const ted: CtcEditor = useCtcEditor({ value: content, onChange: (html) => { setContent(html); setDirty(true); } });
   const [fontSize, setFontSizeState] = useState('14');
   const [block, setBlockState]       = useState('p');
   const [pickerOpen, setPickerOpen]  = useState(false);
@@ -167,11 +170,6 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
    * before opening so the generated HTML lands where the user was typing,
    * not at the start of the editor. */
   const [tablePickerOpen, setTablePickerOpen] = useState(false);
-  /* Insert Horizontal Line dialog — same caret-stash pattern as the table
-   * picker. Replaces document.execCommand('insertHorizontalRule') (which
-   * inserts an unstyled <hr> the dompdf renderer drops to a 1px grey
-   * line) with a styled <hr> the user picks colour + height + style for. */
-  const [hrPickerOpen, setHrPickerOpen] = useState(false);
   // Clause Library picker — drops reusable clauses (GET /clm/clause-library) at the caret.
   const [clausePickerOpen, setClausePickerOpen] = useState(false);
   // Full-page drafting — expands the editor shell to fill the viewport so the
@@ -321,8 +319,16 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     return window.setInterval(() => { p = Math.min(90, p + Math.random() * 7 + 2); setDl(d => (d ? { ...d, progress: Math.round(p) } : d)); }, 300);
   };
   const downloadDocx = async () => {
-    if (!editingId) {
-      toast.error('Save first', 'Save the trade document before downloading as DOCX.');
+    // Guard on `existing?.id`, NOT `editingId` — "Save & Next" sets editingId
+    // for a brand-new draft, which would otherwise let a never-really-saved new
+    // document download. A new doc must be fully saved (which closes the modal)
+    // and reopened before it can be downloaded — same as the Agreement editor.
+    if (!existing?.id) {
+      toast.error('Save draft first', 'Save the trade document draft before downloading as DOCX.');
+      return;
+    }
+    if (dirty) {
+      toast.warning('Save your changes', 'You have unsaved edits — save the trade document before downloading.');
       return;
     }
     const timer = runDlProgress('docx');
@@ -365,8 +371,12 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   /* Download as PDF — rendered server-side with the FULL page-shell (branded
    * header + body content + footer), not just the editor body. */
   const downloadPdf = async () => {
-    if (!editingId) {
-      toast.error('Save first', 'Save the trade document before downloading as PDF.');
+    if (!existing?.id) {
+      toast.error('Save draft first', 'Save the trade document draft before downloading as PDF.');
+      return;
+    }
+    if (dirty) {
+      toast.warning('Save your changes', 'You have unsaved edits — save the trade document before downloading.');
       return;
     }
     const timer = runDlProgress('pdf');
@@ -465,6 +475,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setHeaderConfig(brandedDefaults.header);
       setFooterConfig(brandedDefaults.footer);
     }
+    // Fresh load — no unsaved changes yet (the editor re-seed doesn't fire onChange).
+    setDirty(false);
   }, [open, existing]);
 
   // Keep our names list in sync with the parent — picks up new entries
@@ -560,6 +572,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
         const newId = r.data?.data?.id;
         if (newId) setEditingId(newId);
       }
+      setDirty(false);   // saved — download/export now reflect the current content
       return true;
     } catch (e: any) {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
@@ -925,7 +938,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     {/* DOCX only — Stage 2 exports the editable Word file. The
                         full combined PDF preview lives on the Library list as
                         "Download Draft PDF". */}
-                    <button type="button" className="tdw-editor-btn" onClick={() => void downloadDocx()} title={editingId ? 'Download as DOCX' : 'Save the trade document first'}>
+                    <button type="button" className="tdw-editor-btn" onClick={() => void downloadDocx()} title={existing?.id ? 'Download as DOCX' : 'Save the trade document draft first'}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                       Download DOCX
                     </button>
@@ -1039,12 +1052,6 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('outdent')} title="Outdent">⇤</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('indent')}  title="Indent">⇥</button>
                   <span className="tdw-toolbar-sep" />
-                  <button
-                    type="button" className="tdw-toolbar-btn"
-                    title="Insert horizontal line"
-                    onMouseDown={e => { e.preventDefault(); stashSelection(); }}
-                    onClick={() => setHrPickerOpen(true)}
-                  >—</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('undo')} title="Undo">↶</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={() => exec('redo')} title="Redo">↷</button>
                   <button type="button" className="tdw-toolbar-btn" onClick={clearFormatting} title="Clear formatting">🅣</button>
@@ -1141,12 +1148,6 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
           open={tablePickerOpen}
           onClose={() => setTablePickerOpen(false)}
           onInsert={(html) => { insertHtmlAtCaret(html); setTablePickerOpen(false); }}
-        />
-
-        <ClmInsertHrModal
-          open={hrPickerOpen}
-          onClose={() => setHrPickerOpen(false)}
-          onInsert={(html) => { insertHtmlAtCaret(html); setHrPickerOpen(false); }}
         />
 
         {clausePickerOpen && (
@@ -1616,6 +1617,9 @@ const TDW_CSS = `
 [data-bs-theme="dark"] .tdw-checkbox.is-on { background: rgba(8,145,178,.22); border-color: #67e8f9; color: #cffafe; }
 [data-bs-theme="dark"] .tdw-party-hint { color: #94a3b8; }
 [data-bs-theme="dark"] .tdw-editor-shell { background: #0f172a; border-color: rgba(6,182,212,.22); }
+/* The scroll container behind the document page was a hardcoded white (#fff)
+   with no dark override — it showed as a white strip in dark mode. Match canvas. */
+[data-bs-theme="dark"] .tdw-editor-scroll { background: #0f172a; }
 [data-bs-theme="dark"] .tdw-toolbar { background: rgba(8,145,178,.06); border-bottom-color: rgba(6,182,212,.22); }
 [data-bs-theme="dark"] .tdw-toolbar-sel, [data-bs-theme="dark"] .tdw-toolbar-btn { background: #1e293b; border-color: rgba(6,182,212,.22); color: #cbd5e1; }
 [data-bs-theme="dark"] .tdw-toolbar-btn:hover { background: rgba(8,145,178,.14); color: #67e8f9; border-color: rgba(103,232,249,.45); }

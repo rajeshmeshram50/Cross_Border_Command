@@ -287,6 +287,18 @@ class ClmTradeDocumentController extends Controller
             'footer_config' => 'nullable|array',
         ]);
         $data['updated_by'] = $user->id;
+        // If the editor content was edited and saved, the previously-uploaded
+        // Word file no longer matches it. downloadDocx() prefers that stored
+        // file, so it would keep serving the OLD document. Drop the docx_path
+        // here (only when the content actually changed) so the download
+        // regenerates from the edited HTML the user sees in the editor.
+        if (array_key_exists('content', $data) && $data['content'] !== null && $data['content'] !== $row->content) {
+            if ($row->docx_path) {
+                try { Storage::disk('public')->delete($row->docx_path); } catch (\Throwable $e) { /* ignore */ }
+            }
+            $data['docx_path'] = null;
+            $data['docx_original_name'] = null;
+        }
         $row->update($data);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
@@ -436,9 +448,10 @@ class ClmTradeDocumentController extends Controller
         }
         $this->applyDocxHeaderFooter($section, $headerCfg, $footerCfg, $logoAbs);
 
-        $title = trim((string) $row->title) ?: ($row->name ?: 'Trade Document');
-        $section->addTitle(htmlspecialchars($title, ENT_QUOTES), 1);
-        $section->addTextBreak(1);
+        // NB: the document title is NOT prepended to the body — the page-shell
+        // header already identifies the document, and prepending it here made
+        // the title appear as a duplicate heading above the actual content in
+        // the downloaded Word file. The DOCX now mirrors the editor exactly.
 
         $html = trim((string) $row->content);
         if ($html === '') $html = '<p></p>';

@@ -342,6 +342,18 @@ class ClmAgreementController extends Controller
             'footer_config'  => 'nullable|array',
         ]);
         $data['updated_by'] = $user->id;
+        // If the editor content was edited and saved, the previously-uploaded
+        // Word file no longer matches it. downloadDocx() prefers that stored
+        // file, so it would keep serving the OLD document. Drop the docx_path
+        // here (only when the content actually changed) so the download
+        // regenerates from the edited HTML the user sees in the editor.
+        if (array_key_exists('content', $data) && $data['content'] !== null && $data['content'] !== $row->content) {
+            if ($row->docx_path) {
+                try { Storage::disk('public')->delete($row->docx_path); } catch (\Throwable $e) { /* ignore */ }
+            }
+            $data['docx_path'] = null;
+            $data['docx_original_name'] = null;
+        }
         $row->update($data);
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }

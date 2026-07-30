@@ -347,7 +347,14 @@ class ClmBuyerProfileController extends Controller
 
         /* ── 8. Consignees. ── */
         $consignees = Consignee::query()->forUser($user)
-            ->with(['primaryAddress:id,consignee_id,country', 'customer:id,customer_code'])
+            // `customers` is the many-to-many pivot (all customers this consignee
+            // is mapped to); `customer` is just the legacy single primary. The
+            // profile must reflect ALL mapped customers, not only the primary.
+            ->with([
+                'primaryAddress:id,consignee_id,country',
+                'customer:id,customer_code',
+                'customers:id,customer_code',
+            ])
             ->orderBy('id')
             ->get();
 
@@ -375,6 +382,19 @@ class ClmBuyerProfileController extends Controller
                 'sr'      => $sr,
                 'id'      => $c->consignee_code ?: ('CS-' . str_pad((string) $c->id, 3, '0', STR_PAD_LEFT)),
                 'cid'     => optional($c->customer)->customer_code ?: ('C-' . str_pad((string) $c->customer_id, 3, '0', STR_PAD_LEFT)),
+                // All mapped customers (codes) via the M2M pivot — falls back to
+                // the single primary when the pivot has no rows.
+                'cids'    => (function () use ($c) {
+                    $codes = $c->customers
+                        ->map(fn ($cu) => $cu->customer_code ?: ('C-' . str_pad((string) $cu->id, 3, '0', STR_PAD_LEFT)))
+                        ->filter()
+                        ->values()
+                        ->all();
+                    if (empty($codes) && $c->customer_id) {
+                        $codes = [optional($c->customer)->customer_code ?: ('C-' . str_pad((string) $c->customer_id, 3, '0', STR_PAD_LEFT))];
+                    }
+                    return $codes;
+                })(),
                 'db_id'   => (int) $c->id,
                 'name'    => $c->company_name,
                 'seg'     => trim((string) $c->segment),

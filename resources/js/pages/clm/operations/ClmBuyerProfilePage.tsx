@@ -30,7 +30,7 @@ type BuyerRow = {
 };
 
 type ConsRow = {
-  sr: number; id: string; cid: string; db_id?: number; name: string; seg: string; sc: string; sb: string;
+  sr: number; id: string; cid: string; cids?: string[]; db_id?: number; name: string; seg: string; sc: string; sb: string;
   country: string; same_as_customer?: boolean; kyc: Prog; dd: Prog; tl: Prog; td: Prog; agr: Prog; ship: number;
 };
 
@@ -1512,7 +1512,10 @@ export default function ClmBuyerProfilePage() {
                         // 1 when it actually resolves to a real customer, else 0 (an
                         // orphaned consignee whose customer no longer exists). Derived
                         // the same way the popup resolves the customer, so badge == popup.
-                        const custCount = (r.cid && bpBuyerData.some((b) => b.id === r.cid)) ? 1 : 0;
+                        // All customers this consignee is mapped to (M2M), filtered
+                        // to those present in the current buyer list scope.
+                        const custIds = (r.cids && r.cids.length ? r.cids : (r.cid ? [r.cid] : []));
+                        const custCount = custIds.filter((id) => bpBuyerData.some((b) => b.id === id)).length;
                         return (
                           <tr key={r.id} className="bp-buyer-row" style={{ background: bg, borderBottom: '1px solid rgba(6,182,212,.07)', cursor: 'pointer', transition: 'background .12s' }}
                             onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(224,249,253,.7)'; }}
@@ -1584,11 +1587,14 @@ export default function ClmBuyerProfilePage() {
         />
       )}
 
-      {/* Customer-for-consignee popup — the single customer this consignee maps to. */}
+      {/* Customer-for-consignee popup — ALL customers this consignee is mapped
+          to (many-to-many), filtered to the current buyer list scope. */}
       {custForCons && (
         <ConsigneeCustomerModal
           consignee={custForCons}
-          customer={bpBuyerData.find((b) => b.id === custForCons.cid) ?? null}
+          customers={((custForCons.cids && custForCons.cids.length ? custForCons.cids : (custForCons.cid ? [custForCons.cid] : []))
+            .map((id) => bpBuyerData.find((b) => b.id === id))
+            .filter((b): b is BuyerRow => !!b))}
           onClose={() => setCustForCons(null)}
         />
       )}
@@ -1737,7 +1743,7 @@ function BuyerConsigneesModal({ buyer, rows, onClose }: { buyer: BuyerRow; rows:
  * shows that single customer's identity + compliance in the customer column
  * layout (the mirror of the consignees-for-buyer popup).
  * ────────────────────────────────────────────────────────────────────────── */
-function ConsigneeCustomerModal({ consignee, customer, onClose }: { consignee: ConsRow; customer: BuyerRow | null; onClose: () => void }) {
+function ConsigneeCustomerModal({ consignee, customers, onClose }: { consignee: ConsRow; customers: BuyerRow[]; onClose: () => void }) {
   useScrollLock(true);   // freeze background page scroll while the modal is open
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -1758,8 +1764,8 @@ function ConsigneeCustomerModal({ consignee, customer, onClose }: { consignee: C
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
             </div>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.01em' }}>Customer</div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.86)', marginTop: 2 }}>The buyer this consignee is mapped to, with its compliance readiness.</div>
+              <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.01em' }}>{customers.length > 1 ? 'Customers' : 'Customer'}</div>
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,.86)', marginTop: 2 }}>{customers.length > 1 ? 'The buyers this consignee is mapped to, with their compliance readiness.' : 'The buyer this consignee is mapped to, with its compliance readiness.'}</div>
             </div>
           </div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -1783,10 +1789,10 @@ function ConsigneeCustomerModal({ consignee, customer, onClose }: { consignee: C
               </tr>
             </thead>
             <tbody>
-              {!customer ? (
-                <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>Customer <strong>{consignee.cid}</strong> is not in the current list scope.</td></tr>
-              ) : (
-                <tr style={{ background: '#fff', borderBottom: '1px solid rgba(6,182,212,.07)' }}>
+              {customers.length === 0 ? (
+                <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', fontSize: 12.5, color: '#64748b' }}>None of this consignee's mapped customers are in the current list scope.</td></tr>
+              ) : customers.map((customer) => (
+                <tr key={customer.id} style={{ background: '#fff', borderBottom: '1px solid rgba(6,182,212,.07)' }}>
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><span style={{ fontSize: '10px', fontWeight: 700, color: '#0891b2', background: 'rgba(6,182,212,.08)', border: '1px solid rgba(6,182,212,.18)', padding: '2px 7px', borderRadius: '5px', whiteSpace: 'nowrap', display: 'inline-block' }}>{customer.id}</span></td>
                   <td style={{ padding: '9px 11px', fontSize: '12px', fontWeight: 700, color: '#0c4a6e', whiteSpace: 'nowrap' }}>{customer.name}</td>
                   <td style={{ padding: '9px 11px', textAlign: 'center', minWidth: '140px' }}>
@@ -1800,14 +1806,14 @@ function ConsigneeCustomerModal({ consignee, customer, onClose }: { consignee: C
                   <td style={{ padding: '9px 11px', textAlign: 'center' }}><NumBadge n={customer.ship} /></td>
                   <ProgCell obj={customer.agr} />
                 </tr>
-              )}
+              ))}
             </tbody>
           </table>
         </div>
 
         {/* Footer */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', background: 'linear-gradient(110deg,#f0fdff,#e8fafb)', borderTop: '1.5px solid #A5F3FC', flexShrink: 0 }}>
-          <span style={{ fontSize: '11px', fontWeight: 600, color: '#0891b2' }}>Consignee <strong>{consignee.id}</strong> → Customer <strong>{consignee.cid}</strong></span>
+          <span style={{ fontSize: '11px', fontWeight: 600, color: '#0891b2' }}>Consignee <strong>{consignee.id}</strong> → <strong>{customers.length}</strong> mapped customer{customers.length === 1 ? '' : 's'}</span>
         </div>
       </div>
     </div>,
