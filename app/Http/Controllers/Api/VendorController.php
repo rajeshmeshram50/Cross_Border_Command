@@ -1552,3 +1552,4 @@ class VendorController extends Controller
         return response()->json($bundle);
     }
 }
+ 
