@@ -128,12 +128,6 @@ function MasterPageInner({
   // the "Calendar vs If Joining" style branches in the Leave Plan form.
   const [radioValues, setRadioValues] = useState<Record<string, string>>({});
 
-  // "Manage Banks" — legal_entities-only focused modal that lets the user view
-  // and edit just the bank accounts attached to a row, without opening the
-  // full entity edit form.
-  const [banksMgrOpen, setBanksMgrOpen] = useState(false);
-  const [banksMgrTarget, setBanksMgrTarget] = useState<any | null>(null);
-
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const clearFieldError = (name: string) => {
     setFieldErrors(prev => {
@@ -417,7 +411,8 @@ function MasterPageInner({
     setEditingId(row.id);
     setViewOnly(readonly);
     // Hydrate sublist state from the row — backend returns child arrays inline
-    // (e.g. legal_entities → row.banks), so the form pre-fills with existing items.
+    // (e.g. row.banks for a bank-accounts sublist), so the form pre-fills with
+    // any existing items.
     const init: Record<string, any[]> = {};
     for (const f of cfg.fields) {
       if (f.t === 'sublist' && f.n) {
@@ -1591,14 +1586,6 @@ function MasterPageInner({
               disabled={blockedByRank || isSystemRow || inUseRow}
               onClick={() => handleDeleteClick(info.row.original)}
             />}
-            {cfg.slug === 'legal_entities' && caps.edit && (
-              <ActionBtn
-                title="Manage Bank Accounts"
-                icon="ri-bank-line"
-                color="primary"
-                onClick={() => { setBanksMgrTarget(info.row.original); setBanksMgrOpen(true); }}
-              />
-            )}
             {cfg.slug === 'departments' ? (
               <ActionBtn
                 title="Employee Tree"
@@ -1907,7 +1894,6 @@ function MasterPageInner({
               {cfg.slug === 'roles' ? 'Role Master'
                 : cfg.slug === 'kpis' ? 'KPI Master'
                 : cfg.slug === 'assets' ? 'Asset Master'
-                : cfg.slug === 'legal_entities' ? 'Legal Entities'
                 : cfg.slug === 'haz_class' ? 'Hazard Classifications'
                 : cfg.slug === 'uom' ? 'Units of Measurement'
                 : cfg.slug === 'hsn_codes' ? 'HSN Codes'
@@ -1925,8 +1911,6 @@ function MasterPageInner({
                 ? 'Define performance targets, role assignments and tracking criteria for KPIs'
                 : cfg.slug === 'assets'
                 ? 'Track company equipment, vendors, warranties and depreciation across the organisation'
-                : cfg.slug === 'legal_entities'
-                ? 'Manage all legal entities — entity details, logo, bank accounts & address'
                 : cfg.slug === 'haz_class'
                 ? 'Manage GHS/UN hazard classes used to tag products requiring special handling'
                 : cfg.slug === 'uom'
@@ -2305,181 +2289,12 @@ function MasterPageInner({
         department={treeTarget}
       />
 
-      <BanksManagerModal
-        open={banksMgrOpen}
-        onClose={() => { setBanksMgrOpen(false); setBanksMgrTarget(null); }}
-        entity={banksMgrTarget}
-        bankField={cfg.fields.find(f => f.t === 'sublist' && f.n === 'banks') || null}
-        onSaved={(updatedRow) => {
-          setRecords(prev => prev.map(r => r.id === updatedRow.id ? updatedRow : r));
-          setBanksMgrTarget(updatedRow);
-        }}
-      />
-
     </>
   );
 }
 
 
 
-/* ────────────────────────────────────────────────────────────────────
- * Banks Manager modal — focused view of just the bank accounts for one
- * legal entity. Opens from the bank-icon action button in the row. Lets
- * the user inspect existing banks and add/edit/remove them without
- * touching the rest of the entity form.
- * ──────────────────────────────────────────────────────────────────── */
-function BanksManagerModal({
-  open,
-  onClose,
-  entity,
-  bankField,
-  onSaved,
-}: {
-  open: boolean;
-  onClose: () => void;
-  entity: any | null;
-  bankField: FieldDef | null;
-  onSaved: (updatedRow: any) => void;
-}) {
-  const toast = useToast();
-  const [banks, setBanks] = useState<any[]>([]);
-  const [saving, setSaving] = useState(false);
-
-  // Re-hydrate every time a different entity is opened.
-  useEffect(() => {
-    if (entity) {
-      setBanks(Array.isArray(entity.banks) ? entity.banks : []);
-    } else {
-      setBanks([]);
-    }
-  }, [entity]);
-
-  // Auto-persist — every add/edit/delete in the InlineSublist immediately
-  // PUTs the full banks array back to the server. The user gets a single,
-  // consistent place ("the cards") that always reflects DB state — no extra
-  // outer "Save" button required and no chance of leaving unsaved changes.
-  const persistBanks = async (nextBanks: any[]) => {
-    if (!entity) return;
-    setSaving(true);
-    try {
-      const payload: Record<string, any> = {};
-      const fields = [
-        'entity_name', 'legal_name', 'cin', 'date_of_incorporation',
-        'type_of_business', 'sector', 'nature_of_business', 'country_id',
-        'address_line1', 'address_line2', 'city', 'state_id', 'zip_code',
-        'currency_id', 'financial_year', 'status',
-      ];
-      for (const k of fields) {
-        if (entity[k] != null) payload[k] = entity[k];
-      }
-      payload.banks = nextBanks;
-
-      const { data } = await api.put(`/master/legal_entities/${entity.id}`, payload);
-      // Re-sync from the server response so newly-created banks pick up their ids.
-      setBanks(Array.isArray(data.banks) ? data.banks : []);
-      onSaved(data);
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Could not save bank details';
-      toast.error('Error', msg);
-      // Revert local state to last server-confirmed banks.
-      setBanks(Array.isArray(entity.banks) ? entity.banks : []);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!entity || !bankField) return null;
-
-  const entityLabel = entity.entity_name || entity.legal_name || `#${entity.id}`;
-
-  return (
-    <Modal isOpen={open} toggle={() => { if (!saving) onClose(); }} centered size="lg" backdrop="static">
-      <div style={{ padding: '20px 22px 14px', borderBottom: '1px solid var(--vz-border-color)' }}>
-        <div className="d-flex align-items-start justify-content-between gap-3">
-          <div className="d-flex align-items-center gap-3 min-w-0">
-            <span
-              className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
-              style={{
-                width: 40, height: 40,
-                borderRadius: 10,
-                background: 'linear-gradient(135deg, #405189 0%, #6691e7 100%)',
-                color: '#ffffff',
-                boxShadow: '0 4px 10px rgba(64,81,137,0.28), inset 0 1px 0 rgba(255,255,255,0.18)',
-              }}
-            >
-              <i className="ri-bank-line" style={{ fontSize: 18 }} />
-            </span>
-            <div className="min-w-0">
-              <h5 className="mb-0 fw-bold" style={{ color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
-                Bank Accounts
-              </h5>
-              <small className="text-muted" style={{ fontSize: 12 }}>{entityLabel}</small>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => { if (!saving) onClose(); }}
-            aria-label="Close"
-            disabled={saving}
-            className="d-inline-flex align-items-center justify-content-center"
-            style={{
-              width: 30, height: 30,
-              borderRadius: 8,
-              border: '1px solid var(--vz-border-color)',
-              background: 'var(--vz-card-bg)',
-              color: 'var(--vz-secondary-color)',
-              cursor: saving ? 'not-allowed' : 'pointer',
-              flexShrink: 0,
-              opacity: saving ? 0.5 : 1,
-            }}
-          >
-            <i className="ri-close-line" style={{ fontSize: 15 }} />
-          </button>
-        </div>
-      </div>
-      <ModalBody className="px-4 py-3" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-        {bankField.subDesc && (
-          <div className="text-muted mb-3" style={{ fontSize: 12.5 }}>{bankField.subDesc}</div>
-        )}
-        <InlineSublist
-          field={bankField}
-          value={banks}
-          viewOnly={saving}
-          onChange={(next) => {
-            // Optimistic update so the new card shows immediately, then persist.
-            setBanks(next);
-            persistBanks(next);
-          }}
-        />
-      </ModalBody>
-      <ModalFooter className="px-4 py-3 d-flex align-items-center justify-content-between flex-wrap gap-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
-        <small className="d-inline-flex align-items-center gap-2" style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)' }}>
-          {saving ? (
-            <>
-              <Spinner size="sm" style={{ width: 12, height: 12 }} />
-              <span>Saving…</span>
-            </>
-          ) : (
-            <>
-              <i className="ri-checkbox-circle-fill" style={{ color: '#0ab39c', fontSize: 13 }} />
-              <span>{banks.length} bank account{banks.length === 1 ? '' : 's'} · changes auto-save</span>
-            </>
-          )}
-        </small>
-        <Button
-          type="button"
-          color="primary"
-          onClick={onClose}
-          disabled={saving}
-          className="d-inline-flex align-items-center gap-2"
-        >
-          <i className="ri-check-line" />
-          Done
-        </Button>
-      </ModalFooter>
-    </Modal>
-  );
-}
 
 /* ────────────────────────────────────────────────────────────────────
  * Employee Tree modal — opens from the Department master's row action

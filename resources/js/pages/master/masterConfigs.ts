@@ -26,7 +26,7 @@ export type FieldDef = {
   optionalLabel?: string;   // small uppercase tag next to label, e.g. "OPTIONAL" or "MANDATORY"
   icon?: string;            // remix icon class to render before the label (used by file fields)
   // Sublist fields (t: 'sublist') — render a card-list of child rows inside
-  // the parent form (e.g. legal_entities → bank accounts).
+  // the parent form (e.g. a branch's bank accounts).
   subFields?: FieldDef[];   // fields shown in the sub-modal for each item
   subSingular?: string;     // singular label for the sub-modal title (e.g. 'Bank Detail')
   subDesc?: string;         // small subtitle under the sublist section header
@@ -169,87 +169,6 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
-  legal_entities: {
-    key: 'legal_entities', slug: 'legal_entities', title: 'Legal Entities', titleSingular: 'Legal Entity',
-    icon: 'ri-bank-line', iconColor: 'primary', iconBg: 'primary',
-    desc: 'Manage all legal entities — entity details, logo, bank accounts & address',
-    cat: 'Identity & Entity',
-    fields: [
-      // — IDENTITY ----------------------------------------------------
-      { sec: 'Identity', n: '', l: '', t: 'text' },
-      { n: 'logo_path', l: 'Logo', t: 'file', accept: '.png,.jpg,.jpeg', maxMb: 2, icon: 'ri-image-line', optionalLabel: 'OPTIONAL' },
-      { n: 'country_id', l: 'Country', t: 'select', r: true, ref: 'countries', refL: 'name', p: '— Select —' },
-      { n: 'entity_name', l: 'Entity Name', t: 'text', r: true, p: 'e.g. Inorbvict Healthcare India Pvt Ltd' },
-      { n: 'legal_name', l: 'Legal Name', t: 'text', r: true, p: 'Legal name as registered' },
-      { n: 'cin', l: 'CIN', t: 'text', r: true, p: 'e.g. U85100PN2014PTC152252' },
-      { n: 'date_of_incorporation', l: 'Date of Incorporation', t: 'date', r: true },
-      { n: 'type_of_business', l: 'Type of Business', t: 'select', r: true, p: '— Select —',
-        opts: ['Manufacturing', 'Trading', 'Services', 'IT / ITeS', 'Healthcare', 'Construction', 'Logistics', 'Retail', 'Education', 'Hospitality', 'Agriculture', 'Other'] },
-      { n: 'sector', l: 'Sector', t: 'select', r: true, p: '— Select —',
-        opts: ['Healthcare', 'IT', 'Finance', 'Manufacturing', 'Retail', 'Education', 'Real Estate', 'Logistics', 'Agriculture', 'Energy', 'Telecom', 'Hospitality', 'Other'] },
-      { n: 'nature_of_business', l: 'Nature of Business', t: 'select', p: '— Select —',
-        opts: ['Private Limited', 'Public Limited', 'LLP', 'Partnership', 'Proprietorship', 'OPC (One Person Company)', 'Section 8 Company', 'Trust', 'Society', 'Other'] },
-      { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
-
-      // — ADDRESS -----------------------------------------------------
-      { sec: 'Address', n: '', l: '', t: 'text' },
-      { n: 'address_line1', l: 'Address Line 1', t: 'text', r: true, p: 'Office address' },
-      { n: 'address_line2', l: 'Address Line 2', t: 'text', p: 'Street, locality' },
-      { n: 'city', l: 'City', t: 'text', r: true, p: 'e.g. Pune' },
-      { n: 'state_id', l: 'State', t: 'select', r: true, ref: 'states', refL: 'name', p: '— Select —', cascadeFrom: 'country_id' },
-      { n: 'zip_code', l: 'Zip Code', t: 'text', r: true, p: 'e.g. 411045' },
-
-      // — FINANCIAL ---------------------------------------------------
-      { sec: 'Financial', n: '', l: '', t: 'text' },
-      { n: 'currency_id', l: 'Currency', t: 'select', ref: 'currencies', refL: 'name', p: '— Select —' },
-      { n: 'financial_year', l: 'Financial Year', t: 'select', p: '— Select —',
-        opts: ['April - March', 'January - December', 'July - June'] },
-
-      // — BANK DETAILS (sublist — saved alongside the entity) ---------
-      { sec: 'Bank Details', n: '', l: '', t: 'text' },
-      { n: 'banks', l: 'Bank Accounts', t: 'sublist', r: true,
-        subSingular: 'Bank Detail',
-        subDesc: 'Bank accounts used for payroll & expense tracking',
-        subCardTitleField: 'bank_name',
-        subCardSubtitleField: 'branch_name',
-        subCardLines: ['account_number', 'ifsc_code', 'account_type'],
-        subPrimaryFlagField: 'is_primary',
-        subFields: [
-          // Bug #5 — bank name: letters and name-safe punctuation only, no digits/symbols.
-          { n: 'bank_name', l: 'Bank Name', t: 'text', r: true, p: 'e.g. HDFC Bank',
-            pattern: "^[A-Za-z][A-Za-z .&'()\\-]*$", patternMessage: 'Bank Name may only contain letters, spaces and . & \' ( ) -' },
-          // Bug #3 (mandatory) + #6 (no numbers/special) — branch name.
-          { n: 'branch_name', l: 'Branch Name', t: 'text', r: true, p: 'e.g. HINJAWADI branch',
-            pattern: "^[A-Za-z][A-Za-z .&'()\\-]*$", patternMessage: 'Branch Name may only contain letters, spaces and . & \' ( ) -' },
-          // Bug #1 (validation) + #7 (numeric only) — account number: 9–18 digits.
-          { n: 'account_number', l: 'Account Number', t: 'text', r: true, p: 'Full account number',
-            pattern: '^[0-9]{9,18}$', patternMessage: 'Account Number must be 9 to 18 digits (numbers only).' },
-          // Bug #4 (mandatory) + #2 (format) — IFSC code: 4 letters + 0 + 6 alphanumerics.
-          { n: 'ifsc_code', l: 'IFSC Code', t: 'text', r: true, p: 'e.g. HDFC0000001',
-            pattern: '^[A-Za-z]{4}0[A-Za-z0-9]{6}$', patternMessage: 'Enter a valid 11-character IFSC code, e.g. HDFC0000001.' },
-          { n: 'account_type', l: 'Account Type', t: 'select', opts: ['Current', 'Savings'] },
-          { n: 'is_primary', l: 'Primary Account', t: 'select', opts: [{ value: 'No', label: 'No' }, { value: 'Yes', label: 'Yes' }] },
-        ],
-      },
-    ],
-    cols: ['entity_name', 'legal_name', 'cin', 'country_id', 'type_of_business', 'sector', 'status'],
-    colL: ['Entity Name', 'Legal Name', 'CIN', 'Country', 'Type of Business', 'Sector', 'Status'],
-    uFields: ['entity_name', 'cin'],
-    data: [],
-    kpis: [
-      { label: 'Total Entities',    icon: 'ri-bank-line',           gradient: 'linear-gradient(135deg,#405189 0%,#6691e7 100%)', compute: r => r.length },
-      { label: 'Active',            icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
-      { label: 'Inactive',          icon: 'ri-close-circle-line',   gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'inactive').length },
-      { label: 'Countries Covered', icon: 'ri-global-line',         gradient: 'linear-gradient(135deg,#3577f1 0%,#6da7ff 100%)', compute: r => new Set(r.map((x:any) => x.country_id).filter(Boolean)).size },
-      { label: 'Sectors',           icon: 'ri-briefcase-4-line',    gradient: 'linear-gradient(135deg,#7c5cfc 0%,#a993fd 100%)', compute: r => new Set(r.map((x:any) => x.sector).filter(Boolean)).size },
-    ],
-    wtd: [
-      { icon: 'ri-bank-line',         title: 'Add Legal Entity',    desc: 'CIN, type of business, sector' },
-      { icon: 'ri-image-line',        title: 'Upload Company Logo', desc: 'Used on all documents & reports' },
-      { icon: 'ri-map-pin-line',      title: 'Complete Address',    desc: 'Registered office address' },
-      { icon: 'ri-coins-line',        title: 'Set Currency & FY',   desc: 'e.g. INR · April - March' },
-    ],
-  },
 
   organization_types: {
     key: 'organization_types', slug: 'organization_types', title: 'Organization Types', titleSingular: 'Organization Type',

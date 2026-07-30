@@ -82,7 +82,6 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Designations',      'slug' => 'master.designations',      'icon' => 'BadgeCheck',     'description' => 'Job titles on HR docs and letters'],
                 ['name' => 'Employees',         'slug' => 'master.employees',         'icon' => 'Users',          'description' => 'Employee master with login provisioning'],
                 ['name' => 'KPIs',              'slug' => 'master.kpis',              'icon' => 'Target',         'description' => 'KPI catalogue mapped to roles'],
-                ['name' => 'Legal Entities',    'slug' => 'master.legal_entities',    'icon' => 'Scale',          'description' => 'Registered legal entities + bank accounts'],
             ],
             'master.geography' => [
                 ['name' => 'Countries',         'slug' => 'master.countries',         'icon' => 'Globe2',         'description' => 'Country master for trade documents'],
