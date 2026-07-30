@@ -1310,6 +1310,15 @@ class SalesLeadController extends Controller
             $rows->pluck('product_id')->filter()->unique()->values()->all(),
         );
 
+        // Lead-product ids that already have a SHARED PRICE (Stage 4). A shared
+        // price means the customer was quoted — the mapping is locked from
+        // unmapping just like a sourcing decision. Batched into one query.
+        $sharedPriceIds = LeadProductSharedPrice::query()
+            ->whereIn('lead_product_id', $rows->pluck('id'))
+            ->distinct()
+            ->pluck('lead_product_id')
+            ->flip();
+
         $mapped = $rows->map(fn ($r) => [
             'id'               => $r->id,
             'product_id'       => $r->product_id,
@@ -1330,6 +1339,8 @@ class SalesLeadController extends Controller
             'procurement_done' => (bool) $r->procurement_done,
             'procurement_id'   => $procByLeadProduct[$r->id] ?? null,
             'vendor_count'     => (int) ($vendorCountByProduct[$r->product_id] ?? 0),
+            // True ⇒ a price was already shared for this product → unmap blocked.
+            'has_shared_price' => $sharedPriceIds->has($r->id),
             'created_at'       => $r->created_at,
         ]);
 
@@ -1873,6 +1884,27 @@ class SalesLeadController extends Controller
                     . '. Remove the product from ' . (count($usedIn) > 1 ? 'those documents' : 'that document')
                     . ' first, then unmap it.',
                 'used_in' => $usedIn,
+            ], 422);
+        }
+
+        /* Also block once a sourcing decision has been made. A product may be
+         * unmapped only while it is still "not set" in Product Sourcing; once
+         * it is marked Sourcing Required or Sourcing Not Required it has entered
+         * the procurement flow and its directory mapping must stay put. */
+        if (!empty($row->sourcing_status)) {
+            return response()->json([
+                'status'  => false,
+                'message' => "You can't unmap this product — a sourcing decision has been set for it. "
+                    . 'Unmapping is only allowed before the product is sent for sourcing.',
+            ], 422);
+        }
+
+        /* Block once a price has been shared with the customer (Stage 4). The
+         * shared price references this mapping, so it must stay put. */
+        if (LeadProductSharedPrice::where('lead_product_id', $row->id)->exists()) {
+            return response()->json([
+                'status'  => false,
+                'message' => "You can't unmap this product — a price has already been shared for it.",
             ], 422);
         }
 

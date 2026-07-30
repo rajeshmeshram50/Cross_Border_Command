@@ -40,7 +40,6 @@ const NOTICE_PERIOD_OPTIONS = [
   { value: CUSTOM_NOTICE_VALUE, label: 'Set Custom Notice Period…' },
 ];
 
-const SHIFT_OPTIONS         = ['General Shift','Morning Shift','Evening Shift','Night Shift','Flexible'].map(v => ({ value: v, label: v }));
 const WEEKLY_OFF_OPTIONS    = ['Week Off Policy','Saturday & Sunday','Sunday Only','Rotational'].map(v => ({ value: v, label: v }));
 const TIME_TRACKING_OPTIONS = ['Manual','Biometric'].map(v => ({ value: v, label: v }));
 const PENALIZATION_OPTIONS  = ['Tracking Policy','Strict Policy','Lenient Policy','No Penalty'].map(v => ({ value: v, label: v }));
@@ -657,16 +656,21 @@ export default function HrEmployees() {
   // built-in defaults only when the branch has none. Always include the
   // employee's currently-saved shift so editing never blanks an old value.
   const shiftSelectOptions = useMemo(() => {
-    const base = branchShiftOptions.length ? branchShiftOptions : SHIFT_OPTIONS;
+    // Branch-configured shifts are the ONLY source — no hardcoded fallback, so
+    // an unconfigured branch shows an empty list (with a hint) rather than
+    // misleading legacy defaults.
+    const base = [...branchShiftOptions];
     if (eShift && !base.some(o => o.value === eShift)) {
-      // The saved shift isn't in the branch's configured list (e.g. an older
-      // hardcoded value). Keep it so editing doesn't blank it, but flag it as
-      // the current/legacy value so it's not mistaken for a branch shift.
-      const suffix = branchShiftOptions.length ? ' (current)' : '';
-      return [{ value: eShift, label: `${eShift}${suffix}` }, ...base];
+      // Keep the employee's already-saved shift so editing never blanks it,
+      // but flag it as the current/legacy value — it's not a branch shift.
+      return [{ value: eShift, label: `${eShift} (current)` }, ...base];
     }
     return base;
   }, [branchShiftOptions, eShift]);
+  // Placeholder doubles as a hint when the branch has no shifts configured yet.
+  const shiftPlaceholder = branchShiftOptions.length === 0
+    ? 'No shifts configured for this branch'
+    : 'Select shift';
   const [eWeeklyOff, setEWeeklyOff]              = useState('');
   const [eAttendanceNumber, setEAttendanceNumber]= useState('');
   const [eOvertime, setEOvertime]                = useState('');
@@ -3658,7 +3662,7 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Shift<span className="req">*</span></label>
-                      <MasterSelect value={eShift} onChange={(v) => { setEShift(v); clearEErr('shift'); }} options={shiftSelectOptions} placeholder="Select shift" invalid={!!eErrors.shift} />
+                      <MasterSelect value={eShift} onChange={(v) => { setEShift(v); clearEErr('shift'); }} options={shiftSelectOptions} placeholder={shiftPlaceholder} invalid={!!eErrors.shift} />
                       {eErrors.shift && <small className="emp-err">{eErrors.shift}</small>}
                     </Col>
                     <Col md={4}>

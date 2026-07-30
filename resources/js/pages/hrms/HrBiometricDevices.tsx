@@ -7,7 +7,8 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import Swal from 'sweetalert2';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
-import DataTable, { IdCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionCell, IdCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import '../../../css/recruitment.css';
 
 interface Terminal {
   id: number;
@@ -155,14 +156,13 @@ export default function HrBiometricDevices() {
       id: '__actions',
       enableSorting: false,
       meta: { align: 'center', width: '8%' },
+      /* Shared <ActionCell> (.dt-act) — the Customer list's action button, so
+         the column matches every other module instead of using reactstrap's
+         soft-primary / soft-danger squares. */
       cell: info => (
         <div className="d-flex gap-1 justify-content-center">
-          <Button size="sm" color="soft-primary" onClick={() => openEdit(info.row.original)} title="Edit">
-            <i className="ri-pencil-line"></i>
-          </Button>
-          <Button size="sm" color="soft-danger" onClick={() => handleDelete(info.row.original)} title="Remove">
-            <i className="ri-delete-bin-line"></i>
-          </Button>
+          <ActionCell title="Edit"   icon="ri-pencil-line"     tone="info"   onClick={() => openEdit(info.row.original)} />
+          <ActionCell title="Remove" icon="ri-delete-bin-line" tone="danger" onClick={() => handleDelete(info.row.original)} />
         </div>
       ),
     },
@@ -283,69 +283,63 @@ export default function HrBiometricDevices() {
 
   return (
     <>
-      <Row>
-        <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0">Biometric Devices</h4>
-            <div className="page-title-right">
-              <ol className="breadcrumb m-0">
-                <li className="breadcrumb-item">HR</li>
-                <li className="breadcrumb-item active">Biometric Devices</li>
-              </ol>
-            </div>
-          </div>
-        </Col>
-      </Row>
-
-      <Row>
-        <Col xs={12}>
-          {/* Shared list table (components/ui/DataTable) — the search box,
-              sortable headers and the rows-per-page pager come from the
-              component; the Import/Add buttons ride in its toolbar. Search
-              stays controlled because /device-terminals filters server-side. */}
-          <DataTable<Terminal>
-            data={items}
-            columns={columns}
-            serial
-            accent="violet"
-            autoFitRows
-            minWidth={1250}
-            loading={loading}
-            searchValue={search}
-            onSearchChange={setSearch}
-            searchPlaceholder="Search serial or name…"
-            emptyMessage={
-              <>
-                <i className="ri-fingerprint-line display-6 d-block mb-2" style={{ opacity: .4 }} />
-                No biometric devices registered yet
-              </>
-            }
-            toolbarActions={
-              <>
-                <Button color="soft-primary" className="btn-label waves-effect rounded-pill" onClick={openImport}>
-                  <i className="ri-upload-2-line label-icon align-middle fs-16 me-2"></i>
-                  Import Punches
-                </Button>
-                <Button color="primary" className="btn-label waves-effect waves-light rounded-pill" onClick={openNew}>
-                  <i className="ri-add-line label-icon align-middle fs-16 me-2"></i>
-                  Add Device
-                </Button>
-              </>
-            }
-          >
-            {/* Kept from the old CardHeader — the enrollment rule (device User
-                ID must equal the employee's Attendance Number) is the one thing
-                users get wrong, so it stays visible above the rows. */}
-            <div className="d-flex align-items-center gap-2 px-3 py-2" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-              <i className="ri-fingerprint-line fs-4 text-primary"></i>
-              <div>
-                <h5 className="mb-0" style={{ fontSize: 14 }}>eSSL / Biometric Terminals</h5>
-                <small className="text-muted">Register a device Serial No. and bind it to a branch. Enroll each employee on the device with User ID = their Attendance Number.</small>
+      {/* Header strip — the same frm-cstrip hero as Holiday / Broadcast Centre /
+          Document Templates, instead of the bare Velzon page-title + breadcrumb
+          row this page used to have. The eSSL enrollment rule (device User ID
+          must equal the employee's Attendance Number) is the thing users get
+          wrong most often, so it moves up here as the subtitle rather than
+          sitting in a banner between the toolbar and the header row. */}
+      <div className="rec-page">
+        <div className="frm-cstrip mb-3">
+          <span className="frm-cstrip-accent" />
+          <div className="frm-cstrip-left">
+            <div className="frm-cstrip-icon"><i className="ri-fingerprint-line" /></div>
+            <div className="min-w-0">
+              <div className="frm-cstrip-title">eSSL / Biometric Terminals</div>
+              <div className="frm-cstrip-sub">
+                Register a device Serial No. and bind it to a branch. Enroll each employee on the device with User ID = their Attendance Number.
               </div>
             </div>
-          </DataTable>
-        </Col>
-      </Row>
+          </div>
+        </div>
+
+        {/* Shared list table (components/ui/DataTable) — search, sortable
+            headers and the rows-per-page pager come from the component; the
+            Import / Add buttons ride in its toolbar and use the module-standard
+            .rec-btn-ghost / .rec-btn-primary pair (same as Holiday's Import
+            Excel + Add Holiday) rather than reactstrap's blue soft-primary
+            pills, which were the odd one out across HRMS. Search stays
+            controlled because /device-terminals filters server-side. */}
+        <DataTable<Terminal>
+          data={items}
+          columns={columns}
+          serial
+          accent="violet"
+          autoFitRows
+          fitToViewport
+          minWidth={1250}
+          loading={loading}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder="Search serial or name…"
+          emptyMessage={
+            <>
+              <i className="ri-fingerprint-line display-6 d-block mb-2" style={{ opacity: .4 }} />
+              No biometric devices registered yet
+            </>
+          }
+          toolbarActions={
+            <>
+              <button type="button" className="rec-btn-ghost" onClick={openImport}>
+                <i className="ri-upload-2-line" />Import Punches
+              </button>
+              <button type="button" className="rec-btn-primary" onClick={openNew}>
+                <i className="ri-add-line" />Add Device
+              </button>
+            </>
+          }
+        />
+      </div>
 
       <MasterFormStyles />
       <Modal
