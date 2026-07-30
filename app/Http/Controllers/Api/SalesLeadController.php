@@ -1501,6 +1501,16 @@ class SalesLeadController extends Controller
             ], 422);
         }
 
+        // A product must have a sourcing decision (Sourcing Required / Not
+        // Required) before a price can be shared for it — products still
+        // "not set" in Product Sourcing are not yet eligible for pricing.
+        if (empty($row->sourcing_status)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Set a sourcing status (Sourcing Required / Not Required) for this product before sharing a price.',
+            ], 422);
+        }
+
         $data = $request->validate([
             // B12: zero quoted price would render "₹ 0.00" to the customer.
             // gt:0 forces a real number; if a free sample is intended, that
