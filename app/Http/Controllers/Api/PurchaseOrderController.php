@@ -1186,15 +1186,27 @@ class PurchaseOrderController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401);
+        // India country id (once) → decide each supplier's document type: a supplier
+        // whose primary address country is India is DOMESTIC, any other country is
+        // INTERNATIONAL. This drives the Stage-1 gate (the PO's Document Type must
+        // match the supplier's).
+        $indiaId = DB::table('master_countries')->whereRaw('LOWER(name) = ?', ['india'])->value('id');
         $rows = Vendor::query()
             ->forUser($user, $request->integer('branch_id') ?: null)
+            ->with('primaryAddress:id,vendor_id,country_id')
             ->orderBy('company_name')
             ->get(['id', 'vendor_code', 'company_name', 'legal_name'])
-            ->map(fn($v) => [
-                'id' => $v->id,
-                'code' => $v->vendor_code,
-                'name' => $v->company_name ?: $v->legal_name,
-            ]);
+            ->map(function ($v) use ($indiaId) {
+                $cid = optional($v->primaryAddress)->country_id;
+                // No country yet → treat as domestic (the pre-onboarding default).
+                $docType = $cid ? (((int) $cid === (int) $indiaId) ? 'domestic' : 'international') : 'domestic';
+                return [
+                    'id' => $v->id,
+                    'code' => $v->vendor_code,
+                    'name' => $v->company_name ?: $v->legal_name,
+                    'document_type' => $docType,
+                ];
+            });
         return response()->json(['status' => true, 'data' => $rows]);
     }
 

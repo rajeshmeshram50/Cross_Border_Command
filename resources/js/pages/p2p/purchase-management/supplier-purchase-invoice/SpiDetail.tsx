@@ -561,6 +561,15 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
       scrollToFirstError();
       return;
     }
+    // A With-PO invoice can't be dated BEFORE its Purchase Order — the invoice is
+    // raised against the PO, so it can be the PO date or later, never earlier.
+    if (withPo && po?.po_date && invoiceDate < po.po_date) {
+      setErrs(prev => ({ ...prev, invoiceDate: true }));
+      setInvOpen(true);
+      toast.error('Invalid Purchase Invoice Date', `The invoice date can’t be before the PO date (${formatDmy(new Date(po.po_date))}). Pick that date or later.`);
+      scrollToFirstError();
+      return;
+    }
     setSaving(true);
     try {
       // If a new attachment was chosen, upload it; otherwise keep the existing one.
@@ -938,7 +947,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
               <Field label="PURCHASE INVOICE NUMBER" req><input className={`spi-dt-inp ${errs.invoiceNo ? 'is-invalid' : ''}`} value={invoiceNo} onChange={e => { setInvoiceNo(e.target.value); setErrs(x => ({ ...x, invoiceNo: false })); }} placeholder="e.g. INV-2025-001" /></Field>
               {/* Invoice date can be today or any PAST date, never the future
                   (QA #9) — maxDate caps the picker at today. */}
-              <Field label="PURCHASE INVOICE DATE" req><MasterDatePicker value={invoiceDate} onChange={v => { setInvoiceDate(v); setErrs(x => ({ ...x, invoiceDate: false })); }} maxDate={todayIso} invalid={!!errs.invoiceDate} placeholder="Select date" popupClassName="spi-cal" /></Field>
+              <Field label="PURCHASE INVOICE DATE" req><MasterDatePicker value={invoiceDate} onChange={v => { setInvoiceDate(v); setErrs(x => ({ ...x, invoiceDate: false })); }} minDate={withPo && po?.po_date ? po.po_date : undefined} maxDate={todayIso} invalid={!!errs.invoiceDate} placeholder="Select date" popupClassName="spi-cal" /></Field>
               <Field label="PURCHASE INVOICE ATTACHMENT" req>
                 <div className={`spi-dt-file is-clickable ${errs.file ? 'is-invalid' : ''}`} role="button" tabIndex={0} onClick={() => fileRef.current?.click()} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}>
                   <span className="spi-dt-file-txt"><IcoClip /> {file ? file.name : (existingAttach ? (existingAttach.split('/').pop() || 'Attached file') : 'Choose file…')}</span>

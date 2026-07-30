@@ -619,6 +619,10 @@ export default function AddVendorModal(props: {
     'Can’t change this',
     'This supplier is already used in a Purchase Order.',
   );
+  const intlStateCodeToast = () => toast.info(
+    'Not applicable',
+    'State Code is only for Indian (GST) suppliers — it doesn’t apply to an international supplier.',
+  );
   const [city,      setCity]      = useState('');
   const [pincode,   setPincode]   = useState('');
 
@@ -3369,24 +3373,29 @@ export default function AddVendorModal(props: {
                             clearFieldError('state');
                             clearFieldError('stateCode');
                           }}
-                          placeholder={supplierDocType === 'international' && !!country ? 'Not applicable (international)' : (country ? 'Select State' : 'Select country first')}
+                          placeholder={country ? 'Select State' : 'Select country first'}
                           options={stateOpts}
-                          disabled={!country || stateLocked || (supplierDocType === 'international' && !!country)}
+                          disabled={!country || stateLocked}
                         />
                       </LockField>
                     </Field>
+                    {/* State Code is an Indian GST construct (2-digit GST state code).
+                        Shown for every supplier, but for a non-India (international)
+                        one it's disabled with a "Not applicable" placeholder + a toast
+                        on click. The State field itself stays available. */}
                     <Field label="State Code" required={!(supplierDocType === 'international' && !!country)} error={fieldErrors.stateCode}>
                       {/* Derived from the selected State — read-only so it can't drift
-                          out of sync with the State (GST state code is fixed per state).
-                          For a non-India (international) supplier there is no GST state
-                          code, so the field is disabled/greyed (GST doesn't apply). */}
-                      <LockField locked={stateLocked} onLockClick={lockToast}>
+                          out of sync with the State (GST state code is fixed per state). */}
+                      <LockField
+                        locked={stateLocked || (supplierDocType === 'international' && !!country)}
+                        onLockClick={() => (stateLocked ? lockToast() : intlStateCodeToast())}
+                      >
                         <input
                           className="avm-input avm-input-ro"
                           placeholder={supplierDocType === 'international' && !!country ? 'Not applicable (international)' : 'Auto-filled from State'}
-                          value={stateCode}
+                          value={supplierDocType === 'international' && !!country ? '' : stateCode}
                           readOnly
-                          disabled={(supplierDocType === 'international' && !!country) || stateLocked}
+                          disabled={stateLocked || (supplierDocType === 'international' && !!country)}
                           tabIndex={-1}
                           title="GST state code — automatically set from the selected State"
                         />

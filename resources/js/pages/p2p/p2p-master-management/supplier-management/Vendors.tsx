@@ -681,11 +681,11 @@ useEffect(() => {
                         <th>Sr No</th>
                         <th>Supplier Code</th>
                         <th>Supplier Name</th>
-                        <th>Category</th>
+                        <th>Supplier Type</th>
                         <th>Segment</th>
                         <th>Supplier State</th>
                         <th>Country</th>
-                        <th>Supplier Type</th>
+                        <th>Trade Type</th>
                         <th>Contact Person</th>
                         <th>Contact No</th>
                         <th className="sl-th-email">Email</th>
@@ -926,7 +926,7 @@ useEffect(() => {
         rows={vendors.map(v => ({ ...v, segment: (v.segments && v.segments.length ? v.segments.join(', ') : (v.segment ?? '')) }))}
         facets={SUPPLIER_FACETS}
         title="Filter Suppliers"
-        typeLabel="Supplier Type"
+        typeLabel="Trade Type"
         theme="purple"
       />
     </>
