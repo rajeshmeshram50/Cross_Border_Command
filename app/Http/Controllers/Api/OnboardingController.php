@@ -193,7 +193,25 @@ class OnboardingController extends Controller
                 'departments'  => Departments::where($tenantScope)->orderBy('name')->get(['id', 'name']),
                 'designations' => \App\Models\Masters\Designations::where($tenantScope)->orderBy('name')->get(['id', 'name']),
                 'roles'        => \App\Models\Masters\Roles::where($tenantScope)->orderBy('name')->get(['id', 'name']),
-                'legal_entities' => \App\Models\Masters\LegalEntities::where($tenantScope)->orderBy('entity_name')->get(['id', 'entity_name', 'city']),
+                /* Legal entities are the client's BRANCHES — the branch carries
+                   the GST/PAN/CIN and bank accounts, so that's what an employee
+                   is hired into. `entity_name` is kept as the label key so the
+                   public form's existing shape is unchanged, and `location`
+                   (city + country) pre-fills the read-only Location field. */
+                'legal_entities' => \App\Models\Branch::where('client_id', $invite->client_id)
+                    // The invite already fixes which branch is hiring, so the
+                    // candidate gets exactly that one and the form shows it
+                    // read-only — they never choose their own legal entity.
+                    ->when($invite->branch_id, fn ($q) => $q->where('id', $invite->branch_id))
+                    ->orderBy('name')
+                    ->get(['id', 'name', 'city', 'country'])
+                    ->map(fn ($b) => [
+                        'id'          => $b->id,
+                        'entity_name' => $b->name,
+                        'city'        => $b->city,
+                        'country'     => $b->country,
+                        'location'    => \App\Http\Controllers\Api\BranchController::composeBranchLocation($b),
+                    ])->values(),
             ],
         ]);
     }
@@ -540,7 +558,14 @@ class OnboardingController extends Controller
             'designation_id'  => ['nullable', 'integer', $tenantFk('master_designations')],
             'primary_role_id' => ['nullable', 'integer', $tenantFk('master_roles')],
             'ancillary_role_id' => ['nullable', 'integer', $tenantFk('master_roles')],
-            'legal_entity_id' => ['nullable', 'integer', $tenantFk('master_legal_entities')],
+            /* Legal entity = one of the inviting client's branches. Not $tenantFk:
+               that helper also allows global rows (client_id IS NULL), which for
+               `branches` would let a candidate post another tenant's branch id. */
+            'legal_entity_id' => [
+                'nullable', 'integer',
+                Rule::exists('branches', 'id')
+                    ->where(fn ($q) => $q->where('client_id', $invite->client_id)->whereNull('deleted_at')),
+            ],
             'location'        => 'nullable|string|max:191',
             // Joining date must be realistic for a NEW joiner — not an absurd
             // historical date (e.g. 1900) and not far in the future. Window:

@@ -145,6 +145,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // feeds the Employee form's Shift dropdown.
     Route::get('/branch-shifts', [BranchController::class, 'shiftOptions']);
 
+    // Legal-entity options (= the client's branches, since a branch holds the
+    // GST/PAN/CIN and bank accounts) for the Employee + Onboarding forms.
+    Route::get('/branch-legal-entities', [BranchController::class, 'legalEntityOptions']);
+
     Route::get('/branches/form-bundle', [BranchController::class, 'formBundle']);
     Route::apiResource('branches', BranchController::class);
 
@@ -596,6 +600,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::delete('/p2p/supplier-purchase-invoices/{id}',                [SupplierPurchaseInvoiceController::class, 'destroy'])->whereNumber('id');
     Route::post  ('/p2p/supplier-purchase-invoices/{id}/sync',           [SupplierPurchaseInvoiceController::class, 'sync'])->whereNumber('id');
     Route::post  ('/p2p/supplier-purchase-invoices/{id}/sync-payment',   [SupplierPurchaseInvoiceController::class, 'syncPayment'])->whereNumber('id');
+    Route::post  ('/p2p/supplier-purchase-invoices/{id}/sync-attachment',[SupplierPurchaseInvoiceController::class, 'syncAttachment'])->whereNumber('id');
     Route::get   ('/p2p/supplier-purchase-invoices/{id}/zoho-pdf',        [SupplierPurchaseInvoiceController::class, 'zohoPdf'])->whereNumber('id');
     // Direct-SPI payments ("Payment Summary Against SPI") — mirrors the PO flow.
     Route::get   ('/p2p/supplier-purchase-invoices/{spi}/payment-summary',     [SpiPaymentController::class, 'summary'])->whereNumber('spi');

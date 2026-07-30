@@ -30,7 +30,6 @@ class MasterController extends Controller
         'roles' => \App\Models\Masters\Roles::class,
         'designations' => \App\Models\Masters\Designations::class,
         'kpis' => \App\Models\Masters\Kpis::class,
-        'legal_entities' => \App\Models\Masters\LegalEntities::class,
         'countries' => \App\Models\Masters\Countries::class,
         'states' => \App\Models\Masters\States::class,
         'state_codes' => \App\Models\Masters\StateCodes::class,
@@ -97,7 +96,6 @@ class MasterController extends Controller
 // would have allowed "TesT" + CIN-A and "Test" + CIN-B as separate
 // rows because the combination differs; users expect the name and
 // CIN to each be globally unique within the tenant scope.
-'legal_entities' => ['fields' => [['n' => 'entity_name', 't' => 'text', 'r' => true], ['n' => 'legal_name', 't' => 'text', 'r' => true], ['n' => 'cin', 't' => 'text', 'r' => true], ['n' => 'date_of_incorporation', 't' => 'date', 'r' => true], ['n' => 'type_of_business', 't' => 'select', 'r' => true, 'opts' => ['Manufacturing', 'Trading', 'Services', 'IT / ITeS', 'Healthcare', 'Construction', 'Logistics', 'Retail', 'Education', 'Hospitality', 'Agriculture', 'Other']], ['n' => 'sector', 't' => 'select', 'r' => true, 'opts' => ['Healthcare', 'IT', 'Finance', 'Manufacturing', 'Retail', 'Education', 'Real Estate', 'Logistics', 'Agriculture', 'Energy', 'Telecom', 'Hospitality', 'Other']], ['n' => 'nature_of_business', 't' => 'select', 'opts' => ['Private Limited', 'Public Limited', 'LLP', 'Partnership', 'Proprietorship', 'OPC (One Person Company)', 'Section 8 Company', 'Trust', 'Society', 'Other']], ['n' => 'country_id', 't' => 'select', 'r' => true, 'ref' => 'countries'], ['n' => 'address_line1', 't' => 'text', 'r' => true], ['n' => 'address_line2', 't' => 'text'], ['n' => 'city', 't' => 'text', 'r' => true], ['n' => 'state_id', 't' => 'select', 'r' => true, 'ref' => 'states'], ['n' => 'zip_code', 't' => 'text', 'r' => true], ['n' => 'currency_id', 't' => 'select', 'ref' => 'currencies'], ['n' => 'financial_year', 't' => 'select', 'opts' => ['April - March', 'January - December', 'July - June']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['entity_name', 'cin', 'legal_name']],
         'countries' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'iso_code', 't' => 'text', 'normalize' => 'upper'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name', 'iso_code']],
         'states' => ['fields' => [['n' => 'country_id', 't' => 'select', 'r' => true, 'ref' => 'countries'], ['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name', 'country_id']],
         'state_codes' => ['fields' => [['n' => 'state_id', 't' => 'select', 'r' => true, 'ref' => 'states'], ['n' => 'state_code', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['state_id', 'state_code']],
@@ -352,9 +350,6 @@ class MasterController extends Controller
 
         $row = $modelClass::create($data);
 
-        // Sync any embedded sublist payloads (e.g. legal_entities → banks).
-        $this->syncSublists($request, $slug, $row);
-
         // Invalidate the form-bundle dropdown caches so this new master shows
         // in the Customer/Product/Vendor/Client/Branch forms immediately.
         MasterBundleCache::bump();
@@ -395,9 +390,6 @@ class MasterController extends Controller
         $data = $this->absorbUploads($request, $modelClass, $slug, $data, $row);
 
         $row->update($data);
-
-        // Sync any embedded sublist payloads (e.g. legal_entities → banks).
-        $this->syncSublists($request, $slug, $row);
 
         // Edited values may feed cached form-bundle dropdowns — refresh them.
         MasterBundleCache::bump();
@@ -627,13 +619,6 @@ class MasterController extends Controller
         $arr['creator_name']      = $row->creator?->name;
         $arr['creator_user_type'] = $row->creator?->user_type;
 
-        // Inline sublists — return embedded child rows alongside the parent so the
-        // edit form can pre-fill them without a second roundtrip. Currently only
-        // legal_entities → banks; add additional cases here as new masters opt in.
-        if ($row instanceof \App\Models\Masters\LegalEntities) {
-            $arr['banks'] = $row->banks()->orderByDesc('is_primary')->orderBy('id')->get()->toArray();
-        }
-
         // GST rates referenced by any product or HSN code are "in use" — the
         // frontend disables their Delete button + shows a tooltip, mirroring the
         // hard guard in destroy() (QA #43). Cheap: gst_percentage has a handful
@@ -646,12 +631,7 @@ class MasterController extends Controller
         return $arr;
     }
 
-    /**
-     * Sync any inline sublist payloads (banks, contacts, etc.) the request may
-     * carry alongside the parent record's own fields. Keeps the parent's API
-     * contract simple: the form posts everything in one JSON payload, the
-     * controller fans it out to the correct child tables transactionally.
-     */
+
     /**
      * Pull any uploaded files off the request, stash them on the
      * public disk, and rewrite the data array so the `_path` column on
@@ -705,69 +685,6 @@ class MasterController extends Controller
         }
 
         return $data;
-    }
-
-    private function syncSublists(Request $request, string $slug, $parent): void
-    {
-        // legal_entities → banks
-        if ($slug === 'legal_entities' && $parent instanceof \App\Models\Masters\LegalEntities) {
-            $banks = $request->input('banks');
-            if (!is_array($banks)) return;
-
-            // At least one bank account is mandatory (bug #9).
-            $nonEmpty = collect($banks)->filter(fn ($b) => is_array($b) && !empty($b['bank_name']))->count();
-            if ($nonEmpty === 0) {
-                throw ValidationException::withMessages(['banks' => ['Please add at least one bank account.']]);
-            }
-
-            $allowed = ['bank_name', 'branch_name', 'account_number', 'ifsc_code', 'account_type', 'is_primary'];
-            $keptIds = [];
-
-            foreach ($banks as $b) {
-                if (!is_array($b)) continue;
-                $payload = [];
-                foreach ($allowed as $k) {
-                    if (array_key_exists($k, $b)) $payload[$k] = $b[$k];
-                }
-                // Required field — skip silently if missing so the parent save still succeeds.
-                if (empty($payload['bank_name']) || empty($payload['account_number'])) continue;
-
-                // Server-side format guards mirroring the frontend (bugs #1-#7):
-                // name charsets, numeric account number, IFSC format, mandatory
-                // branch + IFSC. Reject so a crafted API payload can't bypass the UI.
-                $bn = trim((string) ($payload['bank_name'] ?? ''));
-                $br = trim((string) ($payload['branch_name'] ?? ''));
-                $ac = trim((string) ($payload['account_number'] ?? ''));
-                $if = trim((string) ($payload['ifsc_code'] ?? ''));
-                $bankErr = [];
-                if (!preg_match("/^[A-Za-z][A-Za-z .&'()\\-]*$/", $bn)) $bankErr[] = 'Bank Name may only contain letters and . & \' ( ) -.';
-                if ($br === '')                                        $bankErr[] = 'Branch Name is required.';
-                elseif (!preg_match("/^[A-Za-z][A-Za-z .&'()\\-]*$/", $br)) $bankErr[] = 'Branch Name may only contain letters and . & \' ( ) -.';
-                if (!preg_match('/^[0-9]{9,18}$/', $ac))               $bankErr[] = 'Account Number must be 9 to 18 digits.';
-                if ($if === '')                                        $bankErr[] = 'IFSC Code is required.';
-                elseif (!preg_match('/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/', $if)) $bankErr[] = 'IFSC Code is invalid (e.g. HDFC0000001).';
-                if ($bankErr) {
-                    throw ValidationException::withMessages(['banks' => [implode(' ', $bankErr)]]);
-                }
-
-                $payload['is_primary'] = !empty($payload['is_primary']);
-
-                $existingId = $b['id'] ?? null;
-                if ($existingId) {
-                    $existing = $parent->banks()->where('id', $existingId)->first();
-                    if ($existing) {
-                        $existing->update($payload);
-                        $keptIds[] = $existing->id;
-                        continue;
-                    }
-                }
-                $created = $parent->banks()->create($payload);
-                $keptIds[] = $created->id;
-            }
-
-            // Anything not in the incoming list is removed — true sync semantics.
-            $parent->banks()->whereNotIn('id', $keptIds)->delete();
-        }
     }
 
     /**

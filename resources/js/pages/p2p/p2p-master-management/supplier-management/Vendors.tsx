@@ -671,7 +671,7 @@ useEffect(() => {
             {/* Table — purple Figma table wired to the real /vendors data.
                 Pagination is client-side (10 rows/page). */}
             {loading ? (
-              <div className="p-3"><ShimmerTable rows={8} cols={13} /></div>
+              <div className="p-3"><ShimmerTable rows={8} cols={11} /></div>
             ) : (
               <>
                 <div className="sl-table-scroll" ref={scrollRef} style={fillH ? { minHeight: fillH } : undefined}>
@@ -681,11 +681,10 @@ useEffect(() => {
                         <th>Sr No</th>
                         <th>Supplier Code</th>
                         <th>Supplier Name</th>
-                        <th>Category</th>
+                        <th>Supplier Type</th>
                         <th>Segment</th>
                         <th>Supplier State</th>
                         <th>Country</th>
-                        <th>Supplier Type</th>
                         <th>Contact Person</th>
                         <th>Contact No</th>
                         <th className="sl-th-email">Email</th>
@@ -695,7 +694,7 @@ useEffect(() => {
                     </thead>
                     <tbody>
                       {pageRows.length === 0 ? (
-                        <tr><td colSpan={13} className="sl-empty">No suppliers found.</td></tr>
+                        <tr><td colSpan={12} className="sl-empty">No suppliers found.</td></tr>
                       ) : pageRows.map((v, i) => {
                         const kind = typeKind(v.type);
                         const hasWa = !!v.phone && v.phone !== '—';
@@ -730,11 +729,6 @@ useEffect(() => {
                             </td>
                             <td><span className="sl-state">{v.state}{v.stateCode ? <> (<strong>{v.stateCode}</strong>)</> : ''}</span></td>
                             <td><span className="sl-country">{v.country || '—'}</span></td>
-                            <td>
-                              {v.country
-                                ? <span className={`sl-trade sl-trade--${(v.country ?? '').trim() === 'India' ? 'dom' : 'intl'}`}>{(v.country ?? '').trim() === 'India' ? 'Domestic' : 'International'}</span>
-                                : <span className="sl-country">—</span>}
-                            </td>
                             <td>
                               <span className="sl-contact-wrap">
                                 <Tooltip label={v.contactName}><span className="sl-contact sl-trunc">{v.contactName}</span></Tooltip>
@@ -926,7 +920,7 @@ useEffect(() => {
         rows={vendors.map(v => ({ ...v, segment: (v.segments && v.segments.length ? v.segments.join(', ') : (v.segment ?? '')) }))}
         facets={SUPPLIER_FACETS}
         title="Filter Suppliers"
-        typeLabel="Supplier Type"
+        typeLabel="Trade Type"
         theme="purple"
       />
     </>

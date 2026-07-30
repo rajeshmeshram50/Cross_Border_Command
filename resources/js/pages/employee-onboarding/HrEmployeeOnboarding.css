@@ -1224,7 +1224,14 @@
         .onb-doc-row-meta { min-width: 0; flex-grow: 1; }
         .onb-doc-row-name { font-size: 12.5px; font-weight: 700; color: #1f2937; margin: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
         [data-bs-theme="dark"] .onb-doc-row-name { color: var(--vz-heading-color, var(--vz-body-color)); }
-        .onb-doc-row-sub { font-size: 11px; color: var(--vz-secondary-color); margin: 1px 0 0; }
+        /* One line only. The uploaded file name lives here, and a long one used
+           to wrap onto a second row and push the row's height around; clip it
+           with an ellipsis instead (the full name is on the element's tooltip).
+           Needs the min-width:0 on .onb-doc-row-meta above to shrink in flex. */
+        .onb-doc-row-sub {
+          font-size: 11px; color: var(--vz-secondary-color); margin: 1px 0 0;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
         .onb-doc-status-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 10.5px; font-weight: 600; }
         .onb-doc-status-pill .dot { width: 6px; height: 6px; border-radius: 50%; }
         /* Per-status colours as classes (was inline tones) so dark mode adapts.

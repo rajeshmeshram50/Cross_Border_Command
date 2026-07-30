@@ -108,7 +108,7 @@ class ConsigneeKycMirror
         // The customer's FULL address book → consignee rows. Strip identity /
         // ownership / timestamp columns; keep everything else (incl.
         // `is_primary`) so the primary + secondary split is preserved.
-        $addressRows = $customer->addresses->map(fn ($a) => collect($a->getAttributes())
+        $addressRows = $customer->addresses->map(fn($a) => collect($a->getAttributes())
             ->except(['id', 'customer_id', 'consignee_id', 'created_at', 'updated_at'])
             ->all())->all();
 
@@ -210,7 +210,10 @@ class ConsigneeKycMirror
         // Commit succeeded — now it's safe to unlink the superseded originals.
         // (If the transaction had thrown, these files are still intact.)
         foreach ($oldFiles as $old) {
-            try { $disk->delete($old); } catch (\Throwable $e) { /* best-effort cleanup */ }
+            try {
+                $disk->delete($old);
+            } catch (\Throwable $e) { /* best-effort cleanup */
+            }
         }
     }
 }

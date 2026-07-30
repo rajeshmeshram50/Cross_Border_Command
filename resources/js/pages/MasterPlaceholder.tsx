@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { Navigate, useParams, useNavigate } from 'react-router-dom';
 import { Card, CardBody, CardHeader, Col, Row, Badge, Button, Input, InputGroup, InputGroupText } from 'reactstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { MASTER_GROUPS } from '../constants';
@@ -41,10 +41,12 @@ export default function MasterPlaceholder() {
   let groupLabel = '';
   let groupIcon: string | undefined;
   let groupId = '';
+  let known = false;
 
   for (const g of MASTER_GROUPS) {
     const found = g.children.find(c => c.id === fullSlug);
     if (found) {
+      known = true;
       leafLabel = found.label;
       leafIcon = found.icon;
       groupLabel = g.label;
@@ -52,6 +54,15 @@ export default function MasterPlaceholder() {
       groupId = g.id;
       break;
     }
+  }
+
+  /* No such master → no such route. `/master/:slug` is a catch-all, so a retired
+     master (e.g. legal_entities, replaced by the branch record) or a typo would
+     otherwise render this "Coming Soon — Phase 2" placeholder and advertise a
+     module that doesn't exist. Bounce to the Master list instead; `replace` keeps
+     the dead URL out of history so Back doesn't return to it. */
+  if (!known) {
+    return <Navigate to="/master" replace />;
   }
 
   const isSuperAdmin = user?.user_type === 'super_admin';

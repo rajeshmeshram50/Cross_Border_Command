@@ -990,6 +990,11 @@ input.spi-dt-inp[type="date"]::-webkit-calendar-picker-indicator { cursor:pointe
 .spi-mdl-shipbadge.is-without { background:#fef3c7; color:#b45309; border:1px solid #fde68a; }
 [data-bs-theme="dark"] .spi-mdl-shipbadge.is-with { background:rgba(34,197,94,.16); color:#4ade80; border-color:rgba(34,197,94,.32); }
 [data-bs-theme="dark"] .spi-mdl-shipbadge.is-without { background:rgba(245,158,11,.16); color:#fbbf24; border-color:rgba(245,158,11,.32); }
+.spi-mdl-tradebadge { flex-shrink:0; display:inline-flex; align-items:center; padding:1px 7px; border-radius:20px; font-size:9px; font-weight:600; letter-spacing:.02em; text-transform:uppercase; white-space:nowrap; }
+.spi-mdl-tradebadge.is-dom { background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; }
+.spi-mdl-tradebadge.is-intl { background:#f3e8ff; color:#7e22ce; border:1px solid #e9d5ff; }
+[data-bs-theme="dark"] .spi-mdl-tradebadge.is-dom { background:rgba(14,165,233,.16); color:#38bdf8; border-color:rgba(14,165,233,.32); }
+[data-bs-theme="dark"] .spi-mdl-tradebadge.is-intl { background:rgba(168,85,247,.16); color:#c084fc; border-color:rgba(168,85,247,.32); }
 .spi-mdl-dd-opt:hover { background:#eafaff; color:#0c4a6e; }
 .spi-mdl-dd-opt.is-sel { background:#e0f7fb; color:#0e7490; font-weight:800; }
 .spi-mdl-dd-opt-ck { flex-shrink:0; display:inline-flex; color:#0891b2; opacity:0; }

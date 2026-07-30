@@ -8,6 +8,8 @@ import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
+import type { FieldDef } from '../master/masterConfigs';
+import InlineSublist from '../../components/ui/InlineSublist';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import { MasterTimePicker } from '../../components/ui/MasterTimePicker';
 import { validatePhone } from '../../utils/validatePhone';
@@ -40,6 +42,33 @@ const empty = {
 };
 
 type FormState = typeof empty;
+
+/* Bank-accounts sublist definition for <InlineSublist>. Deliberately a copy of
+ * masterConfigs' legal_entities → `banks` field (same labels, placeholders,
+ * regexes and card layout) so a bank account typed on a branch is validated
+ * exactly like one typed on a legal entity. Keep the two in step when either
+ * changes. */
+const BRANCH_BANK_FIELD: FieldDef = {
+  n: 'bank_accounts', l: 'Bank Accounts', t: 'sublist',
+  subSingular: 'Bank Detail',
+  subDesc: 'Bank accounts used for payroll, collections & expense tracking',
+  subCardTitleField: 'bank_name',
+  subCardSubtitleField: 'branch_name',
+  subCardLines: ['account_number', 'ifsc_code', 'account_type'],
+  subPrimaryFlagField: 'is_primary',
+  subFields: [
+    { n: 'bank_name', l: 'Bank Name', t: 'text', r: true, p: 'e.g. HDFC Bank',
+      pattern: "^[A-Za-z][A-Za-z .&'()\\-]*$", patternMessage: 'Bank Name may only contain letters, spaces and . & \' ( ) -' },
+    { n: 'branch_name', l: 'Branch Name', t: 'text', r: true, p: 'e.g. HINJAWADI branch',
+      pattern: "^[A-Za-z][A-Za-z .&'()\\-]*$", patternMessage: 'Branch Name may only contain letters, spaces and . & \' ( ) -' },
+    { n: 'account_number', l: 'Account Number', t: 'text', r: true, p: 'Full account number',
+      pattern: '^[0-9]{9,18}$', patternMessage: 'Account Number must be 9 to 18 digits (numbers only).' },
+    { n: 'ifsc_code', l: 'IFSC Code', t: 'text', r: true, p: 'e.g. HDFC0000001',
+      pattern: '^[A-Za-z]{4}0[A-Za-z0-9]{6}$', patternMessage: 'Enter a valid 11-character IFSC code, e.g. HDFC0000001.' },
+    { n: 'account_type', l: 'Account Type', t: 'select', opts: ['Current', 'Savings'] },
+    { n: 'is_primary', l: 'Primary Account', t: 'select', opts: [{ value: 'No', label: 'No' }, { value: 'Yes', label: 'Yes' }] },
+  ],
+};
 
 // Human-readable field labels used for error summaries / toasts
 const FIELD_LABELS: Record<string, string> = {
@@ -371,6 +400,13 @@ export default function BranchForm({ onBack, editId }: Props) {
     });
     return errs;
   };
+  /* Bank accounts (Legal & Registration) — the same repeatable block the Legal
+     Entities master uses, via the shared <InlineSublist>. Field definitions,
+     validation patterns and card layout come from BRANCH_BANK_FIELD below, which
+     mirrors masterConfigs' legal_entities → banks sublist so both places accept
+     exactly the same input. Persisted as branches.bank_accounts (JSON), the same
+     way `shifts` is. */
+  const [bankAccounts, setBankAccounts] = useState<any[]>([]);
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
   // Authorised-signatory image (signature + company stamp combined).
@@ -633,6 +669,13 @@ export default function BranchForm({ onBack, editId }: Props) {
       if (Array.isArray(rawShifts) && rawShifts.length) {
         setShifts(rawShifts.map((s: any) => ({ name: s?.name || '', start: s?.start || '', end: s?.end || '' })));
       }
+      // Bank accounts — same defensive decode as shifts (null / JSON string /
+      // array). is_primary comes back as a real boolean from the array cast;
+      // InlineSublist normalises it to Yes/No when the row is opened for edit.
+      const rawBanks = typeof b.bank_accounts === 'string'
+        ? (() => { try { return JSON.parse(b.bank_accounts); } catch { return []; } })()
+        : b.bank_accounts;
+      if (Array.isArray(rawBanks)) setBankAccounts(rawBanks);
       // Prefer the `logo_url` accessor (resolves to a public Storage URL)
       // over the raw `logo` path — otherwise the <img> tries to load
       // "branches/logos/foo.png" relative to the SPA root and 404s.
@@ -695,6 +738,10 @@ export default function BranchForm({ onBack, editId }: Props) {
       const cleanShifts = shifts
         .filter(s => (s.name || '').trim())
         .map(s => ({ name: s.name.trim(), start: s.start, end: s.end }));
+      // Bank accounts (repeater) — travels the same way as shifts. Every row
+      // already passed the inline editor's validation, so nothing to re-check
+      // here; the backend still normalises and drops nameless rows.
+      const cleanBanks = bankAccounts.filter(b => String(b?.bank_name || '').trim());
 
       if (isEdit) {
         if (logoFile || profilePhotoFile || signatureFile) {
@@ -703,12 +750,13 @@ export default function BranchForm({ onBack, editId }: Props) {
           const fd = new FormData();
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
           fd.append('shifts', JSON.stringify(cleanShifts));
+          fd.append('bank_accounts', JSON.stringify(cleanBanks));
           if (logoFile)         fd.append('logo', logoFile);
           if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
           if (signatureFile)    fd.append('signature_path', signatureFile);
           await api.post(`/branches/${editId}?_method=PUT`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
-          await api.put(`/branches/${editId}`, { ...payload, shifts: cleanShifts });
+          await api.put(`/branches/${editId}`, { ...payload, shifts: cleanShifts, bank_accounts: cleanBanks });
         }
         toast.success('Branch Updated', 'Branch details have been updated successfully');
       } else {
@@ -717,12 +765,13 @@ export default function BranchForm({ onBack, editId }: Props) {
           const fd = new FormData();
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
           fd.append('shifts', JSON.stringify(cleanShifts));
+          fd.append('bank_accounts', JSON.stringify(cleanBanks));
           if (logoFile)         fd.append('logo', logoFile);
           if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
           if (signatureFile)    fd.append('signature_path', signatureFile);
           createRes = await api.post('/branches', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
-          createRes = await api.post('/branches', { ...payload, shifts: cleanShifts });
+          createRes = await api.post('/branches', { ...payload, shifts: cleanShifts, bank_accounts: cleanBanks });
         }
         toast.success('Branch Created', 'New branch has been created with login credentials');
         // Surface the welcome-email outcome — if it couldn't be sent (e.g.
@@ -1766,6 +1815,23 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Input style={css.input} value={form.one_star_udin_no}
                   onChange={e => set('one_star_udin_no', e.target.value)}
                   maxLength={60} placeholder="Optional" />
+              </Col>
+
+              {/* Bank accounts — the shared <InlineSublist> block, identical to
+                  the one on the Legal Entities master (card list + inline
+                  Add/Edit panel + dashed "+Add"). Optional: a branch with no
+                  bank account saves fine. */}
+              <Col xs={12} className="mt-2">
+                <Lbl>Bank Accounts</Lbl>
+                <div className="text-muted mb-2" style={{ fontSize: 11.5 }}>
+                  {BRANCH_BANK_FIELD.subDesc}
+                </div>
+                <InlineSublist
+                  field={BRANCH_BANK_FIELD}
+                  value={bankAccounts}
+                  onChange={setBankAccounts}
+                  viewOnly={false}
+                />
               </Col>
             </Row>
 

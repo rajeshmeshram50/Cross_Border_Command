@@ -5,7 +5,6 @@ namespace App\Models;
 use App\Models\Masters\Countries;
 use App\Models\Masters\Departments;
 use App\Models\Masters\Designations;
-use App\Models\Masters\LegalEntities;
 use App\Models\Masters\Roles;
 use App\Models\Masters\States;
 use Illuminate\Database\Eloquent\Model;
@@ -354,9 +353,15 @@ class Employee extends Model
         return $this->belongsTo(States::class, 'perm_state_id');
     }
 
+    /**
+     * The employing legal entity — a BRANCH, not a master_legal_entities row.
+     * The branch carries the GST/PAN/CIN/IEC and bank accounts, so it is the
+     * registered entity an employee is hired into. Repointed by the
+     * 2026_07_30_000020 migration; the column name is kept for continuity.
+     */
     public function legalEntity(): BelongsTo
     {
-        return $this->belongsTo(LegalEntities::class, 'legal_entity_id');
+        return $this->belongsTo(Branch::class, 'legal_entity_id');
     }
 
     public function department(): BelongsTo

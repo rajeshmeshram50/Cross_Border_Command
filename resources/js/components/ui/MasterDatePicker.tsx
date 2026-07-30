@@ -19,6 +19,7 @@ export function MasterDatePicker({
   disabled,
   invalid,
   popupClassName,
+  onDisabledSelect,
 }: {
   name?: string;
   value?: string;
@@ -31,6 +32,11 @@ export function MasterDatePicker({
   invalid?: boolean;
   /** Extra class on the portalled popup so a host can re-theme it (e.g. teal). */
   popupClassName?: string;
+  /** When provided, min/max-blocked DAYS stay clickable (rendered greyed) and
+   *  fire this with the clicked date instead of being inert — lets a host show a
+   *  toast like "invoice date can't be before the PO date". Month/year cells are
+   *  unaffected. */
+  onDisabledSelect?: (dateIso: string) => void;
 }) {
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
   useEffect(() => {
@@ -341,17 +347,25 @@ export function MasterDatePicker({
                   const isDisabled =
                     (!!minD && d < minD) ||
                     (!!maxD && d > maxD);
+                  // With an onDisabledSelect host, a blocked day stays clickable
+                  // (a native `disabled` button swallows clicks) but is styled as
+                  // blocked, so clicking it can raise a toast.
+                  const blockedClickable = isDisabled && !!onDisabledSelect;
                   const cls = [
                     'master-datepicker-day',
                     isSelected && 'is-selected',
                     isToday && !isSelected && 'is-today',
+                    blockedClickable && 'is-blocked',
                   ].filter(Boolean).join(' ');
                   return (
                     <button
                       key={day}
                       type="button"
-                      disabled={isDisabled}
-                      onClick={() => { commit(fmt(d)); setOpen(false); }}
+                      disabled={isDisabled && !onDisabledSelect}
+                      onClick={() => {
+                        if (isDisabled) { onDisabledSelect?.(fmt(d)); return; }
+                        commit(fmt(d)); setOpen(false);
+                      }}
                       className={cls}
                     >
                       {day}

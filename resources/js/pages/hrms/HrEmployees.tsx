@@ -9,6 +9,7 @@ import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } f
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import api from '../../api';
 import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
@@ -131,7 +132,8 @@ interface ApiEmployee {
   ancillary_role?: { id: number; name: string } | null;
   reporting_manager?: { id: number; display_name?: string | null; emp_code?: string | null; first_name?: string | null; last_name?: string | null; designation?: { id: number; name?: string | null } | null } | null;
   reporting_manager_user?: { id: number; name?: string | null; email?: string | null; user_type?: string | null; designation?: string | null } | null;
-  legal_entity?: { id: number; entity_name?: string; city?: string | null } | null;
+  // Legal entity = the employing branch (name + city/country for Location).
+  legal_entity?: { id: number; name?: string; code?: string | null; city?: string | null; state?: string | null; country?: string | null } | null;
   work_country?: { id: number; name: string } | null;
   nationality_country?: { id: number; name: string } | null;
   country?: { id: number; name: string } | null;
@@ -281,6 +283,8 @@ const KPI_CARDS = [
 type ExpiryDays = 3 | 7 | 15;
 
 export default function HrEmployees() {
+  // Active branch — the auto-fetched Legal Entity resolves against it.
+  const { selectedBranchId } = useBranchSwitcher();
   const [tab, setTab] = useState<'active' | 'disabled'>('active');
   const [tabSwitching, setTabSwitching] = useState(false);
   useEffect(() => {
@@ -343,10 +347,20 @@ export default function HrEmployees() {
     [mRoles],
   );
   const ancillaryRoleOptions = primaryRoleOptions;
-  const legalEntityOptions = useMemo(
-    () => mLegalEntities.map(le => ({ value: String(le.id), label: le.entity_name })),
-    [mLegalEntities],
-  );
+  /* Legal Entity is NOT a picker — an employee is always hired into the branch
+     the form is being filled under, so the field is auto-fetched and read-only,
+     exactly like Location beside it.
+     Resolution: the single branch the API returned (a branch_user, or a
+     client_admin with one branch selected in the BranchSwitcher), else the row
+     matching the active branch. With "All Branches" selected there is no single
+     answer — nothing is filled and validation asks for a branch. */
+  const autoLegalEntity = useMemo(() => {
+    if (mLegalEntities.length === 1) return mLegalEntities[0];
+    if (selectedBranchId) {
+      return mLegalEntities.find(le => String(le.id) === String(selectedBranchId)) ?? null;
+    }
+    return null;
+  }, [mLegalEntities, selectedBranchId]);
   const countryOptions = useMemo(
     () => mCountries.map(c => ({ value: String(c.id), label: c.name })),
     [mCountries],
@@ -373,7 +387,13 @@ export default function HrEmployees() {
       api.get('/master/departments').then(r => setMDepts(Array.isArray(r.data) ? r.data : [])),
       api.get('/master/designations').then(r => setMDesignations(Array.isArray(r.data) ? r.data : [])),
       api.get('/master/roles').then(r => setMRoles(Array.isArray(r.data) ? r.data : [])),
-      api.get('/master/legal_entities').then(r => setMLegalEntities(Array.isArray(r.data) ? r.data : [])),
+      /* Legal entities = the client's BRANCHES (the branch carries the
+         GST/PAN/CIN and bank accounts). /branch-legal-entities is a permission-
+         free form lookup — HR staff who can add an employee often can't manage
+         branches, so /branches would 403 for them. */
+      api.get('/branch-legal-entities')
+        .then(r => setMLegalEntities(Array.isArray(r.data?.legal_entities) ? r.data.legal_entities : []))
+        .catch(() => setMLegalEntities([])),
       api.get('/holiday-groups').then(r => setMHolidayGroups(Array.isArray(r.data) ? r.data : [])).catch(() => setMHolidayGroups([])),
       api.get('/master/countries').then(r => setMCountries(
         Array.isArray(r.data) ? [...r.data].sort((a: any, b: any) => a.name.localeCompare(b.name)) : []
@@ -600,7 +620,21 @@ export default function HrEmployees() {
     [primaryRoleOptions, ePrimaryRole],
   );
   const [eLegalEntity, setELegalEntity]          = useState('');
+  /* Display name for the read-only Legal Entity field. Held separately from the
+     id because when editing an employee of another branch the saved entity may
+     not be in the branch-scoped options list — the row's own
+     `legal_entity.name` is then the only source for the label. */
+  const [eLegalEntityLabel, setELegalEntityLabel] = useState('');
   const [eLocation, setELocation]                = useState('');
+  /* Fill both fields once the branch resolves. Only when EMPTY, so opening an
+     existing employee keeps their saved entity instead of being rewritten to the
+     active branch (which would silently re-home them on the next save). */
+  useEffect(() => {
+    if (!autoLegalEntity || eLegalEntity) return;
+    setELegalEntity(String(autoLegalEntity.id));
+    setELegalEntityLabel(autoLegalEntity.name || '');
+    setELocation(autoLegalEntity.location || autoLegalEntity.city || '');
+  }, [autoLegalEntity, eLegalEntity]);
   const [eReportingMgr, setEReportingMgr]        = useState('');
   const [savedMgrOption, setSavedMgrOption] = useState<{ value: string; label: string } | null>(null);
   const [eProbationPolicy, setEProbationPolicy]  = useState('');
@@ -878,7 +912,7 @@ export default function HrEmployees() {
     setEPermAddr1(''); setEPermAddr2(''); setEPermCity(''); setEPermState(''); setEPermCountry(''); setEPermPin('');
     setEJoinDate(''); setEDept(''); setEDesignation('');
     setEPrimaryRole(''); setEAncillaryRole([]); setEWorkType('');
-    setELegalEntity(''); setELocation(''); setEReportingMgr(''); setSavedMgrOption(null);
+    setELegalEntity(''); setELegalEntityLabel(''); setELocation(''); setEReportingMgr(''); setSavedMgrOption(null);
     setEProbationPolicy(''); setENoticePeriod('');
     setECustomProbation(''); setECustomNotice('');
     setELeavePlan(''); setEHolidayList('');
@@ -1411,6 +1445,9 @@ export default function HrEmployees() {
       );
       setEWorkType(raw.work_type || '');
       setELegalEntity(raw.legal_entity_id ? String(raw.legal_entity_id) : '');
+      // Label straight off the row — the saved entity may sit outside the
+      // branch-scoped options list this user can see.
+      setELegalEntityLabel(raw.legal_entity?.name || '');
       setELocation(raw.location || '');
       const mgrUserId   = raw.reporting_manager_user_id;
       const mgrUserType = raw.reporting_manager_user?.user_type;
@@ -1595,7 +1632,9 @@ export default function HrEmployees() {
     // A role can't be both Primary and Ancillary for the same employee.
     else if (eAncillaryRole.includes(ePrimaryRole)) e.primary_role_id = 'The Primary role cannot also be an Ancillary role.';
     if (!eWorkType)        e.work_type         = 'Work type is required';
-    if (!eLegalEntity)     e.legal_entity_id   = 'Legal entity is required';
+    // Auto-fetched, so it can only be empty when no single branch resolved
+    // (client_admin on "All Branches") — say what to do rather than "required".
+    if (!eLegalEntity)     e.legal_entity_id   = 'Pick a branch in the branch switcher — the legal entity is taken from it';
     if (!eReportingMgr)    e.reporting_manager_id = 'Reporting manager is required';
     else if (hodDesignationId && String(eDesignation) === hodDesignationId
              && !String(eReportingMgr).startsWith('branch_user:'))
@@ -3536,19 +3575,20 @@ export default function HrEmployees() {
                     <i className="ri-building-2-line" /> Organisational Details
                   </div>
                   <Row className="g-3">
+                    {/* Legal Entity + Location are both auto-fetched from the
+                        branch this employee is being added under — no picker. */}
                     <Col md={4}>
-                      <label className="emp-label">Legal Entity<span className="req">*</span></label>
-                      <MasterSelect
-                        value={eLegalEntity}
-                        onChange={(v) => {
-                          setELegalEntity(v);
-                          const entity = mLegalEntities.find(le => String(le.id) === String(v));
-                          setELocation(entity?.city || entity?.address_line1 || '');
-                          clearEErr('legal_entity_id');
-                        }}
-                        placeholder="Select entity"
-                        options={legalEntityOptions}
-                        invalid={!!eErrors.legal_entity_id}
+                      <label className="emp-label">
+                        Legal Entity<span className="req">*</span>
+                        <span className="hint">(auto-fetched)</span>
+                      </label>
+                      <input
+                        className="emp-input is-readonly"
+                        type="text"
+                        value={eLegalEntityLabel}
+                        readOnly
+                        placeholder="Select a branch to auto-fetch"
+                        title="The branch this employee is hired into — switch branch to change it"
                       />
                       {eErrors.legal_entity_id && <small className="emp-err">{eErrors.legal_entity_id}</small>}
                     </Col>
@@ -3562,7 +3602,8 @@ export default function HrEmployees() {
                         type="text"
                         value={eLocation}
                         readOnly
-                        placeholder="Select a legal entity first"
+                        placeholder="Auto-fetched with the legal entity"
+                        title="The legal entity's city and country"
                       />
                     </Col>
                     <Col md={4}>

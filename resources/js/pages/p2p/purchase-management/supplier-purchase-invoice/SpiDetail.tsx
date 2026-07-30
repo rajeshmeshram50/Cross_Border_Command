@@ -278,6 +278,13 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
       const d = (r.data?.data ?? null) as SpiSupplier | null;
       setStdSup(d);
       if (d?.name) setStdSupName(d.name);
+      // Supplier drives the trade type: an international supplier (country ≠ India)
+      // makes this an International invoice — no GST / scrutiny, 2-column tax table.
+      // Skip in edit mode (that path prefills docType from the saved invoice).
+      if (!editId) {
+        const intl = !!d?.country && d.country.trim().toLowerCase() !== 'india';
+        setBasic(b => ({ ...b, docType: intl ? 'International' : 'Domestics' }));
+      }
     }).catch(() => {}).finally(() => { if (alive && !editId) setLoading(false); });
     api.get(`/segment-uploads/supplier/${supplierId}/vault`)
       .then(r => { if (alive && r.data?.data) setSupLegal(buildLegalFromVault(r.data.data)); })
@@ -342,7 +349,16 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
 
   // In the Without-PO flow the supplier comes from the picker, not a linked PO.
   const sup = po?.supplier ?? stdSup;
-  const scrutinyOld = isScrutinyOld(sup?.scrutiny);
+  // International SPIs carry no GST, so GST scrutiny doesn't apply: the whole GST
+  // Scrutiny Details card is hidden and the stale-scrutiny gate is skipped.
+  const isIntlSpi = withPo ? po?.document_type === 'International' : basic.docType === 'International';
+  const scrutinyOld = !isIntlSpi && isScrutinyOld(sup?.scrutiny);
+  // PO date normalised to YYYY-MM-DD. The API may return it with a time/zone
+  // suffix ("2026-07-30 00:00:00"); comparing that against the picker's plain
+  // "2026-07-30" would treat the SAME day as "before" the PO, wrongly blocking a
+  // same-day invoice. Slice to the date part so a PO raised today can be invoiced
+  // today.
+  const poDateIso = withPo && po?.po_date ? String(po.po_date).slice(0, 10) : null;
   const vendorDbId = po?.vendor_id ?? stdVendorId ?? undefined; // real vendor id → live Evidence-Vault fetch
 
   // Pull the vendor's real 5-parameter Evidence-Vault breakdown for the legal card.
@@ -415,9 +431,11 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
   const hasPi = !!po?.pi_number;
   const rowCost = (r: SpiRow) => {
     const base = Number(r.spiQty || 0) * Number(r.spiRate || 0);
-    const cgstA = intra ? (base * (r.gst / 2)) / 100 : 0;
-    const sgstA = intra ? (base * (r.gst / 2)) / 100 : 0;
-    const igstA = intra ? 0 : (base * r.gst) / 100;
+    // International invoices carry no GST — tax is always 0, cost = base.
+    const rate = isIntlSpi ? 0 : r.gst;
+    const cgstA = (!isIntlSpi && intra) ? (base * (rate / 2)) / 100 : 0;
+    const sgstA = (!isIntlSpi && intra) ? (base * (rate / 2)) / 100 : 0;
+    const igstA = (!isIntlSpi && !intra) ? (base * rate) / 100 : 0;
     return { cgstA, sgstA, igstA, cost: base + cgstA + sgstA + igstA };
   };
   const addlCharges = Number(charges.ship || 0) + Number(charges.pack || 0) + Number(charges.other || 0);
@@ -516,7 +534,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
         quantity: r.spiQty === '' ? 0 : Number(r.spiQty),
         hsn_code: r.hsn || null,
         rate: r.spiRate === '' ? 0 : Number(r.spiRate),
-        gst_pct: r.gst,
+        // International invoices carry no GST — persist 0 so the bill/totals match.
+        gst_pct: isIntlSpi ? 0 : r.gst,
       })),
     };
   };
@@ -558,6 +577,15 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
       setErrs(prev => ({ ...prev, invoiceDate: true }));
       setInvOpen(true);
       toast.error('Invalid Purchase Invoice Date', 'The invoice date cannot be in the future — pick today or an earlier date.');
+      scrollToFirstError();
+      return;
+    }
+    // A With-PO invoice can't be dated BEFORE its Purchase Order — the invoice is
+    // raised against the PO, so it can be the PO date or later, never earlier.
+    if (poDateIso && invoiceDate < poDateIso) {
+      setErrs(prev => ({ ...prev, invoiceDate: true }));
+      setInvOpen(true);
+      toast.error('Invalid Purchase Invoice Date', `The invoice date can’t be before the PO date (${formatDmy(new Date(poDateIso))}). Pick that date or later.`);
       scrollToFirstError();
       return;
     }
@@ -823,7 +851,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
               </div>
             </div>
 
-            {/* GST Scrutiny Details */}
+            {/* GST Scrutiny Details — hidden for international SPIs (no GST applies) */}
+            {!isIntlSpi && (
             <div className="spi-dt-card">
               <div className="spi-dt-card-head">
                 <div className="spi-dt-card-title"><span className="spi-dt-card-ico spi-dt-card-ico-4"><IcoDocSm /></span> GST Scrutiny Details
@@ -842,6 +871,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 <Field label="PREV. INVOICE / REMARKS" full><textarea className="spi-dt-textarea" value={sup?.remarks ?? ''} placeholder="Notes on previous invoices, filing history or scrutiny remarks…" readOnly /></Field>
               </div>
             </div>
+            )}
           </div>
         </div>
       </div>
@@ -911,6 +941,8 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                   <RO label="CONTACT NUMBER" value={dash(sup?.phone)} />
                   <RO label="EMAIL ID" value={dash(sup?.email)} />
                 </ROGroup>
+                {/* GST Scrutiny Details — hidden for international SPIs (no GST applies) */}
+                {!isIntlSpi && (
                 <ROGroup label="GST Scrutiny Details">
                   <RO label="SCRUTINY DATE" value={sup?.scrutiny ? formatDmy(sup.scrutiny) : dash(sup?.scrutiny)} />
                   <RO label="GST NUMBER" value={dash(sup?.gstNo)} />
@@ -918,6 +950,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                   <RO label="LAST FILING DATE" value={sup?.filing ? formatDmy(sup.filing) : dash(sup?.filing)} />
                   <RO label="PREV. INVOICE / REMARKS" value={sup?.remarks || '— Not provided'} muted={!sup?.remarks} full />
                 </ROGroup>
+                )}
               </div>
             </div>
           </div>
@@ -938,7 +971,11 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
               <Field label="PURCHASE INVOICE NUMBER" req><input className={`spi-dt-inp ${errs.invoiceNo ? 'is-invalid' : ''}`} value={invoiceNo} onChange={e => { setInvoiceNo(e.target.value); setErrs(x => ({ ...x, invoiceNo: false })); }} placeholder="e.g. INV-2025-001" /></Field>
               {/* Invoice date can be today or any PAST date, never the future
                   (QA #9) — maxDate caps the picker at today. */}
-              <Field label="PURCHASE INVOICE DATE" req><MasterDatePicker value={invoiceDate} onChange={v => { setInvoiceDate(v); setErrs(x => ({ ...x, invoiceDate: false })); }} maxDate={todayIso} invalid={!!errs.invoiceDate} placeholder="Select date" popupClassName="spi-cal" /></Field>
+              <Field label="PURCHASE INVOICE DATE" req><MasterDatePicker value={invoiceDate} onChange={v => { setInvoiceDate(v); setErrs(x => ({ ...x, invoiceDate: false })); }} minDate={poDateIso ?? undefined} maxDate={todayIso} invalid={!!errs.invoiceDate} placeholder="Select date" popupClassName="spi-cal"
+                onDisabledSelect={(d) => {
+                  if (poDateIso && d < poDateIso) { toast.warning('Invalid Purchase Invoice Date', `The invoice date can’t be before the PO date (${formatDmy(new Date(poDateIso))}). Pick that date or later.`); return; }
+                  if (d > todayIso) { toast.warning('Invalid Purchase Invoice Date', 'The invoice date cannot be in the future — pick today or an earlier date.'); }
+                }} /></Field>
               <Field label="PURCHASE INVOICE ATTACHMENT" req>
                 <div className={`spi-dt-file is-clickable ${errs.file ? 'is-invalid' : ''}`} role="button" tabIndex={0} onClick={() => fileRef.current?.click()} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileRef.current?.click(); } }}>
                   <span className="spi-dt-file-txt"><IcoClip /> {file ? file.name : (existingAttach ? (existingAttach.split('/').pop() || 'Attached file') : 'Choose file…')}</span>
@@ -1078,7 +1115,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                   <col style={{ width: '130px' }} />
                   <col style={{ width: '130px' }} />
                   <col style={{ width: '130px' }} />
-                  {intra
+                  {(!isIntlSpi && intra)
                     ? (<><col style={{ width: '72px' }} /><col style={{ width: '72px' }} /><col style={{ width: '112px' }} /><col style={{ width: '112px' }} /></>)
                     : (<><col style={{ width: '72px' }} /><col style={{ width: '112px' }} /></>)}
                   <col style={{ width: '120px' }} />
@@ -1092,7 +1129,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                     <th className="spi-dt-mc-c">PRODUCT QUANTITY</th>
                     <th className="spi-dt-mc-c">HSN CODE</th>
                     <th className="spi-dt-mc-c">PRODUCT RATE</th>
-                    {intra
+                    {isIntlSpi
+                      ? (<><th className="spi-dt-mc-c">TAX (%)</th><th className="spi-dt-mc-c">TAX AMOUNT</th></>)
+                      : intra
                       ? (<><th className="spi-dt-mc-c">CGST (%)</th><th className="spi-dt-mc-c">SGST (%)</th><th className="spi-dt-mc-c">CGST AMOUNT</th><th className="spi-dt-mc-c">SGST AMOUNT</th></>)
                       : (<><th className="spi-dt-mc-c">IGST (%)</th><th className="spi-dt-mc-c">IGST AMOUNT</th></>)}
                     <th className="spi-dt-mc-c">PRODUCT COST</th>
@@ -1101,7 +1140,7 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                 </thead>
                 <tbody>
                   {rows.length === 0 ? (
-                    <tr><td colSpan={intra ? 12 : 10} className="spi-dt-mc-c" style={{ padding: '20px', color: '#94a3b8' }}>No products added yet — click <b>Add Product</b> below.</td></tr>
+                    <tr><td colSpan={(!isIntlSpi && intra) ? 12 : 10} className="spi-dt-mc-c" style={{ padding: '20px', color: '#94a3b8' }}>No products added yet — click <b>Add Product</b> below.</td></tr>
                   ) : rows.map((r, i) => {
                     const c = rowCost(r);
                     return (
@@ -1114,7 +1153,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiQty} onChange={e => setRow(i, { spiQty: e.target.value.replace(/[^0-9.]/g, '') })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" inputMode="numeric" maxLength={8} value={r.hsn} onChange={e => setRow(i, { hsn: e.target.value.replace(/\D/g, '').slice(0, 8) })} /></td>
                       <td><input className="spi-dt-minp spi-dt-minp-sm" type="number" min={0} value={r.spiRate} onChange={e => setRow(i, { spiRate: e.target.value })} /></td>
-                      {intra
+                      {isIntlSpi
+                        ? (<><td className="spi-dt-mc-c">0%</td><td className="spi-dt-amt spi-dt-mc-c">{inr(0)}</td></>)
+                        : intra
                         ? (<><td className="spi-dt-mc-c">{r.gst / 2}%</td><td className="spi-dt-mc-c">{r.gst / 2}%</td><td className="spi-dt-amt spi-dt-mc-c">{inr(c.cgstA)}</td><td className="spi-dt-amt spi-dt-mc-c">{inr(c.sgstA)}</td></>)
                         : (<><td className="spi-dt-mc-c">{r.gst}%</td><td className="spi-dt-amt spi-dt-mc-c">{inr(c.igstA)}</td></>)}
                       <td className="spi-dt-amt spi-dt-mc-c">{inr(c.cost)}</td>
@@ -1154,7 +1195,9 @@ export default function SpiDetail({ onClose, onChangeSelection, withPo = true, p
               </div>
               <div className="spi-dt-totbox">
                 <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total Product Cost</span><span className="spi-dt-totrow-v">{inr(totals.prod)}</span></div>
-                {intra ? (<>
+                {isIntlSpi ? (
+                  <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total Tax Amount</span><span className="spi-dt-totrow-v">{inr(0)}</span></div>
+                ) : intra ? (<>
                   <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total CGST Amount</span><span className="spi-dt-totrow-v">{inr(totals.cgst)}</span></div>
                   <div className="spi-dt-totrow"><span className="spi-dt-totrow-k">Total SGST Amount</span><span className="spi-dt-totrow-v">{inr(totals.sgst)}</span></div>
                 </>) : (

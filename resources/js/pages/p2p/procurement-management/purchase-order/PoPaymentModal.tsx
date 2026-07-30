@@ -11,6 +11,7 @@ type Summary = {
   po: {
     id: number; code: string; pi_number: string | null; status: string;
     zoho_synced?: boolean; zoho_bill_number?: string | null;
+    is_international?: boolean;
   };
   supplier: {
     name?: string; code?: string; type?: string; state?: string; stateCode?: string;
@@ -112,6 +113,9 @@ export default function PoPaymentModal({
 
   const a = data?.amounts;
   const sup = data?.supplier;
+  // International POs carry no GST/TDS: TDS deduction is frozen, the GST breakdown
+  // is not applicable, and the "cut TDS first" gate is dropped for payments.
+  const isIntl = !!data?.po.is_international;
   // The footer "Sync All Payments" button only appears once the bill IS synced to
   // Zoho AND there's at least one cleared payment still un-synced (payment syncing
   // isn't complete). If the PO isn't synced, or every payment is already posted,
@@ -124,13 +128,17 @@ export default function PoPaymentModal({
   // carries the TDS, so a later change would desync from Zoho).
   const tdsHasPayment = (a?.paidCount ?? 0) > 0;
   const tdsSynced = !!data?.po.zoho_synced;
-  const tdsLocked = tdsHasPayment || tdsSynced;
-  const tdsLockReason = tdsHasPayment
-    ? `TDS locked — a payment has been recorded for this ${label}`
-    : `TDS locked — this ${label}'s bill is already synced to Zoho Books`;
+  // International POs freeze the TDS deduction entirely (GST/TDS don't apply).
+  const tdsLocked = tdsHasPayment || tdsSynced || isIntl;
+  const tdsLockReason = isIntl
+    ? `TDS is not applicable for an international ${label} — GST/TDS don't apply to international purchases`
+    : tdsHasPayment
+      ? `TDS locked — a payment has been recorded for this ${label}`
+      : `TDS locked — this ${label}'s bill is already synced to Zoho Books`;
   const tryAddPayment = () => {
     if (!entityId) return;
-    if (!a?.tdsCut) { toast.warning('Deduct the TDS first', 'Save the TDS deduction in Payment Details before recording a payment.'); return; }
+    // International POs skip the "cut TDS first" gate — there's no TDS to deduct.
+    if (!isIntl && !a?.tdsCut) { toast.warning('Deduct the TDS first', 'Save the TDS deduction in Payment Details before recording a payment.'); return; }
     if ((a?.balance ?? 0) <= 0.005) { toast.success('Amount paid completely', `This ${label} is fully paid — there is no outstanding balance to record.`); return; }
     setAddOpen(true);
   };
@@ -266,11 +274,23 @@ export default function PoPaymentModal({
 
           {/* ── Payment Details (TDS) ── */}
           <Section tag="Payment" title="Payment Details" sub={`Figures derived from ${label} line items · enter TDS % to compute net payable`}
-            right={<Tooltip label="View the per-product CGST / SGST breakdown" themed zIndex={2999999}>
-              <button type="button" className="pop-gstbtn" disabled={!entityId} onClick={(e) => { e.stopPropagation(); setGstOpen(true); }}>
+            right={<Tooltip label={isIntl ? `GST breakdown is not applicable for an international ${label}` : 'View the per-product CGST / SGST breakdown'} themed zIndex={2999999}>
+              <button type="button" className={`pop-gstbtn ${isIntl ? 'is-disabled' : ''}`} disabled={!entityId}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isIntl) { toast.info('GST breakdown not applicable', `GST doesn't apply to an international ${label} — there's no CGST / SGST breakdown to show.`); return; }
+                  setGstOpen(true);
+                }}>
                 <IcoPct /><span>GST Breakdown</span>
               </button>
             </Tooltip>}>
+            {/* International POs: the whole Payment Details table is dimmed and a
+                transparent mask captures clicks to explain TDS/GST don't apply. */}
+            <div className={`pop-pd-body ${isIntl ? 'is-off' : ''}`}>
+            {isIntl && (
+              <button type="button" className="pop-pd-mask" aria-label="Payment Details disabled for international PO"
+                onClick={() => toast.info('Not applicable for international', `GST & TDS don't apply to an international ${label} — TDS deduction is disabled in Payment Details.`)} />
+            )}
             <div className="pop-tbl-wrap">
               <table className="pop-tbl pop-tbl-c">
                 <thead><tr>
@@ -291,9 +311,10 @@ export default function PoPaymentModal({
                        }} disabled={tdsLocked} /></td>
                   <td><span className="pop-ro">{inr(preview?.tdsAmount ?? a?.tdsAmount)}</span></td>
                   <td><span className="pop-ro">{inr(preview?.netPayable ?? a?.netPayable)}</span></td>
-                  <td><Tooltip label={tdsLocked ? tdsLockReason : (a?.tdsCut ? 'Edit the TDS % (allowed until the first payment or Zoho sync)' : 'Deduct the TDS')} themed zIndex={2999999}><button className={`pop-btn-save ${tdsLocked ? 'is-cut' : ''}`} disabled={savingTds || tdsLocked} onClick={saveTds}>{savingTds ? '…' : (tdsLocked ? '✓ Deducted' : (a?.tdsCut ? 'Update' : 'Deduct'))}</button></Tooltip></td>
+                  <td><Tooltip label={tdsLocked ? tdsLockReason : (a?.tdsCut ? 'Edit the TDS % (allowed until the first payment or Zoho sync)' : 'Deduct the TDS')} themed zIndex={2999999}><button className={`pop-btn-save ${(tdsLocked && !isIntl) ? 'is-cut' : ''}`} disabled={savingTds || tdsLocked} onClick={saveTds}>{savingTds ? '…' : isIntl ? 'N/A' : (tdsLocked ? '✓ Deducted' : (a?.tdsCut ? 'Update' : 'Deduct'))}</button></Tooltip></td>
                 </tr></tbody>
               </table>
+            </div>
             </div>
           </Section>
 
@@ -1114,6 +1135,11 @@ body.pop-modal-open .master-datepicker-popup{z-index:2900050 !important;}
 .pop-gstbtn{display:inline-flex;align-items:center;gap:6px;padding:6px 13px;border:1.5px solid #7dd3e0;background:#fff;color:#0e7490;font-family:inherit;font-size:11.5px;font-weight:700;border-radius:8px;cursor:pointer;box-shadow:0 2px 6px rgba(6,182,212,.12);}
 .pop-gstbtn:hover:not(:disabled){background:#ecfeff;border-color:#0891b2;}
 .pop-gstbtn:disabled{opacity:.5;cursor:not-allowed;}
+.pop-gstbtn.is-disabled{opacity:.5;cursor:not-allowed;background:#f1f5f9;border-color:#cbd5e1;color:#64748b;box-shadow:none;}
+.pop-gstbtn.is-disabled:hover{background:#f1f5f9;border-color:#cbd5e1;}
+.pop-pd-body{position:relative;}
+.pop-pd-body.is-off .pop-tbl-wrap{opacity:.5;filter:grayscale(.35);pointer-events:none;user-select:none;}
+.pop-pd-mask{position:absolute;inset:0;z-index:3;border:0;background:transparent;cursor:not-allowed;padding:0;margin:0;}
 .pop-gstbtn svg{width:14px;height:14px;}
 .gst-backdrop{position:fixed;inset:0;z-index:2900010;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:24px 16px;font-family:var(--font-sans,'Inter',sans-serif);}
 .gst-modal{width:100%;max-width:1000px;background:#fff;border:1.5px solid rgba(255,255,255,.5);border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.5);display:flex;flex-direction:column;}

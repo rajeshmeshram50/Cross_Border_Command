@@ -50,6 +50,7 @@ class Branch extends Model
         'status',
         'notes',
         'shifts',
+        'bank_accounts',
         'created_by',
     ];
 
@@ -61,6 +62,7 @@ class Branch extends Model
             'max_users' => 'integer',
             'established_at' => 'date',
             'shifts' => 'array',
+            'bank_accounts' => 'array',
         ];
     }
 
