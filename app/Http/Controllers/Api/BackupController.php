@@ -3,144 +3,159 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\DatabaseBackupMail;
+use App\Services\DatabaseBackupService;
+use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Mail;
+use RuntimeException;
 
 /**
- * Database backup (super-admin only).
+ * Database backup email (super-admin only).
  *
- * Produces a full logical dump of the active PostgreSQL database with pg_dump
- * and streams it back to the browser as a downloadable .sql file.
+ * The scheduler auto-sends a gzip-compressed pg_dump every 15 days
+ * (see App\Console\Commands\SendDatabaseBackupEmail + routes/console.php).
+ * These endpoints expose that same pipeline to the admin UI:
+ *  - GET  /backup/email/status  → when it last went out + when it's next due.
+ *  - POST /backup/email/send    → generate + email a backup right now (on demand,
+ *                                 ignores the 15-day gate) and re-stamp the marker.
  *
- * Reliability notes:
- *  - The dump is written to a temp file FIRST (Process timeout 0 = no cap), so a
- *    non-zero pg_dump exit surfaces as a real HTTP 500 with the stderr text
- *    instead of a half-written download. Only on success do we stream the file.
- *  - set_time_limit(0) removes PHP's own execution cap; the frontend calls this
- *    with an Axios timeout of 0 so a large DB never trips a client timeout.
- *  - pg_dump path is configurable via PG_DUMP_PATH (falls back to "pg_dump" on
- *    PATH). PGPASSWORD is passed through the child env, never on the cmdline.
+ * The heavy lifting (pg_dump, env, restrict-key) lives in DatabaseBackupService
+ * so the console command and this controller stay in lockstep.
  */
 class BackupController extends Controller
 {
-    public function download(Request $request)
+    /** Keep in step with SendDatabaseBackupEmail::INTERVAL_DAYS. */
+    private const INTERVAL_DAYS = 15;
+
+    private function markerPath(): string
     {
-        $user = $request->user();
-        abort_unless($user && $user->user_type === 'super_admin', 403,
-            'Only administrators can download database backups.');
+        return storage_path('app/backups/.last_email_backup');
+    }
 
-        @set_time_limit(0);
+    /** Read the last-sent timestamp from the marker file, or null. */
+    private function lastSentAt(): ?Carbon
+    {
+        $marker = $this->markerPath();
+        if (! File::exists($marker)) {
+            return null;
+        }
+        try {
+            return Carbon::parse(trim((string) File::get($marker)));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
 
-        $connection = config('database.default');
-        $cfg        = config("database.connections.$connection");
+    /**
+     * Resolve recipients: explicit override, else BACKUP_EMAIL_RECIPIENTS,
+     * else MAIL_FROM_ADDRESS. Trimmed, lowercased, de-duped, validated.
+     *
+     * @return list<string>
+     */
+    private function recipients(string $override = ''): array
+    {
+        $raw = $override !== ''
+            ? $override
+            : (string) env('BACKUP_EMAIL_RECIPIENTS', (string) config('mail.from.address', ''));
 
-        if (($cfg['driver'] ?? null) !== 'pgsql') {
+        return collect(explode(',', $raw))
+            ->map(fn ($e) => strtolower(trim($e)))
+            ->filter(fn ($e) => filter_var($e, FILTER_VALIDATE_EMAIL))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /** GET /backup/email/status — last send + next due + configured recipients. */
+    public function status(Request $request): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $last = $this->lastSentAt();
+        $due  = $last?->copy()->addDays(self::INTERVAL_DAYS);
+
+        return response()->json([
+            'interval_days'  => self::INTERVAL_DAYS,
+            'recipients'     => $this->recipients(),
+            'last_sent_at'   => $last?->toIso8601String(),
+            'last_sent_human'=> $last?->diffForHumans(),
+            'next_due_at'    => $due?->toDateString(),
+            'is_due_now'     => $last === null || $last->diffInDays(now()) >= self::INTERVAL_DAYS,
+            'ever_sent'      => $last !== null,
+        ]);
+    }
+
+    /** POST /backup/email/send — generate + email a backup now (on demand). */
+    public function send(Request $request, DatabaseBackupService $service): JsonResponse
+    {
+        $this->authorizeAdmin($request);
+
+        $data = $request->validate([
+            'to' => ['nullable', 'string'],
+        ]);
+
+        $recipients = $this->recipients((string) ($data['to'] ?? ''));
+        if (empty($recipients)) {
             return response()->json([
-                'message' => 'Database backup is only supported for PostgreSQL on this server.',
+                'message' => 'No recipients configured. Set BACKUP_EMAIL_RECIPIENTS in .env or pass "to".',
             ], 422);
         }
 
-        $host = (string) ($cfg['host'] ?? '127.0.0.1');
-        $port = (string) ($cfg['port'] ?? '5432');
-        $dbUser = (string) ($cfg['username'] ?? '');
-        $dbName = (string) ($cfg['database'] ?? '');
-        $dbPass = (string) ($cfg['password'] ?? '');
-
-        $pgDump = env('PG_DUMP_PATH', 'pg_dump');
-
-        // If an explicit path was configured, make sure it actually exists so we
-        // can fail fast with a clear message instead of an opaque proc error.
-        if (str_contains($pgDump, DIRECTORY_SEPARATOR) && ! is_file($pgDump)) {
-            return response()->json([
-                'message' => 'pg_dump was not found at the configured PG_DUMP_PATH.',
-            ], 500);
-        }
-
-        $dir = storage_path('app/backups');
-        File::ensureDirectoryExists($dir);
-
-        $filename = $dbName . '_backup_' . now()->format('Y-m-d_His') . '.sql';
-        $path     = $dir . DIRECTORY_SEPARATOR . $filename;
-
-        // Clean up any stale dumps (older than 1h) so failed/aborted downloads
-        // don't accumulate on disk.
-        foreach (File::glob($dir . DIRECTORY_SEPARATOR . '*.sql') as $old) {
-            if (File::lastModified($old) < now()->subHour()->timestamp) {
-                File::delete($old);
-            }
-        }
-
-        // pg_dump 18 wraps plain-SQL output in a psql \restrict <key> block and
-        // generates that key with the OS strong-RNG. Under a Windows service
-        // account (XAMPP's Apache) that RNG call can fail with "could not
-        // generate restrict key". We sidestep it entirely by supplying our own
-        // alphanumeric key from PHP's random_bytes, which works under any account.
-        $restrictKey = bin2hex(random_bytes(16));
-
-        $command = [
-            $pgDump,
-            '-h', $host,
-            '-p', $port,
-            '-U', $dbUser,
-            '-d', $dbName,
-            '--no-owner',
-            '--no-privileges',
-            '--clean',
-            '--if-exists',
-            '--restrict-key', $restrictKey,
-            '-f', $path,
-        ];
-
-        // Build a COMPLETE child environment. Under `artisan serve` / Apache the
-        // process Laravel spawns does not reliably inherit PATH, so pg_dump.exe
-        // cannot locate its sibling DLLs (libpq, etc.) and dies with an empty
-        // "pg_dump: error:" (exit 1). We pass an explicit env: PGPASSWORD, a PATH
-        // that starts with pg_dump's own bin directory, plus SystemRoot/System32
-        // for the Windows crypto + core DLLs.
-        $systemRoot = getenv('SystemRoot') ?: 'C:\\Windows';
-        $pathParts  = array_filter([
-            str_contains($pgDump, DIRECTORY_SEPARATOR) ? dirname($pgDump) : null,
-            getenv('PATH') ?: null,
-            $systemRoot . DIRECTORY_SEPARATOR . 'System32',
-        ]);
-        $procEnv = [
-            'PGPASSWORD' => $dbPass,
-            'PATH'       => implode(PATH_SEPARATOR, $pathParts),
-            'SystemRoot' => $systemRoot,
-        ];
-
+        // --- Generate ---------------------------------------------------
         try {
-            $result = Process::timeout(0)
-                ->env($procEnv)
-                ->run($command);
+            $dump = $service->generate();
+        } catch (RuntimeException $e) {
+            Log::error('[DB Backup] API send — generation failed', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Backup generation failed: ' . $e->getMessage()], 500);
+        }
+
+        // --- Compress for email ----------------------------------------
+        $gzBytes = gzencode((string) File::get($dump['path']), 6);
+        File::delete($dump['path']);
+        if ($gzBytes === false) {
+            return response()->json(['message' => 'Could not compress the backup for email.'], 500);
+        }
+
+        $connection = config('database.default');
+        $dbName     = (string) config("database.connections.$connection.database");
+
+        // --- Send -------------------------------------------------------
+        try {
+            Mail::to($recipients)->send(new DatabaseBackupMail(
+                databaseName: $dbName,
+                generatedAt: now()->format('d M Y, H:i'),
+                senderName: (string) ($request->user()?->name ?? 'Admin'),
+                gzBytes: $gzBytes,
+                gzFilename: $dump['filename'] . '.gz',
+            ));
         } catch (\Throwable $e) {
-            Log::error('[DB Backup] pg_dump failed to start', ['error' => $e->getMessage()]);
-            return response()->json([
-                'message' => 'Could not start pg_dump. Check that PostgreSQL client tools are installed.',
-                'error'   => $e->getMessage(),
-            ], 500);
+            Log::error('[DB Backup] API send failed', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Backup email failed: ' . $e->getMessage()], 500);
         }
 
-        if (! $result->successful() || ! is_file($path) || filesize($path) === 0) {
-            Log::error('[DB Backup] pg_dump exited non-zero', [
-                'exit'   => $result->exitCode(),
-                'stderr' => $result->errorOutput(),
-            ]);
-            if (is_file($path)) {
-                File::delete($path);
-            }
-            return response()->json([
-                'message' => 'Database backup failed.',
-                'error'   => trim($result->errorOutput()) ?: 'pg_dump returned a non-zero exit code.',
-            ], 500);
-        }
+        // Stamp success so the scheduled 15-day clock restarts from now too.
+        File::put($this->markerPath(), now()->toIso8601String());
 
-        return response()
-            ->download($path, $filename, [
-                'Content-Type' => 'application/sql',
-            ])
-            ->deleteFileAfterSend(true);
+        $sizeKb = (int) round(strlen($gzBytes) / 1024);
+        Log::info('[DB Backup] API send OK', ['recipients' => $recipients, 'size_kb' => $sizeKb]);
+
+        return response()->json([
+            'message'    => 'Backup emailed successfully.',
+            'recipients' => $recipients,
+            'size_kb'    => $sizeKb,
+            'sent_at'    => now()->toIso8601String(),
+        ]);
+    }
+
+    /** Only super-admins may generate/email full database dumps. */
+    private function authorizeAdmin(Request $request): void
+    {
+        $user = $request->user();
+        abort_unless($user && $user->user_type === 'super_admin', 403,
+            'Only administrators can send database backups.');
     }
 }
