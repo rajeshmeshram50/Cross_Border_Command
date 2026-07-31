@@ -83,6 +83,44 @@ trait HandlesDocxHtmlRoundtrip
             (string) $html
         );
 
+        // PhpWord fills a table cell from `background-color` and IGNORES the
+        // `background` shorthand — but the editor writes cell fills as
+        // `background: rgb(r,g,b)`. Without this the teal header row came out
+        // with no fill, so its white text was invisible (white-on-white).
+        // Promote a solid-colour `background:` to `background-color:` (PhpWord
+        // accepts the rgb() value as-is and emits <w:shd>).
+        $html = preg_replace(
+            '/\bbackground\s*:\s*(rgb\([^)]*\)|#[0-9a-fA-F]{3,6})/i',
+            'background-color:$1',
+            (string) $html
+        );
+
+        // Repair links whose href is empty or protocol-only (e.g. href="https://")
+        // but whose visible TEXT is a real URL — an old editor bug saved these
+        // when the user link-wrapped a pasted URL and accepted the bare "https://"
+        // prompt default. Use the link text as the href so the DOCX (and PDF)
+        // link actually opens instead of going nowhere.
+        $html = preg_replace_callback(
+            '/<a\b([^>]*)>(.*?)<\/a>/is',
+            function ($m) {
+                $attrs = $m[1];
+                $inner = $m[2];
+                $href  = '';
+                if (preg_match('/\bhref\s*=\s*"([^"]*)"/i', $attrs, $hm)) $href = trim($hm[1]);
+                $broken = $href === '' || $href === '#' || (bool) preg_match('#^(https?://|mailto:|tel:)$#i', $href);
+                if (!$broken) return $m[0];
+                $text = trim(html_entity_decode(strip_tags($inner), ENT_QUOTES | ENT_HTML5));
+                if ($text === '' || !preg_match('#^(https?://|mailto:|tel:|www\.|[\w-]+(\.[\w-]+)+)#i', $text)) return $m[0];
+                $newHref = preg_match('#^(https?://|mailto:|tel:)#i', $text) ? $text : 'https://' . $text;
+                $newHref = htmlspecialchars($newHref, ENT_QUOTES);
+                $attrs = preg_match('/\bhref\s*=/i', $attrs)
+                    ? preg_replace('/\bhref\s*=\s*"[^"]*"/i', 'href="' . $newHref . '"', $attrs)
+                    : $attrs . ' href="' . $newHref . '"';
+                return '<a' . $attrs . '>' . $inner . '</a>';
+            },
+            (string) $html
+        );
+
         // Word renders a hyperlink as blue + underlined ONLY when the <a> run
         // carries that font style. The editor styles links via CSS (which
         // PhpWord ignores when building the DOCX), so links came out as plain
@@ -446,11 +484,56 @@ trait HandlesDocxHtmlRoundtrip
     }
 
     /**
-     * Give every <table> that lacks explicit column widths a full-width,
-     * EQUAL-column layout (a <colgroup> + width:100%) so the DOCX renders it the
-     * same way the editor does (table-layout:fixed; width:100%) instead of
-     * PhpWord's default uneven auto-sizing. Tables that already carry widths
-     * (e.g. from an uploaded Word grid) are left untouched.
+     * PhpWord section page-size style from the request's ?size / ?orient params.
+     * Lets a wide, many-column table be exported to a larger page (A3) or
+     * landscape so it isn't cramped onto A4. Dimensions are in twips (1/20 pt):
+     * A4 = 210×297mm, A3 = 297×420mm (portrait).
+     */
+    /** Section side margin (twips) — PhpWord's default; set explicitly so the
+     *  usable text width used for table sizing is deterministic. */
+    protected const DOCX_SIDE_MARGIN = 1440;
+
+    protected function docxPageStyle(\Illuminate\Http\Request $request): array
+    {
+        $size   = strtolower((string) $request->query('size', 'a4'));
+        $orient = strtolower((string) $request->query('orient', 'portrait'));
+        [$w, $h] = $size === 'a3' ? [16838, 23811] : [11906, 16838];
+        if ($orient === 'landscape') { [$w, $h] = [$h, $w]; }
+        return [
+            'pageSizeW'    => $w,
+            'pageSizeH'    => $h,
+            'orientation'  => $orient === 'landscape' ? 'landscape' : 'portrait',
+            'marginLeft'   => self::DOCX_SIDE_MARGIN,
+            'marginRight'  => self::DOCX_SIDE_MARGIN,
+            'marginTop'    => self::DOCX_SIDE_MARGIN,
+            'marginBottom' => self::DOCX_SIDE_MARGIN,
+        ];
+    }
+
+    /** Usable text width (twips) for the chosen page = page width − side margins.
+     *  Tables are stretched to exactly this so they fill the page without the
+     *  user having to drag columns in Word. */
+    protected function docxUsableWidthTwips(\Illuminate\Http\Request $request): int
+    {
+        $s = $this->docxPageStyle($request);
+        return max(2000, (int) $s['pageSizeW'] - 2 * self::DOCX_SIDE_MARGIN);
+    }
+
+    /**
+     * Make every <table> that lacks explicit column widths render as an
+     * EQUAL-column, full-width grid that fits the page — matching the editor's
+     * `table-layout:fixed; width:100%`.
+     *
+     * The subtlety: PhpWord's HTML reader IGNORES <colgroup>/<col> widths and
+     * sizes columns from the CELLS. When cells have no width it defaults every
+     * grid column to a fixed 5000-twip width, so an N-column table becomes
+     * N×5000 twips wide and overflows the page in portrait (a 3-col table is
+     * 15000 twips ≈ 10.4" — wider than A4's ~6.3" text area). Stamping an equal
+     * `width:%` on each cell makes PhpWord emit PROPORTIONAL grid columns that,
+     * with the table at width:100%, scale to the page in any size/orientation.
+     *
+     * Tables that already carry real column widths (e.g. an uploaded Word grid)
+     * are left untouched so their proportions survive.
      */
     protected function ensureTableColWidths(string $html): string
     {
@@ -464,9 +547,14 @@ trait HandlesDocxHtmlRoundtrip
             )) {
                 return $html;
             }
+            // A real width, as opposed to the editor's harmless `min-width:25px`.
+            $hasRealWidth = static function (string $style): bool {
+                return (bool) preg_match('/(?<!-)\bwidth\s*:/i', $style);
+            };
+
             $xp = new \DOMXPath($doc);
             foreach ($xp->query('//table') as $table) {
-                if ($xp->query('colgroup', $table)->length) continue;   // already has widths
+                // Widest row (respecting colspans) = the column count.
                 $maxCols = 0;
                 foreach ($xp->query('.//tr', $table) as $tr) {
                     $cols = 0;
@@ -476,18 +564,51 @@ trait HandlesDocxHtmlRoundtrip
                     $maxCols = max($maxCols, $cols);
                 }
                 if ($maxCols < 1) continue;
-                $style = $table->getAttribute('style');
-                if (stripos($style, 'width') === false) {
-                    $table->setAttribute('style', trim($style . ';width:100%', '; '));
+
+                // If the author already set explicit column widths (on <col> or
+                // on any cell), respect them and leave the table alone.
+                $explicit = false;
+                foreach ($xp->query('.//col', $table) as $col) {
+                    if ($hasRealWidth($col->getAttribute('style'))) { $explicit = true; break; }
                 }
-                $cg  = $doc->createElement('colgroup');
-                $pct = round(100 / $maxCols, 4);
-                for ($i = 0; $i < $maxCols; $i++) {
-                    $col = $doc->createElement('col');
-                    $col->setAttribute('style', 'width:' . $pct . '%');
-                    $cg->appendChild($col);
+                if (!$explicit) {
+                    foreach ($xp->query('.//td|.//th', $table) as $cell) {
+                        if ($hasRealWidth($cell->getAttribute('style'))) { $explicit = true; break; }
+                    }
                 }
-                $table->insertBefore($cg, $table->firstChild);
+                if ($explicit) continue;
+
+                // Table itself: full width + fixed layout.
+                $tStyle = $table->getAttribute('style');
+                if (!$hasRealWidth($tStyle)) $tStyle = trim($tStyle . ';width:100%', '; ');
+                if (stripos($tStyle, 'table-layout') === false) $tStyle = trim($tStyle . ';table-layout:fixed', '; ');
+                $table->setAttribute('style', $tStyle);
+
+                // Stamp an equal width on every cell (× colspan). This is what
+                // PhpWord actually reads to size the columns. The width MUST be a
+                // whole-number percent — PhpWord's percent parser mangles decimals
+                // (33.3333% → 3333%, 33.0% → 0%), so use an integer share. Exact
+                // sum-to-100 is irrelevant: the widths only set the column RATIO
+                // and the table itself is pinned to 100% of the page.
+                $perCol = max(1, (int) round(100 / $maxCols));
+                foreach ($xp->query('.//tr', $table) as $tr) {
+                    foreach ($xp->query('td|th', $tr) as $cell) {
+                        $span = max(1, (int) ($cell->getAttribute('colspan') ?: 1));
+                        $w    = $perCol * $span;
+                        $cs   = preg_replace('/(?<!-)\bwidth\s*:[^;]*;?/i', '', $cell->getAttribute('style'));
+                        $cell->setAttribute('style', trim('width:' . $w . '%;' . $cs, '; '));
+                    }
+                }
+
+                // Also normalise the <colgroup> (cosmetic — PhpWord ignores it,
+                // but keeps the markup self-consistent for other consumers).
+                foreach ($xp->query('colgroup', $table) as $cg) {
+                    $cols = $xp->query('col', $cg);
+                    if ($cols->length) {
+                        $per = max(1, (int) round(100 / $cols->length));
+                        foreach ($cols as $col) $col->setAttribute('style', 'width:' . $per . '%');
+                    }
+                }
             }
             $root = null;
             foreach ($doc->childNodes as $n) {
@@ -533,6 +654,143 @@ trait HandlesDocxHtmlRoundtrip
                 if ($txt !== '') $section->addText($txt);
             }
         }
+    }
+
+    /**
+     * Repair schema-INVALID OOXML that PhpWord's Word2007 writer can emit from
+     * editor HTML, which makes the .docx corrupt — Word opens it as a single
+     * recovered line and Google Docs rejects it ("unexpected error"). Rewrites
+     * document.xml + any header/footer parts in-place inside the .docx zip:
+     *
+     *   1. Bare `&` (PhpWord leaves ampersands decoded from HTML entities
+     *      unescaped) → `&amp;`. This is the fatal one: it makes the XML
+     *      non-well-formed, so the whole document fails to parse.
+     *   2. Fractional `w:sz` / `w:szCs` (from a px→pt font-size conversion,
+     *      e.g. 19.6) → nearest integer. Half-points must be whole numbers.
+     *   3. Border `w:color` that isn't 6-hex or `auto` (PhpWord maps a CSS
+     *      `solid` border keyword into the colour slot) → `auto`.
+     */
+    protected function sanitizeDocxXml(string $docxPath, ?int $usableTwips = null): void
+    {
+        if (!class_exists('ZipArchive')) return;
+        $zip = new \ZipArchive();
+        if ($zip->open($docxPath) !== true) return;
+        $parts = [
+            'word/document.xml',
+            'word/header1.xml', 'word/header2.xml', 'word/header3.xml',
+            'word/footer1.xml', 'word/footer2.xml', 'word/footer3.xml',
+        ];
+        foreach ($parts as $name) {
+            $xml = $zip->getFromName($name);
+            if ($xml === false || $xml === '') continue;
+            $fixed = $this->sanitizeOoxmlString($xml);
+            // Stretch body tables to the page width (document.xml only — leave
+            // header/footer layout tables alone). Runs after the & escape so the
+            // XML is well-formed enough to parse.
+            if ($name === 'word/document.xml' && $usableTwips) {
+                $fixed = $this->fitTablesToWidthDom($fixed, $usableTwips);
+            }
+            if ($fixed !== $xml) $zip->addFromString($name, $fixed);
+        }
+        $zip->close();
+    }
+
+    /**
+     * Force every table in document.xml to fill the page's usable width, so the
+     * user never has to hand-drag columns in Word.
+     *
+     * PhpWord emits `tblLayout=autofit` with a narrow grid, so Word shrinks the
+     * table to its content instead of the page. We switch to a FIXED layout and
+     * rewrite the grid + each cell width to equal, absolute (dxa) columns that
+     * sum to the usable width — a fixed-layout table with a full-width grid
+     * renders edge-to-edge, empty cells included, in any page size/orientation.
+     * Cell colspans (w:gridSpan) get a proportionally wider width.
+     */
+    protected function fitTablesToWidthDom(string $xml, int $usableTwips): string
+    {
+        if (stripos($xml, '<w:tbl>') === false && stripos($xml, '<w:tbl ') === false) return $xml;
+        $prev = libxml_use_internal_errors(true);
+        try {
+            $dom = new \DOMDocument();
+            if (!$dom->loadXML($xml)) return $xml;
+            $xp = new \DOMXPath($dom);
+            $xp->registerNamespace('w', self::W_NS);
+
+            foreach ($xp->query('//w:tbl') as $tbl) {
+                $grid = $xp->query('w:tblGrid', $tbl)->item(0);
+                if (!$grid) continue;
+                $cols = $xp->query('w:gridCol', $grid);
+                $n = $cols->length;
+                if ($n < 1) continue;
+                $colW  = max(1, intdiv($usableTwips, $n));
+                $total = $colW * $n;
+
+                // Equal grid columns (absolute).
+                foreach ($cols as $gc) $gc->setAttributeNS(self::W_NS, 'w:w', (string) $colW);
+
+                // Table preferred width = full usable, and FIXED layout so Word
+                // honours the grid rather than shrinking to content.
+                $tblPr = $xp->query('w:tblPr', $tbl)->item(0);
+                if ($tblPr) {
+                    $tw = $xp->query('w:tblW', $tblPr)->item(0);
+                    if (!$tw) { $tw = $dom->createElementNS(self::W_NS, 'w:tblW'); $tblPr->appendChild($tw); }
+                    $tw->setAttributeNS(self::W_NS, 'w:w', (string) $total);
+                    $tw->setAttributeNS(self::W_NS, 'w:type', 'dxa');
+
+                    $tl = $xp->query('w:tblLayout', $tblPr)->item(0);
+                    if (!$tl) { $tl = $dom->createElementNS(self::W_NS, 'w:tblLayout'); $tblPr->appendChild($tl); }
+                    $tl->setAttributeNS(self::W_NS, 'w:type', 'fixed');
+                }
+
+                // Each cell width = span × column width (absolute), overriding the
+                // relative pct widths PhpWord wrote.
+                foreach ($xp->query('.//w:tc', $tbl) as $tc) {
+                    $tcPr = $xp->query('w:tcPr', $tc)->item(0);
+                    if (!$tcPr) continue;
+                    $span = 1;
+                    $gs = $xp->query('w:gridSpan', $tcPr)->item(0);
+                    if ($gs) $span = max(1, (int) $gs->getAttributeNS(self::W_NS, 'val'));
+                    $tcW = $xp->query('w:tcW', $tcPr)->item(0);
+                    if (!$tcW) { $tcW = $dom->createElementNS(self::W_NS, 'w:tcW'); $tcPr->insertBefore($tcW, $tcPr->firstChild); }
+                    $tcW->setAttributeNS(self::W_NS, 'w:w', (string) ($colW * $span));
+                    $tcW->setAttributeNS(self::W_NS, 'w:type', 'dxa');
+                }
+            }
+            $out = $dom->saveXML();
+            return $out !== false ? $out : $xml;
+        } catch (\Throwable $e) {
+            return $xml;
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($prev);
+        }
+    }
+
+    /** Apply the three OOXML repairs (see sanitizeDocxXml) to one XML part. */
+    protected function sanitizeOoxmlString(string $xml): string
+    {
+        // 1) Escape bare ampersands (anything not already a valid entity).
+        $xml = preg_replace('/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/', '&amp;', (string) $xml);
+
+        // 2) Fractional font sizes → nearest whole half-point.
+        $xml = preg_replace_callback(
+            '/(<w:sz(?:Cs)?\b[^>]*\bw:val=")([0-9]+\.[0-9]+)(")/',
+            fn ($m) => $m[1] . (string) max(1, (int) round((float) $m[2])) . $m[3],
+            (string) $xml
+        );
+
+        // 3) Invalid border colours → auto (runs use <w:color w:val="…"> and
+        //    are untouched; this only matches the w:color="…" attribute form).
+        $xml = preg_replace_callback(
+            '/\bw:color="([^"]*)"/',
+            function ($m) {
+                $v = $m[1];
+                return ($v === 'auto' || preg_match('/^[0-9A-Fa-f]{6}$/', $v)) ? $m[0] : 'w:color="auto"';
+            },
+            (string) $xml
+        );
+
+        return (string) $xml;
     }
 
     /** Split body HTML into its top-level block elements (for the resilient add). */

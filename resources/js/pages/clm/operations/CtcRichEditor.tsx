@@ -89,6 +89,34 @@ export interface CtcEditor {
   setHTML: (html: string) => void;
 }
 
+/**
+ * Repair links whose href is empty or protocol-only (e.g. href="https://") but
+ * whose visible TEXT is a real URL. An old toolbar bug saved these when a user
+ * link-wrapped a pasted URL and accepted the bare "https://" prompt default, so
+ * the link opened nowhere — in the editor AND in the DOCX/PDF export. Rewriting
+ * the href from the text makes the link openable everywhere, and (because the
+ * editor emits the repaired HTML on the next save) permanently fixes the record.
+ */
+export function repairBrokenLinkHrefs(html: string): string {
+  if (!html || html.indexOf('<a') === -1) return html;
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    let changed = false;
+    doc.querySelectorAll('a').forEach((a) => {
+      const href = (a.getAttribute('href') || '').trim();
+      const broken = href === '' || href === '#' || /^(https?:\/\/|mailto:|tel:)$/i.test(href);
+      if (!broken) return;
+      const text = (a.textContent || '').trim();
+      if (!text || !/^(https?:\/\/|mailto:|tel:|www\.|[\w-]+(\.[\w-]+)+)/i.test(text)) return;
+      a.setAttribute('href', /^(https?:\/\/|mailto:|tel:)/i.test(text) ? text : `https://${text}`);
+      changed = true;
+    });
+    return changed ? doc.body.innerHTML : html;
+  } catch {
+    return html;
+  }
+}
+
 export function useCtcEditor(opts: { value: string; onChange: (html: string) => void; editable?: boolean }): CtcEditor {
   const { value, onChange, editable = true } = opts;
   const lastSyncedRef = useRef<string>(value);
@@ -135,7 +163,7 @@ export function useCtcEditor(opts: { value: string; onChange: (html: string) => 
       StyledTableCell,
       ParagraphIndent,
     ],
-    content: value || '<p></p>',
+    content: repairBrokenLinkHrefs(value) || '<p></p>',
     onUpdate({ editor }) {
       const html = editor.getHTML();
       lastSyncedRef.current = html;
@@ -154,7 +182,7 @@ export function useCtcEditor(opts: { value: string; onChange: (html: string) => 
     if (!editor) return;
     if (value !== lastSyncedRef.current && value !== editor.getHTML()) {
       lastSyncedRef.current = value;
-      editor.commands.setContent(value || '<p></p>', { emitUpdate: false });
+      editor.commands.setContent(repairBrokenLinkHrefs(value) || '<p></p>', { emitUpdate: false });
     }
   }, [value, editor]);
 
@@ -164,9 +192,10 @@ export function useCtcEditor(opts: { value: string; onChange: (html: string) => 
     insertText: (text: string) => { editor?.chain().focus().insertContent(text + ' ').run(); },
     setHTML: (html: string) => {
       if (!editor) return;
-      lastSyncedRef.current = html;
-      editor.commands.setContent(html || '<p></p>', { emitUpdate: false });
-      onChange(html);
+      const repaired = repairBrokenLinkHrefs(html);
+      lastSyncedRef.current = repaired;
+      editor.commands.setContent(repaired || '<p></p>', { emitUpdate: false });
+      onChange(repaired);
     },
   };
 }
