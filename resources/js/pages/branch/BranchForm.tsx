@@ -347,6 +347,10 @@ export default function BranchForm({ onBack, editId }: Props) {
   // feed the Employee form's Shift dropdown, so each branch runs its own shifts.
   type Shift = { name: string; start: string; end: string };
   const blankShift = (): Shift => ({ name: '', start: '', end: '' });
+  /* An overnight shift is simply one whose end time is at or before its start
+     (21:00 → 06:00). Both times are plain "HH:MM" clock values, so the wrap is
+     implied rather than stored — the row means "next day" whenever this is true. */
+  const isOvernightShift = (s: Shift) => !!s.start && !!s.end && s.end <= s.start;
   // Always keep at least one row so the section renders an editable shift
   // straight away instead of an empty-state placeholder.
   const [shifts, setShifts] = useState<Shift[]>([blankShift()]);
@@ -1234,26 +1238,10 @@ export default function BranchForm({ onBack, editId }: Props) {
         }
       `}</style>
 
-      {/* Page Title */}
+      {/* The page-title strip that used to sit here is gone — it stacked a second
+          header above the card's own, repeating the same "Edit Branch" identity.
+          Its title, subtitle and Back button moved into the card header below. */}
       <div className="bf-wrap">
-      <Row className="mb-0">
-        <Col xs={12}>
-          <div className="frm-cstrip mb-3">
-            <span className="frm-cstrip-accent" />
-            <div className="frm-cstrip-left">
-              <div className="frm-cstrip-icon"><i className="ri-git-branch-line" /></div>
-              <div className="min-w-0">
-                <div className="frm-cstrip-title">{isEdit ? 'Edit Branch' : 'Add New Branch'}</div>
-                <div className="frm-cstrip-sub">{isEdit ? 'Update branch office details' : 'Create a new branch office'}</div>
-              </div>
-            </div>
-            <button type="button" className="frm-cstrip-back" onClick={onBack}>
-              <i className="ri-arrow-left-line" />
-              Back
-            </button>
-          </div>
-        </Col>
-      </Row>
 
       {serverErrors.general && (() => {
         const msg = serverErrors.general[0] || '';
@@ -1398,7 +1386,9 @@ export default function BranchForm({ onBack, editId }: Props) {
               alignItems: 'center',
               justifyContent: 'space-between',
               borderBottom: '1px solid var(--vz-border-color)',
-              background: 'linear-gradient(135deg, rgba(99,102,241,0.06), rgba(99,102,241,0.01))',
+              // Plain white — the indigo wash it used to carry made the header
+              // read as a separate band from the form body below it.
+              background: 'var(--vz-card-bg, #ffffff)',
             }}
           >
             <div className="d-flex align-items-center gap-3">
@@ -1412,29 +1402,39 @@ export default function BranchForm({ onBack, editId }: Props) {
               >
                 <i className={isEdit ? 'ri-edit-2-line' : 'ri-git-branch-line'} style={{ color: '#fff', fontSize: 20 }} />
               </span>
-              <div>
-                <h6 className="mb-0 fw-bold" style={{ fontSize: 15 }}>Branch Registration Form</h6>
+              {/* The page title lives here now — one header for the screen. */}
+              <div className="min-w-0">
+                <h6 className="mb-0 fw-bold" style={{ fontSize: 15 }}>{isEdit ? 'Edit Branch' : 'Add New Branch'}</h6>
+                <div className="text-muted" style={{ fontSize: 12, marginTop: 2 }}>
+                  {isEdit ? 'Update branch office details' : 'Create a new branch office'}
+                </div>
               </div>
             </div>
-            <span
-              className="rounded-pill fw-bold"
-              style={{
-                fontSize: 11,
-                padding: '4px 10px',
-                letterSpacing: '0.06em',
-                background: isEdit
-                  ? 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)'
-                  : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                color: '#fff',
-                boxShadow: isEdit
-                  ? '0 4px 10px rgba(10,179,156,0.28)'
-                  : '0 4px 10px rgba(99,102,241,0.28)',
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-              }}
-            >
-              <i className={isEdit ? 'ri-edit-2-fill' : 'ri-add-circle-fill'} style={{ fontSize: 12 }} />
-              {isEdit ? 'Edit Mode' : 'New Branch'}
-            </span>
+            <div className="d-flex align-items-center gap-2 flex-shrink-0">
+              <span
+                className="rounded-pill fw-bold"
+                style={{
+                  fontSize: 11,
+                  padding: '4px 10px',
+                  letterSpacing: '0.06em',
+                  background: isEdit
+                    ? 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)'
+                    : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                  color: '#fff',
+                  boxShadow: isEdit
+                    ? '0 4px 10px rgba(10,179,156,0.28)'
+                    : '0 4px 10px rgba(99,102,241,0.28)',
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                <i className={isEdit ? 'ri-edit-2-fill' : 'ri-add-circle-fill'} style={{ fontSize: 12 }} />
+                {isEdit ? 'Edit Mode' : 'New Branch'}
+              </span>
+              <button type="button" className="frm-cstrip-back" onClick={onBack}>
+                <i className="ri-arrow-left-line" />
+                Back
+              </button>
+            </div>
           </CardHeader>
 
           <CardBody style={css.cardBody}>
@@ -1633,15 +1633,19 @@ export default function BranchForm({ onBack, editId }: Props) {
                   </div>
                   <div style={{ flex: '0 0 170px' }}>
                     {i === 0 && <Lbl>Start Time <span style={{ color: '#dc2626' }}>*</span></Lbl>}
-                    <MasterTimePicker value={sh.start} showNow={false}
+                    <MasterTimePicker value={sh.start} showNow={false} hour12
                       invalid={!!shiftErrors[i]?.start}
                       onChange={v => updateShift(i, 'start', v)} />
                   </div>
-                  <div style={{ flex: '0 0 170px' }}>
+                  <div style={{ flex: '0 0 190px' }}>
                     {i === 0 && <Lbl>End Time <span style={{ color: '#dc2626' }}>*</span></Lbl>}
-                    <MasterTimePicker value={sh.end} showNow={false}
+                    {/* No minTime here: an overnight shift (9:00 PM → 6:00 AM)
+                        ends BEFORE it starts on the clock, and a minTime floor
+                        made those hours unselectable — night shifts simply
+                        couldn't be entered. The badge below spells out that the
+                        end falls on the next day. */}
+                    <MasterTimePicker value={sh.end} showNow={false} hour12
                       invalid={!!shiftErrors[i]?.end}
-                      minTime={sh.start || undefined}
                       onChange={v => updateShift(i, 'end', v)} />
                   </div>
                   <button type="button" onClick={() => removeShift(i)} title="Remove shift"

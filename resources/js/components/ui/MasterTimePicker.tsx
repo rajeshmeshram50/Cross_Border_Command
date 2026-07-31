@@ -23,6 +23,7 @@ export function MasterTimePicker({
   showNow = true,
   minTime,
   accent,
+  hour12 = false,
 }: {
   name?: string;
   value?: string;
@@ -43,6 +44,10 @@ export function MasterTimePicker({
    * the app violet; pass 'teal' inside the teal-themed Meeting modal so the
    * dropdown matches its surroundings instead of clashing purple. */
   accent?: 'violet' | 'teal';
+  /* Show the field and the hour column in 12-hour clock form ("09:00 PM",
+   * "12 AM"). Purely presentational — the value this component reads and emits
+   * is always 24-hour "HH:MM", so nothing downstream has to change. */
+  hour12?: boolean;
 }) {
   const accentCls = accent === 'teal' ? ' mtp-accent-teal' : '';
   const [internal, setInternal] = useState<string>(defaultValue ?? '');
@@ -65,6 +70,26 @@ export function MasterTimePicker({
   const selM = mStr ? parseInt(mStr, 10) : null;
 
   const hours = Array.from({ length: 24 }, (_, i) => i);
+
+  /* 12-hour helpers. `hourLabel` renders the hour column (00 → "12 AM",
+   * 13 → "1 PM"); `displayValue` renders the field itself. Midnight and noon
+   * are the cases people get wrong, so they're spelled out here: hour 0 is
+   * 12 AM and hour 12 is 12 PM. */
+  const hourLabel = (h: number): string => {
+    if (!hour12) return pad(h);
+    const suffix = h < 12 ? 'AM' : 'PM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${h12} ${suffix}`;
+  };
+  const displayValue = (v: string): string => {
+    if (!hour12 || !v) return v;
+    const [hs, ms] = v.split(':');
+    const h = parseInt(hs, 10);
+    if (Number.isNaN(h)) return v;
+    const suffix = h < 12 ? 'AM' : 'PM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    return `${pad(h12)}:${ms ?? '00'} ${suffix}`;
+  };
   const minutes = Array.from({ length: Math.floor(60 / minuteStep) }, (_, i) => i * minuteStep);
 
   // Min-time floor: parse "HH:MM" once, then expose helpers that tell whether a
@@ -193,7 +218,7 @@ export function MasterTimePicker({
         aria-disabled={disabled}
       >
         {currentValue
-          ? <span className="master-timepicker-value">{currentValue}</span>
+          ? <span className="master-timepicker-value">{displayValue(currentValue)}</span>
           : <span className="master-timepicker-placeholder">{placeholder}</span>}
         {currentValue && !disabled && (
           <button
@@ -231,7 +256,7 @@ export function MasterTimePicker({
         >
           <div className="master-timepicker-cols">
             <div className="master-timepicker-col">
-              <div className="master-timepicker-col-head">HH</div>
+              <div className="master-timepicker-col-head">{hour12 ? 'HOUR' : 'HH'}</div>
               <div ref={hColRef} className="master-timepicker-col-list">
                 {hours.map(h => (
                   <button
@@ -241,7 +266,7 @@ export function MasterTimePicker({
                     className={`master-timepicker-item ${selH === h ? 'selected' : ''} ${hourDisabled(h) ? 'is-past' : ''}`}
                     onClick={() => pickHour(h)}
                   >
-                    {pad(h)}
+                    {hourLabel(h)}
                   </button>
                 ))}
               </div>

@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Col, Row, Input, Spinner } from 'reactstrap';
-import TableContainer from '../../velzon/Components/Common/TableContainerReactTable';
+import { Col, Row, Spinner } from 'reactstrap';
+import DataTable from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
-import { Shimmer, ShimmerTable } from '../../components/ui/Shimmer';
+import { Shimmer } from '../../components/ui/Shimmer';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import * as XLSX from 'xlsx';
@@ -212,12 +212,9 @@ export default function Branches({ onNavigate }: Props) {
   );
 
   // ── Table columns ──
+  // No Sr No column — DataTable's `serial` prop prepends one that numbers the
+  // row's VISIBLE position, so it stays 1..n once a column is sorted.
   const columns = useMemo(() => [
-    {
-      header: 'Sr No',
-      accessorKey: '__idx',
-      cell: (info: any) => <span className="text-muted fs-13">{info.row.index + 1}</span>,
-    },
     {
       header: 'Branch',
       accessorKey: 'name',
@@ -459,21 +456,9 @@ export default function Branches({ onNavigate }: Props) {
         [data-bs-theme="dark"] .br-cstrip-export { background: transparent; color: #c4b5fd; }
         [data-bs-theme="dark"] .br-cstrip-export:hover:not(:disabled) { background: rgba(124,58,237,.14); }
 
-        /* Unified list frame (search + table) — mirrors the Recruitment
-           page's .rec-list-frame so search + table read as one panel. */
-        .branches-list-frame {
-          background: #ffffff;
-          border: 1px solid #ececf2;
-          border-radius: 14px;
-          overflow: hidden;
-          box-shadow: 0 1px 0 rgba(15,23,42,0.04), 0 4px 14px rgba(15,23,42,0.05);
-        }
-        .branches-list-frame .branches-frame-filter { border-bottom: 1px solid var(--vz-border-color); }
-        [data-bs-theme="dark"] .branches-list-frame {
-          background: var(--vz-card-bg);
-          border-color: var(--vz-border-color);
-          box-shadow: 0 6px 18px rgba(0,0,0,0.30);
-        }
+        /* The .branches-list-frame wrapper (search row + table in one panel) is
+           gone — components/ui/DataTable is its own bordered card with the search
+           in its toolbar. */
 
         /* Unify table typography — every cell + header reads at the same
            13px size so the table looks like a single grid (matches the
@@ -651,49 +636,31 @@ export default function Branches({ onNavigate }: Props) {
               ))}
             </Row>
 
-            {/* ── Search + Table — one bordered frame (matches the
-                Recruitment list frame: search row on top, table below) ── */}
-            <div className="branches-list-frame">
-              <div className="branches-frame-filter p-3">
-                <div className="search-box">
-                  <Input
-                    type="text"
-                    className="form-control"
-                    placeholder="Search by name, code, city..."
-                    value={searchInput}
-                    onChange={e => setSearchInput(e.target.value)}
-                  />
-                  <i className="ri-search-line search-icon"></i>
-                </div>
-              </div>
-
-              {/* ── Table ── */}
-              <div className="p-3 pt-2">
-                {loading ? (
-                  <ShimmerTable rows={6} cols={9} />
-                ) : (
-                  <>
-                    <TableContainer
-                      columns={columns}
-                      data={filtered}
-                      isGlobalFilter={false}
-                      customPageSize={10}
-                      worklistPagination
-                      pageSizeOptions={[10, 25, 50, 100]}
-                      tableClass="align-middle table-nowrap mb-0"
-                      theadClass="table-light"
-                      divClass="table-responsive"
-                      SearchPlaceholder="Search by name, code, city..."
-                    />
-                    {filtered.length === 0 && (
-                      <div className="text-center text-muted py-5">
-                        No branches found. Click "Add Branch" to create one.
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
+            {/* Shared list table (components/ui/DataTable) — the same component
+                the masters and My Workplace use: violet header band, sortable
+                headers, search in the toolbar, the rows-per-page footer and the
+                fit-the-viewport row sizing. */}
+            <DataTable<any>
+              data={filtered}
+              columns={columns}
+              serial
+              accent="violet"
+              minWidth={1400}
+              fitToViewport
+              autoFitRows
+              loading={loading}
+              searchValue={searchInput}
+              onSearchChange={setSearchInput}
+              searchPlaceholder="Search by name, code, city..."
+              emptyMessage={
+                <>
+                  <i className="ri-git-branch-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                  {branches.length === 0
+                    ? 'No branches yet — click Add Branch to create one'
+                    : 'No branches match your search'}
+                </>
+              }
+            />
           </div>
         </Col>
       </Row>
