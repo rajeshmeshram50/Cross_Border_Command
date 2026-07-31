@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import '../../css/documentation.css';
@@ -361,9 +361,54 @@ export default function Documentation() {
   }
 
   const tabs = activeItem ? orderedTypes(activeItem.types) : [];
+  const pageRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = pageRef.current;
+    if (!el) return;
+
+    /* Find the real scroll container by walking up for the first ancestor that
+     * actually scrolls. The app ships two shells and they don't agree on markup:
+     * AppLayout scrolls a <main>, while the Velzon horizontal layout scrolls a
+     * plain <div class="main-content">. Matching on the tag name only worked in
+     * one of them — in the other this bailed out and the CSS fallback height
+     * took over, which overflowed the container. */
+    const findScrollHost = (start: HTMLElement): HTMLElement | null => {
+      let node = start.parentElement;
+      while (node && node !== document.body) {
+        const oy = getComputedStyle(node).overflowY;
+        if (oy === 'auto' || oy === 'scroll') return node;
+        node = node.parentElement;
+      }
+      return null;
+    };
+
+    const host = findScrollHost(el);
+    if (!host) return;   // nothing scrolls above us — keep the CSS fallback
+
+    const apply = () => {
+      const cs = getComputedStyle(host);
+      // Distance from the host's padding-box top down to our own top, measured
+      // as if unscrolled (hence + scrollTop). This absorbs whatever wrappers
+      // and padding each shell puts in between, rather than hard-coding an
+      // offset per layout.
+      const offset = el.getBoundingClientRect().top
+        - host.getBoundingClientRect().top
+        - parseFloat(cs.borderTopWidth || '0')
+        + host.scrollTop;
+      // clientHeight spans the padding box, so drop the bottom padding to stay
+      // inside it (AppLayout's <main> carries a pb-20).
+      const avail = host.clientHeight - offset - parseFloat(cs.paddingBottom || '0');
+      if (avail > 0) el.style.setProperty('--doc-avail-h', `${Math.round(avail)}px`);
+    };
+
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, []);
 
   return (
-    <div className="doc-page">
+    <div className="doc-page" ref={pageRef}>
       <div className="doc-topbar">
         <button type="button" className="doc-nav-toggle" onClick={() => setNavOpen(o => !o)} aria-label="Toggle list">
           <IcBook />
