@@ -752,6 +752,168 @@ class ExpenseClaimController extends Controller
             'created_by'      => $row->created_by,
             'creator_name'    => $row->creator?->name,
             'created_at'      => optional($row->created_at)->toIso8601String(),
+            // ── Settlement (post-approval payment) ──
+            'sanctioned_amount' => $row->sanctioned_amount !== null ? (float) $row->sanctioned_amount : null,
+            'deduction_amount'  => (float) $row->deduction_amount,
+            'deduction_reason'  => $row->deduction_reason,
+            'total_paid'        => (float) $row->total_paid,
+            'settlement_status' => $row->settlement_status ?: 'unpaid',
+            'settled_at'        => optional($row->settled_at)->toIso8601String(),
+            // Remaining to pay against the sanctioned amount (once sanctioned is set).
+            'remaining_amount'  => $row->sanctioned_amount !== null
+                ? round((float) $row->sanctioned_amount - (float) $row->total_paid, 2)
+                : null,
         ];
+    }
+
+    /* ============================================================ */
+    /*  SETTLEMENT — post-approval payment (partial payments)        */
+    /* ============================================================ */
+
+    /**
+     * GET /expense-claims/{id}/settlement
+     * The settlement state for the Record-Payment form: the claimed amount, the
+     * sanctioned amount + deduction (once set), how much is paid/remaining, and
+     * the list of installment payments made so far.
+     */
+    public function settlement(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = ExpenseClaim::with('payments.payer')->findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+
+        return response()->json([
+            'id'                => $row->id,
+            'title'             => $row->title,
+            'employee_name'     => $row->employee_name ?: $row->employee?->display_name,
+            'currency'          => $row->currency,
+            'claimed_amount'    => (float) $row->amount,
+            'category_id'       => $row->category_id,
+            'category_name'     => $row->category?->name ?? $row->category_name,
+            'sanctioned_amount' => $row->sanctioned_amount !== null ? (float) $row->sanctioned_amount : null,
+            'deduction_amount'  => (float) $row->deduction_amount,
+            'deduction_reason'  => $row->deduction_reason,
+            'total_paid'        => (float) $row->total_paid,
+            'remaining_amount'  => $row->sanctioned_amount !== null
+                ? round((float) $row->sanctioned_amount - (float) $row->total_paid, 2)
+                : null,
+            'settlement_status' => $row->settlement_status ?: 'unpaid',
+            'status'            => $row->status,
+            'payments'          => $row->payments->map(fn ($p) => [
+                'id'           => $p->id,
+                'amount'       => (float) $p->amount,
+                'category_name'=> $p->category_name,
+                'payment_type' => $p->payment_type,
+                'expense_type' => $p->expense_type,
+                'note'         => $p->note,
+                'paid_by_name' => $p->payer?->name,
+                'paid_at'      => optional($p->paid_at)->toIso8601String(),
+            ])->all(),
+        ]);
+    }
+
+    /**
+     * POST /expense-claims/{id}/settle
+     * Record ONE settlement installment against an approved claim. The FIRST call
+     * also sets the sanctioned amount (+ deduction reason when it's less than the
+     * claim). Partial payments are allowed until the sanctioned amount is met.
+     *
+     * Body: sanctioned_amount (first payment only), deduction_reason (if reduced),
+     *       amount, category_id?, payment_type, expense_type, note.
+     */
+    public function settle(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = ExpenseClaim::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+        // Same right as HR approval for now (may be split into can_settle later).
+        $this->guardHrPermission($user, 'can_approve');
+
+        if ($row->status !== 'approved') {
+            abort(409, 'Only an approved claim can be paid. Approve it first.');
+        }
+        if (($row->settlement_status ?? 'unpaid') === 'paid') {
+            abort(409, 'This claim is already fully paid.');
+        }
+
+        $firstPayment = $row->sanctioned_amount === null;
+
+        $data = $request->validate([
+            // Sanctioned amount is set ONCE (first payment). Can't exceed the claim.
+            'sanctioned_amount' => [$firstPayment ? 'required' : 'nullable', 'numeric', 'min:0.01', 'max:' . (float) $row->amount],
+            'deduction_reason'  => ['nullable', 'string', 'max:1000'],
+            'amount'            => ['required', 'numeric', 'min:0.01'],
+            'category_id'       => ['nullable', 'integer'],
+            'payment_type'      => ['required', 'string', 'in:Cash,Cheque,UPI'],
+            'expense_type'      => ['required', 'string', 'in:Goods,Service'],
+            'note'              => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        // Resolve the sanctioned amount (fixed on the first payment).
+        $sanctioned = $firstPayment ? round((float) $data['sanctioned_amount'], 2) : (float) $row->sanctioned_amount;
+        $deduction  = round((float) $row->amount - $sanctioned, 2);
+
+        if ($firstPayment && $deduction > 0.005 && empty($data['deduction_reason'])) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'A reason is required when the sanctioned amount is less than the claimed amount.',
+                'errors'  => ['deduction_reason' => ['Deduction reason is required.']],
+            ], 422);
+        }
+
+        $pay       = round((float) $data['amount'], 2);
+        $remaining = round($sanctioned - (float) $row->total_paid, 2);
+        if ($pay > $remaining + 0.005) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Payment (' . number_format($pay, 2) . ') exceeds the remaining amount (' . number_format($remaining, 2) . ').',
+                'errors'  => ['amount' => ['Cannot pay more than the remaining amount.']],
+            ], 422);
+        }
+
+        // Resolve the payment's category (defaults to the claim's).
+        $categoryId   = $data['category_id'] ?? $row->category_id;
+        $categoryName = $row->category_name;
+        if (!empty($data['category_id'])) {
+            $cat = \App\Models\Masters\ExpenseCategories::find($data['category_id']);
+            if ($cat) $categoryName = $cat->name;
+        }
+
+        DB::transaction(function () use ($row, $user, $firstPayment, $sanctioned, $deduction, $data, $pay, $categoryId, $categoryName) {
+            if ($firstPayment) {
+                $row->sanctioned_amount = $sanctioned;
+                $row->deduction_amount  = max(0, $deduction);
+                $row->deduction_reason  = $deduction > 0.005 ? ($data['deduction_reason'] ?? null) : null;
+            }
+
+            \App\Models\ExpenseClaimPayment::create([
+                'client_id'        => $row->client_id,
+                'branch_id'        => $row->branch_id,
+                'expense_claim_id' => $row->id,
+                'amount'           => $pay,
+                'category_id'      => $categoryId,
+                'category_name'    => $categoryName,
+                'payment_type'     => $data['payment_type'],
+                'expense_type'     => $data['expense_type'],
+                'note'             => $data['note'] ?? null,
+                'paid_by'          => $user->id,
+                'paid_at'          => now(),
+            ]);
+
+            $row->total_paid = round((float) $row->total_paid + $pay, 2);
+            $paidUp = $row->total_paid + 0.005 >= (float) $row->sanctioned_amount;
+            $row->settlement_status = $paidUp ? 'paid' : 'partial';
+            $row->settled_at = $paidUp ? now() : null;
+            $row->save();
+        });
+
+        $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
+        return response()->json([
+            'status'  => true,
+            'message' => $row->settlement_status === 'paid'
+                ? 'Payment recorded — claim fully paid.'
+                : 'Payment recorded — ₹' . number_format((float) $row->total_paid, 2) . ' of ₹' . number_format((float) $row->sanctioned_amount, 2) . ' paid.',
+            'data'    => $this->serialize($row),
+        ]);
     }
 }

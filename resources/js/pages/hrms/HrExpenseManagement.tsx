@@ -7,6 +7,7 @@ import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { expenseClaimColumns, type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
+import ExpenseSettlementModal from '../../components/ExpenseSettlementModal';
 import { advanceRequestColumns, type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import DataTable from '../../components/ui/DataTable';
@@ -131,6 +132,8 @@ export default function HrExpenseManagement() {
   const { user } = useAuth();
   const toast = useToast();
   const chartTheme = useChartTheme();
+  // Claim whose Record-Payment (settlement) modal is open.
+  const [settleClaimId, setSettleClaimId] = useState<number | null>(null);
 
   const [rows, setRows] = useState<ExpenseClaimRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -567,7 +570,7 @@ export default function HrExpenseManagement() {
   /* Columns come from the shared row components, so an expense row looks the
      same here and on the employee profile's Expense tab. */
   const claimColumns = useMemo(
-    () => expenseClaimColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct }),
+    () => expenseClaimColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct, onRecordPayment: (row) => setSettleClaimId(row.id) }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [canHrApprove, user?.employee_id],
   );
@@ -925,6 +928,13 @@ export default function HrExpenseManagement() {
           />
         )}
       </div>
+
+      {/* Record Payment (settlement) for an approved claim — partial payments supported. */}
+      <ExpenseSettlementModal
+        claimId={settleClaimId}
+        onClose={() => setSettleClaimId(null)}
+        onDone={refresh}
+      />
     </>
   );
 }

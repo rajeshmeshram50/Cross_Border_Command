@@ -724,6 +724,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/expense-claims/{id}/manager-reject',      [ExpenseClaimController::class, 'managerReject']);
     Route::post  ('/expense-claims/{id}/hr-approve',          [ExpenseClaimController::class, 'hrApprove']);
     Route::post  ('/expense-claims/{id}/hr-reject',           [ExpenseClaimController::class, 'hrReject']);
+    // Post-approval settlement (Record Payment) — supports partial payments.
+    Route::get   ('/expense-claims/{id}/settlement',          [ExpenseClaimController::class, 'settlement']);
+    Route::post  ('/expense-claims/{id}/settle',              [ExpenseClaimController::class, 'settle']);
 
 
     Route::get   ('/advance-requests',                          [\App\Http\Controllers\Api\AdvanceRequestController::class, 'index']);

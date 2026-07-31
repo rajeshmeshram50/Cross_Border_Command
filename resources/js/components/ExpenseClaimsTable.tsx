@@ -56,6 +56,13 @@ export type ExpenseClaimRow = {
   hr_comment: string | null;
   creator_name: string | null;
   created_at: string | null;
+  // Settlement (post-approval payment)
+  sanctioned_amount?: number | null;
+  deduction_amount?: number;
+  deduction_reason?: string | null;
+  total_paid?: number;
+  settlement_status?: 'unpaid' | 'partial' | 'paid';
+  remaining_amount?: number | null;
 };
 
 type ActionKind = 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reject';
@@ -74,6 +81,8 @@ type Props = {
   /** Whether the current user has HR/Finance approval permission. */
   canHrApprove?: boolean;
   onAct?: (claimId: number, action: ActionKind, comment?: string) => Promise<void> | void;
+  /** HR/Finance: open the Record-Payment (settlement) form for an approved claim. */
+  onRecordPayment?: (claim: ExpenseClaimRow) => void;
 };
 
 const STATUS_TONE: Record<ExpenseClaimRow['status'], { bg: string; fg: string; dot: string; label: string }> = {
@@ -140,7 +149,7 @@ function withAuthToken(url: string): string {
  * Widths sum to 100 (fixed layout): 5+9+16+13+18+11+10+9+9. */
 export function expenseClaimColumns({
   accent = '#7c5cfc', fallbackName, fallbackInitials,
-  mode = 'mine', currentEmployeeId = null, canHrApprove = false, onAct,
+  mode = 'mine', currentEmployeeId = null, canHrApprove = false, onAct, onRecordPayment,
 }: Omit<Props, 'rows' | 'loading'>): DataTableColumn<ExpenseClaimRow>[] {
   return [
     {
@@ -265,6 +274,7 @@ export function expenseClaimColumns({
           currentEmployeeId={currentEmployeeId}
           canHrApprove={canHrApprove}
           onAct={onAct}
+          onRecordPayment={onRecordPayment}
         />
       ),
     },
@@ -275,11 +285,11 @@ export default function ExpenseClaimsTable({
   rows, loading,
   fallbackName, fallbackInitials, accent = '#7c5cfc',
   mode = 'mine', currentEmployeeId = null, canHrApprove = false,
-  onAct,
+  onAct, onRecordPayment,
 }: Props) {
   const columns = useMemo(
-    () => expenseClaimColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct }),
-    [accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct],
+    () => expenseClaimColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment }),
+    [accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment],
   );
   return (
     <>
@@ -311,13 +321,14 @@ export default function ExpenseClaimsTable({
  *  confirm-modal state, which is why it's a component rather than inline JSX:
  *  each row needs its own. */
 function ExpenseActionCell({
-  claim: c, mode, currentEmployeeId, canHrApprove, onAct,
+  claim: c, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment,
 }: {
   claim: ExpenseClaimRow;
   mode: 'mine' | 'team' | 'hr';
   currentEmployeeId: number | null;
   canHrApprove: boolean;
   onAct?: Props['onAct'];
+  onRecordPayment?: Props['onRecordPayment'];
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   // Confirmation modal for both approve & reject. The action shape carries
@@ -340,6 +351,14 @@ function ExpenseActionCell({
     && c.manager_status === 'approved'
     && c.hr_status === 'pending'
     && !!onAct;
+
+  // Record Payment (settlement) — an approved claim that isn't fully paid yet.
+  const canSettle =
+    mode === 'hr'
+    && canHrApprove
+    && c.status === 'approved'
+    && (c.settlement_status ?? 'unpaid') !== 'paid'
+    && !!onRecordPayment;
 
   const verdictBtn = (stage: 'manager' | 'hr', verdict: 'approve' | 'reject') => (
     <button
@@ -366,6 +385,19 @@ function ExpenseActionCell({
       <div className="d-inline-flex align-items-center gap-1">
         {canManagerAct && <>{verdictBtn('manager', 'approve')}{verdictBtn('manager', 'reject')}</>}
         {canHrAct && <>{verdictBtn('hr', 'approve')}{verdictBtn('hr', 'reject')}</>}
+        {canSettle && (
+          <button
+            type="button"
+            data-tooltip={(c.settlement_status ?? 'unpaid') === 'partial' ? 'Record another payment' : 'Record payment'}
+            data-tooltip-pos="left"
+            aria-label="Record payment"
+            onClick={() => onRecordPayment?.(c)}
+            className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+            style={{ width: 28, height: 28, padding: 0, background: 'linear-gradient(135deg,#f7b84b,#f59e0b)', color: '#fff', border: 'none' }}
+          >
+            <i className="ri-bank-card-line" />
+          </button>
+        )}
         <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} claim={c} />
       </div>
 
