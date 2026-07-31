@@ -103,7 +103,7 @@ class PurchaseOrderController extends Controller
 
         $po = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
-            $code = $this->nextCode($user->client_id);
+            $code = $this->nextCode($user->client_id, $user->branch_id);
 
             $header = $this->buildHeader($user, $data);
             $header['client_id'] = $user->client_id;
@@ -762,10 +762,37 @@ class PurchaseOrderController extends Controller
             ]]);
         } catch (\Throwable $e) {
             Log::error('PO send-for-signature failed', ['error' => $e->getMessage(), 'po' => $po->id]);
-            return response()->json(['status' => false, 'message' => 'Failed to send for signature: ' . $e->getMessage()], 500);
+            return response()->json(['status' => false, 'message' => $this->cleanSignError($e)], 500);
         } finally {
             foreach ($tempPaths as $p) @unlink($p);
         }
+    }
+
+    /**
+     * Turn a raw send-for-signature exception into a clean, user-facing message.
+     * Zoho Sign failures bubble up as "Zoho Sign API error: <raw JSON body>" — that
+     * raw third-party payload must never reach the UI (QA #10). Detect the common
+     * "already sent / signed / processed" case; otherwise a clean generic message.
+     */
+    private function cleanSignError(\Throwable $e): string
+    {
+        $raw    = $e->getMessage();
+        $marker = 'Zoho Sign API error:';
+        if (!str_contains($raw, $marker)) {
+            return 'Failed to send for signature: ' . $raw;
+        }
+        $body    = trim((string) substr($raw, strpos($raw, $marker) + strlen($marker)));
+        $decoded = json_decode($body, true);
+        $zohoMsg = is_array($decoded) ? (string) ($decoded['message'] ?? '') : '';
+        $low     = strtolower($zohoMsg . ' ' . $body);
+        if (str_contains($low, 'already') || str_contains($low, 'processed')
+            || str_contains($low, 'signed') || str_contains($low, 'completed')
+            || str_contains($low, 'in progress') || str_contains($low, 'duplicate')) {
+            return 'This document has already been signed or is being processed in another tab or session. Refresh the page to see its current status.';
+        }
+        return $zohoMsg !== ''
+            ? ('The e-signature service could not process this request: ' . $zohoMsg)
+            : 'The e-signature service could not process this request right now. Please try again in a moment.';
     }
 
     /**
@@ -1165,7 +1192,7 @@ class PurchaseOrderController extends Controller
     public function previewCode(Request $request): JsonResponse
     {
         $user = $request->user();
-        $code = ($user && $user->client_id) ? $this->peekCode($user->client_id) : null;
+        $code = ($user && $user->client_id) ? $this->peekCode($user->client_id, $user->branch_id) : null;
         return response()->json(['status' => true, 'data' => ['code' => $code]]);
     }
 
@@ -1188,7 +1215,7 @@ class PurchaseOrderController extends Controller
         $header = $this->buildHeader($user, $data);
         $header['client_id'] = $user->client_id;
         $header['branch_id'] = $user->branch_id;
-        $header['code'] = $request->input('code') ?: $this->peekCode($user->client_id);
+        $header['code'] = $request->input('code') ?: $this->peekCode($user->client_id, $user->branch_id);
         $po = new PurchaseOrder($header);
 
         $intra = $data['_intra'];
@@ -1967,20 +1994,23 @@ class PurchaseOrderController extends Controller
 
     /* ── Sequential PO code (per client + FY, locked) ── */
 
-    private function peekCode(int $clientId): string
+    private function peekCode(int $clientId, ?int $branchId): string
     {
         $fy = $this->currentFinancialYear();
-        $max = $this->maxSeq($clientId, $fy);
+        $max = $this->maxSeq($clientId, $fy, $branchId);
         return "PO/{$fy}/" . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
-    private function nextCode(int $clientId): string
+    private function nextCode(int $clientId, ?int $branchId): string
     {
         $fy = $this->currentFinancialYear();
         if (DB::getDriverName() === 'pgsql') {
-            DB::statement('SELECT pg_advisory_xact_lock(?)', [crc32("po-code:{$clientId}:{$fy}")]);
+            // Lock per client + BRANCH + FY: each branch runs its own sequence.
+            DB::statement('SELECT pg_advisory_xact_lock(?)', [crc32("po-code:{$clientId}:" . ($branchId ?? 0) . ":{$fy}")]);
         }
-        $codes = PurchaseOrder::where('client_id', $clientId)->where('code', 'like', "PO/{$fy}/%")->pluck('code')->all();
+        $q = PurchaseOrder::where('client_id', $clientId)->where('code', 'like', "PO/{$fy}/%");
+        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
+        $codes = $q->pluck('code')->all();
         $taken = [];
         $max = 0;
         foreach ($codes as $c) {
@@ -1998,10 +2028,12 @@ class PurchaseOrderController extends Controller
         return $code;
     }
 
-    private function maxSeq(int $clientId, string $fy): int
+    private function maxSeq(int $clientId, string $fy, ?int $branchId): int
     {
         $max = 0;
-        foreach (PurchaseOrder::where('client_id', $clientId)->where('code', 'like', "PO/{$fy}/%")->pluck('code') as $c) {
+        $q = PurchaseOrder::where('client_id', $clientId)->where('code', 'like', "PO/{$fy}/%");
+        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
+        foreach ($q->pluck('code') as $c) {
             if (preg_match('#^PO/' . preg_quote($fy, '#') . '/(\d+)$#', $c, $m)) {
                 $n = (int) $m[1];
                 if ($n > $max) $max = $n;

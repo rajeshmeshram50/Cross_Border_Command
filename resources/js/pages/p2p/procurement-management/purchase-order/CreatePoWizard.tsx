@@ -273,9 +273,14 @@ function Dd({ label, value, options, onChange, onDisabledSelect, req, err, optMe
           // Full label reads "S-009: aaaa…" when the option carries code+name
           // meta (supplier field) — else the raw value (product name field).
           const tip = optMeta?.[value] ? `${optMeta[value].code ? optMeta[value].code + ': ' : ''}${optMeta[value].name ?? value}` : value;
+          // A placeholder value (e.g. "— Select Supplier —") renders in the light
+          // placeholder style, matching the date picker — not the bold chosen-value
+          // weight, which read like a real selection (QA #23 / #24).
+          const isPh = value.trim().startsWith('—');
+          const valCls = `pof-dd__val${isPh ? ' is-placeholder' : ''}`;
           return tooltip
-            ? <Tooltip label={tip} disabled={!tip || tip.length <= 30} position="bottom" zIndex={2999999}><span className="pof-dd__val"><DdOptLabel o={value} meta={optMeta?.[value]} /></span></Tooltip>
-            : <span className="pof-dd__val" title={tip}><DdOptLabel o={value} meta={optMeta?.[value]} /></span>;
+            ? <Tooltip label={tip} disabled={!tip || tip.length <= 30} position="bottom" zIndex={2999999}><span className={valCls}><DdOptLabel o={value} meta={optMeta?.[value]} /></span></Tooltip>
+            : <span className={valCls} title={tip}><DdOptLabel o={value} meta={optMeta?.[value]} /></span>;
         })()}
         <Chev />
       </button>
@@ -1007,6 +1012,25 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     if (Object.keys(e).length) {
       toast.error('Required fields missing', 'Please complete the highlighted fields.');
       scrollToFirstError();
+      return false;
+    }
+    // GST scrutiny must be current (≤ 3 months) before advancing to Stage 2 —
+    // domestic only, since GST/scrutiny don't apply to an international PO (QA #25).
+    if (!isIntlPo && scrutinyOld) {
+      toast.error('GST scrutiny overdue', `This supplier's GST scrutiny is more than ${SCRUTINY_STALE_MONTHS} months old — re-run the scrutiny for this supplier before moving to Stage 2.`);
+      document.querySelector('.pof-scrutiny-warn')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return false;
+    }
+    // GST must be ACTIVE and filings current for a domestic supplier — block the PO
+    // when the supplier's GST is Inactive or its last filing is stale (QA #12).
+    if (!isIntlPo && (sup.gstStatus || '').trim().toLowerCase() === 'inactive') {
+      toast.error('GST inactive', "This supplier's GST status is Inactive — you can't raise a domestic PO until the GST is active again. Update the supplier's GST status first.");
+      document.querySelector('.pof-scrutiny-warn, .pof-sub')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return false;
+    }
+    if (!isIntlPo && isScrutinyOld(sup.filing)) {
+      toast.error('GST filing overdue', `This supplier's last GST filing (${sup.filing ? formatDmy(sup.filing) : 'not recorded'}) is more than ${SCRUTINY_STALE_MONTHS} months old — update the filing before raising the PO.`);
+      document.querySelector('.pof-scrutiny-warn, .pof-sub')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return false;
     }
     return true;

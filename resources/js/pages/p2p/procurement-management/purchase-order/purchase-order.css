@@ -111,6 +111,8 @@
 .pom .polist-filter{position:relative;display:inline-flex;align-items:center;flex-shrink:0;}
 .pom .polist-filtersel{display:inline-flex;align-items:center;white-space:nowrap;min-width:160px;text-align:left;padding:11px 34px 11px 14px;border:1.5px solid #e3edf2;border-radius:12px;background:#fff;font-family:inherit;font-size:12.5px;font-weight:600;color:#0c4a6e;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
 .pom .polist-filtersel:hover{border-color:#bfe5ee;}
+.pom .polist-filtersel__ico{display:inline-flex;align-items:center;margin-right:7px;color:#0891b2;flex-shrink:0;}
+[data-bs-theme="dark"] .pom .polist-filtersel__ico{color:#22d3ee;}
 .pom .polist-filtersel.is-open{outline:none;border-color:#22d3ee;box-shadow:0 0 0 3px rgba(34,211,238,.12);}
 .pom .polist-filter svg{position:absolute;right:11px;pointer-events:none;color:#0891b2;transition:transform .2s ease;}
 .pom .polist-filtersel.is-open + svg{transform:rotate(180deg);}
@@ -478,6 +480,9 @@
 .pom .pof-dd:hover{border-color:#bfe5ee;background:#fff;}
 .pom .pof-dd.is-open{border-color:#22d3ee;background:#fff;box-shadow:0 0 0 4px rgba(34,211,238,.12);}
 .pom .pof-dd__val{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* Placeholder value ("— Select … —") reads light, like the date picker's placeholder,
+   so it isn't mistaken for a real selection (QA #23 / #24). */
+.pom .pof-dd__val.is-placeholder{color:var(--vz-secondary-color);opacity:.65;font-weight:400;}
 .pom .pof-dd__chev{flex-shrink:0;color:#7c97a8;transition:transform .2s ease,color .15s;}
 .pom .pof-dd.is-open .pof-dd__chev{transform:rotate(180deg);color:#0891b2;}
 .pom .pof-dd-pop{position:fixed;z-index:2500060;background:#fff;border:1.5px solid #d3e7ee;border-radius:11px;box-shadow:0 14px 36px rgba(8,40,60,.17),0 3px 10px rgba(8,40,60,.08);padding:5px;max-height:264px;overflow-y:auto;animation:pomMpvIn .14s ease;}

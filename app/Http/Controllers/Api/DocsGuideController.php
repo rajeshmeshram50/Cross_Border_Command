@@ -51,13 +51,14 @@ class DocsGuideController extends Controller
         'payment'      => 'Payment',
         'payroll'      => 'Payroll',
         'permission'   => 'Permission',
+        'integrations' => 'Integrations',
         'saas'         => 'SaaS Platform',
     ];
 
     /** Preferred group ordering; unlisted groups fall to the end, alphabetically. */
     private const GROUP_ORDER = [
         'saas', 'masters', 'sales-matrix', 'hrms',
-        'client', 'branch', 'plan', 'payment', 'payroll', 'permission',
+        'client', 'branch', 'plan', 'payment', 'payroll', 'permission', 'integrations',
     ];
 
     private function baseDir(): string

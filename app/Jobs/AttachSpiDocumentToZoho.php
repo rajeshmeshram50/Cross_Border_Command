@@ -84,14 +84,16 @@ class AttachSpiDocumentToZoho implements ShouldQueue
         $bytes = Storage::disk('public')->get($path);
         if ($bytes === '' || $bytes === null) return;
 
-        // Filename: "<SPI no> - <invoice no>.<ext>" — e.g. "SPI-2026-27-024 - 778894.pdf".
-        // Slashes and other path/unsafe chars in the SPI code/invoice no are replaced
-        // with '-' so Zoho stores a clean single filename.
+        // Filename: "<SPI no>-<invoice no>.<ext>" — e.g. "SPI-2026-27-024-778894.pdf".
+        // Zoho's attachment endpoint rejects filenames with spaces or odd characters
+        // ("Invalid value passed for attachment"), so keep ONLY [A-Za-z0-9_-] in each
+        // part (collapsing every run of anything else — spaces, slashes, backticks —
+        // to a single '-'). Mirrors the working PO-PDF attach sanitisation.
         $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION) ?: 'pdf');
-        $clean = fn ($s) => trim(preg_replace('#[/\\\\:*?"<>|]+#', '-', (string) $s));
-        $spiNo = $clean($spi->code ?: $spi->id);
-        $invNo = $clean($spi->invoice_no ?: $spi->id);
-        $filename = $spiNo . ' - ' . $invNo . '.' . $ext;
+        $clean = fn ($s) => trim(preg_replace('/[^A-Za-z0-9_-]+/', '-', (string) $s), '-');
+        $spiNo = $clean($spi->code ?: $spi->id) ?: (string) $spi->id;
+        $invNo = $clean($spi->invoice_no ?: $spi->id) ?: (string) $spi->id;
+        $filename = $spiNo . '-' . $invNo . '.' . $ext;
 
         // Attach to the PRIMARY target first — the PO for a with-PO invoice, or the
         // bill for a direct invoice — and stamp `zoho_doc_attached_at` as soon as it
