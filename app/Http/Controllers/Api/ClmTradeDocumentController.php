@@ -469,19 +469,16 @@ class ClmTradeDocumentController extends Controller
         // tables into run-on text. Round-trip through the lenient HTML parser
         // first so PhpWord receives well-formed markup and the tables render
         // as real Word tables.
+        // Give width-less tables equal full-width columns BEFORE well-forming,
+        // so the injected <col> tags get self-closed (PhpWord's strict XML
+        // reader drops the whole table otherwise). Matches the editor layout.
+        $html = $this->ensureTableColWidths($html);
         $html = $this->toWellFormedHtml($html);
 
-        // Wrap as a full document so PhpWord parses it as one — fragment
-        // mode (false) sometimes drops block-level styling like text-align.
-        $wrapped = '<!DOCTYPE html><html><body>' . $html . '</body></html>';
-
-        try {
-            Html::addHtml($section, $wrapped, true, false);
-        } catch (\Throwable $e) {
-            // Last-resort fallback so the download still produces something
-            // even when the markup is too far gone for PhpWord.
-            $section->addText(strip_tags($html));
-        }
+        // Add resiliently: try the whole body, and on a PhpWord failure fall
+        // back to PER-BLOCK adds so one bad element can't wipe every table /
+        // format (which the old whole-document strip_tags fallback did).
+        $this->addHtmlResilient($section, $html);
 
         $filename = ($row->code ?: 'trade-document') . '.docx';
         $tmp      = tempnam(sys_get_temp_dir(), 'tdocx_');

@@ -916,14 +916,16 @@ class ClmAgreementController extends Controller
         // without this, PhpWord's strict reader throws on unclosed tags and we
         // fall into the strip_tags() branch, which flattens the whole agreement
         // (headings, tables, line breaks) into one run-on paragraph.
+        // Give width-less tables equal full-width columns BEFORE well-forming,
+        // so the injected <col> tags get self-closed (PhpWord's strict XML
+        // reader drops the whole table otherwise). Matches the editor layout.
+        $html    = $this->ensureTableColWidths($html);
         $html    = $this->toWellFormedHtml($html);
-        $wrapped = '<!DOCTYPE html><html><body>' . $html . '</body></html>';
 
-        try {
-            Html::addHtml($section, $wrapped, true, false);
-        } catch (\Throwable $e) {
-            $section->addText(strip_tags($html));
-        }
+        // Add resiliently: try the whole body, and on a PhpWord failure fall
+        // back to PER-BLOCK adds so one bad element can't wipe every table /
+        // format (which the old whole-document strip_tags fallback did).
+        $this->addHtmlResilient($section, $html);
 
         $filename = ($row->code ?: 'agreement') . '.docx';
         $tmp      = tempnam(sys_get_temp_dir(), 'agrdocx_');

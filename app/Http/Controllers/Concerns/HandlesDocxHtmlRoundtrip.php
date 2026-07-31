@@ -83,6 +83,26 @@ trait HandlesDocxHtmlRoundtrip
             (string) $html
         );
 
+        // Word renders a hyperlink as blue + underlined ONLY when the <a> run
+        // carries that font style. The editor styles links via CSS (which
+        // PhpWord ignores when building the DOCX), so links came out as plain
+        // black text — clickable, but indistinguishable from normal text. Stamp
+        // a blue underline inline (unless the <a> already sets its own colour)
+        // so DOCX links look like — and are recognised as — links.
+        $html = preg_replace_callback(
+            '/<a\b([^>]*)>/i',
+            function ($m) {
+                $attrs = $m[1];
+                if (preg_match('/\bstyle\s*=\s*"([^"]*)"/i', $attrs, $sm)) {
+                    if (preg_match('/color\s*:/i', $sm[1])) return $m[0];   // keep an author colour
+                    $newStyle = rtrim($sm[1], "; \t") . ';color:#0563C1;text-decoration:underline';
+                    return '<a' . preg_replace('/\bstyle\s*=\s*"[^"]*"/i', 'style="' . $newStyle . '"', $attrs) . '>';
+                }
+                return '<a' . $attrs . ' style="color:#0563C1;text-decoration:underline">';
+            },
+            (string) $html
+        );
+
         return (string) $html;
     }
 
@@ -229,20 +249,54 @@ trait HandlesDocxHtmlRoundtrip
         return "<p{$styleAttr}>{$inner}</p>";
     }
 
-    /** Convert a <w:tbl> to an HTML <table>. */
+    /** Convert a <w:tbl> to an HTML <table>, preserving the ORIGINAL column
+     *  widths (from <w:tblGrid>) and merged cells (<w:gridSpan>) so a wide /
+     *  multi-column Word table doesn't collapse into equal, cramped columns. */
     private function xmlTableToHtml(\DOMElement $t, \DOMXPath $xp): string
     {
+        // ── Column widths (twips) from the table grid → percentages ──
+        $colWidths = [];
+        foreach ($xp->query('w:tblGrid/w:gridCol', $t) as $gc) {
+            $w = (int) $gc->getAttributeNS(self::W_NS, 'w');
+            $colWidths[] = $w > 0 ? $w : 1;
+        }
+        $totalW = array_sum($colWidths);
+        $pcts   = [];
+        if ($totalW > 0) foreach ($colWidths as $w) $pcts[] = round($w / $totalW * 100, 2);
+
+        // A <colgroup> is honoured by dompdf (PDF) + PhpWord (DOCX); the editor
+        // (TipTap) may drop it, so the width is ALSO stamped on each cell's
+        // inline style, which the editor preserves — tables render with their
+        // original proportions everywhere instead of collapsing to equal cols.
+        $colgroup = '';
+        if ($pcts) {
+            $colgroup = '<colgroup>';
+            foreach ($pcts as $pct) $colgroup .= '<col style="width:' . $pct . '%" />';
+            $colgroup .= '</colgroup>';
+        }
+
         $rows = '';
         foreach ($xp->query('w:tr', $t) as $tr) {
-            $cells = '';
+            $cells  = '';
+            $colIdx = 0;
             foreach ($xp->query('w:tc', $tr) as $tc) {
+                // Horizontal merge → colspan (and its width spans those columns).
+                $span = 1;
+                $gs = $xp->query('w:tcPr/w:gridSpan', $tc);
+                if ($gs->length) $span = max(1, (int) $gs->item(0)->getAttributeNS(self::W_NS, 'val'));
+                $wPct = 0.0;
+                for ($k = 0; $k < $span; $k++) $wPct += $pcts[$colIdx + $k] ?? 0;
+                $colIdx += $span;
+
+                $spanAttr  = $span > 1 ? ' colspan="' . $span . '"' : '';
+                $styleAttr = $wPct > 0 ? ' style="width:' . round($wPct, 2) . '%"' : '';
                 $ci = '';
                 foreach ($xp->query('w:p', $tc) as $p) $ci .= $this->xmlParaToHtml($p, $xp);
-                $cells .= '<td>' . $ci . '</td>';
+                $cells .= '<td' . $spanAttr . $styleAttr . '>' . $ci . '</td>';
             }
             $rows .= '<tr>' . $cells . '</tr>';
         }
-        return '<table border="1">' . $rows . '</table>';
+        return '<table border="1">' . $colgroup . '<tbody>' . $rows . '</tbody></table>';
     }
 
     protected function elementToHtml($el): string
@@ -385,6 +439,131 @@ trait HandlesDocxHtmlRoundtrip
             return $out !== '' ? $out : $html;
         } catch (\Throwable $e) {
             return $html;
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($prev);
+        }
+    }
+
+    /**
+     * Give every <table> that lacks explicit column widths a full-width,
+     * EQUAL-column layout (a <colgroup> + width:100%) so the DOCX renders it the
+     * same way the editor does (table-layout:fixed; width:100%) instead of
+     * PhpWord's default uneven auto-sizing. Tables that already carry widths
+     * (e.g. from an uploaded Word grid) are left untouched.
+     */
+    protected function ensureTableColWidths(string $html): string
+    {
+        if (stripos($html, '<table') === false) return $html;
+        $prev = libxml_use_internal_errors(true);
+        try {
+            $doc = new \DOMDocument('1.0', 'UTF-8');
+            if (!$doc->loadHTML(
+                '<?xml encoding="UTF-8"?><div data-root="1">' . $html . '</div>',
+                LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+            )) {
+                return $html;
+            }
+            $xp = new \DOMXPath($doc);
+            foreach ($xp->query('//table') as $table) {
+                if ($xp->query('colgroup', $table)->length) continue;   // already has widths
+                $maxCols = 0;
+                foreach ($xp->query('.//tr', $table) as $tr) {
+                    $cols = 0;
+                    foreach ($xp->query('td|th', $tr) as $cell) {
+                        $cols += max(1, (int) ($cell->getAttribute('colspan') ?: 1));
+                    }
+                    $maxCols = max($maxCols, $cols);
+                }
+                if ($maxCols < 1) continue;
+                $style = $table->getAttribute('style');
+                if (stripos($style, 'width') === false) {
+                    $table->setAttribute('style', trim($style . ';width:100%', '; '));
+                }
+                $cg  = $doc->createElement('colgroup');
+                $pct = round(100 / $maxCols, 4);
+                for ($i = 0; $i < $maxCols; $i++) {
+                    $col = $doc->createElement('col');
+                    $col->setAttribute('style', 'width:' . $pct . '%');
+                    $cg->appendChild($col);
+                }
+                $table->insertBefore($cg, $table->firstChild);
+            }
+            $root = null;
+            foreach ($doc->childNodes as $n) {
+                if ($n->nodeType === XML_ELEMENT_NODE && $n->nodeName === 'div') { $root = $n; break; }
+            }
+            if (!$root) return $html;
+            $out = '';
+            foreach ($root->childNodes as $c) $out .= $doc->saveHTML($c);
+            return $out !== '' ? $out : $html;
+        } catch (\Throwable $e) {
+            return $html;
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($prev);
+        }
+    }
+
+    /**
+     * Add editor HTML to a PhpWord section RESILIENTLY. PhpWord's Html reader
+     * throws on markup it can't handle, and the old catch degraded the WHOLE
+     * document to strip_tags() — so one bad element wiped every table + all
+     * formatting ("table broken / content missing"). Here we first try the whole
+     * body; if that throws, we add each top-level block on its own so only the
+     * single offending block degrades to plain text — everything else keeps its
+     * tables, links and formatting.
+     */
+    protected function addHtmlResilient($section, string $bodyHtml): void
+    {
+        $whole = '<!DOCTYPE html><html><body>' . $bodyHtml . '</body></html>';
+        try {
+            \PhpOffice\PhpWord\Shared\Html::addHtml($section, $whole, true, false);
+            return;
+        } catch (\Throwable $e) {
+            // fall through to per-block
+        }
+
+        foreach ($this->splitTopLevelBlocks($bodyHtml) as $block) {
+            $wrapped = '<!DOCTYPE html><html><body>' . $block . '</body></html>';
+            try {
+                \PhpOffice\PhpWord\Shared\Html::addHtml($section, $wrapped, true, false);
+            } catch (\Throwable $e2) {
+                $txt = trim(html_entity_decode(strip_tags($block), ENT_QUOTES | ENT_HTML5));
+                if ($txt !== '') $section->addText($txt);
+            }
+        }
+    }
+
+    /** Split body HTML into its top-level block elements (for the resilient add). */
+    protected function splitTopLevelBlocks(string $html): array
+    {
+        $prev = libxml_use_internal_errors(true);
+        try {
+            $doc = new \DOMDocument('1.0', 'UTF-8');
+            if (!$doc->loadHTML(
+                '<?xml encoding="UTF-8"?><div data-root="1">' . $html . '</div>',
+                LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD
+            )) {
+                return [$html];
+            }
+            $root = null;
+            foreach ($doc->childNodes as $n) {
+                if ($n->nodeType === XML_ELEMENT_NODE && $n->nodeName === 'div') { $root = $n; break; }
+            }
+            if (!$root) return [$html];
+            $blocks = [];
+            foreach ($root->childNodes as $child) {
+                $s = $doc->saveHTML($child);
+                if ($s === false) continue;
+                // Keep blocks with text, or structural elements (tables / rules).
+                if (trim(strip_tags($s)) !== '' || preg_match('/<(table|hr|img)\b/i', $s)) {
+                    $blocks[] = $s;
+                }
+            }
+            return $blocks ?: [$html];
+        } catch (\Throwable $e) {
+            return [$html];
         } finally {
             libxml_clear_errors();
             libxml_use_internal_errors($prev);
