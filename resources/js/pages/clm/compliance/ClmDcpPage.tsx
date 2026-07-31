@@ -830,7 +830,10 @@ function SegmentRuleModal(props: {
           <div className="dcp-step-badge" style={{ fontSize: 9.5, fontWeight: 700, color: '#0891b2', background: 'rgba(8,145,178,.07)', border: '1px solid rgba(8,145,178,.16)', borderRadius: 20, padding: '3px 9px' }}>Step {stage} of 2</div>
         </div>
 
-        <div className="clm-modal-body" style={{ maxHeight: '70vh' }}>
+        {/* Flex-fill + scroll (not a fixed 70vh) so the body always fits the
+            space left between the header/stepper and footer — content stays
+            fully reachable via scroll on short / zoomed / small screens. */}
+        <div className="clm-modal-body" style={{ flex: '1 1 auto', minHeight: 0 }}>
           {stage === 1 ? (
             <>
               {/* Card 0: Document Type (Domestic / International) — empty by
