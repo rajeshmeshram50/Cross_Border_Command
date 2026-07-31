@@ -21,7 +21,7 @@ class ClmKycController extends Controller
 
         // Branch-scoped read: a branch admin sees its own rows + client-level
         // (shared) rows; sibling branches stay hidden (CBC-433/KYC).
-        $q = ClmKycDocument::query()->orderBy('id');
+        $q = ClmKycDocument::query()->orderByDesc('id');   // newest entry first
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
         $rows = $q->get();
 

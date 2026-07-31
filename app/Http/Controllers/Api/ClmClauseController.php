@@ -155,7 +155,7 @@ class ClmClauseController extends Controller
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
         // Branch-scoped read (globals + client-level + own branch; siblings hidden).
-        $query = ClmClauseLibrary::query()->orderBy('id');
+        $query = ClmClauseLibrary::query()->orderBy('id', 'desc');   // newest entry first
         MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
         $rows = $query->get();
 

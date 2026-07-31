@@ -22,7 +22,7 @@ class ClmAuthorityController extends Controller
         // Branch-scoped read: a branch admin sees its own rows + client-level
         // (shared) rows; sibling branches stay hidden (CBC-431). Client
         // admins/users see the whole client and may narrow via BranchSwitcher.
-        $q = ClmAuthority::query()->orderBy('id');
+        $q = ClmAuthority::query()->orderBy('id', 'desc');   // newest entry first
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
         $rows = $q->get();
 

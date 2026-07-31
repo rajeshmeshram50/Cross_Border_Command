@@ -156,11 +156,11 @@ function CompRing({ comp }: { comp?: CpComp; size?: number; onLight?: boolean })
   return (
     <div title={title} style={{
       display: 'inline-flex', alignItems: 'center', gap: 10, padding: '5px 15px 5px 5px', borderRadius: 30,
-      background: 'rgba(255,255,255,.15)', backdropFilter: 'blur(3px)',
-      border: `1.5px solid ${done ? 'rgba(52,211,153,.85)' : 'rgba(255,255,255,.4)'}`,
+      background: 'rgba(15,23,42,.34)',
+      border: `1.5px solid ${done ? 'rgba(52,211,153,.9)' : 'rgba(255,255,255,.45)'}`,
       boxShadow: done
-        ? 'inset 0 1px 0 rgba(255,255,255,.22), 0 0 0 3px rgba(52,211,153,.16), 0 3px 12px rgba(16,185,129,.3)'
-        : 'inset 0 1px 0 rgba(255,255,255,.2), 0 3px 10px rgba(0,0,0,.14)',
+        ? '0 0 0 3px rgba(52,211,153,.2), 0 4px 12px rgba(2,6,23,.28)'
+        : '0 3px 10px rgba(2,6,23,.28)',
       flexShrink: 0, whiteSpace: 'nowrap',
     }}>
       <span style={{ position: 'relative', width: s, height: s, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>

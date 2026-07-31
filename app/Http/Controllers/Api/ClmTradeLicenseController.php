@@ -20,7 +20,7 @@ class ClmTradeLicenseController extends Controller
         if (!$user) abort(401);
 
         // Branch-scoped read: own rows + client-level (shared); siblings hidden (CBC-435).
-        $q = ClmTradeLicense::query()->orderBy('id');
+        $q = ClmTradeLicense::query()->orderByDesc('id');   // newest entry first
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
         $rows = $q->get();
 
