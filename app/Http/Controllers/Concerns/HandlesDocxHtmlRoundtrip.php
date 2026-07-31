@@ -230,13 +230,17 @@ trait HandlesDocxHtmlRoundtrip
         }
     }
 
-    /** Convert a single <w:r> run to HTML (text + <br>/<tab>, with b/i/u). */
+    /** Convert a single <w:r> run to HTML (text + <br>/<tab>, with b/i/u + colour). */
     private function xmlRunToHtml(\DOMElement $r, \DOMXPath $xp): string
     {
         $b  = $xp->query('w:rPr/w:b', $r)->length > 0;
         $i  = $xp->query('w:rPr/w:i', $r)->length > 0;
         $uN = $xp->query('w:rPr/w:u', $r);
         $u  = $uN->length > 0 && $uN->item(0)->getAttributeNS(self::W_NS, 'val') !== 'none';
+        // Text colour — needed so a white header run survives the round trip
+        // (it sits on a coloured cell fill; without this it comes back black).
+        $colorN = $xp->query('w:rPr/w:color', $r);
+        $color  = $colorN->length ? $colorN->item(0)->getAttributeNS(self::W_NS, 'val') : '';
 
         $out = '';
         foreach ($r->childNodes as $c) {
@@ -248,6 +252,9 @@ trait HandlesDocxHtmlRoundtrip
         if ($b) $out = "<b>{$out}</b>";
         if ($i) $out = "<i>{$out}</i>";
         if ($u) $out = "<u>{$out}</u>";
+        if ($color !== '' && $color !== 'auto' && preg_match('/^[0-9A-Fa-f]{6}$/', $color)) {
+            $out = '<span style="color:#' . $color . '">' . $out . '</span>';
+        }
         return $out;
     }
 
@@ -313,10 +320,29 @@ trait HandlesDocxHtmlRoundtrip
             $colgroup .= '</colgroup>';
         }
 
-        $rows = '';
+        // Does the table carry borders? PhpWord writes them at TABLE level
+        // (w:tblBorders), not per-cell, so detect once here and stamp an inline
+        // border on every cell (that's what the editor renders) plus the table's
+        // own border attribute — the grid lines were vanishing on re-upload.
+        $tblBordered = false;
+        $tblB = $xp->query('w:tblPr/w:tblBorders', $t)->item(0);
+        if ($tblB) {
+            foreach (['top', 'left', 'bottom', 'right', 'insideH', 'insideV'] as $side) {
+                $b = $xp->query('w:' . $side, $tblB)->item(0);
+                if ($b) {
+                    $v = $b->getAttributeNS(self::W_NS, 'val');
+                    if ($v !== '' && $v !== 'none' && $v !== 'nil') { $tblBordered = true; break; }
+                }
+            }
+        }
+
+        $rowsHtml    = [];
+        $rowIsHeader = [];
         foreach ($xp->query('w:tr', $t) as $tr) {
-            $cells  = '';
-            $colIdx = 0;
+            $cells      = '';
+            $colIdx     = 0;
+            $cellCount  = 0;
+            $shadedCount = 0;
             foreach ($xp->query('w:tc', $tr) as $tc) {
                 // Horizontal merge → colspan (and its width spans those columns).
                 $span = 1;
@@ -326,15 +352,56 @@ trait HandlesDocxHtmlRoundtrip
                 for ($k = 0; $k < $span; $k++) $wPct += $pcts[$colIdx + $k] ?? 0;
                 $colIdx += $span;
 
-                $spanAttr  = $span > 1 ? ' colspan="' . $span . '"' : '';
-                $styleAttr = $wPct > 0 ? ' style="width:' . round($wPct, 2) . '%"' : '';
+                // Cell fill (w:shd/@fill) → background-color, so a coloured header
+                // row (e.g. the teal header) survives a download → re-upload round
+                // trip instead of coming back plain white.
+                $bg = '';
+                $shd = $xp->query('w:tcPr/w:shd', $tc);
+                if ($shd->length) {
+                    $fill = $shd->item(0)->getAttributeNS(self::W_NS, 'fill');
+                    if ($fill && $fill !== 'auto' && preg_match('/^[0-9A-Fa-f]{6}$/', $fill)) {
+                        $bg = 'background-color:#' . $fill;
+                    }
+                }
+
+                $spanAttr = $span > 1 ? ' colspan="' . $span . '"' : '';
+                $styleBits = [];
+                if ($wPct > 0) $styleBits[] = 'width:' . round($wPct, 2) . '%';
+                if ($bg !== '') $styleBits[] = $bg;
+                // Bordered table → inline slate border on every cell (the exact
+                // colour is lost in the DOCX, so match the editor's default).
+                if ($tblBordered) $styleBits[] = 'border:1px solid #cbd5e1';
+                $styleBits[] = 'padding:6px 8px';   // match the editor's cell padding
+                $styleBits[] = 'vertical-align:top';
+                $styleAttr = $styleBits ? ' style="' . implode(';', $styleBits) . '"' : '';
                 $ci = '';
                 foreach ($xp->query('w:p', $tc) as $p) $ci .= $this->xmlParaToHtml($p, $xp);
                 $cells .= '<td' . $spanAttr . $styleAttr . '>' . $ci . '</td>';
+                $cellCount++;
+                if ($bg !== '') $shadedCount++;
             }
-            $rows .= '<tr>' . $cells . '</tr>';
+            $rowsHtml[]    = '<tr>' . $cells . '</tr>';
+            $rowIsHeader[] = $cellCount > 0 && $shadedCount === $cellCount;
         }
-        return '<table border="1">' . $colgroup . '<tbody>' . $rows . '</tbody></table>';
+
+        // If the first row is a fully-shaded header (the teal Insert-Table header),
+        // emit it as a real <thead>. With the PDF's `thead{display:table-header-group}`
+        // that keeps the header WITH its body across a page break (no orphaned
+        // header stranded at the bottom of a page) and repeats it on each page.
+        $thead = '';
+        $bodyRows = $rowsHtml;
+        if (!empty($rowIsHeader) && $rowIsHeader[0] && count($rowsHtml) > 1) {
+            $thead    = '<thead>' . array_shift($bodyRows) . '</thead>';
+        }
+        $tbody = '<tbody>' . implode('', $bodyRows) . '</tbody>';
+
+        // border-collapse + fixed layout so the re-imported table renders its
+        // cell borders as a clean grid. Keep the `border` attribute on a bordered
+        // table so a later DOWNLOAD re-emits PhpWord table borders (PhpWord only
+        // honours the attribute, never the CSS border).
+        $borderAttr = $tblBordered ? ' border="1"' : '';
+        return '<table' . $borderAttr . ' style="width:100%;table-layout:fixed;border-collapse:collapse">'
+            . $colgroup . $thead . $tbody . '</table>';
     }
 
     protected function elementToHtml($el): string
@@ -565,6 +632,21 @@ trait HandlesDocxHtmlRoundtrip
                 }
                 if ($maxCols < 1) continue;
 
+                // PhpWord IGNORES CSS cell borders — it only draws table borders
+                // from the `border` ATTRIBUTE. So if the cells carry a visible CSS
+                // border (every Insert-Table table does), mirror it onto the
+                // table's border attribute or the downloaded DOCX shows no grid
+                // lines. Done before the width check so ALL bordered tables get it.
+                if (!$table->hasAttribute('border')) {
+                    foreach ($xp->query('.//td|.//th', $table) as $cell) {
+                        $cs = $cell->getAttribute('style');
+                        if (preg_match('/\bborder(-top|-right|-bottom|-left)?\s*:\s*(?!\s*(none|0|hidden))[^;]*\b(1px|2px|solid|thin|medium|double)\b/i', $cs)) {
+                            $table->setAttribute('border', '1');
+                            break;
+                        }
+                    }
+                }
+
                 // If the author already set explicit column widths (on <col> or
                 // on any cell), respect them and leave the table alone.
                 $explicit = false;
@@ -722,7 +804,12 @@ trait HandlesDocxHtmlRoundtrip
                 $cols = $xp->query('w:gridCol', $grid);
                 $n = $cols->length;
                 if ($n < 1) continue;
-                $colW  = max(1, intdiv($usableTwips, $n));
+                // Leave a small buffer under the usable width: a table pinned to
+                // EXACTLY the text width draws its right-hand border on the margin,
+                // which the page then clips ("last column border cut"). ~160 twips
+                // (~0.11") keeps the whole grid + borders inside the margin.
+                $fitTwips = max(2000, $usableTwips - 160);
+                $colW  = max(1, intdiv($fitTwips, $n));
                 $total = $colW * $n;
 
                 // Equal grid columns (absolute).

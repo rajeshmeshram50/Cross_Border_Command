@@ -178,6 +178,18 @@
          borderless (CBC — clause content broken in PDF). */
       .document-content table td,
       .document-content table th { padding: 6px 8px; vertical-align: top; word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; }
+      /* Let a tall table row SPLIT across the page boundary instead of jumping
+         whole to the next page (leaving a big gap) or being clipped so its text
+         is lost. dompdf 3.x paginates inside rows/cells when nothing forces them
+         to stay together — make that explicit for the body tables. The header
+         row is kept intact (short, single line) and repeats on each page. */
+      .document-content table,
+      .document-content tbody,
+      .document-content tr,
+      .document-content td,
+      .document-content th { page-break-inside: auto; }
+      .document-content thead { display: table-header-group; }
+      .document-content thead tr { page-break-inside: avoid; }
       .document-content img { max-width: 100%; }
       .document-content ul, .document-content ol { margin: 0 0 8px 24px; }
       /* Clause Library bodies routinely arrive wrapped in a <pre> (monospace
