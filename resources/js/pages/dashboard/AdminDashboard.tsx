@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardBody, Col, Row, Badge, Modal, ModalBody } from 'reactstrap';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import api from '../../api';
+import { useToast } from '../../contexts/ToastContext';
 import { ShimmerDashboard } from '../../components/ui/Shimmer';
 import { formatCompact } from '../../utils/formatNumber';
 import { useChartTheme } from '../../hooks/useChartTheme';
@@ -60,6 +61,71 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
     return () => clearInterval(timer);
   }, [value]);
   return <>{prefix}{display.toLocaleString()}{suffix}</>;
+}
+
+/* Speedometer gauge for the DB-backup modal. A 180° top arc (0% at the
+ * left, 100% at the right) with a coloured progress arc, sweeping needle
+ * and a big percentage read-out. `phase` recolours the whole gauge:
+ * running = indigo, done = green, error = red. */
+function BackupSpeedometer({ pct, phase }: { pct: number; phase: 'running' | 'done' | 'error' }) {
+  const cx = 100, cy = 100, r = 78;
+  const clamped = Math.max(0, Math.min(100, pct));
+  const polar = (angleDeg: number) => {
+    const a = (angleDeg * Math.PI) / 180;
+    return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+  };
+  // 0% → 180° (left), 100% → 360° (right), sweeping through 270° (top).
+  const arcPath = (a0: number, a1: number) => {
+    const p0 = polar(a0), p1 = polar(a1);
+    const large = a1 - a0 > 180 ? 1 : 0;
+    return `M ${p0.x} ${p0.y} A ${r} ${r} 0 ${large} 1 ${p1.x} ${p1.y}`;
+  };
+  const endAngle = 180 + (clamped / 100) * 180;
+  // Needle is drawn pointing straight up and rotated via CSS transform (which
+  // animates smoothly) — up = 270°, so the offset from vertical is endAngle-270.
+  const needleRot = endAngle - 270;
+  const color = phase === 'done' ? '#0ab39c' : phase === 'error' ? '#f06548' : '#405189';
+  const label = phase === 'done' ? 'Done' : phase === 'error' ? 'Failed' : 'Working…';
+
+  // Ticks every 10% across the 180° arc.
+  const ticks = Array.from({ length: 11 }, (_, i) => {
+    const ang = 180 + (i / 10) * 180;
+    const outer = polar(ang);
+    const inner = { x: cx + (r - 9) * Math.cos((ang * Math.PI) / 180), y: cy + (r - 9) * Math.sin((ang * Math.PI) / 180) };
+    return { i, outer, inner, major: i % 5 === 0 };
+  });
+
+  return (
+    <svg viewBox="0 0 200 130" width="230" height="150" role="img" aria-label={`Backup progress ${Math.round(clamped)} percent`}>
+      {/* Track */}
+      <path d={arcPath(180, 360)} fill="none" stroke="var(--vz-border-color, #e9ebec)" strokeWidth={12} strokeLinecap="round" />
+      {/* Ticks */}
+      {ticks.map(t => (
+        <line key={t.i} x1={t.inner.x} y1={t.inner.y} x2={t.outer.x} y2={t.outer.y}
+          stroke="var(--vz-border-color, #ced4da)" strokeWidth={t.major ? 2 : 1} opacity={0.7} />
+      ))}
+      {/* Progress arc */}
+      {clamped > 0 && (
+        <path className="ad-gauge-arc" d={arcPath(180, endAngle)} fill="none"
+          stroke={color} strokeWidth={12} strokeLinecap="round" />
+      )}
+      {/* Needle — points up, rotated to the current value via CSS transform */}
+      <line
+        className="ad-gauge-needle"
+        x1={cx} y1={cy} x2={cx} y2={cy - (r - 12)}
+        stroke={color} strokeWidth={3} strokeLinecap="round"
+        style={{ transform: `rotate(${needleRot}deg)` }}
+      />
+      <circle cx={cx} cy={cy} r={7} fill={color} />
+      <circle cx={cx} cy={cy} r={3} fill="#fff" />
+      {/* Read-out */}
+      <text x={cx} y={cy - 22} textAnchor="middle" className="ad-gauge-pct" fill={color}>
+        {Math.round(clamped)}%
+      </text>
+      <text x={cx} y={cy - 4} textAnchor="middle" fontSize={11} fontWeight={600}
+        fill="var(--vz-secondary-color, #878a99)">{label}</text>
+    </svg>
+  );
 }
 
 const ChartTooltip = ({ active, payload, label, prefix = '' }: any) => {
@@ -173,6 +239,91 @@ export default function AdminDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [openModal, setOpenModal] = useState<DetailModal>(null);
+  const toast = useToast();
+
+  // --- Database backup download ---------------------------------------
+  // phase drives the modal: running (pg_dump generating + download),
+  // done (100% + green), error (red + message). pct feeds the speedometer.
+  const [backupOpen, setBackupOpen] = useState(false);
+  const [backupPhase, setBackupPhase] = useState<'running' | 'done' | 'error'>('running');
+  const [backupPct, setBackupPct] = useState(0);
+  const [backupError, setBackupError] = useState('');
+  const progressTimer = useRef<number | null>(null);
+  const closeTimer = useRef<number | null>(null);
+
+  const stopProgressAnim = () => {
+    if (progressTimer.current !== null) {
+      window.clearInterval(progressTimer.current);
+      progressTimer.current = null;
+    }
+  };
+
+  // Eased fake-progress: climbs quickly, then crawls and HOLDS at 92% until
+  // the real request resolves (we can't know pg_dump's true % server-side).
+  const startProgressAnim = () => {
+    stopProgressAnim();
+    setBackupPct(0);
+    progressTimer.current = window.setInterval(() => {
+      setBackupPct(p => {
+        if (p >= 92) return p;
+        const inc = p < 55 ? 2.4 : p < 78 ? 1.0 : 0.35;
+        return Math.min(92, +(p + inc).toFixed(2));
+      });
+    }, 110);
+  };
+
+  useEffect(() => () => { stopProgressAnim(); if (closeTimer.current !== null) window.clearTimeout(closeTimer.current); }, []);
+
+  const startBackup = async () => {
+    if (closeTimer.current !== null) { window.clearTimeout(closeTimer.current); closeTimer.current = null; }
+    setBackupError('');
+    setBackupPhase('running');
+    setBackupOpen(true);
+    startProgressAnim();
+
+    try {
+      const res = await api.get('/admin/db-backup', {
+        responseType: 'blob',
+        timeout: 0, // never time out — a large dump can take a while
+      });
+
+      // Filename from the Content-Disposition header, else a sensible default.
+      let filename = 'database_backup.sql';
+      const cd = res.headers?.['content-disposition'] as string | undefined;
+      const m = cd?.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+      if (m?.[1]) filename = decodeURIComponent(m[1].replace(/"/g, ''));
+
+      const blob = new Blob([res.data], { type: 'application/sql' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      stopProgressAnim();
+      setBackupPct(100);
+      setBackupPhase('done');
+      toast.success('Backup ready', 'Your database backup has started downloading.');
+      closeTimer.current = window.setTimeout(() => setBackupOpen(false), 1800);
+    } catch (err: any) {
+      stopProgressAnim();
+      // Error body arrives as a Blob because responseType is 'blob' — read it.
+      let msg = 'Database backup failed. Please try again.';
+      const d = err?.response?.data;
+      if (d instanceof Blob) {
+        try { const j = JSON.parse(await d.text()); msg = j.message || j.error || msg; } catch { /* keep default */ }
+      } else if (typeof d === 'object' && d) {
+        msg = d.message || d.error || msg;
+      }
+      setBackupError(msg);
+      setBackupPhase('error');
+      toast.error('Backup failed', msg);
+    }
+  };
+
   // Theme-aware chart palette — grid lines + tick text switch between
   // the pale wash that suits the white card and the translucent-white
   // wash that suits the dark surface. Recomputes when the user flips
@@ -332,6 +483,39 @@ export default function AdminDashboard() {
         }
         .ad-hover-btn:active { transform: translateY(0); }
 
+        /* Get DB Backup CTA — indigo gradient pill matching the dashboard
+         * accent, with a database glyph. Disabled while a backup runs. */
+        .ad-backup-btn {
+          display: inline-flex; align-items: center; gap: 8px;
+          background: linear-gradient(135deg, #405189, #6691e7);
+          border: none; border-radius: 9px;
+          padding: 8px 16px; font-size: 13px; font-weight: 600;
+          color: #ffffff; cursor: pointer; white-space: nowrap;
+          box-shadow: 0 4px 12px rgba(64, 81, 137, 0.22);
+        }
+        .ad-backup-btn i { font-size: 16px; line-height: 1; }
+        .ad-backup-btn:disabled { opacity: .6; cursor: not-allowed; box-shadow: none; }
+
+        /* Speedometer backup modal */
+        .ad-backup-modal .modal-content {
+          border: none; border-radius: 18px; overflow: hidden;
+        }
+        .ad-backup-body {
+          padding: 30px 28px 26px; text-align: center;
+          background: #ffffff;
+        }
+        [data-bs-theme="dark"] .ad-backup-body { background: #1c2531; }
+        .ad-backup-title { font-size: 17px; font-weight: 700; margin: 4px 0 2px; color: var(--vz-body-color); }
+        .ad-backup-sub { font-size: 12.5px; color: var(--vz-secondary-color, #878a99); margin-bottom: 6px; }
+        .ad-gauge-needle {
+          transform-origin: 100px 100px;
+          transition: transform .25s cubic-bezier(.22,1,.36,1);
+        }
+        .ad-gauge-arc { transition: stroke-dashoffset .25s ease, stroke .3s ease; }
+        .ad-gauge-pct { font-size: 30px; font-weight: 800; letter-spacing: -.5px; }
+        @keyframes ad-spin { to { transform: rotate(360deg); } }
+        .ad-gauge-spin { animation: ad-spin 1.1s linear infinite; transform-origin: 100px 100px; }
+
         /* User-role pill on the Payment Health card. Each pill reads its
          * accent from --role-c (set inline) so this rule covers every
          * role without per-role copies. Light mode keeps the original
@@ -383,6 +567,18 @@ export default function AdminDashboard() {
             <div className="frm-cstrip-title">Dashboard</div>
             <div className="frm-cstrip-sub">Welcome back! Here's what's happening today.</div>
           </div>
+        </div>
+        <div className="ms-auto d-flex align-items-center">
+          <button
+            type="button"
+            className="ad-backup-btn ad-hover-btn"
+            onClick={startBackup}
+            disabled={backupOpen && backupPhase === 'running'}
+            title="Download a full backup of the database"
+          >
+            <i className="ri-database-2-line" />
+            <span>Get DB Backup</span>
+          </button>
         </div>
       </div>
 
@@ -1114,6 +1310,49 @@ export default function AdminDashboard() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </ModalBody>
+      </Modal>
+
+      {/* DB Backup progress modal — speedometer + status. Not dismissable while
+          the dump is running so the user can't abort mid-stream by accident. */}
+      <Modal
+        isOpen={backupOpen}
+        centered
+        size="sm"
+        className="ad-backup-modal"
+        toggle={backupPhase === 'running' ? undefined : () => setBackupOpen(false)}
+        backdrop={backupPhase === 'running' ? 'static' : true}
+        keyboard={backupPhase !== 'running'}
+      >
+        <ModalBody className="p-0">
+          <div className="ad-backup-body">
+            <BackupSpeedometer pct={backupPct} phase={backupPhase} />
+            <div className="ad-backup-title">
+              {backupPhase === 'done' ? 'Backup Ready' : backupPhase === 'error' ? 'Backup Failed' : 'Generating Database Backup'}
+            </div>
+            <div className="ad-backup-sub">
+              {backupPhase === 'done'
+                ? 'Your download has started.'
+                : backupPhase === 'error'
+                  ? (backupError || 'Something went wrong.')
+                  : 'Please keep this window open — this can take a moment for large databases.'}
+            </div>
+            {backupPhase === 'error' && (
+              <div className="d-flex justify-content-center gap-2 mt-3">
+                <button type="button" className="ad-backup-btn ad-hover-btn" onClick={startBackup}>
+                  <i className="ri-refresh-line" /> <span>Retry</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-light ad-hover-btn"
+                  style={{ borderRadius: 9, fontWeight: 600, fontSize: 13 }}
+                  onClick={() => setBackupOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+            )}
           </div>
         </ModalBody>
       </Modal>

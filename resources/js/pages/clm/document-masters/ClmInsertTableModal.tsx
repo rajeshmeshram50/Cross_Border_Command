@@ -74,9 +74,11 @@ export default function ClmInsertTableModal({ open, onClose, onInsert }: Props) 
   const clampRows = (n: number) => Math.max(MIN_ROWS, Math.min(MAX_ROWS, Math.round(n)));
   const clampCols = (n: number) => Math.max(MIN_COLS, Math.min(MAX_COLS, Math.round(n)));
 
+  // During editing rows/cols may be NaN (empty field) — fall back to the min so
+  // the live preview never breaks; the field itself commits a clamped value on blur.
   const buildHtml = (): string => {
-    const r = clampRows(rows);
-    const c = clampCols(cols);
+    const r = Number.isFinite(rows) ? clampRows(rows) : MIN_ROWS;
+    const c = Number.isFinite(cols) ? clampCols(cols) : MIN_COLS;
     // overflow-wrap + word-break keep long/unbreakable text INSIDE its cell so a
     // fixed-layout column never grows to fit it (which was resizing every other
     // column and shoving the table sideways).
@@ -172,8 +174,14 @@ export default function ClmInsertTableModal({ open, onClose, onInsert }: Props) 
               <input
                 ref={firstFieldRef}
                 type="number" min={MIN_ROWS} max={MAX_ROWS}
-                value={rows}
-                onChange={e => setRows(clampRows(Number(e.target.value) || 1))}
+                value={Number.isFinite(rows) ? rows : ''}
+                onChange={e => {
+                  const raw = e.target.value;
+                  if (raw === '') { setRows(NaN); return; }            // allow a cleared field while typing
+                  const n = Math.floor(Number(raw));
+                  if (Number.isFinite(n)) setRows(Math.min(MAX_ROWS, Math.max(0, n)));
+                }}
+                onBlur={() => setRows(r => (Number.isFinite(r) ? clampRows(r) : MIN_ROWS))}
                 className="itm-input"
               />
               <small className="itm-hint">{MIN_ROWS}–{MAX_ROWS}</small>
@@ -182,8 +190,14 @@ export default function ClmInsertTableModal({ open, onClose, onInsert }: Props) 
               <span className="itm-lbl">Columns</span>
               <input
                 type="number" min={MIN_COLS} max={MAX_COLS}
-                value={cols}
-                onChange={e => setCols(clampCols(Number(e.target.value) || 1))}
+                value={Number.isFinite(cols) ? cols : ''}
+                onChange={e => {
+                  const raw = e.target.value;
+                  if (raw === '') { setCols(NaN); return; }
+                  const n = Math.floor(Number(raw));
+                  if (Number.isFinite(n)) setCols(Math.min(MAX_COLS, Math.max(0, n)));
+                }}
+                onBlur={() => setCols(c => (Number.isFinite(c) ? clampCols(c) : MIN_COLS))}
                 className="itm-input"
               />
               <small className="itm-hint">{MIN_COLS}–{MAX_COLS}</small>

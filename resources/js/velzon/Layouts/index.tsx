@@ -151,18 +151,31 @@ const Layout = (props : any) => {
     if (layoutType === 'horizontal') {
         return (
             <React.Fragment>
-                {/* Fixed header + single scroll UNDER it: the wrapper fills the
-                    viewport and does not scroll; the header keeps its natural
-                    height at top; only .main-content scrolls, so the scrollbar
-                    starts below the navbar (not a full-height window scrollbar)
-                    and there's exactly one scrollbar (no double scroll). */}
-                <div id="layout-wrapper" className="idims-active" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-                    <style>{'.idims-active .main-content{margin-left:0!important;margin-top:0!important;padding-top:0!important;}.idims-active .page-content{margin-top:0!important;padding-top:1rem!important;}'}</style>
+                {/* Fixed header + fixed footer, single scroll BETWEEN them: the
+                    wrapper fills the viewport and does not scroll; the header and
+                    footer keep their natural height and sit outside the scroller,
+                    so only .main-content moves. That gives exactly one scrollbar
+                    (no double scroll), starting below the navbar.
+
+                    Height is 100dvh, not 100vh, and that matters: 100vh is the
+                    LARGEST viewport, ignoring browser UI, so on a browser whose
+                    chrome is taller (Edge's tab strip + address bar + sidebar
+                    stack vs Chrome's) the wrapper ends up taller than the visible
+                    area. The body then gets its own scrollbar and the whole
+                    shell — header included — scrolls away. 100dvh tracks the
+                    actual visible viewport, so the frame stays put in every
+                    browser. The `overflow: hidden` here is what stops any inner
+                    content pushing the document itself. */}
+                <div id="layout-wrapper" className="idims-active" style={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
+                    <style>{'.idims-active .main-content{margin-left:0!important;margin-top:0!important;padding-top:0!important;}.idims-active .page-content{margin-top:0!important;padding-top:1rem!important;}.idims-active > .footer{position:static!important;left:0!important;right:0!important;flex-shrink:0;}'}</style>
                     <IdimsHeader />
-                    <div className="main-content mb-2" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
+                    <div className="main-content" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
                         {props.children}
-                        <Footer />
                     </div>
+                    {/* Sibling of the scroller, not a child — otherwise it rides
+                        along with the page content instead of pinning to the
+                        bottom of the frame. */}
+                    <Footer />
                 </div>
                 <RightSidebar />
             </React.Fragment>

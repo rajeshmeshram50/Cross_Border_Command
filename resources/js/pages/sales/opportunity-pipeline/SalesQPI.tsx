@@ -2772,14 +2772,22 @@ export function useQpiMasters(open: boolean): LoadedMasters {
     let cancelled = false;
     const branch = currentBranchKey();
 
-    // Cache hit — return synchronously, no network at all.
+    // Cache hit — render the cached data INSTANTLY (no "Loading…" flash), but
+    // ALSO revalidate in the background. Without this, a customer edited after
+    // the cache was written (e.g. its State Code / GST No / country) kept the
+    // stale value here for up to the 5-min TTL, so picking that customer on the
+    // PI/Quotation form auto-filled the OLD State Code. Stale-while-revalidate
+    // keeps the instant open while guaranteeing freshness.
     if (
       qpiMastersCache
       && qpiMastersCache.branchId === branch
       && Date.now() - qpiMastersCache.loadedAt < QPI_MASTERS_CACHE_TTL_MS
     ) {
       setState(qpiMastersCache.data);
-      return;
+      if (!qpiMastersInFlight) {
+        loadQpiMasters(branch).then(d => { if (!cancelled) setState(d); }).catch(() => {});
+      }
+      return () => { cancelled = true; };
     }
 
     // Concurrent-open dedupe — piggy-back on the in-flight wave.
@@ -3017,7 +3025,10 @@ export function CreateQuotationModal(props: {
         });
 
         // Hydrate the products grid from the server's items array.
-        const items = Array.isArray(r.items) ? r.items : [];
+        const items = (Array.isArray(r.items) ? r.items : [])
+          // Drop any blank line (no product + no name) so an empty saved row
+          // never renders as a stray empty product in the list.
+          .filter((it: any) => it.product_id != null || (it.product_name ?? '').toString().trim() !== '');
         setProducts(items.map((it: any, i: number) => ({
           id:        Date.now() + i,
           productId: it.product_id ?? null,
@@ -3497,7 +3508,10 @@ export function CreatePIModal(props: {
           bankAccountId:    r.bank_account_id ?? null,
         });
 
-        const items = Array.isArray(r.items) ? r.items : [];
+        const items = (Array.isArray(r.items) ? r.items : [])
+          // Drop any blank line (no product + no name) so an empty saved row
+          // never renders as a stray empty product in the list.
+          .filter((it: any) => it.product_id != null || (it.product_name ?? '').toString().trim() !== '');
         setProducts(items.map((it: any, i: number) => ({
           id:        Date.now() + i,
           productId: it.product_id ?? null,
@@ -4810,6 +4824,12 @@ function ProductsStep(props: {
   /* No selectable products left to add (every mapped product is already in the
    * list, or none are mapped) → the whole "add product" draft row is hidden. */
   const noMoreProducts = !loadingProducts && !loadingLeadProducts && !leadProductsPending && visibleProductOptions.length === 0;
+  /* Show the "add product" draft row ONLY once product loading has SETTLED and
+   * there are options to pick. `!noMoreProducts` also matched the loading phase,
+   * so on edit (where a masters refetch re-triggers loading) the empty draft row
+   * flashed in and back out. Gate it on "not loading + has options" instead. */
+  const anyProductsLoading = loadingProducts || loadingLeadProducts || leadProductsPending;
+  const showAddProductRow  = !anyProductsLoading && visibleProductOptions.length > 0;
 
   const isIntl = form.docType === 'International';
   /* Domestic GST split. International documents are tax-free, so they keep the
@@ -5039,7 +5059,7 @@ function ProductsStep(props: {
             {/* Add-product draft row — hidden entirely once there are no more
                 products to add (all mapped products already in the list, or
                 none mapped to the opportunity). */}
-            {!noMoreProducts && (
+            {showAddProductRow && (
             <tr className="qpi-products-input-row">
               <td>
                 <MasterSelect

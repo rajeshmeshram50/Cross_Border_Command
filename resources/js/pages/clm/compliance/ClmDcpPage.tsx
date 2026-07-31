@@ -830,7 +830,10 @@ function SegmentRuleModal(props: {
           <div className="dcp-step-badge" style={{ fontSize: 9.5, fontWeight: 700, color: '#0891b2', background: 'rgba(8,145,178,.07)', border: '1px solid rgba(8,145,178,.16)', borderRadius: 20, padding: '3px 9px' }}>Step {stage} of 2</div>
         </div>
 
-        <div className="clm-modal-body" style={{ maxHeight: '70vh' }}>
+        {/* Flex-fill + scroll (not a fixed 70vh) so the body always fits the
+            space left between the header/stepper and footer — content stays
+            fully reachable via scroll on short / zoomed / small screens. */}
+        <div className="clm-modal-body dcp-modal-body" style={{ flex: '1 1 auto', minHeight: 0 }}>
           {stage === 1 ? (
             <>
               {/* Card 0: Document Type (Domestic / International) — empty by
@@ -1247,6 +1250,15 @@ const DCP_PAGE_CSS = `
    The 2-step stepper strip is a non-wrapping flex row whose tiles have fixed
    content, so it overflowed / overlapped on narrow screens. Shrink the tiles,
    drop the sub-captions + step badge, and let the Document-Type cards stack. */
+/* The modal body is a flex column. Its children (the cards) default to
+   flex-shrink:1, so on a short / zoomed-in viewport they SQUISH to fit instead
+   of overflowing — the Select-Segment card collapsed to a sliver and nothing
+   scrolled. Pin every direct child to its natural height so the body's
+   overflow-y:auto kicks in and the fields stay reachable via scroll. The
+   header/stepper/footer stay put (flex-shrink:0) so only the body scrolls. */
+.dcp-modal-body > * { flex-shrink: 0; }
+.dcp-stage-strip, .clm-modal .clm-modal-head, .clm-modal .clm-modal-foot { flex-shrink: 0; }
+
 @media (max-width: 680px) {
   .dcp-stage-strip { padding: 8px 12px !important; gap: 4px !important; flex-wrap: nowrap !important; }
   .dcp-stage-tile { padding: 7px 10px !important; gap: 7px !important; min-width: 0 !important; }

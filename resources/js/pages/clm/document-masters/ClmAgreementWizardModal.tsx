@@ -272,8 +272,27 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     });
   };
   const insertLink = () => {
-    const url = window.prompt('Enter URL', 'https://');
-    if (url) agr.editor?.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    const ed = agr.editor;
+    if (!ed) return;
+    const { from, to } = ed.state.selection;
+    const selText = from !== to ? ed.state.doc.textBetween(from, to, ' ').trim() : '';
+    // Seed the prompt with the existing link, or the selected text when it looks
+    // like a URL — otherwise the user accepts the bare "https://" default and the
+    // link points nowhere (href="https://") even though the text is a real URL.
+    const existing = (ed.getAttributes('link').href as string) || '';
+    const looksUrl = /^(https?:\/\/|mailto:|tel:)/i.test(selText) || /^[\w-]+(\.[\w-]+)+/.test(selText);
+    const seed = existing || (looksUrl ? selText : 'https://');
+    const raw = window.prompt('Enter URL', seed)?.trim();
+    if (!raw || raw === 'https://' || raw === 'http://') return;   // ignore empty / protocol-only
+    const url = /^(https?:\/\/|mailto:|tel:)/i.test(raw) ? raw : `https://${raw}`;
+    if (from === to) {
+      // No selection — insert the URL itself as the clickable link text.
+      ed.chain().focus().insertContent(
+        `<a href="${url.replace(/"/g, '&quot;')}" target="_blank" rel="noopener noreferrer">${raw.replace(/</g, '&lt;')}</a> `
+      ).run();
+    } else {
+      ed.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    }
   };
   // TipTap keeps its own selection; `.focus()` on insert restores the last caret,
   // so the old manual range stash/restore is no longer needed (kept as a no-op so
@@ -284,7 +303,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
 
   /* DOCX round-trip — mirrors the Trade Doc draft flow. Requires an
    * existing row so we have an id to scope the upload/download to. */
-  const downloadDocx = async () => {
+  const downloadDocx = async (size: 'a4' | 'a3' = 'a4', orient: 'portrait' | 'landscape' = 'portrait') => {
     if (!editingId) {
       toast.error('Save draft first', 'Save the agreement draft before downloading as DOCX.');
       return;
@@ -299,7 +318,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     let p = 6;
     const timer = window.setInterval(() => { p = Math.min(90, p + Math.random() * 7 + 2); setDocxProgress(Math.round(p)); }, 300);
     try {
-      const resp = await api.get(`/clm/agreement-library/${editingId}/download`, { responseType: 'blob' });
+      const resp = await api.get(`/clm/agreement-library/${editingId}/download`, { params: { size, orient }, responseType: 'blob' });
       window.clearInterval(timer); setDocxProgress(100);
       const url  = URL.createObjectURL(new Blob([resp.data]));
       const a    = document.createElement('a');
@@ -865,7 +884,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                 docxRef={docxRef}
                 uploadingDocx={uploadingDocx}
                 downloadingDocx={downloadingDocx}
-                onDownloadDocx={() => void downloadDocx()}
+                onDownloadDocx={(size, orient) => void downloadDocx(size, orient)}
                 onUploadDocx={(f) => void uploadDocx(f)}
                 onOpenPlaceholder={() => { stashSelection(); setPlaceholderOpen(true); setClauseOpen(false); }}
                 onOpenClauseLibrary={() => { setClauseOpen(o => !o); setPlaceholderOpen(false); }}
@@ -1007,7 +1026,7 @@ function AgrEditor({
   docxRef: React.MutableRefObject<HTMLInputElement | null>;
   uploadingDocx: boolean;
   downloadingDocx: boolean;
-  onDownloadDocx: () => void;
+  onDownloadDocx: (size?: 'a4' | 'a3', orient?: 'portrait' | 'landscape') => void;
   onUploadDocx: (file: File) => void;
   onOpenPlaceholder: () => void;
   onOpenClauseLibrary: () => void;
@@ -1023,6 +1042,11 @@ function AgrEditor({
   fullPage: boolean;
   setFullPage: (v: boolean | ((p: boolean) => boolean)) => void;
 }) {
+  // Download DOCX page-size menu (A4 / A3, portrait / landscape).
+  // Rendered as a fixed-position menu anchored to the button rect, because the
+  // toolbar's actions row has overflow-x:auto which would clip an absolute menu.
+  const [dlMenuOpen, setDlMenuOpen] = useState(false);
+  const [dlAnchor, setDlAnchor] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
   const shell = (
     <div className={`agw-editor-shell ${fullPage ? 'agw-editor-shell-full' : ''}`}>
       {/* ProseMirror + toolbar base styles for the TipTap editor content. */}
@@ -1045,21 +1069,48 @@ function AgrEditor({
         <div className="agw-editor-actions">
           <input ref={docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
                  onChange={e => { const f = e.target.files?.[0]; if (f) onUploadDocx(f); e.currentTarget.value = ''; }} />
-          <Tooltip label={downloadingDocx ? 'Generating the DOCX…' : (editingId ? 'Download as DOCX' : 'Save the agreement first')}>
-            <button type="button" className="agw-editor-btn" disabled={downloadingDocx} onClick={onDownloadDocx}>
-              {downloadingDocx ? (
-                <>
-                  <svg className="agw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-                  Downloading…
-                </>
-              ) : (
-                <>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                  Download DOCX
-                </>
-              )}
-            </button>
-          </Tooltip>
+          <div style={{ position: 'relative', display: 'inline-flex' }}>
+            <Tooltip label={downloadingDocx ? 'Generating the DOCX…' : (editingId ? 'Download as DOCX — pick page size' : 'Save the agreement first')}>
+              <button type="button" className="agw-editor-btn" disabled={downloadingDocx}
+                onClick={e => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setDlAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right });
+                  setDlMenuOpen(o => !o);
+                }}>
+                {downloadingDocx ? (
+                  <>
+                    <svg className="agw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                    Downloading…
+                  </>
+                ) : (
+                  <>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                    Download DOCX
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" style={{ marginLeft: 3 }}><polyline points="6 9 12 15 18 9" /></svg>
+                  </>
+                )}
+              </button>
+            </Tooltip>
+            {dlMenuOpen && !downloadingDocx && (
+              <>
+                <div onClick={() => setDlMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 3000 }} />
+                <div style={{ position: 'fixed', top: dlAnchor.top, right: dlAnchor.right, zIndex: 3001, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(15,23,42,.16)', padding: 4, minWidth: 178 }}>
+                  {([
+                    ['a4', 'portrait', 'A4'],
+                    ['a3', 'portrait', 'A3 (wider)'],
+                  ] as const).map(([size, orient, label]) => (
+                    <button key={label} type="button"
+                      onClick={() => { setDlMenuOpen(false); onDownloadDocx(size, orient); }}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', border: 'none', background: 'transparent', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, color: '#0f172a', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <Tooltip label={uploadingDocx ? 'Converting the document…' : (editingId ? 'Upload a revised Word file' : 'Upload a Word file to draft from')}>
             <button type="button" className="agw-editor-btn" disabled={uploadingDocx} onClick={() => docxRef.current?.click()}>
               {uploadingDocx ? (

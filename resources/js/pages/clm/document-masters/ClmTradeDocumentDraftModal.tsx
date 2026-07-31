@@ -292,8 +292,27 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     });
   };
   const insertLink = () => {
-    const url = window.prompt('Enter URL', 'https://');
-    if (url) ted.editor?.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    const ed = ted.editor;
+    if (!ed) return;
+    const { from, to } = ed.state.selection;
+    const selText = from !== to ? ed.state.doc.textBetween(from, to, ' ').trim() : '';
+    // Seed the prompt with the existing link, or the selected text when it looks
+    // like a URL — otherwise the user accepts the bare "https://" default and the
+    // link points nowhere (href="https://") even though the text is a real URL.
+    const existing = (ed.getAttributes('link').href as string) || '';
+    const looksUrl = /^(https?:\/\/|mailto:|tel:)/i.test(selText) || /^[\w-]+(\.[\w-]+)+/.test(selText);
+    const seed = existing || (looksUrl ? selText : 'https://');
+    const raw = window.prompt('Enter URL', seed)?.trim();
+    if (!raw || raw === 'https://' || raw === 'http://') return;   // ignore empty / protocol-only
+    const url = /^(https?:\/\/|mailto:|tel:)/i.test(raw) ? raw : `https://${raw}`;
+    if (from === to) {
+      // No selection — insert the URL itself as the clickable link text.
+      ed.chain().focus().insertContent(
+        `<a href="${url.replace(/"/g, '&quot;')}" target="_blank" rel="noopener noreferrer">${raw.replace(/</g, '&lt;')}</a> `
+      ).run();
+    } else {
+      ed.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+    }
   };
   // TipTap keeps its own selection; `.focus()` on insert restores the last caret,
   // so the old manual range stash/restore is no longer needed (no-op keeps the
@@ -318,7 +337,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     let p = 6;
     return window.setInterval(() => { p = Math.min(90, p + Math.random() * 7 + 2); setDl(d => (d ? { ...d, progress: Math.round(p) } : d)); }, 300);
   };
-  const downloadDocx = async () => {
+  const downloadDocx = async (size: 'a4' | 'a3' = 'a4', orient: 'portrait' | 'landscape' = 'portrait') => {
     // Guard on `existing?.id`, NOT `editingId` — "Save & Next" sets editingId
     // for a brand-new draft, which would otherwise let a never-really-saved new
     // document download. A new doc must be fully saved (which closes the modal)
@@ -333,7 +352,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     }
     const timer = runDlProgress('docx');
     try {
-      const resp = await api.get(`/clm/trade-doc-library/${editingId}/download`, { responseType: 'blob' });
+      const resp = await api.get(`/clm/trade-doc-library/${editingId}/download`, { params: { size, orient }, responseType: 'blob' });
       window.clearInterval(timer); setDl(d => (d ? { ...d, progress: 100 } : d));
       const url  = URL.createObjectURL(new Blob([resp.data]));
       const a    = document.createElement('a');
@@ -938,7 +957,9 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     {/* DOCX only — Stage 2 exports the editable Word file. The
                         full combined PDF preview lives on the Library list as
                         "Download Draft PDF". */}
-                    <button type="button" className="tdw-editor-btn" onClick={() => void downloadDocx()} title={existing?.id ? 'Download as DOCX' : 'Save the trade document draft first'}>
+                    {/* DOCX downloads as A4 (portrait). A wide table auto-fits the
+                        page, so a page-size picker is no longer needed here. */}
+                    <button type="button" className="tdw-editor-btn" onClick={() => void downloadDocx('a4', 'portrait')} title={existing?.id ? 'Download as DOCX (A4)' : 'Save the trade document draft first'}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                       Download DOCX
                     </button>

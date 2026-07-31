@@ -400,8 +400,11 @@ class ClmTradeDocumentController extends Controller
 
         // Prefer the user-uploaded DOCX (it's the source of truth after a
         // Word round-trip — preserves header/footer/styling we can't fully
-        // reproduce from HTML alone).
-        if ($row->docx_path && Storage::disk('public')->exists($row->docx_path)) {
+        // reproduce from HTML alone). BUT when the user explicitly picks a page
+        // size (?size=a3 / ?orient=landscape) we must REGENERATE so the chosen
+        // page applies — the stored file keeps its original page size.
+        $sizeRequested = $request->filled('size') || $request->filled('orient');
+        if (!$sizeRequested && $row->docx_path && Storage::disk('public')->exists($row->docx_path)) {
             $name = $row->docx_original_name ?: ($row->code ?: 'trade-document') . '.docx';
             try {
                 // Stream via the Storage disk — works for both local and cloud
@@ -430,9 +433,14 @@ class ClmTradeDocumentController extends Controller
         // top so the user opening the file recognises which trade doc it
         // belongs to before they start editing.
         $phpWord = new PhpWord();
-        $phpWord->setDefaultFontName('Calibri');
+        // Match the PDF blade (font-family: Arial). Calibri renders smaller/
+        // lighter than Arial at the same point size, which made the DOCX look
+        // smaller than the "proper" PDF even though the point sizes matched.
+        $phpWord->setDefaultFontName('Arial');
         $phpWord->setDefaultFontSize(11);
-        $section = $phpWord->addSection();
+        // Page size — A4 (default) or A3, portrait or landscape. A wide,
+        // many-column table doesn't fit A4; A3 / landscape gives it room.
+        $section = $phpWord->addSection($this->docxPageStyle($request));
 
         // Page-shell header + footer (logo, title, "Confidential", footer text,
         // page number) from the saved config so the DOCX matches the preview.
@@ -469,23 +477,26 @@ class ClmTradeDocumentController extends Controller
         // tables into run-on text. Round-trip through the lenient HTML parser
         // first so PhpWord receives well-formed markup and the tables render
         // as real Word tables.
+        // Give width-less tables equal full-width columns BEFORE well-forming,
+        // so the injected <col> tags get self-closed (PhpWord's strict XML
+        // reader drops the whole table otherwise). Matches the editor layout.
+        $html = $this->ensureTableColWidths($html);
         $html = $this->toWellFormedHtml($html);
 
-        // Wrap as a full document so PhpWord parses it as one — fragment
-        // mode (false) sometimes drops block-level styling like text-align.
-        $wrapped = '<!DOCTYPE html><html><body>' . $html . '</body></html>';
-
-        try {
-            Html::addHtml($section, $wrapped, true, false);
-        } catch (\Throwable $e) {
-            // Last-resort fallback so the download still produces something
-            // even when the markup is too far gone for PhpWord.
-            $section->addText(strip_tags($html));
-        }
+        // Add resiliently: try the whole body, and on a PhpWord failure fall
+        // back to PER-BLOCK adds so one bad element can't wipe every table /
+        // format (which the old whole-document strip_tags fallback did).
+        $this->addHtmlResilient($section, $html);
 
         $filename = ($row->code ?: 'trade-document') . '.docx';
         $tmp      = tempnam(sys_get_temp_dir(), 'tdocx_');
         IOFactory::createWriter($phpWord, 'Word2007')->save($tmp);
+
+        // Repair any schema-invalid OOXML PhpWord emitted (bare &, fractional
+        // font sizes, invalid border colours) so the .docx opens cleanly in
+        // Word AND Google Docs, and stretch tables to the page width so the
+        // user never has to hand-drag columns.
+        $this->sanitizeDocxXml($tmp, $this->docxUsableWidthTwips($request));
 
         return response()->download($tmp, $filename, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -550,7 +561,10 @@ class ClmTradeDocumentController extends Controller
             'headerConfig'     => $headerConfig,
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
-        ])->setPaper('a4')->setOption('isPhpEnabled', true);
+        ])->setPaper(
+            strtolower((string) $request->query('size', 'a4')) === 'a3' ? 'a3' : 'a4',
+            strtolower((string) $request->query('orient', 'portrait')) === 'landscape' ? 'landscape' : 'portrait'
+        )->setOption('isPhpEnabled', true);
 
         return $pdf->download(($row->code ?: 'trade-document') . '.pdf');
     }
