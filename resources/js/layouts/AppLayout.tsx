@@ -123,7 +123,11 @@ export default function AppLayout({ onNavigate, children }: Props) {
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-bg">
+    // h-dvh, not h-screen: h-screen is 100vh = the LARGEST viewport, which
+    // ignores browser UI. On a browser with taller chrome (Edge) that makes the
+    // shell overflow the visible area, so the document scrolls and the header
+    // scrolls away with it. h-dvh tracks the actual visible viewport.
+    <div className="flex flex-col h-dvh overflow-hidden bg-bg">
 
       {/* ═══ TOP NAV BAR (topnav mode) ═══ */}
       {showTopnav && (

@@ -7,8 +7,15 @@
 .doc-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--vz-header-height, 70px) - 1.5rem);
-  min-height: 520px;
+  /* --doc-avail-h is measured from AppLayout's <main> at runtime (see
+   * Documentation.tsx). The dvh fallback only applies if this ever renders
+   * outside that layout. Do NOT go back to a 100vh calc: this element sits
+   * inside a scrolling <main> that is ~150px shorter than the viewport, so a
+   * viewport-based height always overflows — and whether that overflow was
+   * reachable varied with the browser's own chrome height (it scrolled in
+   * Edge but sat stuck in Chrome). */
+  height: var(--doc-avail-h, calc(100dvh - 190px));
+  min-height: 420px;
   background: var(--vz-secondary-bg, #f3f3f9);
   border-radius: 12px;
   overflow: hidden;
@@ -277,7 +284,7 @@
 /* ── Mobile drawer ── */
 .doc-scrim { display: none; }
 @media (max-width: 768px) {
-  .doc-page { height: calc(100vh - 120px); }
+  .doc-page { height: var(--doc-avail-h, calc(100dvh - 150px)); min-height: 360px; }
   .doc-nav-toggle { display: flex; }
   .doc-sidebar {
     position: absolute; z-index: 30; top: 0; bottom: 0; left: 0;
