@@ -210,6 +210,26 @@ class CtcContractController extends Controller
     }
 
     /**
+     * Counterparty display names straight from the STORED snapshot (no live DB
+     * re-resolve). The list only needs the names captured when each party was
+     * added — resolving them live per row ran a Customer/Consignee/Vendor query
+     * PER counterparty PER row (an N+1 that made the whole list page slow). Live
+     * data is still resolved on the detail/preview/generation paths where a
+     * fresh company name / address actually matters.
+     */
+    private function cpNamesFromStored(CtcContract $c, bool $labeled): array
+    {
+        $cps = is_array($c->counterparties) ? $c->counterparties : [];
+        return collect($cps)->map(function ($cp) use ($labeled) {
+            if (!is_array($cp)) return '';
+            $name = trim((string) ($cp['name'] ?? ''));
+            if ($name === '' || !$labeled) return $name;
+            $role = $this->cpRoleLabel($cp);
+            return $role !== '' ? "{$name} ({$role})" : $name;
+        })->filter()->values()->all();
+    }
+
+    /**
      * Same as cpNames() but each name is suffixed with its entity type —
      * "Royal Cashews (Customer)" — so the +N counterparty popover tells the
      * user whether a company is the Customer, Consignee or Supplier (a company
@@ -439,8 +459,8 @@ class CtcContractController extends Controller
             'id'           => $c->code,
             'dbId'         => $c->id,
             'title'        => $c->title,
-            'cp'           => $this->cpNames($c) ?: ['—'],
-            'cpLabeled'    => $this->cpNamesLabeled($c) ?: ['—'],
+            'cp'           => $this->cpNamesFromStored($c, false) ?: ['—'],
+            'cpLabeled'    => $this->cpNamesFromStored($c, true) ?: ['—'],
             'org'          => $c->org_name ?: '—',
             'stage'        => $c->stage,
             'status'       => $this->listStatus($c),
@@ -473,8 +493,8 @@ class CtcContractController extends Controller
             'id'        => $c->code,
             'dbId'      => $c->id,
             'title'     => $c->title,
-            'cp'        => $this->cpNames($c) ?: ['—'],
-            'cpLabeled' => $this->cpNamesLabeled($c) ?: ['—'],
+            'cp'        => $this->cpNamesFromStored($c, false) ?: ['—'],
+            'cpLabeled' => $this->cpNamesFromStored($c, true) ?: ['—'],
             'org'       => $c->org_name ?: '—',
             'date'      => $this->fmt($c->submitted_at ?: $c->created_at),
             'effDate'   => $this->fmt($c->eff_date),
