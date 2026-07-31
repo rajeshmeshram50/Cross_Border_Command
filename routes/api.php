@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AttendanceRegularizationController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\FaceBiometricController;
 use App\Http\Controllers\Api\CandidateController;
@@ -130,6 +131,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     // Dashboard
     Route::get('/dashboard/admin-stats',    [DashboardController::class, 'adminStats']);
+
+    // Full PostgreSQL database backup download (super-admin only; guarded again
+    // inside the controller). Streams a pg_dump .sql file.
+    Route::get('/admin/db-backup', [BackupController::class, 'download']);
     Route::get('/dashboard/client-stats',   [DashboardController::class, 'clientStats']);
     Route::get('/dashboard/employee-stats', [DashboardController::class, 'employeeStats']);
 
