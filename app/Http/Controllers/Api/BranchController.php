@@ -815,6 +815,49 @@ class BranchController extends Controller
      * lookup, and HR staff who can add an employee may not be able to manage
      * branches.
      */
+    /**
+     * "Our Organisation" options for the CLM Case-to-Case form = ALL of the
+     * caller's client branches (including the caller's own branch), with the
+     * Head-Office row excluded because it represents the CLIENT, not a branch.
+     *
+     * Always scoped to the authenticated user's client — a client_id is never
+     * taken from the request (tenant isolation).
+     */
+    public function ctcOrganisationOptions(Request $request)
+    {
+        $user = $request->user();
+        if (!$user || !$user->client_id) {
+            return response()->json(['data' => []]);
+        }
+
+        $query = Branch::where('client_id', $user->client_id)
+            // Exclude the Head-Office row — that represents the CLIENT itself,
+            // not a branch, so it must never appear in the branch list.
+            ->where('code', '!=', 'HO')
+            ->where('name', 'not ilike', '% — Head Office');
+
+        $rows = $query->orderBy('name')->get([
+            'id', 'name', 'code', 'city', 'state', 'country',
+            'gst_number', 'pan_number', 'email', 'phone',
+        ]);
+
+        return response()->json([
+            'data' => $rows->map(fn (Branch $b) => [
+                'id'         => $b->id,
+                'name'       => $b->name,
+                'code'       => $b->code,
+                'city'       => $b->city,
+                'state'      => $b->state,
+                'country'    => $b->country ?: 'India',
+                'gst_number' => $b->gst_number,
+                'pan_number' => $b->pan_number,
+                'email'      => $b->email,
+                'phone'      => $b->phone,
+                'location'   => self::composeBranchLocation($b),
+            ])->values(),
+        ]);
+    }
+
     public function legalEntityOptions(Request $request)
     {
         $user = $request->user();

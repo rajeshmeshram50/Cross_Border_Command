@@ -30,17 +30,17 @@ import { checkSpelling } from '../../../utils/spellCheck';
  * render the styled review / signing / repository panels.
  * ───────────────────────────────────────────────────────────────────────── */
 
-/* Our-organisation options are sourced from the Company Details master
- * (GET /master/company). We surface only Country, State, Company Name and
- * Short Code. The master is India-centric (GSTIN/PAN/IEC) and has no country
- * column, so country defaults to "India". */
+/* Our-organisation options are the caller's CLIENT BRANCHES
+ * (GET /clm/ctc-organisations): a branch login sees the OTHER branches of its
+ * client, an employee / client-admin sees ALL of them. We surface Country,
+ * State, Branch Name and Code. Country defaults to "India" when blank. */
 type Org = { id: number; name: string; shortCode: string; state: string; country: string; city: string; grad: string; initials: string; sub: string };
 
 const ORG_GRADS = ['#7C3AED,#4C1D95', '#0891b2,#0e7490', '#16a34a,#15803d', '#D97706,#B45309', '#4F46E5,#7C3AED', '#DB2777,#9D174D'];
 const orgInitials = (s: string) => (s || '').trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || 'CO';
 function mapCompany(row: Record<string, unknown>, i: number): Org {
-  const name = String(row.company_name ?? row.name ?? 'Company');
-  const code = String(row.short_code ?? '');
+  const name = String(row.company_name ?? row.name ?? 'Organisation');
+  const code = String(row.short_code ?? row.code ?? '');
   const state = String(row.state ?? '') || '—';
   const city = String(row.city ?? '');
   return { id: Number(row.id ?? i), name, shortCode: code || '—', state, country: String(row.country ?? 'India'), city, grad: ORG_GRADS[i % ORG_GRADS.length], initials: (code || orgInitials(name)).slice(0, 2).toUpperCase(), sub: [code, state].filter(Boolean).join(' · ') };
@@ -164,10 +164,12 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
 
   useEffect(() => { document.body.style.overflow = 'hidden'; document.documentElement.style.overflow = 'hidden'; return () => { document.body.style.overflow = ''; document.documentElement.style.overflow = ''; }; }, []);
 
-  // Pull "Our Organisation" options from the Company Details master.
+  // Pull "Our Organisation" options = the caller's client branches, with the
+  // branch-vs-employee visibility rule applied SERVER-side (a branch login sees
+  // the other branches of its client; an employee/admin sees all).
   useEffect(() => {
     let alive = true;
-    api.get('/master/company')
+    api.get('/clm/ctc-organisations')
       .then(res => { if (!alive) return; const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []); setOrgs(rows.map(mapCompany)); })
       .catch(() => { if (alive) setOrgs([]); });
     return () => { alive = false; };
@@ -815,7 +817,7 @@ function Stage1(p: {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', background: t.dark ? 'rgba(124,58,237,.18)' : 'linear-gradient(110deg,#EDE9FE,#DDD6FE)' }}><span style={{ fontSize: 7.5, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: t.dark ? '#c4b5fd' : '#6D28D9' }}>Organisation</span></div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px 6px' }}>
                     <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${p.org.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 3px 8px rgba(109,40,217,.3)' }}><span style={{ fontSize: 10, fontWeight: 800, color: '#fff' }}>{p.org.initials}</span></div>
-                    <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, lineHeight: 1.3 }}>{p.org.name}</div><div style={{ fontSize: 8.5, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500, marginTop: 2 }}>{p.org.sub}</div></div>
+                    <div style={{ flex: 1, minWidth: 0 }}><div title={p.org.name.length > 25 ? p.org.name : undefined} style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.org.name.length > 25 ? p.org.name.slice(0, 25) + '…' : p.org.name}</div><div style={{ fontSize: 8.5, color: t.dark ? '#a78bfa' : '#7C3AED', fontWeight: 500, marginTop: 2 }}>{p.org.sub}</div></div>
                     {!prevLocked && <button onClick={p.onResetOrg} style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>}
                   </div>
                   <div style={{ borderTop: `1px solid ${t.dark ? 'rgba(148,163,184,.12)' : '#F1EEFF'}`, padding: '5px 10px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -831,7 +833,7 @@ function Stage1(p: {
                     <div key={o.id} onClick={() => p.onSelectOrg(o)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 9, cursor: 'pointer', marginBottom: 2 }}
                       onMouseEnter={e => (e.currentTarget.style.background = t.dark ? 'rgba(124,58,237,.14)' : '#F5F3FF')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                       <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg,${o.grad})`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 9.5, fontWeight: 800, color: '#fff' }}>{o.initials}</span></div>
-                      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.name}</div><div style={{ fontSize: 9, color: t.dark ? '#a78bfa' : '#9D76E0', fontWeight: 500, marginTop: 1 }}>{o.shortCode} · {o.state} · {o.country}</div></div>
+                      <div style={{ flex: 1, minWidth: 0 }}><div title={o.name.length > 25 ? o.name : undefined} style={{ fontSize: 11, fontWeight: 800, color: t.textStrong, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.name.length > 25 ? o.name.slice(0, 25) + '…' : o.name}</div><div style={{ fontSize: 9, color: t.dark ? '#a78bfa' : '#9D76E0', fontWeight: 500, marginTop: 1 }}>{o.shortCode} · {o.state} · {o.country}</div></div>
                     </div>
                   ))}
                 </div>
