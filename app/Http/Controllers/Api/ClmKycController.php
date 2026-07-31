@@ -33,7 +33,7 @@ class ClmKycController extends Controller
         // Per-row "in use" flags so the UI can disable + explain the delete
         // action for referenced documents (mirrors the checks in destroy()).
         $rows->each(function ($r) {
-            $labels = $this->usageCheck($r->code);
+            $labels = $this->usageCheck($r->code, $r->client_id);
             $r->in_use  = !empty($labels);
             $r->used_in = array_values($labels);
         });
@@ -140,7 +140,7 @@ class ClmKycController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        $usedIn = $this->usageCheck($row->code);
+        $usedIn = $this->usageCheck($row->code, $row->client_id);
         if (!empty($usedIn)) {
             return response()->json([
                 'status'  => false,
@@ -154,20 +154,28 @@ class ClmKycController extends Controller
         return response()->json(['status' => true, 'message' => 'Deleted']);
     }
 
-    private function usageCheck(?string $code): array
+    /** Usage check — MUST be scoped to the licence's own client. Codes restart
+     *  per client (KYC-001, KYC-002, …), so an unscoped check falsely marked
+     *  THIS client's doc "in use" whenever ANY other client used the same code,
+     *  blocking deletion of a doc not referenced anywhere in this tenant. */
+    private function usageCheck(?string $code, ?int $clientId = null): array
     {
         if (!$code) return [];
         $usedIn = [];
         if (Schema::hasTable('clm_segment_rules')
             && Schema::hasColumn('clm_segment_rules', 'doc_selections')
             && DB::table('clm_segment_rules')
+                ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
                 ->where('doc_selections', 'like', '%"' . $code . '"%')
                 ->exists()) {
             $usedIn[] = 'Segment Rules';
         }
         if (Schema::hasTable('segment_doc_uploads')
             && Schema::hasColumn('segment_doc_uploads', 'doc_code')
-            && DB::table('segment_doc_uploads')->where('doc_code', $code)->exists()) {
+            && DB::table('segment_doc_uploads')
+                ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
+                ->where('doc_code', $code)
+                ->exists()) {
             $usedIn[] = 'Segment Doc Uploads';
         }
         return $usedIn;
