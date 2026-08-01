@@ -60,10 +60,30 @@
   $showPageNumber    = array_key_exists('show_page_number', $fcfg) ? (bool) $fcfg['show_page_number'] : true;
   $pageNumberAlign   = (string) ($fcfg['page_number_align']  ?? 'right');
   $pageNumberFormat  = (string) ($fcfg['page_number_format'] ?? 'Page N of M');
+
+  /* Promote each table's first row into a <thead> when it doesn't already have
+   * one. dompdf renders a <thead> as a table-header-group: it repeats on every
+   * page the table spans AND is never stranded alone at the bottom of a page —
+   * fixing "table header on one page, its rows on the next". Tables that already
+   * declare a <thead> are left untouched. Non-greedy match grabs one <tr>. */
+  if (!empty($processedHtml) && stripos($processedHtml, '<table') !== false) {
+    $processedHtml = preg_replace_callback('/(<table\b[^>]*>)(.*?)(<\/table>)/is', function ($m) {
+      if (stripos($m[2], '<thead') !== false) return $m[0];   // already grouped
+      if (!preg_match('/<tr\b[^>]*>.*?<\/tr>/is', $m[2], $tr)) return $m[0];
+      $rest = preg_replace('/<tr\b[^>]*>.*?<\/tr>/is', '', $m[2], 1);
+      return $m[1] . '<thead>' . $tr[0] . '</thead>' . $rest . $m[3];
+    }, $processedHtml);
+  }
 @endphp
 <!DOCTYPE html>
 <html>
   <head>
+    {{-- Declare UTF-8 so dompdf decodes multi-byte characters (em-dash "—",
+         curly quotes, en-dash, bullet, ₹, etc.) instead of reading each byte
+         separately and rendering "???". Without this the approver's PDF showed
+         "Supplier ??? v2" where the draft had "Supplier — v2". --}}
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta charset="utf-8" />
     <title>Document Archive - {{ $modelName }}</title>
     <style>
       /* PAGE MARGINS — proper left/right padding */
@@ -91,7 +111,11 @@
         background: {{ $footerBg }};
         color: {{ $footerColor }};
         z-index: 1000;
-        font-family: Arial, Helvetica, sans-serif;
+        /* DejaVu Sans is dompdf's bundled FULL-UNICODE font — it renders every
+           character exactly as typed (em-dash "—", curly quotes, ₹ / € / £,
+           bullets, accents, etc.). Arial/Helvetica are core PDF fonts limited to
+           WinAnsi, so symbols like ₹ dropped to "?". Keep Arial as a fallback. */
+        font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif;
         font-size: 11px;
       }
 
@@ -100,7 +124,11 @@
 
       body {
         margin: 0;
-        font-family: Arial, Helvetica, sans-serif;
+        /* DejaVu Sans is dompdf's bundled FULL-UNICODE font — it renders every
+           character exactly as typed (em-dash "—", curly quotes, ₹ / € / £,
+           bullets, accents, etc.). Arial/Helvetica are core PDF fonts limited to
+           WinAnsi, so symbols like ₹ dropped to "?". Keep Arial as a fallback. */
+        font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif;
         font-size: 11px;
         line-height: 15px;
         color: #333;
@@ -188,8 +216,17 @@
       .document-content tr,
       .document-content td,
       .document-content th { page-break-inside: auto; }
+      /* Header repeats on EVERY page the table spans, so a table split across
+         pages always shows its column headers with the rows — never a header on
+         one page and the body on the next. */
       .document-content thead { display: table-header-group; }
-      .document-content thead tr { page-break-inside: avoid; }
+      /* Keep the header row intact AND glued to the body that follows, so it's
+         never stranded alone at the bottom of a page. The same "don't break right
+         after me" rule is applied to a plain first row for tables that use a
+         styled first <tr> as the header instead of a real <thead>. */
+      .document-content thead tr { page-break-inside: avoid; page-break-after: avoid; }
+      .document-content table > tbody > tr:first-child,
+      .document-content table > tr:first-child { page-break-after: avoid; }
       .document-content img { max-width: 100%; }
       .document-content ul, .document-content ol { margin: 0 0 8px 24px; }
       /* Clause Library bodies routinely arrive wrapped in a <pre> (monospace

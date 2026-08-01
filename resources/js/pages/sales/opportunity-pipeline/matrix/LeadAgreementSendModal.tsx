@@ -944,7 +944,9 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                         </span>
                         <span className="lasm-party-tab-meta">
                           <span><span className="lasm-party-tab-k">Email</span>{info?.email || '—'}</span>
-                          <span><span className="lasm-party-tab-k">Segment</span>{info?.segment || '—'}</span>
+                          {(() => { const seg = info?.segment || ''; return (
+                            <span title={seg.length > 25 ? seg : undefined}><span className="lasm-party-tab-k">Segment</span>{seg.length > 25 ? seg.slice(0, 25) + '…' : (seg || '—')}</span>
+                          ); })()}
                         </span>
                       </div>
                     );
@@ -1022,7 +1024,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             </td>
                             <td>{(tdSafePage - 1) * TD_PER_PAGE + i + 1}</td>
                             <td>
-                              <div className="lasm-doc-name">{td.title || td.name}</div>
+                              {(() => { const nm = td.title || td.name || ''; return <div className="lasm-doc-name" title={nm.length > 25 ? nm : undefined}>{nm.length > 25 ? nm.slice(0, 25) + '…' : nm}</div>; })()}
                               <div className="lasm-doc-sub">{td.reference}</div>
                             </td>
                             <td>
@@ -1343,7 +1345,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                           </td>
                           <td>{(agrSafePage - 1) * AGR_PER_PAGE + idx + 1}</td>
                           <td>
-                            <div className="lasm-doc-name">{a.title}</div>
+                            {(() => { const nm = a.title || ''; return <div className="lasm-doc-name" title={nm.length > 25 ? nm : undefined}>{nm.length > 25 ? nm.slice(0, 25) + '…' : nm}</div>; })()}
                             <div className="lasm-doc-sub">{a.agreement_type || '—'}</div>
                             {/* On the Multiple Segments tab, list the segments this
                                 one agreement covers (e.g. "Rice + Basmati Rice"). */}

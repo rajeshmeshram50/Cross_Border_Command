@@ -113,6 +113,12 @@ interface Props {
      group of the role it was referred as (buyer→customer, consignee→consignee,
      supplier→supplier), so a buyer referred as a supplier inserts {{supplier.*}}. */
   counterparties?: { name: string; code: string; role: string; type?: string; id?: string | number }[];
+  /* Restrict which party tabs (customer/consignee/supplier) are shown, based on
+     the document's applicable party: a Customer/Consignee document exposes the
+     Customer + Consignee tabs; a Supplier document exposes only Supplier. When
+     omitted or empty, all party tabs show. Product is controlled by
+     hideProductTab and is unaffected by this. */
+  allowedParties?: string[];
 }
 
 /* Map a counterparty role to the placeholder token group it should use. */
@@ -123,15 +129,24 @@ function roleGroup(role: string): Exclude<Tab, 'product'> {
   return 'customer';   // buyer / customer / anything else
 }
 
-export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hideProductTab = false, counterparties }: Props) {
+export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hideProductTab = false, counterparties, allowedParties }: Props) {
   const toast = useToast();
   // Counterparty-driven mode (case-to-case): one tab per CP, role-based tokens.
   const cpMode = Array.isArray(counterparties) && counterparties.length > 0;
   const cpTabs = cpMode ? counterparties!.map((cp, i) => ({ cp, i, group: roleGroup(cp.role) })) : [];
   const [cpIdx, setCpIdx] = useState(0);
-  // Tabs available in this context — Product is dropped for case-to-case.
-  const visibleTabs = hideProductTab ? TABS.filter(t => t.key !== 'product') : TABS;
+  // Tabs available in this context — Product is dropped for case-to-case, and
+  // the party tabs are filtered to the document's applicable party.
+  const partyFilter = Array.isArray(allowedParties) && allowedParties.length > 0 ? allowedParties : null;
+  const visibleTabs = TABS.filter(t =>
+    t.key === 'product' ? !hideProductTab : (!partyFilter || partyFilter.includes(t.key)));
   const [tab, setTab] = useState<Tab>('customer');
+  // If the active tab isn't in the visible set (e.g. a Supplier-only document),
+  // snap to the first visible tab whenever the modal opens or the filter changes.
+  useEffect(() => {
+    if (open && !visibleTabs.some(t => t.key === tab)) setTab(visibleTabs[0]?.key ?? 'customer');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, hideProductTab, partyFilter?.join('|')]);
   // Multi-select: tokens the user has ticked across ALL tabs. Persists
   // while the modal is open so a single "Copy selected" can grab a mix of
   // customer + consignee + supplier placeholders in one go.

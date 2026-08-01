@@ -39,7 +39,7 @@ import { checkSpelling } from '../../../utils/spellCheck';
  * (GET /clm/ctc-organisations): a branch login sees the OTHER branches of its
  * client, an employee / client-admin sees ALL of them. We surface Country,
  * State, Branch Name and Code. Country defaults to "India" when blank. */
-type Org = { id: number; name: string; shortCode: string; state: string; country: string; city: string; grad: string; initials: string; sub: string };
+type Org = { id: number; name: string; shortCode: string; state: string; country: string; city: string; grad: string; initials: string; sub: string; logoUrl?: string | null; logoPath?: string | null };
 
 const ORG_GRADS = ['#7C3AED,#4C1D95', '#0891b2,#0e7490', '#16a34a,#15803d', '#D97706,#B45309', '#4F46E5,#7C3AED', '#DB2777,#9D174D'];
 const orgInitials = (s: string) => (s || '').trim().split(/\s+/).map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || 'CO';
@@ -48,7 +48,9 @@ function mapCompany(row: Record<string, unknown>, i: number): Org {
   const code = String(row.short_code ?? row.code ?? '');
   const state = String(row.state ?? '') || '—';
   const city = String(row.city ?? '');
-  return { id: Number(row.id ?? i), name, shortCode: code || '—', state, country: String(row.country ?? 'India'), city, grad: ORG_GRADS[i % ORG_GRADS.length], initials: (code || orgInitials(name)).slice(0, 2).toUpperCase(), sub: [code, state].filter(Boolean).join(' · ') };
+  const logoUrl = row.logo_url ? String(row.logo_url) : null;
+  const logoPath = row.logo ? String(row.logo) : (logoUrl ? (logoUrl.match(/\/storage\/(.+)$/)?.[1] ?? null) : null);
+  return { id: Number(row.id ?? i), name, shortCode: code || '—', state, country: String(row.country ?? 'India'), city, grad: ORG_GRADS[i % ORG_GRADS.length], initials: (code || orgInitials(name)).slice(0, 2).toUpperCase(), sub: [code, state].filter(Boolean).join(' · '), logoUrl, logoPath };
 }
 
 const STAGES = [
@@ -243,7 +245,18 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     // Stage-3 tracker reflects each signer's status; it's a superset of show
     // (returns the contract + org_signature_url, syncing Zoho only if linked).
     const url = record?.zoho_request_id ? `/clm/ctc-contracts/${rid}/sync-signature` : `/clm/ctc-contracts/${rid}`;
-    try { const res = await api.get(url); setRecord((res.data?.data ?? res.data ?? null) as Record<string, unknown>); }
+    try {
+      const res = await api.get(url);
+      const next = (res.data?.data ?? res.data ?? null) as Record<string, unknown> | null;
+      // Only swap the record when it ACTUALLY changed. The 10s poll otherwise
+      // handed React a brand-new object every tick, re-rendering the whole stage
+      // tree and re-laying-out the (large) agreement preview table each time —
+      // that periodic repaint is the "data flickers / looks like loading" blink.
+      setRecord(prev => {
+        try { if (prev && next && JSON.stringify(prev) === JSON.stringify(next)) return prev; } catch { /* fall through */ }
+        return next;
+      });
+    }
     catch { /* keep last snapshot */ }
   };
   // Poll for approver / signer activity while we sit on a review/signing stage.
@@ -343,7 +356,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       setDraft(String(r.content ?? ''));
       if (r.org_name) setOrg({ id: 0, name: String(r.org_name), shortCode: String(r.org_short_code ?? '—'), state: String(r.org_state ?? '—'), country: String(r.org_country ?? 'India'), city: '', grad: ORG_GRADS[0], initials: orgInitials(String(r.org_name)), sub: [r.org_short_code, r.org_state].filter(Boolean).join(' · ') });
       const cpArr = (Array.isArray(r.counterparties) ? r.counterparties : []) as Record<string, unknown>[];
-      setCps(cpArr.map((c, i) => ({ name: String(c.name ?? ''), initials: orgInitials(String(c.name ?? '')), country: String(c.country ?? ''), phone: String(c.phone ?? ''), email: String(c.email ?? ''), grad: ORG_GRADS[i % ORG_GRADS.length], badge: String(c.badge ?? ''), referred: String(c.referred ?? c.name ?? ''), sourceType: c.source_type ? String(c.source_type) : undefined, sourceId: (c.source_id as string | number | undefined) ?? undefined })));
+      setCps(cpArr.map((c, i) => ({ name: String(c.name ?? ''), initials: orgInitials(String(c.name ?? '')), country: String(c.country ?? ''), phone: String(c.phone ?? ''), email: String(c.email ?? ''), grad: ORG_GRADS[i % ORG_GRADS.length], badge: String(c.badge ?? ''), referred: String(c.referred ?? c.name ?? ''), sourceType: c.source_type ? String(c.source_type) : undefined, sourceId: (c.source_id as string | number | undefined) ?? undefined, sourceDbId: (c.source_db_id as number | undefined) ?? undefined })));
       if (r.header_config) setHeader({ ...brandedDefaults, ...(r.header_config as object) } as HeaderConfig);
       if (r.footer_config) setFooter({ ...DEFAULT_FOOTER, ...(r.footer_config as object) } as FooterConfig);
     }).catch(() => { if (alive) toast.error('Could not load', 'Failed to open this agreement for editing.'); })
@@ -365,7 +378,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       await api.put(`/clm/ctc-contracts/${editing.dbId}`, {
         title: agTitle, agreement_type: agType || null,
         content: draft || null, header_config: header, footer_config: footer,
-        counterparties: cps.map(c => ({ name: c.name, country: c.country, phone: c.phone, email: c.email, badge: c.badge, referred: c.referred, source_type: c.sourceType ?? null, source_id: c.sourceId ?? null })),
+        counterparties: cps.map(c => ({ name: c.name, country: c.country, phone: c.phone, email: c.email, badge: c.badge, referred: c.referred, source_type: c.sourceType ?? null, source_id: c.sourceId ?? null, source_db_id: c.sourceDbId ?? null })),
         eff_date: effDate || null, end_date: endDate || null,
       });
       toast.success('Changes saved', agTitle);
@@ -384,7 +397,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     const payload = {
       title: agTitle, agreement_type: agType || null,
       org_name: org?.name ?? null, org_short_code: org?.shortCode ?? null, org_state: org?.state ?? null, org_country: org?.country ?? null,
-      counterparties: cps.map(c => ({ name: c.name, country: c.country, phone: c.phone, email: c.email, badge: c.badge, referred: c.referred, source_type: c.sourceType ?? null, source_id: c.sourceId ?? null })),
+      counterparties: cps.map(c => ({ name: c.name, country: c.country, phone: c.phone, email: c.email, badge: c.badge, referred: c.referred, source_type: c.sourceType ?? null, source_id: c.sourceId ?? null, source_db_id: c.sourceDbId ?? null })),
       eff_date: effDate || null, end_date: endDate || null,
       content: draft || null, header_config: header, footer_config: footer,
       approvers: approval.approvers, days_to_approve: approval.days, reminder_days: approval.reminder,
@@ -570,7 +583,14 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               t={t}
               cps={cps} orgs={orgs} agTypes={agTypes} agTypesLoading={agTypesLoading} org={org} orgOpen={orgOpen} setOrgOpen={setOrgOpen}
               onAddCp={() => setPicker(true)} onRemoveCp={(idx) => setCps(cps.filter((_, j) => j !== idx))}
-              onSelectOrg={(o) => { setOrg(o); setOrgOpen(false); }} onResetOrg={() => setOrg(null)}
+              onSelectOrg={(o) => {
+                setOrg(o); setOrgOpen(false);
+                // Sync the document-header logo to the picked organisation's
+                // branch logo so the preview shows THAT branch's brand, not the
+                // logged-in branch's default. Only when the branch has a logo —
+                // otherwise keep whatever logo the header already has.
+                if (o.logoUrl) setHeader(h => ({ ...h, logo_url: o.logoUrl!, logo_path: o.logoPath ?? h.logo_path }));
+              }} onResetOrg={() => setOrg(null)}
               agTitle={agTitle} setAgTitle={setAgTitle} agType={agType} setAgType={setAgType}
               effDate={effDate} setEffDate={setEffDate} endDate={endDate} setEndDate={setEndDate}
               draft={draft} setDraft={setDraft}
@@ -785,9 +805,13 @@ function Stage1(p: {
     // A counterparty can't advance until its MANDATORY compliance documents are
     // complete (optional docs are ignored; case-to-case Trade/Agreement docs
     // only count when the party has a shipment — see useCpCompliance).
-    const stillLoading = p.cps.some(cp => { const c = cpCompliance[cpKey(cp)]; return !c || c.loading; });
+    // Only VERIFIABLE parties gate — one with no resolvable db_id (a deleted or
+    // legacy manual entry) can never be fetched, so it must not block forever
+    // (this is what left rejected agreements stuck on "Checking documents…").
+    const verifiable = p.cps.filter(cp => cpVaultType(cp) && cp.sourceDbId);
+    const stillLoading = verifiable.some(cp => { const c = cpCompliance[cpKey(cp)]; return !c || c.loading; });
     if (stillLoading) { toast.error('Checking documents…', 'Please wait — verifying each counterparty\'s compliance documents.'); return false; }
-    const incomplete = p.cps.find(cp => !cpCompliance[cpKey(cp)]?.complete);
+    const incomplete = verifiable.find(cp => !cpCompliance[cpKey(cp)]?.complete);
     if (incomplete) {
       const c = cpCompliance[cpKey(incomplete)];
       toast.error('Compliance incomplete', `${incomplete.name}: ${c ? c.done : 0} of ${c ? c.total : 0} mandatory documents complete. Upload the remaining mandatory documents before continuing.`);
@@ -828,15 +852,9 @@ function Stage1(p: {
     if (endBeforeToday) { toast.error('Invalid end date', 'End date cannot be earlier than today.'); setMidStep(2); return false; }
     return true;
   };
-  // The document header must carry a company name AND a logo before the agreement
-  // can go out — both are pre-filled from the branch by default, so this only
-  // fails if the user cleared them (or the branch has no logo yet).
-  const validateHeader = (): boolean => {
-    if (!p.header.title?.trim()) { toast.error('Company name required', 'Add a company name in the document header (click “Edit Header”).'); setMidStep(3); return false; }
-    if (!p.header.logo_url)      { toast.error('Logo required', 'Add a logo in the document header (click “Edit Header” → Upload Logo).'); setMidStep(3); return false; }
-    return true;
-  };
-  const validateAll = (): boolean => validateStep1() && validateStep2() && validateHeader();
+  // Header company-name / logo are NO LONGER mandatory — the header is
+  // pre-filled from the branch but the user may proceed without them.
+  const validateAll = (): boolean => validateStep1() && validateStep2();
   // Stepping forward does no I/O — but the render it triggers is heavy (Step 3
   // mounts the editor with the entire agreement inside it), and that work blocks
   // the main thread. On a long document the click therefore looked like a no-op:
@@ -860,7 +878,17 @@ function Stage1(p: {
   const midBack = () => { if (midStep > 1) setMidStep((midStep - 1) as 1 | 2 | 3); };
   // Section completion chips (Figma-style) — counterparty section is "done"
   // once at least one party is added; organisation once one is selected.
-  const cpPct = p.cps.length ? 100 : 0;
+  // The "Counterparty Details" header badge reflects real mandatory-document
+  // COMPLIANCE (aggregate of every counterparty's Evidence-Vault ring), not just
+  // "a counterparty was added". Otherwise it read a misleading 100% while a
+  // party's docs were still incomplete (e.g. ring shows 5/7 = 71%) — the header
+  // and the ring must agree. Falls back to 100% only when nothing is required.
+  const cpAgg = p.cps.reduce((a, cp) => {
+    const c = cpCompliance[cpKey(cp)];
+    if (c && !c.loading) { a.done += c.done; a.total += c.total; }
+    return a;
+  }, { done: 0, total: 0 });
+  const cpPct = p.cps.length === 0 ? 0 : (cpAgg.total > 0 ? Math.round((cpAgg.done / cpAgg.total) * 100) : 100);
   const orgPct = p.org ? 100 : 0;
   return (
     <div className="ctc-workspace" style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
@@ -2189,9 +2217,10 @@ function ContractSummaryCard({ t, code, agTitle, agType, cps, org, effDate, endD
 }
 
 function CpReadCard({ t, idx, cp, comp, onOpenVault }: { t: OpsTokens; idx: number; cp: CP; comp?: CpComp; onOpenVault?: () => void }) {
-  // The ring is a button when the party's mandatory docs are incomplete — it
-  // opens that party's Evidence Vault so the user can upload the missing files.
-  const ringClickable = !!onOpenVault && !!comp && !comp.loading && !comp.complete;
+  // The ring is a button whenever the party has an Evidence Vault — it opens
+  // that vault so the user can upload the missing files when incomplete, OR
+  // review which documents are already on file even when 100% complete.
+  const ringClickable = !!onOpenVault && !!comp && !comp.loading;
   return (
     <div style={{ flexShrink: 0, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(109,40,217,.08)' }}>
       <div style={{ position: 'relative', background: `radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,${cp.badge === 'BUYER' ? '#0e7490,#0891b2,#06b6d4' : cp.badge === 'SUPPLIER' ? '#047857,#059669,#10b981' : '#4C1D95,#6D28D9,#7C3AED'})`, backgroundSize: '14px 14px, auto', padding: '11px 14px' }}>
@@ -2210,7 +2239,7 @@ function CpReadCard({ t, idx, cp, comp, onOpenVault }: { t: OpsTokens; idx: numb
           <div style={{ position: 'absolute', top: '50%', right: 14, transform: 'translateY(-50%)', display: 'flex', alignItems: 'center' }}>
             {ringClickable ? (
               <button type="button" onClick={onOpenVault}
-                title="Open Evidence Vault — upload the missing mandatory documents"
+                title={comp.complete ? 'Open Evidence Vault — review the documents on file' : 'Open Evidence Vault — upload the missing mandatory documents'}
                 style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                 <CompRing comp={comp} />
               </button>
