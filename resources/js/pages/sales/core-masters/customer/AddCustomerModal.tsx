@@ -5503,7 +5503,21 @@ const SCOPED_CSS = `
 /* Flex column so the TABLE grows and the pager (its last sibling) pins to the
    bottom — without this the pager floated mid-card with empty space beneath. */
 .acm-kyc-stage .acm-section-body-table { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-.acm-kyc-stage .acm-section-body-table .acm-table-wrap { flex: 1 1 auto; min-height: 0; }
+/* Keep the rows area at least ~3 rows tall so on a SHORT / small laptop screen
+   the table never collapses to just its header + scrollbar. It still grows to
+   fill on taller screens; when the screen is too short the modal body scrolls. */
+.acm-kyc-stage .acm-section-body-table .acm-table-wrap { flex: 1 1 auto; min-height: 168px; }
+/* Short viewports (small laptops, ~768px tall): the flex-fill table can't leave
+   room for the header + stepper + tabs + footer, so the modal stops scrolling and
+   the rows get clipped. Below this height, drop the flex-fill — the KYC stage
+   flows at its natural height and the modal BODY scrolls, while the table keeps a
+   bounded scroll of its own so every row is reachable. */
+@media (max-height: 820px) {
+  .acm-kyc-stage,
+  .acm-kyc-stage .acm-section-purple,
+  .acm-kyc-stage .acm-section-body-table { flex: 0 0 auto; min-height: 0; }
+  .acm-kyc-stage .acm-section-body-table .acm-table-wrap { flex: 0 0 auto; min-height: 0; max-height: 44vh; }
+}
 .acm-body::-webkit-scrollbar { width: 6px; }
 .acm-body::-webkit-scrollbar-track { background: #ede9fe; border-radius: 10px; }
 .acm-body::-webkit-scrollbar-thumb { background: #a78bfa; border-radius: 10px; }

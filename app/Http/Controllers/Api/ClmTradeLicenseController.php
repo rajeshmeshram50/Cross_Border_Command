@@ -20,7 +20,7 @@ class ClmTradeLicenseController extends Controller
         if (!$user) abort(401);
 
         // Branch-scoped read: own rows + client-level (shared); siblings hidden (CBC-435).
-        $q = ClmTradeLicense::query()->orderBy('id');
+        $q = ClmTradeLicense::query()->orderByDesc('id');   // newest entry first
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
         $rows = $q->get();
 
@@ -31,7 +31,7 @@ class ClmTradeLicenseController extends Controller
         // Per-row "in use" flags so the UI can disable + explain the delete
         // action for referenced licences (mirrors the checks in destroy()).
         $rows->each(function ($r) {
-            $labels = $this->usageCheck($r->code);
+            $labels = $this->usageCheck($r->code, $r->client_id);
             $r->in_use  = !empty($labels);
             $r->used_in = array_values($labels);
         });
@@ -146,7 +146,7 @@ class ClmTradeLicenseController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        $usedIn = $this->usageCheck($row->code);
+        $usedIn = $this->usageCheck($row->code, $row->client_id);
         if (!empty($usedIn)) {
             return response()->json([
                 'status'  => false,
@@ -161,21 +161,31 @@ class ClmTradeLicenseController extends Controller
     }
 
     /** Shared usage check — referenced by segment rules (doc_selections
-     *  JSON) and by segment_doc_uploads (doc_code). */
-    private function usageCheck(?string $code): array
+     *  JSON) and by segment_doc_uploads (doc_code).
+     *
+     *  MUST be scoped to the licence's own client: trade-licence codes restart
+     *  per client/branch (TL-001, TL-002, …), so an unscoped check made THIS
+     *  client's TL-004 look "in use" whenever ANY other client had used a
+     *  TL-004 — blocking deletion of a licence that isn't referenced anywhere
+     *  in this tenant. */
+    private function usageCheck(?string $code, ?int $clientId = null): array
     {
         if (!$code) return [];
         $usedIn = [];
         if (Schema::hasTable('clm_segment_rules')
             && Schema::hasColumn('clm_segment_rules', 'doc_selections')
             && DB::table('clm_segment_rules')
+                ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
                 ->where('doc_selections', 'like', '%"' . $code . '"%')
                 ->exists()) {
             $usedIn[] = 'Segment Rules';
         }
         if (Schema::hasTable('segment_doc_uploads')
             && Schema::hasColumn('segment_doc_uploads', 'doc_code')
-            && DB::table('segment_doc_uploads')->where('doc_code', $code)->exists()) {
+            && DB::table('segment_doc_uploads')
+                ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
+                ->where('doc_code', $code)
+                ->exists()) {
             $usedIn[] = 'Segment Doc Uploads';
         }
         return $usedIn;

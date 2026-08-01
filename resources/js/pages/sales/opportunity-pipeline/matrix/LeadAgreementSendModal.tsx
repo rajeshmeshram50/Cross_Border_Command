@@ -973,6 +973,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                   {rows.length === 0 ? (
                     <div className="lasm-td-empty">No trade documents in this group.</div>
                   ) : (<>
+                    <div className="lasm-td-scroll">
                     <table className="lasm-td-table">
                       <thead>
                         <tr>
@@ -1025,7 +1026,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               <div className="lasm-doc-sub">{td.reference}</div>
                             </td>
                             <td>
-                              <div className="lasm-doc-name">{td.segmentName}</div>
+                              <div className="lasm-doc-name" title={(td.segmentName ?? '').length > 30 ? td.segmentName : undefined}>{(td.segmentName ?? '').length > 30 ? td.segmentName.slice(0, 30) + '…' : td.segmentName}</div>
                               <div className="lasm-doc-sub">{td.segmentCode}</div>
                             </td>
                             <td><span className={`lasm-pill ${td.requirement === 'M' ? 'lasm-pill-req' : 'lasm-pill-opt'}`}>{td.requirement === 'M' ? 'REQ' : 'OPT'}</span></td>
@@ -1117,9 +1118,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                         })}
                       </tbody>
                     </table>
+                    </div>
 
-                    {/* Pagination — 5 rows per page, Evidence Vault style. */}
-                    {rows.length > TD_PER_PAGE && (
+                    {/* Pagination footer — pinned to the panel bottom. */}
+                    {rows.length > 0 && (
                       <div className="lasm-pager">
                         <div className="lasm-pager-info">Showing {tdFirst}–{tdLast} of {rows.length}</div>
                         <div className="lasm-pager-ctrls">
@@ -1253,6 +1255,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
               {/* ── Agreements ── */}
               <>
               <div className="lasm-table-wrap">
+                <div className="lasm-table-scroll">
                 <table className="lasm-table">
                   <thead>
                     <tr>
@@ -1470,8 +1473,9 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     })}
                   </tbody>
                 </table>
-                {/* Pagination — 5 rows per page, Evidence Vault style. */}
-                {activeAgreements.length > AGR_PER_PAGE && (
+                </div>
+                {/* Pagination footer — pinned to the panel bottom. */}
+                {activeAgreements.length > 0 && (
                   <div className="lasm-pager">
                     <div className="lasm-pager-info">Showing {agrFirst}–{agrLast} of {activeAgreements.length}</div>
                     <div className="lasm-pager-ctrls">
@@ -1736,9 +1740,12 @@ const LASM_CSS = `
 /* Rounded card wrapper — mirrors the Evidence Vault's .lev-table-card so the
    table reads as a bordered, shadowed card with rounded corners. It's also the
    scroll container, so the sticky violet header clips to the rounded top. */
-.lasm-table-wrap { margin: 16px 22px 18px; flex: 1 1 0; min-height: 0; overflow: auto;
+.lasm-table-wrap { margin: 16px 22px 18px; flex: 1 1 0; min-height: 0; overflow: hidden;
+  display: flex; flex-direction: column;
   background: #fff; border: 1px solid #eceef3; border-radius: 14px;
   box-shadow: 0 1px 3px rgba(15,23,42,.04), 0 8px 18px rgba(15,23,42,.05); }
+/* Rows scroll here; the pager below stays pinned to the panel bottom. */
+.lasm-table-scroll, .lasm-td-scroll { flex: 1 1 0; min-height: 0; overflow: auto; }
 .lasm-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 /* Header row matches the popup's violet header — a flat fill so every column
    reads as one continuous bar (a per-cell gradient would segment). */
@@ -1811,11 +1818,11 @@ const LASM_CSS = `
 /* ── Segment-wise Trade Documents panel (moved out of the per-party vault) ── */
 /* Rounded card + violet gradient header — same recipe as the Agreements
    table (.lasm-table) so both Trade Documents and Agreements look identical. */
-.lasm-td-panel { margin: 16px 22px 18px; border: 1px solid #eceef3; border-radius: 14px; overflow: auto; background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.04), 0 8px 18px rgba(15,23,42,.05); flex: 1 1 0; min-height: 0; }
+.lasm-td-panel { margin: 16px 22px 18px; border: 1px solid #eceef3; border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; background: #fff; box-shadow: 0 1px 3px rgba(15,23,42,.04), 0 8px 18px rgba(15,23,42,.05); flex: 1 1 0; min-height: 0; }
 .lasm-td-head { display: flex; align-items: center; gap: 7px; padding: 9px 12px; background: #f5f3ff; color: #4c1d95; font-size: 11.5px; font-weight: 800; letter-spacing: .02em; border-bottom: 1px solid #e2e8f0; }
 .lasm-td-empty { padding: 14px 12px; color: #94a3b8; font-size: 11.5px; font-style: italic; }
 /* Table pager — mirrors the Evidence Vault's lev-pager look. */
-.lasm-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 14px; border-top: 1px solid #ECEEF3; background: #FBFCFE; }
+.lasm-pager { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 14px; border-top: 1px solid #ECEEF3; background: #FBFCFE; }
 .lasm-pager-info { font-size: 12px; font-weight: 600; color: #64748B; }
 .lasm-pager-ctrls { display: inline-flex; align-items: center; gap: 6px; }
 .lasm-pager-btn, .lasm-pager-num {

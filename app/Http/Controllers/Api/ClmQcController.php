@@ -20,7 +20,7 @@ class ClmQcController extends Controller
         if (!$user) abort(401);
 
         // Branch-scoped read: own rows + client-level (shared); siblings hidden (CBC-432).
-        $q = ClmQcDocument::query()->orderBy('id');
+        $q = ClmQcDocument::query()->orderByDesc('id');   // newest entry first
         MasterVisibility::applyReadScope($q, $user, $request->integer('branch_id') ?: null);
         $rows = $q->get();
 

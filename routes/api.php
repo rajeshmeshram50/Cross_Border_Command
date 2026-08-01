@@ -154,6 +154,11 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // GST/PAN/CIN and bank accounts) for the Employee + Onboarding forms.
     Route::get('/branch-legal-entities', [BranchController::class, 'legalEntityOptions']);
 
+    // "Our Organisation" options for the CLM Case-to-Case form = the client's
+    // branches. A branch login sees the OTHER branches of its client (not
+    // itself); an employee / client-admin login sees ALL the client's branches.
+    Route::get('/clm/ctc-organisations', [BranchController::class, 'ctcOrganisationOptions']);
+
     Route::get('/branches/form-bundle', [BranchController::class, 'formBundle']);
     Route::apiResource('branches', BranchController::class);
 

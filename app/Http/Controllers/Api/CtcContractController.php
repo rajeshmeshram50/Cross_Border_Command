@@ -210,6 +210,26 @@ class CtcContractController extends Controller
     }
 
     /**
+     * Counterparty display names straight from the STORED snapshot (no live DB
+     * re-resolve). The list only needs the names captured when each party was
+     * added — resolving them live per row ran a Customer/Consignee/Vendor query
+     * PER counterparty PER row (an N+1 that made the whole list page slow). Live
+     * data is still resolved on the detail/preview/generation paths where a
+     * fresh company name / address actually matters.
+     */
+    private function cpNamesFromStored(CtcContract $c, bool $labeled): array
+    {
+        $cps = is_array($c->counterparties) ? $c->counterparties : [];
+        return collect($cps)->map(function ($cp) use ($labeled) {
+            if (!is_array($cp)) return '';
+            $name = trim((string) ($cp['name'] ?? ''));
+            if ($name === '' || !$labeled) return $name;
+            $role = $this->cpRoleLabel($cp);
+            return $role !== '' ? "{$name} ({$role})" : $name;
+        })->filter()->values()->all();
+    }
+
+    /**
      * Same as cpNames() but each name is suffixed with its entity type —
      * "Royal Cashews (Customer)" — so the +N counterparty popover tells the
      * user whether a company is the Customer, Consignee or Supplier (a company
@@ -402,23 +422,12 @@ class CtcContractController extends Controller
 
     /**
      * Fill the organisation-detail placeholders ({{company_name}} {{company_no}}
-     * {{email}} {{contact_no}} {{address}}) from the Company Details master row
-     * backing this agreement's "Our Organisation" selection.
+     * {{email}} {{contact_no}} {{address}}) from the SELECTED BRANCH backing this
+     * agreement's "Our Organisation" selection (company_no = the branch CIN).
      */
     private function resolveOrgTokens(string $html, CtcContract $row): string
     {
-        $orgName = trim((string) ($row->org_name ?? ''));
-        $company = $orgName
-            ? \App\Models\Masters\Company::where('client_id', $row->client_id)->where('company_name', $orgName)->first()
-            : null;
-        $orgTokens = [
-            'company_name' => $row->org_name ?: ($company->company_name ?? ''),
-            'company_no'   => $company->cin ?? '',
-            'email'        => $company->email ?? '',
-            'contact_no'   => $company->mobile ?? '',
-            'address'      => $company->address ?? '',
-        ];
-        foreach ($orgTokens as $tok => $val) {
+        foreach ($this->orgBranchTokens($row) as $tok => $val) {
             $html = preg_replace('/\{\{\s*' . $tok . '\s*\}\}/i', e((string) $val), $html);
         }
         return $html;
@@ -450,8 +459,8 @@ class CtcContractController extends Controller
             'id'           => $c->code,
             'dbId'         => $c->id,
             'title'        => $c->title,
-            'cp'           => $this->cpNames($c) ?: ['—'],
-            'cpLabeled'    => $this->cpNamesLabeled($c) ?: ['—'],
+            'cp'           => $this->cpNamesFromStored($c, false) ?: ['—'],
+            'cpLabeled'    => $this->cpNamesFromStored($c, true) ?: ['—'],
             'org'          => $c->org_name ?: '—',
             'stage'        => $c->stage,
             'status'       => $this->listStatus($c),
@@ -484,8 +493,8 @@ class CtcContractController extends Controller
             'id'        => $c->code,
             'dbId'      => $c->id,
             'title'     => $c->title,
-            'cp'        => $this->cpNames($c) ?: ['—'],
-            'cpLabeled' => $this->cpNamesLabeled($c) ?: ['—'],
+            'cp'        => $this->cpNamesFromStored($c, false) ?: ['—'],
+            'cpLabeled' => $this->cpNamesFromStored($c, true) ?: ['—'],
             'org'       => $c->org_name ?: '—',
             'date'      => $this->fmt($c->submitted_at ?: $c->created_at),
             'effDate'   => $this->fmt($c->eff_date),
@@ -568,17 +577,57 @@ class CtcContractController extends Controller
         return response()->json(['status' => true, 'data' => $rows->values()]);
     }
 
+    /**
+     * The branch backing this agreement's "Our Organisation" selection. The
+     * form now picks a branch (not a Company-master row), stored as org_name;
+     * branch names are unique per client, so resolve by name within the client.
+     * Falls back to the contract's own branch so the signature/tokens still
+     * resolve on older contracts that pre-date the branch-org selection.
+     */
+    private function resolveOrgBranch(CtcContract $c): ?\App\Models\Branch
+    {
+        $orgName = trim((string) ($c->org_name ?? ''));
+        $branch = $orgName !== ''
+            ? \App\Models\Branch::where('client_id', $c->client_id)->where('name', $orgName)->first()
+            : null;
+        return $branch ?: ($c->branch_id ? \App\Models\Branch::find($c->branch_id) : null);
+    }
+
+    /** Full postal address of a branch for the {{address}} token. */
+    private function branchAddress(?\App\Models\Branch $b): string
+    {
+        if (!$b) return '';
+        return trim(implode(', ', array_filter([
+            trim((string) $b->address),
+            trim((string) $b->city),
+            trim((string) $b->state),
+            trim(trim((string) $b->pincode) . ' ' . trim((string) $b->country)),
+        ], fn ($v) => $v !== '')), ', ');
+    }
+
+    /** Organisation-detail tokens filled from the SELECTED branch's own data. */
+    private function orgBranchTokens(CtcContract $c): array
+    {
+        $b = $this->resolveOrgBranch($c);
+        return [
+            'company_name' => $c->org_name ?: ($b->name ?? ''),
+            'company_no'   => $b->cin ?? '',          // registered company number (CIN)
+            'email'        => $b->email ?? '',
+            'contact_no'   => $b->phone ?? '',
+            'address'      => $this->branchAddress($b),
+        ];
+    }
+
     /** Branch (our-organisation) authorised-signatory image = signature + stamp combined. */
     private function orgSignatureUrl(CtcContract $c): ?string
     {
-        $branch = $c->branch_id ? \App\Models\Branch::find($c->branch_id) : null;
-        return $branch?->signature_url;
+        return $this->resolveOrgBranch($c)?->signature_url;
     }
 
     /** Same image as a data URI for dompdf (which can't fetch /storage URLs). */
     private function orgSignatureDataUri(CtcContract $c): ?string
     {
-        $branch = $c->branch_id ? \App\Models\Branch::find($c->branch_id) : null;
+        $branch = $this->resolveOrgBranch($c);
         $path = $branch?->signature_path;
         if (!$path) return null;
         if (preg_match('#/storage/(.+)$#', (string) $path, $m)) $path = $m[1];
@@ -1320,22 +1369,10 @@ class CtcContractController extends Controller
             : '';
         $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', $sigHtml, $processedHtml);
 
-        // Organisation-detail placeholders — filled from the Company Details
-        // master row backing this agreement's "Our Organisation" selection.
-        // ({{company_name}} {{company_no}} {{email}} {{contact_no}} {{address}})
-        $orgName = trim((string) ($row->org_name ?? ''));
-        $company = $orgName
-            ? \App\Models\Masters\Company::where('client_id', $row->client_id)
-                ->where('company_name', $orgName)->first()
-            : null;
-        $orgTokens = [
-            'company_name' => $row->org_name ?: ($company->company_name ?? ''),
-            'company_no'   => $company->cin ?? '',          // registered company number (CIN)
-            'email'        => $company->email ?? '',
-            'contact_no'   => $company->mobile ?? '',
-            'address'      => $company->address ?? '',
-        ];
-        foreach ($orgTokens as $tok => $val) {
+        // Organisation-detail placeholders — filled from the SELECTED BRANCH
+        // backing this agreement's "Our Organisation" selection.
+        // ({{company_name}} {{company_no}}=CIN {{email}} {{contact_no}} {{address}})
+        foreach ($this->orgBranchTokens($row) as $tok => $val) {
             $processedHtml = preg_replace('/\{\{\s*' . $tok . '\s*\}\}/i', e((string) $val), $processedHtml);
         }
 
