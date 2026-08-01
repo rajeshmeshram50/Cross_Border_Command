@@ -455,7 +455,9 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
     else {
       const lower = trimmed.toLowerCase();
       if (existingNames.some(n => n.trim().toLowerCase() === lower)) {
-        next.name = `A segment named "${trimmed}" already exists. Pick a different name.`;
+        // Clip the echoed name — a 255-char name would otherwise blow the
+        // duplicate banner off-screen.
+        next.name = `A segment named "${clipName(trimmed)}" already exists. Pick a different name.`;
       }
     }
     if (!reg) next.reg = 'Regulatory status is required';
@@ -528,13 +530,14 @@ export function SegmentModal(props: { existing: Segment | null; nextCode: string
                   color: '#b91c1c',
                   fontSize: 12,
                   lineHeight: 1.4,
+                  minWidth: 0,
                 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
                     <circle cx="12" cy="12" r="10"/>
                     <line x1="12" y1="8" x2="12" y2="12"/>
                     <line x1="12" y1="16" x2="12.01" y2="16"/>
                   </svg>
-                  <span><strong>Duplicate segment.</strong> {errors.name}</span>
+                  <span style={{ minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word' }}><strong>Duplicate segment.</strong> {errors.name}</span>
                 </div>
               ) : (
                 <div className="clm-err">{errors.name}</div>

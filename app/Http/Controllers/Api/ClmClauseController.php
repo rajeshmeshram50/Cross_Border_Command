@@ -155,6 +155,8 @@ class ClmClauseController extends Controller
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
         // Branch-scoped read (globals + client-level + own branch; siblings hidden).
+        @ini_set('memory_limit', '512M'); // usage-scan reads CTC drafts; guard against OOM on large data
+
         $query = ClmClauseLibrary::query()->orderBy('id', 'desc');   // newest entry first
         MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
         $rows = $query->get();
@@ -164,26 +166,40 @@ class ClmClauseController extends Controller
         // linked by FK — so we detect usage by looking for that heading in every
         // CTC contract's current content + saved versions. Drives the client-side
         // "can't delete a clause that's used in a CTC" guard.
-        $haystacks = $this->ctcHaystacks((int) $user->client_id);
-        $rows->each(function ($row) use ($haystacks) {
-            $needle = $this->clauseNeedle((string) $row->name);
+        $items = [];
+        foreach ($rows as $row) {
             $row->in_use = 0;
-            foreach ($haystacks as $h) { if ($needle !== '' && mb_strpos($h, $needle) !== false) { $row->in_use = 1; break; } }
-        });
+            $items[] = ['row' => $row, 'needle' => $this->clauseNeedle((string) $row->name)];
+        }
+        $this->scanCtcForClauses((int) $user->client_id, $items);
 
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
     }
 
-    /** Lower-cased content of every CTC contract (current draft + each version),
-     *  used to detect whether a library clause has been inserted into any CTC. */
-    private function ctcHaystacks(int $clientId): array
+    /** Scan every CTC contract's content + saved versions in CHUNKS (bounded
+     *  memory) and mark $item['row']->in_use = 1 when the clause heading
+     *  $item['needle'] appears. Each item = ['row' => model|object, 'needle' => '<h3>name</h3>' lc].
+     *  Replaces the old load-everything haystack that exhausted PHP memory when a
+     *  client had many/large CTC drafts (whose `versions` JSON stores every past draft). */
+    private function scanCtcForClauses(int $clientId, array $items): void
     {
-        return \App\Models\CtcContract::where('client_id', $clientId)->get(['content', 'versions'])
-            ->map(function ($c) {
-                $parts = [(string) $c->content];
-                foreach ((array) ($c->versions ?? []) as $v) { $parts[] = (string) ($v['content'] ?? ''); }
-                return mb_strtolower(implode("\n", $parts));
-            })->all();
+        $items = array_values(array_filter($items, fn ($it) => ($it['needle'] ?? '') !== ''));
+        if (!$items) return;
+        \App\Models\CtcContract::where('client_id', $clientId)
+            ->select('id', 'content', 'versions')
+            ->chunkById(25, function ($chunk) use ($items) {
+                foreach ($chunk as $c) {
+                    $hay = mb_strtolower((string) $c->content);
+                    foreach ((array) ($c->versions ?? []) as $v) { $hay .= "\n" . mb_strtolower((string) ($v['content'] ?? '')); }
+                    $allDone = true;
+                    foreach ($items as $it) {
+                        if ($it['row']->in_use) continue;
+                        if (mb_strpos($hay, $it['needle']) !== false) $it['row']->in_use = 1;
+                        else $allDone = false;
+                    }
+                    if ($allDone) return false; // every clause already matched — stop scanning
+                }
+            });
     }
 
     /** The heading a clause is inserted with — `<h3>Name</h3>`, lower-cased. */
@@ -289,10 +305,10 @@ class ClmClauseController extends Controller
         // (same best-effort heading match as libraryIndex's in_use flag).
         $needle = $this->clauseNeedle((string) $row->name);
         if ($needle !== '') {
-            foreach ($this->ctcHaystacks((int) $user->client_id) as $h) {
-                if (mb_strpos($h, $needle) !== false) {
-                    return response()->json(['status' => false, 'message' => 'This clause is used in one or more CTC agreements and cannot be deleted.'], 409);
-                }
+            $probe = (object) ['in_use' => 0];
+            $this->scanCtcForClauses((int) $user->client_id, [['row' => $probe, 'needle' => $needle]]);
+            if ($probe->in_use) {
+                return response()->json(['status' => false, 'message' => 'This clause is used in one or more CTC agreements and cannot be deleted.'], 409);
             }
         }
         $row->delete();

@@ -1275,12 +1275,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
       );
     };
 
-    // Cache hit — hydrate immediately, skip the network entirely.
+    // Cache hit — hydrate immediately for an instant render, then STILL refetch
+    // fresh below (stale-while-revalidate) so a newly-added master — e.g. a NEW
+    // SEGMENT — appears instead of being stuck behind the cached bundle.
     const cached = readCustomerMasterBundle<Bundle>();
     if (cached) {
       hydrate(cached);
       setMastersLoading(false);
-      return () => { cancelled = true; };
     }
 
     (async () => {

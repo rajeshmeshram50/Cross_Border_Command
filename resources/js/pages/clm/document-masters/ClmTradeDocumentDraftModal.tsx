@@ -531,16 +531,20 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     setErrors(p => ({ ...p, party: '' }));
   };
 
-  const allPartyValues = useMemo(
-    () => [...PARTY_BUYER_CONSIGNEE, ...PARTY_SUPPLIER].map(p => p.value),
-    [],
-  );
+  // Customer/Consignee and Supplier are MUTUALLY EXCLUSIVE — a document applies
+  // to the buyer side OR the supplier side, never both. Once one side has a
+  // selection, the other side's checkboxes are disabled.
+  const hasBuyerParty    = useMemo(() => PARTY_BUYER_CONSIGNEE.some(p => parties.has(p.value)), [parties]);
+  const hasSupplierParty = useMemo(() => PARTY_SUPPLIER.some(p => parties.has(p.value)), [parties]);
+  // "ALL" acts within the ACTIVE side (supplier side once a supplier is picked,
+  // else the buyer side) so it never mixes the two groups.
+  const activePartyGroup = hasSupplierParty ? PARTY_SUPPLIER : PARTY_BUYER_CONSIGNEE;
   const allPartiesSelected = useMemo(
-    () => allPartyValues.every(v => parties.has(v)),
-    [parties, allPartyValues],
+    () => parties.size === activePartyGroup.length && activePartyGroup.every(p => parties.has(p.value)),
+    [parties, activePartyGroup],
   );
   const toggleAllParties = () => {
-    setParties(allPartiesSelected ? new Set() : new Set(allPartyValues));
+    setParties(allPartiesSelected ? new Set() : new Set(activePartyGroup.map(p => p.value)));
     setErrors(p => ({ ...p, party: '' }));
   };
 
@@ -888,8 +892,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                   <div className="tdw-party-label">CUSTOMER & CONSIGNEE</div>
                   <div className="tdw-party-options">
                     {PARTY_BUYER_CONSIGNEE.map(p => (
-                      <label key={p.value} className={`tdw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}>
-                        <input type="checkbox" checked={parties.has(p.value)} onChange={() => toggleParty(p.value)} />
+                      <label key={p.value} className={`tdw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}
+                        title={hasSupplierParty ? 'A Supplier is selected — a document applies to either the Customer/Consignee side or the Supplier side, not both.' : undefined}
+                        style={hasSupplierParty ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
+                        <input type="checkbox" checked={parties.has(p.value)} disabled={hasSupplierParty} onChange={() => toggleParty(p.value)} />
                         <span className="tdw-checkbox-emoji">{p.icon}</span>
                         <span className="tdw-checkbox-label">{p.label}</span>
                       </label>
@@ -900,8 +906,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                   <div className="tdw-party-label">SUPPLIER</div>
                   <div className="tdw-party-options">
                     {PARTY_SUPPLIER.map(p => (
-                      <label key={p.value} className={`tdw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}>
-                        <input type="checkbox" checked={parties.has(p.value)} onChange={() => toggleParty(p.value)} />
+                      <label key={p.value} className={`tdw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}
+                        title={hasBuyerParty ? 'A Customer/Consignee is selected — a document applies to either the Customer/Consignee side or the Supplier side, not both.' : undefined}
+                        style={hasBuyerParty ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
+                        <input type="checkbox" checked={parties.has(p.value)} disabled={hasBuyerParty} onChange={() => toggleParty(p.value)} />
                         <span className="tdw-checkbox-emoji">{p.icon}</span>
                         <span className="tdw-checkbox-label">{p.label}</span>
                       </label>
@@ -1161,6 +1169,17 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
 
         <ClmInsertPlaceholderModal
           open={pickerOpen}
+          allowedParties={(() => {
+            // Restrict placeholder party tabs to the document's applicable party:
+            // a Customer/Consignee doc → Customer + Consignee tabs; a Supplier doc
+            // → Supplier only. (Party values: "Buyer"/"Consignee"/"Supplier-…".)
+            const arr = [...parties];
+            if (!arr.length) return undefined;
+            const s: string[] = [];
+            if (arr.some(p => !p.toLowerCase().startsWith('supplier'))) s.push('customer', 'consignee');
+            if (arr.some(p => p.toLowerCase().startsWith('supplier'))) s.push('supplier');
+            return s;
+          })()}
           onClose={() => setPickerOpen(false)}
           onInsert={(token) => { const isHtml = /^\s*</.test(token); if (isHtml) insertHtmlAtCaret(token); else insertAtCaret(token); toast.success('Placeholder added', isHtml ? undefined : token); setPickerOpen(false); }}
         />

@@ -482,16 +482,18 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     setErrors(p => ({ ...p, party: '' }));
   };
 
-  const allPartyValues = useMemo(
-    () => [...PARTY_BUYER_CONSIGNEE, ...PARTY_SUPPLIER].map(p => p.value),
-    [],
-  );
+  // Customer/Consignee and Supplier are MUTUALLY EXCLUSIVE — an agreement applies
+  // to the buyer side OR the supplier side, never both. Once one side has a
+  // selection, the other side's checkboxes are disabled.
+  const hasBuyerParty    = useMemo(() => PARTY_BUYER_CONSIGNEE.some(p => parties.has(p.value)), [parties]);
+  const hasSupplierParty = useMemo(() => PARTY_SUPPLIER.some(p => parties.has(p.value)), [parties]);
+  const activePartyGroup = hasSupplierParty ? PARTY_SUPPLIER : PARTY_BUYER_CONSIGNEE;
   const allPartiesSelected = useMemo(
-    () => allPartyValues.every(v => parties.has(v)),
-    [parties, allPartyValues],
+    () => parties.size === activePartyGroup.length && activePartyGroup.every(p => parties.has(p.value)),
+    [parties, activePartyGroup],
   );
   const toggleAllParties = () => {
-    setParties(allPartiesSelected ? new Set() : new Set(allPartyValues));
+    setParties(allPartiesSelected ? new Set() : new Set(activePartyGroup.map(p => p.value)));
     setErrors(p => ({ ...p, party: '' }));
   };
 
@@ -836,8 +838,10 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                   <div className="agw-party-label agw-party-label-buyer">CUSTOMER &amp; CONSIGNEE</div>
                   <div className="agw-party-options">
                     {PARTY_BUYER_CONSIGNEE.map(p => (
-                      <label key={p.value} className={`agw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}>
-                        <input type="checkbox" checked={parties.has(p.value)} onChange={() => toggleParty(p.value)} />
+                      <label key={p.value} className={`agw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}
+                        title={hasSupplierParty ? 'A Supplier is selected — an agreement applies to either the Customer/Consignee side or the Supplier side, not both.' : undefined}
+                        style={hasSupplierParty ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
+                        <input type="checkbox" checked={parties.has(p.value)} disabled={hasSupplierParty} onChange={() => toggleParty(p.value)} />
                         <span className="agw-checkbox-emoji">{p.icon}</span>
                         <span className="agw-checkbox-label">{p.label}</span>
                       </label>
@@ -849,8 +853,10 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                   <div className="agw-party-label agw-party-label-supplier">SUPPLIER</div>
                   <div className="agw-party-options">
                     {PARTY_SUPPLIER.map(p => (
-                      <label key={p.value} className={`agw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}>
-                        <input type="checkbox" checked={parties.has(p.value)} onChange={() => toggleParty(p.value)} />
+                      <label key={p.value} className={`agw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}
+                        title={hasBuyerParty ? 'A Customer/Consignee is selected — an agreement applies to either the Customer/Consignee side or the Supplier side, not both.' : undefined}
+                        style={hasBuyerParty ? { opacity: 0.4, pointerEvents: 'none' } : undefined}>
+                        <input type="checkbox" checked={parties.has(p.value)} disabled={hasBuyerParty} onChange={() => toggleParty(p.value)} />
                         <span className="agw-checkbox-emoji">{p.icon}</span>
                         <span className="agw-checkbox-label">{p.label}</span>
                       </label>
@@ -957,6 +963,17 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
             names to the same values, so switching catalogs is safe. */}
         <ClmInsertPlaceholderModal
           open={placeholderOpen}
+          allowedParties={(() => {
+            // Restrict placeholder party tabs to the agreement's applicable party:
+            // a Customer/Consignee agreement → Customer + Consignee tabs; a
+            // Supplier agreement → Supplier only. (Values: "Buyer"/"Consignee"/"Supplier-…".)
+            const arr = [...parties];
+            if (!arr.length) return undefined;
+            const s: string[] = [];
+            if (arr.some(p => !p.toLowerCase().startsWith('supplier'))) s.push('customer', 'consignee');
+            if (arr.some(p => p.toLowerCase().startsWith('supplier'))) s.push('supplier');
+            return s;
+          })()}
           onClose={() => setPlaceholderOpen(false)}
           onInsert={(token) => { if (/^\s*</.test(token)) { toast.success('Inserted', 'Added to the agreement draft.'); insertHtmlAtCaret(token); } else insertPlaceholderToken(token); setPlaceholderOpen(false); }}
         />
