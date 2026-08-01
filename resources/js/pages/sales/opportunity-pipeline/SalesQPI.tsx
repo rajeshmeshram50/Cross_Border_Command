@@ -3014,10 +3014,16 @@ export function CreateQuotationModal(props: {
           portOfDischarge:  r.port_of_discharge ?? '',
           finalDestination: r.final_destination ?? '',
           originCountry:    r.origin_country ?? '',
-          stateCode:        r.state_code ?? '',
+          // Re-pull the customer's CURRENT state code + GSTIN from the live
+          // customer record (custRow) instead of the snapshot stored at create
+          // time — so editing the customer's state reflects in the QT/PI on
+          // re-edit, and GST (CGST+SGST intra vs IGST inter) recomputes against
+          // the customer's new state. Falls back to the snapshot when the live
+          // customer can't be resolved or has no state/GST on file.
+          stateCode:        custRow?.stateCode || (r.state_code ?? ''),
           dispatchFrom:     r.dispatch_from ?? '',
           deliverTo:        r.deliver_to ?? '',
-          customerGstNo:    r.customer_gst_no ?? '',
+          customerGstNo:    custRow?.gstNumber || (r.customer_gst_no ?? ''),
           oppId:            r.opp_id ?? null,
           customerId:       r.customer_id ?? null,
           consigneeId:      r.consignee_id ?? null,
@@ -3498,10 +3504,16 @@ export function CreatePIModal(props: {
           portOfDischarge:  r.port_of_discharge ?? '',
           finalDestination: r.final_destination ?? '',
           originCountry:    r.origin_country ?? '',
-          stateCode:        r.state_code ?? '',
+          // Re-pull the customer's CURRENT state code + GSTIN from the live
+          // customer record (custRow) instead of the snapshot stored at create
+          // time — so editing the customer's state reflects in the QT/PI on
+          // re-edit, and GST (CGST+SGST intra vs IGST inter) recomputes against
+          // the customer's new state. Falls back to the snapshot when the live
+          // customer can't be resolved or has no state/GST on file.
+          stateCode:        custRow?.stateCode || (r.state_code ?? ''),
           dispatchFrom:     r.dispatch_from ?? '',
           deliverTo:        r.deliver_to ?? '',
-          customerGstNo:    r.customer_gst_no ?? '',
+          customerGstNo:    custRow?.gstNumber || (r.customer_gst_no ?? ''),
           oppId:            r.opp_id ?? null,
           customerId:       r.customer_id ?? null,
           consigneeId:      r.consignee_id ?? null,
