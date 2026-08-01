@@ -1,24 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../api';
 
-/**
- * Segments that have a rule defined in the Document Control Panel.
- *
- * A segment with no DCP rule maps to no KYC / DD / Trade-License documents, so
- * tagging a customer / consignee / supplier with it produces an empty Stage 2
- * and nothing to comply with. The onboarding forms therefore still SHOW such a
- * segment in the dropdown (so the user can see it exists) but disable it —
- * see MasterMultiSelect's `disabledValues`.
- *
- * Both keys are returned because the forms differ: the Customer segment field
- * stores segment NAMES and labels by code, while the Supplier field stores
- * segment IDs.
- *
- * `loaded` guards the disable: until the rules land, nothing is disabled —
- * otherwise every option would flash as unusable on open.
- *
- * @param enabled fetch only while the modal is open.
- */
 export type SegDocType = 'domestic' | 'international';
 
 export function useRuledSegments(enabled: boolean) {
