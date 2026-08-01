@@ -245,7 +245,18 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     // Stage-3 tracker reflects each signer's status; it's a superset of show
     // (returns the contract + org_signature_url, syncing Zoho only if linked).
     const url = record?.zoho_request_id ? `/clm/ctc-contracts/${rid}/sync-signature` : `/clm/ctc-contracts/${rid}`;
-    try { const res = await api.get(url); setRecord((res.data?.data ?? res.data ?? null) as Record<string, unknown>); }
+    try {
+      const res = await api.get(url);
+      const next = (res.data?.data ?? res.data ?? null) as Record<string, unknown> | null;
+      // Only swap the record when it ACTUALLY changed. The 10s poll otherwise
+      // handed React a brand-new object every tick, re-rendering the whole stage
+      // tree and re-laying-out the (large) agreement preview table each time —
+      // that periodic repaint is the "data flickers / looks like loading" blink.
+      setRecord(prev => {
+        try { if (prev && next && JSON.stringify(prev) === JSON.stringify(next)) return prev; } catch { /* fall through */ }
+        return next;
+      });
+    }
     catch { /* keep last snapshot */ }
   };
   // Poll for approver / signer activity while we sit on a review/signing stage.
@@ -867,7 +878,17 @@ function Stage1(p: {
   const midBack = () => { if (midStep > 1) setMidStep((midStep - 1) as 1 | 2 | 3); };
   // Section completion chips (Figma-style) — counterparty section is "done"
   // once at least one party is added; organisation once one is selected.
-  const cpPct = p.cps.length ? 100 : 0;
+  // The "Counterparty Details" header badge reflects real mandatory-document
+  // COMPLIANCE (aggregate of every counterparty's Evidence-Vault ring), not just
+  // "a counterparty was added". Otherwise it read a misleading 100% while a
+  // party's docs were still incomplete (e.g. ring shows 5/7 = 71%) — the header
+  // and the ring must agree. Falls back to 100% only when nothing is required.
+  const cpAgg = p.cps.reduce((a, cp) => {
+    const c = cpCompliance[cpKey(cp)];
+    if (c && !c.loading) { a.done += c.done; a.total += c.total; }
+    return a;
+  }, { done: 0, total: 0 });
+  const cpPct = p.cps.length === 0 ? 0 : (cpAgg.total > 0 ? Math.round((cpAgg.done / cpAgg.total) * 100) : 100);
   const orgPct = p.org ? 100 : 0;
   return (
     <div className="ctc-workspace" style={{ display: 'flex', alignItems: 'stretch', gap: 12, flex: 1, minHeight: 0, width: '100%' }}>
@@ -2196,9 +2217,10 @@ function ContractSummaryCard({ t, code, agTitle, agType, cps, org, effDate, endD
 }
 
 function CpReadCard({ t, idx, cp, comp, onOpenVault }: { t: OpsTokens; idx: number; cp: CP; comp?: CpComp; onOpenVault?: () => void }) {
-  // The ring is a button when the party's mandatory docs are incomplete — it
-  // opens that party's Evidence Vault so the user can upload the missing files.
-  const ringClickable = !!onOpenVault && !!comp && !comp.loading && !comp.complete;
+  // The ring is a button whenever the party has an Evidence Vault — it opens
+  // that vault so the user can upload the missing files when incomplete, OR
+  // review which documents are already on file even when 100% complete.
+  const ringClickable = !!onOpenVault && !!comp && !comp.loading;
   return (
     <div style={{ flexShrink: 0, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(109,40,217,.08)' }}>
       <div style={{ position: 'relative', background: `radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,${cp.badge === 'BUYER' ? '#0e7490,#0891b2,#06b6d4' : cp.badge === 'SUPPLIER' ? '#047857,#059669,#10b981' : '#4C1D95,#6D28D9,#7C3AED'})`, backgroundSize: '14px 14px, auto', padding: '11px 14px' }}>
@@ -2217,7 +2239,7 @@ function CpReadCard({ t, idx, cp, comp, onOpenVault }: { t: OpsTokens; idx: numb
           <div style={{ position: 'absolute', top: '50%', right: 14, transform: 'translateY(-50%)', display: 'flex', alignItems: 'center' }}>
             {ringClickable ? (
               <button type="button" onClick={onOpenVault}
-                title="Open Evidence Vault — upload the missing mandatory documents"
+                title={comp.complete ? 'Open Evidence Vault — review the documents on file' : 'Open Evidence Vault — upload the missing mandatory documents'}
                 style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                 <CompRing comp={comp} />
               </button>

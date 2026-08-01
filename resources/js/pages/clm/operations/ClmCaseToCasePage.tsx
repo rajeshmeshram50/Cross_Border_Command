@@ -260,10 +260,11 @@ export default function ClmCaseToCasePage() {
     <div style={{ padding: 0, display: 'flex', flexDirection: 'column', gap: 8, fontFamily: 'var(--font-sans)' }}>
       <style>{CTC_CSS}</style>
 
-      {/* Whole-page lock while a contract is downloading — the PDF can take a
-          while to generate server-side, so block every other action (create,
-          tab switch, other rows) until it finishes and can't be cut off. */}
-      {downloadingId !== null && createPortal(
+      {/* Whole-page lock while a contract OR completion certificate is
+          downloading — the PDF / Zoho certificate can take a while to generate
+          server-side, so block every other action (create, tab switch, other
+          rows) until it finishes and can't be cut off. */}
+      {(downloadingId !== null || certId !== null) && createPortal(
         <div style={{ position: 'fixed', inset: 0, zIndex: 2000000, background: 'rgba(15,7,50,.55)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 15, fontFamily: 'var(--font-sans)' }}>
           <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" strokeWidth="2.4" strokeLinecap="round" style={{ animation: 'ctcSpin .7s linear infinite' }}><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
           <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>Preparing your download…</div>
@@ -436,7 +437,10 @@ export default function ClmCaseToCasePage() {
                             // history/timeline button keeps its own spinner.
                             const verBusy = lifecycleBusy?.id === c.id && lifecycleBusy?.kind === 'version';
                             const tlBusy  = lifecycleBusy?.id === c.id && lifecycleBusy?.kind === 'timeline';
-                            const frozen  = lifecycleBusy !== null || downloadingId !== null;
+                            // Freeze every row action while a lifecycle modal
+                            // loads OR a contract / certificate download is in
+                            // flight — no other action until it finishes.
+                            const frozen  = lifecycleBusy !== null || downloadingId !== null || certId !== null;
                             return (
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
                             <ActBtn t={t} tone="green" title="Download signed copy / latest PDF" busy={downloadingId === c.id} busyLabel="Downloading…" disabled={frozen} onClick={() => downloadContract(c)}>

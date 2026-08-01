@@ -78,6 +78,12 @@
 <!DOCTYPE html>
 <html>
   <head>
+    {{-- Declare UTF-8 so dompdf decodes multi-byte characters (em-dash "—",
+         curly quotes, en-dash, bullet, ₹, etc.) instead of reading each byte
+         separately and rendering "???". Without this the approver's PDF showed
+         "Supplier ??? v2" where the draft had "Supplier — v2". --}}
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta charset="utf-8" />
     <title>Document Archive - {{ $modelName }}</title>
     <style>
       /* PAGE MARGINS — proper left/right padding */
@@ -105,7 +111,11 @@
         background: {{ $footerBg }};
         color: {{ $footerColor }};
         z-index: 1000;
-        font-family: Arial, Helvetica, sans-serif;
+        /* DejaVu Sans is dompdf's bundled FULL-UNICODE font — it renders every
+           character exactly as typed (em-dash "—", curly quotes, ₹ / € / £,
+           bullets, accents, etc.). Arial/Helvetica are core PDF fonts limited to
+           WinAnsi, so symbols like ₹ dropped to "?". Keep Arial as a fallback. */
+        font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif;
         font-size: 11px;
       }
 
@@ -114,7 +124,11 @@
 
       body {
         margin: 0;
-        font-family: Arial, Helvetica, sans-serif;
+        /* DejaVu Sans is dompdf's bundled FULL-UNICODE font — it renders every
+           character exactly as typed (em-dash "—", curly quotes, ₹ / € / £,
+           bullets, accents, etc.). Arial/Helvetica are core PDF fonts limited to
+           WinAnsi, so symbols like ₹ dropped to "?". Keep Arial as a fallback. */
+        font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif;
         font-size: 11px;
         line-height: 15px;
         color: #333;
