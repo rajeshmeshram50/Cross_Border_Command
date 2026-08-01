@@ -445,6 +445,18 @@
   white-space: nowrap;
   vertical-align: middle;
 }
+/* Pill flavour of .dt-trunc (ChipCell). Colours/padding come from the page's
+   own chip class; this only stops the label from spilling past the column —
+   it ellipsises inside the pill and ChipCell hangs a tooltip on it when cut.
+   Chips are inline-block (not inline-flex) precisely so text-overflow applies. */
+.dt-chip-trunc {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
 /* Same chip as the Customer list's .smc-id-chip — mono face, soft accent tint,
    6px radius. Codes (CUST-014, EMP-007, PO/25-26/0042) read as one family
    across every list this way. */

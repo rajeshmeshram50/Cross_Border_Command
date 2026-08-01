@@ -137,7 +137,11 @@ function withAuthToken(url: string): string {
  * Management page can compose its own tabs / search / pager around exactly
  * these columns while the employee-profile tab keeps using the wrapper
  * component below — one definition of an expense row, two layouts.
- * Widths sum to 100 (fixed layout): 5+9+16+13+18+11+10+9+9. */
+ * Widths sum to 100 (fixed layout): 8+14+11+16+10+9+13+9+10. The Proof of
+ * Payment column was added after the original split without the others giving
+ * anything back, which pushed the total to 104% — in a fixed layout that
+ * over-constraint silently shrinks every column. Rebalanced, with the extra
+ * going to Proof so a real file name + extension fits. */
 export function expenseClaimColumns({
   accent = '#7c5cfc', fallbackName, fallbackInitials,
   mode = 'mine', currentEmployeeId = null, canHrApprove = false, onAct,
@@ -147,7 +151,7 @@ export function expenseClaimColumns({
       header: 'Exp ID',
       id: 'claim_no',
       accessorFn: (c: ExpenseClaimRow) => c.claim_no || `#${c.id}`,
-      meta: { width: '9%' },
+      meta: { width: '8%' },
       cell: info => (
         <span
           className="font-monospace fw-semibold exp-id-badge"
@@ -161,7 +165,7 @@ export function expenseClaimColumns({
       header: 'Employee',
       id: 'employee',
       accessorFn: (c: ExpenseClaimRow) => c.employee_name || fallbackName || `#${c.employee_id}`,
-      meta: { width: '16%' },
+      meta: { width: '14%' },
       cell: info => {
         const c = info.row.original;
         const empName = c.employee_name || fallbackName || ('#' + c.employee_id);
@@ -189,7 +193,7 @@ export function expenseClaimColumns({
       header: 'Category',
       id: 'category',
       accessorFn: (c: ExpenseClaimRow) => c.category_name ?? '',
-      meta: { width: '13%' },
+      meta: { width: '11%' },
       cell: info => (
         <span
           className="d-inline-flex align-items-center gap-1 fw-semibold exp-cat-badge"
@@ -203,7 +207,7 @@ export function expenseClaimColumns({
     {
       header: 'Description',
       accessorKey: 'title',
-      meta: { width: '18%' },
+      meta: { width: '16%' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive max={70} />,
     },
     {
@@ -212,20 +216,20 @@ export function expenseClaimColumns({
       header: 'Expense Date',
       id: 'expense_date',
       accessorFn: (c: ExpenseClaimRow) => (c.expense_date ? new Date(c.expense_date).getTime() : 0),
-      meta: { width: '11%' },
+      meta: { width: '10%' },
       cell: info => <span className="text-muted">{fmtDate(info.row.original.expense_date)}</span>,
     },
     {
       header: 'Amount',
       accessorKey: 'amount',
-      meta: { width: '10%', align: 'right' },
+      meta: { width: '9%', align: 'right' },
       cell: info => <span className="fw-bold">₹{Number(info.row.original.amount || 0).toLocaleString('en-IN')}</span>,
     },
     {
       header: () => <div className="text-center">Proof of Payment</div>,
       id: '__proof',
       enableSorting: false,
-      meta: { align: 'center', width: '9%' },
+      meta: { align: 'center', width: '13%' },
       /* Only the first receipt shows in the cell; extras collapse into a
          "+N more" popover so multiple uploads can't expand the row height. */
       cell: info => (
@@ -257,7 +261,7 @@ export function expenseClaimColumns({
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { align: 'center', width: '9%', wrap: true },
+      meta: { align: 'center', width: '10%', wrap: true },
       cell: info => (
         <ExpenseActionCell
           claim={info.row.original}

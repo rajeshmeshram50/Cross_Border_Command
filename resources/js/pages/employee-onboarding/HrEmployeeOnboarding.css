@@ -160,7 +160,11 @@
         .onb-pill .d { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
         .onb-id-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: #ece6ff; color: #5a3fd1; font-family: var(--vz-font-monospace, monospace); font-weight: 700; font-size: 12px; letter-spacing: 0.02em; }
         .onb-role-pill {
-          display: inline-flex; align-items: center;
+          /* inline-block, not inline-flex: the pill renders through ChipCell,
+             which relies on text-overflow: ellipsis — and that only applies to
+             a block-level container, so a flex pill would clip the role name
+             dead with no ellipsis and no hover affordance. */
+          display: inline-block;
           padding: 4px 12px;
           border-radius: 999px;
           background: rgba(124,92,252,0.10);
