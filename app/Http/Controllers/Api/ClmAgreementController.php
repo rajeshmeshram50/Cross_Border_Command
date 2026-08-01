@@ -242,7 +242,7 @@ class ClmAgreementController extends Controller
         }
         // Branch-scoped read (globals + client-level + own branch; siblings hidden).
         $branchFilter = $request->integer('branch_id') ?: null;
-        $libQuery = ClmAgreementLibrary::query()->orderBy('id');
+        $libQuery = ClmAgreementLibrary::query()->orderBy('id', 'desc');   // newest entry first
         MasterVisibility::applyReadScope($libQuery, $user, $branchFilter);
         $rows = $libQuery->get();
 

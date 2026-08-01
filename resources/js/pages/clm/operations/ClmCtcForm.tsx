@@ -18,6 +18,11 @@ import { VersionHistoryModal, type CtcVersion } from './clmCtcModals';
 import ClmCtcSignPositionModal from './ClmCtcSignPositionModal';
 import Tooltip from '../../../components/ui/Tooltip';
 import { Shimmer } from '../../../components/ui/Shimmer';
+// Evidence-Vault modals — opened from a counterparty's compliance ring so the
+// user can upload the missing mandatory documents without leaving the CTC form.
+import CustomerEvidenceVaultModal from '../../sales/core-masters/customer/CustomerEvidenceVaultModal';
+import ConsigneeEvidenceVaultModal from '../../sales/core-masters/consignee/ConsigneeEvidenceVaultModal';
+import SupplierEvidenceVaultModal from '../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import { checkSpelling } from '../../../utils/spellCheck';
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -53,7 +58,7 @@ const STAGES = [
   { n: 4, label: 'Final Contract Repository',          sub: 'Store finalized signed agreement and history' },
 ];
 
-type CP = { name: string; initials: string; country: string; phone: string; email: string; grad: string; badge: string; referred: string; sourceType?: string; sourceId?: string | number };
+type CP = { name: string; initials: string; country: string; phone: string; email: string; grad: string; badge: string; referred: string; sourceType?: string; sourceId?: string | number; sourceDbId?: number };
 
 /* Domestic = country is India; anything else (or blank-but-non-India) is
  * International. Mirrors the app-wide Gst::isDomestic rule so the CTC category
@@ -62,6 +67,118 @@ const isDomesticCountry = (country?: string | null): boolean =>
   (country ?? '').trim().toLowerCase() === 'india';
 const cpRole = (c: { sourceType?: string; badge?: string }): string =>
   (c.sourceType || c.badge || '').toLowerCase();
+
+/* ── Counterparty compliance (mandatory-doc completeness) ──────────────────
+ * Reads each counterparty's Evidence-Vault summary (GET /segment-uploads/
+ * {type}/{db_id}/vault) and computes the mandatory-doc completion the CTC
+ * "Next" gate needs:
+ *   - mandatory STANDARD docs (KYC / DD / Trade Licence, requirement "M") —
+ *     always required  → `core_total_documents` / `core_verified_signed`
+ *   - mandatory CASE-TO-CASE docs (Trade Documents + Agreements) — required
+ *     ONLY when the party has at least one shipment (total_shipments > 0)
+ * "Complete" = the doc has an uploaded file (the vault marks it Verified). */
+type CpComp = { percent: number; complete: boolean; total: number; done: number; loading: boolean };
+
+const cpVaultType = (cp: CP): 'customer' | 'consignee' | 'supplier' | null => {
+  const r = (cp.sourceType || cp.badge || '').toLowerCase();
+  if (r === 'buyer' || r === 'customer') return 'customer';
+  if (r === 'consignee') return 'consignee';
+  if (r === 'supplier' || r === 'vendor') return 'supplier';
+  return null;
+};
+const cpKey = (cp: CP): string => `${cpVaultType(cp) ?? '?'}:${cp.sourceDbId ?? 0}`;
+
+function computeCpComp(v: Record<string, unknown>): { percent: number; complete: boolean; total: number; done: number } {
+  // "done/total" from a "3/4" ratio string.
+  const parse = (r: unknown) => { const [s, t] = String(r ?? '0/0').split('/').map(x => Number(x) || 0); return { s, t }; };
+
+  // 1) STANDARD mandatory docs (KYC + DD + Trade Licence) — always required.
+  let total = Number(v?.core_total_documents ?? 0);
+  let done  = Number(v?.core_verified_signed ?? 0);
+
+  // 2) CASE-TO-CASE docs — added ONLY for parties that carry a shipment.
+  //    Customer/Consignee → each shipment's Trade Docs + Agreement ratios
+  //    (shipment_agreements[]). Supplier → each with-shipment deal's Trade
+  //    Docs ratio (vendor_with_shipment[]). No shipment ⇒ these arrays are
+  //    empty, so only the standard docs count (per the requested rule).
+  const ships = Array.isArray(v?.shipment_agreements) ? (v.shipment_agreements as Record<string, unknown>[]) : [];
+  for (const sh of ships) {
+    const td = parse((sh?.trade_docs as Record<string, unknown>)?.ratio);
+    const ag = parse((sh?.agreement as Record<string, unknown>)?.ratio);
+    total += td.t + ag.t; done += td.s + ag.s;
+  }
+  const vDeals = Array.isArray(v?.vendor_with_shipment) ? (v.vendor_with_shipment as Record<string, unknown>[]) : [];
+  for (const d of vDeals) {
+    const td = (d?.ratios as Record<string, { d?: number; t?: number }>)?.td;
+    if (td) { total += Number(td.t ?? 0); done += Number(td.d ?? 0); }
+  }
+
+  return { percent: total > 0 ? Math.round((done / total) * 100) : 100, complete: done >= total, total, done };
+}
+
+function useCpCompliance(cps: CP[], nonce = 0): Record<string, CpComp> {
+  const [map, setMap] = useState<Record<string, CpComp>>({});
+  const keys = cps.map(cpKey).join('|');
+  useEffect(() => {
+    let alive = true;
+    cps.forEach(cp => {
+      const type = cpVaultType(cp); const id = cp.sourceDbId;
+      if (!type || !id) return;
+      const k = cpKey(cp);
+      setMap(m => (m[k] && !m[k].loading ? m : { ...m, [k]: { percent: 0, complete: false, total: 0, done: 0, loading: true } }));
+      api.get(`/segment-uploads/${type}/${id}/vault`)
+        .then(res => { if (!alive) return; const v = ((res.data?.data ?? res.data) ?? {}) as Record<string, unknown>; setMap(m => ({ ...m, [k]: { ...computeCpComp(v), loading: false } })); })
+        .catch(() => { if (alive) setMap(m => ({ ...m, [k]: { percent: 0, complete: false, total: 0, done: 0, loading: false } })); });
+    });
+    return () => { alive = false; };
+  }, [keys, nonce]);   // eslint-disable-line react-hooks/exhaustive-deps
+  return map;
+}
+
+/** Circular mandatory-doc completion ring for a counterparty card header.
+ *  Sits on a coloured/dark header — white track + a status-coloured arc
+ *  (red < 50%, amber ≥ 50%, green = complete → shows a ✓ instead of the %).
+ *  `size` lets the same ring serve the large (Panel 02) and small (Panel 01)
+ *  cards. */
+function CompRing({ comp }: { comp?: CpComp; size?: number; onLight?: boolean }) {
+  if (!comp) return null;
+  const done = comp.complete, loading = comp.loading;
+  const pct  = Math.max(0, Math.min(100, comp.percent));
+  const arc  = loading ? '#cbd5e1' : done ? '#10b981' : pct >= 50 ? '#f59e0b' : '#f43f5e';
+  const title = loading ? 'Checking documents…'
+    : done ? `Legal status complete — all ${comp.total} document(s) on file`
+    : `${comp.done} of ${comp.total} mandatory document(s) complete — click to upload the rest`;
+  const mainText = loading ? 'Checking…' : done ? 'Completed' : `${comp.done}/${comp.total} docs`;
+  // One consistent FROSTED pill for both states (so it never blends into the
+  // green / teal / purple card header). The state reads from the ring + a
+  // coloured border/glow: green when complete, amber/red while incomplete.
+  const s = 34, sw = 3.6, r = (s - sw) / 2, circ = 2 * Math.PI * r, off = circ * (1 - pct / 100);
+  return (
+    <div title={title} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 10, padding: '5px 15px 5px 5px', borderRadius: 30,
+      background: 'rgba(15,23,42,.34)',
+      border: `1.5px solid ${done ? 'rgba(52,211,153,.9)' : 'rgba(255,255,255,.45)'}`,
+      boxShadow: done
+        ? '0 0 0 3px rgba(52,211,153,.2), 0 4px 12px rgba(2,6,23,.28)'
+        : '0 3px 10px rgba(2,6,23,.28)',
+      flexShrink: 0, whiteSpace: 'nowrap',
+    }}>
+      <span style={{ position: 'relative', width: s, height: s, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <svg width={s} height={s} viewBox={`0 0 ${s} ${s}`} style={{ transform: 'rotate(-90deg)', display: 'block', position: 'relative' }}>
+          <circle cx={s / 2} cy={s / 2} r={r} fill="none" stroke="rgba(255,255,255,.32)" strokeWidth={sw} />
+          {!loading && <circle cx={s / 2} cy={s / 2} r={r} fill="none" stroke={arc} strokeWidth={sw} strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={off} style={{ transition: 'stroke-dashoffset .5s ease' }} />}
+        </svg>
+        <span style={{ position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, textShadow: '0 1px 2px rgba(0,0,0,.22)' }}>
+          {loading ? <span style={{ fontSize: 11, opacity: .85 }}>…</span> : <span style={{ fontSize: pct >= 100 ? 8.5 : 9.5 }}>{pct}%</span>}
+        </span>
+      </span>
+      <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 800, color: '#fff', letterSpacing: '.01em', textShadow: '0 1px 2px rgba(0,0,0,.18)' }}>{mainText}</span>
+        {!loading && <span style={{ fontSize: 7.5, fontWeight: 700, color: 'rgba(255,255,255,.85)', letterSpacing: '.09em', textTransform: 'uppercase', marginTop: 1 }}>legal status</span>}
+      </span>
+    </div>
+  );
+}
 
 export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: CtcContract | null; onClose: () => void; onSaved: () => void }) {
   const toast = useToast();
@@ -650,6 +767,14 @@ function Stage1(p: {
   // Stage-1 validation — counterparty + organisation (Step 1), then title,
   // type and dates (Step 2) are all required before the draft can be submitted.
   const toast = useToast();
+  // Per-counterparty mandatory-document completeness (drives the header ring
+  // AND the Step-1 → Step-2 gate below). `complianceNonce` forces a re-check
+  // after the user uploads documents in the Evidence Vault (opened from the ring).
+  const [complianceNonce, setComplianceNonce] = useState(0);
+  const [vaultCp, setVaultCp] = useState<CP | null>(null);
+  const cpCompliance = useCpCompliance(p.cps, complianceNonce);
+  const closeVault = () => { setVaultCp(null); setComplianceNonce(n => n + 1); };
+  const vaultTarget = vaultCp ? { id: String(vaultCp.sourceId ?? ''), db_id: vaultCp.sourceDbId, company: vaultCp.name, country: vaultCp.country } : null;
   // Inline field errors (Step 2 required *). Flags set on a failed validate;
   // each field's red state auto-clears once it has a value (see the `error`
   // props on the Fields below), so we never have to manually reset them.
@@ -657,6 +782,18 @@ function Stage1(p: {
   const validateStep1 = (): boolean => {
     if (!p.cps.length) { toast.error('Counterparty required', 'Add at least one counterparty before continuing.'); setMidStep(1); return false; }
     if (!p.org)        { toast.error('Organisation required', 'Select your organisation details before continuing.'); setMidStep(1); return false; }
+    // A counterparty can't advance until its MANDATORY compliance documents are
+    // complete (optional docs are ignored; case-to-case Trade/Agreement docs
+    // only count when the party has a shipment — see useCpCompliance).
+    const stillLoading = p.cps.some(cp => { const c = cpCompliance[cpKey(cp)]; return !c || c.loading; });
+    if (stillLoading) { toast.error('Checking documents…', 'Please wait — verifying each counterparty\'s compliance documents.'); return false; }
+    const incomplete = p.cps.find(cp => !cpCompliance[cpKey(cp)]?.complete);
+    if (incomplete) {
+      const c = cpCompliance[cpKey(incomplete)];
+      toast.error('Compliance incomplete', `${incomplete.name}: ${c ? c.done : 0} of ${c ? c.total : 0} mandatory documents complete. Upload the remaining mandatory documents before continuing.`);
+      setMidStep(1);
+      return false;
+    }
     return true;
   };
   // End date must never precede the effective date. Both values are ISO
@@ -907,7 +1044,7 @@ function Stage1(p: {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {total > 2 && arrow('l', safe === 0, () => setMidCpPage(Math.max(0, safe - 1)))}
                         <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, minWidth: 0 }}>
-                          {visible.map((cp, vi) => <CpReadCard key={safe * 2 + vi} t={t} idx={safe * 2 + vi + 1} cp={cp} />)}
+                          {visible.map((cp, vi) => <CpReadCard key={safe * 2 + vi} t={t} idx={safe * 2 + vi + 1} cp={cp} comp={cpCompliance[cpKey(cp)]} onOpenVault={cp.sourceDbId ? () => setVaultCp(cp) : undefined} />)}
                         </div>
                         {total > 2 && arrow('r', safe >= pages - 1, () => setMidCpPage(Math.min(pages - 1, safe + 1)))}
                       </div>
@@ -1099,6 +1236,13 @@ function Stage1(p: {
         </Panel>
       </div>
       {approvalOpen && <ApprovalWorkflowModal t={t} orgName={p.org?.name ?? 'Our Organisation'} onClose={() => setApprovalOpen(false)} onSubmit={(data) => p.onSubmitForApproval(data)} />}
+
+      {/* Evidence Vault — opened from a counterparty's compliance ring so the
+          user can upload the missing mandatory documents; on close the CP's
+          completeness is re-checked (complianceNonce bump). */}
+      {vaultCp && vaultTarget && cpVaultType(vaultCp) === 'customer'  && <CustomerEvidenceVaultModal  open customer={vaultTarget}  onClose={closeVault} />}
+      {vaultCp && vaultTarget && cpVaultType(vaultCp) === 'consignee' && <ConsigneeEvidenceVaultModal open consignee={vaultTarget} onClose={closeVault} />}
+      {vaultCp && vaultTarget && cpVaultType(vaultCp) === 'supplier'  && <SupplierEvidenceVaultModal  open supplier={vaultTarget}  onClose={closeVault} />}
 
       {/* RIGHT — Summary */}
       <div style={{ flex: rightOpen ? 2.5 : '0 0 48px', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', transition: 'flex .25s cubic-bezier(.22,1,.36,1)' }}>
@@ -2044,18 +2188,35 @@ function ContractSummaryCard({ t, code, agTitle, agType, cps, org, effDate, endD
   );
 }
 
-function CpReadCard({ t, idx, cp }: { t: OpsTokens; idx: number; cp: CP }) {
+function CpReadCard({ t, idx, cp, comp, onOpenVault }: { t: OpsTokens; idx: number; cp: CP; comp?: CpComp; onOpenVault?: () => void }) {
+  // The ring is a button when the party's mandatory docs are incomplete — it
+  // opens that party's Evidence Vault so the user can upload the missing files.
+  const ringClickable = !!onOpenVault && !!comp && !comp.loading && !comp.complete;
   return (
     <div style={{ flexShrink: 0, background: t.surface, borderRadius: 14, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#EDE9FE'}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(109,40,217,.08)' }}>
-      <div style={{ background: `radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,${cp.badge === 'BUYER' ? '#0e7490,#0891b2,#06b6d4' : cp.badge === 'SUPPLIER' ? '#047857,#059669,#10b981' : '#4C1D95,#6D28D9,#7C3AED'})`, backgroundSize: '14px 14px, auto', padding: '10px 14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+      <div style={{ position: 'relative', background: `radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,${cp.badge === 'BUYER' ? '#0e7490,#0891b2,#06b6d4' : cp.badge === 'SUPPLIER' ? '#047857,#059669,#10b981' : '#4C1D95,#6D28D9,#7C3AED'})`, backgroundSize: '14px 14px, auto', padding: '11px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8, paddingRight: comp ? 122 : 0 }}>
           <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: 'rgba(255,255,255,.7)' }}>Counter Party {idx}</span>
           {cp.badge && <span style={{ fontSize: 8, fontWeight: 800, padding: '2px 8px', borderRadius: 20, background: 'rgba(255,255,255,.2)', border: '1px solid rgba(255,255,255,.35)', color: '#fff', textTransform: 'uppercase' }}>{cp.badge === 'BUYER' ? 'CUSTOMER' : cp.badge}</span>}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingRight: comp ? 122 : 0 }}>
           <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,.2)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><span style={{ fontSize: 11, fontWeight: 800, color: '#fff' }}>{cp.initials}</span></div>
           <div style={{ minWidth: 0, flex: 1 }}><div style={{ fontSize: 13, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cp.name}</div><div style={{ fontSize: 10, color: 'rgba(255,255,255,.65)', fontWeight: 500 }}>{cp.country}</div></div>
         </div>
+        {/* Mandatory-document completion pill — vertically centred at the header's
+            right. 100% (green ✓) = every required doc on file; below that the Next
+            step is blocked and (when incomplete) the pill opens the Evidence Vault. */}
+        {comp && (
+          <div style={{ position: 'absolute', top: '50%', right: 14, transform: 'translateY(-50%)', display: 'flex', alignItems: 'center' }}>
+            {ringClickable ? (
+              <button type="button" onClick={onOpenVault}
+                title="Open Evidence Vault — upload the missing mandatory documents"
+                style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+                <CompRing comp={comp} />
+              </button>
+            ) : <CompRing comp={comp} />}
+          </div>
+        )}
       </div>
       <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ background: t.dark ? 'rgba(124,58,237,.1)' : 'linear-gradient(135deg,#F5F0FF,#EDE9FE)', borderRadius: 8, padding: '9px 11px', border: `1px solid ${t.dark ? 'rgba(124,58,237,.25)' : '#DDD6FE'}` }}>
@@ -2535,9 +2696,11 @@ function ApproverPickerModal({ t, existing, onClose, onAdd }: { t: OpsTokens; ex
   );
 }
 
-type PickEntry = { id: string; name: string; initials: string; country: string; phone: string; email: string; grad: string };
-const toEntry = (name: unknown, country: unknown, phone: unknown, email: unknown, id: unknown, i: number): PickEntry => ({
-  id: String(id ?? i), name: String(name || '—'), initials: orgInitials(String(name || '')), country: String(country || '—'), phone: String(phone || '—'), email: String(email || '—'), grad: ORG_GRADS[i % ORG_GRADS.length],
+type PickEntry = { id: string; dbId: number; name: string; initials: string; country: string; phone: string; email: string; grad: string; sameAsCustomer?: boolean };
+// dbId = the party's NUMERIC primary key (needed for the compliance vault
+// endpoint, which is keyed by numeric id, not the display code).
+const toEntry = (name: unknown, country: unknown, phone: unknown, email: unknown, id: unknown, i: number, dbId?: unknown): PickEntry => ({
+  id: String(id ?? i), dbId: Number(dbId ?? 0), name: String(name || '—'), initials: orgInitials(String(name || '')), country: String(country || '—'), phone: String(phone || '—'), email: String(email || '—'), grad: ORG_GRADS[i % ORG_GRADS.length],
 });
 
 function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null, onClose, onPick }: { t: OpsTokens; slot: number; usedTypes?: string[]; taken?: { buyer?: string; consignee?: string }; requiredDomestic?: boolean | null; onClose: () => void; onPick: (cp: CP) => void }) {
@@ -2557,8 +2720,8 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
     const rowsOf = (d: unknown): Record<string, unknown>[] => Array.isArray(d) ? d as Record<string, unknown>[] : ((d as { data?: unknown })?.data as Record<string, unknown>[] ?? []);
     Promise.allSettled([api.get('/customers', { params: { tab: 'all' } }), api.get('/consignees'), api.get('/vendors', { params: { per_page: 200 } })]).then(([cu, co, ve]) => {
       if (!alive) return;
-      const buyer = cu.status === 'fulfilled' ? rowsOf(cu.value.data).map((r, i) => toEntry(r.company ?? r.company_name, r.country, r.phone, r.email, r.id, i)) : [];
-      const consignee = co.status === 'fulfilled' ? rowsOf(co.value.data).map((r, i) => toEntry(r.company ?? r.company_name, r.country, r.phone, r.email, r.id, i)) : [];
+      const buyer = cu.status === 'fulfilled' ? rowsOf(cu.value.data).map((r, i) => toEntry(r.company ?? r.company_name, r.country, r.phone, r.email, r.id, i, r.db_id ?? r.id)) : [];
+      const consignee = co.status === 'fulfilled' ? rowsOf(co.value.data).map((r, i) => ({ ...toEntry(r.company ?? r.company_name, r.country, r.phone, r.email, r.id, i, r.db_id ?? r.id), sameAsCustomer: !!r.same_as_customer })) : [];
       const supplier = ve.status === 'fulfilled' ? rowsOf(ve.value.data).map((r, i) => {
         const a = (r.primaryAddress ?? r.primary_address) as Record<string, unknown> | undefined;
         // Show the supplier's COUNTRY (Domestic/India vs International), not the
@@ -2567,7 +2730,7 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
         const ac = a?.country as { name?: string } | string | null | undefined;
         const country = (typeof ac === 'object' && ac ? ac.name : (typeof ac === 'string' ? ac : undefined))
           ?? (r.country as string | undefined);
-        return toEntry(r.company_name ?? r.vendor_name, country ?? a?.city, a?.contact_no ?? r.mobile, r.primary_email ?? a?.email, r.vendor_code ?? r.id, i);
+        return toEntry(r.company_name ?? r.vendor_name, country ?? a?.city, a?.contact_no ?? r.mobile, r.primary_email ?? a?.email, r.vendor_code ?? r.id, i, r.db_id ?? r.id);
       }) : [];
       setDir({ buyer, consignee, supplier });
       setLoading(false);
@@ -2576,18 +2739,17 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
   }, []);
 
   // The same company must not be both Customer and Consignee. Two rules:
-  //  1. The Consignee tab hides EVERY consignee that duplicates a Customer by
-  //     name — a party that already exists as a customer must never be pickable
-  //     as a consignee (e.g. "header checking" is a customer, so it's dropped
-  //     from the consignee list).
-  //  2. Either tab also hides the party already chosen for the opposite role on
-  //     THIS agreement (covers the reverse pick order).
+  //  1. The Consignee tab shows ALL consignees EXCEPT a "same as customer"
+  //     mirror — that consignee is just a copy of its customer, so it's never
+  //     pickable as an independent counterparty. (Any other consignee, even one
+  //     that shares a name with a customer, IS a separate entity and shows.)
+  //  2. The Customer tab still hides the party already chosen as the consignee
+  //     on THIS agreement (a company can't be both roles picked separately).
   const norm = (s: string) => s.trim().toLowerCase();
-  const customerNames = new Set(dir.buyer.map(b => norm(b.name)));
-  const excludedName = tab === 'consignee' ? taken.buyer : tab === 'buyer' ? taken.consignee : undefined;
+  const excludedName = tab === 'buyer' ? taken.consignee : undefined;
   const list = dir[tab].filter(p => {
     if (!(p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase())) return false;
-    if (tab === 'consignee' && customerNames.has(norm(p.name))) return false;
+    if (tab === 'consignee' && p.sameAsCustomer) return false;
     if (excludedName && norm(p.name) === norm(excludedName)) return false;
     // Customer ↔ Consignee must share a category. Once one of the pair is added,
     // the other's list is restricted to the same category (Domestic/India or
@@ -2667,7 +2829,7 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
             <label style={{ fontSize: 7, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: '#A78BFA' }}>Referred As In Agreement</label>
             <input value={referred} onChange={e => setReferred(e.target.value)} style={{ width: '100%', padding: '7px 10px', border: `1.5px solid ${t.searchBorder}`, borderRadius: 8, fontSize: 10.5, lineHeight: 1.5, fontFamily: 'inherit', color: t.text, background: t.dark ? 'rgba(255,255,255,.04)' : '#fff', outline: 'none', boxSizing: 'border-box', marginTop: 4 }} />
             <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
-              <button onClick={() => onPick({ name: pending.name, initials: pending.initials, country: pending.country, phone: pending.phone, email: pending.email, grad: pending.grad, badge: tab.toUpperCase(), referred: referred || pending.name, sourceType: tab, sourceId: pending.id })} style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, color: '#fff', boxShadow: '0 3px 12px rgba(109,40,217,.38)' }}>Confirm &amp; Add</button>
+              <button onClick={() => onPick({ name: pending.name, initials: pending.initials, country: pending.country, phone: pending.phone, email: pending.email, grad: pending.grad, badge: tab.toUpperCase(), referred: referred || pending.name, sourceType: tab, sourceId: pending.id, sourceDbId: pending.dbId })} style={{ flex: 1, padding: '8px 0', borderRadius: 8, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 700, color: '#fff', boxShadow: '0 3px 12px rgba(109,40,217,.38)' }}>Confirm &amp; Add</button>
               <button onClick={() => setPending(null)} style={{ padding: '8px 13px', borderRadius: 8, background: t.dark ? 'rgba(255,255,255,.05)' : '#F8F6FF', border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, cursor: 'pointer', fontFamily: 'inherit', fontSize: 10.5, fontWeight: 600, color: t.textSub }}>Back</button>
             </div>
           </div>

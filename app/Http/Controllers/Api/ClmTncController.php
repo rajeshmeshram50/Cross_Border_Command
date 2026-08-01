@@ -96,7 +96,7 @@ class ClmTncController extends Controller
             return response()->json(['status' => true, 'data' => [], 'count' => 0]);
         }
         // Branch-scoped read (globals + client-level + own branch; siblings hidden).
-        $query = ClmTncLibrary::query()->orderBy('id');
+        $query = ClmTncLibrary::query()->orderBy('id', 'desc');   // newest entry first
         MasterVisibility::applyReadScope($query, $user, $request->integer('branch_id') ?: null);
         $rows = $query->get();
         return response()->json(['status' => true, 'data' => $rows, 'count' => $rows->count()]);
