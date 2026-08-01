@@ -1,7 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
+import { useCallback, useEffect, useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -25,25 +22,19 @@ import Tooltip from './Tooltip';
 export type DataTableAlign = 'left' | 'start' | 'center' | 'right' | 'end';
 
 export interface DataTableColumnMeta {
-  /** Header + cell alignment. Default 'left'. */
   align?: DataTableAlign;
   width?: string | number;
   wrap?: boolean;
 }
 
-/** A column def with our `meta` shape pre-typed. */
 export type DataTableColumn<T> = ColumnDef<T, any> & { meta?: DataTableColumnMeta };
 
 export interface DataTableTab {
   key: string;
   label: string;
-  /** Remix icon class ('ri-group-line') or a plain emoji ('💻') — both render. */
   icon?: string;
   count?: number;
 }
-
-/** Icon classes are rendered as <i>, anything else (an emoji) as text — some
- *  masters label their tabs with emoji rather than an icon font. */
 const isIconClass = (icon: string) => /^(ri|bx|mdi|fa|las|la|uil)[-\s]/.test(icon);
 
 export interface DataTableChip {
@@ -56,23 +47,14 @@ export type DataTableAccent = 'violet' | 'teal' | 'blue' | 'emerald' | 'amber' |
 export interface DataTableProps<T> {
   data: T[];
   columns: DataTableColumn<T>[];
-
-  /* ── Tabs (pill rail, left of the toolbar) ── */
   tabs?: DataTableTab[];
   activeTab?: string;
   onTabChange?: (key: string) => void;
-
-  /* ── Search ── */
-  /** Set false to hide the search field entirely. Default true. */
   searchable?: boolean;
-  /** Controlled value ⇒ the PARENT filters (usually server-side). */
   searchValue?: string;
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
-  /** Debounce for the controlled onSearchChange. Default 300ms; 0 disables. */
   searchDebounce?: number;
-
-  /* ── Filter button + chips ── */
   onFilterClick?: () => void;
   activeFilterCount?: number;
   filterLabel?: string;
@@ -209,12 +191,6 @@ export default function DataTable<T extends object>({
   const [sorting, setSorting] = useState<SortingState>(initialSort ?? []);
   const [globalFilter, setGlobalFilter] = useState('');
   useEffect(() => { if (!isSearchControlled) setGlobalFilter(ownQuery); }, [ownQuery, isSearchControlled]);
-
-  /* The Sr No column, when asked for. It numbers the row's VISIBLE position:
-   * TanStack's `row.index` is the position in the ORIGINAL data array, so using
-   * it would jumble the serials the moment a column is sorted (rows 1, 7, 3…).
-   * The findIndex is over the current page only (≤ pageSize rows), so the cost
-   * is negligible. */
   const allColumns = useMemo<DataTableColumn<T>[]>(() => {
     if (!serial) return columns;
     const cfg = typeof serial === 'object' ? serial : {};
@@ -238,12 +214,6 @@ export default function DataTable<T extends object>({
     () => allColumns.some(c => (c.meta as DataTableColumnMeta | undefined)?.width !== undefined),
     [allColumns],
   );
-
-  /* Pagination is fully controlled here rather than left to the table, because
-   * the page index has to survive a page-size change (auto-fit re-measures on
-   * every resize) and be clamped when a filter shrinks the row count — sitting
-   * on page 5 of a set that just became 3 rows would show an empty table with
-   * no hint that there IS data, just on another page. */
   const [pageIndex, setPageIndex] = useState(0);
 
   const table = useReactTable({
@@ -275,7 +245,6 @@ export default function DataTable<T extends object>({
   const filteredCount = table.getFilteredRowModel().rows.length;
   const pageCount = paginate ? Math.max(1, Math.ceil(filteredCount / pageSize)) : 1;
   useEffect(() => { if (pageIndex > pageCount - 1) setPageIndex(pageCount - 1); }, [pageIndex, pageCount]);
-  // Back to page 1 whenever the visible set is redefined (tab, search, filters).
   useEffect(() => { setPageIndex(0); }, [activeTab, inputValue, filterChips?.length]);
 
   const rows = table.getRowModel().rows;
@@ -287,8 +256,6 @@ export default function DataTable<T extends object>({
     const top = el.getBoundingClientRect().top;
     const h = Math.max(240, window.innerHeight - top - 15);
     const px = (sel: string) => (el.querySelector(sel) as HTMLElement | null)?.offsetHeight || 0;
-    // Skip the empty-state row: it stretches to fill the body, so measuring it
-    // as "one row" would collapse the page size to the 5-row floor.
     const rowH = px('.dt-table tbody tr:not(.dt-empty-row)') || 44;
     const avail = h - px('.dt-toolbar') - px('.dt-chipbar') - px('.dt-table thead') - px('.tc-wl-pag') - 8;
     setAutoSize(Math.max(5, Math.floor(avail / rowH)));
@@ -300,9 +267,6 @@ export default function DataTable<T extends object>({
     const size = () => {
       const top = el.getBoundingClientRect().top;
       const h = `${Math.max(240, window.innerHeight - top - 15)}px`;
-      // No-op writes matter here: setting the height resizes the parent, which
-      // re-fires the observer below. Bailing out when the value is unchanged is
-      // what makes that settle instead of looping.
       if (el.style.height === h) return;
       el.style.flex = 'none';
       el.style.height = h;
@@ -311,10 +275,6 @@ export default function DataTable<T extends object>({
     size();
     const t = window.setTimeout(size, 120);
     window.addEventListener('resize', size);
-    /* Whatever sits above the table can change height after first paint (KPI
-     * cards resolving their counts, a collapsible banner opening) — that moves
-     * our top edge, so re-measure instead of keeping a stale height that either
-     * overflows the fold or leaves a gap. */
     let ro: ResizeObserver | undefined;
     if (typeof ResizeObserver !== 'undefined') {
       ro = new ResizeObserver(() => size());
