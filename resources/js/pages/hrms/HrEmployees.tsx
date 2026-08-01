@@ -2237,7 +2237,7 @@ export default function HrEmployees() {
       header: 'Employee',
       id: 'name',
       accessorFn: (r: EmployeeRow) => r.name,
-      meta: { width: '16%' },
+      meta: { width: '15%' },
       cell: info => {
         const e = info.row.original;
         return (
@@ -2287,7 +2287,7 @@ export default function HrEmployees() {
          other ID column in the app. */
       header: 'Employee ID',
       accessorKey: 'id',
-      meta: { width: '8%' },
+      meta: { width: '7%' },
       cell: info => <IdCell value={info.getValue() as string} />,
     },
     {
@@ -2385,7 +2385,7 @@ export default function HrEmployees() {
     {
       header: 'Onboarding',
       accessorKey: 'onboarding',
-      meta: { width: '8%', align: 'center' },
+      meta: { width: '7%', align: 'center' },
       cell: info => {
         const status = info.row.original.onboarding;
         const ob = ONBOARDING_TONES[status];

@@ -6,7 +6,7 @@ import api from '../../api';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../components/ui/Tooltip';
 import { MasterSelect } from '../../components/ui/MasterSelect';
-import DataTable, { ActionCell, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ActionCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { TemplateRow, EmployeeCategory, RoleType, DocStatus, ROLE_TYPES } from './doc-templates/TemplateForm';
 import '../../../css/recruitment.css';
 
@@ -175,7 +175,11 @@ export default function HrDocumentTemplates() {
         const r = info.row.original;
         return (
           <>
-            <div className="dtm-tpl-name" style={{ fontWeight: 700 }}>{r.name}</div>
+            {/* One line, ellipsised, full name on hover. The cell is `wrap`
+                (the Approval pill needs a second line), so an over-long name
+                used to run straight across Version / Auto-Trigger — and a
+                pasted no-space name has nowhere to wrap even when it could. */}
+            <TruncCell value={r.name} className="dtm-tpl-name fw-bold" caseSensitive />
             {r.requires_manager_approval && (
               <div className="d-flex gap-1 mt-1">
                 <span className="dtm-approval-pill" style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontWeight: 700 }}>

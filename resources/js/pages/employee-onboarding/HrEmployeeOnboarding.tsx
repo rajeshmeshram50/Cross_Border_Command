@@ -632,7 +632,7 @@ export default function HrEmployeeOnboarding() {
       header: 'Employee',
       accessorKey: 'name',
       // wrap: the join date sits on a second line under the name.
-      meta: { width: '15%', wrap: true },
+      meta: { width: '13%', wrap: true },
       cell: info => {
         const r = info.row.original;
         return (
@@ -667,8 +667,8 @@ export default function HrEmployeeOnboarding() {
         );
       },
     },
-    { header: 'Emp ID', accessorKey: 'empId', meta: { width: '8%' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: '9%' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Emp ID', accessorKey: 'empId', meta: { width: '7%' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: '8%' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     { header: 'Designation', accessorKey: 'designation', meta: { width: '9%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
@@ -695,7 +695,7 @@ export default function HrEmployeeOnboarding() {
     {
       header: 'Rep. Manager',
       accessorKey: 'managerName',
-      meta: { width: '10%' },
+      meta: { width: '9%' },
       cell: info => {
         const r = info.row.original;
         /* Plain dash when there is no manager — rendering an avatar with a dash
@@ -727,7 +727,7 @@ export default function HrEmployeeOnboarding() {
          floating badge is not clipped by the cell. */
       header: 'Profile %',
       accessorKey: 'profile',
-      meta: { width: '9%', wrap: true },
+      meta: { width: '8%', wrap: true },
       cell: info => {
         const p = info.row.original.profile;
         const T = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
@@ -788,7 +788,12 @@ export default function HrEmployeeOnboarding() {
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { width: '13%', align: 'center', wrap: true },
+      /* 16% ≈ 240px at the table's 1500px floor, which is what the Edit square
+         (34) + gap (8) + the Initiate pill actually measure. At 13% the pair
+         was wider than its own cell, so `justify-content:center` overflowed it
+         evenly past both column edges (wrap:true leaves overflow visible) and
+         the buttons no longer lined up under the ACTION header. */
+      meta: { width: '16%', align: 'center', wrap: true },
       cell: info => {
         const r = info.row.original;
         if (tab === 'completed') {

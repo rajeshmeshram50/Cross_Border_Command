@@ -126,7 +126,7 @@ export default function HrExitManagement() {
       header: 'Employee',
       accessorKey: 'name',
       // wrap: the exit-state caption sits on a second line under the name.
-      meta: { width: '17%', wrap: true },
+      meta: { width: '16%', wrap: true },
       cell: info => {
         const e = info.row.original;
         const isScheduled = e.status === 'Active' && e.exitInitiated;
@@ -171,7 +171,7 @@ export default function HrExitManagement() {
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
     { header: 'Department',  accessorKey: 'department',  meta: { width: '9%' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: '10%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: '9%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
@@ -198,7 +198,7 @@ export default function HrExitManagement() {
     {
       header: 'Rep. Manager',
       accessorKey: 'managerName',
-      meta: { width: '11%' },
+      meta: { width: '10%' },
       cell: info => {
         const e = info.row.original;
         return (
