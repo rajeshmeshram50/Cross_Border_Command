@@ -1122,7 +1122,7 @@ export default function HrPayroll() {
     {
       header: 'Employee',
       accessorKey: 'name',
-      meta: { width: '30%' },
+      meta: { width: '26%' },
       cell: info => {
         const emp = info.row.original;
         const accent = '#7c5cfc';
@@ -1184,7 +1184,11 @@ export default function HrPayroll() {
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { width: '8%', align: 'center' },
+      /* 12%, not 8%: the "Set Salary" pill measures ~115px and the cell clips
+         (no `wrap`, so the td's overflow:hidden cuts it) the moment the column
+         is narrower than its content — at the table's 1200px floor 8% was only
+         ~96px, which is exactly how the label lost its tail at the table edge. */
+      meta: { width: '12%', align: 'center' },
       cell: info => {
         const emp = info.row.original;
         return (
@@ -1733,7 +1737,10 @@ export default function HrPayroll() {
                 columns={rosterColumns}
                 accent="violet"
                 autoFitRows
-                minWidth={1100}
+                /* Floor raised 1100 → 1200 so the Action column's 12% still
+                   clears the Set Salary pill on a narrow window; below that the
+                   wrapper scrolls horizontally instead of crushing the button. */
+                minWidth={1200}
                 loading={rosterLoading}
                 searchPlaceholder="Search employee, ID, department…"
                 emptyMessage={

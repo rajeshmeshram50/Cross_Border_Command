@@ -464,6 +464,12 @@ export default function HrHoliday() {
               columns={columns}
               serial
               accent="violet"
+              /* fitToViewport + autoFitRows together: the card stretches to the
+                 bottom of the window and the page size is measured from the
+                 space that leaves, so the pager sits pinned at the bottom
+                 instead of floating under a short list. Same pairing as the
+                 Employee Onboarding hub. */
+              fitToViewport
               autoFitRows
               minWidth={1250}
               loading={loading}

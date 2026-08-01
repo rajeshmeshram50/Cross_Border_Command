@@ -4,7 +4,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import {
   flexRender,
@@ -572,6 +574,29 @@ export const titleCase = (s: string): string => {
   return idx === -1 ? s : s.slice(0, idx) + s[idx].toUpperCase() + s.slice(idx + 1);
 };
 
+/** True while the referenced element's text is visually cut by its own box.
+ *  Measured from the DOM (scrollWidth vs clientWidth) rather than guessed from
+ *  a character count, so it stays right at any column width or zoom level.
+ *  A ResizeObserver keeps it honest when the *column* resizes without the
+ *  window doing so (tab switch, data load, sidebar collapse). */
+export function useIsClipped(ref: RefObject<HTMLElement | null>, value: unknown) {
+  const [clipped, setClipped] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    const measure = () => { const n = ref.current; if (n) setClipped(n.scrollWidth > n.clientWidth + 1); };
+    measure();
+    window.addEventListener('resize', measure);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (el && ro) ro.observe(el);
+    return () => {
+      window.removeEventListener('resize', measure);
+      ro?.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return clipped;
+}
+
 /** One-line cell that ellipsises and shows the full value on hover.
  *  The tooltip fires when the text is cut by EITHER the `max` char cap or the
  *  column width — the visual clip is measured from the DOM, because a 29-char
@@ -591,20 +616,40 @@ export function TruncCell({
   dash?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const [clipped, setClipped] = useState(false);
   const raw = value === null || value === undefined ? '' : String(value).trim();
   const v = raw ? (caseSensitive ? raw : titleCase(raw)) : '';
-  useEffect(() => {
-    const measure = () => { const el = ref.current; if (el) setClipped(el.scrollWidth > el.clientWidth + 1); };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [v]);
+  const clipped = useIsClipped(ref, v);
   if (!raw) return <span className="dt-dash">{dash}</span>;
   const capped = v.length > max;
   const shown = capped ? `${v.slice(0, max)}…` : v;
   const inner = <span ref={ref} className={`dt-trunc ${className ?? ''}`}>{shown}</span>;
   return capped || clipped ? <Tooltip label={v}>{inner}</Tooltip> : inner;
+}
+
+/** Pill variant of TruncCell — for columns whose value is rendered as a chip
+ *  (role, tag, category). The chip keeps whatever colours the page gives it
+ *  via `className`; this only guarantees the label ellipsises INSIDE the pill
+ *  at the column edge instead of spilling under the next column, and that the
+ *  full value is reachable on hover once it's actually cut. */
+export function ChipCell({
+  value,
+  className,
+  style,
+  dash = '—',
+}: {
+  value?: string | number | null;
+  /** The page's own chip class(es), e.g. `exit-role-chip exit-role-chip--primary`. */
+  className?: string;
+  /** Inline chip colours, for pages that tint per value (role → palette). */
+  style?: CSSProperties;
+  dash?: string;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const v = value === null || value === undefined ? '' : String(value).trim();
+  const clipped = useIsClipped(ref, v);
+  if (!v) return <span className="dt-dash">{dash}</span>;
+  const chip = <span ref={ref} className={`dt-chip-trunc ${className ?? ''}`} style={style}>{v}</span>;
+  return clipped ? <Tooltip label={v}>{chip}</Tooltip> : chip;
 }
 
 /** Monospace code chip — customer/consignee/lead IDs, PO numbers. */
