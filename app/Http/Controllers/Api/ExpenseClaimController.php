@@ -354,6 +354,28 @@ class ExpenseClaimController extends Controller
     }
 
     /**
+     * Stream the proof-of-payment file attached to one settlement installment.
+     * Auth via query token (?token=<sanctum>) so plain link-clicks work.
+     */
+    public function downloadPaymentProof(Request $request, $paymentId)
+    {
+        $this->authenticateFromQueryToken($request);
+
+        $payment = \App\Models\ExpenseClaimPayment::findOrFail($paymentId);
+        $claim   = ExpenseClaim::findOrFail($payment->expense_claim_id);
+        $this->ensureTenantAccess($claim, $request->user());
+
+        if (empty($payment->proof_path)) {
+            abort(404, 'No proof of payment was attached to this settlement.');
+        }
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (!$disk->exists($payment->proof_path)) {
+            abort(404, 'Proof file is missing on the server.');
+        }
+        return $disk->response($payment->proof_path, $payment->proof_name ?: basename($payment->proof_path));
+    }
+
+    /**
      * Resolve the request user from `?token=<sanctum>` so direct browser
      * link-clicks work without sending an Authorization header. Mirrors
      * CandidateController::authenticateFromQueryToken.
@@ -784,8 +806,10 @@ class ExpenseClaimController extends Controller
 
         return response()->json([
             'id'                => $row->id,
+            'claim_no'          => $row->claim_no ?: ('#' . $row->id),
             'title'             => $row->title,
             'employee_name'     => $row->employee_name ?: $row->employee?->display_name,
+            'expense_date'      => optional($row->expense_date)->format('Y-m-d'),
             'currency'          => $row->currency,
             'claimed_amount'    => (float) $row->amount,
             'category_id'       => $row->category_id,
@@ -793,12 +817,23 @@ class ExpenseClaimController extends Controller
             'sanctioned_amount' => $row->sanctioned_amount !== null ? (float) $row->sanctioned_amount : null,
             'deduction_amount'  => (float) $row->deduction_amount,
             'deduction_reason'  => $row->deduction_reason,
+            'deductions'        => collect($row->deductions ?? [])->map(fn ($d) => [
+                'amount' => (float) ($d['amount'] ?? 0),
+                'reason' => (string) ($d['reason'] ?? ''),
+            ])->values()->all(),
             'total_paid'        => (float) $row->total_paid,
             'remaining_amount'  => $row->sanctioned_amount !== null
                 ? round((float) $row->sanctioned_amount - (float) $row->total_paid, 2)
                 : null,
             'settlement_status' => $row->settlement_status ?: 'unpaid',
             'status'            => $row->status,
+            // The employee's uploaded proof/receipt documents — shown in the form so
+            // the payer can verify before recording the payment. Tokenised route.
+            'attachments'       => collect($row->attachments ?? [])->values()->map(fn ($a, $i) => [
+                'name' => $a['name'] ?? ('Attachment ' . ($i + 1)),
+                'size' => $a['size'] ?? null,
+                'url'  => url("/api/expense-claims/{$row->id}/attachments/{$i}"),
+            ])->all(),
             'payments'          => $row->payments->map(fn ($p) => [
                 'id'           => $p->id,
                 'amount'       => (float) $p->amount,
@@ -806,9 +841,83 @@ class ExpenseClaimController extends Controller
                 'payment_type' => $p->payment_type,
                 'expense_type' => $p->expense_type,
                 'note'         => $p->note,
+                'proof_name'   => $p->proof_name,
+                'proof_url'    => $p->proof_path ? url("/api/expense-claims/payments/{$p->id}/proof") : null,
                 'paid_by_name' => $p->payer?->name,
                 'paid_at'      => optional($p->paid_at)->toIso8601String(),
             ])->all(),
+        ]);
+    }
+
+    /**
+     * POST /expense-claims/{id}/set-deductions
+     * Lock the ONE-TIME deduction on an approved claim WITHOUT recording a payment.
+     * Computes the sanctioned amount (claim − Σ deductions) and freezes it so every
+     * later payment pays against a fixed net-payable. Can only run before the first
+     * payment (i.e. while the sanctioned amount is still unset).
+     *
+     * Body: deductions[] (each { amount, reason }).
+     */
+    public function setDeductions(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = ExpenseClaim::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+        $this->guardHrPermission($user, 'can_approve');
+
+        if ($row->status !== 'approved') {
+            abort(409, 'Only an approved claim can be settled. Approve it first.');
+        }
+        if ($row->sanctioned_amount !== null) {
+            abort(409, 'The deduction is already locked for this claim.');
+        }
+
+        $data = $request->validate([
+            'deductions'          => ['nullable', 'array'],
+            'deductions.*.amount' => ['required_with:deductions', 'numeric', 'min:0'],
+            'deductions.*.reason' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $deductionRows = [];
+        $deduction     = 0.0;
+        foreach ((array) ($data['deductions'] ?? []) as $d) {
+            $amt = round((float) ($d['amount'] ?? 0), 2);
+            if ($amt <= 0.005) continue;
+            if (empty(trim((string) ($d['reason'] ?? '')))) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Each deduction needs a reason.',
+                    'errors'  => ['deductions' => ['Every deduction must have a reason.']],
+                ], 422);
+            }
+            $deductionRows[] = ['amount' => $amt, 'reason' => trim((string) $d['reason'])];
+            $deduction += $amt;
+        }
+        $deduction = round($deduction, 2);
+        if ($deduction > (float) $row->amount - 0.005) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Total deductions cannot equal or exceed the claimed amount.',
+                'errors'  => ['deductions' => ['Deductions are too high — nothing left to pay.']],
+            ], 422);
+        }
+
+        $row->sanctioned_amount = round((float) $row->amount - $deduction, 2);
+        $row->deduction_amount  = max(0, $deduction);
+        $row->deductions        = $deductionRows;
+        $row->deduction_reason  = $deductionRows
+            ? implode(' · ', array_map(fn ($d) => number_format($d['amount'], 2) . ': ' . $d['reason'], $deductionRows))
+            : null;
+        if (($row->settlement_status ?? 'unpaid') === 'unpaid') {
+            $row->settlement_status = 'unpaid';
+        }
+        $row->save();
+
+        $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
+        return response()->json([
+            'status'  => true,
+            'message' => 'Deduction locked — net payable ₹' . number_format((float) $row->sanctioned_amount, 2) . '. Add a payment to disburse.',
+            'data'    => $this->serialize($row),
         ]);
     }
 
@@ -839,27 +948,51 @@ class ExpenseClaimController extends Controller
         $firstPayment = $row->sanctioned_amount === null;
 
         $data = $request->validate([
-            // Sanctioned amount is set ONCE (first payment). Can't exceed the claim.
-            'sanctioned_amount' => [$firstPayment ? 'required' : 'nullable', 'numeric', 'min:0.01', 'max:' . (float) $row->amount],
-            'deduction_reason'  => ['nullable', 'string', 'max:1000'],
-            'amount'            => ['required', 'numeric', 'min:0.01'],
-            'category_id'       => ['nullable', 'integer'],
-            'payment_type'      => ['required', 'string', 'in:Cash,Cheque,UPI'],
-            'expense_type'      => ['required', 'string', 'in:Goods,Service'],
-            'note'              => ['nullable', 'string', 'max:1000'],
+            // Itemised deductions (first payment only) — each has an amount + reason.
+            // The sanctioned amount is derived as claim − Σ deductions.
+            'deductions'          => ['nullable', 'array'],
+            'deductions.*.amount' => ['required_with:deductions', 'numeric', 'min:0'],
+            'deductions.*.reason' => ['nullable', 'string', 'max:500'],
+            'amount'              => ['required', 'numeric', 'min:0.01'],
+            'category_id'         => ['nullable', 'integer'],
+            // Payment method used to disburse the reimbursement.
+            'payment_type'        => ['required', 'string', 'in:Cash,Cheque,UPI,PhonePe,Bank Transfer'],
+            'expense_type'        => ['required', 'string', 'in:Goods,Service'],
+            'note'                => ['nullable', 'string', 'max:1000'],
+            // Proof of payment — the receipt / transfer confirmation (optional).
+            'proof'               => ['nullable', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
         ]);
 
-        // Resolve the sanctioned amount (fixed on the first payment).
-        $sanctioned = $firstPayment ? round((float) $data['sanctioned_amount'], 2) : (float) $row->sanctioned_amount;
-        $deduction  = round((float) $row->amount - $sanctioned, 2);
-
-        if ($firstPayment && $deduction > 0.005 && empty($data['deduction_reason'])) {
-            return response()->json([
-                'status'  => false,
-                'message' => 'A reason is required when the sanctioned amount is less than the claimed amount.',
-                'errors'  => ['deduction_reason' => ['Deduction reason is required.']],
-            ], 422);
+        // Normalise deductions (first payment): keep only rows with amount > 0, and
+        // require a reason for each. Total deduction can't wipe out the whole claim.
+        $deductionRows = [];
+        $deduction     = 0.0;
+        if ($firstPayment) {
+            foreach ((array) ($data['deductions'] ?? []) as $d) {
+                $amt = round((float) ($d['amount'] ?? 0), 2);
+                if ($amt <= 0.005) continue;
+                if (empty(trim((string) ($d['reason'] ?? '')))) {
+                    return response()->json([
+                        'status'  => false,
+                        'message' => 'Each deduction needs a reason.',
+                        'errors'  => ['deductions' => ['Every deduction must have a reason.']],
+                    ], 422);
+                }
+                $deductionRows[] = ['amount' => $amt, 'reason' => trim((string) $d['reason'])];
+                $deduction += $amt;
+            }
+            $deduction = round($deduction, 2);
+            if ($deduction > (float) $row->amount - 0.005) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Total deductions cannot equal or exceed the claimed amount.',
+                    'errors'  => ['deductions' => ['Deductions are too high — nothing left to pay.']],
+                ], 422);
+            }
         }
+
+        // Sanctioned = claim − Σ deductions (fixed on the first payment).
+        $sanctioned = $firstPayment ? round((float) $row->amount - $deduction, 2) : (float) $row->sanctioned_amount;
 
         $pay       = round((float) $data['amount'], 2);
         $remaining = round($sanctioned - (float) $row->total_paid, 2);
@@ -879,11 +1012,25 @@ class ExpenseClaimController extends Controller
             if ($cat) $categoryName = $cat->name;
         }
 
-        DB::transaction(function () use ($row, $user, $firstPayment, $sanctioned, $deduction, $data, $pay, $categoryId, $categoryName) {
+        // Proof of payment — stored on the public disk; only name/path are kept and
+        // the URL is built per-request (query-token route) like the claim attachments.
+        $proofPath = null;
+        $proofName = null;
+        if ($request->hasFile('proof')) {
+            $f = $request->file('proof');
+            $proofName = $f->getClientOriginalName();
+            $proofPath = $f->store('expense_claim_payments/' . $row->id, 'public');
+        }
+
+        DB::transaction(function () use ($row, $user, $firstPayment, $sanctioned, $deduction, $deductionRows, $pay, $data, $categoryId, $categoryName, $proofPath, $proofName) {
             if ($firstPayment) {
                 $row->sanctioned_amount = $sanctioned;
                 $row->deduction_amount  = max(0, $deduction);
-                $row->deduction_reason  = $deduction > 0.005 ? ($data['deduction_reason'] ?? null) : null;
+                $row->deductions        = $deductionRows;
+                // A combined reason string kept for legacy display / audit.
+                $row->deduction_reason  = $deductionRows
+                    ? implode(' · ', array_map(fn ($d) => number_format($d['amount'], 2) . ': ' . $d['reason'], $deductionRows))
+                    : null;
             }
 
             \App\Models\ExpenseClaimPayment::create([
@@ -896,6 +1043,8 @@ class ExpenseClaimController extends Controller
                 'payment_type'     => $data['payment_type'],
                 'expense_type'     => $data['expense_type'],
                 'note'             => $data['note'] ?? null,
+                'proof_path'       => $proofPath,
+                'proof_name'       => $proofName,
                 'paid_by'          => $user->id,
                 'paid_at'          => now(),
             ]);

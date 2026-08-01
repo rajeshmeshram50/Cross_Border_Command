@@ -22,7 +22,7 @@ class ExpenseClaim extends Model
         'hr_status', 'hr_user_id', 'hr_acted_at', 'hr_comment',
         'created_by',
         // Settlement (post-approval payment)
-        'sanctioned_amount', 'deduction_amount', 'deduction_reason',
+        'sanctioned_amount', 'deduction_amount', 'deduction_reason', 'deductions',
         'total_paid', 'settlement_status', 'settled_at',
     ];
 
@@ -34,6 +34,7 @@ class ExpenseClaim extends Model
         'attachments'      => 'array',
         'sanctioned_amount' => 'decimal:2',
         'deduction_amount'  => 'decimal:2',
+        'deductions'        => 'array',
         'total_paid'        => 'decimal:2',
         'settled_at'        => 'datetime',
     ];

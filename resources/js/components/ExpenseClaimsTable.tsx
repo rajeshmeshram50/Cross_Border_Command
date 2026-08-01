@@ -91,6 +91,23 @@ const STATUS_TONE: Record<ExpenseClaimRow['status'], { bg: string; fg: string; d
   rejected: { bg: '#fdd9ea', fg: '#a02960', dot: '#ef4444', label: 'Rejected' },
 };
 
+/* Payment (settlement) status pill — only meaningful once a claim is approved.
+   'paid' → Complete, 'partial' → Partial, otherwise Pending. Non-approved
+   claims show a muted dash since there's nothing to reimburse yet. */
+const PAY_TONE: Record<'paid' | 'partial' | 'pending', { bg: string; fg: string; icon: string; label: string }> = {
+  paid:    { bg: '#d6f4e3', fg: '#108548', icon: 'ri-checkbox-circle-line', label: 'Complete' },
+  partial: { bg: '#fde8c4', fg: '#a4661c', icon: 'ri-progress-4-line',      label: 'Partial'  },
+  pending: { bg: '#fdd9d6', fg: '#b1401d', icon: 'ri-time-line',            label: 'Pending'  },
+};
+
+function paymentStatusOf(c: ExpenseClaimRow): 'paid' | 'partial' | 'pending' | null {
+  if (c.status !== 'approved') return null;
+  const s = c.settlement_status ?? 'unpaid';
+  if (s === 'paid') return 'paid';
+  if (s === 'partial') return 'partial';
+  return 'pending';
+}
+
 /* Dark-mode badge tints. The EXP ID / Category / Status pills set light pastel
    backgrounds via inline styles (fine in light mode), which washed out to
    bright chips on the dark table. These rules override only in dark mode
@@ -108,6 +125,9 @@ const BADGE_DARK_CSS = `
 [data-bs-theme="dark"] .exp-status-badge--pending  { background: #3a2a08 !important; color: #fbbf24 !important; }
 [data-bs-theme="dark"] .exp-status-badge--approved { background: #0c2e1d !important; color: #4ade80 !important; }
 [data-bs-theme="dark"] .exp-status-badge--rejected { background: #3a0e1e !important; color: #f9a8d4 !important; }
+[data-bs-theme="dark"] .exp-pay-badge--paid    { background: #0c2e1d !important; color: #4ade80 !important; }
+[data-bs-theme="dark"] .exp-pay-badge--partial { background: #3a2a08 !important; color: #fbbf24 !important; }
+[data-bs-theme="dark"] .exp-pay-badge--pending { background: #3a1608 !important; color: #fdba74 !important; }
 `;
 
 function fmtDate(iso: string | null | undefined): string {
@@ -212,7 +232,7 @@ export function expenseClaimColumns({
     {
       header: 'Description',
       accessorKey: 'title',
-      meta: { width: '18%' },
+      meta: { width: '14%' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive max={70} />,
     },
     {
@@ -258,6 +278,27 @@ export function expenseClaimColumns({
             style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: tone.bg, color: tone.fg }}
           >
             {tone.label}
+          </span>
+        );
+      },
+    },
+    {
+      header: () => <div className="text-center">Payment Status</div>,
+      id: 'payment_status',
+      enableSorting: false,
+      accessorFn: (c: ExpenseClaimRow) => paymentStatusOf(c) ?? '',
+      meta: { width: '11%', align: 'center' },
+      cell: info => {
+        const ps = paymentStatusOf(info.row.original);
+        if (!ps) return <span className="text-muted">—</span>;
+        const t = PAY_TONE[ps];
+        return (
+          <span
+            className={`d-inline-flex align-items-center gap-1 fw-semibold exp-pay-badge exp-pay-badge--${ps}`}
+            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: t.bg, color: t.fg }}
+          >
+            <i className={t.icon} />
+            {t.label}
           </span>
         );
       },
@@ -352,13 +393,15 @@ function ExpenseActionCell({
     && c.hr_status === 'pending'
     && !!onAct;
 
-  // Record Payment (settlement) — an approved claim that isn't fully paid yet.
+  // Record Payment / View history (settlement) — available on any approved claim.
+  // When it's already fully paid the button flips to a "view history" affordance
+  // (still opens the same modal) so the payment record stays reachable.
   const canSettle =
     mode === 'hr'
     && canHrApprove
     && c.status === 'approved'
-    && (c.settlement_status ?? 'unpaid') !== 'paid'
     && !!onRecordPayment;
+  const settleDone = (c.settlement_status ?? 'unpaid') === 'paid';
 
   const verdictBtn = (stage: 'manager' | 'hr', verdict: 'approve' | 'reject') => (
     <button
@@ -388,14 +431,17 @@ function ExpenseActionCell({
         {canSettle && (
           <button
             type="button"
-            data-tooltip={(c.settlement_status ?? 'unpaid') === 'partial' ? 'Record another payment' : 'Record payment'}
+            data-tooltip={settleDone ? 'View payment history' : (c.settlement_status ?? 'unpaid') === 'partial' ? 'Record another payment' : 'Record payment'}
             data-tooltip-pos="left"
-            aria-label="Record payment"
+            aria-label={settleDone ? 'View payment history' : 'Record payment'}
             onClick={() => onRecordPayment?.(c)}
             className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-            style={{ width: 28, height: 28, padding: 0, background: 'linear-gradient(135deg,#f7b84b,#f59e0b)', color: '#fff', border: 'none' }}
+            style={{
+              width: 28, height: 28, padding: 0, color: '#fff', border: 'none',
+              background: settleDone ? 'linear-gradient(135deg,#0ab39c,#02c8a7)' : 'linear-gradient(135deg,#f7b84b,#f59e0b)',
+            }}
           >
-            <i className="ri-bank-card-line" />
+            <i className={settleDone ? 'ri-history-line' : 'ri-bank-card-line'} />
           </button>
         )}
         <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} claim={c} />

@@ -142,7 +142,7 @@ export default function HrExpenseManagement() {
   const [module, setModule] = useState<'expense' | 'advance'>('expense');
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
-  const [analyticsOpen, setAnalyticsOpen] = useState(true);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   useEffect(() => {

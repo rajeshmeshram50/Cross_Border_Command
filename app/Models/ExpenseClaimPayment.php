@@ -21,6 +21,7 @@ class ExpenseClaimPayment extends Model
         'client_id', 'branch_id', 'expense_claim_id',
         'amount', 'category_id', 'category_name',
         'payment_type', 'expense_type', 'note',
+        'proof_path', 'proof_name',
         'paid_by', 'paid_at',
     ];
 
