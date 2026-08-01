@@ -1051,6 +1051,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
             <th>Document Name</th>
             <th>{codeLbl}</th>
             <th>{authorityLbl}</th>
+            <th>Requirement</th>
             <th>Expiry</th>
             <th>Attachment</th>
             <th>Status</th>
@@ -1059,13 +1060,20 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={8} className="cev-empty">No documents in this bucket yet.</td></tr>
+            <tr><td colSpan={9} className="cev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
             <tr key={`${d.doc_code ?? 'doc'}-${i}`}>
               <td>{i + 1}</td>
               <td className="cev-doc-name">{d.name}</td>
               <td className="cev-mono">{d.reference || d.doc_code || '—'}</td>
               <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
+              <td>
+                {d.requirement === 'M' ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                )}
+              </td>
               <td>{evFmtExpiry(d.expiry)}</td>
               <td>
                 {d.attachment_url ? (

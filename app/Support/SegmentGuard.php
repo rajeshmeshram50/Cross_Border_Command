@@ -168,6 +168,13 @@ class SegmentGuard
     public const PI_IGNORED = ['cancelled'];
 
     /**
+     * Quotation statuses that DON'T lock a segment. A quotation is soft-deleted
+     * by setting status = 'cancelled' (rows are never hard-deleted), so a
+     * cancelled quote is void and is the only state that doesn't count.
+     */
+    public const QT_IGNORED = ['cancelled'];
+
+    /**
      * Purchase-Order statuses that count as an issued/committed reference for a
      * supplier's segment (a Draft/Pending PO is not yet committed).
      */
@@ -228,19 +235,20 @@ class SegmentGuard
             return array_values(array_unique(array_merge($poNames, $spiNames)));
         }
 
-        // Customer / Consignee: which PI column identifies the party.
-        $piCol = $partyType === \App\Models\Consignee::class ? 'consignee_id'
+        // Customer / Consignee: which party column identifies the party (same
+        // column name on both quotations and proforma_invoices).
+        $partyCol = $partyType === \App\Models\Consignee::class ? 'consignee_id'
             : ($partyType === \App\Models\Customer::class ? 'customer_id' : null);
-        if ($piCol === null) return [];
+        if ($partyCol === null) return [];
 
         // Segments of the products on this party's PIs — a PI counts if it is not
         // cancelled OR it has a Shipment (Stage-6 won).
-        return \Illuminate\Support\Facades\DB::table('proforma_invoices as pi')
+        $piNames = \Illuminate\Support\Facades\DB::table('proforma_invoices as pi')
             ->join('proforma_invoice_items as pii', 'pii.proforma_invoice_id', '=', 'pi.id')
             ->join('products as p', 'p.id', '=', 'pii.product_id')
             ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
             ->where('pi.client_id', $clientId)
-            ->where('pi.' . $piCol, $partyId)
+            ->where('pi.' . $partyCol, $partyId)
             ->where(function ($q) {
                 $q->whereNotIn('pi.status', self::PI_IGNORED)
                   ->orWhereExists(function ($s) {
@@ -250,6 +258,22 @@ class SegmentGuard
             ->distinct()
             ->pluck('cs.name')
             ->all();
+
+        // Segments of the products on this party's QUOTATIONS — a quotation locks
+        // the segment too (a Stage-5 quote already commits the product/segment,
+        // before any PI/Shipment). Cancelled quotes are ignored (soft-delete).
+        $qtNames = \Illuminate\Support\Facades\DB::table('quotations as q')
+            ->join('quotation_items as qi', 'qi.quotation_id', '=', 'q.id')
+            ->join('products as p', 'p.id', '=', 'qi.product_id')
+            ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
+            ->where('q.client_id', $clientId)
+            ->where('q.' . $partyCol, $partyId)
+            ->whereNotIn('q.status', self::QT_IGNORED)
+            ->distinct()
+            ->pluck('cs.name')
+            ->all();
+
+        return array_values(array_unique(array_merge($piNames, $qtNames)));
     }
 
     /**

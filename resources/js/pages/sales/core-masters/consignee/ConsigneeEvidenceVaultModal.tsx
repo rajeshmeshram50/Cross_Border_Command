@@ -66,6 +66,9 @@ export interface VaultDoc {
    *  that came from a completed Zoho Sign request; renders the
    *  certificate icon button in the Actions column. */
   certificate_url?: string | null;
+  /** Mandatory / Optional per the segment DCP rules — drives the
+   *  Requirement column (matches the Customer vault's table). */
+  requirement?: 'M' | 'O' | null;
 }
 
 export interface VaultShipmentRow {
@@ -970,13 +973,14 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
             <th>Document Name</th>
             <th>{numberHeader}</th>
             <th>{authorityLbl}</th>
+            <th>Requirement</th>
             <th>Attachment</th>
             <th style={{ width: 140 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={6} className="cnev-empty">No documents in this bucket yet.</td></tr>
+            <tr><td colSpan={7} className="cnev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
             <tr key={d.id}>
               <td>{i + 1}</td>
@@ -989,6 +993,13 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               </Tooltip>
               <td className="cnev-mono">{d.reference || '—'}</td>
               <td>{d.authority && d.authority !== '—' ? <Tooltip label={d.authority}><span>{d.authority.length > 25 ? d.authority.slice(0, 25) + '…' : d.authority}</span></Tooltip> : '—'}</td>
+              <td>
+                {d.requirement === 'M' ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 800, background: '#dcfce7', color: '#15803d', border: '1px solid #bbf7d0', whiteSpace: 'nowrap' }}>★ Mandatory</span>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
+                )}
+              </td>
               <td>
                 {d.attachment ? (
                   d.attachment_url ? (
