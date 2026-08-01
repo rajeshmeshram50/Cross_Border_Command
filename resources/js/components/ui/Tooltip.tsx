@@ -140,8 +140,14 @@ export default function Tooltip({
   // be silently broken — the resulting plain object isn't a real React
   // element, so React rendered it without the handlers and the
   // tooltip never showed up). cloneElement does the right thing.
-  const originalChildRef = (children as any).ref;
+  // React 19 passes `ref` as a regular prop; `element.ref` only still resolves
+  // through a dev-only compatibility getter (which also warns). Reading
+  // props.ref FIRST keeps the caller's own ref alive in production builds —
+  // without it, a child that measures itself (TruncCell / ChipCell checking
+  // scrollWidth to decide whether to tooltip at all) got a null ref once
+  // bundled, so truncated values silently lost their hover reveal.
   const childProps = (children as any).props ?? {};
+  const originalChildRef = childProps.ref ?? (children as any).ref;
   const childWithProps = cloneElement(children, {
     ref: (node: HTMLElement) => {
       triggerRef.current = node;

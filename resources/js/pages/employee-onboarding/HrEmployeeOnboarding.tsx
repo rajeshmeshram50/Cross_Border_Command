@@ -14,7 +14,7 @@ import HeaderFooterPanel, {
 } from '../hrms/doc-templates/HeaderFooterPanel';
 import DocGenerateModal from '../hrms/doc-templates/DocGenerateModal';
 import Tooltip from '../../components/ui/Tooltip';
-import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
@@ -673,14 +673,16 @@ export default function HrEmployeeOnboarding() {
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
-      meta: { width: '8%' },
-      cell: info => <span className="onb-role-pill">{String(info.getValue() ?? '')}</span>,
+      meta: { width: '9%' },
+      /* Long role names ellipsise inside the pill and reveal on hover instead
+         of spilling under the next column — same contract as Designation. */
+      cell: info => <ChipCell value={info.getValue() as string} className="onb-role-pill" />,
     },
     {
       header: 'Ancillary Role',
       id: 'ancillary',
       enableSorting: false,
-      meta: { width: '7%' },
+      meta: { width: '9%' },
       cell: info => {
         const r = info.row.original;
         return (

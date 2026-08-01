@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Card, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import Tooltip from '../../components/ui/Tooltip';
-import DataTable, { IdCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ChipCell, IdCell, TruncCell, useIsClipped, type DataTableColumn } from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -2305,16 +2305,18 @@ export default function HrEmployees() {
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
-      meta: { width: '8%' },
+      meta: { width: '9%' },
+      /* Role names run long ("Software Development", "Training Coordinator")
+         and the column is narrow — ChipCell ellipsises inside the pill and
+         reveals the full name on hover, same contract as Designation. */
       cell: info => {
         const t = tone(info.row.original.primaryRole, isDark);
         return (
-          <span
-            className="d-inline-flex align-items-center fw-semibold hr-emp-row-pill"
+          <ChipCell
+            value={info.row.original.primaryRole}
+            className="fw-semibold hr-emp-row-pill"
             style={{ fontSize: 11, padding: '4px 10px', borderRadius: 999, background: t.bg, color: t.fg }}
-          >
-            {info.row.original.primaryRole}
-          </span>
+          />
         );
       },
     },
@@ -2322,7 +2324,7 @@ export default function HrEmployees() {
       header: 'Ancillary Role',
       id: 'ancillaryRoles',
       enableSorting: false,
-      meta: { width: '7%' },
+      meta: { width: '9%' },
       cell: info => <AncillaryRolesChip names={info.row.original.ancillaryRoles} />,
     },
     {
@@ -4490,6 +4492,12 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+  // Only the FIRST role is shown as a pill, and role names ("Sales Employee",
+  // "Software Development") routinely outrun this narrow column. Measure the
+  // pill and tooltip it once the name is actually cut, so a truncated role is
+  // never a dead end. Same treatment as the shared AncillaryRolesChip.
+  const firstRef = useRef<HTMLSpanElement>(null);
+  const firstClipped = useIsClipped(firstRef, names?.[0]);
 
   const place = () => {
     const b = btnRef.current?.getBoundingClientRect();
@@ -4535,19 +4543,34 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
 
   return (
     <>
-      <span className="d-inline-flex align-items-center gap-1">
-        <span
-          className="d-inline-flex align-items-center fw-semibold hr-emp-row-pill"
-          style={{
-            fontSize: 11,
-            padding: '4px 10px',
-            borderRadius: 999,
-            background: firstTone.bg,
-            color: firstTone.fg,
-          }}
-        >
-          {first}
-        </span>
+      <span className="d-inline-flex align-items-center gap-1" style={{ maxWidth: '100%', minWidth: 0 }}>
+        <Tooltip label={first} disabled={!firstClipped}>
+          <span
+            ref={firstRef}
+            className="fw-semibold hr-emp-row-pill"
+            style={{
+              /* inline-block + ellipsis: the pill shrinks to the column and
+                 cuts its own label cleanly instead of overflowing the cell. */
+              display: 'inline-block',
+              maxWidth: '100%',
+              /* Flex items default to min-width:auto, which refuses to shrink
+                 below the text's own width — without this the pill just
+                 overflows the cell and the ellipsis never appears. */
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              verticalAlign: 'middle',
+              fontSize: 11,
+              padding: '4px 10px',
+              borderRadius: 999,
+              background: firstTone.bg,
+              color: firstTone.fg,
+            }}
+          >
+            {first}
+          </span>
+        </Tooltip>
         {rest.length > 0 && (
           <button
             ref={btnRef}
@@ -4565,6 +4588,9 @@ function AncillaryRolesChip({ names }: { names: string[] }) {
               cursor: 'pointer',
               transition: 'background .15s ease, color .15s ease',
               lineHeight: 1.1,
+              /* The pill next to it shrinks; the +N counter never does —
+                 otherwise "+2" itself gets squeezed into "+…". */
+              flexShrink: 0,
             }}
           >
             +{rest.length}

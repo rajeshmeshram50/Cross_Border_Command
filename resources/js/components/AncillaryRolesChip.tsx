@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTheme } from '../contexts/ThemeContext';
+import { useIsClipped } from './ui/DataTable';
+import Tooltip from './ui/Tooltip';
 
 // Role → tone palette. Same shape and defaults as HrEmployees.tsx so the
 // chip looks identical wherever it's mounted (Employees, Onboarding,
@@ -60,6 +62,12 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+  // The visible pill is the first role only, and role names ("Sales Employee",
+  // "Software Developer") routinely outrun a 9%-wide column. Measure the pill
+  // and hang a tooltip on it once the name is actually cut, so a truncated
+  // role is never a dead end.
+  const firstRef = useRef<HTMLSpanElement>(null);
+  const firstClipped = useIsClipped(firstRef, names?.[0]);
 
   // Recompute the popover anchor whenever it opens. Clamp to the viewport
   // so it never falls off the edge on the right.
@@ -107,19 +115,34 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
 
   return (
     <>
-      <span className="d-inline-flex align-items-center gap-1">
-        <span
-          className="d-inline-flex align-items-center fw-semibold"
-          style={{
-            fontSize: 11,
-            padding: '4px 10px',
-            borderRadius: 999,
-            background: firstTone.bg,
-            color: firstTone.fg,
-          }}
-        >
-          {first}
-        </span>
+      <span className="d-inline-flex align-items-center gap-1" style={{ maxWidth: '100%', minWidth: 0 }}>
+        <Tooltip label={first} disabled={!firstClipped}>
+          <span
+            ref={firstRef}
+            className="fw-semibold"
+            style={{
+              /* inline-block + ellipsis: the pill shrinks to the column and
+                 cuts its own label cleanly instead of overflowing the cell. */
+              display: 'inline-block',
+              maxWidth: '100%',
+              /* Flex items default to min-width:auto, which refuses to shrink
+                 below the text's own width — without this the pill just
+                 overflows the cell and the ellipsis never appears. */
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              verticalAlign: 'middle',
+              fontSize: 11,
+              padding: '4px 10px',
+              borderRadius: 999,
+              background: firstTone.bg,
+              color: firstTone.fg,
+            }}
+          >
+            {first}
+          </span>
+        </Tooltip>
         {rest.length > 0 && (
           <button
             ref={btnRef}
@@ -137,6 +160,9 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
               cursor: 'pointer',
               transition: 'background .15s ease, color .15s ease',
               lineHeight: 1.1,
+              /* The pill next to it shrinks; the +N counter never does —
+                 otherwise "+2" itself gets squeezed into "+…". */
+              flexShrink: 0,
             }}
           >
             +{rest.length}

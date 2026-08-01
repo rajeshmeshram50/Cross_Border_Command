@@ -5,7 +5,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
-import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import Tooltip from '../../components/ui/Tooltip';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
 import '../../../css/recruitment.css';
@@ -175,14 +175,17 @@ export default function HrExitManagement() {
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
-      meta: { width: '8%' },
-      cell: info => <span className="exit-role-chip exit-role-chip--primary">{String(info.getValue() ?? '')}</span>,
+      meta: { width: '9%' },
+      /* Role names run long ("Software Developer", "Sales Intern") and the
+         column is narrow — ChipCell ellipsises inside the pill and reveals
+         the full name on hover, same contract as the Designation column. */
+      cell: info => <ChipCell value={info.getValue() as string} className="exit-role-chip exit-role-chip--primary" />,
     },
     {
       header: 'Ancillary Role',
       id: 'ancillary',
       enableSorting: false,
-      meta: { width: '7%' },
+      meta: { width: '9%' },
       cell: info => {
         const e = info.row.original;
         return (
