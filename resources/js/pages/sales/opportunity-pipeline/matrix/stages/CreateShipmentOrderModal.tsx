@@ -646,7 +646,7 @@ export default function CreateShipmentOrderModal({
 
           <div className="cso-remarks">
             <Field label="Remarks">
-              <textarea className="cso-textarea" rows={3} maxLength={2000}
+              <textarea className="cso-textarea" rows={3} maxLength={20000}
                 value={remarks} onChange={(e) => setRemarks(e.target.value)}
                 placeholder="Any additional notes or remarks for this Shipment ID…" />
             </Field>

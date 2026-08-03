@@ -73,7 +73,7 @@ class ShipmentOrderController extends Controller
 
             'attachments'         => 'nullable|array|max:1',
             'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:2048',
-            'remarks'             => 'nullable|string|max:2000',
+            'remarks'             => 'nullable|string|max:20000',
         ]);
 
         // Tenant gate — lead must belong to caller's client.
@@ -487,7 +487,7 @@ class ShipmentOrderController extends Controller
             'place_of_delivery'   => 'nullable|string|max:128',
             'attachments'         => 'nullable|array|max:1',
             'attachments.*'       => 'file|mimes:jpg,jpeg,png,webp,pdf,doc,docx|max:2048',
-            'remarks'             => 'nullable|string|max:2000',
+            'remarks'             => 'nullable|string|max:20000',
         ]);
 
         /* Keep the two flows disjoint on edit too. update() writes $data

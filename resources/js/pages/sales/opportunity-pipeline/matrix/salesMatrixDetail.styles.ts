@@ -1040,9 +1040,33 @@ export const SALES_MATRIX_DETAIL_CSS = `
 
 /* Side widths are percentage-based now, so they scale down on their own —
    no per-breakpoint column overrides needed until the layout stacks. */
+/* Large laptops (~1440): give the data-heavy centre more room by shrinking the
+   side panels, and tighten the 6-step stepper so it stays on one clean row. */
+@media (max-width: 1440px) {
+  .smd-body { grid-template-columns: 18% 1fr 25%; gap: 10px; }
+  .smd-body-clm-collapsed  { grid-template-columns: 44px 1fr 25%; }
+  .smd-body-deal-collapsed { grid-template-columns: 18% 1fr 44px; }
+  .smd-body-clm-collapsed.smd-body-deal-collapsed { grid-template-columns: 44px 1fr 44px; }
+  .smd-stepper { gap: 8px; }
+  .smd-step { padding: 5px 6px 5px 8px; }
+}
 @media (max-width: 1280px) {
   .smd-stepper-card { padding: 8px 10px; }
   .smd-toolbar { padding: 8px 10px; }
+}
+/* Small laptops (~1200): the 6-step chevron row + the horizontally-scrolling
+   action toolbar cramp before the panels stack. Switch the stepper to a clean
+   3-col grid and let the toolbar WRAP onto multiple rows instead of scrolling. */
+@media (max-width: 1200px) {
+  .smd-stepper { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .smd-step { margin-right: 0; }
+  .smd-step, .smd-step:first-child, .smd-step:last-child {
+    clip-path: none; border-radius: 10px; border: 1px solid #e5e7eb; padding: 8px 12px;
+  }
+  .smd-step::after { display: none; }   /* no chevron arrows in grid mode */
+  .smd-toolbar { flex-wrap: wrap; overflow-x: visible; white-space: normal; row-gap: 7px; }
+  .smd-toolbar > .smd-act { flex: 0 1 auto; }
+  .smd-act-sep { display: none; }
 }
 @media (max-width: 1100px) {
   /* Stack the three panels into a single grid column; each takes its

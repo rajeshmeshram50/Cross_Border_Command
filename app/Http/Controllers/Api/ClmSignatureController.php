@@ -1836,6 +1836,9 @@ class ClmSignatureController extends Controller
         // The override path lets the workplace Send-for-Signature flow
         // tweak agreement copy without mutating the master.
         $sourceHtml    = $contentOverride !== null ? $contentOverride : (string) $agreement->content;
+        // Strip the wrong party family (supplier vs customer/consignee) per the
+        // agreement's applicable party BEFORE resolving tokens.
+        $sourceHtml    = $this->hideOtherPartyTokens($sourceHtml, $agreement->party ?? null);
         // $allParties carries every party the lead has mapped (Customer
         // + Consignee for a Buyer+Consignee agreement). Without it,
         // replacePlaceholders only substitutes the primary's tokens
@@ -2564,6 +2567,11 @@ class ClmSignatureController extends Controller
         // used by the Send-for-Signature modal when the user pastes in
         // a table via Insert Table or otherwise edits the body inline.
         $sourceHtml    = $contentOverride !== null ? $contentOverride : (string) $doc->content;
+        // Strip the wrong party family (supplier vs customer/consignee) per the
+        // trade document's applicable party BEFORE resolving tokens — otherwise
+        // the lead's customer/consignee (always in $allParties) resolve into a
+        // supplier document and can't be removed afterwards.
+        $sourceHtml    = $this->hideOtherPartyTokens($sourceHtml, $doc->party ?? null);
         // Resolve EVERY party the opportunity has mapped so BOTH {{customer.*}}
         // AND {{consignee.*}} tokens fill in. The trade-doc send flow only
         // loads a single primary party ($party), so a Buyer+Consignee document
@@ -2754,6 +2762,33 @@ class ClmSignatureController extends Controller
      * primary_email, primaryAddress with cp_*), so a single resolver
      * over the relevant party works for all three.
      */
+    /**
+     * Hide the OTHER party family so the two sides never mix on a document.
+     * A Buyer / Consignee document must not show {{supplier.*}} and a Supplier
+     * document must not show {{customer.*}} / {{consignee.*}} ({{buyer.*}} alias).
+     * The sides are mutually exclusive (enforced when authoring the doc), so the
+     * document's own applicable-party decides which family to strip. Runs on the
+     * RAW content BEFORE token resolution (for a supplier doc the lead's customer
+     * + consignee are otherwise resolved into real text and can't be stripped
+     * afterwards). Blank/legacy party ⇒ no stripping (keeps old behaviour).
+     */
+    private function hideOtherPartyTokens(string $html, ?string $applicableParty): string
+    {
+        $p = strtolower(trim((string) $applicableParty));
+        if ($p === '' || $html === '') return $html;
+        // Decode entity-encoded braces (Word / Docs paste) so the regex matches.
+        $html = str_replace(
+            ['&#123;', '&#x7B;', '&#125;', '&#x7D;', '&lcub;', '&rcub;'],
+            ['{',      '{',      '}',      '}',      '{',      '}'],
+            $html,
+        );
+        $drop = str_contains($p, 'supplier') ? ['customer', 'consignee', 'buyer'] : ['supplier'];
+        foreach ($drop as $ns) {
+            $html = preg_replace('/\{\{\s*' . $ns . '\s*\.[^{}]*\}\}/iu', '', $html);
+        }
+        return $html;
+    }
+
     private function replacePlaceholders(string $html, Model $party, string $modelName, array $extraParties = []): string
     {
         if ($html === '') return '<p></p>';

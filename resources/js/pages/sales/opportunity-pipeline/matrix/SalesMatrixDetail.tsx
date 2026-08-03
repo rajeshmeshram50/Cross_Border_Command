@@ -349,7 +349,14 @@ export default function SalesMatrixDetail() {
    * lead-pipeline fields (qualified/disqualified/taskManager). */
   const seedHeader: OppHeaderData = useMemo(() => {
     const fromState = (location.state as any)?.row;
-    if (fromState) {
+    // Only trust the router-state seed when it belongs to THIS opportunity.
+    // React Router keeps location.state across navigations, so opening a
+    // different opp (browser back/forward, or a link that didn't refresh state)
+    // can leave a STALE row from a previous opp. Using its leadId would fetch and
+    // display the WRONG opportunity's Customer / Country / Stage under the right
+    // Opportunity ID (QA: "same Opportunity ID opens with different details").
+    // On a mismatch we drop the seed and resolve the lead from the URL oppId.
+    if (fromState && fromState.oppId === oppId) {
       return {
         leadId:       typeof fromState.id === 'number' ? fromState.id : undefined,
         oppId:        fromState.oppId        || oppId,
@@ -826,8 +833,19 @@ export default function SalesMatrixDetail() {
   // Stage tracker click → navigate to the same opportunity at a new stage.
   // No-op for locked (not-yet-reached) future steps: you can step back to
   // completed stages but can't skip ahead to one you haven't reached.
+  /* Sales Person Name is MANDATORY before the lead leaves Stage 1 (Inquiry
+   * Received). It's not blocked ON Stage 1 — the user can sit there and fill
+   * things in — but moving forward to Stage 2 (Lead Acknowledgement) requires a
+   * salesperson to be assigned (via Change Owner). */
+  const requireSalespersonForAck = (): boolean => {
+    if ((serverHeader.salespersonName ?? '').trim()) return true;
+    toast.error('Sales Person Name required', 'Assign a salesperson (Change Owner) before moving to Lead Acknowledgement.');
+    return false;
+  };
+
   const goToStage = (n: StageNum) => {
     if (n > furthestStage) return;
+    if (n === 2 && !requireSalespersonForAck()) return;
     navStage(n);
   };
 
@@ -835,6 +853,7 @@ export default function SalesMatrixDetail() {
   const goPrev = () => stage > 1 && navStage((stage - 1) as StageNum);
   const goNext = () => {
     if (stage >= 6) return;
+    if (stage === 1 && !requireSalespersonForAck()) return;
     // Crossing 5 → 6 via Save & Next is a "deal won" moment — drop a one-shot
     // session flag so the Victory stage celebrates EVERY time it's reached this
     // way (its localStorage gate otherwise only confetti's once per lead ever).

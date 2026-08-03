@@ -1894,6 +1894,11 @@ export default function SalesCustomerSendForSignatureModal({
         />
         <ClmInsertPlaceholderModal
           open={placeholderPickerOpen}
+          // Restrict placeholder party tabs to this document's side: a Supplier
+          // (Vendor) send shows only the Supplier tab; a Customer/Consignee send
+          // shows Customer + Consignee. Product tab stays for both. Mirrors the
+          // mutual exclusion enforced when authoring the doc.
+          allowedParties={modelName === 'Vendor' ? ['supplier'] : ['customer', 'consignee']}
           onClose={() => setPlaceholderPickerOpen(false)}
           onInsert={(token) => { insertIntoBody(token, /^\s*</.test(token) ? 'html' : 'text'); setPlaceholderPickerOpen(false); }}
         />
