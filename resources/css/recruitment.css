@@ -7198,45 +7198,100 @@
    Recruitment list table (.rec-list-table) so it matches the Logs & Requests
    table and every other HRMS list. The markup dropped .table-sm / .table-light
    for this; see RegularizationApprovals.tsx. */
+/* Shared frame for the attendance list tables, so the Attendance Log and the
+   Regularization Requests tables sit in IDENTICAL boxes rather than one being
+   framed and the other floating flush against the card. Rounded on top only —
+   the WorklistPager below closes the bottom. No `overflow` here: the radius
+   still clips the accent header band because .table-responsive already sets
+   overflow-x, and forcing `hidden` would kill horizontal scrolling on narrow
+   screens. */
+.att-tablebox {
+  margin: 0;
+  border: 1px solid var(--vz-border-color);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+}
+/* No pager underneath — close the box on all four sides instead of leaving the
+   bottom edge open for a footer that never comes. */
+.att-tablebox--solo {
+  border-bottom: 1px solid var(--vz-border-color);
+  border-radius: 12px;
+}
+
+/* Calendar month summary — one KPI card per day-status, replacing the old
+   single-line dot legend. auto-fit keeps them on one row on a wide screen and
+   reflows to 2–3 per row on smaller ones without a media query. Cards reuse
+   .rec-kpi-* so they match the KPI row at the top of the page. */
+.att-cal-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.att-cal-kpis .rec-kpi-num { font-size: 20px; }
+
+/* Same shared-DataTable treatment as .att-logs-table--v2 above, in the same
+   attendance green — accent header band with white caps, zebra rows, hairline
+   accent separators. `box-shadow: none` defeats Bootstrap's inset cell fill. */
+.reg-req-table {
+  --atl-a-50:  #f0fdfa;
+  --atl-a-400: #2dd4bf;
+  --atl-a-500: #14b8a6;
+  --atl-a-600: #0d9488;
+  --atl-a-700: #0f766e;
+  --atl-a-rgb: 13, 148, 136;
+  border-collapse: collapse;
+}
+.reg-req-table thead tr {
+  background: linear-gradient(110deg, var(--atl-a-400) 0%, var(--atl-a-500) 55%, var(--atl-a-600) 100%);
+}
 .reg-req-table thead th {
-  padding: 13px 12px;
-  background: linear-gradient(180deg, #fafbfc 0%, #f4f5f8 100%);
-  color: var(--vz-secondary-color);
+  position: sticky; top: 0; z-index: 3;
+  background: color-mix(in srgb, var(--atl-a-500) 60%, var(--atl-a-600));
+  box-shadow: none;
+  color: #ffffff;
   text-transform: uppercase;
-  font-weight: 700;
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  border-bottom: 1px solid #ececf2;
+  font-weight: 800;
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  padding: 9px;
+  line-height: 1.3;
+  border: 0;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.18);
   white-space: nowrap;
   vertical-align: middle;
 }
 [data-bs-theme="dark"] .reg-req-table thead th,
 [data-layout-mode="dark"] .reg-req-table thead th {
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--vz-card-bg, #1a1d29) 88%, #ffffff) 0%,
-    var(--vz-card-bg, #1a1d29) 100%);
-  border-bottom-color: var(--vz-border-color, #2c3242);
-  color: rgba(255,255,255,0.70);
+  background: color-mix(in srgb, var(--atl-a-600) 70%, var(--atl-a-700));
+  border-bottom-color: transparent;
+  color: #ffffff;
 }
 .reg-req-table tbody td {
-  padding: 14px 12px;
-  border-bottom: 1px solid #f3f4f6;
+  padding: 10px 9px;
+  font-size: 12px;
+  font-weight: 500;
+  background: transparent;
+  box-shadow: none;
+  border-bottom: 1px solid rgba(var(--atl-a-rgb), 0.08);
   vertical-align: middle;
+  line-height: 1.45;
 }
+.reg-req-table tbody tr { background: #ffffff; transition: background .14s ease; }
+.reg-req-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--atl-a-50) 55%, #ffffff); }
+.reg-req-table tbody tr:hover { background: var(--atl-a-50); }
 .reg-req-table tbody tr:last-child td { border-bottom: 0; }
+[data-bs-theme="dark"] .reg-req-table tbody tr,
+[data-layout-mode="dark"] .reg-req-table tbody tr,
+[data-bs-theme="dark"] .reg-req-table tbody tr:nth-child(even),
+[data-layout-mode="dark"] .reg-req-table tbody tr:nth-child(even) { background: var(--vz-card-bg); }
 [data-bs-theme="dark"] .reg-req-table tbody td,
 [data-layout-mode="dark"] .reg-req-table tbody td {
-  border-bottom-color: color-mix(in srgb, #ffffff 6%, transparent);
+  border-bottom-color: rgba(255,255,255,0.07);
 }
-.reg-req-table tbody tr { transition: background .14s ease; }
-.reg-req-table tbody tr:hover td {
-  background: linear-gradient(180deg,
-    rgba(134,92,226,0.04) 0%,
-    rgba(134,92,226,0.02) 100%);
-}
-[data-bs-theme="dark"] .reg-req-table tbody tr:hover td,
-[data-layout-mode="dark"] .reg-req-table tbody tr:hover td {
-  background: rgba(134,92,226,0.08);
+[data-bs-theme="dark"] .reg-req-table tbody tr:hover,
+[data-layout-mode="dark"] .reg-req-table tbody tr:hover {
+  background: rgba(var(--atl-a-rgb), 0.12);
 }
 
 /* WorklistPager footer — retheme from the shared violet to this page's teal
@@ -7453,6 +7508,15 @@
 }
 .att-chip:hover { border-color: #99f6e4; color: #0f766e; box-shadow: 0 2px 6px rgba(13,148,136,0.10); }
 .att-chip i { font-size: 12px; color: #14b8a6; }
+/* Secondary text inside a chip — e.g. the shift window beside the shift name.
+   Separated by a hairline so "Evening Shift | 06:00 AM – 12:00 PM" reads as
+   one fact, not two chips. */
+.att-chip-sub {
+  padding-left: 7px; margin-left: 2px;
+  border-left: 1px solid var(--vz-border-color);
+  font-weight: 500; opacity: 0.85; white-space: nowrap;
+}
+[data-bs-theme="dark"] .att-chip-sub { border-left-color: rgba(255,255,255,0.16); }
 [data-bs-theme="dark"] .att-chip {
   background: rgba(255,255,255,0.06);
   border-color: rgba(255,255,255,0.12);
@@ -8565,12 +8629,19 @@
   border-radius: 9px;
   overflow: hidden;
 }
+/* Icon + label. Was a 32px icon-only square, which left the two views
+   indistinguishable at a glance; the name now sits beside the icon and the
+   button sizes to its content. */
 .att-logs-vbtn {
-  width: 32px; height: 30px;
+  min-width: 32px; height: 30px;
+  padding: 0 11px;
+  gap: 6px;
   display: inline-flex; align-items: center; justify-content: center;
   background: #ffffff;
   border: 0;
   color: var(--vz-secondary-color);
+  font-size: 11.5px; font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
   transition: background .15s ease, color .15s ease;
 }
@@ -8619,21 +8690,69 @@
    the base look (matches HR · Employee). All body cells share the same
    font-size + weight so the grid reads as one consistent table; only the
    colour conveys meaning (deviation +/-, status pills). */
+/* ── Attendance log table — adopts the shared DataTable (.dt-table) visual
+   language: solid accent header band with white caps, tinted zebra rows and
+   hairline accent separators. Every metric below mirrors DataTable.css so the
+   two read as one component; only the palette differs — this keeps the
+   attendance GREEN (#14b8a6 → #0d9488) instead of DataTable's default violet.
+   `box-shadow: none` is load-bearing: Bootstrap 5.3 paints table cell
+   backgrounds with an `inset 0 0 0 9999px` shadow, which would cover both the
+   header band and the zebra tint. ── */
+.att-logs-table--v2 {
+  --atl-a-50:  #f0fdfa;
+  --atl-a-400: #2dd4bf;
+  --atl-a-500: #14b8a6;
+  --atl-a-600: #0d9488;
+  --atl-a-700: #0f766e;
+  --atl-a-rgb: 13, 148, 136;
+  border-collapse: collapse;
+}
+.att-logs-table--v2 thead tr {
+  background: linear-gradient(110deg, var(--atl-a-400) 0%, var(--atl-a-500) 55%, var(--atl-a-600) 100%);
+}
 .att-logs-table--v2 thead th {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--vz-secondary-color);
+  position: sticky; top: 0; z-index: 3;
+  background: color-mix(in srgb, var(--atl-a-500) 60%, var(--atl-a-600));
+  box-shadow: none;
+  color: #ffffff;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
+  padding: 9px;
+  line-height: 1.3;
+  border: 0;
+  vertical-align: middle;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.18);
+  white-space: normal;
 }
 .att-logs-table--v2 tbody td {
-  padding: 14px 12px;
-  font-size: 13px;
-  font-weight: 400;
+  padding: 10px 9px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--vz-body-color);
   vertical-align: middle;
+  line-height: 1.45;
+  background: transparent;
+  box-shadow: none;
+  border-bottom: 1px solid rgba(var(--atl-a-rgb), 0.08);
 }
-.att-logs-table--v2 tbody tr.is-open { background: var(--vz-light) !important; }
+.att-logs-table--v2 tbody tr { background: #ffffff; }
+.att-logs-table--v2 tbody tr:nth-child(even) { background: color-mix(in srgb, var(--atl-a-50) 55%, #ffffff); }
+.att-logs-table--v2 tbody tr:hover { background: var(--atl-a-50); }
+.att-logs-table--v2 tbody tr:last-child td { border-bottom: none; }
+.att-logs-table--v2 tbody tr.is-open { background: var(--atl-a-50) !important; }
+/* Off-days (weekly-off / holiday / leave) keep their muted wash above the zebra. */
+.att-logs-table--v2 tbody tr.att-log-row--off { background: var(--vz-light, #f9fafb); }
+
+[data-bs-theme="dark"] .att-logs-table--v2 thead th {
+  background: color-mix(in srgb, var(--atl-a-600) 70%, var(--atl-a-700));
+  color: #ffffff;
+  border-bottom-color: transparent;
+}
+[data-bs-theme="dark"] .att-logs-table--v2 tbody tr,
+[data-bs-theme="dark"] .att-logs-table--v2 tbody tr:nth-child(even) { background: var(--vz-card-bg); }
+[data-bs-theme="dark"] .att-logs-table--v2 tbody td { border-bottom-color: rgba(255,255,255,0.07); }
 
 /* Date cell — matches the rest of the table (recruitment-style regular
    weight); only colour distinguishes day (body) from month (muted). */
@@ -9220,16 +9339,15 @@
 .att-log-pop-cell--in i { color: #16a34a; transform: rotate(-90deg); }
 .att-log-pop-cell--out i { color: #ef4444; }
 [data-bs-theme="dark"] .att-log-pop-cell { color: #ffffff; }
+/* Plain red word, no pill — it sits in place of a time inside the punch-pair
+   row, so a filled badge read as a status chip rather than "no time here". */
 .att-log-pop-missing {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: 6px;
-  background: #fee2e2;
+  display: inline;
   color: #b91c1c;
-  font-weight: 800;
-  font-size: 11px;
-  letter-spacing: 0.06em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
+[data-bs-theme="dark"] .att-log-pop-missing { color: #fca5a5; }
 
 /* ════════════════════════════════════════════════════════════════════════
    Regularization modal — V3 (Keka-style, teal-themed)
@@ -9244,7 +9362,13 @@
   overflow: hidden;
   box-shadow: 0 24px 48px rgba(15,23,42,0.18);
 }
-.att-reg-modal-v3 { background: var(--vz-card-bg); }
+/* NOT --vz-card-bg: that one is scoped to `.card` by Bootstrap, and this modal
+   is portalled to <body>, outside any card — the var resolves to nothing, the
+   declaration is dropped, and the panel renders transparent (invisible against
+   a white page, see-through in dark mode). --vz-secondary-bg is a :root var,
+   with a hard colour fallback so a missing theme can't blank it again. */
+.att-reg-modal-keka .modal-content { background: var(--vz-secondary-bg, #ffffff); }
+.att-reg-modal-v3 { background: var(--vz-secondary-bg, #ffffff); }
 
 /* Header — teal gradient banner with subtle radial highlight on the right
    so the title bar reads as a polished, branded surface. */
@@ -9647,9 +9771,11 @@
   .att-cal-nav { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.10); color: rgba(255,255,255,0.78); }
   .att-cal-nav:hover { background: rgba(255,255,255,0.10); }
 
-  /* Regularization modal — dark surface */
+  /* Regularization modal — dark surface. See the note on the base rule: the
+     modal lives in a <body> portal, so a card-scoped var leaves it transparent
+     and the page shows through the form. */
   .att-reg-modal-v3,
-  .att-reg-modal-keka .modal-content { background: var(--vz-card-bg); }
+  .att-reg-modal-keka .modal-content { background: var(--vz-secondary-bg, #212529); }
   .att-reg-keka-foot { background: rgba(255,255,255,0.02); border-top-color: var(--vz-border-color); }
   .att-reg-keka-cancel {
     background: rgba(255,255,255,0.04);
@@ -9674,8 +9800,10 @@
   .att-logs-foot-info { color: rgba(255,255,255,0.65); }
   .att-logs-foot-info strong { color: #ffffff; }
 
-  /* Day-detail popover body */
-  .att-log-pop-body { background: var(--vz-card-bg); }
+  /* Day-detail popover body. Also body-portalled — same card-scoped-var trap
+     as the regularization modal, so it needs a :root var + hard fallback. */
+  .att-log-pop { background: var(--vz-secondary-bg, #212529); }
+  .att-log-pop-body { background: var(--vz-secondary-bg, #212529); }
   .att-log-pop-shift--v2,
   .att-log-pop-location--v2,
   .att-log-pop-cell { color: rgba(255,255,255,0.92); }

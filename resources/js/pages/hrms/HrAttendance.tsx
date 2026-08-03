@@ -4,7 +4,7 @@ import { MasterFormStyles, MasterDatePicker } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { Turtle } from 'lucide-react';
 import api from '../../api';
-import RegularizationModal from './RegularizationModal';
+import RegularizationModal, { type RegPrefillPunch } from './RegularizationModal';
 import RegularizationApprovals from './RegularizationApprovals';
 import type { ApiRegularization } from './regularizationApi';
 import WorklistPager from '../../components/ui/WorklistPager';
@@ -112,7 +112,9 @@ interface AttendanceLog {
   worked: string;
   deviation: string;
   exception?: string;
-  workSegments?: Array<{ start: number; end: number }>;
+  /* `open` = an in-punch with no matching out (still clocked in, or a forgotten
+     check-out). The out time is unknown, so the popover prints MISSING for it. */
+  workSegments?: Array<{ start: number; end: number; open?: boolean }>;
   effectiveMinutes?: number;
   grossMinutes?: number;
   expectedMinutes?: number;
@@ -150,6 +152,46 @@ const fmtDurHm = (m: number) => m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 6
 // the shift start time (e.g. 9:30 start, arrive 9:47 → 17 min late).
 const LATE_GRACE_MINUTES = 10;
 
+/* ── Calendar month summary tiles ──────────────────────────────────────────
+   A day carries ONE status, but the KPI totals aren't mutually exclusive:
+   turning up late is still turning up, so a Late day counts under BOTH Present
+   and Late. Same for a half day, a forgotten punch (Missing In/Out) and a
+   corrected day — the employee attended, and only the exception tile should
+   single them out. `Leave` aggregates Paid + Unpaid, which previously read 0
+   even with leave days on the calendar because the raw statuses are stored as
+   "Paid Leave" / "Unpaid Leave". WFH and On Duty stay out of Present: they get
+   their own tiles and aren't office attendance. */
+const CAL_PRESENT_LIKE: DayStatus[] = ['Present', 'Late', 'Half Day', 'Missing In', 'Missing Out', 'Corrected'];
+const CAL_LEAVE_LIKE:   DayStatus[] = ['Leave', 'Paid Leave', 'Unpaid Leave'];
+const CAL_KPIS: { key: DayStatus; label: string; icon: string }[] = [
+  { key: 'Present',        label: 'Present',     icon: 'ri-checkbox-circle-line' },
+  { key: 'Late',           label: 'Late',        icon: 'ri-time-line' },
+  { key: 'Half Day',       label: 'Half Day',    icon: 'ri-contrast-2-line' },
+  { key: 'Work From Home', label: 'WFH',         icon: 'ri-home-office-line' },
+  { key: 'On Duty',        label: 'On Duty',     icon: 'ri-briefcase-line' },
+  { key: 'Leave',          label: 'Leave',       icon: 'ri-calendar-check-line' },
+  { key: 'Absent',         label: 'Absent',      icon: 'ri-close-circle-line' },
+  { key: 'Weekly Off',     label: 'Weekly Off',  icon: 'ri-calendar-2-line' },
+  { key: 'Missing Out',    label: 'Missing Out', icon: 'ri-error-warning-line' },
+  { key: 'Holiday',        label: 'Holiday',     icon: 'ri-flag-2-line' },
+];
+const calCount = (summary: Record<DayStatus, number>, key: DayStatus): number => {
+  const sum = (keys: DayStatus[]) => keys.reduce((n, s) => n + (summary[s] || 0), 0);
+  if (key === 'Present') return sum(CAL_PRESENT_LIKE);
+  if (key === 'Leave')   return sum(CAL_LEAVE_LIKE);
+  return summary[key] || 0;
+};
+
+/** "18:30" → "06:30 PM". Plain string (renderTime returns a ReactNode). */
+const fmt12h = (hhmm?: string | null): string => {
+  const m = /^(\d{1,2}):(\d{2})/.exec((hhmm || '').trim());
+  if (!m) return '';
+  const h = Number(m[1]);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(h12).padStart(2, '0')}:${m[2]} ${ampm}`;
+};
+
 const renderTime = (t?: string | null, hour24 = false): ReactNode => {
   if (!t) return '—';
   const m = /^(\d{1,2}):(\d{2})/.exec(t);
@@ -171,16 +213,18 @@ export default function HrAttendance() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [logTab, setLogTab]       = useState<'log' | 'calendar'>('log');
   const [regOpen, setRegOpen]     = useState(false);
+  // Date + prefill punches the regularization modal opens on. Set from the log
+  // row that was clicked; falls back to the day panel's date when empty.
+  const [regDate, setRegDate]     = useState<string>('');
+  const [regPunches, setRegPunches] = useState<RegPrefillPunch[] | null>(null);
 
-  // Time-format preference, shared page-wide so the "24 hour format" toggle
-  // reformats every clock time. Persisted to localStorage; defaults to 12-hour.
-  const [hour24, setHour24]       = useState<boolean>(() => {
-    try { const v = localStorage.getItem('cbc-attendance-hour24'); return v === null ? false : v === '1'; }
-    catch { return false; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem('cbc-attendance-hour24', hour24 ? '1' : '0'); } catch {}
-  }, [hour24]);
+  /* Clock format is fixed at 12-hour. The "24 hour format" toggle was removed
+     from the Logs & Requests header, so this is a constant rather than stored
+     state — the old localStorage preference is deliberately NOT read back: a
+     user who had switched it on would otherwise be stuck in 24-hour with no
+     control left to turn it off. Every formatter still takes the flag, so
+     restoring a toggle later only means putting the control back. */
+  const hour24 = false;
 
   const [viewDate, setViewDate]   = useState<string>(TODAY_ISO);
   const [calMonth, setCalMonth]   = useState<string>(monthKey(TODAY_ISO));
@@ -270,6 +314,30 @@ export default function HrAttendance() {
       setEmployees(prev => prev.map(e => e.id === selected.id ? { ...e, correction: newReq } : e));
     }
     setRegOpen(false);
+  };
+
+  /* Open the regularization modal for a SPECIFIC log row. It used to just flip
+     `regOpen` and let the modal read `viewDate`, so Regularize on any row —
+     1 Aug, 3 Aug, anything — always opened on the date pinned in the day panel
+     above, and prefilled that day's punches. Both now follow the row clicked. */
+  const openRegularizeFor = (iso: string) => {
+    const log = selected?.logs?.find(l => l.iso === iso);
+    // Rebuild prefill punches from the row's work segments (decimal hours →
+    // "HH:MM"). An open segment contributes only its in-punch, so a forgotten
+    // check-out opens with the out box empty and ready to fill.
+    const hhmm = (h: number) => {
+      let hr = Math.floor(h);
+      let mi = Math.round((h - hr) * 60);
+      if (mi === 60) { hr += 1; mi = 0; }
+      return `${String(hr).padStart(2, '0')}:${String(mi).padStart(2, '0')}`;
+    };
+    const punches = (log?.workSegments ?? []).flatMap(s => ([
+      { time: hhmm(s.start), type: 'in' as const },
+      ...(s.open ? [] : [{ time: hhmm(s.end), type: 'out' as const }]),
+    ]));
+    setRegDate(iso);
+    setRegPunches(punches);
+    setRegOpen(true);
   };
 
   if (employeesLoading) {
@@ -490,7 +558,19 @@ export default function HrAttendance() {
                     </div>
                   </div>
                   <div className="att-emp-bar-chips">
-                    <span className="att-chip"><i className="ri-time-line" />{selected.shift}</span>
+                    {/* Shift NAME + the window it resolves to. The name alone
+                        ("Evening Shift") told HR nothing about when the day
+                        actually starts, and the window is what every late /
+                        effective-hours reading on this screen is measured
+                        against — it comes from the branch's Shift Details via
+                        Employee::resolveShiftWindow(). */}
+                    <span className="att-chip">
+                      <i className="ri-time-line" />
+                      {selected.shift}
+                      {selected.shiftStart && selected.shiftEnd && (
+                        <span className="att-chip-sub">{fmt12h(selected.shiftStart)} – {fmt12h(selected.shiftEnd)}</span>
+                      )}
+                    </span>
                     <span className="att-chip"><i className="ri-calendar-2-line" />Off: {selected.weeklyOff}</span>
                     <span className="att-chip"><i className="ri-fingerprint-line" />{selected.attendanceNumber}</span>
                     <span className="att-chip"><i className="ri-user-star-line" />Mgr: {selected.managerName}</span>
@@ -541,8 +621,8 @@ export default function HrAttendance() {
                 tab={logTab} setTab={setLogTab}
                 calMonth={calMonth} setCalMonth={setCalMonth}
                 onPickDate={(iso) => setViewDate(iso)}
-                onRegularize={() => setRegOpen(true)}
-                hour24={hour24} setHour24={setHour24}
+                onRegularize={openRegularizeFor}
+                hour24={hour24}
               />
             </div>
 
@@ -555,10 +635,11 @@ export default function HrAttendance() {
           open={regOpen}
           employeeId={selected.id}
           managerName={selected.managerName}
-          dateIso={viewDate}
+          dateIso={regDate || viewDate}
           shiftStart={selected.shiftStart}
           shiftEnd={selected.shiftEnd}
-          initialPunches={selected.punches}
+          shiftName={selected.shift}
+          initialPunches={regPunches ?? selected.punches}
           onClose={() => setRegOpen(false)}
           onSubmitted={onRegularizationSubmitted}
         />
@@ -788,7 +869,7 @@ function hourLabel(h: number): string {
   return `${String(h12).padStart(2, '0')}:${String(mm).padStart(2, '0')} ${ampm}`;
 }
 
-function AttendanceVisualBar({ segments, status }: { segments: Array<{ start: number; end: number }>; status?: DayStatus }) {
+function AttendanceVisualBar({ segments, status }: { segments: Array<{ start: number; end: number; open?: boolean }>; status?: DayStatus }) {
   const ticks = Array.from({ length: 24 }, (_, h) => h);
   const band = status && segments.length === 0 ? VBAR_BANDS[status] : undefined;
   return (
@@ -813,8 +894,11 @@ function AttendanceVisualBar({ segments, status }: { segments: Array<{ start: nu
           <span
             key={i}
             className="att-vbar-block"
-            style={{ left: `${(s.start / 24) * 100}%`, width: `${((s.end - s.start) / 24) * 100}%` }}
-            title={`Session ${i + 1}: ${hourLabel(s.start)} – ${hourLabel(s.end)}`}
+            /* An open session (in with no out) on a PAST day has no known end,
+               so it comes back zero-length — floor the width so the in time is
+               still visible as a marker instead of vanishing. */
+            style={{ left: `${(s.start / 24) * 100}%`, width: `${Math.max(((s.end - s.start) / 24) * 100, s.open ? 0.7 : 0)}%` }}
+            title={`Session ${i + 1}: ${hourLabel(s.start)} – ${s.open ? 'missing' : hourLabel(s.end)}`}
           />
         ))}
       </div>
@@ -853,7 +937,7 @@ function ArrivalIcon({ lateMinutes, arrival }: { lateMinutes: number; arrival: R
 }
 
 function LogsRequestsCard({
-  employee, tab, setTab, calMonth, setCalMonth, onPickDate, onRegularize, hour24, setHour24,
+  employee, tab, setTab, calMonth, setCalMonth, onPickDate, onRegularize, hour24,
 }: {
   employee: AttendanceEmployee;
   tab: 'log' | 'calendar';
@@ -861,9 +945,9 @@ function LogsRequestsCard({
   calMonth: string;
   setCalMonth: (m: string) => void;
   onPickDate: (iso: string) => void;
-  onRegularize: () => void;
+  /** Regularize the given log row's date — NOT the day panel's date. */
+  onRegularize: (iso: string) => void;
   hour24: boolean;
-  setHour24: (v: boolean | ((p: boolean) => boolean)) => void;
 }) {
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
@@ -928,39 +1012,33 @@ function LogsRequestsCard({
               ))}
             </div>
             <div className="att-logs-viewtoggle">
-              <button type="button" className={`att-logs-vbtn ${viewMode === 'list' ? 'is-active' : ''}`} onClick={() => { setViewMode('list'); setTab('log'); }} title="List view">
-                <i className="ri-list-check" />
+              <button type="button" className={`att-logs-vbtn ${viewMode === 'list' ? 'is-active' : ''}`} onClick={() => { setViewMode('list'); setTab('log'); }} title="Attendance Log view">
+                <i className="ri-list-check" />Attendance Log
               </button>
               <button type="button" className={`att-logs-vbtn ${viewMode === 'cal' ? 'is-active' : ''}`} onClick={() => { setViewMode('cal'); setTab('calendar'); }} title="Calendar view">
-                <i className="ri-calendar-2-line" />
+                <i className="ri-calendar-2-line" />Calendar
               </button>
             </div>
-            <label className="att-logs-h24">
-              <span>24 hour format</span>
-              <span className={`att-switch ${hour24 ? 'is-on' : ''}`} onClick={() => setHour24(v => !v)} role="switch" aria-checked={hour24}>
-                <span className="att-switch-knob" />
-              </span>
-            </label>
           </div>
         </div>
 
-        <div className="att-logs-tabs">
-          <button type="button" className={`att-logs-tab ${tab === 'log' ? 'is-active' : ''}`} onClick={() => setTab('log')}>
-            <i className="ri-checkbox-circle-line" />Attendance Log
-          </button>
-          <button type="button" className={`att-logs-tab ${tab === 'calendar' ? 'is-active' : ''}`} onClick={() => setTab('calendar')}>
-            <i className="ri-calendar-line" />Calendar
-          </button>
-        </div>
+        {/* No tab row — the labelled Attendance Log / Calendar buttons in the
+            header strip above switch the same view, so this was a duplicate
+            control for the same two states. */}
 
         {tab === 'log' && (
           <>
             <div
               className="table-responsive table-card border rounded att-logs-table-wrap--fixed"
-              style={{ minHeight: `${46 + Math.min(Math.max(visibleLogs.length, 1), pageSize) * 52}px` }}
+              /* 34px accent header band + 46px rows — matches the DataTable
+                 metrics the table now follows, so the card doesn't reserve
+                 dead space below a short page. */
+              style={{ minHeight: `${34 + Math.min(Math.max(visibleLogs.length, 1), pageSize) * 46}px` }}
             >
               <table className="table align-middle table-nowrap mb-0 att-logs-table att-logs-table--v2">
-                <thead className="table-light">
+                {/* No `table-light`: the header is a solid accent band now, and
+                    Bootstrap's light-header vars would paint over it. */}
+                <thead>
                   <tr>
                     <th scope="col">Date</th>
                     <th scope="col" style={{ minWidth: 280 }}>Attendance Visual</th>
@@ -982,7 +1060,12 @@ function LogsRequestsCard({
                     const popId = `att-log-info-${employee.id}-${pageStart + i}`;
                     const isOpen = popoverIdx === pageStart + i;
                     const isHolidayDay = l.status === 'Holiday';
-                    const isOff   = l.status === 'Weekly Off' || isHolidayDay;
+                    /* Approved-leave days carry no punches, so they get the same
+                       single-line treatment as a weekly-off / holiday — a pill
+                       beside the date and one centred line — instead of a row of
+                       dashes across Effective / Gross / Break / Arrival / Late. */
+                    const isLeaveDay = l.status === 'Leave' || l.status === 'Paid Leave' || l.status === 'Unpaid Leave';
+                    const isOff   = l.status === 'Weekly Off' || isHolidayDay || isLeaveDay;
                     const isAbsent = l.status === 'Absent';
                     // A day with no punches at all (synthesised Absent / no record)
                     // should read as "No Time Entries Logged" rather than three
@@ -995,15 +1078,24 @@ function LogsRequestsCard({
 
                     if (isOff) {
                       return (
-                        <tr key={pageStart + i} className={`att-log-row--off${isHolidayDay ? ' att-log-row--holiday' : ''}`}>
+                        <tr key={pageStart + i} className={`att-log-row--off${isHolidayDay ? ' att-log-row--holiday' : ''}${isLeaveDay ? ' att-log-row--leave' : ''}`}>
                           <td className="att-log-datecell">
                             {formattedDate}
-                            <span className="att-log-woff-pill" style={isHolidayDay ? { color: '#0c63b0', background: '#dceefe' } : undefined}>
-                              {isHolidayDay ? 'HOLIDAY' : 'W-OFF'}
+                            <span
+                              className="att-log-woff-pill"
+                              style={
+                                isLeaveDay    ? { color: tone.fg, background: tone.bg }
+                                : isHolidayDay ? { color: '#0c63b0', background: '#dceefe' }
+                                : undefined
+                              }
+                            >
+                              {isLeaveDay ? tone.label.toUpperCase() : isHolidayDay ? 'HOLIDAY' : 'W-OFF'}
                             </span>
                           </td>
                           <td colSpan={6} className="text-center att-log-woff-text">
-                            {isHolidayDay ? (l.holidayName ? `Holiday — ${l.holidayName}` : 'Holiday') : 'Full day Weekly-off'}
+                            {isLeaveDay
+                              ? `Full day ${tone.label}`
+                              : isHolidayDay ? (l.holidayName ? `Holiday — ${l.holidayName}` : 'Holiday') : 'Full day Weekly-off'}
                           </td>
                           <td className="text-center">
                             {/* Holiday / Weekly-off rows have no punches to review
@@ -1100,7 +1192,7 @@ function LogsRequestsCard({
                                     {fmtClock(employee.shiftStart)} - {fmtClock(employee.shiftEnd)}
                                   </div>
 
-                                  <button type="button" className="att-log-pop-regularize" onClick={() => { setPopoverIdx(null); onRegularize(); }}>
+                                  <button type="button" className="att-log-pop-regularize" onClick={() => { setPopoverIdx(null); if (l.iso) onRegularize(l.iso); }}>
                                     <i className="ri-pencil-line" />
                                     Regularize
                                   </button>
@@ -1117,7 +1209,12 @@ function LogsRequestsCard({
                                     {l.workSegments.map((seg, idx) => {
                                       const isLast = idx === l.workSegments!.length - 1;
                                       const inMissing = false;
-                                      const outMissing = isLast && (l.status === 'Missing Out');
+                                      // `seg.open` — punched in, never out: the out
+                                      // time genuinely doesn't exist yet, so show
+                                      // MISSING even while the day is still 'Present'
+                                      // (today's row), not just once it turns
+                                      // 'Missing Out' overnight.
+                                      const outMissing = seg.open || (isLast && l.status === 'Missing Out');
                                       const inHrs = Math.floor(seg.start);
                                       const inMin = Math.floor((seg.start - inHrs) * 60);
                                       const inSec = Math.floor((((seg.start - inHrs) * 60) - inMin) * 60);
@@ -1257,15 +1354,20 @@ function CalendarMonthGrid({
         <button type="button" className="att-cal-nav" onClick={onNextMonth}><i className="ri-arrow-right-s-line" /></button>
       </div>
 
-      <div className="att-cal-summary">
-        {(['Present','Late','Half Day','Work From Home','On Duty','Leave','Absent','Weekly Off','Missing Out','Holiday'] as DayStatus[]).map(s => {
-          const tone = STATUS_TONE[s];
+      <div className="att-cal-kpis">
+        {CAL_KPIS.map(k => {
+          const tone = STATUS_TONE[k.key];
           return (
-            <span key={s} className="att-cal-sum">
-              <span className="att-cal-sum-dot" style={{ background: tone.dot }} />
-              <span className="att-cal-sum-label">{tone.label}</span>
-              <span className="att-cal-sum-num">{summary[s] || 0}</span>
-            </span>
+            <div key={k.key} className="rec-kpi-card">
+              <span className="rec-kpi-strip" style={{ background: tone.dot }} />
+              <div className="rec-kpi-text">
+                <span className="rec-kpi-label">{k.label}</span>
+                <span className="rec-kpi-num">{calCount(summary, k.key)}</span>
+              </div>
+              <span className="rec-kpi-icon" style={{ background: tone.dot }}>
+                <i className={k.icon} />
+              </span>
+            </div>
           );
         })}
       </div>

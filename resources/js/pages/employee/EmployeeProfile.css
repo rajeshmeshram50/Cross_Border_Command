@@ -39,6 +39,13 @@
            the rule applies on the very first open. */
         .modal.ep-reg-modal { z-index: 2100 !important; }
         .modal-backdrop.ep-reg-backdrop { z-index: 2095 !important; }
+        /* Attendance Log day popover (the Log column's status button, which
+           carries the Regularize action). Bootstrap popovers default to
+           z-index 1070 — below the 1080 overlay — so it opened behind the
+           profile shell and the button appeared to do nothing. Kept ABOVE the
+           overlay but BELOW the 2100 modals so opening Regularize still
+           layers correctly. */
+        .popover.ep-att-log-pop { z-index: 2090 !important; }
         /* Leave tab modals — Request Leave, Leave Request Details, the
            View Approvers popover and the Balance History viewer. Same
            lift as ep-reg-modal so they paint above the fullscreen overlay. */
