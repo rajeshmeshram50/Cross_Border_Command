@@ -242,7 +242,7 @@ class AttendanceController extends Controller
         // employee's shift start, falling back to 09:30 when the shift
         // string has no parseable time pair. Without the tz conversion the
         // comparison ran against UTC time and never flagged anyone late.
-        [$shiftStart, $shiftEnd] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
+        [$shiftStart, $shiftEnd] = $emp->resolveShiftWindow();
         $shiftStart = $shiftStart ?: '09:30';
         $shiftEnd   = $shiftEnd   ?: '18:30';
         $todayStr = self::todayLocal();
@@ -450,6 +450,7 @@ class AttendanceController extends Controller
                 'department:id,name',
                 'designation:id,name',
                 'reportingManager:id,first_name,last_name,display_name',
+                'branch:id,shifts', // shift-window resolution (resolveShiftWindow) without an N+1
             ])
             ->orderBy('display_name');
 
@@ -570,7 +571,7 @@ class AttendanceController extends Controller
         }
 
         $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date, $histStart, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp) {
-            [$parsedStart, $parsedEnd] = $this->parseShiftWindow((string) ($emp->shift ?? ''));
+            [$parsedStart, $parsedEnd] = $emp->resolveShiftWindow();
             $shiftStart = $parsedStart ?: $defaultShiftStart;
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
             $expectedMinutes = $this->expectedMinutesFromWindow($shiftStart, $shiftEnd);
@@ -624,7 +625,13 @@ class AttendanceController extends Controller
                 if (in_array($st, ['present', 'late', 'on duty', 'work from home', 'corrected', 'half day'], true)) {
                     $presentDays++;
                 }
-                if ($st === 'late' || $st === 'half day') $lateMarks++;
+                // A half day is its own category (0.5 present credit), NOT a late
+                // mark — counting it here over-stated the KPI and, worse, diverged
+                // from payroll's late count (PayrollService::attendanceAggregates)
+                // and the profile summary, so the "Late Marks" HR sees no longer
+                // matched the BR-01 LOP actually deducted. Late = stored 'Late'
+                // plus the Present→Late >10-min promotion below.
+                if ($st === 'late') $lateMarks++;
                 if ($st === 'missing in' || $st === 'missing out') {
                     $missingPunch++;
                 } elseif ($r->check_in_at && !$r->check_out_at
@@ -706,15 +713,6 @@ class AttendanceController extends Controller
         })->values();
 
         return response()->json($out);
-    }
-
-    private function parseShiftWindow(string $shift): array
-    {
-        if ($shift === '') return [null, null];
-        if (preg_match('/(\d{1,2}:\d{2})\s*[–\-]\s*(\d{1,2}:\d{2})/u', $shift, $m)) {
-            return [$m[1], $m[2]];
-        }
-        return [null, null];
     }
 
     /** Expected minutes between two HH:MM strings — wraps midnight for night shifts. */

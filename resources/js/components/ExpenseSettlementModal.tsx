@@ -579,7 +579,7 @@ export default function ExpenseSettlementModal({
                         ) : (summary.additions ?? []).length > 0 ? (
                           <div className="esm-ded-list">
                             {summary.additions.map((a, i) => (
-                              <div className="esm-payrow" key={i}><span>{a.reason}</span><span className="is-pos">+ {inr(a.amount)}</span></div>
+                              <div className="esm-payrow" key={i}><span className="esm-adj-reason" title={a.reason}>{a.reason}</span><span className="is-pos">+ {inr(a.amount)}</span></div>
                             ))}
                           </div>
                         ) : (
@@ -614,7 +614,7 @@ export default function ExpenseSettlementModal({
                         ) : (summary.deductions ?? []).length > 0 ? (
                           <div className="esm-ded-list">
                             {summary.deductions.map((d, i) => (
-                              <div className="esm-payrow" key={i}><span>{d.reason}</span><span className="is-neg">− {inr(d.amount)}</span></div>
+                              <div className="esm-payrow" key={i}><span className="esm-adj-reason" title={d.reason}>{d.reason}</span><span className="is-neg">− {inr(d.amount)}</span></div>
                             ))}
                           </div>
                         ) : (
@@ -943,7 +943,10 @@ const CSS = `
 .esm-modal--fit .esm-hero{padding-bottom:0;}
 /* Manager review is just the Claim Details card — sit it tight under the header,
    with a divider line at the bottom of the header (no read-only panel here). */
-.esm-modal--fit-mgr .esm-body{padding-top:14px;}
+/* Reporting-manager review popup only — give the Claim Details card more
+   breathing room below the hero (scoped to esm-modal--fit-mgr, which is applied
+   only when the claim is at the manager-approval stage). */
+.esm-modal--fit-mgr .esm-body{padding-top:24px;}
 .esm-modal--fit-mgr .esm-hero{border-bottom:4px solid rgba(255,255,255,.6);}
 [data-bs-theme="dark"] .esm-modal{background:#0b1e27;color:#e2e8f0;}
 /* Nested Add-Payment popup (over the overview) — styled like the PO "Update PO
@@ -1259,7 +1262,12 @@ textarea.esm-in{resize:vertical;}
 [data-bs-theme="dark"] .esm-sumrow{background:#0d2730;color:#cbd5e1;}
 .esm-sumrow.is-grand{background:linear-gradient(120deg,#0891b2,#06b6d4);color:#fff;font-weight:800;font-size:13.5px;}
 .esm-sumrow.is-grand.is-bad{background:linear-gradient(120deg,#e11d48,#f43f5e);}
-.esm-payrow{display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px dashed #e2e8f0;}
+.esm-payrow{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;font-size:12px;padding:6px 0;border-bottom:1px dashed #e2e8f0;}
+/* Adjustment reason — clamp to 3 lines; the untruncated text lives in the
+   row's title tooltip. min-width:0 lets the flex child shrink so the clamp
+   engages instead of pushing the amount off the row. */
+.esm-adj-reason{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-width:0;flex:1;line-height:1.35;word-break:break-word;}
+.esm-payrow .is-pos,.esm-payrow .is-neg{flex-shrink:0;white-space:nowrap;}
 /* Payment history table */
 /* History table — exact styling from the PO "Payment Summary" table (pop-tbl). */
 .esm-tblwrap{overflow-x:auto;overflow-y:hidden;border-radius:12px;border:1px solid #dbeef4;box-shadow:0 2px 8px rgba(15,23,42,.05);}

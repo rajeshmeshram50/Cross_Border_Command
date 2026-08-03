@@ -624,7 +624,7 @@ class PayrollService
 
         // ── Rules 2 & 3 — attendance + leave ───────────────────────────────
         $att = $this->attendanceAggregates(
-            $employee->id, $winStart, $winEnd, $this->shiftStartOf($employee->shift ?? null)
+            $employee->id, $winStart, $winEnd, $employee->resolveShiftWindow()[0]
         );
         $leave = $this->leaveAggregates($employee->id, $winStart, $winEnd);
         // Holidays from the employee's assigned holiday group that fall on a
@@ -657,10 +657,12 @@ class PayrollService
         // Everything else in the active window is loss-of-pay.
         $lopDays = max(0, round($effectiveWorkingDays - $paidDays, 2));
 
-        // Rule 2 — every 3 late marks costs 1 day. Flag for HR review rather
-        // than silently docking (exception: late-sitting may have covered the
-        // hours; HR can hold/waive on review).
-        $lateLopDays = intdiv($lateMarks, 3);
+        // Rule 2 (BR-01) — LOP accrues in 0.5-day steps for every completed block
+        // of 3 late marks: 3→0.5, 6→1, 9→1.5, 12→2, and +0.5 per extra 3.
+        // Fewer than 3 late marks never deducts. Flag for HR review rather than
+        // silently docking (exception: late-sitting may have covered the hours;
+        // HR can hold/waive on review).
+        $lateLopDays = intdiv(max(0, $lateMarks), 3) * 0.5;
         if ($lateLopDays > 0) {
             $lopDays += $lateLopDays;
             $exceptions = $this->withException($exceptions, 'warning',
@@ -1050,18 +1052,6 @@ class PayrollService
             }
         }
         return ['present' => round($present, 2), 'late' => $late, 'missing' => $missing, 'rows' => $rows->count()];
-    }
-
-    /** Shift start ("HH:MM") parsed from an employee shift label like
-     *  "09:30 – 18:30"; null when unparseable. Mirrors
-     *  AttendanceController::parseShiftWindow so payroll and attendance agree. */
-    private function shiftStartOf(?string $shift): ?string
-    {
-        if (!$shift) return null;
-        if (preg_match('/(\d{1,2}:\d{2})\s*[–\-]\s*(\d{1,2}:\d{2})/u', $shift, $m)) {
-            return $m[1];
-        }
-        return null;
     }
 
     /** Minutes from $from ("HH:MM") to $to ("HH:MM"); negative if $to earlier. */

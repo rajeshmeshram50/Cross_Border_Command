@@ -1,0 +1,102 @@
+{
+  "info": {
+    "name": "Cross Border Command — DB Backup Email APIs",
+    "description": "All database-backup send endpoints (super-admin only). Auto-sends a gzip pg_dump every 15 days; these expose the same pipeline on demand.\n\nSetup: set collection variables `base_url` (default http://127.0.0.1:8000) and `token`. Run 'Login' first to auto-populate `token`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000", "type": "string" },
+    { "key": "token", "value": "", "type": "string" },
+    { "key": "admin_email", "value": "ceo@inhpl.com", "type": "string" },
+    { "key": "admin_password", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Login (get token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const res = pm.response.json();",
+              "const tok = res.token || res.data?.token || res.access_token;",
+              "if (tok) { pm.collectionVariables.set('token', tok); console.log('token saved'); }",
+              "pm.test('got a token', function () { pm.expect(tok).to.be.a('string'); });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/login",
+          "host": ["{{base_url}}"],
+          "path": ["api", "login"]
+        },
+        "description": "Standard email+password login. Test script stores the returned Sanctum token into the `token` collection variable used by the backup requests."
+      }
+    },
+    {
+      "name": "Backup email — Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/backup/email/status",
+          "host": ["{{base_url}}"],
+          "path": ["api", "backup", "email", "status"]
+        },
+        "description": "GET /api/backup/email/status — when the last DB backup went out, when it's next due (15-day cycle), the configured recipients, and whether it's due now / ever sent.\n\nResponse:\n{\n  \"interval_days\": 15,\n  \"recipients\": [\"php@inhpl.com\"],\n  \"last_sent_at\": null,\n  \"last_sent_human\": null,\n  \"next_due_at\": null,\n  \"is_due_now\": true,\n  \"ever_sent\": false\n}"
+      }
+    },
+    {
+      "name": "Backup email — Send now (default recipients)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/backup/email/send",
+          "host": ["{{base_url}}"],
+          "path": ["api", "backup", "email", "send"]
+        },
+        "description": "POST /api/backup/email/send — generate a full pg_dump of the whole DB right now, gzip it, and email it to BACKUP_EMAIL_RECIPIENTS (php@inhpl.com). Bypasses the 15-day gate and re-stamps the marker so the scheduled clock resets.\n\nResponse:\n{\n  \"message\": \"Backup emailed successfully.\",\n  \"recipients\": [\"php@inhpl.com\"],\n  \"size_kb\": 342,\n  \"sent_at\": \"2026-07-31T...\"\n}"
+      }
+    },
+    {
+      "name": "Backup email — Send now (override recipients)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"to\": \"php@inhpl.com,ceo@inhpl.com\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/backup/email/send",
+          "host": ["{{base_url}}"],
+          "path": ["api", "backup", "email", "send"]
+        },
+        "description": "Same as Send now, but `to` overrides the recipients for this one run (comma-separated). Values are trimmed, lowercased, de-duped and validated; invalid addresses are dropped. Returns 422 if none are valid."
+      }
+    }
+  ]
+}
