@@ -1,7 +1,7 @@
 /* ── KPI tiles — same recipe as the dashboard "Sales Performance" tiles
    (.dashboard-kpi-card in pages/dashboard/DashboardSections.tsx): compact
-   11px/14px padding on a 13px radius, a thin gradient rail down the LEFT edge
-   (this page used a full-width strip across the top), a faint gradient glow
+   11px/14px padding on a 13px radius, a thin full-width gradient strip across
+   the TOP edge, a faint gradient glow
    tucked into the top-right corner, a glass sheen and a hover shine streak.
    Values are copied rather than shared because the dashboard defines its
    version in a page-level <style> block. ── */
@@ -79,12 +79,13 @@
   border-color: rgba(64, 81, 137, 0.35) !important;
 }
 
-/* Thin glossy accent rail down the left edge. */
+/* Thin glossy accent strip across the top edge, full card width. The card's
+   `overflow: hidden` clips it to the 13px corner radius. */
 .hr-ov-kpi-strip {
   position: absolute;
-  top: 11px; bottom: 11px; left: 0;
-  width: 3px;
-  border-radius: 0 4px 4px 0;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  border-radius: 0 0 4px 4px;
 }
 /* Faint gradient tint tucked tight into the top-right corner. Kept subtle so
    the tile reads clean, not "smoky". */

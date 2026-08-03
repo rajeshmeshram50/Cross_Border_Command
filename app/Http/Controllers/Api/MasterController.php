@@ -886,7 +886,7 @@ class MasterController extends Controller
                 $rule = $applyTenantScope(Rule::unique($table, $f['n']));
                 if ($id) $rule = $rule->ignore($id);
                 $r[] = $rule;
-            }
+            } 
             // `uEach` (independent per-field uniqueness) is checked AFTER
             // this loop using a case-INSENSITIVE comparison, so "india" and
             // "India" are treated as the same value. Skip the standard

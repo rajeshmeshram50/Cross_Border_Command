@@ -32,8 +32,9 @@ const ONB_LOCATION     = OPT('Pune HQ', 'Mumbai', 'Bengaluru');
 
 const ONB_PROBATION    = OPT('Default Probation Policy', '3-Month Probation', '6-Month Probation', 'No Probation');
 const ONB_NOTICE       = OPT('Default Notice Period', '15 Days', '30 Days', '60 Days', '90 Days');
-const ONB_HOLIDAY      = OPT('Holiday Calendar', 'India Holidays 2026', 'Global Holidays 2026');
-const ONB_SHIFT        = OPT('General Shift', 'Morning Shift', 'Evening Shift', 'Night Shift', 'Flexible');
+/* No ONB_HOLIDAY / ONB_SHIFT constants — Holiday List is fed by the Holiday
+   Master (/holiday-groups) and Shift by the branch's configured Shift Details
+   (/branch-shifts). Never hardcode either list. */
 const ONB_WEEKLY_OFF   = OPT('Week Off Policy', 'Saturday & Sunday', 'Sunday Only', 'Rotational');
 
 const ONB_TIME_TRACK   = OPT('Manual', 'Biometric');
@@ -3326,6 +3327,16 @@ function InitiateOnboardingModal({
   // hydrate (a stored rate ⇒ Yes) but kept as its own state so toggling to
   // Yes before a rate is picked still reveals the picker.
   const [overtimeApplicable, setOvertimeApplicable] = useState('No');
+  // Holiday groups come from the Holiday Master (HR › Holiday › Groups), same
+  // source as the Add Employee form — which stores the GROUP ID, so a
+  // hardcoded name list would leave this dropdown blank for every employee
+  // already assigned a real group.
+  const [mHolidayGroups, setMHolidayGroups] = useState<any[]>([]);
+  // Shifts come from the branch's configured Shift Details (Branch Setup), not
+  // a hardcoded list. BranchSwitcher injects ?branch_id on this GET, so a
+  // branch user sees their branch's shifts and a client_admin sees the branch
+  // selected in the switcher (or the union across branches on "All Branches").
+  const [branchShiftOpts, setBranchShiftOpts] = useState<{ value: string; label: string }[]>([]);
   // While the master fetch below is in flight the async dropdowns shimmer
   // instead of flashing the saved raw id (work country showed "101" until
   // /master/countries landed, then swapped to the name). Starts true so the
@@ -3385,6 +3396,22 @@ function InitiateOnboardingModal({
             .map((o: any) => ({ value: String(o.rate_name), label: String(o.rate_name) })),
         );
       }).catch(() => { if (!cancelled) setOvertimeRateOpts([]); }),
+      api.get('/holiday-groups')
+        .then(r => { if (!cancelled) setMHolidayGroups(Array.isArray(r.data) ? r.data : []); })
+        .catch(() => { if (!cancelled) setMHolidayGroups([]); }),
+      api.get('/branch-shifts')
+        .then(r => {
+          if (cancelled) return;
+          const list = Array.isArray(r.data?.shifts) ? r.data.shifts : [];
+          setBranchShiftOpts(list
+            .filter((s: any) => s?.name)
+            .map((s: any) => ({
+              value: s.name,
+              // Timing beside the name so the picker is self-explanatory.
+              label: s.start && s.end ? `${s.name} (${s.start}–${s.end})` : s.name,
+            })));
+        })
+        .catch(() => { if (!cancelled) setBranchShiftOpts([]); }),
     ]).then(() => { if (!cancelled) setMastersLoading(false); });
     return () => { cancelled = true; };
   }, [isOpen]);
@@ -3404,6 +3431,14 @@ function InitiateOnboardingModal({
     return h ? String(h.id) : '';
   })();
   const roleOpts        = mRoles.map(r => ({ value: String(r.id), label: r.name }));
+  /* Holiday List — only ACTIVE groups are assignable. A group that was
+     deactivated after this employee was assigned to it is appended (flagged
+     "Inactive") so the saved value still renders instead of showing blank. */
+  const holidayGroupOpts = mHolidayGroups
+    .filter(g => String(g.status ?? 'Active').toLowerCase() !== 'inactive')
+    .map(g => ({ value: String(g.id), label: g.name }));
+  // (`holidayGroupSelectOpts` — which folds in the saved-but-inactive group —
+  // is built below, once the `s1` form state exists.)
   /* Legal Entity is auto-fetched, not picked: an onboardee is always hired into
      the branch the form is filled under. `autoLegalEntity` is the single branch
      the API returned (a branch_user, or a client_admin with one branch selected
@@ -3498,6 +3533,34 @@ function InitiateOnboardingModal({
     pf_type: 'Statutory',   // 'Statutory' (₹15k cap) | 'Standard' (full basic)
   });
 
+  /* Holiday List options as rendered: the active groups, plus this employee's
+     own group when it has since been deactivated (so an existing assignment
+     never disappears from the dropdown). `s1.holiday_list` holds the group id. */
+  const holidayGroupSelectOpts = (() => {
+    const opts = [...holidayGroupOpts];
+    if (s1.holiday_list && !opts.some(o => o.value === String(s1.holiday_list))) {
+      const g = mHolidayGroups.find(x => String(x.id) === String(s1.holiday_list));
+      if (g) opts.push({ value: String(g.id), label: `${g.name} (Inactive)` });
+    }
+    return opts;
+  })();
+
+  /* Shift options as rendered. Branch-configured shifts are the ONLY source —
+     no hardcoded fallback, so an unconfigured branch shows an empty list with
+     a hint rather than misleading defaults. The employee's already-saved shift
+     is kept at the top (flagged "current") so editing never blanks an older
+     value that predates the branch's shift setup. */
+  const shiftSelectOpts = (() => {
+    const base = [...branchShiftOpts];
+    if (s1.shift && !base.some(o => o.value === s1.shift)) {
+      return [{ value: s1.shift, label: `${s1.shift} (current)` }, ...base];
+    }
+    return base;
+  })();
+  const shiftPlaceholder = branchShiftOpts.length === 0
+    ? 'No shifts configured for this branch'
+    : 'Select shift';
+
   // Snapshot of the name as last persisted on the server. Drives the
   // read-only "Employee Actual Name" field so the legal name stays
   // pinned to the saved value while the HR is editing first/middle/last —
@@ -3553,7 +3616,9 @@ useEffect(() => {
     notice_period:    String(x.notice_period    ?? ''),
 
     leave_plan:          String(x.leave_plan          ?? ''),
-    holiday_list:        String(x.holiday_list        ?? ''),
+    // Holiday List binds to the Holiday Master group ID (the legacy
+    // `holiday_list` name column is written alongside it on save).
+    holiday_list:        x.holiday_group_id ? String(x.holiday_group_id) : '',
     shift:               String(x.shift               ?? ''),
     weekly_off:          String(x.weekly_off          ?? ''),
     attendance_number:   String(x.attendance_number   ?? ''),
@@ -3916,6 +3981,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       reporting_manager_id:      rmIds.emp,
       reporting_manager_user_id: rmIds.user,
       annual_salary:    s1.annual_salary === '' ? null : Number(s1.annual_salary),
+      // The picker holds the Holiday Master group id; persist the FK and keep
+      // the legacy `holiday_list` name column in sync (same as Add Employee).
+      holiday_group_id: intOrNull(s1.holiday_list),
+      holiday_list:     mHolidayGroups.find(g => String(g.id) === String(s1.holiday_list))?.name || null,
       // PF type → backend expects lowercase; only meaningful when PF applies.
       pf_type:     s1.pf_eligible ? String(s1.pf_type).toLowerCase() : null,
       // Empty strings to null for nullable string columns
@@ -4006,7 +4075,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   // see exactly which fields the "complete required fields" toast refers to.
   const [s4ShowErrors, setS4ShowErrors] = useState(false);
   const [s4, setS4] = useState({
-    salary_payment_mode: 'bank' as 'bank' | 'cheque' | 'cash',
+    salary_payment_mode: 'bank' as 'bank' | 'cheque',
     bank_name: '',
     bank_account_number: '',
     ifsc_code: '',
@@ -4029,7 +4098,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     const x = emp.raw;
     const mode = String(x.salary_payment_mode ?? 'bank').toLowerCase();
     setS4({
-      salary_payment_mode: (mode === 'cheque' || mode === 'cash') ? mode as any : 'bank',
+      // Cash is no longer offered — a legacy `cash` record falls back to Bank
+      // Transfer so the radio group never loads with nothing selected.
+      salary_payment_mode: mode === 'cheque' ? 'cheque' : 'bank',
       bank_name:           String(x.bank_name           ?? ''),
       bank_account_number: String(x.bank_account_number ?? ''),
       ifsc_code:           String(x.ifsc_code           ?? ''),
@@ -4431,7 +4502,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
   // Stage 4 readiness — same shape as the four checks rendered inside
   // `Stage4Payroll`, derived from the live s4 form state. Bank check
-  // auto-passes for cheque/cash since no account is needed.
+  // auto-passes for cheque since no account is needed.
   const PAN_RE  = /^[A-Z]{5}[0-9]{4}[A-Z]$/i;
   const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/i;
   const UAN_RE  = /^\d{12}$/;
@@ -4971,15 +5042,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
                   <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={ONB_HOLIDAY} value={s1.holiday_list} placeholder="Select holiday list" onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={ONB_SHIFT} value={s1.shift} placeholder="Select shift" onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={holidayGroupSelectOpts} loading={mastersLoading} value={s1.holiday_list} placeholder={holidayGroupOpts.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={shiftSelectOpts} loading={mastersLoading} value={s1.shift} placeholder={shiftPlaceholder} onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" value={s1.attendance_number} onChange={e => setS1(p => ({ ...p, attendance_number: e.target.value }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Overtime Applicable</label><MasterSelect options={ONB_YES_NO} value={overtimeApplicable} placeholder="Select" onChange={(v) => { setOvertimeApplicable(v); if (v !== 'Yes') setS1(p => ({ ...p, overtime: '' })); }} /></Col>
                   {overtimeApplicable === 'Yes' && (
                     <Col md={4}><label className="onb-init-label">Overtime Rate</label><MasterSelect options={overtimeRateOpts} loading={mastersLoading} value={s1.overtime} placeholder={overtimeRateOpts.length ? 'Select overtime rate' : 'No rates — add in Master › Overtime (OT)'} onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
                   )}
-                  <Col md={4} data-field="expense_policy"><label className="onb-init-label">Expense Policy<span className="req">*</span></label><MasterSelect options={ONB_EXPENSE} placeholder="Select policy" value={s1.expense_policy} invalid={!!s1Errors.expense_policy} onChange={(v) => { setS1(p => ({ ...p, expense_policy: v })); setS1Errors(p => ({ ...p, expense_policy: '' })); }} />{s1Errors.expense_policy && <div className="onb-error-msg">{s1Errors.expense_policy}</div>}</Col>
+                  <Col md={4} data-field="expense_policy"><label className="onb-init-label">Expense Policy<span className="req">*</span></label><MasterSelect options={ONB_EXPENSE} placeholder="Select expense policy" value={s1.expense_policy} invalid={!!s1Errors.expense_policy} onChange={(v) => { setS1(p => ({ ...p, expense_policy: v })); setS1Errors(p => ({ ...p, expense_policy: '' })); }} />{s1Errors.expense_policy && <div className="onb-error-msg">{s1Errors.expense_policy}</div>}</Col>
                 </Row>
 
                 <div
@@ -7284,7 +7355,8 @@ function Stage3Provisioning({
 /** Bound to the modal-level `s4` state so all Stage 4 progress, check-pills,
  *  Save Draft button, and Next-Stage gating share one source of truth. */
 type S4State = {
-  salary_payment_mode: 'bank' | 'cheque' | 'cash';
+  /* Cash payout was retired — onboarding offers Bank Transfer or Cheque only. */
+  salary_payment_mode: 'bank' | 'cheque';
   bank_name: string;
   bank_account_number: string;
   ifsc_code: string;
@@ -7348,7 +7420,6 @@ function Stage4Payroll({
           {([
             { id: 'bank',   name: 'Bank Transfer to Employee Account', sub: 'Direct bank credit on salary date' },
             { id: 'cheque', name: 'Payment by Cheque',                 sub: 'Physical cheque issued on salary date' },
-            { id: 'cash',   name: 'Payment by Cash',                   sub: 'Cash payment (only for applicable roles)' },
           ] as const).map(opt => (
             <div
               key={opt.id}
@@ -7365,7 +7436,7 @@ function Stage4Payroll({
         </div>
       </div>
 
-      {/* Bank Details — only collected for `bank` mode. Cheque and Cash skip
+      {/* Bank Details — only collected for `bank` mode. Cheque skips
           straight to Tax & Statutory since no account is needed. This also
           matches the validation + readiness checks, which require bank details
           ONLY when the mode is `bank` (showing them for Cheque was misleading
@@ -7525,14 +7596,14 @@ function Stage4Payroll({
         </div>
         <div className="onb-pay-section-body">
           {checkRows.map(c => {
-            // Bank details aren't applicable for Cheque / Cash payouts. The
-            // readiness check auto-passes them in those modes — but rendering
+            // Bank details aren't applicable for a Cheque payout. The
+            // readiness check auto-passes them in that mode — but rendering
             // that as a green "Verified" wrongly implied bank info was entered
             // (QA bug). Show a neutral "Not required" row instead; it still
             // counts toward stage completion since no account is needed.
             const bankNA = c.id === 'bank' && s4.salary_payment_mode !== 'bank';
             if (bankNA) {
-              const modeLabel = s4.salary_payment_mode === 'cheque' ? 'Cheque' : 'Cash';
+              const modeLabel = 'Cheque';
               return (
                 <div key={c.id} className="onb-pay-check">
                   <span className="onb-pay-check-icon"><i className="ri-subtract-line" /></span>

@@ -417,7 +417,12 @@ class ExpenseClaimController extends Controller
         }
 
         $title    = ($claim->claim_no ?: ('EXP-' . $claim->id)) . ' - ' . ($claim->title ?: 'Expense');
-        $category = $payment->category_name ?: ($claim->category_name ?: 'Employee Reimbursement');
+        // Resolve the category LIVE from its id (payment first, then claim) so a
+        // rename in the Expense Category master flows through — never the stored
+        // *_name snapshot, which would go stale.
+        $category = $payment->category?->name
+            ?: $claim->category?->name
+            ?: 'Employee Reimbursement';
 
         $expenseId = null;
         try {
@@ -437,25 +442,59 @@ class ExpenseClaimController extends Controller
                 $payload['source_of_supply']      = $state;
                 $payload['destination_of_supply'] = $state;
             }
-            // Mandatory "Title" custom field on the Zoho Expense module — resolve
-            // its api_name live (falls back to the configured value).
-            $titleCf = $zoho->resolveExpenseTitleFieldApiName();
-            if ($titleCf) {
-                $payload['custom_fields'] = [['api_name' => $titleCf, 'value' => $title]];
-            }
 
             $expense   = $zoho->createExpense($payload);
             $expenseId = (string) ($expense['expense_id'] ?? '');
 
-            // Attach the proof-of-payment file as the expense receipt (best-effort;
-            // a receipt failure shouldn't undo an otherwise-created expense).
-            if ($expenseId !== '' && !empty($payment->proof_path)) {
+            // Attach receipts (best-effort; a receipt failure shouldn't undo an
+            // otherwise-created expense). Every supporting file is pushed to the
+            // Zoho expense: the settlement's proof-of-payment first, then the
+            // claim's original receipt attachments — so a claim with multiple
+            // receipts carries them all across, not just one.
+            //
+            // Zoho caps an expense at 5 receipts (10 MB each), so we stop at 5.
+            // NOTE: the /receipt endpoint's accumulate-vs-replace behaviour on
+            // Zoho Books is undocumented — the UI supports up to 5 receipts, so
+            // we upload each separately; if a given org replaces instead of
+            // accumulating, only the last would survive (logged, non-fatal).
+            if ($expenseId !== '') {
                 $disk = \Illuminate\Support\Facades\Storage::disk('public');
-                if ($disk->exists($payment->proof_path)) {
+
+                $receiptFiles = [];
+                // Proof-of-payment first — it's the strongest evidence for this expense.
+                if (!empty($payment->proof_path)) {
+                    $receiptFiles[] = [
+                        'path' => $payment->proof_path,
+                        'name' => $payment->proof_name ?: basename($payment->proof_path),
+                    ];
+                }
+                // Then the claim's original supporting receipts (may be several).
+                foreach (($claim->attachments ?? []) as $att) {
+                    $p = is_array($att) ? ($att['path'] ?? null) : null;
+                    if (empty($p)) continue;
+                    $receiptFiles[] = [
+                        'path' => $p,
+                        'name' => (is_array($att) ? ($att['name'] ?? null) : null) ?: basename($p),
+                    ];
+                }
+                // De-dup by stored path and respect Zoho's 5-receipt-per-expense cap.
+                $seen = [];
+                $receiptFiles = array_values(array_filter($receiptFiles, function ($f) use (&$seen) {
+                    if (isset($seen[$f['path']])) return false;
+                    $seen[$f['path']] = true;
+                    return true;
+                }));
+
+                foreach (array_slice($receiptFiles, 0, 5) as $rf) {
+                    if (!$disk->exists($rf['path'])) continue;
                     try {
-                        $zoho->attachExpenseReceipt($expenseId, $disk->get($payment->proof_path), $payment->proof_name ?: basename($payment->proof_path));
+                        $zoho->attachExpenseReceipt($expenseId, $disk->get($rf['path']), $rf['name']);
                     } catch (\Throwable $e) {
-                        \Illuminate\Support\Facades\Log::warning('Zoho expense receipt attach failed', ['payment' => $payment->id, 'error' => $e->getMessage()]);
+                        \Illuminate\Support\Facades\Log::warning('Zoho expense receipt attach failed', [
+                            'payment' => $payment->id,
+                            'file'    => $rf['path'],
+                            'error'   => $e->getMessage(),
+                        ]);
                     }
                 }
             }
@@ -1002,14 +1041,22 @@ class ExpenseClaimController extends Controller
     public function settlement(Request $request, $id)
     {
         $user = $request->user();
-        $row  = ExpenseClaim::with('payments.payer')->findOrFail($id);
+        $row  = ExpenseClaim::with(['payments.payer', 'payments.category', 'employee', 'category'])->findOrFail($id);
         $this->ensureTenantAccess($row, $user);
+
+        // Employee details are fetched LIVE from the employee record (by
+        // employee_id), so a name change reflects here. The stored snapshot is
+        // only a fallback for a since-deleted employee. Mirrors serialize().
+        $employee     = $row->employee;
+        $employeeName = ($employee
+            ? ($employee->display_name ?: trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')))
+            : null) ?: $row->employee_name;
 
         return response()->json([
             'id'                => $row->id,
             'claim_no'          => $row->claim_no ?: ('#' . $row->id),
             'title'             => $row->title,
-            'employee_name'     => $row->employee_name ?: $row->employee?->display_name,
+            'employee_name'     => $employeeName,
             'expense_date'      => optional($row->expense_date)->format('Y-m-d'),
             'currency'          => $row->currency,
             'claimed_amount'    => (float) $row->amount,
@@ -1048,7 +1095,9 @@ class ExpenseClaimController extends Controller
             'payments'          => $row->payments->map(fn ($p) => [
                 'id'           => $p->id,
                 'amount'       => (float) $p->amount,
-                'category_name'=> $p->category_name,
+                // Live from the category master (by category_id); snapshot is a
+                // fallback for a since-deleted category only.
+                'category_name'=> $p->category?->name ?? $p->category_name,
                 'payment_type' => $p->payment_type,
                 'expense_type' => $p->expense_type,
                 'note'         => $p->note,
