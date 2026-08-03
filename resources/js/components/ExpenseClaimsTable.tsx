@@ -2,6 +2,7 @@ import { useRef, useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import DataTable, { TruncCell, type DataTableColumn } from './ui/DataTable';
 import ProofOfPaymentCell from './ProofOfPaymentCell';
+import { useToast } from '../contexts/ToastContext';
 // Reuses the polished confirmation-modal CSS classes already shipping with
 // the recruitment / candidate flows (cand-confirm-modal, cand-confirm-head,
 // cand-confirm-body, cand-confirm-footer, etc.).
@@ -56,6 +57,15 @@ export type ExpenseClaimRow = {
   hr_comment: string | null;
   creator_name: string | null;
   created_at: string | null;
+  // Settlement (post-approval payment)
+  sanctioned_amount?: number | null;
+  deduction_amount?: number;
+  deduction_reason?: string | null;
+  total_paid?: number;
+  settlement_status?: 'unpaid' | 'partial' | 'paid';
+  remaining_amount?: number | null;
+  zoho_all_synced?: boolean;
+  reimbursement_emailed_at?: string | null;
 };
 
 type ActionKind = 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reject';
@@ -74,6 +84,17 @@ type Props = {
   /** Whether the current user has HR/Finance approval permission. */
   canHrApprove?: boolean;
   onAct?: (claimId: number, action: ActionKind, comment?: string) => Promise<void> | void;
+  /** HR/Finance: open the Record-Payment (settlement) form for an approved claim. */
+  onRecordPayment?: (claim: ExpenseClaimRow) => void;
+  /** Anyone (e.g. the claim owner): open the settlement in read-only view to see
+   *  the payment history. */
+  onViewPayments?: (claim: ExpenseClaimRow) => void;
+  /** HR: open the "Review & Approve" popup (header + KPIs + editable adjustments,
+   *  then Approve/Reject) instead of the inline approve/reject icon buttons. */
+  onReview?: (claim: ExpenseClaimRow) => void;
+  /** HR: email the employee the reimbursement confirmation. Enabled only once the
+   *  claim is fully paid AND every payment is synced to Zoho. */
+  onEmailReimbursement?: (claim: ExpenseClaimRow) => void;
 };
 
 const STATUS_TONE: Record<ExpenseClaimRow['status'], { bg: string; fg: string; dot: string; label: string }> = {
@@ -81,6 +102,23 @@ const STATUS_TONE: Record<ExpenseClaimRow['status'], { bg: string; fg: string; d
   approved: { bg: '#d6f4e3', fg: '#108548', dot: '#10b981', label: 'Approved' },
   rejected: { bg: '#fdd9ea', fg: '#a02960', dot: '#ef4444', label: 'Rejected' },
 };
+
+/* Payment (settlement) status pill — only meaningful once a claim is approved.
+   'paid' → Complete, 'partial' → Partial, otherwise Pending. Non-approved
+   claims show a muted dash since there's nothing to reimburse yet. */
+const PAY_TONE: Record<'paid' | 'partial' | 'pending', { bg: string; fg: string; icon: string; label: string }> = {
+  paid:    { bg: '#d6f4e3', fg: '#108548', icon: 'ri-checkbox-circle-line', label: 'Complete' },
+  partial: { bg: '#fde8c4', fg: '#a4661c', icon: 'ri-progress-4-line',      label: 'Partial'  },
+  pending: { bg: '#fdd9d6', fg: '#b1401d', icon: 'ri-time-line',            label: 'Pending'  },
+};
+
+function paymentStatusOf(c: ExpenseClaimRow): 'paid' | 'partial' | 'pending' | null {
+  if (c.status !== 'approved') return null;
+  const s = c.settlement_status ?? 'unpaid';
+  if (s === 'paid') return 'paid';
+  if (s === 'partial') return 'partial';
+  return 'pending';
+}
 
 /* Dark-mode badge tints. The EXP ID / Category / Status pills set light pastel
    backgrounds via inline styles (fine in light mode), which washed out to
@@ -99,6 +137,9 @@ const BADGE_DARK_CSS = `
 [data-bs-theme="dark"] .exp-status-badge--pending  { background: #3a2a08 !important; color: #fbbf24 !important; }
 [data-bs-theme="dark"] .exp-status-badge--approved { background: #0c2e1d !important; color: #4ade80 !important; }
 [data-bs-theme="dark"] .exp-status-badge--rejected { background: #3a0e1e !important; color: #f9a8d4 !important; }
+[data-bs-theme="dark"] .exp-pay-badge--paid    { background: #0c2e1d !important; color: #4ade80 !important; }
+[data-bs-theme="dark"] .exp-pay-badge--partial { background: #3a2a08 !important; color: #fbbf24 !important; }
+[data-bs-theme="dark"] .exp-pay-badge--pending { background: #3a1608 !important; color: #fdba74 !important; }
 `;
 
 function fmtDate(iso: string | null | undefined): string {
@@ -144,7 +185,7 @@ function withAuthToken(url: string): string {
  * going to Proof so a real file name + extension fits. */
 export function expenseClaimColumns({
   accent = '#7c5cfc', fallbackName, fallbackInitials,
-  mode = 'mine', currentEmployeeId = null, canHrApprove = false, onAct,
+  mode = 'mine', currentEmployeeId = null, canHrApprove = false, onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement,
 }: Omit<Props, 'rows' | 'loading'>): DataTableColumn<ExpenseClaimRow>[] {
   return [
     {
@@ -258,6 +299,27 @@ export function expenseClaimColumns({
       },
     },
     {
+      header: () => <div className="text-center">Payment Status</div>,
+      id: 'payment_status',
+      enableSorting: false,
+      accessorFn: (c: ExpenseClaimRow) => paymentStatusOf(c) ?? '',
+      meta: { width: '11%', align: 'center' },
+      cell: info => {
+        const ps = paymentStatusOf(info.row.original);
+        if (!ps) return <span className="text-muted">—</span>;
+        const t = PAY_TONE[ps];
+        return (
+          <span
+            className={`d-inline-flex align-items-center gap-1 fw-semibold exp-pay-badge exp-pay-badge--${ps}`}
+            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: t.bg, color: t.fg }}
+          >
+            <i className={t.icon} />
+            {t.label}
+          </span>
+        );
+      },
+    },
+    {
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
@@ -269,6 +331,10 @@ export function expenseClaimColumns({
           currentEmployeeId={currentEmployeeId}
           canHrApprove={canHrApprove}
           onAct={onAct}
+          onRecordPayment={onRecordPayment}
+          onViewPayments={onViewPayments}
+          onReview={onReview}
+          onEmailReimbursement={onEmailReimbursement}
         />
       ),
     },
@@ -279,11 +345,11 @@ export default function ExpenseClaimsTable({
   rows, loading,
   fallbackName, fallbackInitials, accent = '#7c5cfc',
   mode = 'mine', currentEmployeeId = null, canHrApprove = false,
-  onAct,
+  onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement,
 }: Props) {
   const columns = useMemo(
-    () => expenseClaimColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct }),
-    [accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct],
+    () => expenseClaimColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement }),
+    [accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement],
   );
   return (
     <>
@@ -315,15 +381,20 @@ export default function ExpenseClaimsTable({
  *  confirm-modal state, which is why it's a component rather than inline JSX:
  *  each row needs its own. */
 function ExpenseActionCell({
-  claim: c, mode, currentEmployeeId, canHrApprove, onAct,
+  claim: c, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement,
 }: {
   claim: ExpenseClaimRow;
   mode: 'mine' | 'team' | 'hr';
   currentEmployeeId: number | null;
   canHrApprove: boolean;
   onAct?: Props['onAct'];
+  onRecordPayment?: Props['onRecordPayment'];
+  onViewPayments?: Props['onViewPayments'];
+  onReview?: Props['onReview'];
+  onEmailReimbursement?: Props['onEmailReimbursement'];
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const toast = useToast();
   // Confirmation modal for both approve & reject. The action shape carries
   // both the verdict and the stage so we can render a contextual title +
   // submit colour, and so the same dispatcher hits the right backend route.
@@ -344,6 +415,26 @@ function ExpenseActionCell({
     && c.manager_status === 'approved'
     && c.hr_status === 'pending'
     && !!onAct;
+
+  // Record Payment / View history (settlement) — available on any approved claim.
+  // When it's already fully paid the button flips to a "view history" affordance
+  // (still opens the same modal) so the payment record stays reachable.
+  const canSettle =
+    mode === 'hr'
+    && canHrApprove
+    && c.status === 'approved'
+    && !!onRecordPayment;
+  const settleDone = (c.settlement_status ?? 'unpaid') === 'paid';
+
+  // Email the employee — shown on every claim except Rejected; enabled only once
+  // the claim is approved, fully paid AND every payment is synced to Zoho.
+  const showEmail =
+    mode === 'hr'
+    && canHrApprove
+    && c.status !== 'rejected'
+    && !!onEmailReimbursement;
+  const canEmail = showEmail && c.status === 'approved' && settleDone && !!c.zoho_all_synced;
+  const emailedAlready = !!c.reimbursement_emailed_at;
 
   const verdictBtn = (stage: 'manager' | 'hr', verdict: 'approve' | 'reject') => (
     <button
@@ -368,8 +459,78 @@ function ExpenseActionCell({
   return (
     <>
       <div className="d-inline-flex align-items-center gap-1">
-        {canManagerAct && <>{verdictBtn('manager', 'approve')}{verdictBtn('manager', 'reject')}</>}
-        {canHrAct && <>{verdictBtn('hr', 'approve')}{verdictBtn('hr', 'reject')}</>}
+        {(canManagerAct || canHrAct) && onReview ? (
+          <button
+            type="button"
+            onClick={() => onReview(c)}
+            className="btn btn-sm d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold"
+            style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', whiteSpace: 'nowrap' }}
+          >
+            <i className="ri-eye-line" /> Review &amp; Approve
+          </button>
+        ) : (
+          <>
+            {canManagerAct && <>{verdictBtn('manager', 'approve')}{verdictBtn('manager', 'reject')}</>}
+            {canHrAct && <>{verdictBtn('hr', 'approve')}{verdictBtn('hr', 'reject')}</>}
+          </>
+        )}
+        {canSettle && (
+          <button
+            type="button"
+            data-tooltip={settleDone ? 'View payment history' : (c.settlement_status ?? 'unpaid') === 'partial' ? 'Record another payment' : 'Record payment'}
+            data-tooltip-pos="left"
+            aria-label={settleDone ? 'View payment history' : 'Record payment'}
+            onClick={() => onRecordPayment?.(c)}
+            className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+            style={{
+              width: 28, height: 28, padding: 0, color: '#fff', border: 'none',
+              background: settleDone ? 'linear-gradient(135deg,#0ab39c,#02c8a7)' : 'linear-gradient(135deg,#f7b84b,#f59e0b)',
+            }}
+          >
+            <i className={settleDone ? 'ri-history-line' : 'ri-bank-card-line'} />
+          </button>
+        )}
+        {showEmail && (
+          <button
+            type="button"
+            data-tooltip={!canEmail ? (settleDone ? 'Sync all payments to Zoho first' : 'Available once fully paid & synced to Zoho') : emailedAlready ? 'Re-send reimbursement email' : 'Email reimbursement to employee'}
+            data-tooltip-pos="left"
+            aria-label="Email reimbursement"
+            onClick={() => {
+              if (canEmail) { onEmailReimbursement?.(c); return; }
+              if (settleDone && !c.zoho_all_synced) {
+                toast.warning('Sync to Zoho first', 'This claim’s payment isn’t in Zoho Books yet — sync all payments to Zoho before emailing the reimbursement.');
+              } else {
+                toast.info('Not ready yet', 'The claim must be fully paid and every payment synced to Zoho before it can be emailed.');
+              }
+            }}
+            className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+            style={{
+              width: 28, height: 28, padding: 0, color: '#fff', border: 'none',
+              cursor: canEmail ? 'pointer' : 'not-allowed',
+              opacity: canEmail ? 1 : 0.5,
+              background: !canEmail ? 'linear-gradient(135deg,#cbd5e1,#94a3b8)'
+                : emailedAlready ? 'linear-gradient(135deg,#94a3b8,#64748b)'
+                : 'linear-gradient(135deg,#6366f1,#4f46e5)',
+            }}
+          >
+            <i className={emailedAlready && canEmail ? 'ri-mail-check-line' : 'ri-mail-send-line'} />
+          </button>
+        )}
+        {/* View payments (read-only) — for the claim owner on their profile. */}
+        {!!onViewPayments && c.status === 'approved' && (
+          <button
+            type="button"
+            data-tooltip="View payments"
+            data-tooltip-pos="left"
+            aria-label="View payments"
+            onClick={() => onViewPayments?.(c)}
+            className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+            style={{ width: 28, height: 28, padding: 0, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)' }}
+          >
+            <i className="ri-history-line" />
+          </button>
+        )}
         <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} claim={c} />
       </div>
 

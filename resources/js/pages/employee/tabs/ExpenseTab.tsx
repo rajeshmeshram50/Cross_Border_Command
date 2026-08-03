@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card, Col, Row, Dropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 import ExpenseClaimsTable from '../../../components/ExpenseClaimsTable';
+import ExpenseSettlementModal from '../../../components/ExpenseSettlementModal';
 import AdvanceRequestsTable from '../../../components/AdvanceRequestsTable';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import DraftListView from './DraftListView';
@@ -33,6 +34,10 @@ export default function ExpenseTab() {
   // changes (module, My/Team, status filter, search) so we never land past the end.
   const [pageSize, setPageSize] = useState(10);
   const [page, setPage] = useState(1);
+  // Claim whose read-only payment history is open (owner/manager viewing).
+  const [viewClaimId, setViewClaimId] = useState<number | null>(null);
+  // Claim open in the "Review & Approve" popup (reporting-manager stage).
+  const [reviewClaimId, setReviewClaimId] = useState<number | null>(null);
   useEffect(() => { setPage(1); }, [expenseModuleTab, expenseSubTab, advanceSubTab, expenseFilter, expenseSearch]);
 
   const isAdvance   = expenseModuleTab === 'advance';
@@ -44,6 +49,7 @@ export default function ExpenseTab() {
   const visibleExpenses = filteredExpenses.slice(pageStart, pageStart + pageSize);
 
   return (
+      <>
         <div className="ep-tab-fill">
           {/* Expense Overview hero — same shape as Evidence Vault / Payroll Summary. */}
           <Card className="mb-3 border-0 ext-hero-card">
@@ -419,6 +425,8 @@ export default function ExpenseTab() {
                   mode={expenseSubTab === 'team' ? 'team' : 'mine'}
                   currentEmployeeId={authUser?.employee_id ?? null}
                   onAct={actOnClaim}
+                  onViewPayments={(c) => setViewClaimId(c.id)}
+                  onReview={(c) => setReviewClaimId(c.id)}
                 />
               )}
 
@@ -446,5 +454,22 @@ export default function ExpenseTab() {
             </div>
           </div>
         </div>
+
+        {/* Read-only payment history for the claim owner / manager. */}
+        <ExpenseSettlementModal
+          claimId={viewClaimId}
+          readOnly
+          onClose={() => setViewClaimId(null)}
+          onDone={refreshClaims}
+        />
+
+        {/* Review & Approve (reporting-manager stage) — view-only, approve/reject. */}
+        <ExpenseSettlementModal
+          claimId={reviewClaimId}
+          review
+          onClose={() => setReviewClaimId(null)}
+          onDone={refreshClaims}
+        />
+      </>
   );
 }

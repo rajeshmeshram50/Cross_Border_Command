@@ -7,6 +7,7 @@ import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { expenseClaimColumns, type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
+import ExpenseSettlementModal from '../../components/ExpenseSettlementModal';
 import { advanceRequestColumns, type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import DataTable from '../../components/ui/DataTable';
@@ -131,6 +132,10 @@ export default function HrExpenseManagement() {
   const { user } = useAuth();
   const toast = useToast();
   const chartTheme = useChartTheme();
+  // Claim whose Record-Payment (settlement) modal is open.
+  const [settleClaimId, setSettleClaimId] = useState<number | null>(null);
+  // Claim whose "Review & Approve" modal is open.
+  const [reviewClaimId, setReviewClaimId] = useState<number | null>(null);
 
   const [rows, setRows] = useState<ExpenseClaimRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -139,7 +144,7 @@ export default function HrExpenseManagement() {
   const [module, setModule] = useState<'expense' | 'advance'>('expense');
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
-  const [analyticsOpen, setAnalyticsOpen] = useState(true);
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   useEffect(() => {
@@ -210,6 +215,17 @@ export default function HrExpenseManagement() {
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Action failed.';
       toast.error('Action failed', msg);
+    }
+  };
+
+  // Email the employee their reimbursement confirmation (fully paid + all synced).
+  const emailReimbursement = async (claimId: number) => {
+    try {
+      const res = await api.post(`/expense-claims/${claimId}/email-reimbursement`);
+      toast.success('Emailed', res?.data?.message || 'Reimbursement emailed to the employee.');
+      await refresh();
+    } catch (err: any) {
+      toast.error('Email failed', err?.response?.data?.message || 'Could not send the email.');
     }
   };
 
@@ -567,7 +583,7 @@ export default function HrExpenseManagement() {
   /* Columns come from the shared row components, so an expense row looks the
      same here and on the employee profile's Expense tab. */
   const claimColumns = useMemo(
-    () => expenseClaimColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct }),
+    () => expenseClaimColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct, onRecordPayment: (row) => setSettleClaimId(row.id), onReview: (row) => setReviewClaimId(row.id), onEmailReimbursement: (row) => emailReimbursement(row.id) }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [canHrApprove, user?.employee_id],
   );
@@ -925,6 +941,21 @@ export default function HrExpenseManagement() {
           />
         )}
       </div>
+
+      {/* Record Payment (settlement) for an approved claim — partial payments supported. */}
+      <ExpenseSettlementModal
+        claimId={settleClaimId}
+        onClose={() => setSettleClaimId(null)}
+        onDone={refresh}
+      />
+
+      {/* Review & Approve — HR sets adjustments and approves/rejects a pending claim. */}
+      <ExpenseSettlementModal
+        claimId={reviewClaimId}
+        review
+        onClose={() => setReviewClaimId(null)}
+        onDone={refresh}
+      />
     </>
   );
 }

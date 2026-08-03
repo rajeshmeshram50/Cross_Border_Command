@@ -39,7 +39,7 @@ const ONB_WEEKLY_OFF   = OPT('Week Off Policy', 'Saturday & Sunday', 'Sunday Onl
 const ONB_TIME_TRACK   = OPT('Manual', 'Biometric');
 const ONB_PENALIZE     = OPT('Tracking Policy', 'Strict Policy', 'Lenient Policy', 'No Penalty');
 const ONB_OVERTIME     = OPT('Not applicable', 'Hourly Pay', 'Compensation Off', 'Time and a Half');
-const ONB_EXPENSE      = OPT('Standard Expense Policy', 'Manager Approval', 'No Expenses');
+const ONB_EXPENSE      = OPT('Applicable', 'Not Applicable');
 const ONB_YES_NO       = OPT('No', 'Yes');
 const ONB_ACCESS_CARD  = OPT('Not Issued', 'Issued');
 
