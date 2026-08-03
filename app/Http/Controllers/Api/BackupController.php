@@ -158,4 +158,4 @@ class BackupController extends Controller
         abort_unless($user && $user->user_type === 'super_admin', 403,
             'Only administrators can send database backups.');
     }
-}
+} 
