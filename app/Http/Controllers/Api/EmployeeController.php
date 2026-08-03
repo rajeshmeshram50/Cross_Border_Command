@@ -137,6 +137,12 @@ class EmployeeController extends Controller
         $empId = $this->resolveIdParam($id);
         $this->authorizeViewOrSelf($request, $empId);
         $row = $this->resolveRow($request, $empId);
+        /* Resolved shift window (branch Shift Details → this employee's shift
+           name). Computed, not stored: the employees table holds only the shift
+           NAME, so the profile had no way to show the actual timings. */
+        [$shiftStart, $shiftEnd] = $row->resolveShiftWindow();
+        $row->setAttribute('shift_start', $shiftStart);
+        $row->setAttribute('shift_end', $shiftEnd);
         return response()->json($row);
     }
 

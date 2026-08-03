@@ -6,6 +6,16 @@ import { useEmployeeProfile } from '../EmployeeProfileContext';
 import { AncillaryRolesChip } from '../../../components/AncillaryRolesChip';
 import { leavePlansApi } from '../../hrms/leavePlansApi';
 
+/** "18:30" → "06:30 PM" for the shift window shown beside Time Type. */
+const fmtShiftTime = (hhmm?: string | null): string => {
+  const m = /^(\d{1,2}):(\d{2})/.exec((hhmm || '').trim());
+  if (!m) return '';
+  const h = Number(m[1]);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(h12).padStart(2, '0')}:${m[2]} ${ampm}`;
+};
+
 export default function JobTab() {
   const { empDetail, employee, employeeId, fmtDate, ancillaryList } = useEmployeeProfile();
 
@@ -47,8 +57,22 @@ export default function JobTab() {
                   <AncillaryRolesChip names={ancillaryList} />
                 </Col>
                 <Col><div className="ep-field-label">Employment Status</div><div className="ep-field-value">{empDetail?.status || (employee?.enabled === false ? 'Disabled' : 'Active')}</div></Col>
-                <Col><div className="ep-field-label">Worker Type</div><div className="ep-field-value">{empDetail?.worker_type || empDetail?.work_type || '—'}</div></Col>
-                <Col><div className="ep-field-label">Time Type</div><div className="ep-field-value">{empDetail?.time_type || empDetail?.work_type || '—'}</div></Col>
+                {/* Work Type and Time Type used to be "Worker Type" / "Time
+                    Type", both falling back to the SAME `work_type` column
+                    (neither `worker_type` nor `time_type` exists), so the two
+                    printed "Full Time" twice. Work Type is now the employee
+                    form's own Work Type; Time Type carries the assigned shift
+                    and the window it resolves to in the branch's Shift Details. */}
+                <Col><div className="ep-field-label">Work Type</div><div className="ep-field-value">{empDetail?.work_type || '—'}</div></Col>
+                <Col>
+                  <div className="ep-field-label">Time Type</div>
+                  <div className="ep-field-value">
+                    {empDetail?.shift || '—'}
+                    {empDetail?.shift_start && empDetail?.shift_end && (
+                      <span className="ep-field-note"> ({fmtShiftTime(empDetail.shift_start)} – {fmtShiftTime(empDetail.shift_end)})</span>
+                    )}
+                  </div>
+                </Col>
               </Row>
             </div>
           </div>
