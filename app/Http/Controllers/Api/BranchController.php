@@ -838,7 +838,7 @@ class BranchController extends Controller
 
         $rows = $query->orderBy('name')->get([
             'id', 'name', 'code', 'city', 'state', 'country',
-            'gst_number', 'pan_number', 'email', 'phone',
+            'gst_number', 'pan_number', 'email', 'phone', 'logo',
         ]);
 
         return response()->json([
@@ -854,6 +854,10 @@ class BranchController extends Controller
                 'email'      => $b->email,
                 'phone'      => $b->phone,
                 'location'   => self::composeBranchLocation($b),
+                // Branch logo drives the document-header logo when this org is
+                // picked in the CTC "Our Organisation" panel.
+                'logo'       => $b->logo,            // public-disk relative path
+                'logo_url'   => $b->logo_url,        // absolute URL (accessor)
             ])->values(),
         ]);
     }

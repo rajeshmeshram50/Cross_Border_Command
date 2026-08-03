@@ -535,12 +535,14 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
       });
     };
 
-    // Cache hit — hydrate immediately, skip the network entirely.
+    // Cache hit — hydrate immediately for an instant render, then STILL refetch
+    // fresh below (stale-while-revalidate). Without the refetch, a master added
+    // after the bundle was cached — e.g. a NEW SEGMENT — never showed in the
+    // dropdown because the network call was skipped entirely on a cache hit.
     const cached = readCustomerMasterBundle<Bundle>();
     if (cached) {
       hydrate(cached);
       setMastersLoading(false);
-      return () => { cancelled = true; };
     }
 
     (async () => {
@@ -2250,7 +2252,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
                 && (segReqKeys[s] ?? []).some(k => uploadedSet.has(k) && !keepKeys.has(k)));
               if (lockedRemoved.length) {
-                toast.error('Cannot remove segment', `${lockedRemoved.join(', ')} — used in a PI / Shipment.`);
+                toast.error('Cannot remove segment', `${lockedRemoved.join(', ')} — used in a Quotation / PI / Shipment.`);
               }
               if (docRemoved.length) {
                 toast.error('Cannot remove segment', `${docRemoved.join(', ')} — has its own uploaded document.`);

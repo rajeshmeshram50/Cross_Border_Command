@@ -899,12 +899,13 @@ export default function AddProductModal(props: {
       })));
     };
 
-    // Cache hit — hydrate immediately and skip the network entirely.
+    // Cache hit — hydrate immediately for an instant render, then STILL refetch
+    // fresh below (stale-while-revalidate) so a newly-added master — e.g. a NEW
+    // SEGMENT — appears instead of being stuck behind the cached bundle.
     const cached = readProductMasterBundle<Bundle>();
     if (cached) {
       hydrate(cached);
       setMastersLoading(false);
-      return;
     }
 
     // Cache miss — fetch the bundle and persist it for next time.

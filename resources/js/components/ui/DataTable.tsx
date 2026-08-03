@@ -1,10 +1,9 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
+import { useCallback, useEffect, useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import {
   flexRender,
@@ -23,25 +22,19 @@ import Tooltip from './Tooltip';
 export type DataTableAlign = 'left' | 'start' | 'center' | 'right' | 'end';
 
 export interface DataTableColumnMeta {
-  /** Header + cell alignment. Default 'left'. */
   align?: DataTableAlign;
   width?: string | number;
   wrap?: boolean;
 }
 
-/** A column def with our `meta` shape pre-typed. */
 export type DataTableColumn<T> = ColumnDef<T, any> & { meta?: DataTableColumnMeta };
 
 export interface DataTableTab {
   key: string;
   label: string;
-  /** Remix icon class ('ri-group-line') or a plain emoji ('💻') — both render. */
   icon?: string;
   count?: number;
 }
-
-/** Icon classes are rendered as <i>, anything else (an emoji) as text — some
- *  masters label their tabs with emoji rather than an icon font. */
 const isIconClass = (icon: string) => /^(ri|bx|mdi|fa|las|la|uil)[-\s]/.test(icon);
 
 export interface DataTableChip {
@@ -54,23 +47,14 @@ export type DataTableAccent = 'violet' | 'teal' | 'blue' | 'emerald' | 'amber' |
 export interface DataTableProps<T> {
   data: T[];
   columns: DataTableColumn<T>[];
-
-  /* ── Tabs (pill rail, left of the toolbar) ── */
   tabs?: DataTableTab[];
   activeTab?: string;
   onTabChange?: (key: string) => void;
-
-  /* ── Search ── */
-  /** Set false to hide the search field entirely. Default true. */
   searchable?: boolean;
-  /** Controlled value ⇒ the PARENT filters (usually server-side). */
   searchValue?: string;
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
-  /** Debounce for the controlled onSearchChange. Default 300ms; 0 disables. */
   searchDebounce?: number;
-
-  /* ── Filter button + chips ── */
   onFilterClick?: () => void;
   activeFilterCount?: number;
   filterLabel?: string;
@@ -207,12 +191,6 @@ export default function DataTable<T extends object>({
   const [sorting, setSorting] = useState<SortingState>(initialSort ?? []);
   const [globalFilter, setGlobalFilter] = useState('');
   useEffect(() => { if (!isSearchControlled) setGlobalFilter(ownQuery); }, [ownQuery, isSearchControlled]);
-
-  /* The Sr No column, when asked for. It numbers the row's VISIBLE position:
-   * TanStack's `row.index` is the position in the ORIGINAL data array, so using
-   * it would jumble the serials the moment a column is sorted (rows 1, 7, 3…).
-   * The findIndex is over the current page only (≤ pageSize rows), so the cost
-   * is negligible. */
   const allColumns = useMemo<DataTableColumn<T>[]>(() => {
     if (!serial) return columns;
     const cfg = typeof serial === 'object' ? serial : {};
@@ -236,12 +214,6 @@ export default function DataTable<T extends object>({
     () => allColumns.some(c => (c.meta as DataTableColumnMeta | undefined)?.width !== undefined),
     [allColumns],
   );
-
-  /* Pagination is fully controlled here rather than left to the table, because
-   * the page index has to survive a page-size change (auto-fit re-measures on
-   * every resize) and be clamped when a filter shrinks the row count — sitting
-   * on page 5 of a set that just became 3 rows would show an empty table with
-   * no hint that there IS data, just on another page. */
   const [pageIndex, setPageIndex] = useState(0);
 
   const table = useReactTable({
@@ -273,7 +245,6 @@ export default function DataTable<T extends object>({
   const filteredCount = table.getFilteredRowModel().rows.length;
   const pageCount = paginate ? Math.max(1, Math.ceil(filteredCount / pageSize)) : 1;
   useEffect(() => { if (pageIndex > pageCount - 1) setPageIndex(pageCount - 1); }, [pageIndex, pageCount]);
-  // Back to page 1 whenever the visible set is redefined (tab, search, filters).
   useEffect(() => { setPageIndex(0); }, [activeTab, inputValue, filterChips?.length]);
 
   const rows = table.getRowModel().rows;
@@ -285,8 +256,6 @@ export default function DataTable<T extends object>({
     const top = el.getBoundingClientRect().top;
     const h = Math.max(240, window.innerHeight - top - 15);
     const px = (sel: string) => (el.querySelector(sel) as HTMLElement | null)?.offsetHeight || 0;
-    // Skip the empty-state row: it stretches to fill the body, so measuring it
-    // as "one row" would collapse the page size to the 5-row floor.
     const rowH = px('.dt-table tbody tr:not(.dt-empty-row)') || 44;
     const avail = h - px('.dt-toolbar') - px('.dt-chipbar') - px('.dt-table thead') - px('.tc-wl-pag') - 8;
     setAutoSize(Math.max(5, Math.floor(avail / rowH)));
@@ -298,9 +267,6 @@ export default function DataTable<T extends object>({
     const size = () => {
       const top = el.getBoundingClientRect().top;
       const h = `${Math.max(240, window.innerHeight - top - 15)}px`;
-      // No-op writes matter here: setting the height resizes the parent, which
-      // re-fires the observer below. Bailing out when the value is unchanged is
-      // what makes that settle instead of looping.
       if (el.style.height === h) return;
       el.style.flex = 'none';
       el.style.height = h;
@@ -309,10 +275,6 @@ export default function DataTable<T extends object>({
     size();
     const t = window.setTimeout(size, 120);
     window.addEventListener('resize', size);
-    /* Whatever sits above the table can change height after first paint (KPI
-     * cards resolving their counts, a collapsible banner opening) — that moves
-     * our top edge, so re-measure instead of keeping a stale height that either
-     * overflows the fold or leaves a gap. */
     let ro: ResizeObserver | undefined;
     if (typeof ResizeObserver !== 'undefined') {
       ro = new ResizeObserver(() => size());
@@ -572,6 +534,29 @@ export const titleCase = (s: string): string => {
   return idx === -1 ? s : s.slice(0, idx) + s[idx].toUpperCase() + s.slice(idx + 1);
 };
 
+/** True while the referenced element's text is visually cut by its own box.
+ *  Measured from the DOM (scrollWidth vs clientWidth) rather than guessed from
+ *  a character count, so it stays right at any column width or zoom level.
+ *  A ResizeObserver keeps it honest when the *column* resizes without the
+ *  window doing so (tab switch, data load, sidebar collapse). */
+export function useIsClipped(ref: RefObject<HTMLElement | null>, value: unknown) {
+  const [clipped, setClipped] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    const measure = () => { const n = ref.current; if (n) setClipped(n.scrollWidth > n.clientWidth + 1); };
+    measure();
+    window.addEventListener('resize', measure);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (el && ro) ro.observe(el);
+    return () => {
+      window.removeEventListener('resize', measure);
+      ro?.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return clipped;
+}
+
 /** One-line cell that ellipsises and shows the full value on hover.
  *  The tooltip fires when the text is cut by EITHER the `max` char cap or the
  *  column width — the visual clip is measured from the DOM, because a 29-char
@@ -591,20 +576,40 @@ export function TruncCell({
   dash?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const [clipped, setClipped] = useState(false);
   const raw = value === null || value === undefined ? '' : String(value).trim();
   const v = raw ? (caseSensitive ? raw : titleCase(raw)) : '';
-  useEffect(() => {
-    const measure = () => { const el = ref.current; if (el) setClipped(el.scrollWidth > el.clientWidth + 1); };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [v]);
+  const clipped = useIsClipped(ref, v);
   if (!raw) return <span className="dt-dash">{dash}</span>;
   const capped = v.length > max;
   const shown = capped ? `${v.slice(0, max)}…` : v;
   const inner = <span ref={ref} className={`dt-trunc ${className ?? ''}`}>{shown}</span>;
   return capped || clipped ? <Tooltip label={v}>{inner}</Tooltip> : inner;
+}
+
+/** Pill variant of TruncCell — for columns whose value is rendered as a chip
+ *  (role, tag, category). The chip keeps whatever colours the page gives it
+ *  via `className`; this only guarantees the label ellipsises INSIDE the pill
+ *  at the column edge instead of spilling under the next column, and that the
+ *  full value is reachable on hover once it's actually cut. */
+export function ChipCell({
+  value,
+  className,
+  style,
+  dash = '—',
+}: {
+  value?: string | number | null;
+  /** The page's own chip class(es), e.g. `exit-role-chip exit-role-chip--primary`. */
+  className?: string;
+  /** Inline chip colours, for pages that tint per value (role → palette). */
+  style?: CSSProperties;
+  dash?: string;
+}) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const v = value === null || value === undefined ? '' : String(value).trim();
+  const clipped = useIsClipped(ref, v);
+  if (!v) return <span className="dt-dash">{dash}</span>;
+  const chip = <span ref={ref} className={`dt-chip-trunc ${className ?? ''}`} style={style}>{v}</span>;
+  return clipped ? <Tooltip label={v}>{chip}</Tooltip> : chip;
 }
 
 /** Monospace code chip — customer/consignee/lead IDs, PO numbers. */

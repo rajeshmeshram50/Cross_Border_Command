@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Tooltip from './ui/Tooltip';
 
 /**
  * Proof-of-Payment table cell.
@@ -26,6 +27,76 @@ interface Accent {
 
 const POP_W = 244;
 const POP_MAXH = 220;
+
+/* ── File identity helpers ────────────────────────────────────────────────────
+   A receipt uploaded straight off a phone is often named "13418200434190.jpg"
+   or "320-Screenshot 2026-06-04.png". Cutting that to a bare 14 characters
+   dropped the extension and left a numeric blob that didn't read as a file at
+   all. These helpers keep the extension (the strongest "this is a document"
+   signal), pick a matching glyph, and put the untouched name in the tooltip. */
+
+const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'svg'];
+
+/** Extension from the file name, falling back to the URL path. Lower-cased,
+ *  no dot; '' when there isn't one. */
+function extOf(name?: string, url?: string): string {
+  const fromName = (name ?? '').split('?')[0];
+  const pick = (s: string) => {
+    const base = s.split('/').pop() ?? '';
+    const dot = base.lastIndexOf('.');
+    return dot > 0 && dot < base.length - 1 ? base.slice(dot + 1).toLowerCase() : '';
+  };
+  return pick(fromName) || pick((url ?? '').split('?')[0]);
+}
+
+/** Remixicon glyph + a human label for the type, so the chip reads as a
+ *  document rather than a coloured tag. */
+function fileMeta(ext: string): { icon: string; label: string } {
+  if (ext === 'pdf') return { icon: 'ri-file-pdf-2-line', label: 'PDF' };
+  if (IMAGE_EXTS.includes(ext)) return { icon: 'ri-image-2-line', label: 'Image' };
+  if (ext === 'doc' || ext === 'docx') return { icon: 'ri-file-word-2-line', label: 'Word doc' };
+  if (ext === 'xls' || ext === 'xlsx' || ext === 'csv') return { icon: 'ri-file-excel-2-line', label: 'Spreadsheet' };
+  return { icon: 'ri-file-text-line', label: 'File' };
+}
+
+/** Shorten the STEM only and keep the extension attached — "320-Screenshot
+ *  2026-06-04.png" becomes "320-Screensh….png", never "320-Screensho". */
+function shortName(name: string, max = 20): string {
+  if (name.length <= max) return name;
+  const dot = name.lastIndexOf('.');
+  const hasExt = dot > 0 && dot < name.length - 1 && name.length - dot <= 6;
+  const ext = hasExt ? name.slice(dot) : '';
+  const stem = hasExt ? name.slice(0, dot) : name;
+  const keep = Math.max(4, max - ext.length - 1);
+  return stem.length <= keep ? `${stem}${ext}` : `${stem.slice(0, keep)}…${ext}`;
+}
+
+function fmtSize(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Tooltip text: what the file is, how big, and what a click does. */
+function hint(name: string, size: number | undefined, typeLabel: string): string {
+  const parts = [name, typeLabel];
+  const s = fmtSize(size);
+  if (s) parts.push(s);
+  return `${parts.join(' · ')} — opens in a new tab`;
+}
+
+/* Hover affordance: the chip lifts and underlines, so it reads as a link
+   rather than a status badge. Injected once, scoped to the chip class. */
+const PROOF_CSS = `
+  .proof-chip { cursor: pointer; transition: filter .14s ease, box-shadow .14s ease; }
+  .proof-chip:hover { filter: brightness(0.97); box-shadow: 0 2px 6px rgba(15,23,42,0.12); }
+  .proof-chip:hover .proof-chip-name { text-decoration: underline; }
+  .proof-chip:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
+  .pop-proof-item { transition: background 120ms ease; }
+  .pop-proof-item:hover { background: rgba(128,128,128,0.14); }
+  .pop-proof-item:hover .proof-chip-name { text-decoration: underline; }
+`;
 
 export default function ProofOfPaymentCell({
   attachments,
@@ -87,27 +158,30 @@ export default function ProofOfPaymentCell({
     border: `1px solid ${accent.border}`,
   };
 
+  const firstName = first.name || 'Receipt 1';
+  const firstExt = extOf(first.name, first.url);
+  const firstMeta = fileMeta(firstExt);
+
   return (
-    <div className="d-inline-flex align-items-center" style={{ gap: 4 }}>
-      <a
-        href={withAuthToken(first.url!)}
-        target="_blank"
-        rel="noreferrer"
-        className="d-inline-flex align-items-center gap-1 text-decoration-none"
-        title={first.name || 'Attachment 1'}
-        /* Show as much of the filename as the cell allows and let the browser
-           add an ellipsis only when it genuinely overflows — the old hard
-           `.slice(0, 14)` cut every name to 14 chars even when there was room,
-           which is why titles read as "Trade documer". The `title` tooltip
-           still surfaces the full name on hover. `minWidth: 0` lets the flex
-           child shrink so the ellipsis engages instead of overflowing. */
-        style={{ ...chipStyle, maxWidth: 200, minWidth: 0 }}
-      >
-        <i className="ri-file-text-line" style={{ flexShrink: 0 }} />
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {first.name || 'Receipt 1'}
-        </span>
-      </a>
+    <div className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
+      <style>{PROOF_CSS}</style>
+      <Tooltip label={hint(firstName, first.size, firstMeta.label)}>
+        <a
+          href={withAuthToken(first.url!)}
+          target="_blank"
+          rel="noreferrer"
+          className="proof-chip d-inline-flex align-items-center gap-1 text-decoration-none"
+          style={{ ...chipStyle, maxWidth: '100%', minWidth: 0, whiteSpace: 'nowrap' }}
+        >
+          <i className={firstMeta.icon} style={{ flexShrink: 0, fontSize: 13 }} />
+          <span className="proof-chip-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {shortName(firstName)}
+          </span>
+          {/* Explicit "this opens something" cue — the icon alone reads as
+              decoration on a coloured badge. */}
+          <i className="ri-external-link-line" style={{ flexShrink: 0, fontSize: 11, opacity: 0.75 }} />
+        </a>
+      </Tooltip>
 
       {rest.length > 0 && (
         <>
@@ -134,26 +208,33 @@ export default function ProofOfPaymentCell({
                 borderRadius: 10, boxShadow: '0 12px 32px rgba(15,23,42,0.22)', padding: 6,
               }}
             >
-              <style>{`
-                .pop-proof-item { transition: background 120ms ease; }
-                .pop-proof-item:hover { background: rgba(128,128,128,0.14); }
-              `}</style>
-              {rest.map((att, i) => (
-                <a
-                  key={`${att.url}-${i}`}
-                  href={withAuthToken(att.url!)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="d-flex align-items-center gap-2 text-decoration-none pop-proof-item"
-                  title={att.name || `Attachment ${i + 2}`}
-                  style={{ padding: '7px 9px', borderRadius: 8, color: accent.fg, fontSize: 12, fontWeight: 600 }}
-                >
-                  <i className="ri-file-text-line" style={{ flexShrink: 0 }} />
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {att.name || `Receipt ${i + 2}`}
-                  </span>
-                </a>
-              ))}
+              {rest.map((att, i) => {
+                const nm = att.name || `Receipt ${i + 2}`;
+                const m = fileMeta(extOf(att.name, att.url));
+                const size = fmtSize(att.size);
+                return (
+                  <a
+                    key={`${att.url}-${i}`}
+                    href={withAuthToken(att.url!)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="d-flex align-items-center gap-2 text-decoration-none pop-proof-item"
+                    title={hint(nm, att.size, m.label)}
+                    style={{ padding: '7px 9px', borderRadius: 8, color: accent.fg, fontSize: 12, fontWeight: 600 }}
+                  >
+                    <i className={m.icon} style={{ flexShrink: 0, fontSize: 14 }} />
+                    <span className="d-flex flex-column" style={{ minWidth: 0, lineHeight: 1.2 }}>
+                      <span className="proof-chip-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {nm}
+                      </span>
+                      {size && (
+                        <span style={{ fontSize: 10, fontWeight: 500, opacity: 0.7 }}>{m.label} · {size}</span>
+                      )}
+                    </span>
+                    <i className="ri-external-link-line ms-auto" style={{ flexShrink: 0, fontSize: 12, opacity: 0.7 }} />
+                  </a>
+                );
+              })}
             </div>,
             document.body,
           )}

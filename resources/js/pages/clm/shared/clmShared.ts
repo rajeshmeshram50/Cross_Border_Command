@@ -829,7 +829,7 @@ body > .dropdown-menu.master-select-menu,
   padding-right: 36px;
 }
 .clm-input-err { border-color: #ef4444 !important; }
-.clm-err { font-size: 10.5px; color: #ef4444; }
+.clm-err { font-size: 10.5px; color: #ef4444; overflow-wrap: anywhere; word-break: break-word; }
 .clm-field-hint { font-size: 10px; color: #0891b2; opacity: .7; margin-top: 3px; }
 
 /* Inline + button (next to selects) */

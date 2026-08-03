@@ -5,7 +5,7 @@ import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
-import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import Tooltip from '../../components/ui/Tooltip';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
 import '../../../css/recruitment.css';
@@ -126,7 +126,7 @@ export default function HrExitManagement() {
       header: 'Employee',
       accessorKey: 'name',
       // wrap: the exit-state caption sits on a second line under the name.
-      meta: { width: '17%', wrap: true },
+      meta: { width: '16%', wrap: true },
       cell: info => {
         const e = info.row.original;
         const isScheduled = e.status === 'Active' && e.exitInitiated;
@@ -171,18 +171,21 @@ export default function HrExitManagement() {
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
     { header: 'Department',  accessorKey: 'department',  meta: { width: '9%' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: '10%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: '9%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
-      meta: { width: '8%' },
-      cell: info => <span className="exit-role-chip exit-role-chip--primary">{String(info.getValue() ?? '')}</span>,
+      meta: { width: '9%' },
+      /* Role names run long ("Software Developer", "Sales Intern") and the
+         column is narrow — ChipCell ellipsises inside the pill and reveals
+         the full name on hover, same contract as the Designation column. */
+      cell: info => <ChipCell value={info.getValue() as string} className="exit-role-chip exit-role-chip--primary" />,
     },
     {
       header: 'Ancillary Role',
       id: 'ancillary',
       enableSorting: false,
-      meta: { width: '7%' },
+      meta: { width: '9%' },
       cell: info => {
         const e = info.row.original;
         return (
@@ -195,7 +198,7 @@ export default function HrExitManagement() {
     {
       header: 'Rep. Manager',
       accessorKey: 'managerName',
-      meta: { width: '11%' },
+      meta: { width: '10%' },
       cell: info => {
         const e = info.row.original;
         return (

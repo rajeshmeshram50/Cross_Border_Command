@@ -343,10 +343,13 @@ class CtcContractController extends Controller
             if (!$row) return null;
             $a = $row->primaryAddress;
             return [
-                'name'    => (string) $row->company_name,
-                'country' => (string) ($a?->country ?? ''),
-                'phone'   => (string) ($a?->cp_contact ?? ''),
-                'email'   => (string) ($a?->cp_email ?? $row->primary_email ?? ''),
+                'name'         => (string) $row->company_name,
+                'country'      => (string) ($a?->country ?? ''),
+                'phone'        => (string) ($a?->cp_contact ?? ''),
+                'email'        => (string) ($a?->cp_email ?? $row->primary_email ?? ''),
+                // Numeric PK so the CTC "Next" gate can fetch this party's
+                // Evidence-Vault compliance (source_id is the display code).
+                'source_db_id' => (int) $row->id,
             ];
         }
         if ($type === 'consignee') {
@@ -355,10 +358,11 @@ class CtcContractController extends Controller
             if (!$row) return null;
             $a = $row->primaryAddress;
             return [
-                'name'    => (string) $row->company_name,
-                'country' => (string) ($a?->country ?? ''),
-                'phone'   => (string) ($a?->cp_contact ?? ''),
-                'email'   => (string) ($a?->cp_email ?? $row->primary_email ?? ''),
+                'name'         => (string) $row->company_name,
+                'country'      => (string) ($a?->country ?? ''),
+                'phone'        => (string) ($a?->cp_contact ?? ''),
+                'email'        => (string) ($a?->cp_email ?? $row->primary_email ?? ''),
+                'source_db_id' => (int) $row->id,
             ];
         }
         if ($type === 'supplier' || $type === 'vendor') {
@@ -367,10 +371,11 @@ class CtcContractController extends Controller
             if (!$row) return null;
             $a = $row->primaryAddress;
             return [
-                'name'    => (string) $row->company_name,
-                'country' => (string) ($a?->city ?? ''),
-                'phone'   => (string) ($a?->contact_no ?? ''),
-                'email'   => (string) ($a?->email ?? $row->primary_email ?? ''),
+                'name'         => (string) $row->company_name,
+                'country'      => (string) ($a?->city ?? ''),
+                'phone'        => (string) ($a?->contact_no ?? ''),
+                'email'        => (string) ($a?->email ?? $row->primary_email ?? ''),
+                'source_db_id' => (int) $row->id,
             ];
         }
         return null;
