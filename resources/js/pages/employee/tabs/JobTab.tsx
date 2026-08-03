@@ -117,7 +117,22 @@ export default function JobTab() {
                 <div className="px-3 py-3">
                   <Row className="g-3">
                     <Col xs={6}><div className="ep-field-label">Probation Policy</div><div className="ep-field-value">{empDetail?.probation_policy || '—'}</div></Col>
-                    <Col xs={6}><div className="ep-field-label">Notice Period</div><div className="ep-field-value">{empDetail?.notice_period || (empDetail?.notice_period_days ? `${empDetail.notice_period_days} Days` : '—')}</div></Col>
+                    {/* Notice Period carries the auto-calculated Probation End
+                        Date alongside it. The date is derived in the Add/Edit
+                        form (joining date + probation months) and stored, but
+                        had no read-side surface anywhere on the profile — HR
+                        could set it and then never see it again (CBC #102).
+                        The suffix is dropped when no probation end is stored,
+                        so "No Probation" employees don't show an empty bracket. */}
+                    <Col xs={6}>
+                      <div className="ep-field-label">Notice Period</div>
+                      <div className="ep-field-value">
+                        {empDetail?.notice_period || (empDetail?.notice_period_days ? `${empDetail.notice_period_days} Days` : '—')}
+                        {empDetail?.probation_end_date && (
+                          <span className="ep-field-note"> (Probation End Date: {fmtDate(empDetail.probation_end_date)})</span>
+                        )}
+                      </div>
+                    </Col>
                   </Row>
                 </div>
               </div>

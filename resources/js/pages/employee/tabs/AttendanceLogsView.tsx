@@ -33,6 +33,12 @@ export interface AttLog {
   worked: string;
   deviation: string;
   exception?: string | null;
+  /* Approved leave covering this day. `leavePortion` is 'full' for a whole-day
+     leave and 'first_half' / 'second_half' for a half-day one — a half-day
+     leave still has the employee working the other half, so the row stays a
+     working row and shows the leave as a pill instead of blanking the day. */
+  leaveKind?: 'Paid' | 'Unpaid' | null;
+  leavePortion?: 'full' | 'first_half' | 'second_half' | null;
   /* `open` = an in-punch with no matching out (still clocked in, or a forgotten
      check-out). The out time is unknown, so the popover prints MISSING for it. */
   workSegments?: Array<{ start: number; end: number; open?: boolean }>;
@@ -97,6 +103,18 @@ const fmtDurHm = (m: number) => m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 6
 // this an arrival is on-time; at/above it we show the minutes-late measured from
 // the shift start time (e.g. 9:30 start, arrive 9:47 → 17 min late).
 const LATE_GRACE_MINUTES = 10;
+
+/* Leave portion labels. A half-day leave is shown on an otherwise normal
+   working row (the employee worked the other half), so the label has to say
+   WHICH half rather than the row reading "Full day Paid Leave". */
+const LEAVE_PORTION_LABEL: Record<string, string> = {
+  full: 'Full day', first_half: 'First half', second_half: 'Second half',
+};
+const LEAVE_PORTION_PILL: Record<string, string> = {
+  first_half: '1ST HALF', second_half: '2ND HALF',
+};
+const isHalfLeave = (l: AttLog) => l.leavePortion === 'first_half' || l.leavePortion === 'second_half';
+const leaveToneOf = (l: AttLog) => STATUS_TONE[l.leaveKind === 'Unpaid' ? 'Unpaid Leave' : 'Paid Leave'];
 
 /* ── Calendar month summary tiles ──────────────────────────────────────────
    A day carries ONE status, but the KPI totals aren't mutually exclusive:
@@ -402,7 +420,7 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                           </td>
                           <td colSpan={6} className="text-center att-log-woff-text">
                             {isLeaveDay
-                              ? `Full day ${tone.label}`
+                              ? `${LEAVE_PORTION_LABEL[l.leavePortion || 'full']} ${tone.label}`
                               : isHolidayDay ? (l.holidayName ? `Holiday — ${l.holidayName}` : 'Holiday') : 'Full day Weekly-off'}
                           </td>
                           <td className="text-center">
@@ -418,7 +436,21 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
 
                     return (
                       <tr key={pageStart + i} className={isOpen ? 'is-open' : ''}>
-                        <td className="att-log-datecell">{formattedDate}</td>
+                        <td className="att-log-datecell">
+                          {formattedDate}
+                          {/* Half-day leave on a day that was still (partly)
+                              worked — the row keeps its punches and hours, and
+                              the leave rides beside the date. */}
+                          {isHalfLeave(l) && (
+                            <span
+                              className="att-log-woff-pill"
+                              style={{ color: leaveToneOf(l).fg, background: leaveToneOf(l).bg }}
+                              title={`${LEAVE_PORTION_LABEL[l.leavePortion!]} ${leaveToneOf(l).label}`}
+                            >
+                              {LEAVE_PORTION_PILL[l.leavePortion!]} {leaveToneOf(l).label.toUpperCase()}
+                            </span>
+                          )}
+                        </td>
                         {noEntries ? (
                           /* No punches → hide the Attendance Visual bar entirely
                              and let the "No Time Entries Logged" note span the

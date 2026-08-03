@@ -1153,6 +1153,13 @@
           font-size: 11px; font-weight: 600;
           color: var(--vz-heading-color, var(--vz-body-color));
         }
+        /* Secondary detail trailing a field value — e.g. the probation end date
+           after the notice period. Lighter and unbolded so the primary value
+           still leads. */
+        .ep-field-note {
+          font-weight: 500;
+          color: var(--vz-secondary-color, #6b7280);
+        }
         .ep-addr-marker {
           display: inline-flex; align-items: center; gap: 6px;
           font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;

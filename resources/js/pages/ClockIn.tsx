@@ -41,6 +41,8 @@ interface TodayResp {
   record: AttendanceRecord | null;
   next_direction: 'in' | 'out';
   allowed_labels: string[];
+  /** ISO instant an open punch is auto-closed at — shift end + 1h, server-side. */
+  auto_cutoff_at?: string | null;
 }
 
 // Activity-label palette — matches the methodology of the original
@@ -227,15 +229,25 @@ export default function ClockIn() {
   const nextDir0 = today?.next_direction ?? 'in';
 
   // Live total worked seconds — completed pairs plus the open 'in' (if any)
-  // extended only up to a 9 PM auto-checkout, so the timer ticks until 9 PM
-  // and then freezes (no hours counted past 9 PM). Matches the model + branch
-  // logic so the same record reads the same everywhere.
+  // extended only up to the auto-checkout, so the timer ticks until then and
+  // freezes (no hours counted past it). Matches the model so the same record
+  // reads the same everywhere.
   const liveWorkedSeconds = useMemo(() => {
     if (!record0) return 0;
-    // 9 PM local today — the auto-checkout boundary for an open punch.
-    const cutoff = new Date();
-    cutoff.setHours(21, 0, 0, 0);
-    const cutoffMs = cutoff.getTime();
+    /* Auto-checkout boundary: the employee's SHIFT END + 1h, computed
+       server-side and sent as `auto_cutoff_at`. The old hardcoded 9 PM
+       over-counted every shift that ends earlier — an 08:00–14:00 employee
+       kept accruing hours until 21:00 on this screen while the server had
+       already closed the day at 15:00. Falls back to 9 PM only if the field
+       is missing (older payload). */
+    const cutoffMs = (() => {
+      const iso = today?.auto_cutoff_at;
+      const t = iso ? new Date(iso).getTime() : NaN;
+      if (!Number.isNaN(t)) return t;
+      const fallback = new Date();
+      fallback.setHours(21, 0, 0, 0);
+      return fallback.getTime();
+    })();
     let total = 0;
     let openInIso: string | null = null;
     for (const p of punches0) {
@@ -250,7 +262,7 @@ export default function ClockIn() {
       total += Math.max(0, Math.floor((boundary - new Date(openInIso).getTime()) / 1000));
     }
     return total;
-  }, [record0, punches0, nowTick]);
+  }, [record0, punches0, nowTick, today?.auto_cutoff_at]);
 
   // Quick-pick label set — simplified to just Check In / Check Out.
   const quickLabels = useMemo<string[]>(() => {

@@ -47,6 +47,15 @@ class AttendanceController extends Controller
             // Convenience flags so the SPA doesn't have to derive them.
             'next_direction' => $row ? $row->next_direction : 'in',
             'allowed_labels' => self::KNOWN_LABELS,
+            /* Instant an open punch is auto-closed at: the employee's shift end
+               + 1h (21:00 when no shift resolves). Sent down so the Clock-In
+               timer stops at the same boundary the server counts to, instead of
+               hardcoding its own cut-off and drifting from the stored total. */
+            'auto_cutoff_at' => \Carbon\Carbon::createFromTimestamp(
+                ($row ?: (new Attendance(['attendance_date' => self::todayLocal()]))->setRelation('employee', $employee))
+                    ->autoCheckoutCutoffTs(self::todayLocal()),
+                self::DISPLAY_TZ
+            )->toIso8601String(),
         ]);
     }
 
@@ -292,16 +301,21 @@ class AttendanceController extends Controller
             ->where('status', 'Approved')
             ->whereDate('from_date', '<=', $end->toDateString())
             ->whereDate('to_date', '>=', $start->toDateString())
-            ->get(['from_date', 'to_date', 'leave_type_id']);
+            ->get(['from_date', 'to_date', 'leave_type_id', 'day_type']);
         // Paid vs Unpaid per leave type (master_leave_types.paid_unpaid) so the
         // Attendance Log can label each leave day "Paid Leave" / "Unpaid Leave".
         $paidByType = \App\Models\Masters\LeaveTypes::whereIn('id', $approvedLeaves->pluck('leave_type_id')->filter()->unique()->all())
             ->pluck('paid_unpaid', 'id');
-        // $leaveDaySet[iso] = 'Paid' | 'Unpaid' — drives both the KPI count and
-        // the per-day leave overlay in buildHistoryLogs().
+        /* $leaveDaySet[iso] = ['paid' => 'Paid'|'Unpaid', 'portion' => 'full'|
+           'first_half'|'second_half'] — drives the KPI count and the per-day
+           leave overlay in buildHistoryLogs(). The portion comes from the
+           request's `day_type`: a half-day leave means the employee still
+           worked the other half, so the log must say which half rather than
+           blanking the whole day out as "Full day Paid Leave". */
         $leaveDaySet = [];
         foreach ($approvedLeaves as $lv) {
-            $paid = strcasecmp((string) ($paidByType[$lv->leave_type_id] ?? 'Paid'), 'Unpaid') === 0 ? 'Unpaid' : 'Paid';
+            $paid    = strcasecmp((string) ($paidByType[$lv->leave_type_id] ?? 'Paid'), 'Unpaid') === 0 ? 'Unpaid' : 'Paid';
+            $portion = in_array($lv->day_type, ['first_half', 'second_half'], true) ? $lv->day_type : 'full';
             $fromC = \Carbon\Carbon::parse($lv->from_date);
             $toC   = \Carbon\Carbon::parse($lv->to_date);
             $cursor = $fromC->lt($start) ? $start->copy() : $fromC->copy();
@@ -311,7 +325,7 @@ class AttendanceController extends Controller
                 if (isset($leaveDaySet[$iso])) continue;
                 if (isset($weeklyOffSet[$c->dayOfWeek])) continue; // weekend isn't a leave day
                 if (isset($empHolidaySet[$iso])) continue;         // holiday isn't a leave day
-                $leaveDaySet[$iso] = $paid;
+                $leaveDaySet[$iso] = ['paid' => $paid, 'portion' => $portion];
             }
         }
         $leaveDays = count($leaveDaySet);
@@ -587,12 +601,13 @@ class AttendanceController extends Controller
                 ->where('status', 'Approved')
                 ->whereDate('from_date', '<=', $date)
                 ->whereDate('to_date', '>=', $histStart)
-                ->get(['employee_id', 'from_date', 'to_date', 'leave_type_id']);
+                ->get(['employee_id', 'from_date', 'to_date', 'leave_type_id', 'day_type']);
             $paidByTypeLog = \App\Models\Masters\LeaveTypes::whereIn(
                 'id', $logLeaves->pluck('leave_type_id')->filter()->unique()->all()
             )->pluck('paid_unpaid', 'id');
             foreach ($logLeaves as $lv) {
-                $paid  = strcasecmp((string) ($paidByTypeLog[$lv->leave_type_id] ?? 'Paid'), 'Unpaid') === 0 ? 'Unpaid' : 'Paid';
+                $paid    = strcasecmp((string) ($paidByTypeLog[$lv->leave_type_id] ?? 'Paid'), 'Unpaid') === 0 ? 'Unpaid' : 'Paid';
+                $portion = in_array($lv->day_type, ['first_half', 'second_half'], true) ? $lv->day_type : 'full';
                 $fromC = \Carbon\Carbon::parse($lv->from_date);
                 $toC   = \Carbon\Carbon::parse($lv->to_date);
                 $c     = $fromC->lt($logStartC) ? $logStartC->copy() : $fromC->copy();
@@ -600,7 +615,7 @@ class AttendanceController extends Controller
                 for ($d = $c->copy(); $d->lte($till); $d->addDay()) {
                     $iso = $d->toDateString();
                     if (isset($leaveLogByEmp[(int) $lv->employee_id][$iso])) continue;
-                    $leaveLogByEmp[(int) $lv->employee_id][$iso] = $paid;
+                    $leaveLogByEmp[(int) $lv->employee_id][$iso] = ['paid' => $paid, 'portion' => $portion];
                 }
             }
         }
@@ -614,6 +629,10 @@ class AttendanceController extends Controller
             $isWeeklyOff     = isset($weeklyOffSet[\Carbon\Carbon::parse($date)->dayOfWeek]);
 
             $today    = $dailyRows->get($emp->id);
+            // Hand the row its employee so the shift-based auto-checkout can be
+            // resolved without a lazy-load per employee (the branch relation is
+            // already eager-loaded on $emp for resolveShiftWindow).
+            if ($today) $today->setRelation('employee', $emp);
             $todayPunches = $today ? $today->punches->sortBy('punched_at')->values() : collect();
 
             // Determine status for the selected date.
@@ -624,21 +643,30 @@ class AttendanceController extends Controller
             }
             $firstIn     = $today?->check_in_at ? $today->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : null;
             $lastOut     = $today?->check_out_at ? $today->check_out_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : null;
-            // Full worked total (completed pairs + any open pair auto-closed at
-            // 9 PM) — used for static / past-day display.
+            // Full worked total (completed pairs + any open pair auto-closed an
+            // hour after shift end) — used for static / past-day display.
             $workedSecs  = $today ? (int) $today->total_worked_seconds : 0;
             $workedMins  = (int) floor($workedSecs / 60);
 
             // Live-tick inputs. For an OPEN day (clocked-in, not yet out) the SPA
             // re-derives the running total each second as:
             //     completedSeconds + (min(now, autoCutoff) − openInAt)
-            // so the WORKED figure ticks up to a 9 PM auto-checkout and then
+            // so the WORKED figure ticks up to the auto-checkout and then
             // freezes — matching the employee's own Clock-In screen. Past days
             // have no open punch, so the SPA just shows $workedSecs (already
-            // capped at 9 PM by the model).
+            // capped by the model).
             $workedCompletedSecs = $today ? (int) $today->completedWorkedSeconds() : 0;
             $openInAt  = null;
-            $autoCutoffAt = \Carbon\Carbon::parse($date . ' 21:00:00', self::DISPLAY_TZ)->toIso8601String();
+            /* Auto-checkout is the employee's SHIFT END + 1h, not a blanket
+               9 PM — an 08:00–14:00 shift closes at 15:00. Derived from the
+               same model helper the worked-seconds total uses, so the live
+               ticker and the stored figure can't drift apart. Employees with
+               no attendance row today still need a boundary for the ticker,
+               so fall back to a bare Attendance carrying this date/employee. */
+            $cutoffRow = $today ?: (new Attendance(['attendance_date' => $date]))->setRelation('employee', $emp);
+            $autoCutoffAt = \Carbon\Carbon::createFromTimestamp(
+                $cutoffRow->autoCheckoutCutoffTs($date), self::DISPLAY_TZ
+            )->toIso8601String();
             $lastPunch = $todayPunches->last();
             if ($lastPunch && $lastPunch->direction === 'in' && $lastPunch->punched_at) {
                 $openInAt = $lastPunch->punched_at->toIso8601String();
@@ -1064,8 +1092,23 @@ class AttendanceController extends Controller
             // (QA #30). Only overrides a plain Absent reading: a day the employee
             // actually punched keeps its real status, and Weekly-Off / Holiday
             // days were already excluded when $leaveDaySet was built.
-            if (strcasecmp((string) $status, 'Absent') === 0 && isset($leaveDaySet[$iso])) {
-                $status = strcasecmp((string) $leaveDaySet[$iso], 'Unpaid') === 0 ? 'Unpaid Leave' : 'Paid Leave';
+            /* A leave day is surfaced two different ways:
+                 · no punches  → the day BECOMES the leave (existing behaviour);
+                 · has punches → the worked status is kept and the leave rides
+                   alongside it as `leavePortion`, which is the only way a
+                   half-day leave can show at all — the employee worked the
+                   other half, so the row must stay a working row.
+               `leaveKind` / `leavePortion` are emitted for every leave day so
+               the UI can say "First half Paid Leave" instead of "Full day". */
+            $leaveInfo   = $leaveDaySet[$iso] ?? null;
+            $leaveKind   = null;
+            $leavePortion = null;
+            if ($leaveInfo) {
+                $leaveKind    = strcasecmp((string) ($leaveInfo['paid'] ?? 'Paid'), 'Unpaid') === 0 ? 'Unpaid' : 'Paid';
+                $leavePortion = (string) ($leaveInfo['portion'] ?? 'full');
+                if (strcasecmp((string) $status, 'Absent') === 0) {
+                    $status = $leaveKind === 'Unpaid' ? 'Unpaid Leave' : 'Paid Leave';
+                }
             }
 
             // Signed deviation (sub-hour shortfalls were printing "+0h 30m"
@@ -1107,6 +1150,8 @@ class AttendanceController extends Controller
                 'worked'           => $worked === 0 ? '—' : sprintf('%dh %02dm', intdiv($worked, 60), $worked % 60),
                 'deviation'        => $deviation,
                 'exception'        => in_array(strtolower($status), ['late', 'half day', 'absent', 'corrected', 'missing in', 'missing out'], true) ? $status : null,
+                'leaveKind'        => $leaveKind,
+                'leavePortion'     => $leavePortion,
                 'workSegments'     => $segments,
                 'effectiveMinutes' => $worked,
                 'grossMinutes'     => $grossMin,
