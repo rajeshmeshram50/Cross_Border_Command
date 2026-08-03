@@ -1325,19 +1325,12 @@ class ClmSignatureController extends Controller
      */
     private function resolveCtcContent(string $html, CtcContract $c, bool $keepSignature = false): string
     {
-        // Organisation tokens from the Company Details master.
-        $orgName = trim((string) ($c->org_name ?? ''));
-        $company = $orgName
-            ? \App\Models\Masters\Company::where('client_id', $c->client_id)->where('company_name', $orgName)->first()
-            : null;
-        $orgTokens = [
-            'company_name' => $c->org_name ?: ($company->company_name ?? ''),
-            'company_no'   => $company->cin ?? '',
-            'email'        => $company->email ?? '',
-            'contact_no'   => $company->mobile ?? '',
-            'address'      => $company->address ?? '',
-        ];
-        foreach ($orgTokens as $tok => $val) {
+        // Organisation tokens from the SELECTED "Our Organisation" BRANCH (the CTC
+        // org picker lists client branches, not the Company master). Resolving from
+        // Company master left company_no/email/contact/address BLANK on the
+        // approver's PDF while the Stage-2 preview (CtcContractController) showed
+        // them — this mirrors that branch-based resolution so both match.
+        foreach ($this->ctcOrgBranchTokens($c) as $tok => $val) {
             $html = preg_replace('/\{\{\s*' . $tok . '\s*\}\}/i', e((string) $val), $html);
         }
 
@@ -1412,10 +1405,51 @@ class ClmSignatureController extends Controller
         $c->versions = $versions;
     }
 
+    /**
+     * The SELECTED "Our Organisation" branch. The CTC org picker lists client
+     * branches (resolved by name — unique per client), falling back to the
+     * contract's own branch for older contracts. Mirrors
+     * CtcContractController::resolveOrgBranch so the approver PDF, the Stage-2
+     * preview and the signed copy all resolve the SAME organisation.
+     */
+    private function resolveCtcOrgBranch(CtcContract $c): ?Branch
+    {
+        $orgName = trim((string) ($c->org_name ?? ''));
+        $branch = $orgName !== ''
+            ? Branch::where('client_id', $c->client_id)->where('name', $orgName)->first()
+            : null;
+        return $branch ?: ($c->branch_id ? Branch::find($c->branch_id) : null);
+    }
+
+    /** Full postal address of a branch for the {{address}} token. */
+    private function ctcBranchAddress(?Branch $b): string
+    {
+        if (!$b) return '';
+        return trim(implode(', ', array_filter([
+            trim((string) $b->address),
+            trim((string) $b->city),
+            trim((string) $b->state),
+            trim(trim((string) $b->pincode) . ' ' . trim((string) $b->country)),
+        ], fn ($v) => $v !== '')), ', ');
+    }
+
+    /** Organisation-detail tokens filled from the SELECTED branch's own data. */
+    private function ctcOrgBranchTokens(CtcContract $c): array
+    {
+        $b = $this->resolveCtcOrgBranch($c);
+        return [
+            'company_name' => $c->org_name ?: ($b->name ?? ''),
+            'company_no'   => $b->cin ?? '',   // registered company number (CIN)
+            'email'        => $b->email ?? '',
+            'contact_no'   => $b->phone ?? '',
+            'address'      => $this->ctcBranchAddress($b),
+        ];
+    }
+
     /** Branch (receiving-party) signature + stamp image as a data URI. */
     private function ctcOrgSignatureDataUri(CtcContract $c): ?string
     {
-        $branch = $c->branch_id ? Branch::find($c->branch_id) : null;
+        $branch = $this->resolveCtcOrgBranch($c);
         $path = $branch?->signature_path;
         if (!$path) return null;
         if (preg_match('#/storage/(.+)$#', (string) $path, $m)) $path = $m[1];

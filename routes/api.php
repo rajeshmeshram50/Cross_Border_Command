@@ -4,7 +4,6 @@ use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\AttendanceController;
 use App\Http\Controllers\Api\AttendanceRegularizationController;
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\BranchController;
 use App\Http\Controllers\Api\FaceBiometricController;
 use App\Http\Controllers\Api\CandidateController;
@@ -26,6 +25,7 @@ use App\Http\Controllers\Api\SegmentDocUploadController;
 use App\Http\Controllers\Api\ClmTncController;
 use App\Http\Controllers\Api\ClmTradeDocumentController;
 use App\Http\Controllers\Api\ClmTradeLicenseController;
+use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\DummyItemController;
@@ -129,12 +129,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post('/me/branding', [AuthController::class, 'updateBranding']);
     Route::post('/me/profile', [AuthController::class, 'updateProfile']);
 
+    // Database backup email (super-admin only)
+    Route::get('/backup/email/status', [BackupController::class, 'status']);
+    Route::post('/backup/email/send',  [BackupController::class, 'send']);
+
     // Dashboard
     Route::get('/dashboard/admin-stats',    [DashboardController::class, 'adminStats']);
-
-    // Full PostgreSQL database backup download (super-admin only; guarded again
-    // inside the controller). Streams a pg_dump .sql file.
-    Route::get('/admin/db-backup', [BackupController::class, 'download']);
     Route::get('/dashboard/client-stats',   [DashboardController::class, 'clientStats']);
     Route::get('/dashboard/employee-stats', [DashboardController::class, 'employeeStats']);
 

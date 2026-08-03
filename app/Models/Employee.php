@@ -157,6 +157,56 @@ class Employee extends Model
         return $this->belongsTo(Branch::class);
     }
 
+    /**
+     * Resolve the assigned shift into a ["HH:MM" start, "HH:MM" end] window.
+     *
+     * The `shift` column stores only the shift NAME (e.g. "General") — the
+     * actual timings live on the branch's `shifts` repeater ({name,start,end}).
+     * Late-mark detection and payroll LOP must use the ACTUAL assigned timing,
+     * so we resolve name → branch shift here instead of trying to read a time
+     * out of the bare name (which always failed and fell back to 09:30).
+     * Resolution order:
+     *   1. a "HH:MM–HH:MM" range embedded in the shift string (legacy values),
+     *   2. the branch shift row whose name matches `shift`,
+     *   3. [null, null] → callers apply the 09:30–18:30 office default.
+     *
+     * Eager-load `branch:id,shifts` on list endpoints to avoid an N+1.
+     */
+    public function resolveShiftWindow(): array
+    {
+        $shift = trim((string) ($this->shift ?? ''));
+        if ($shift === '') {
+            return [null, null];
+        }
+
+        // 1. Time range already embedded in the value.
+        if (preg_match('/(\d{1,2}:\d{2})\s*[–\-]\s*(\d{1,2}:\d{2})/u', $shift, $m)) {
+            return [$m[1], $m[2]];
+        }
+
+        // 2. Match the shift NAME against the branch's configured shifts.
+        $branch = $this->relationLoaded('branch') ? $this->getRelation('branch') : $this->branch()->first();
+        foreach ((array) ($branch->shifts ?? []) as $s) {
+            if (strcasecmp(trim((string) ($s['name'] ?? '')), $shift) === 0) {
+                $start = $this->hhmm($s['start'] ?? '');
+                $end   = $this->hhmm($s['end'] ?? '');
+                if ($start) {
+                    return [$start, $end];
+                }
+                break; // name matched but timing unparseable → office default
+            }
+        }
+
+        // 3. No parseable timing — caller falls back to the office default.
+        return [null, null];
+    }
+
+    /** First "HH:MM" found in $v, else null. Tolerates "9:30", "09:30:00", "09:30 AM". */
+    private function hhmm($v): ?string
+    {
+        return preg_match('/(\d{1,2}:\d{2})/', (string) $v, $m) ? $m[1] : null;
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
