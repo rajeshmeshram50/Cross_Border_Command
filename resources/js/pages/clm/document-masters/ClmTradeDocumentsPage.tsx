@@ -289,6 +289,8 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
   // Row id currently generating a download, so its button can show a spinner
   // and disable to prevent duplicate clicks while the PDF/DOCX renders.
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  // Open "Download as Doc / PDF" menu (anchored to the row's download button).
+  const [dlMenuFor, setDlMenuFor] = useState<{ row: TdLib; top: number; right: number } | null>(null);
   // 0→100 progress + label for the "Generating…" popup. The server gives no real
   // progress, so it eases toward ~90 while rendering and snaps to 100 on done.
   const [dlProgress, setDlProgress] = useState(0);
@@ -495,8 +497,9 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                       {/* Draft PDF preview — the complete combined document
                           (branded header + content + footer), to see how the
                           finished trade document looks. */}
-                      <Tooltip label="Download the complete draft as PDF">
-                        <button type="button" className="tdl-dl-btn" disabled={downloadingId === r.id} onClick={() => void download(r, 'pdf')}>
+                      <Tooltip label="Download the complete draft as Doc or PDF">
+                        <button type="button" className="tdl-dl-btn" disabled={downloadingId === r.id}
+                          onClick={(e) => { const rect = e.currentTarget.getBoundingClientRect(); setDlMenuFor({ row: r, top: rect.bottom + 4, right: window.innerWidth - rect.right }); }}>
                           {downloadingId === r.id ? (
                             <>
                               <svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
@@ -505,7 +508,8 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                           ) : (
                             <>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                              Download Draft PDF
+                              Download Draft
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 1 }}><polyline points="6 9 12 15 18 9" /></svg>
                             </>
                           )}
                         </button>
@@ -579,6 +583,23 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}
       />
+
+      {/* "Download as Doc / PDF" menu, anchored under the row's download button. */}
+      {dlMenuFor && createPortal(
+        <>
+          <div className="tdl-dl-backdrop" onClick={() => setDlMenuFor(null)} />
+          <div className="tdl-dl-menu" style={{ position: 'fixed', top: dlMenuFor.top, right: dlMenuFor.right }}>
+            {([['docx', 'Download as Doc'], ['pdf', 'Download as PDF']] as const).map(([fmt, label]) => (
+              <button key={fmt} type="button" className="tdl-dl-item"
+                onClick={() => { const row = dlMenuFor.row; setDlMenuFor(null); void download(row, fmt); }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                {label}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
 
       {/* Popup loader while a PDF/DOCX is generated — a big/table-rich trade doc
           can take several seconds server-side. Shows a 0→100% ring. */}

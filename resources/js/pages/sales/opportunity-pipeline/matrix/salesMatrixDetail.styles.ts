@@ -1002,10 +1002,12 @@ export const SALES_MATRIX_DETAIL_CSS = `
 /* ── Stage card (middle column shell) — 4px rainbow accent on top ── */
 .smd-stage-card {
   position: relative;
-  /* No content-driven min-height here: the stage content lives in the
-     absolutely-positioned .smd-stg-scroll (out of flow), so the card takes
-     the shared viewport min-height as a floor and otherwise stretches to
-     the side panels' row height. */
+  /* Opt OUT of driving the grid row height (min-height:0): the stage content
+     lives in the absolutely-positioned .smd-stg-scroll (out of flow), so the row
+     height is set by the SIDE panels and the centre stretches to match, scrolling
+     tall content (e.g. Stage 6) INSIDE the card instead of growing the whole page
+     and pushing the ← Previous / Save buttons off-screen. */
+  min-height: 0;
   border: 1.5px solid #c4b5fd;
 }
 .smd-stage-card::before {
@@ -1025,15 +1027,16 @@ export const SALES_MATRIX_DETAIL_CSS = `
    tall centre content scrolling internally instead of growing the row.
    Stays a flex column so short stages fill the card the same as before. */
 .smd-stg-scroll {
-  /* In normal flow (not absolute) with NO internal scroll — the stage content
-     grows the card, and the page (the layout's main-content) is the single
-     scroll. The old absolute + overflow-auto gave the card its OWN scrollbar
-     nested inside the page scroll, which made scrolling shaky/laggy (two scroll
-     containers fighting). min-height:100% keeps a short stage filling the card
-     to the side panels' height. */
-  position: relative;
-  min-height: 100%;
-  overflow: visible;
+  /* Fill the card (absolute → out of flow) so the centre column contributes 0
+     intrinsic height to the grid row — the row height is driven by the side
+     panels and the centre matches them (all three cards equal height). This
+     wrapper itself does NOT scroll (overflow:hidden); its header + footer stay
+     pinned and the .smd-stg-body flex child scrolls internally instead. (Two
+     scrolling containers — this + .smd-stg-body — used to fight and let the card
+     grow past the side panels on Stage 6.) */
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }

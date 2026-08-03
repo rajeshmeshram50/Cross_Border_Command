@@ -340,13 +340,11 @@ function Ico({ d }: { d: string }) {
 
 /** Drop once inside the editor's stage (styles the toolbar + ProseMirror body). */
 export const CTC_EDITOR_CSS = `
-.ctcte-toolbar { display: flex; align-items: center; gap: 3px; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; padding: 7px 10px; border-bottom: 1px solid #EDE9FE; background: #FAFBFF; flex-shrink: 0; }
-/* Keep every control full-size on one aligned row — scroll horizontally instead
-   of wrapping to a ragged second row. */
+/* WRAP onto multiple rows so EVERY tool is visible (no horizontal scroll that
+   hid the right-hand tools). row-gap keeps the rows cleanly separated and
+   align-items:center lines the controls up so it doesn't read as ragged. */
+.ctcte-toolbar { display: flex; align-items: center; gap: 3px; row-gap: 6px; flex-wrap: wrap; padding: 7px 10px; border-bottom: 1px solid #EDE9FE; background: #FAFBFF; flex-shrink: 0; }
 .ctcte-toolbar > * { flex-shrink: 0; }
-.ctcte-toolbar::-webkit-scrollbar { height: 5px; }
-.ctcte-toolbar::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 999px; }
-.ctcte-toolbar::-webkit-scrollbar-track { background: transparent; }
 .ctcte-sel { height: 28px; border: 1.5px solid #E5E1F3; border-radius: 8px; background: #fff; color: #4C1D95; font-family: inherit; font-size: 11px; font-weight: 600; padding: 0 8px; cursor: pointer; outline: none; }
 .ctcte-sel-sm { min-width: 56px; padding: 0 6px; }
 .ctcte-div { width: 1px; height: 18px; background: #E5E1F3; margin: 0 3px; }

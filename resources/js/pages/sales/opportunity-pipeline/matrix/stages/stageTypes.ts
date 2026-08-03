@@ -173,7 +173,10 @@ export const SHARED_STAGE_CSS = `
   50%      { opacity: .5; transform: scale(.7); }
 }
 
-.smd-stg-body { padding: 12px 14px; flex: 1; overflow-y: auto; }
+/* min-height:0 lets this flex child shrink below its content and scroll
+   internally (without it the body grows to fit its content and pushes the card
+   taller than the side panels on Stage 6). */
+.smd-stg-body { padding: 12px 14px; flex: 1; min-height: 0; overflow-y: auto; }
 .smd-stg-body::-webkit-scrollbar { width: 4px; }
 .smd-stg-body::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 999px; }
 

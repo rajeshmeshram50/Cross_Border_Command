@@ -833,19 +833,19 @@ export default function SalesMatrixDetail() {
   // Stage tracker click → navigate to the same opportunity at a new stage.
   // No-op for locked (not-yet-reached) future steps: you can step back to
   // completed stages but can't skip ahead to one you haven't reached.
-  /* Sales Person Name is MANDATORY before the lead leaves Stage 1 (Inquiry
-   * Received). It's not blocked ON Stage 1 — the user can sit there and fill
-   * things in — but moving forward to Stage 2 (Lead Acknowledgement) requires a
+  /* Sales Person Name is MANDATORY before the lead reaches Stage 3 (Product
+   * Sourcing). Stages 1 & 2 are open — the user can sit on Inquiry Received /
+   * Lead Acknowledgement without it — but moving forward to Stage 3 requires a
    * salesperson to be assigned (via Change Owner). */
-  const requireSalespersonForAck = (): boolean => {
+  const requireSalespersonForSourcing = (): boolean => {
     if ((serverHeader.salespersonName ?? '').trim()) return true;
-    toast.error('Sales Person Name required', 'Assign a salesperson (Change Owner) before moving to Lead Acknowledgement.');
+    toast.error('Sales Person Name required', 'Assign a salesperson (Change Owner) before moving to Product Sourcing.');
     return false;
   };
 
   const goToStage = (n: StageNum) => {
     if (n > furthestStage) return;
-    if (n === 2 && !requireSalespersonForAck()) return;
+    if (n === 3 && !requireSalespersonForSourcing()) return;
     navStage(n);
   };
 
@@ -853,7 +853,7 @@ export default function SalesMatrixDetail() {
   const goPrev = () => stage > 1 && navStage((stage - 1) as StageNum);
   const goNext = () => {
     if (stage >= 6) return;
-    if (stage === 1 && !requireSalespersonForAck()) return;
+    if (stage === 2 && !requireSalespersonForSourcing()) return;
     // Crossing 5 → 6 via Save & Next is a "deal won" moment — drop a one-shot
     // session flag so the Victory stage celebrates EVERY time it's reached this
     // way (its localStorage gate otherwise only confetti's once per lead ever).
