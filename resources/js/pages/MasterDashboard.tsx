@@ -50,6 +50,7 @@ const LEAF_ICONS: Record<string, string> = {
   Thermometer: 'ri-temp-cold-line', Rows3: 'ri-layout-row-line', Rows4: 'ri-layout-grid-line',
   Monitor: 'ri-computer-line', Snowflake: 'ri-snowy-line',
   CalendarCheck: 'ri-calendar-check-line', CalendarOff: 'ri-calendar-close-line', CalendarRange: 'ri-calendar-2-line',
+  Timer: 'ri-timer-flash-line',
 };
 const leafIcon = (name?: string) => (name && LEAF_ICONS[name]) || 'ri-file-list-3-line';
 
@@ -105,6 +106,7 @@ const LEAF_DESCRIPTIONS: Record<string, string> = {
   'master.freezers':                'Cold storage units — direct placement, no bins required',
   'master.leave_type':              'Define leave categories (Regular, Incident Based, Unpaid) with short codes',
   'master.leave_plan':              'Configure leave plans with calendar year & start-month rules',
+  'master.overtime_rates':          'Overtime rate names & multipliers used in employee setup',
 };
 const leafDescription = (leaf: MenuChild) =>
   LEAF_DESCRIPTIONS[leaf.id] || `Manage ${leaf.label.toLowerCase()} records`;

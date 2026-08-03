@@ -1831,6 +1831,34 @@ const C: Record<string, MasterConfig> = {
     ],
   },
 
+  overtime_rates: {
+    key: 'overtime_rates', slug: 'overtime_rates', title: 'Overtime (OT) Master', titleSingular: 'Overtime Rate',
+    icon: 'ri-timer-flash-line', iconColor: 'warning', iconBg: 'warning',
+    desc: 'Define overtime rate names & multipliers used in employee setup',
+    cat: 'Attendance Master Management',
+    fields: [
+      { n: 'rate_name', l: 'Rate Name', t: 'text', r: true, p: 'e.g. Time and a Half' },
+      { n: 'multiplier', l: 'Multiplier', t: 'number', r: true, min: 0, max: 100, p: 'e.g. 1.5', hint: 'Factor on base hourly rate (1 = normal, 1.5 = 150%)' },
+      { n: 'description', l: 'Description', t: 'text', p: 'e.g. 150% of hourly rate', full: true },
+      { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
+    ],
+    cols: ['rate_name', 'multiplier', 'description', 'status'],
+    colL: ['Rate Name', 'Multiplier', 'Description', 'Status'],
+    uFields: ['rate_name'],
+    data: [],
+    kpis: [
+      { label: 'Total Rates', icon: 'ri-timer-flash-line',    gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', compute: r => r.length },
+      { label: 'Active',      icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'active').length },
+      { label: 'Inactive',    icon: 'ri-close-circle-line',    gradient: 'linear-gradient(135deg,#f06548 0%,#f47c5d 100%)', compute: r => r.filter((x:any) => String(x.status).toLowerCase() === 'inactive').length },
+    ],
+    wtd: [
+      { icon: 'ri-price-tag-3-line',     title: 'Name the Rate',    desc: 'e.g. Regular Time, Time and a Half, Double Time' },
+      { icon: 'ri-numbers-line',         title: 'Set the Multiplier', desc: 'Factor on base hourly rate (1, 1.5, 2, 2.5, 3…)' },
+      { icon: 'ri-edit-line',            title: 'Add a Description', desc: 'Optional — e.g. "150% of hourly rate"' },
+      { icon: 'ri-checkbox-circle-line', title: 'Activate',          desc: 'Active rates appear in the Employee Overtime picker' },
+    ],
+  },
+
   // ---------- HR · DOCUMENT & EVIDENCE ----------
   // Trigger Point Master — defines lifecycle trigger modules (Onboarding,
   // Offboarding, Event-Based, etc.) that the Doc Generation Rules engine
@@ -1899,6 +1927,7 @@ export function getMasterConfig(slug: string): MasterConfig | null {
 export function allMasterConfigs(): MasterConfig[] {
   return Object.values(C);
 }
+
 
 // Resolve a reference field value to its display label.
 export function resolveRef(refMaster: string, refLabel: string | undefined, value: any): string {
