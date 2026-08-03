@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect } from 'react';
-import { Row, Col } from 'reactstrap';
+import { Row, Col, Card, CardBody } from 'reactstrap';
 import api from '../../../api';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import { KpiTile, AnimatedNumber } from '../EmployeeProfileShared';
@@ -336,16 +336,26 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
       {myRegs.length > 0 && (
         <Row className="g-3 mt-1">
           <Col xs={12}>
-            <div className="ep-section-card-flat ep-section-card ep-ct-indigo">
-              <div className="d-flex align-items-center gap-2 px-3 py-2 ep-hd-indigo">
-                <span className="ep-section-icon ep-icon-indigo"><i className="ri-file-edit-line" /></span>
-                <h6 className="mb-0 fw-bold ep-fs-12">My Regularization Requests</h6>
-              </div>
-              <div className="px-3 py-3">
-                <div className="table-responsive">
-                  <table className="table table-sm align-middle mb-0">
+            {/* Same shell as the Logs & Requests card above — att-logs-card +
+                att-logs-headbar rather than the profile's tinted section card,
+                so the two stack as one component. The table inside uses the
+                shared `att-tablebox` frame and `reg-req-table` accent header;
+                no `table-sm`, whose compressed padding breaks the row rhythm. */}
+            <Card className="att-logs-card mb-0">
+              <CardBody>
+                <div className="att-logs-headbar">
+                  <div className="d-flex align-items-center gap-3 min-w-0">
+                    <span className="att-logs-headbar-icon"><i className="ri-file-edit-line" /></span>
+                    <div>
+                      <div className="att-logs-headbar-title">My Regularization Requests</div>
+                      <div className="att-logs-headbar-sub">Your attendance corrections and their approval status</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="table-responsive att-tablebox att-tablebox--solo">
+                  <table className="table align-middle mb-0 reg-req-table">
                     <thead>
-                      <tr className="att-thead-row">
+                      <tr>
                         <th>Date</th>
                         <th>Type</th>
                         <th>Requested Punches</th>
@@ -378,8 +388,8 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                     </tbody>
                   </table>
                 </div>
-              </div>
-            </div>
+              </CardBody>
+            </Card>
           </Col>
         </Row>
       )}
@@ -391,6 +401,7 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
           dateIso={regDate}
           shiftStart={data?.employee?.shift_start ?? undefined}
           shiftEnd={data?.employee?.shift_end ?? undefined}
+          shiftName={data?.shift ?? null}
           initialPunches={regPunches}
           onClose={() => setRegOpen(false)}
           onSubmitted={() => loadRegs()}

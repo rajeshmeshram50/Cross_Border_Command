@@ -570,7 +570,42 @@ class AttendanceController extends Controller
             }
         }
 
-        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date, $histStart, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp) {
+        /* Approved-leave days across the LOG window, keyed employee → ISO →
+           'Paid' | 'Unpaid'. The month map above is a boolean set sized to the
+           compliance window; the Attendance Log needs the wider 90-day range AND
+           the paid/unpaid label, otherwise a leave day in this module rendered as
+           a bare "Absent" row while the employee profile — which already passes a
+           leave set — showed "Paid Leave" for the same day.
+           No weekly-off / holiday filtering needed here: buildHistoryLogs only
+           lets a leave override a day already reading 'Absent', and weekly-offs
+           and holidays are resolved before that point. */
+        $leaveLogByEmp = [];
+        if (!empty($empIdsForLeave)) {
+            $logStartC = \Carbon\Carbon::parse($histStart);
+            $logLeaves = \App\Models\LeaveRequest::query()
+                ->whereIn('employee_id', $empIdsForLeave)
+                ->where('status', 'Approved')
+                ->whereDate('from_date', '<=', $date)
+                ->whereDate('to_date', '>=', $histStart)
+                ->get(['employee_id', 'from_date', 'to_date', 'leave_type_id']);
+            $paidByTypeLog = \App\Models\Masters\LeaveTypes::whereIn(
+                'id', $logLeaves->pluck('leave_type_id')->filter()->unique()->all()
+            )->pluck('paid_unpaid', 'id');
+            foreach ($logLeaves as $lv) {
+                $paid  = strcasecmp((string) ($paidByTypeLog[$lv->leave_type_id] ?? 'Paid'), 'Unpaid') === 0 ? 'Unpaid' : 'Paid';
+                $fromC = \Carbon\Carbon::parse($lv->from_date);
+                $toC   = \Carbon\Carbon::parse($lv->to_date);
+                $c     = $fromC->lt($logStartC) ? $logStartC->copy() : $fromC->copy();
+                $till  = $toC->gt($dateC) ? (clone $dateC) : $toC->copy();
+                for ($d = $c->copy(); $d->lte($till); $d->addDay()) {
+                    $iso = $d->toDateString();
+                    if (isset($leaveLogByEmp[(int) $lv->employee_id][$iso])) continue;
+                    $leaveLogByEmp[(int) $lv->employee_id][$iso] = $paid;
+                }
+            }
+        }
+
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $date, $histStart, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp) {
             [$parsedStart, $parsedEnd] = $emp->resolveShiftWindow();
             $shiftStart = $parsedStart ?: $defaultShiftStart;
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
@@ -671,7 +706,11 @@ class AttendanceController extends Controller
             // and the month range pills paint a full picture, not just the
             // days the employee happened to punch.
             $hRows = $historyRows->get($emp->id, collect());
-            $logs = $this->buildHistoryLogs($hRows, $emp, $shiftStart, $expectedMinutes, $weeklyOffSet, $histStart, $date, $holidayByGroupLog[$emp->holiday_group_id] ?? []);
+            $logs = $this->buildHistoryLogs(
+                $hRows, $emp, $shiftStart, $expectedMinutes, $weeklyOffSet, $histStart, $date,
+                $holidayByGroupLog[$emp->holiday_group_id] ?? [],
+                $leaveLogByEmp[$emp->id] ?? []
+            );
 
             return [
                 'id'                => $emp->id,
@@ -969,9 +1008,36 @@ class AttendanceController extends Controller
                     if ($p->direction === 'in') {
                         $openIn = $hf;
                     } elseif ($p->direction === 'out' && $openIn !== null) {
-                        $segments[] = ['start' => round($openIn, 2), 'end' => round($hf, 2)];
+                        // 6dp, not 2 — the UI turns these decimal hours back into
+                        // HH:MM:SS, and 2dp rounded a 09:35 punch to 9.58 which
+                        // printed as "09:34:48 AM".
+                        $segments[] = ['start' => round($openIn, 6), 'end' => round($hf, 6)];
                         $openIn = null;
                     }
+                }
+                // An in-punch with no matching out (still clocked in today, or a
+                // forgotten check-out on a past day) used to produce NO segment
+                // at all — the visual bar drew nothing and the day popover hid
+                // its punch list entirely, even though the row showed real
+                // effective hours. Emit an open-ended segment so the in time is
+                // always visible; `open` tells the UI to print MISSING in place
+                // of the out time. It runs to "now" on today's row (matching the
+                // live effective-hours reading) and to the shift end on a past
+                // day, so the bar has something to draw.
+                if ($openIn !== null) {
+                    $nowLocal = \Carbon\Carbon::now(self::DISPLAY_TZ);
+                    // Today: run to "now" so the bar matches the live effective
+                    // hours. A past day: we genuinely don't know when they left,
+                    // so the segment stays zero-length rather than inventing a
+                    // span — the popover still lists the in time with MISSING.
+                    $endHf = $iso === $todayLocal
+                        ? max($openIn, $nowLocal->hour + $nowLocal->minute / 60)
+                        : $openIn;
+                    $segments[] = [
+                        'start' => round($openIn, 6),
+                        'end'   => round($endHf, 6),
+                        'open'  => true,
+                    ];
                 }
             } else {
                 // No Attendance row for this day — synthesise it.
