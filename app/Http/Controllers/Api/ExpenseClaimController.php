@@ -354,6 +354,183 @@ class ExpenseClaimController extends Controller
     }
 
     /**
+     * Stream the proof-of-payment file attached to one settlement installment.
+     * Auth via query token (?token=<sanctum>) so plain link-clicks work.
+     */
+    public function downloadPaymentProof(Request $request, $paymentId)
+    {
+        $this->authenticateFromQueryToken($request);
+
+        $payment = \App\Models\ExpenseClaimPayment::findOrFail($paymentId);
+        $claim   = ExpenseClaim::findOrFail($payment->expense_claim_id);
+        $this->ensureTenantAccess($claim, $request->user());
+
+        if (empty($payment->proof_path)) {
+            abort(404, 'No proof of payment was attached to this settlement.');
+        }
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (!$disk->exists($payment->proof_path)) {
+            abort(404, 'Proof file is missing on the server.');
+        }
+        return $disk->response($payment->proof_path, $payment->proof_name ?: basename($payment->proof_path));
+    }
+
+    /** Build the Zoho Books web-app deep link for an expense (region derived from
+     *  the configured API host, e.g. zohoapis.in → books.zoho.in). */
+    private function zohoExpenseUrl(string $expenseId): string
+    {
+        $cfg    = config('services.zoho_books');
+        $org    = (string) ($cfg['organization_id'] ?? '');
+        $region = 'in';
+        if (preg_match('#zohoapis\.([a-z.]+)#i', (string) ($cfg['base_url'] ?? ''), $m)) {
+            $region = $m[1];
+        }
+        return "https://books.zoho.{$region}/app/{$org}#/expenses/" . rawurlencode($expenseId);
+    }
+
+    /**
+     * POST /expense-claims/payments/{paymentId}/sync-zoho
+     * Push a settlement payment to Zoho Books as an Expense:
+     *   • Expense Account   ← the payment's Expense Category (find-or-create in Zoho)
+     *   • Paid Through      ← the payment method            (find-or-create in Zoho)
+     *   • Amount / Notes    ← payment amount / note
+     *   • Invoice # / Title ← "EXP-ID - Title"
+     *   • Receipt           ← the proof-of-payment file
+     * Idempotent: a payment already carrying a zoho_expense_id is not re-created.
+     */
+    public function syncPaymentToZoho(Request $request, $paymentId)
+    {
+        $user    = $request->user();
+        $payment = \App\Models\ExpenseClaimPayment::findOrFail($paymentId);
+        $claim   = ExpenseClaim::findOrFail($payment->expense_claim_id);
+        $this->ensureTenantAccess($claim, $user);
+        $this->guardHrPermission($user, 'can_approve');
+
+        if (($payment->zoho_status ?? 'not_synced') === 'synced' || !empty($payment->zoho_expense_id)) {
+            return response()->json(['status' => true, 'message' => 'This payment is already synced to Zoho Books.']);
+        }
+
+        /** @var \App\Services\ZohoBooksService $zoho */
+        $zoho = app(\App\Services\ZohoBooksService::class);
+        if (!$zoho->isConfigured()) {
+            return response()->json(['status' => false, 'message' => 'Zoho Books is not configured on the server.'], 503);
+        }
+
+        $title    = ($claim->claim_no ?: ('EXP-' . $claim->id)) . ' - ' . ($claim->title ?: 'Expense');
+        $category = $payment->category_name ?: ($claim->category_name ?: 'Employee Reimbursement');
+
+        $expenseId = null;
+        try {
+            $payload = [
+                'account_id'             => $zoho->resolveExpenseAccountId($category),
+                'paid_through_account_id'=> $zoho->findOrCreatePaidThroughAccountId($payment->payment_type ?: 'Bank'),
+                'date'                   => optional($payment->paid_at)->format('Y-m-d') ?: now()->format('Y-m-d'),
+                'amount'                 => (float) $payment->amount,
+                'reference_number'       => $title,
+                'description'            => (string) ($payment->note ?? ''),
+                // Our Goods/Service radio → Zoho's Expense Type (goods | service).
+                'product_type'           => strtolower($payment->expense_type ?: 'goods') === 'service' ? 'service' : 'goods',
+            ];
+            // GST-registered orgs need source/destination of supply on the expense.
+            $state = $zoho->orgStateCode();
+            if ($state) {
+                $payload['source_of_supply']      = $state;
+                $payload['destination_of_supply'] = $state;
+            }
+            // Mandatory "Title" custom field on the Zoho Expense module — resolve
+            // its api_name live (falls back to the configured value).
+            $titleCf = $zoho->resolveExpenseTitleFieldApiName();
+            if ($titleCf) {
+                $payload['custom_fields'] = [['api_name' => $titleCf, 'value' => $title]];
+            }
+
+            $expense   = $zoho->createExpense($payload);
+            $expenseId = (string) ($expense['expense_id'] ?? '');
+
+            // Attach the proof-of-payment file as the expense receipt (best-effort;
+            // a receipt failure shouldn't undo an otherwise-created expense).
+            if ($expenseId !== '' && !empty($payment->proof_path)) {
+                $disk = \Illuminate\Support\Facades\Storage::disk('public');
+                if ($disk->exists($payment->proof_path)) {
+                    try {
+                        $zoho->attachExpenseReceipt($expenseId, $disk->get($payment->proof_path), $payment->proof_name ?: basename($payment->proof_path));
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning('Zoho expense receipt attach failed', ['payment' => $payment->id, 'error' => $e->getMessage()]);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Reverse a partially-created expense so a retry starts clean.
+            if ($expenseId) { try { $zoho->deleteExpense($expenseId); } catch (\Throwable $ignore) {} }
+            return response()->json(['status' => false, 'message' => 'Zoho Books sync failed: ' . $e->getMessage()], 422);
+        }
+
+        $payment->zoho_status    = 'synced';
+        $payment->zoho_synced_at = now();
+        $payment->zoho_expense_id = $expenseId;
+        $payment->save();
+
+        return response()->json([
+            'status'  => true,
+            'message' => 'Expense synced to Zoho Books.',
+        ]);
+    }
+
+    /**
+     * POST /expense-claims/{id}/email-reimbursement
+     * Email the employee their reimbursement confirmation (breakdown + payments +
+     * proof attachments). Allowed only once the claim is fully paid AND every
+     * payment has been synced to Zoho Books.
+     */
+    public function emailReimbursement(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = ExpenseClaim::with(['payments', 'employee', 'client'])->findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+        $this->guardHrPermission($user, 'can_approve');
+
+        if ($row->status !== 'approved') {
+            abort(409, 'Only an approved claim can be emailed.');
+        }
+        if (($row->settlement_status ?? 'unpaid') !== 'paid') {
+            abort(409, 'The claim must be fully paid before emailing the reimbursement.');
+        }
+        $payments = $row->payments;
+        if ($payments->isEmpty() || !$payments->every(fn ($p) => ($p->zoho_status ?? 'not_synced') === 'synced')) {
+            abort(409, 'All payments must be synced to Zoho Books before emailing.');
+        }
+
+        $email = $row->employee?->official_email ?: $row->employee?->email;
+        if (!$email) {
+            return response()->json(['status' => false, 'message' => 'The employee has no email address on file.'], 422);
+        }
+
+        $employeeName = $row->employee?->display_name
+            ?: trim(($row->employee?->first_name ?? '') . ' ' . ($row->employee?->last_name ?? ''))
+            ?: ($row->employee_name ?: 'Employee');
+        $orgName = $row->client?->name ?: config('mail.from.name', 'Cross Border Command');
+
+        // Proof files to attach (public disk, existing only).
+        $disk  = \Illuminate\Support\Facades\Storage::disk('public');
+        $files = $payments->filter(fn ($p) => $p->proof_path && $disk->exists($p->proof_path))
+            ->map(fn ($p) => ['path' => $p->proof_path, 'name' => $p->proof_name ?: basename($p->proof_path)])
+            ->values()->all();
+
+        try {
+            \Illuminate\Support\Facades\Mail::to($email)->send(
+                new \App\Mail\ExpenseReimbursementMail($row, $employeeName, $orgName, $files)
+            );
+        } catch (\Throwable $e) {
+            return response()->json(['status' => false, 'message' => 'Could not send the email: ' . $e->getMessage()], 422);
+        }
+
+        $row->reimbursement_emailed_at = now();
+        $row->save();
+
+        return response()->json(['status' => true, 'message' => 'Reimbursement emailed to ' . $email . '.']);
+    }
+
+    /**
      * Resolve the request user from `?token=<sanctum>` so direct browser
      * link-clicks work without sending an Authorization header. Mirrors
      * CandidateController::authenticateFromQueryToken.
@@ -453,18 +630,58 @@ class ExpenseClaimController extends Controller
 
         // A rejection reason is mandatory for auditability (parity with the
         // frontend + Notifications reject flow); approvals may omit a note.
+        // On APPROVAL, HR also locks the one-time settlement adjustments here
+        // (additions / deductions) — after this the claim is payment-only.
         $data = $request->validate([
-            'comment' => [$verdict === 'rejected' ? 'required' : 'nullable', 'string', 'max:1000'],
+            'comment'             => [$verdict === 'rejected' ? 'required' : 'nullable', 'string', 'max:1000'],
+            'deductions'          => ['nullable', 'array'],
+            'deductions.*.amount' => ['required_with:deductions', 'numeric', 'min:0'],
+            'deductions.*.reason' => ['nullable', 'string', 'max:500'],
+            'additions'           => ['nullable', 'array'],
+            'additions.*.amount'  => ['required_with:additions', 'numeric', 'min:0', 'max:100000'],
+            'additions.*.reason'  => ['nullable', 'string', 'max:500'],
         ], [
             'comment.required' => 'A reason is required to reject this claim.',
         ]);
 
-        $row->hr_status   = $verdict;
-        $row->hr_user_id  = $user->id;
-        $row->hr_acted_at = now();
-        $row->hr_comment  = $data['comment'] ?? null;
-        $row->status      = $verdict; // hr stage is the final word
-        $row->save();
+        // Compute + validate the settlement adjustments when approving.
+        $applyAdjust   = $verdict === 'approved';
+        $deductionRows = [];  $deduction = 0.0;
+        $additionRows  = [];  $addition  = 0.0;
+        $sanctioned    = null;
+        if ($applyAdjust) {
+            [$deductionRows, $deduction, $dedErr] = $this->normaliseAdjustments($data['deductions'] ?? [], 'deduction');
+            if ($dedErr) return $dedErr;
+            [$additionRows, $addition, $addErr] = $this->normaliseAdjustments($data['additions'] ?? [], 'addition');
+            if ($addErr) return $addErr;
+            $sanctioned = round((float) $row->amount - $deduction + $addition, 2);
+            if ($sanctioned <= 0.005) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Deductions cannot exceed the claimed amount plus additions — net payable must be greater than zero.',
+                    'errors'  => ['deductions' => ['Net payable must be greater than zero.']],
+                ], 422);
+            }
+        }
+
+        DB::transaction(function () use ($row, $user, $verdict, $data, $applyAdjust, $sanctioned, $deduction, $deductionRows, $addition, $additionRows) {
+            $row->hr_status   = $verdict;
+            $row->hr_user_id  = $user->id;
+            $row->hr_acted_at = now();
+            $row->hr_comment  = $data['comment'] ?? null;
+            $row->status      = $verdict; // hr stage is the final word
+            if ($applyAdjust) {
+                $row->sanctioned_amount = $sanctioned;
+                $row->deduction_amount  = max(0, $deduction);
+                $row->deductions        = $deductionRows;
+                $row->addition_amount   = max(0, $addition);
+                $row->additions         = $additionRows;
+                $row->deduction_reason  = $deductionRows
+                    ? implode(' · ', array_map(fn ($d) => number_format($d['amount'], 2) . ': ' . $d['reason'], $deductionRows))
+                    : null;
+            }
+            $row->save();
+        });
 
         $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
         return response()->json($this->serialize($row));
@@ -752,6 +969,329 @@ class ExpenseClaimController extends Controller
             'created_by'      => $row->created_by,
             'creator_name'    => $row->creator?->name,
             'created_at'      => optional($row->created_at)->toIso8601String(),
+            // ── Settlement (post-approval payment) ──
+            'sanctioned_amount' => $row->sanctioned_amount !== null ? (float) $row->sanctioned_amount : null,
+            'deduction_amount'  => (float) $row->deduction_amount,
+            'deduction_reason'  => $row->deduction_reason,
+            'total_paid'        => (float) $row->total_paid,
+            'settlement_status' => $row->settlement_status ?: 'unpaid',
+            'settled_at'        => optional($row->settled_at)->toIso8601String(),
+            'reimbursement_emailed_at' => optional($row->reimbursement_emailed_at)->toIso8601String(),
+            // Every recorded payment pushed to Zoho Books? (gates the "Email" action)
+            'zoho_all_synced'   => (function () use ($row) {
+                $payments = $row->relationLoaded('payments') ? $row->payments : $row->payments()->get();
+                return $payments->isNotEmpty() && $payments->every(fn ($p) => ($p->zoho_status ?? 'not_synced') === 'synced');
+            })(),
+            // Remaining to pay against the sanctioned amount (once sanctioned is set).
+            'remaining_amount'  => $row->sanctioned_amount !== null
+                ? round((float) $row->sanctioned_amount - (float) $row->total_paid, 2)
+                : null,
         ];
+    }
+
+    /* ============================================================ */
+    /*  SETTLEMENT — post-approval payment (partial payments)        */
+    /* ============================================================ */
+
+    /**
+     * GET /expense-claims/{id}/settlement
+     * The settlement state for the Record-Payment form: the claimed amount, the
+     * sanctioned amount + deduction (once set), how much is paid/remaining, and
+     * the list of installment payments made so far.
+     */
+    public function settlement(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = ExpenseClaim::with('payments.payer')->findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+
+        return response()->json([
+            'id'                => $row->id,
+            'claim_no'          => $row->claim_no ?: ('#' . $row->id),
+            'title'             => $row->title,
+            'employee_name'     => $row->employee_name ?: $row->employee?->display_name,
+            'expense_date'      => optional($row->expense_date)->format('Y-m-d'),
+            'currency'          => $row->currency,
+            'claimed_amount'    => (float) $row->amount,
+            'purpose'           => $row->purpose,
+            'vendor'            => $row->vendor,
+            'project'           => $row->project,
+            'category_id'       => $row->category_id,
+            'category_name'     => $row->category?->name ?? $row->category_name,
+            'sanctioned_amount' => $row->sanctioned_amount !== null ? (float) $row->sanctioned_amount : null,
+            'deduction_amount'  => (float) $row->deduction_amount,
+            'deduction_reason'  => $row->deduction_reason,
+            'deductions'        => collect($row->deductions ?? [])->map(fn ($d) => [
+                'amount' => (float) ($d['amount'] ?? 0),
+                'reason' => (string) ($d['reason'] ?? ''),
+            ])->values()->all(),
+            'addition_amount'   => (float) $row->addition_amount,
+            'additions'         => collect($row->additions ?? [])->map(fn ($d) => [
+                'amount' => (float) ($d['amount'] ?? 0),
+                'reason' => (string) ($d['reason'] ?? ''),
+            ])->values()->all(),
+            'total_paid'        => (float) $row->total_paid,
+            'remaining_amount'  => $row->sanctioned_amount !== null
+                ? round((float) $row->sanctioned_amount - (float) $row->total_paid, 2)
+                : null,
+            'settlement_status' => $row->settlement_status ?: 'unpaid',
+            'status'            => $row->status,
+            'manager_status'    => $row->manager_status,
+            'hr_status'         => $row->hr_status,
+            // The employee's uploaded proof/receipt documents — shown in the form so
+            // the payer can verify before recording the payment. Tokenised route.
+            'attachments'       => collect($row->attachments ?? [])->values()->map(fn ($a, $i) => [
+                'name' => $a['name'] ?? ('Attachment ' . ($i + 1)),
+                'size' => $a['size'] ?? null,
+                'url'  => url("/api/expense-claims/{$row->id}/attachments/{$i}"),
+            ])->all(),
+            'payments'          => $row->payments->map(fn ($p) => [
+                'id'           => $p->id,
+                'amount'       => (float) $p->amount,
+                'category_name'=> $p->category_name,
+                'payment_type' => $p->payment_type,
+                'expense_type' => $p->expense_type,
+                'note'         => $p->note,
+                'proof_name'   => $p->proof_name,
+                'proof_url'    => $p->proof_path ? url("/api/expense-claims/payments/{$p->id}/proof") : null,
+                'zoho_status'  => $p->zoho_status ?: 'not_synced',
+                'zoho_synced_at' => optional($p->zoho_synced_at)->toIso8601String(),
+                'zoho_expense_url' => $p->zoho_expense_id ? $this->zohoExpenseUrl((string) $p->zoho_expense_id) : null,
+                'paid_by_name' => $p->payer?->name,
+                'paid_at'      => optional($p->paid_at)->toIso8601String(),
+            ])->all(),
+        ]);
+    }
+
+    /**
+     * POST /expense-claims/{id}/set-deductions
+     * Lock the ONE-TIME deduction on an approved claim WITHOUT recording a payment.
+     * Computes the sanctioned amount (claim − Σ deductions) and freezes it so every
+     * later payment pays against a fixed net-payable. Can only run before the first
+     * payment (i.e. while the sanctioned amount is still unset).
+     *
+     * Body: deductions[] (each { amount, reason }).
+     */
+    public function setDeductions(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = ExpenseClaim::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+        $this->guardHrPermission($user, 'can_approve');
+
+        if ($row->status !== 'approved') {
+            abort(409, 'Only an approved claim can be settled. Approve it first.');
+        }
+        if ($row->sanctioned_amount !== null) {
+            abort(409, 'The deduction is already locked for this claim.');
+        }
+
+        $data = $request->validate([
+            'deductions'          => ['nullable', 'array'],
+            'deductions.*.amount' => ['required_with:deductions', 'numeric', 'min:0'],
+            'deductions.*.reason' => ['nullable', 'string', 'max:500'],
+            'additions'           => ['nullable', 'array'],
+            'additions.*.amount'  => ['required_with:additions', 'numeric', 'min:0', 'max:100000'],
+            'additions.*.reason'  => ['nullable', 'string', 'max:500'],
+        ]);
+
+        [$deductionRows, $deduction, $dedErr] = $this->normaliseAdjustments($data['deductions'] ?? [], 'deduction');
+        if ($dedErr) return $dedErr;
+        [$additionRows, $addition, $addErr] = $this->normaliseAdjustments($data['additions'] ?? [], 'addition');
+        if ($addErr) return $addErr;
+
+        $sanctioned = round((float) $row->amount - $deduction + $addition, 2);
+        if ($sanctioned <= 0.005) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Deductions cannot exceed the claimed amount plus additions — net payable must be greater than zero.',
+                'errors'  => ['deductions' => ['Net payable must be greater than zero.']],
+            ], 422);
+        }
+
+        $row->sanctioned_amount = $sanctioned;
+        $row->deduction_amount  = max(0, $deduction);
+        $row->deductions        = $deductionRows;
+        $row->addition_amount   = max(0, $addition);
+        $row->additions         = $additionRows;
+        $row->deduction_reason  = $deductionRows
+            ? implode(' · ', array_map(fn ($d) => number_format($d['amount'], 2) . ': ' . $d['reason'], $deductionRows))
+            : null;
+        $row->save();
+
+        $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
+        return response()->json([
+            'status'  => true,
+            'message' => 'Locked — net payable ₹' . number_format($sanctioned, 2) . '. Add a payment to disburse.',
+            'data'    => $this->serialize($row),
+        ]);
+    }
+
+    /**
+     * Normalise an itemised adjustments array (deductions / additions): keep only
+     * rows with amount > 0, require a reason for each, and return
+     * [rows, total, errorResponse|null]. `$kind` names the field in the 422.
+     */
+    private function normaliseAdjustments(array $items, string $kind): array
+    {
+        $rows  = [];
+        $total = 0.0;
+        $field = $kind === 'addition' ? 'additions' : 'deductions';
+        foreach ($items as $d) {
+            $amt = round((float) ($d['amount'] ?? 0), 2);
+            if ($amt <= 0.005) continue;
+            if (empty(trim((string) ($d['reason'] ?? '')))) {
+                return [[], 0.0, response()->json([
+                    'status'  => false,
+                    'message' => 'Each ' . $kind . ' needs a reason.',
+                    'errors'  => [$field => ['Every ' . $kind . ' must have a reason.']],
+                ], 422)];
+            }
+            $rows[] = ['amount' => $amt, 'reason' => trim((string) $d['reason'])];
+            $total += $amt;
+        }
+        return [$rows, round($total, 2), null];
+    }
+
+    /**
+     * POST /expense-claims/{id}/settle
+     * Record ONE settlement installment against an approved claim. The FIRST call
+     * also sets the sanctioned amount (+ deduction reason when it's less than the
+     * claim). Partial payments are allowed until the sanctioned amount is met.
+     *
+     * Body: sanctioned_amount (first payment only), deduction_reason (if reduced),
+     *       amount, category_id?, payment_type, expense_type, note.
+     */
+    public function settle(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = ExpenseClaim::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+        // Same right as HR approval for now (may be split into can_settle later).
+        $this->guardHrPermission($user, 'can_approve');
+
+        if ($row->status !== 'approved') {
+            abort(409, 'Only an approved claim can be paid. Approve it first.');
+        }
+        if (($row->settlement_status ?? 'unpaid') === 'paid') {
+            abort(409, 'This claim is already fully paid.');
+        }
+
+        $firstPayment = $row->sanctioned_amount === null;
+
+        $data = $request->validate([
+            // Itemised deductions / additions (first payment only) — each has an
+            // amount + reason. Net payable = claim − Σ deductions + Σ additions.
+            'deductions'          => ['nullable', 'array'],
+            'deductions.*.amount' => ['required_with:deductions', 'numeric', 'min:0'],
+            'deductions.*.reason' => ['nullable', 'string', 'max:500'],
+            'additions'           => ['nullable', 'array'],
+            'additions.*.amount'  => ['required_with:additions', 'numeric', 'min:0', 'max:100000'],
+            'additions.*.reason'  => ['nullable', 'string', 'max:500'],
+            'amount'              => ['required', 'numeric', 'min:0.01'],
+            'category_id'         => ['required', 'integer'],
+            // Payment method used to disburse the reimbursement.
+            'payment_type'        => ['required', 'string', 'in:Cheque,UPI,PhonePe,Bank Transfer'],
+            'expense_type'        => ['required', 'string', 'in:Goods,Service'],
+            'note'                => ['required', 'string', 'max:500'],
+            // Proof of payment — the receipt / transfer confirmation (mandatory).
+            'proof'               => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+        ]);
+
+        // Normalise deductions + additions (first payment only). Net payable =
+        // claim − Σ deductions + Σ additions.
+        $deductionRows = [];
+        $deduction     = 0.0;
+        $additionRows  = [];
+        $addition      = 0.0;
+        if ($firstPayment) {
+            [$deductionRows, $deduction, $dedErr] = $this->normaliseAdjustments($data['deductions'] ?? [], 'deduction');
+            if ($dedErr) return $dedErr;
+            [$additionRows, $addition, $addErr] = $this->normaliseAdjustments($data['additions'] ?? [], 'addition');
+            if ($addErr) return $addErr;
+            if (round((float) $row->amount - $deduction + $addition, 2) <= 0.005) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Deductions cannot exceed the claimed amount plus additions — net payable must be greater than zero.',
+                    'errors'  => ['deductions' => ['Net payable must be greater than zero.']],
+                ], 422);
+            }
+        }
+
+        // Sanctioned = claim − Σ deductions + Σ additions (fixed on the first payment).
+        $sanctioned = $firstPayment ? round((float) $row->amount - $deduction + $addition, 2) : (float) $row->sanctioned_amount;
+
+        $pay       = round((float) $data['amount'], 2);
+        $remaining = round($sanctioned - (float) $row->total_paid, 2);
+        if ($pay > $remaining + 0.005) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Payment (' . number_format($pay, 2) . ') exceeds the remaining amount (' . number_format($remaining, 2) . ').',
+                'errors'  => ['amount' => ['Cannot pay more than the remaining amount.']],
+            ], 422);
+        }
+
+        // Resolve the payment's category (defaults to the claim's).
+        $categoryId   = $data['category_id'] ?? $row->category_id;
+        $categoryName = $row->category_name;
+        if (!empty($data['category_id'])) {
+            $cat = \App\Models\Masters\ExpenseCategories::find($data['category_id']);
+            if ($cat) $categoryName = $cat->name;
+        }
+
+        // Proof of payment — stored on the public disk; only name/path are kept and
+        // the URL is built per-request (query-token route) like the claim attachments.
+        $proofPath = null;
+        $proofName = null;
+        if ($request->hasFile('proof')) {
+            $f = $request->file('proof');
+            $proofName = $f->getClientOriginalName();
+            $proofPath = $f->store('expense_claim_payments/' . $row->id, 'public');
+        }
+
+        DB::transaction(function () use ($row, $user, $firstPayment, $sanctioned, $deduction, $deductionRows, $addition, $additionRows, $pay, $data, $categoryId, $categoryName, $proofPath, $proofName) {
+            if ($firstPayment) {
+                $row->sanctioned_amount = $sanctioned;
+                $row->deduction_amount  = max(0, $deduction);
+                $row->deductions        = $deductionRows;
+                $row->addition_amount   = max(0, $addition);
+                $row->additions         = $additionRows;
+                // A combined reason string kept for legacy display / audit.
+                $row->deduction_reason  = $deductionRows
+                    ? implode(' · ', array_map(fn ($d) => number_format($d['amount'], 2) . ': ' . $d['reason'], $deductionRows))
+                    : null;
+            }
+
+            \App\Models\ExpenseClaimPayment::create([
+                'client_id'        => $row->client_id,
+                'branch_id'        => $row->branch_id,
+                'expense_claim_id' => $row->id,
+                'amount'           => $pay,
+                'category_id'      => $categoryId,
+                'category_name'    => $categoryName,
+                'payment_type'     => $data['payment_type'],
+                'expense_type'     => $data['expense_type'],
+                'note'             => $data['note'] ?? null,
+                'proof_path'       => $proofPath,
+                'proof_name'       => $proofName,
+                'paid_by'          => $user->id,
+                'paid_at'          => now(),
+            ]);
+
+            $row->total_paid = round((float) $row->total_paid + $pay, 2);
+            $paidUp = $row->total_paid + 0.005 >= (float) $row->sanctioned_amount;
+            $row->settlement_status = $paidUp ? 'paid' : 'partial';
+            $row->settled_at = $paidUp ? now() : null;
+            $row->save();
+        });
+
+        $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
+        return response()->json([
+            'status'  => true,
+            'message' => $row->settlement_status === 'paid'
+                ? 'Payment recorded — claim fully paid.'
+                : 'Payment recorded — ₹' . number_format((float) $row->total_paid, 2) . ' of ₹' . number_format((float) $row->sanctioned_amount, 2) . ' paid.',
+            'data'    => $this->serialize($row),
+        ]);
     }
 }

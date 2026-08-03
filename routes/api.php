@@ -734,6 +734,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/expense-claims/{id}/manager-reject',      [ExpenseClaimController::class, 'managerReject']);
     Route::post  ('/expense-claims/{id}/hr-approve',          [ExpenseClaimController::class, 'hrApprove']);
     Route::post  ('/expense-claims/{id}/hr-reject',           [ExpenseClaimController::class, 'hrReject']);
+    // Post-approval settlement (Record Payment) — supports partial payments.
+    Route::get   ('/expense-claims/{id}/settlement',          [ExpenseClaimController::class, 'settlement']);
+    Route::post  ('/expense-claims/{id}/set-deductions',      [ExpenseClaimController::class, 'setDeductions']);
+    Route::post  ('/expense-claims/{id}/settle',              [ExpenseClaimController::class, 'settle']);
+    Route::post  ('/expense-claims/payments/{paymentId}/sync-zoho', [ExpenseClaimController::class, 'syncPaymentToZoho']);
+    Route::post  ('/expense-claims/{id}/email-reimbursement',  [ExpenseClaimController::class, 'emailReimbursement']);
 
 
     Route::get   ('/advance-requests',                          [\App\Http\Controllers\Api\AdvanceRequestController::class, 'index']);
@@ -970,6 +976,9 @@ Route::get('/candidates/{candidate}/cv', [CandidateController::class, 'downloadC
 
 Route::get('/expense-claims/{id}/attachments/{index}', [ExpenseClaimController::class, 'downloadAttachment'])
     ->name('expense-claims.attachment');
+
+Route::get('/expense-claims/payments/{paymentId}/proof', [ExpenseClaimController::class, 'downloadPaymentProof'])
+    ->name('expense-claims.payment-proof');
 
 
 Route::get('/advance-requests/{id}/attachments/{index}', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'downloadAttachment'])

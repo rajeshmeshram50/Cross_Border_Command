@@ -1806,7 +1806,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     { key: 'attendance', label: 'Attendance',      icon: 'ri-calendar-check-line',      color: 'linear-gradient(135deg,#299cdb,#5fc8ff)' },
     { key: 'vault',      label: 'Evidence Vault',  icon: 'ri-folder-shield-2-line',     color: 'linear-gradient(135deg,#a855f7,#c084fc)' },
     { key: 'payroll',    label: 'Payroll Details', icon: 'ri-money-dollar-circle-line', color: 'linear-gradient(135deg,#f59e0b,#fbbf24)' },
-    { key: 'expense',    label: 'Expense Details', icon: 'ri-wallet-3-line',            color: 'linear-gradient(135deg,#f06548,#ff7a5c)' },
+    // Expense Details — only surfaced when the employee's Expense Policy is
+    // "Applicable" (set at onboarding / on the employee Work Details form).
+    // "Not Applicable" or unset hides the whole tab.
+    ...(String(empDetail?.expense_policy || '') === 'Applicable' ? [{
+      key: 'expense' as TabKey, label: 'Expense Details', icon: 'ri-wallet-3-line',
+      color: 'linear-gradient(135deg,#f06548,#ff7a5c)',
+    }] : []),
     { key: 'apply_leave',label: 'Leave',           icon: 'ri-calendar-2-line',          color: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)' },
     { key: 'holidays',   label: 'Holidays',        icon: 'ri-calendar-event-line',      color: 'linear-gradient(135deg,#ec4899,#f472b6)' },
     // Hiring Requests — visible when the profile owner is also the

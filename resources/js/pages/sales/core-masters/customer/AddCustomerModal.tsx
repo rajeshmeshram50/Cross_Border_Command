@@ -2252,7 +2252,7 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
                 && (segReqKeys[s] ?? []).some(k => uploadedSet.has(k) && !keepKeys.has(k)));
               if (lockedRemoved.length) {
-                toast.error('Cannot remove segment', `${lockedRemoved.join(', ')} — used in a PI / Shipment.`);
+                toast.error('Cannot remove segment', `${lockedRemoved.join(', ')} — used in a Quotation / PI / Shipment.`);
               }
               if (docRemoved.length) {
                 toast.error('Cannot remove segment', `${docRemoved.join(', ')} — has its own uploaded document.`);

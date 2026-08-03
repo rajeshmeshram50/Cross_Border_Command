@@ -5,23 +5,6 @@ import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { useNavigateContext } from '../../../components/App';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Sales Matrix → Lead Distribution → Leads Details
- *
- * Faithful port of the SalesMatrix_v4_9 prototype's #leadsDetailModal
- * (line 10246). Reached by clicking "View Leads" on the Lead Distribution
- * roster — the salesperson id is read from `?sp=<id>&sp_name=<name>`.
- *
- * Columns mirror the prototype exactly: Sr No · Lead Type · Lead Date ·
- * Lead Source · Assigned To · Opp. ID · Customer Name · Shipment ID ·
- * PI Number · Country · Status. Shipment ID and PI Number aren't on the
- * lead record (they live on PI/Shipment objects downstream) so they
- * always render as "N/A" until those relations are joined into the API.
- *
- * Empty cells show "N/A" rather than the legacy "—" dash so missing
- * data reads as deliberately-absent instead of pending.
- * ───────────────────────────────────────────────────────────────────────── */
-
 type ServerLead = {
   id:                number;
   opp_code:          string;
@@ -63,10 +46,7 @@ const nullable = (v: string | null | undefined): string => {
   return s;
 };
 
-/* IndiaMart query_type codes → friendly labels — MUST match the worksheet
- * (SalesLeadWorksheet.tsx LEAD_TYPE_LABEL) so the Lead Type column reads the
- * same here as in My Workplace ("Buy-Leads" not "B"). Unknown codes fall
- * through to whatever the server sent (or "Manual" for null). */
+
 const LEAD_TYPE_LABEL: Record<string, string> = {
   BUY:               'Buy Leads',
   P:                 'PNS Calls',

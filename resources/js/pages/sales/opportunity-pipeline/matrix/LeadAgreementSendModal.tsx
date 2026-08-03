@@ -944,8 +944,8 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                         </span>
                         <span className="lasm-party-tab-meta">
                           <span><span className="lasm-party-tab-k">Email</span>{info?.email || '—'}</span>
-                          {(() => { const seg = info?.segment || ''; return (
-                            <span title={seg.length > 25 ? seg : undefined}><span className="lasm-party-tab-k">Segment</span>{seg.length > 25 ? seg.slice(0, 25) + '…' : (seg || '—')}</span>
+                          {(() => { const seg = info?.segment || ''; const long = seg.length > 25; return (
+                            <Tooltip label={seg} disabled={!long}><span><span className="lasm-party-tab-k">Segment</span>{long ? seg.slice(0, 25) + '…' : (seg || '—')}</span></Tooltip>
                           ); })()}
                         </span>
                       </div>
@@ -1024,11 +1024,11 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             </td>
                             <td>{(tdSafePage - 1) * TD_PER_PAGE + i + 1}</td>
                             <td>
-                              {(() => { const nm = td.title || td.name || ''; return <div className="lasm-doc-name" title={nm.length > 25 ? nm : undefined}>{nm.length > 25 ? nm.slice(0, 25) + '…' : nm}</div>; })()}
+                              {(() => { const nm = td.title || td.name || ''; const long = nm.length > 25; return <Tooltip label={nm} disabled={!long}><div className="lasm-doc-name">{long ? nm.slice(0, 25) + '…' : nm}</div></Tooltip>; })()}
                               <div className="lasm-doc-sub">{td.reference}</div>
                             </td>
                             <td>
-                              <div className="lasm-doc-name" title={(td.segmentName ?? '').length > 30 ? td.segmentName : undefined}>{(td.segmentName ?? '').length > 30 ? td.segmentName.slice(0, 30) + '…' : td.segmentName}</div>
+                              {(() => { const seg = td.segmentName ?? ''; const long = seg.length > 30; return <Tooltip label={seg} disabled={!long}><div className="lasm-doc-name">{long ? seg.slice(0, 30) + '…' : seg}</div></Tooltip>; })()}
                               <div className="lasm-doc-sub">{td.segmentCode}</div>
                             </td>
                             <td><span className={`lasm-pill ${td.requirement === 'M' ? 'lasm-pill-req' : 'lasm-pill-opt'}`}>{td.requirement === 'M' ? 'REQ' : 'OPT'}</span></td>
@@ -1345,7 +1345,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                           </td>
                           <td>{(agrSafePage - 1) * AGR_PER_PAGE + idx + 1}</td>
                           <td>
-                            {(() => { const nm = a.title || ''; return <div className="lasm-doc-name" title={nm.length > 25 ? nm : undefined}>{nm.length > 25 ? nm.slice(0, 25) + '…' : nm}</div>; })()}
+                            {(() => { const nm = a.title || ''; const long = nm.length > 25; return <Tooltip label={nm} disabled={!long}><div className="lasm-doc-name">{long ? nm.slice(0, 25) + '…' : nm}</div></Tooltip>; })()}
                             <div className="lasm-doc-sub">{a.agreement_type || '—'}</div>
                             {/* On the Multiple Segments tab, list the segments this
                                 one agreement covers (e.g. "Rice + Basmati Rice"). */}

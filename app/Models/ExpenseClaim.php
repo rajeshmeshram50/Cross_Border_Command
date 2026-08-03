@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Masters\ExpenseCategories;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ExpenseClaim extends Model
 {
@@ -20,6 +21,10 @@ class ExpenseClaim extends Model
         'status', 'manager_status', 'manager_acted_at', 'manager_comment',
         'hr_status', 'hr_user_id', 'hr_acted_at', 'hr_comment',
         'created_by',
+        // Settlement (post-approval payment)
+        'sanctioned_amount', 'deduction_amount', 'deduction_reason', 'deductions',
+        'additions', 'addition_amount',
+        'total_paid', 'settlement_status', 'settled_at', 'reimbursement_emailed_at',
     ];
 
     protected $casts = [
@@ -28,7 +33,20 @@ class ExpenseClaim extends Model
         'manager_acted_at' => 'datetime',
         'hr_acted_at'      => 'datetime',
         'attachments'      => 'array',
+        'sanctioned_amount' => 'decimal:2',
+        'deduction_amount'  => 'decimal:2',
+        'deductions'        => 'array',
+        'additions'         => 'array',
+        'addition_amount'   => 'decimal:2',
+        'total_paid'        => 'decimal:2',
+        'settled_at'        => 'datetime',
+        'reimbursement_emailed_at' => 'datetime',
     ];
+
+    public function payments(): HasMany
+    {
+        return $this->hasMany(ExpenseClaimPayment::class)->orderBy('id');
+    }
 
     public function employee(): BelongsTo
     {

@@ -948,6 +948,125 @@ class ZohoBooksService
         return $accounts[0]['id'];   // no bank → first cash
     }
 
+    /* ─────────────── Expense (employee reimbursement settlement) ─────────────── */
+
+    /**
+     * Resolve a local Expense Category name to a Zoho "Expense" chart-of-accounts
+     * account id, CREATING it in Zoho on first use so the finance team never has
+     * to pre-create accounts by hand. Matches by name (case-insensitive) against
+     * the org's expense-type ledgers; creates a new Expense account when absent.
+     */
+    public function resolveExpenseAccountId(string $name): string
+    {
+        $name = trim($name) !== '' ? mb_substr(trim($name), 0, 100) : 'Employee Reimbursement';
+        $needle = mb_strtolower($name);
+
+        $accounts = $this->expenseAccounts();
+        foreach ($accounts as $a) {
+            if (mb_strtolower($a['name']) === $needle) return $a['id'];
+        }
+
+        // Not found — create an Expense-type ledger with this category's name.
+        $created = $this->post('chartofaccounts', ['account_name' => $name, 'account_type' => 'expense']);
+        $id = $created['chart_of_account']['account_id'] ?? $created['chartofaccount']['account_id'] ?? null;
+        if (!$id) throw new RuntimeException('Zoho Books did not return an expense account id.');
+        Cache::forget('zoho_books_expense_accounts:' . $this->orgId);
+        return (string) $id;
+    }
+
+    /** The org's Expense-type ledgers, cached per org as [['id'=>…,'name'=>…], …]. */
+    protected function expenseAccounts(): array
+    {
+        return Cache::remember('zoho_books_expense_accounts:' . $this->orgId, now()->addHours(6), function () {
+            $out = [];
+            foreach (($this->get('chartofaccounts')['chartofaccounts'] ?? []) as $a) {
+                if ((string) ($a['account_type'] ?? '') === 'expense' && ($a['is_active'] ?? true)) {
+                    $out[] = ['id' => (string) ($a['account_id'] ?? ''), 'name' => (string) ($a['account_name'] ?? '')];
+                }
+            }
+            return $out;
+        });
+    }
+
+    /**
+     * Resolve a payment method (UPI / PhonePe / Cheque / Bank Transfer) to a Zoho
+     * "Paid Through" (Bank/Cash) account id, CREATING a Bank ledger of that name
+     * when it doesn't exist yet — so payment methods don't have to be pre-created.
+     */
+    public function findOrCreatePaidThroughAccountId(string $name): string
+    {
+        $name = trim($name) !== '' ? mb_substr(trim($name), 0, 100) : 'Bank';
+        $needle = mb_strtolower($name);
+
+        foreach ($this->bankCashAccounts() as $a) {
+            if (mb_strtolower($a['name']) === $needle) return $a['id'];
+        }
+
+        $created = $this->post('chartofaccounts', ['account_name' => $name, 'account_type' => 'bank']);
+        $id = $created['chart_of_account']['account_id'] ?? $created['chartofaccount']['account_id'] ?? null;
+        if (!$id) throw new RuntimeException('Zoho Books did not return a paid-through account id.');
+        Cache::forget('zoho_books_bank_accounts:' . $this->orgId);
+        return (string) $id;
+    }
+
+    /** POST a fully-built expense payload; returns the expense node (carries expense_id). */
+    public function createExpense(array $payload): array
+    {
+        $resp = $this->post('expenses', $payload);
+        $exp  = $resp['expense'] ?? null;
+        if (!$exp || empty($exp['expense_id'])) {
+            throw new RuntimeException('Zoho Books did not return an expense id.');
+        }
+        return $exp;
+    }
+
+    /** Reverse helper — delete a Zoho expense created by a failed sync. */
+    public function deleteExpense(string $expenseId): void
+    {
+        $this->delete('expenses/' . rawurlencode($expenseId));
+    }
+
+    /** Attach a receipt (raw bytes) to a Zoho expense. */
+    public function attachExpenseReceipt(string $expenseId, string $fileBytes, string $filename): void
+    {
+        $this->upload('expenses/' . rawurlencode($expenseId) . '/receipt', $fileBytes, $filename, 'receipt');
+    }
+
+    /**
+     * Resolve the api_name of the Expense module's "Title" custom field by reading
+     * the org's field config (GET settings/fields?entity=expense), so a rename in
+     * Zoho doesn't break the sync. Prefers a custom field labelled "…title…", else
+     * the first mandatory custom field; falls back to the configured api_name.
+     * Cached per org; a read failure silently uses the config fallback.
+     */
+    public function resolveExpenseTitleFieldApiName(): ?string
+    {
+        $fallback = (string) config('services.zoho_books.expense_title_cf', '');
+
+        $found = Cache::remember('zoho_books_expense_title_cf:' . $this->orgId, now()->addHours(6), function () {
+            try {
+                $fields = $this->get('settings/fields', ['entity' => 'expense'])['fields'] ?? [];
+            } catch (\Throwable $e) {
+                return '';
+            }
+            // 1) A custom field whose label mentions "title".
+            foreach ($fields as $f) {
+                if (empty($f['is_custom_field']) || empty($f['api_name'])) continue;
+                $label = mb_strtolower((string) ($f['field_name_formatted'] ?? ''));
+                if (str_contains($label, 'title')) return (string) $f['api_name'];
+            }
+            // 2) Otherwise the first mandatory custom field on the expense.
+            foreach ($fields as $f) {
+                if (!empty($f['is_custom_field']) && !empty($f['is_mandatory']) && !empty($f['api_name'])) {
+                    return (string) $f['api_name'];
+                }
+            }
+            return '';
+        });
+
+        return ($found ?: $fallback) ?: null;
+    }
+
     /** Raw PDF bytes of Zoho's own rendered Bill — cached alongside the app. */
     public function getBillPdf(string $zohoId): string
     {

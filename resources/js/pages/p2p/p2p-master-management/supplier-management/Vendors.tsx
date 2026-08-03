@@ -140,7 +140,7 @@ export default function Vendors() {
      (no WhatsApp facet — the supplier row doesn't carry a whatsapp flag). */
   const [filters, setFilters] = useState<PartyFilters>({});
   const [filterOpen, setFilterOpen] = useState(false);
-  const SUPPLIER_FACETS: FacetKey[] = ['type', 'segment', 'country'];
+  const SUPPLIER_FACETS: FacetKey[] = ['type', 'supplierType', 'segment', 'country'];
   const [tab, setTab] = useState<SupplierTab>('all');
   const [addOpen, setAddOpen] = useState(false);
   /* Edit vs Add — same modal, just seeded with an existing vendor id.
@@ -461,6 +461,7 @@ useEffect(() => {
   const filterChips = useMemo(() => {
     const chips: { label: string; onRemove: () => void }[] = [];
     if (filters.region) chips.push({ label: filters.region === 'domestic' ? 'Domestic' : 'International', onRemove: () => setFilters(f => ({ ...f, region: undefined })) });
+    (filters.supplierType ?? []).forEach(t => chips.push({ label: t, onRemove: () => setFilters(f => ({ ...f, supplierType: (f.supplierType ?? []).filter(x => x !== t) })) }));
     (filters.segments ?? []).forEach(s => chips.push({ label: s, onRemove: () => setFilters(f => ({ ...f, segments: (f.segments ?? []).filter(x => x !== s) })) }));
     (filters.countries ?? []).forEach(c => chips.push({ label: c, onRemove: () => setFilters(f => ({ ...f, countries: (f.countries ?? []).filter(x => x !== c) })) }));
     return chips;

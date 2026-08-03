@@ -278,9 +278,23 @@ export default function IdimsHeader() {
           thing every engine honours. Events inside the panel are exempt so a
           tall menu (CLM) can still scroll its own content.
      The padding-right swap replaces the width each hidden scrollbar gives back,
-     so locking doesn't shift the page sideways. */
+     so locking doesn't shift the page sideways.
+
+     Two things make that swap fiddly, and getting either wrong shows up as the
+     page visibly jerking sideways twice per open/close ("the tables shake"):
+       · Velzon ships `.main-content { transition: all .1s ease-out }`
+         (scss/velzon/structure/_vertical.scss). The scrollbar disappears the
+         instant overflow flips — content is a gutter wider RIGHT NOW — while
+         the compensating padding eases in over 100ms. Transitions are pinned
+         off around both edits so the swap lands in a single frame.
+       · The gutter must be ADDED to whatever padding-right the element already
+         carries; assigning the bare gutter wipes a stylesheet padding and then
+         shifts the page for real.
+     The dependency is the boolean, not openDD itself, so moving between two
+     mega-menus doesn't unlock and re-lock (which shifted the page again). */
+  const ddLocked = !!openDD;
   useEffect(() => {
-    if (!openDD) return;
+    if (!ddLocked) return;
 
     const targets = [
       document.querySelector('.main-content') as HTMLElement | null,
@@ -291,9 +305,16 @@ export default function IdimsHeader() {
 
     const restore = targets.map(el => {
       const gutter = el.offsetWidth - el.clientWidth;
-      const prev = { el, overflowY: el.style.overflowY, paddingRight: el.style.paddingRight };
+      const basePad = parseFloat(getComputedStyle(el).paddingRight) || 0;
+      const prev = {
+        el,
+        overflowY: el.style.overflowY,
+        paddingRight: el.style.paddingRight,
+        transition: el.style.transition,
+      };
+      el.style.transition = 'none';
       el.style.overflowY = 'hidden';
-      if (gutter > 0) el.style.paddingRight = `${gutter}px`;
+      if (gutter > 0) el.style.paddingRight = `${basePad + gutter}px`;
       return prev;
     });
 
@@ -309,12 +330,18 @@ export default function IdimsHeader() {
     return () => {
       document.removeEventListener('wheel', block, opts);
       document.removeEventListener('touchmove', block, opts);
-      restore.forEach(({ el, overflowY, paddingRight }) => {
+      restore.forEach(({ el, overflowY, paddingRight, transition }) => {
         el.style.overflowY = overflowY;
         el.style.paddingRight = paddingRight;
+        // Commit both lines while transitions are still off (reading a layout
+        // property forces the recalc), THEN hand the transition back. Restoring
+        // it in the same batch would re-animate the padding on the way out and
+        // reintroduce the shake on close.
+        void el.offsetHeight;
+        el.style.transition = transition;
       });
     };
-  }, [openDD]);
+  }, [ddLocked]);
 
   // Close every open header popover (mega-menu, branch, profile, search, more).
   // Any in-header control that isn't the popover's own toggle should call this

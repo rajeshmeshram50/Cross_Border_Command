@@ -383,8 +383,8 @@ class CustomerController extends Controller
         );
         if (!empty($usedSegments)) {
             return response()->json([
-                'message' => 'Cannot remove ' . implode(', ', $usedSegments) . ' — a product on a Proforma Invoice or Shipment belongs to it.',
-                'errors'  => ['segment' => ['Segment(s) used by a PI / Shipment product cannot be removed: ' . implode(', ', $usedSegments) . '.']],
+                'message' => 'Cannot remove ' . implode(', ', $usedSegments) . ' — a product on a Quotation, Proforma Invoice or Shipment belongs to it.',
+                'errors'  => ['segment' => ['Segment(s) used by a Quotation / PI / Shipment product cannot be removed: ' . implode(', ', $usedSegments) . '.']],
             ], 422);
         }
 

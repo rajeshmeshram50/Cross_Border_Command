@@ -80,6 +80,9 @@ return [
         'organization_id' => env('ZOHO_BOOKS_ORG_ID'),
         'base_url'      => env('ZOHO_BOOKS_BASE_URL', 'https://www.zohoapis.in/books/v3'),
         'accounts_url'  => env('ZOHO_BOOKS_ACCOUNTS_URL', env('ZOHO_ACCOUNTS_URL', 'https://accounts.zoho.in')),
+        // API name of the mandatory "Title" custom field on the Zoho Books Expense
+        // module (Settings → Custom Fields → Expenses). Sent in expense create.
+        'expense_title_cf' => env('ZOHO_BOOKS_EXPENSE_TITLE_CF', 'cf_expense_title'),
     ],
 
 ];
