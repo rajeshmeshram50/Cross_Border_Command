@@ -22,12 +22,14 @@ class ExpenseClaimPayment extends Model
         'amount', 'category_id', 'category_name',
         'payment_type', 'expense_type', 'note',
         'proof_path', 'proof_name',
+        'zoho_status', 'zoho_synced_at', 'zoho_expense_id',
         'paid_by', 'paid_at',
     ];
 
     protected $casts = [
-        'amount'  => 'decimal:2',
-        'paid_at' => 'datetime',
+        'amount'         => 'decimal:2',
+        'paid_at'        => 'datetime',
+        'zoho_synced_at' => 'datetime',
     ];
 
     public function claim(): BelongsTo

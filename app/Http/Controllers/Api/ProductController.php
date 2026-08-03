@@ -226,18 +226,33 @@ class ProductController extends Controller
      * ────────────────────────────────────────────────────────────── */
     public function index(Request $request)
     {
-        $query = Product::query()
-            ->with([
-                'segment', 'hazClass', 'uom', 'hsn', 'condition',
-                'packagingMaterial', 'gstPercentage',
-                'vendorMaps:id,product_id,vendor_name',
-                'qcRecords:id,product_id',
-                // creator + their branch so the product-owner filter can
-                // show "Person Name · Branch Name" and resolve filtering
-                // on the frontend without a second lookup.
-                'creator:id,name,user_type,branch_id',
-                'creator.branch:id,name',
-            ]);
+        // Lightweight mode for pickers (e.g. the supplier "Map Product" popup).
+        // The full listing eager-loads 10 relations — including two hasMany
+        // (`vendorMaps`, `qcRecords`) that fan out across every row — which made
+        // a 500-row fetch take ~5s. A picker only needs id / code / name / HSN /
+        // segment / base price / GST %, so `?lite=1` loads just the three
+        // belongsTo relations those fields come from and drops the rest.
+        $lite = $request->boolean('lite');
+
+        $query = Product::query()->with(
+            $lite
+                ? [
+                    'hsn:id,hsn_code',
+                    'segment:id,title',
+                    'gstPercentage:id,percentage',
+                ]
+                : [
+                    'segment', 'hazClass', 'uom', 'hsn', 'condition',
+                    'packagingMaterial', 'gstPercentage',
+                    'vendorMaps:id,product_id,vendor_name',
+                    'qcRecords:id,product_id',
+                    // creator + their branch so the product-owner filter can
+                    // show "Person Name · Branch Name" and resolve filtering
+                    // on the frontend without a second lookup.
+                    'creator:id,name,user_type,branch_id',
+                    'creator.branch:id,name',
+                ]
+        );
 
         $query = $this->applyScope($query, $request, true); // opt-in BranchSwitcher narrowing
 

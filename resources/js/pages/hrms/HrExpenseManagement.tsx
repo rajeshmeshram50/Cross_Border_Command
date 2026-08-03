@@ -134,6 +134,8 @@ export default function HrExpenseManagement() {
   const chartTheme = useChartTheme();
   // Claim whose Record-Payment (settlement) modal is open.
   const [settleClaimId, setSettleClaimId] = useState<number | null>(null);
+  // Claim whose "Review & Approve" modal is open.
+  const [reviewClaimId, setReviewClaimId] = useState<number | null>(null);
 
   const [rows, setRows] = useState<ExpenseClaimRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -213,6 +215,17 @@ export default function HrExpenseManagement() {
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Action failed.';
       toast.error('Action failed', msg);
+    }
+  };
+
+  // Email the employee their reimbursement confirmation (fully paid + all synced).
+  const emailReimbursement = async (claimId: number) => {
+    try {
+      const res = await api.post(`/expense-claims/${claimId}/email-reimbursement`);
+      toast.success('Emailed', res?.data?.message || 'Reimbursement emailed to the employee.');
+      await refresh();
+    } catch (err: any) {
+      toast.error('Email failed', err?.response?.data?.message || 'Could not send the email.');
     }
   };
 
@@ -570,7 +583,7 @@ export default function HrExpenseManagement() {
   /* Columns come from the shared row components, so an expense row looks the
      same here and on the employee profile's Expense tab. */
   const claimColumns = useMemo(
-    () => expenseClaimColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct, onRecordPayment: (row) => setSettleClaimId(row.id) }),
+    () => expenseClaimColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct, onRecordPayment: (row) => setSettleClaimId(row.id), onReview: (row) => setReviewClaimId(row.id), onEmailReimbursement: (row) => emailReimbursement(row.id) }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [canHrApprove, user?.employee_id],
   );
@@ -933,6 +946,14 @@ export default function HrExpenseManagement() {
       <ExpenseSettlementModal
         claimId={settleClaimId}
         onClose={() => setSettleClaimId(null)}
+        onDone={refresh}
+      />
+
+      {/* Review & Approve — HR sets adjustments and approves/rejects a pending claim. */}
+      <ExpenseSettlementModal
+        claimId={reviewClaimId}
+        review
+        onClose={() => setReviewClaimId(null)}
         onDone={refresh}
       />
     </>

@@ -32,6 +32,10 @@ export type PartyFilters = {
   whatsapp?: 'Yes' | 'No';
   /** Consignee only — ignored when the 'sameAs' facet isn't enabled. */
   sameAsCustomer?: 'Yes' | 'No';
+  /** Supplier only — matches the supplier's Supplier Type (Material / Goods,
+   *  Services, FFD / Transporter). Ignored when the 'supplierType' facet isn't
+   *  enabled. Multi-select. */
+  supplierType?: string[];
 };
 
 const EMPTY_FILTERS: PartyFilters = {};
@@ -45,10 +49,11 @@ export const countPartyFilterValues = (f: PartyFilters): number => {
   n += f.countries?.length ?? 0;
   if (f.whatsapp) n += 1;
   if (f.sameAsCustomer) n += 1;
+  n += f.supplierType?.length ?? 0;
   return n;
 };
 
-export type FacetKey = 'type' | 'segment' | 'country' | 'whatsapp' | 'sameAs';
+export type FacetKey = 'type' | 'segment' | 'country' | 'whatsapp' | 'sameAs' | 'supplierType';
 type Opt = { value: string; label: string };
 
 /** Facets for the Customer list. */
@@ -89,15 +94,22 @@ const ICONS: Record<FacetKey, JSX.Element> = {
       <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
     </svg>
   ),
+  supplierType: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+      <line x1="7" y1="7" x2="7.01" y2="7" />
+    </svg>
+  ),
 };
 
 /* The 'type' facet is labelled by the HOST (Customer Type / Consignee Type) so
  * it reads the same as that page's column; the rest are identical everywhere. */
 const LABELS: Record<Exclude<FacetKey, 'type'>, string> = {
-  segment:  'Segment',
-  country:  'Country',
-  whatsapp: 'Whatsapp',
-  sameAs:   'Same as Customer',
+  segment:      'Segment',
+  country:      'Country',
+  whatsapp:     'Whatsapp',
+  sameAs:       'Same as Customer',
+  supplierType: 'Supplier Type',
 };
 
 /* Single-select facets render radios and clear on re-click; the rest are
@@ -120,6 +132,9 @@ export type FilterableParty = {
   segment?: string | null;
   whatsapp?: string | null;
   same_as_customer?: boolean;
+  /** Supplier Type name (supplier list only) — Material / Goods, Services,
+   *  FFD / Transporter. Absent on customer / consignee rows. */
+  type?: string | null;
 };
 
 /** India == domestic — the same rule the forms and the backend's Gst use. */
@@ -143,6 +158,7 @@ export function applyPartyFilters<T extends FilterableParty>(rows: T[], f: Party
     if (f.countries?.length && !f.countries.includes((c.country ?? '').trim())) return false;
     if (f.whatsapp && (c.whatsapp ?? '') !== f.whatsapp) return false;
     if (f.sameAsCustomer && (c.same_as_customer ? 'Yes' : 'No') !== f.sameAsCustomer) return false;
+    if (f.supplierType?.length && !f.supplierType.includes((c.type ?? '').trim())) return false;
     if (f.segments?.length) {
       // segment is a comma-joined string ("Rice, Tobacco") — a row matches when
       // it carries ANY of the picked segments.
@@ -220,21 +236,31 @@ export default function PartyFilterModal({ open, onClose, onApply, initial, rows
     return [...seen].sort((a, b) => a.localeCompare(b)).map(s => ({ value: s, label: s }));
   }, [rows]);
 
+  /* Supplier Type options — derived from the loaded rows' `type` field so the
+   * facet only ever lists types that actually exist (same rule as segment /
+   * country). Excludes the placeholder "Pending" for unsaved-type rows. */
+  const supplierTypeOpts = useMemo<Opt[]>(() => {
+    const seen = new Set<string>();
+    rows.forEach(c => { const v = (c.type ?? '').trim(); if (v && v !== 'Pending') seen.add(v); });
+    return [...seen].sort((a, b) => a.localeCompare(b)).map(s => ({ value: s, label: s }));
+  }, [rows]);
+
   const optionsFor = (k: FacetKey): Opt[] => {
     switch (k) {
-      case 'type':     return TYPE_OPTS;
-      case 'segment':  return segmentOpts;
-      case 'country':  return countryOpts;
-      case 'whatsapp': return YES_NO_OPTS;
-      case 'sameAs':   return YES_NO_OPTS;
-      default:         return [];
+      case 'type':         return TYPE_OPTS;
+      case 'segment':      return segmentOpts;
+      case 'country':      return countryOpts;
+      case 'whatsapp':     return YES_NO_OPTS;
+      case 'sameAs':       return YES_NO_OPTS;
+      case 'supplierType': return supplierTypeOpts;
+      default:             return [];
     }
   };
 
   /* Multi-select toggle. Drops the key entirely once the last value is
    * unchecked, so an empty array never lingers and countPartyFilterValues can
    * stay a simple length sum. */
-  const toggleMulti = (k: 'segments' | 'countries', value: string) => {
+  const toggleMulti = (k: 'segments' | 'countries' | 'supplierType', value: string) => {
     setFilters(prev => {
       const current = prev[k] ?? [];
       const next = current.includes(value) ? current.filter(v => v !== value) : [...current, value];
@@ -290,6 +316,7 @@ export default function PartyFilterModal({ open, onClose, onApply, initial, rows
       case 'sameAs':   return filters.sameAsCustomer === value;
       case 'segment':  return (filters.segments ?? []).includes(value);
       case 'country':  return (filters.countries ?? []).includes(value);
+      case 'supplierType': return (filters.supplierType ?? []).includes(value);
       default:         return false;
     }
   };
@@ -301,6 +328,7 @@ export default function PartyFilterModal({ open, onClose, onApply, initial, rows
       case 'country':  return filters.countries?.length ?? 0;
       case 'whatsapp': return filters.whatsapp ? 1 : 0;
       case 'sameAs':   return filters.sameAsCustomer ? 1 : 0;
+      case 'supplierType': return filters.supplierType?.length ?? 0;
       default:         return 0;
     }
   };
@@ -394,7 +422,12 @@ export default function PartyFilterModal({ open, onClose, onApply, initial, rows
                         readOnly
                         onClick={() => (isSingle
                           ? pickSingle(active, opt.value)
-                          : toggleMulti(active === 'segment' ? 'segments' : 'countries', opt.value))}
+                          : toggleMulti(
+                              active === 'segment' ? 'segments'
+                                : active === 'supplierType' ? 'supplierType'
+                                : 'countries',
+                              opt.value,
+                            ))}
                       />
                       <span className={`lfm-check ${isSingle ? 'lfm-check-round' : ''}`} aria-hidden="true">
                         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">

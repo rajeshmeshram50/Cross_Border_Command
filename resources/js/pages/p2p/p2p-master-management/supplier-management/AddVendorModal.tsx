@@ -32,18 +32,68 @@ import {
 /* Vendor-specific contact number rule — 6 to 15 digits, numerics only.
  * Stricter than the shared `validatePhoneGeneric` (which permits +, spaces,
  * parens, hyphens) because the vendor module wants a clean digit string
- * for WhatsApp / SMS automations downstream. */
-function validateContactNumber(value: string, label = 'Contact No'): string {
+ * for WhatsApp / SMS automations downstream.
+ * When `isIndia` is set (country = India), the rule tightens to a valid
+ * 10-digit Indian mobile number (starts 6-9) — the +91 code is shown as a
+ * fixed prefix in the UI and is NOT part of the stored value. */
+function validateContactNumber(value: string, label = 'Contact No', isIndia = false): string {
   const v = (value ?? '').trim();
   if (!v) return '';
   if (!/^\d+$/.test(v))           return `${label} must contain digits only (no spaces, +, or punctuation)`;
+  if (isIndia) {
+    if (!/^[6-9]\d{9}$/.test(v))  return `${label} must be a valid 10-digit mobile number (after +91)`;
+    return '';
+  }
   if (v.length < 7 || v.length > 15) return `${label} must be 7 to 15 digits`;
   return '';
 }
 
 /* Strip any non-digit character from a contact-number input as the user
- * types, so the field is impossible to populate with letters or symbols. */
-const digitsOnly = (raw: string): string => (raw || '').replace(/\D/g, '').slice(0, 15);
+ * types, so the field is impossible to populate with letters or symbols.
+ * `max` caps the length — 10 for India (post +91), 15 otherwise. */
+const digitsOnly = (raw: string, max = 15): string => (raw || '').replace(/\D/g, '').slice(0, max);
+
+/* Contact-number input. For India it renders a fixed +91 prefix addon and
+ * limits entry to a 10-digit mobile; for every other country it keeps the
+ * original free 15-digit field. Shared by the primary-contact card and the
+ * Add-Contact popup so both enforce the same rule. */
+function ContactNoInput(props: {
+  value: string;
+  onChange: (next: string) => void;
+  isIndia: boolean;
+  readOnly?: boolean;
+}) {
+  const { value, onChange, isIndia, readOnly } = props;
+  if (isIndia) {
+    return (
+      <div className="avm-phone-in">
+        <span className="avm-phone-cc">+91</span>
+        <input
+          className="avm-input avm-phone-field"
+          placeholder="9876543210"
+          inputMode="numeric"
+          pattern="\d*"
+          maxLength={10}
+          value={value}
+          readOnly={readOnly}
+          onChange={e => onChange(digitsOnly(e.target.value, 10))}
+        />
+      </div>
+    );
+  }
+  return (
+    <input
+      className="avm-input"
+      placeholder="Enter contact number"
+      inputMode="numeric"
+      pattern="\d*"
+      maxLength={15}
+      value={value}
+      readOnly={readOnly}
+      onChange={e => onChange(digitsOnly(e.target.value))}
+    />
+  );
+}
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Add Vendor — 4-step wizard
@@ -1801,7 +1851,7 @@ export default function AddVendorModal(props: {
     if (!contactNo.trim())         errs.contactNo        = 'Contact No is required';
     if (!email.trim())             errs.email            = 'Email is required';
     if (!errs.email && email)      { const e = validateEmail(email);              if (e) errs.email     = e; }
-    if (!errs.contactNo && contactNo) { const e = validateContactNumber(contactNo, 'Contact No'); if (e) errs.contactNo = e; }
+    if (!errs.contactNo && contactNo) { const e = validateContactNumber(contactNo, 'Contact No', supplierDocType === 'domestic'); if (e) errs.contactNo = e; }
     if (pincode)                   { const e = validatePincode(pincode);          if (e) errs.pincode   = e; }
     if (Object.keys(errs).length) { flagErrors(errs); return false; }
 
@@ -2002,6 +2052,13 @@ export default function AddVendorModal(props: {
           toast.error('Bank Details required', 'Add at least one bank account before continuing.');
           return;
         }
+        // GST Scrutiny is MANDATORY for a Domestic (Indian) supplier — the GST
+        // sub-tab only exists when gstApplicable === 'Yes' (i.e. country = India),
+        // so gate it on the same flag. International suppliers skip it.
+        if (kycTab === 'gst' && gstApplicable === 'Yes' && gstRows.length === 0) {
+          toast.error('GST Scrutiny required', 'Add at least one GST Scrutiny record for a domestic supplier before continuing.');
+          return;
+        }
         // Step 2 has 5 sub-tabs (Company DD → Owner KYC → Trade License →
         // Bank → GST). Save & Next persists the full KYC payload AND
         // walks one sub-tab forward. Only on the last sub-tab (gst) does
@@ -2047,6 +2104,13 @@ export default function AddVendorModal(props: {
     if (bankRows.length === 0) {
       toast.error('Bank Details required', 'Add at least one bank account before saving the supplier.');
       setKycTab('bank');
+      return;
+    }
+    // GST Scrutiny is mandatory for a Domestic (Indian) supplier — block the
+    // final save until at least one record exists and jump to the GST tab.
+    if (gstApplicable === 'Yes' && gstRows.length === 0) {
+      toast.error('GST Scrutiny required', 'Add at least one GST Scrutiny record for a domestic supplier before saving.');
+      setKycTab('gst');
       return;
     }
     // silentToast: this is the FINAL submit, so the completion notice below is
@@ -2515,7 +2579,11 @@ export default function AddVendorModal(props: {
       // SEGMENT (Core step done) — that's what the segment filter matches against
       // and what a supplier is mapped by. Price / GST are entered in the popup,
       // so a product that hasn't finished Sales / Quality can still be mapped.
-      const res = await api.get<{ data?: ProductRow[] } | ProductRow[]>('/products?per_page=500');
+      // `lite=1` → the backend skips the 10 heavy list relations (incl. the
+      // vendorMaps / qcRecords hasMany fan-outs) and returns only the fields
+      // this picker reads (code / name / HSN / segment / base price / GST %),
+      // cutting the ~5s load to well under a second.
+      const res = await api.get<{ data?: ProductRow[] } | ProductRow[]>('/products?per_page=500&lite=1');
       const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
       const eligible = rows.filter(r => r.segment_id != null || r.segment?.id != null);
       setProductOpts(eligible.map(r => ({
@@ -2760,7 +2828,7 @@ export default function AddVendorModal(props: {
     if (!contactName.trim())  errs.contactName = 'Contact Person Name is required';
     if (!designation.trim())  errs.designation = 'Designation is required';
     if (!contactNo.trim())    errs.contactNo   = 'Contact No is required';
-    else { const e = validateContactNumber(contactNo, 'Contact No'); if (e) errs.contactNo = e; }
+    else { const e = validateContactNumber(contactNo, 'Contact No', supplierDocType === 'domestic'); if (e) errs.contactNo = e; }
     if (!email.trim())        errs.email       = 'Email is required';
     else { const e = validateEmail(email); if (e) errs.email = e; }
     if (Object.keys(errs).length) {
@@ -2861,7 +2929,7 @@ export default function AddVendorModal(props: {
       return;
     }
     // Format checks — phone and email
-    const phoneErr = validateContactNumber(contactDraft.phone, 'Contact No');
+    const phoneErr = validateContactNumber(contactDraft.phone, 'Contact No', supplierDocType === 'domestic');
     if (phoneErr) { toast.error('Invalid Contact No', phoneErr); return; }
     const emailErr = validateEmail(contactDraft.email);
     if (emailErr) { toast.error('Invalid Email', emailErr); return; }
@@ -3475,7 +3543,12 @@ export default function AddVendorModal(props: {
                         <input className="avm-input" placeholder="Manager" value={designation} maxLength={60} readOnly={primaryLocked} onChange={e => applySanitizer(e.target.value, 'designation', setDesignation, raw => sanitizeKycDesignation(raw, 60))} />
                       </Field>
                       <Field label="Contact No" required error={fieldErrors.contactNo}>
-                        <input className="avm-input" placeholder="9876543210" inputMode="numeric" pattern="\d*" maxLength={15} value={contactNo} readOnly={primaryLocked} onChange={e => { setContactNo(digitsOnly(e.target.value)); clearFieldError('contactNo'); }} />
+                        <ContactNoInput
+                          value={contactNo}
+                          isIndia={supplierDocType === 'domestic'}
+                          readOnly={primaryLocked}
+                          onChange={(v) => { setContactNo(v); clearFieldError('contactNo'); }}
+                        />
                       </Field>
                       <Field label="Email" required error={fieldErrors.email}>
                         <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} readOnly={primaryLocked} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} />
@@ -3848,6 +3921,7 @@ export default function AddVendorModal(props: {
           setDraft={setContactDraft}
           onClose={() => setContactPopupOpen(false)}
           onSave={saveContactDraft}
+          isIndia={supplierDocType === 'domestic'}
         />
       )}
 
@@ -4307,8 +4381,9 @@ function ContactAddPopup(props: {
   setDraft: (next: ContactDraft) => void;
   onClose: () => void;
   onSave: () => void | Promise<void>;
+  isIndia?: boolean;
 }) {
-  const { draft, setDraft, onClose, onSave } = props;
+  const { draft, setDraft, onClose, onSave, isIndia = false } = props;
   const confirm = useConfirm();
   const set = <K extends keyof ContactDraft>(k: K, v: ContactDraft[K]) => setDraft({ ...draft, [k]: v });
   const [errors, setErrors] = useState<{ name?: string; designation?: string; phone?: string; email?: string }>({});
@@ -4365,14 +4440,10 @@ function ContactAddPopup(props: {
               />
             </Field>
             <Field label="Contact No" required error={errors.phone}>
-              <input
-                className="avm-input"
-                placeholder="Enter contact number"
-                inputMode="numeric"
-                pattern="\d*"
-                maxLength={15}
+              <ContactNoInput
                 value={draft.phone}
-                onChange={e => { set('phone', digitsOnly(e.target.value)); setErrors(prev => ({ ...prev, phone: undefined })); }}
+                isIndia={isIndia}
+                onChange={(v) => { set('phone', v); setErrors(prev => ({ ...prev, phone: undefined })); }}
               />
             </Field>
             <Field label="Email" required error={errors.email}>
@@ -7152,6 +7223,27 @@ export const SCOPED_CSS = `
   font-family: inherit; font-size: 13px; font-weight: 400; outline: none;
   box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
   transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+/* +91 country-code prefix shown on the Contact No field for Indian suppliers.
+   The addon sits flush-left of the input; the input loses its left radius so
+   the two read as a single control. */
+.avm-phone-in { display: flex; align-items: stretch; width: 100%; }
+.avm-phone-cc {
+  display: inline-flex; align-items: center; padding: 0 11px;
+  height: 38px; white-space: nowrap;
+  font-size: 13px; font-weight: 600;
+  color: var(--vz-body-color, #495057);
+  background: color-mix(in srgb, #a78bfa 14%, var(--vz-card-bg, #fff));
+  border: 1px solid color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec));
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+}
+.avm-phone-field { border-radius: 0 10px 10px 0 !important; }
+.avm-cp-body .avm-phone-cc { height: 42px; border-radius: 11px 0 0 11px; }
+.avm-cp-body .avm-phone-field { border-radius: 0 11px 11px 0 !important; }
+[data-bs-theme="dark"] .avm-phone-cc {
+  background: color-mix(in srgb, #a78bfa 18%, #110c25);
+  border-color: #3b2a6b; color: #ede9fe;
 }
 .avm-input::placeholder,
 .avm-modal input::placeholder,

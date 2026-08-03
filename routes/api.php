@@ -738,6 +738,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/expense-claims/{id}/settlement',          [ExpenseClaimController::class, 'settlement']);
     Route::post  ('/expense-claims/{id}/set-deductions',      [ExpenseClaimController::class, 'setDeductions']);
     Route::post  ('/expense-claims/{id}/settle',              [ExpenseClaimController::class, 'settle']);
+    Route::post  ('/expense-claims/payments/{paymentId}/sync-zoho', [ExpenseClaimController::class, 'syncPaymentToZoho']);
+    Route::post  ('/expense-claims/{id}/email-reimbursement',  [ExpenseClaimController::class, 'emailReimbursement']);
 
 
     Route::get   ('/advance-requests',                          [\App\Http\Controllers\Api\AdvanceRequestController::class, 'index']);

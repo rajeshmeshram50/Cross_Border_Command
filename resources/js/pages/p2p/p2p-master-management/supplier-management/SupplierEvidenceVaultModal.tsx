@@ -1522,11 +1522,12 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
         </button>
       </Tooltip>
       {/* Upload / Re-upload is hidden on the Case-to-Case Trade Documents
-          tab (category 'td') — those rows are driven by the signature
-          flow (Send / Reminder / signed-file View), not manual file
+          tab (category 'td') AND on CTC Agreement rows (category
+          'agreement') — those rows are driven by the signature flow
+          (Send / Reminder / signed-file View), not manual file
           attachment. Standard tabs (KYC / DD / Trade Licenses) keep it.
           Also hidden in viewOnly mode (e.g. from a With-PO SPI). */}
-      {category !== 'td' && !viewOnly && (
+      {category !== 'td' && category !== 'agreement' && !viewOnly && (
       <Tooltip label={canReupload ? (busy ? 'Uploading…' : (doc.attachment ? 'Re-upload (replace file)' : 'Upload')) : 'Save the record first'}>
         <button
           type="button"

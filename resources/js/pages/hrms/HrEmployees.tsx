@@ -45,7 +45,7 @@ const WEEKLY_OFF_OPTIONS    = ['Week Off Policy','Saturday & Sunday','Sunday Onl
 const TIME_TRACKING_OPTIONS = ['Manual','Biometric'].map(v => ({ value: v, label: v }));
 const PENALIZATION_OPTIONS  = ['Tracking Policy','Strict Policy','Lenient Policy','No Penalty'].map(v => ({ value: v, label: v }));
 const OVERTIME_OPTIONS      = ['Not applicable','Hourly Pay','Compensation Off','Time and a Half'].map(v => ({ value: v, label: v }));
-const EXPENSE_POLICY_OPTIONS= ['Select policy','Standard Expense Policy','Manager Approval','No Expenses'].map((v, i) => ({ value: i === 0 ? '' : v, label: v }));
+const EXPENSE_POLICY_OPTIONS= [{ value: '', label: 'Select' }, { value: 'Applicable', label: 'Applicable' }, { value: 'Not Applicable', label: 'Not Applicable' }];
 
 const SALARY_FREQUENCY_OPTIONS  = ['Per annum','Per month','Per hour','Per day'].map(v => ({ value: v, label: v }));
 const SALARY_STRUCTURE_OPTIONS  = ['Range Based','Fixed','Component Based'].map(v => ({ value: v, label: v }));
@@ -1665,6 +1665,7 @@ export default function HrEmployees() {
     }
     if (!eShift)              e.shift               = 'Shift is required';
     if (!eWeeklyOff)          e.weekly_off          = 'Weekly off is required';
+    if (!eExpensePolicy)      e.expense_policy      = 'Expense policy is required';
 
     if (!eAadharFile && !existing['aadhaar']) {
       e.doc_aadhaar = 'Aadhar Card upload is required';
@@ -3688,7 +3689,7 @@ export default function HrEmployees() {
               <>
                 <div className="emp-section">
                   <div className="emp-section-title" style={{ color: '#0a8a78' }}>
-                    <i className="ri-calendar-2-line" style={{ color: '#0ab39c' }} /> Leave &amp; Attendance
+                    <i className="ri-calendar-2-line" style={{ color: '#0ab39c' }} /> Leave, Expense &amp; Attendance
                   </div>
                   <Row className="g-3">
                     <Col md={4}>
@@ -3726,6 +3727,11 @@ export default function HrEmployees() {
                     <Col md={4}>
                       <label className="emp-label">Overtime</label>
                       <MasterSelect value={eOvertime} onChange={setEOvertime} options={OVERTIME_OPTIONS} placeholder="Select overtime policy" />
+                    </Col>
+                    <Col md={4}>
+                      <label className="emp-label">Expense Policy<span className="req">*</span></label>
+                      <MasterSelect value={eExpensePolicy} onChange={(v) => { setEExpensePolicy(v); clearEErr('expense_policy'); }} options={EXPENSE_POLICY_OPTIONS} placeholder="Select" invalid={!!eErrors.expense_policy} />
+                      {eErrors.expense_policy && <small className="emp-err">{eErrors.expense_policy}</small>}
                     </Col>
                   </Row>
                 </div>

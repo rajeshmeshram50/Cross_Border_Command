@@ -2,6 +2,7 @@ import { useRef, useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import DataTable, { TruncCell, type DataTableColumn } from './ui/DataTable';
 import ProofOfPaymentCell from './ProofOfPaymentCell';
+import { useToast } from '../contexts/ToastContext';
 // Reuses the polished confirmation-modal CSS classes already shipping with
 // the recruitment / candidate flows (cand-confirm-modal, cand-confirm-head,
 // cand-confirm-body, cand-confirm-footer, etc.).
@@ -63,6 +64,8 @@ export type ExpenseClaimRow = {
   total_paid?: number;
   settlement_status?: 'unpaid' | 'partial' | 'paid';
   remaining_amount?: number | null;
+  zoho_all_synced?: boolean;
+  reimbursement_emailed_at?: string | null;
 };
 
 type ActionKind = 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reject';
@@ -83,6 +86,15 @@ type Props = {
   onAct?: (claimId: number, action: ActionKind, comment?: string) => Promise<void> | void;
   /** HR/Finance: open the Record-Payment (settlement) form for an approved claim. */
   onRecordPayment?: (claim: ExpenseClaimRow) => void;
+  /** Anyone (e.g. the claim owner): open the settlement in read-only view to see
+   *  the payment history. */
+  onViewPayments?: (claim: ExpenseClaimRow) => void;
+  /** HR: open the "Review & Approve" popup (header + KPIs + editable adjustments,
+   *  then Approve/Reject) instead of the inline approve/reject icon buttons. */
+  onReview?: (claim: ExpenseClaimRow) => void;
+  /** HR: email the employee the reimbursement confirmation. Enabled only once the
+   *  claim is fully paid AND every payment is synced to Zoho. */
+  onEmailReimbursement?: (claim: ExpenseClaimRow) => void;
 };
 
 const STATUS_TONE: Record<ExpenseClaimRow['status'], { bg: string; fg: string; dot: string; label: string }> = {
@@ -169,7 +181,7 @@ function withAuthToken(url: string): string {
  * Widths sum to 100 (fixed layout): 5+9+16+13+18+11+10+9+9. */
 export function expenseClaimColumns({
   accent = '#7c5cfc', fallbackName, fallbackInitials,
-  mode = 'mine', currentEmployeeId = null, canHrApprove = false, onAct, onRecordPayment,
+  mode = 'mine', currentEmployeeId = null, canHrApprove = false, onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement,
 }: Omit<Props, 'rows' | 'loading'>): DataTableColumn<ExpenseClaimRow>[] {
   return [
     {
@@ -190,7 +202,7 @@ export function expenseClaimColumns({
       header: 'Employee',
       id: 'employee',
       accessorFn: (c: ExpenseClaimRow) => c.employee_name || fallbackName || `#${c.employee_id}`,
-      meta: { width: '16%' },
+      meta: { width: '15%' },
       cell: info => {
         const c = info.row.original;
         const empName = c.employee_name || fallbackName || ('#' + c.employee_id);
@@ -232,7 +244,7 @@ export function expenseClaimColumns({
     {
       header: 'Description',
       accessorKey: 'title',
-      meta: { width: '14%' },
+      meta: { width: '11%' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive max={70} />,
     },
     {
@@ -254,7 +266,7 @@ export function expenseClaimColumns({
       header: () => <div className="text-center">Proof of Payment</div>,
       id: '__proof',
       enableSorting: false,
-      meta: { align: 'center', width: '9%' },
+      meta: { align: 'center', width: '13%' },
       /* Only the first receipt shows in the cell; extras collapse into a
          "+N more" popover so multiple uploads can't expand the row height. */
       cell: info => (
@@ -307,7 +319,7 @@ export function expenseClaimColumns({
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { align: 'center', width: '9%', wrap: true },
+      meta: { align: 'center', width: '15%', wrap: false },
       cell: info => (
         <ExpenseActionCell
           claim={info.row.original}
@@ -316,6 +328,9 @@ export function expenseClaimColumns({
           canHrApprove={canHrApprove}
           onAct={onAct}
           onRecordPayment={onRecordPayment}
+          onViewPayments={onViewPayments}
+          onReview={onReview}
+          onEmailReimbursement={onEmailReimbursement}
         />
       ),
     },
@@ -326,11 +341,11 @@ export default function ExpenseClaimsTable({
   rows, loading,
   fallbackName, fallbackInitials, accent = '#7c5cfc',
   mode = 'mine', currentEmployeeId = null, canHrApprove = false,
-  onAct, onRecordPayment,
+  onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement,
 }: Props) {
   const columns = useMemo(
-    () => expenseClaimColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment }),
-    [accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment],
+    () => expenseClaimColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement }),
+    [accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement],
   );
   return (
     <>
@@ -362,7 +377,7 @@ export default function ExpenseClaimsTable({
  *  confirm-modal state, which is why it's a component rather than inline JSX:
  *  each row needs its own. */
 function ExpenseActionCell({
-  claim: c, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment,
+  claim: c, mode, currentEmployeeId, canHrApprove, onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement,
 }: {
   claim: ExpenseClaimRow;
   mode: 'mine' | 'team' | 'hr';
@@ -370,8 +385,12 @@ function ExpenseActionCell({
   canHrApprove: boolean;
   onAct?: Props['onAct'];
   onRecordPayment?: Props['onRecordPayment'];
+  onViewPayments?: Props['onViewPayments'];
+  onReview?: Props['onReview'];
+  onEmailReimbursement?: Props['onEmailReimbursement'];
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const toast = useToast();
   // Confirmation modal for both approve & reject. The action shape carries
   // both the verdict and the stage so we can render a contextual title +
   // submit colour, and so the same dispatcher hits the right backend route.
@@ -403,6 +422,16 @@ function ExpenseActionCell({
     && !!onRecordPayment;
   const settleDone = (c.settlement_status ?? 'unpaid') === 'paid';
 
+  // Email the employee — shown on every claim except Rejected; enabled only once
+  // the claim is approved, fully paid AND every payment is synced to Zoho.
+  const showEmail =
+    mode === 'hr'
+    && canHrApprove
+    && c.status !== 'rejected'
+    && !!onEmailReimbursement;
+  const canEmail = showEmail && c.status === 'approved' && settleDone && !!c.zoho_all_synced;
+  const emailedAlready = !!c.reimbursement_emailed_at;
+
   const verdictBtn = (stage: 'manager' | 'hr', verdict: 'approve' | 'reject') => (
     <button
       type="button"
@@ -426,8 +455,21 @@ function ExpenseActionCell({
   return (
     <>
       <div className="d-inline-flex align-items-center gap-1">
-        {canManagerAct && <>{verdictBtn('manager', 'approve')}{verdictBtn('manager', 'reject')}</>}
-        {canHrAct && <>{verdictBtn('hr', 'approve')}{verdictBtn('hr', 'reject')}</>}
+        {(canManagerAct || canHrAct) && onReview ? (
+          <button
+            type="button"
+            onClick={() => onReview(c)}
+            className="btn btn-sm d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold"
+            style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', whiteSpace: 'nowrap' }}
+          >
+            <i className="ri-eye-line" /> Review &amp; Approve
+          </button>
+        ) : (
+          <>
+            {canManagerAct && <>{verdictBtn('manager', 'approve')}{verdictBtn('manager', 'reject')}</>}
+            {canHrAct && <>{verdictBtn('hr', 'approve')}{verdictBtn('hr', 'reject')}</>}
+          </>
+        )}
         {canSettle && (
           <button
             type="button"
@@ -442,6 +484,47 @@ function ExpenseActionCell({
             }}
           >
             <i className={settleDone ? 'ri-history-line' : 'ri-bank-card-line'} />
+          </button>
+        )}
+        {showEmail && (
+          <button
+            type="button"
+            data-tooltip={!canEmail ? (settleDone ? 'Sync all payments to Zoho first' : 'Available once fully paid & synced to Zoho') : emailedAlready ? 'Re-send reimbursement email' : 'Email reimbursement to employee'}
+            data-tooltip-pos="left"
+            aria-label="Email reimbursement"
+            onClick={() => {
+              if (canEmail) { onEmailReimbursement?.(c); return; }
+              if (settleDone && !c.zoho_all_synced) {
+                toast.warning('Sync to Zoho first', 'This claim’s payment isn’t in Zoho Books yet — sync all payments to Zoho before emailing the reimbursement.');
+              } else {
+                toast.info('Not ready yet', 'The claim must be fully paid and every payment synced to Zoho before it can be emailed.');
+              }
+            }}
+            className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+            style={{
+              width: 28, height: 28, padding: 0, color: '#fff', border: 'none',
+              cursor: canEmail ? 'pointer' : 'not-allowed',
+              opacity: canEmail ? 1 : 0.5,
+              background: !canEmail ? 'linear-gradient(135deg,#cbd5e1,#94a3b8)'
+                : emailedAlready ? 'linear-gradient(135deg,#94a3b8,#64748b)'
+                : 'linear-gradient(135deg,#6366f1,#4f46e5)',
+            }}
+          >
+            <i className={emailedAlready && canEmail ? 'ri-mail-check-line' : 'ri-mail-send-line'} />
+          </button>
+        )}
+        {/* View payments (read-only) — for the claim owner on their profile. */}
+        {!!onViewPayments && c.status === 'approved' && (
+          <button
+            type="button"
+            data-tooltip="View payments"
+            data-tooltip-pos="left"
+            aria-label="View payments"
+            onClick={() => onViewPayments?.(c)}
+            className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+            style={{ width: 28, height: 28, padding: 0, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)' }}
+          >
+            <i className="ri-history-line" />
           </button>
         )}
         <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} claim={c} />

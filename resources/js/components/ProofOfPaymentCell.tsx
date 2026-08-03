@@ -95,10 +95,18 @@ export default function ProofOfPaymentCell({
         rel="noreferrer"
         className="d-inline-flex align-items-center gap-1 text-decoration-none"
         title={first.name || 'Attachment 1'}
-        style={{ ...chipStyle, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        /* Show as much of the filename as the cell allows and let the browser
+           add an ellipsis only when it genuinely overflows — the old hard
+           `.slice(0, 14)` cut every name to 14 chars even when there was room,
+           which is why titles read as "Trade documer". The `title` tooltip
+           still surfaces the full name on hover. `minWidth: 0` lets the flex
+           child shrink so the ellipsis engages instead of overflowing. */
+        style={{ ...chipStyle, maxWidth: 200, minWidth: 0 }}
       >
-        <i className="ri-file-text-line" />
-        {(first.name || 'Receipt 1').slice(0, 14)}
+        <i className="ri-file-text-line" style={{ flexShrink: 0 }} />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {first.name || 'Receipt 1'}
+        </span>
       </a>
 
       {rest.length > 0 && (

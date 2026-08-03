@@ -31,19 +31,27 @@ type Summary = {
   expense_date: string | null;
   currency: string | null;
   claimed_amount: number;
+  purpose?: string | null;
+  vendor?: string | null;
+  project?: string | null;
   category_id: number | null;
   category_name: string | null;
   sanctioned_amount: number | null;
   deduction_amount: number;
   deductions: DeductionRow[];
+  addition_amount: number;
+  additions: DeductionRow[];
   total_paid: number;
   remaining_amount: number | null;
   settlement_status: 'unpaid' | 'partial' | 'paid';
+  manager_status?: 'pending' | 'approved' | 'rejected';
+  hr_status?: 'pending' | 'approved' | 'rejected';
   attachments: Attachment[];
   payments: {
     id: number; amount: number; category_name: string | null;
     payment_type: string | null; expense_type: string | null;
     note: string | null; proof_name: string | null; proof_url: string | null;
+    zoho_status: string | null; zoho_expense_url: string | null;
     paid_by_name: string | null; paid_at: string | null;
   }[];
 };
@@ -59,18 +67,41 @@ const fmtDate = (iso: string | null | undefined) => {
 };
 const tokenUrl = (u: string) => `${u}${u.includes('?') ? '&' : '?'}token=${encodeURIComponent(localStorage.getItem('cbc_token') || '')}`;
 
+// Download a just-selected (not-yet-uploaded) proof file from the browser.
+const downloadFile = (f: File) => {
+  const url = URL.createObjectURL(f);
+  const a = document.createElement('a');
+  a.href = url; a.download = f.name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+// Open a just-selected proof file in a new tab (preview).
+const viewFile = (f: File) => {
+  const url = URL.createObjectURL(f);
+  window.open(url, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+};
+
 // KPI icons — same set as the PO "Payment Summary" modal.
 const IcoDoc = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>;
 const IcoCheck = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><polyline points="8 12 11 15 16 9" /></svg>;
 const IcoWallet = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="6" width="20" height="14" rx="2" /><path d="M16 12h.01M2 10h20" /></svg>;
 const IcoMinus = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="8" y1="12" x2="16" y2="12" /></svg>;
+const IcoPlus = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>;
 
 export default function ExpenseSettlementModal({
-  claimId, onClose, onDone,
+  claimId, onClose, onDone, readOnly = false, review = false,
 }: {
   claimId: number | null;
   onClose: () => void;
   onDone: () => void;
+  /** View-only mode (e.g. the employee viewing their own claim's payments) —
+   *  no deduction editing, no Add Payment; just the settled figures + history. */
+  readOnly?: boolean;
+  /** HR "Review & Approve" mode — header + KPIs + editable adjustments only;
+   *  footer becomes Approve / Reject. Approving locks the adjustments. */
+  review?: boolean;
 }) {
   const toast = useToast();
   const open = claimId != null;
@@ -82,14 +113,24 @@ export default function ExpenseSettlementModal({
   // The Add-Payment form opens as its own nested popup over the overview.
   const [showForm, setShowForm] = useState(false);
 
-  // Editable deduction rows (first payment only).
+  // Editable deduction / addition rows (first payment only).
   const [deductions, setDeductions] = useState<{ amount: string; reason: string }[]>([]);
+  const [additions, setAdditions] = useState<{ amount: string; reason: string }[]>([]);
   const [amount, setAmount] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [paymentType, setPaymentType] = useState('');
   const [expenseType, setExpenseType] = useState('');
   const [note, setNote] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
+  // Turns on inline field-level errors once a save is attempted.
+  const [showErrors, setShowErrors] = useState(false);
+  // Collapsible Adjustments (deductions/additions) section.
+  const [adjOpen, setAdjOpen] = useState(true);
+  // Payment row currently being synced to Zoho Books.
+  const [syncingId, setSyncingId] = useState<number | null>(null);
+  // Review mode: confirmation dialog ('approve' | 'reject') + reject reason.
+  const [confirmKind, setConfirmKind] = useState<null | 'approve' | 'reject'>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   const firstPayment = !summary?.sanctioned_amount;
 
@@ -101,6 +142,8 @@ export default function ExpenseSettlementModal({
   useEffect(() => {
     if (!open || claimId == null) { setSummary(null); return; }
     setShowForm(false);
+    setConfirmKind(null);
+    setRejectReason('');
     setLoading(true);
     Promise.all([
       api.get<Summary>(`/expense-claims/${claimId}/settlement`).then(r => r.data),
@@ -109,7 +152,12 @@ export default function ExpenseSettlementModal({
       .then(([s]) => {
         setSummary(s);
         const first = !s.sanctioned_amount;
-        setDeductions(first ? (s.deductions ?? []).map(d => ({ amount: String(d.amount), reason: d.reason })) : []);
+        // On a fresh (unlocked) claim start with one blank row in each so the
+        // inputs are visible by default; otherwise show what was saved.
+        const dedRows = (s.deductions ?? []).map(d => ({ amount: String(d.amount), reason: d.reason }));
+        const addRows = (s.additions ?? []).map(d => ({ amount: String(d.amount), reason: d.reason }));
+        setDeductions(first ? (dedRows.length ? dedRows : [{ amount: '', reason: '' }]) : []);
+        setAdditions(first ? (addRows.length ? addRows : [{ amount: '', reason: '' }]) : []);
         const remaining = first ? s.claimed_amount : (s.remaining_amount ?? 0);
         setAmount(String(remaining));
         setCategoryId(s.category_id ? String(s.category_id) : '');
@@ -128,19 +176,37 @@ export default function ExpenseSettlementModal({
     () => +deductions.reduce((s, d) => s + (Number(d.amount) || 0), 0).toFixed(2),
     [deductions],
   );
+  const totalAddition = useMemo(
+    () => +additions.reduce((s, d) => s + (Number(d.amount) || 0), 0).toFixed(2),
+    [additions],
+  );
   const paidSoFar = summary?.total_paid ?? 0;
-  const sanctioned = firstPayment ? +(claimed - totalDeduction).toFixed(2) : (summary?.sanctioned_amount ?? 0);
+  const sanctioned = firstPayment ? +(claimed - totalDeduction + totalAddition).toFixed(2) : (summary?.sanctioned_amount ?? 0);
   const remaining = +(sanctioned - paidSoFar).toFixed(2);
   const amountNum = Math.max(0, Number(amount) || 0);
   const fullyPaid = !firstPayment && remaining <= 0.005;
   const payPct = sanctioned > 0 ? Math.min(100, Math.round((paidSoFar / sanctioned) * 100)) : 0;
+  // Review stage: a claim still pending at the manager is a MANAGER review
+  // (view-only, approve/reject); once the manager has approved it's an HR review
+  // (editable adjustments). Only meaningful when `review` is true.
+  const reviewStage: 'manager' | 'hr' = (summary?.manager_status && summary.manager_status !== 'approved') ? 'manager' : 'hr';
+  const managerReview = review && reviewStage === 'manager';
+  // Deductions are editable only before the first payment, not view-only, and
+  // never in a manager review (the manager can't deduct — only approve/reject).
+  const editDeductions = firstPayment && !readOnly && !managerReview;
 
   const setDed = (i: number, patch: Partial<{ amount: string; reason: string }>) =>
     setDeductions(rows => rows.map((r, idx) => idx === i ? { ...r, ...patch } : r));
   const addDed = () => setDeductions(rows => [...rows, { amount: '', reason: '' }]);
   const removeDed = (i: number) => setDeductions(rows => rows.filter((_, idx) => idx !== i));
 
+  const setAdd = (i: number, patch: Partial<{ amount: string; reason: string }>) =>
+    setAdditions(rows => rows.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  const addAdd = () => setAdditions(rows => [...rows, { amount: '', reason: '' }]);
+  const removeAdd = (i: number) => setAdditions(rows => rows.filter((_, idx) => idx !== i));
+
   const openPaymentForm = () => {
+    setShowErrors(false);
     setAmount(String(remaining));
     setPaymentType('');
     setExpenseType('');
@@ -158,11 +224,17 @@ export default function ExpenseSettlementModal({
       const amt = Number(d.amount) || 0;
       if (amt > 0 && !d.reason.trim()) { toast.warning('Deduction reason required', 'Every deduction needs a reason.'); return; }
     }
-    if (totalDeduction >= claimed - 0.005) { toast.warning('Deductions too high', 'Deductions cannot equal or exceed the claimed amount.'); return; }
+    for (const a of additions) {
+      const amt = Number(a.amount) || 0;
+      if (amt > 0 && !a.reason.trim()) { toast.warning('Addition reason required', 'Every addition needs a reason.'); return; }
+      if (amt > 100000) { toast.warning('Addition too high', 'A single addition cannot exceed ₹1,00,000.'); return; }
+    }
+    if (sanctioned <= 0) { toast.warning('Deductions too high', 'Deductions cannot exceed the claimed amount plus additions — net payable must be greater than zero.'); return; }
     setSaving(true);
     try {
       const { data: r } = await api.post(`/expense-claims/${claimId}/set-deductions`, {
         deductions: deductions.filter(d => (Number(d.amount) || 0) > 0).map(d => ({ amount: Number(d.amount), reason: d.reason })),
+        additions: additions.filter(a => (Number(a.amount) || 0) > 0).map(a => ({ amount: Number(a.amount), reason: a.reason })),
       });
       toast.success('Deduction locked', r?.message ?? 'The net payable is fixed. Use “+ Add Payment” to disburse.');
       const s = (await api.get<Summary>(`/expense-claims/${claimId}/settlement`)).data;
@@ -175,12 +247,82 @@ export default function ExpenseSettlementModal({
     } finally { setSaving(false); }
   };
 
+  // Validate the adjustments (HR only), then open the approve-confirmation dialog.
+  const requestApprove = () => {
+    if (!summary) return;
+    if (!managerReview) {
+      for (const d of deductions) {
+        const amt = Number(d.amount) || 0;
+        if (amt > 0 && !d.reason.trim()) { toast.warning('Deduction reason required', 'Every deduction needs a reason.'); return; }
+      }
+      for (const a of additions) {
+        const amt = Number(a.amount) || 0;
+        if (amt > 0 && !a.reason.trim()) { toast.warning('Addition reason required', 'Every addition needs a reason.'); return; }
+        if (amt > 100000) { toast.warning('Addition too high', 'A single addition cannot exceed ₹1,00,000.'); return; }
+      }
+      if (sanctioned <= 0) { toast.warning('Deductions too high', 'Net payable must be greater than zero.'); return; }
+    }
+    setConfirmKind('approve');
+  };
+
+  // Approve: manager stage just forwards to HR (no adjustments); HR stage locks
+  // the adjustments while approving.
+  const reviewApprove = async () => {
+    if (claimId == null || !summary) return;
+    setSaving(true);
+    try {
+      if (managerReview) {
+        await api.post(`/expense-claims/${claimId}/manager-approve`);
+        toast.success('Claim approved', 'Approved and forwarded to HR / Finance for settlement.');
+      } else {
+        await api.post(`/expense-claims/${claimId}/hr-approve`, {
+          deductions: deductions.filter(d => (Number(d.amount) || 0) > 0).map(d => ({ amount: Number(d.amount), reason: d.reason })),
+          additions: additions.filter(a => (Number(a.amount) || 0) > 0).map(a => ({ amount: Number(a.amount), reason: a.reason })),
+        });
+        toast.success('Claim approved', 'The claim is approved and adjustments are locked. Record payments to disburse.');
+      }
+      onDone();
+      onClose();
+    } catch (e: any) {
+      toast.error('Could not approve', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setSaving(false); }
+  };
+
+  const reviewReject = async () => {
+    if (claimId == null) return;
+    if (!rejectReason.trim()) { toast.warning('Reason required', 'A reason is required to reject this claim.'); return; }
+    setSaving(true);
+    try {
+      const action = managerReview ? 'manager-reject' : 'hr-reject';
+      await api.post(`/expense-claims/${claimId}/${action}`, { comment: rejectReason.trim() });
+      toast.success('Claim rejected', 'The claim has been rejected.');
+      onDone();
+      onClose();
+    } catch (e: any) {
+      toast.error('Could not reject', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setSaving(false); }
+  };
+
+  // Sync one payment to Zoho Books (local status toggle for now).
+  const syncZoho = async (paymentId: number) => {
+    if (claimId == null) return;
+    setSyncingId(paymentId);
+    try {
+      const { data: r } = await api.post(`/expense-claims/payments/${paymentId}/sync-zoho`);
+      toast.success('Synced to Zoho', r?.message ?? 'Payment marked as synced to Zoho Books.');
+      const s = (await api.get<Summary>(`/expense-claims/${claimId}/settlement`)).data;
+      setSummary(s);
+    } catch (e: any) {
+      toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this payment to Zoho Books.');
+    } finally { setSyncingId(null); }
+  };
+
   const submit = async () => {
     if (claimId == null) return;
-    if (amountNum <= 0) { toast.warning('Enter an amount', 'The payment amount must be greater than zero.'); return; }
-    if (amountNum > remaining + 0.005) { toast.warning('Too high', `You can pay at most the remaining ${inr(remaining)}.`); return; }
-    if (!paymentType) { toast.warning('Select a payment method', 'Choose how the reimbursement was paid.'); return; }
-    if (!expenseType) { toast.warning('Select expense type', 'Choose Goods or Service.'); return; }
+    // Inline validation — mark the offending fields red instead of a toast.
+    const invalid = !categoryId || !paymentType || !expenseType || !proofFile
+      || !note.trim() || amountNum <= 0 || amountNum > remaining + 0.005;
+    if (invalid) { setShowErrors(true); return; }
     setSaving(true);
     try {
       const fd = new FormData();
@@ -189,6 +331,10 @@ export default function ExpenseSettlementModal({
           fd.append(`deductions[${i}][amount]`, String(Number(d.amount)));
           fd.append(`deductions[${i}][reason]`, d.reason);
         });
+        additions.filter(a => (Number(a.amount) || 0) > 0).forEach((a, i) => {
+          fd.append(`additions[${i}][amount]`, String(Number(a.amount)));
+          fd.append(`additions[${i}][reason]`, a.reason);
+        });
       }
       fd.append('amount', String(amountNum));
       if (categoryId) fd.append('category_id', categoryId);
@@ -196,7 +342,9 @@ export default function ExpenseSettlementModal({
       fd.append('expense_type', expenseType);
       if (note) fd.append('note', note);
       if (proofFile) fd.append('proof', proofFile);
-      const { data: r } = await api.post(`/expense-claims/${claimId}/settle`, fd);
+      const { data: r } = await api.post(`/expense-claims/${claimId}/settle`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       toast.success('Payment recorded', r?.message ?? 'The settlement was recorded.');
       onDone();
       // Close the Add-Payment popup and refresh the overview so the new payment
@@ -214,7 +362,7 @@ export default function ExpenseSettlementModal({
   return createPortal(
     <div className="esm-backdrop" onMouseDown={onClose}>
       <style>{CSS}</style>
-      <div className="esm-modal" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div className={`esm-modal ${review ? 'esm-modal--fit' : ''} ${managerReview ? 'esm-modal--fit-mgr' : ''}`} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
         {/* ── Teal hero header (with embedded claim summary panel) ── */}
         <div className="esm-hero">
           <div className="esm-hero-top">
@@ -224,13 +372,13 @@ export default function ExpenseSettlementModal({
               </span>
               <div>
                 <div className="esm-hero-eyebrow">HRMS · EXPENSE MANAGEMENT</div>
-                <div className="esm-hero-title">Record Payment{summary ? <span className="esm-hero-sub-inline"> · {summary.title}</span> : ''}</div>
-                <div className="esm-hero-sub">Settle an approved expense claim and record the reimbursement.</div>
+                <div className="esm-hero-title">{review ? 'Review & Approve' : readOnly ? 'Payment Details' : 'Record Payment'}{summary ? <span className="esm-hero-sub-inline"> · {summary.title}</span> : ''}</div>
+                <div className="esm-hero-sub">{review ? (managerReview ? 'Review the claim, then approve or reject.' : 'Review the claim, set adjustments, then approve or reject.') : readOnly ? 'Reimbursement details for this expense claim.' : 'Settle an approved expense claim and record the reimbursement.'}</div>
               </div>
             </div>
             <button className="esm-x" onClick={onClose} aria-label="Close">✕</button>
           </div>
-          {summary && (
+          {summary && !managerReview && (
             <div className="esm-hpanel">
               <div className="esm-hp"><label>EXPENSE ID</label><div>{summary.claim_no || '—'}</div></div>
               <div className="esm-hp"><label>EMPLOYEE</label><div>{summary.employee_name || '—'}</div></div>
@@ -265,13 +413,14 @@ export default function ExpenseSettlementModal({
             <div className="esm-loading"><i className="ri-loader-4-line ri-spin" /> Loading…</div>
           ) : (
             <>
-              {/* KPI strip — same look as the PO "Payment Summary" modal. */}
-              <div className="esm-kpis">
+              {/* KPI strip — hidden in a manager review (everything's in Claim Details). */}
+              {!managerReview && (
+              <div className={`esm-kpis ${review ? 'esm-kpis--4' : ''}`}>
                 <div className="esm-kpi esm-kpi-teal">
                   <span className="esm-kpi-ico"><IcoDoc /></span>
                   <div className="esm-kpi-txt">
                     <div className="esm-kpi-lab">CLAIMED AMOUNT</div>
-                    <div className="esm-kpi-val">{inr(claimed)}</div>
+                    <div className="esm-kpi-val" title={inr(claimed)}>{inr(claimed)}</div>
                     <div className="esm-kpi-sub">Original claim</div>
                   </div>
                 </div>
@@ -279,27 +428,87 @@ export default function ExpenseSettlementModal({
                   <span className="esm-kpi-ico"><IcoCheck /></span>
                   <div className="esm-kpi-txt">
                     <div className="esm-kpi-lab">AMOUNT PAID</div>
-                    <div className="esm-kpi-val">{inr(paidSoFar)}</div>
+                    <div className="esm-kpi-val" title={inr(paidSoFar)}>{inr(paidSoFar)}</div>
                     <div className="esm-kpi-sub">{summary.payments.length} payment{summary.payments.length === 1 ? '' : 's'} recorded</div>
                   </div>
                 </div>
+                {!review && (
                 <div className="esm-kpi esm-kpi-amber">
                   <span className="esm-kpi-ico"><IcoWallet /></span>
                   <div className="esm-kpi-txt">
                     <div className="esm-kpi-lab">BALANCE AMOUNT</div>
-                    <div className="esm-kpi-val">{inr(remaining)}</div>
+                    <div className="esm-kpi-val" title={inr(remaining)}>{inr(remaining)}</div>
                     <div className="esm-kpi-sub">{fullyPaid ? 'Fully paid' : 'Outstanding'}</div>
+                  </div>
+                </div>
+                )}
+                <div className="esm-kpi esm-kpi-blue">
+                  <span className="esm-kpi-ico"><IcoPlus /></span>
+                  <div className="esm-kpi-txt">
+                    <div className="esm-kpi-lab">TOTAL ADDITIONS</div>
+                    <div className="esm-kpi-val" title={inr(firstPayment ? totalAddition : (summary.addition_amount || 0))}>{inr(firstPayment ? totalAddition : (summary.addition_amount || 0))}</div>
+                    <div className="esm-kpi-sub">Added to claim</div>
                   </div>
                 </div>
                 <div className="esm-kpi esm-kpi-rose">
                   <span className="esm-kpi-ico"><IcoMinus /></span>
                   <div className="esm-kpi-txt">
                     <div className="esm-kpi-lab">TOTAL DEDUCTED</div>
-                    <div className="esm-kpi-val">{inr(firstPayment ? totalDeduction : (summary.deduction_amount || 0))}</div>
+                    <div className="esm-kpi-val" title={inr(firstPayment ? totalDeduction : (summary.deduction_amount || 0))}>{inr(firstPayment ? totalDeduction : (summary.deduction_amount || 0))}</div>
                     <div className="esm-kpi-sub">Deducted from claim</div>
                   </div>
                 </div>
               </div>
+              )}
+
+              {/* Claim Details — shown in a manager review (the Adjustments &
+                  Payment History sections are hidden) so the manager has full
+                  context to approve or reject. */}
+              {managerReview && (
+                <div className="esm-sec">
+                  <div className="esm-sec-hd">
+                    <div className="esm-sec-l">
+                      <span className="esm-sec-ico"><i className="ri-file-list-3-line" /></span>
+                      <div className="esm-sec-tt">
+                        <div className="esm-sec-title-row">
+                          <span className="esm-sec-tag">Expense</span>
+                          <span className="esm-sec-div">|</span>
+                          <span className="esm-sec-title">Claim Details</span>
+                        </div>
+                        <div className="esm-sec-sub">Review the claim before approving</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="esm-sec-body esm-grid12">
+                    <div className="esm-ro c3"><label>EXPENSE ID</label><div className="esm-ro-v esm-ro-sm">{summary.claim_no || '—'}</div></div>
+                    <div className="esm-ro c3"><label>EMPLOYEE</label><div className="esm-ro-v esm-ro-sm">{summary.employee_name || '—'}</div></div>
+                    <div className="esm-ro c3"><label>RAISED DATE</label><div className="esm-ro-v esm-ro-sm">{fmtDate(summary.expense_date)}</div></div>
+                    <div className="esm-ro c3"><label>CURRENCY</label><div className="esm-ro-v esm-ro-sm">{summary.currency || 'INR'}</div></div>
+                    <div className="esm-ro c3"><label>CATEGORY</label><div className="esm-ro-v esm-ro-sm">{summary.category_name || '—'}</div></div>
+                    <div className="esm-ro c3"><label>CLAIMED AMOUNT</label><div className="esm-ro-v">{inr(claimed)}</div></div>
+                    <div className="esm-ro c6"><label>DESCRIPTION</label><div className="esm-ro-v esm-ro-sm">{summary.title || '—'}</div></div>
+                    <div className="esm-ro c4"><label>PURPOSE</label><div className="esm-ro-v esm-ro-sm">{summary.purpose || '—'}</div></div>
+                    <div className="esm-ro c4"><label>VENDOR</label><div className="esm-ro-v esm-ro-sm">{summary.vendor || '—'}</div></div>
+                    <div className="esm-ro c4"><label>PROJECT</label><div className="esm-ro-v esm-ro-sm">{summary.project || '—'}</div></div>
+                    <div className="esm-ro c12">
+                      <label>PROOF OF PAYMENT (BY EMPLOYEE)</label>
+                      {summary.attachments.length === 0 ? (
+                        <div className="esm-hint">No documents were uploaded with this claim.</div>
+                      ) : (
+                        <div className="esm-docs">
+                          {summary.attachments.map((a, i) => (
+                            <a key={i} className="esm-doc" href={tokenUrl(a.url)} target="_blank" rel="noreferrer" title={a.name}>
+                              <i className="ri-file-text-line" />
+                              <span className="esm-doc-name">{a.name}</span>
+                              <i className="ri-external-link-line esm-doc-ext" />
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Payment progress — sits above the deductions,
                   shown once the deduction is locked and payments can be recorded. */}
@@ -313,35 +522,82 @@ export default function ExpenseSettlementModal({
                 </div>
               )}
 
-              {/* Deductions section — icon header, 2-col body (left deductions /
-                  right net payable), submit button below. Editable only until the
-                  first payment locks it (one-time). */}
+              {/* Deductions section — hidden in a MANAGER review (they only see the
+                  claim + approve/reject; no deduct). Icon header, 2-col body,
+                  submit below; editable only until the first payment locks it. */}
+              {!managerReview && (
               <div className="esm-sec">
                 <div className="esm-sec-hd">
-                  <div className="esm-sec-l">
+                  <div
+                    className="esm-sec-l"
+                    style={!firstPayment ? { cursor: 'pointer' } : undefined}
+                    onClick={!firstPayment ? () => toast.info('Adjustments locked', 'Additions & deductions can only be applied once — they’re locked for this claim.') : undefined}
+                  >
                     <span className="esm-sec-ico"><i className="ri-scissors-cut-line" /></span>
                     <div className="esm-sec-tt">
                       <div className="esm-sec-title-row">
                         <span className="esm-sec-tag">Settlement</span>
                         <span className="esm-sec-div">|</span>
-                        <span className="esm-sec-title">Deductions</span>
+                        <span className="esm-sec-title">Adjustments</span>
                       </div>
-                      <div className="esm-sec-sub">{firstPayment ? 'Apply any one-time deductions, then submit to lock the net payable' : 'Locked — the net payable is fixed for this claim'}</div>
+                      <div className="esm-sec-sub">{editDeductions ? 'Apply one-time additions / deductions, then submit to lock the net payable' : 'Adjustments applied to this claim'}</div>
                     </div>
                   </div>
-                  {!firstPayment && <span className="esm-sec-badge esm-sec-badge--lock"><i className="ri-lock-2-line" /> Locked</span>}
+                  <div className="esm-sec-hd-actions">
+                    {!firstPayment && <span className="esm-sec-badge esm-sec-badge--lock" style={{ cursor: 'pointer' }} onClick={() => toast.info('Adjustments locked', 'Additions & deductions can only be applied once — they’re locked for this claim.')}><i className="ri-lock-2-line" /> Locked</span>}
+                    <button type="button" className={`esm-sec-chev ${adjOpen ? '' : 'is-collapsed'}`} onClick={() => setAdjOpen(o => !o)} aria-label={adjOpen ? 'Collapse' : 'Expand'}>
+                      <i className="ri-arrow-down-s-line" />
+                    </button>
+                  </div>
                 </div>
+                {adjOpen && (
                 <div className="esm-sec-body">
                   <div className="esm-ded-split">
                     <div className="esm-ded-l">
-                      {firstPayment ? (
-                        <>
-                          <div className="esm-ded-hd">
-                            <span className="esm-ded-hd-lbl">DEDUCTIONS (−)</span>
-                            <button type="button" className="esm-ded-add" onClick={addDed}>+ Add</button>
+                      {/* Additions (+) */}
+                      <div className="esm-adj esm-adj--add">
+                        <div className="esm-ded-hd">
+                          <span className="esm-ded-hd-lbl esm-add-lbl">ADDITIONS (+)</span>
+                          {editDeductions && <button type="button" className="esm-ded-add esm-add-btn" onClick={addAdd}>+ Add</button>}
+                        </div>
+                        {editDeductions ? (
+                          additions.length === 0 ? (
+                            <div className="esm-hint">No additions.</div>
+                          ) : (
+                            <div className="esm-ded-list">
+                              {additions.map((a, i) => (
+                                <div className="esm-ded" key={i}>
+                                  <div className="esm-ded-amt"><span className="esm-cur">₹</span>
+                                    <input className="esm-in" type="number" min={0} max={100000} placeholder="0.00" value={a.amount} onChange={e => setAdd(i, { amount: e.target.value })} />
+                                  </div>
+                                  <input className="esm-in esm-ded-reason" placeholder="Reason for this addition…" value={a.reason} onChange={e => setAdd(i, { reason: e.target.value })} />
+                                  <button type="button" className="esm-ded-x" onClick={() => removeAdd(i)} aria-label="Remove">✕</button>
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        ) : (summary.additions ?? []).length > 0 ? (
+                          <div className="esm-ded-list">
+                            {summary.additions.map((a, i) => (
+                              <div className="esm-payrow" key={i}><span>{a.reason}</span><span className="is-pos">+ {inr(a.amount)}</span></div>
+                            ))}
                           </div>
-                          {deductions.length === 0 ? (
-                            <div className="esm-hint">No deductions — the full claimed amount will be sanctioned.</div>
+                        ) : (
+                          <div className="esm-hint">No additions applied.</div>
+                        )}
+                      </div>
+
+                      <div className="esm-vline" />
+
+                      {/* Deductions (−) */}
+                      <div className="esm-adj esm-adj--ded">
+                        <div className="esm-ded-hd">
+                          <span className="esm-ded-hd-lbl">DEDUCTIONS (−)</span>
+                          {editDeductions && <button type="button" className="esm-ded-add" onClick={addDed}>+ Add</button>}
+                        </div>
+                        {editDeductions ? (
+                          deductions.length === 0 ? (
+                            <div className="esm-hint">No deductions.</div>
                           ) : (
                             <div className="esm-ded-list">
                               {deductions.map((d, i) => (
@@ -354,52 +610,42 @@ export default function ExpenseSettlementModal({
                                 </div>
                               ))}
                             </div>
-                          )}
-                        </>
-                      ) : (summary.deductions ?? []).length > 0 ? (
-                        <>
-                          <div className="esm-ded-hd"><span className="esm-ded-hd-lbl">DEDUCTIONS APPLIED</span></div>
+                          )
+                        ) : (summary.deductions ?? []).length > 0 ? (
                           <div className="esm-ded-list">
                             {summary.deductions.map((d, i) => (
                               <div className="esm-payrow" key={i}><span>{d.reason}</span><span className="is-neg">− {inr(d.amount)}</span></div>
                             ))}
                           </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="esm-ded-hd"><span className="esm-ded-hd-lbl">DEDUCTIONS</span></div>
-                          <div className="esm-hint">No deductions were applied — the full claim is payable.</div>
-                        </>
-                      )}
+                        ) : (
+                          <div className="esm-hint">No deductions applied.</div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="esm-ded-r">
-                      {firstPayment ? (
-                        <div className="esm-sumbox">
-                          <div className="esm-sumrow"><span>Claimed Amount</span><span>{inr(claimed)}</span></div>
-                          <div className="esm-sumrow"><span>Total Deductions (−)</span><span className={totalDeduction > 0 ? 'is-neg' : ''}>− {inr(totalDeduction)}</span></div>
-                          <div className="esm-sumrow is-grand"><span>Net Payable (Sanctioned)</span><span>{inr(sanctioned)}</span></div>
-                        </div>
-                      ) : (
-                        <div className="esm-sumbox">
-                          <div className="esm-sumrow"><span>Claimed Amount</span><span>{inr(claimed)}</span></div>
-                          <div className="esm-sumrow"><span>Deducted (−)</span><span className={(summary.deduction_amount || 0) > 0 ? 'is-neg' : ''}>− {inr(summary.deduction_amount || 0)}</span></div>
-                          <div className="esm-sumrow is-grand"><span>Net Payable (Sanctioned)</span><span>{inr(sanctioned)}</span></div>
-                        </div>
-                      )}
+                      <div className="esm-sumbox">
+                        <div className="esm-sumrow"><span>Claimed Amount</span><span>{inr(claimed)}</span></div>
+                        <div className="esm-sumrow"><span>Additions (+)</span><span className={(editDeductions ? totalAddition : (summary.addition_amount || 0)) > 0 ? 'is-pos' : ''}>+ {inr(editDeductions ? totalAddition : (summary.addition_amount || 0))}</span></div>
+                        <div className="esm-sumrow"><span>Deductions (−)</span><span className={(editDeductions ? totalDeduction : (summary.deduction_amount || 0)) > 0 ? 'is-neg' : ''}>− {inr(editDeductions ? totalDeduction : (summary.deduction_amount || 0))}</span></div>
+                        <div className={`esm-sumrow is-grand ${sanctioned <= 0 ? 'is-bad' : ''}`}><span>Net Payable (Sanctioned)</span><span>{inr(sanctioned)}</span></div>
+                      </div>
                     </div>
                   </div>
 
-                  {firstPayment && (
+                  {editDeductions && !review && (
                     <div className="esm-sec-actions">
-                      <span className="esm-sec-actions-hint">Once submitted, the deduction is locked and can’t be edited.</span>
-                      <button type="button" className="esm-btn-submit" onClick={submitDeductions} disabled={saving || !summary}>{saving ? 'Submitting…' : 'Submit'}</button>
+                      <span className="esm-sec-actions-hint">{sanctioned <= 0 ? 'Net payable must be greater than zero — reduce the deductions.' : 'Once submitted, the deduction is locked and can’t be edited.'}</span>
+                      <button type="button" className="esm-btn-submit" onClick={submitDeductions} disabled={saving || !summary || sanctioned <= 0}>{saving ? 'Submitting…' : 'Submit'}</button>
                     </div>
                   )}
                 </div>
+                )}
               </div>
+              )}
 
-              {/* Payment History — a single expense may be paid in several installments. */}
+              {/* Payment History — hidden in review mode (no payments yet). */}
+              {!review && (
               <div className="esm-sec">
                 <div className="esm-sec-hd">
                   <div className="esm-sec-l">
@@ -415,30 +661,34 @@ export default function ExpenseSettlementModal({
                   </div>
                   <div className="esm-sec-hd-actions">
                     <span className="esm-sec-badge">{summary.payments.length} transaction{summary.payments.length === 1 ? '' : 's'}</span>
-                    <button
-                      type="button"
-                      className="esm-sec-btn"
-                      onClick={openPaymentForm}
-                      disabled={firstPayment || fullyPaid}
-                      title={firstPayment ? 'Submit the deduction first' : fullyPaid ? 'This claim is fully paid' : 'Record a payment'}
-                    >
-                      + Add Payment
-                    </button>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        className="esm-sec-btn"
+                        onClick={openPaymentForm}
+                        disabled={firstPayment || fullyPaid}
+                        title={firstPayment ? 'Submit the deduction first' : fullyPaid ? 'This claim is fully paid' : 'Record a payment'}
+                      >
+                        + Add Payment
+                      </button>
+                    )}
                   </div>
                 </div>
                 <div className="esm-sec-body">
                   {summary.payments.length === 0 ? (
-                    <div className="esm-hint">No payments recorded yet. Use “+ Add Payment” to record one.</div>
+                    <div className="esm-hint">{readOnly ? 'No payments recorded yet against this claim.' : 'No payments recorded yet. Use “+ Add Payment” to record one.'}</div>
                   ) : (
                     <div className="esm-tblwrap">
                       <table className="esm-tbl">
                         <thead>
                           <tr>
-                            <th>SR NO</th><th>AMOUNT PAID</th><th>METHOD</th><th>EXPENSE TYPE</th><th>PROOF</th><th>PAID BY</th><th>DATE</th>
+                            <th>SR NO</th><th>AMOUNT PAID</th><th>METHOD</th><th>EXPENSE TYPE</th><th>PROOF</th><th>PAID BY</th><th>DATE</th><th>ZOHO BOOK STATUS</th>{!readOnly && <th>ACTION</th>}
                           </tr>
                         </thead>
                         <tbody>
-                          {summary.payments.map((p, i) => (
+                          {summary.payments.map((p, i) => {
+                            const synced = (p.zoho_status || 'not_synced') === 'synced';
+                            return (
                             <tr key={p.id}>
                               <td>{i + 1}</td>
                               <td className="esm-tbl-amt">{inr(p.amount)}</td>
@@ -453,28 +703,65 @@ export default function ExpenseSettlementModal({
                               </td>
                               <td>{p.paid_by_name || '—'}</td>
                               <td>{fmtDate(p.paid_at)}</td>
+                              <td>
+                                <span className={`esm-zpill ${synced ? 'is-synced' : 'is-unsynced'}`}>
+                                  <i className={synced ? 'ri-checkbox-circle-line' : 'ri-time-line'} /> {synced ? 'Synced' : 'Not Synced'}
+                                </span>
+                              </td>
+                              {!readOnly && (
+                                <td>
+                                  {synced ? (
+                                    p.zoho_expense_url ? (
+                                      <a className="esm-zbtn esm-zbtn--view" href={p.zoho_expense_url} target="_blank" rel="noreferrer">
+                                        <i className="ri-external-link-line" /> View in Zoho
+                                      </a>
+                                    ) : (
+                                      <span className="esm-muted">—</span>
+                                    )
+                                  ) : (
+                                    <button type="button" className="esm-zbtn" onClick={() => syncZoho(p.id)} disabled={syncingId === p.id}>
+                                      <i className="ri-refresh-line" /> {syncingId === p.id ? 'Syncing…' : 'Sync to Zoho'}
+                                    </button>
+                                  )}
+                                </td>
+                              )}
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
                   )}
                 </div>
               </div>
+              )}
             </>
           )}
         </div>
 
         {/* ── Footer ── */}
+        {review ? (
+          <div className="esm-foot">
+            <div className="esm-foot-hint"><i className="ri-information-line" /> {managerReview ? 'Review the claim, then approve or reject.' : `Set adjustments (if any), then approve — net payable ${inr(sanctioned)}.`}</div>
+            <div className="esm-foot-r">
+              <button className="esm-btn-approve" onClick={requestApprove} disabled={saving || (!managerReview && sanctioned <= 0)}>Approve</button>
+              <button className="esm-btn-reject" onClick={() => { setRejectReason(''); setConfirmKind('reject'); }} disabled={saving}>Reject</button>
+              <button className="esm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+            </div>
+          </div>
+        ) : (
         <div className="esm-foot">
           <div className="esm-foot-hint">
             <i className="ri-information-line" />
-            {fullyPaid ? 'This claim is fully paid.' : firstPayment ? 'Submit the one-time deduction, then use “+ Add Payment”.' : `Remaining ${inr(remaining)} — use “+ Add Payment” to disburse.`}
+            {readOnly
+              ? (fullyPaid ? 'This claim is fully paid.' : firstPayment ? 'This claim has not been settled yet.' : `${inr(paidSoFar)} paid · ${inr(remaining)} remaining.`)
+              : (fullyPaid ? 'This claim is fully paid.' : firstPayment ? 'Submit the one-time deduction, then use “+ Add Payment”.' : `Remaining ${inr(remaining)} — use “+ Add Payment” to disburse.`)}
           </div>
           <div className="esm-foot-r">
-            <button className="esm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="esm-btn-ghost" onClick={onClose} disabled={saving}>{readOnly ? 'Close' : 'Cancel'}</button>
           </div>
         </div>
+        )}
       </div>
 
       {/* ── Add Payment — nested popup over the overview ── */}
@@ -512,22 +799,26 @@ export default function ExpenseSettlementModal({
               <div className="esm-fgrid">
                 {/* Row 1 — Category · Payment Method · Expense Type (4·4·4) */}
                 <div className="esm-fld s4">
-                  <label>CATEGORY</label>
+                  <label>CATEGORY <span className="esm-req">*</span></label>
                   <MasterSelect
                     value={categoryId}
                     onChange={setCategoryId}
+                    invalid={showErrors && !categoryId}
                     options={cats.map(c => ({ value: String(c.id), label: c.name }))}
                     placeholder="Select category"
                   />
+                  {showErrors && !categoryId && <span className="esm-err">Select a category.</span>}
                 </div>
                 <div className="esm-fld s4">
                   <label>PAYMENT METHOD <span className="esm-req">*</span></label>
                   <MasterSelect
                     value={paymentType}
                     onChange={setPaymentType}
-                    options={['UPI', 'PhonePe', 'Cash', 'Cheque', 'Bank Transfer'].map(v => ({ value: v, label: v }))}
+                    invalid={showErrors && !paymentType}
+                    options={['UPI', 'PhonePe', 'Cheque', 'Bank Transfer'].map(v => ({ value: v, label: v }))}
                     placeholder="Select method"
                   />
+                  {showErrors && !paymentType && <span className="esm-err">Select a payment method.</span>}
                 </div>
                 <div className="esm-fld s4">
                   <label>EXPENSE TYPE <span className="esm-req">*</span></label>
@@ -539,17 +830,20 @@ export default function ExpenseSettlementModal({
                       </label>
                     ))}
                   </div>
+                  {showErrors && !expenseType && <span className="esm-err">Select an expense type.</span>}
                 </div>
 
                 {/* Row 2 — Amount To Pay (4) · Proof of Payment (8) */}
-                <div className="esm-fld s4">
+                <div className={`esm-fld s4 ${showErrors && (amountNum <= 0 || amountNum > remaining + 0.005) ? 'esm-fld--err' : ''}`}>
                   <label>AMOUNT TO PAY <span className="esm-req">*</span> <span className="esm-muted">(max {inr(remaining)})</span></label>
-                  <div className="esm-ded-amt"><span className="esm-cur">₹</span>
+                  <div className="esm-money"><span className="esm-cur">₹</span>
                     <input className="esm-in" type="number" min={0} value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
                   </div>
+                  {showErrors && amountNum <= 0 && <span className="esm-err">Enter an amount.</span>}
+                  {showErrors && amountNum > remaining + 0.005 && <span className="esm-err">Cannot exceed {inr(remaining)}.</span>}
                 </div>
-                <div className="esm-fld s8">
-                  <label>PROOF OF PAYMENT</label>
+                <div className={`esm-fld s8 ${showErrors && !proofFile ? 'esm-fld--err' : ''}`}>
+                  <label>PROOF OF PAYMENT <span className="esm-req">*</span></label>
                   {!proofFile ? (
                     <label className="esm-file">
                       <i className="ri-attachment-2" />
@@ -558,17 +852,26 @@ export default function ExpenseSettlementModal({
                     </label>
                   ) : (
                     <div className="esm-file-chip">
-                      <i className="ri-file-text-line" />
+                      <i className="ri-file-text-line esm-file-ic" />
                       <span className="esm-file-name" title={proofFile.name}>{proofFile.name}</span>
-                      <button type="button" className="esm-file-x" onClick={() => setProofFile(null)} aria-label="Remove">✕</button>
+                      <button type="button" className="esm-file-btn" onClick={() => viewFile(proofFile)}><i className="ri-eye-line" /> View</button>
+                      <button type="button" className="esm-file-btn" onClick={() => downloadFile(proofFile)}><i className="ri-download-2-line" /> Download</button>
+                      <label className="esm-file-btn" title="Replace file"><i className="ri-refresh-line" /> Reupload
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setProofFile(e.target.files?.[0] ?? proofFile)} />
+                      </label>
                     </div>
                   )}
+                  {showErrors && !proofFile && <span className="esm-err">Attach proof of payment.</span>}
                 </div>
 
                 {/* Row 3 — Note (12) */}
-                <div className="esm-fld s12">
-                  <label>NOTE</label>
-                  <textarea className="esm-in" rows={2} value={note} onChange={e => setNote(e.target.value)} />
+                <div className={`esm-fld s12 ${showErrors && !note.trim() ? 'esm-fld--err' : ''}`}>
+                  <label>NOTE <span className="esm-req">*</span></label>
+                  <textarea className="esm-in" rows={2} maxLength={500} value={note} onChange={e => setNote(e.target.value)} />
+                  <div className="esm-note-foot">
+                    {showErrors && !note.trim() ? <span className="esm-err">A note is required.</span> : <span />}
+                    <span className="esm-note-count">{note.length}/500</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -582,6 +885,49 @@ export default function ExpenseSettlementModal({
           </div>
         </div>
       )}
+
+      {/* ── Approve / Reject confirmation ── */}
+      {confirmKind && summary && (
+        <div className="esm-sub-backdrop" onMouseDown={() => { if (!saving) setConfirmKind(null); }}>
+          <div className="esm-confirm" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <span className={`esm-confirm-ico ${confirmKind === 'approve' ? 'is-approve' : 'is-reject'}`}>
+              <i className={confirmKind === 'approve' ? 'ri-checkbox-circle-line' : 'ri-close-circle-line'} />
+            </span>
+            <div className="esm-confirm-title">{confirmKind === 'approve' ? 'Approve this claim?' : 'Reject this claim?'}</div>
+            {confirmKind === 'approve' ? (
+              managerReview ? (
+                <div className="esm-confirm-msg">
+                  This forwards the claim to <b>HR / Finance</b> for settlement. As the reporting manager you’re approving the claim only — deductions & payment happen at the next stage.
+                </div>
+              ) : (
+                <div className="esm-confirm-msg">
+                  Net payable <b>{inr(sanctioned)}</b> will be locked. <b>Once approved, the sanctioned amount can’t be changed</b> — only payments can be recorded.
+                </div>
+              )
+            ) : (
+              <>
+                <div className="esm-confirm-msg">This will reject <b>{summary.title || summary.claim_no}</b>. Please provide a reason.</div>
+                <textarea
+                  className="esm-in"
+                  rows={3}
+                  placeholder="Reason for rejection…"
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  autoFocus
+                />
+              </>
+            )}
+            <div className="esm-confirm-actions">
+              {confirmKind === 'approve' ? (
+                <button className="esm-btn-approve" onClick={reviewApprove} disabled={saving}>{saving ? 'Approving…' : 'Confirm Approve'}</button>
+              ) : (
+                <button className="esm-btn-reject" onClick={reviewReject} disabled={saving || !rejectReason.trim()}>{saving ? 'Rejecting…' : 'Confirm Reject'}</button>
+              )}
+              <button className="esm-btn-ghost" onClick={() => setConfirmKind(null)} disabled={saving}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>,
     document.body,
   );
@@ -589,7 +935,16 @@ export default function ExpenseSettlementModal({
 
 const CSS = `
 .esm-backdrop{position:fixed;inset:0;z-index:9000;background:rgba(15,23,42,.55);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:20px;}
-.esm-modal{width:100%;max-width:1240px;min-height:min(720px,94vh);max-height:94vh;display:flex;flex-direction:column;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 28px 70px rgba(2,44,52,.4);font-family:inherit;}
+.esm-modal{width:100%;max-width:1360px;min-height:min(720px,94vh);max-height:94vh;display:flex;flex-direction:column;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 28px 70px rgba(2,44,52,.4);font-family:inherit;}
+/* Review mode fits its content instead of forcing the tall min-height, with
+   even spacing around the content on all four sides. */
+.esm-modal--fit{min-height:0;}
+.esm-modal--fit .esm-body{flex:0 0 auto;padding:22px;}
+.esm-modal--fit .esm-hero{padding-bottom:0;}
+/* Manager review is just the Claim Details card — sit it tight under the header,
+   with a divider line at the bottom of the header (no read-only panel here). */
+.esm-modal--fit-mgr .esm-body{padding-top:14px;}
+.esm-modal--fit-mgr .esm-hero{border-bottom:4px solid rgba(255,255,255,.6);}
 [data-bs-theme="dark"] .esm-modal{background:#0b1e27;color:#e2e8f0;}
 /* Nested Add-Payment popup (over the overview) — styled like the PO "Update PO
    Payment" dialog: teal header + outstanding-balance strip + form. */
@@ -627,11 +982,27 @@ const CSS = `
 .esm-fgrid .s8{grid-column:span 8;}
 .esm-fgrid .s12{grid-column:span 12;}
 @media (max-width:760px){.esm-fgrid .s4,.esm-fgrid .s8{grid-column:span 12;}}
+/* Inline field errors — red mark on the offending field (no toast). */
+.esm-err{font-size:11px;font-weight:600;color:#ef4444;}
+.esm-fld--err .esm-in,.esm-fld--err .esm-money .esm-in{border-color:#ef4444;background:#fff7f7;}
+.esm-fld--err .esm-in:focus{box-shadow:0 0 0 3px rgba(239,68,68,.14);}
+.esm-fld--err .esm-file{border-color:#ef4444;background:#fff7f7;color:#e11d48;}
+[data-bs-theme="dark"] .esm-fld--err .esm-in,[data-bs-theme="dark"] .esm-fld--err .esm-file{background:#2a0f16;border-color:#e11d48;}
+.esm-note-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:2px;}
+.esm-note-count{font-size:10.5px;color:#94a3b8;font-weight:600;margin-left:auto;}
+/* Amount-to-pay currency input (form cell — must NOT inherit the deduction
+   row's flex-basis, which would make it 150px tall inside the column layout). */
+.esm-money{position:relative;display:flex;align-items:center;}
+.esm-money .esm-cur{position:absolute;left:11px;color:#64748b;font-size:13px;pointer-events:none;}
+.esm-money .esm-in{padding-left:24px;}
 /* Expense-type radio pair */
-.esm-radio-row{display:flex;gap:10px;}
-.esm-radio{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1.5px solid #dbe7ec;border-radius:10px;padding:9px 12px;font-size:13px;font-weight:600;color:#475569;background:#fff;cursor:pointer;transition:border-color .15s,background .15s;}
-.esm-radio input{accent-color:#0891b2;margin:0;}
-.esm-radio.is-on{border-color:#0891b2;background:#ecfeff;color:#0e7490;box-shadow:0 0 0 3px rgba(34,211,238,.14);}
+/* Plain (borderless) radios — Goods / Service */
+.esm-radio-row{display:flex;align-items:center;gap:22px;min-height:41px;}
+.esm-radio{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#475569;cursor:pointer;}
+.esm-radio input{width:16px;height:16px;accent-color:#0891b2;margin:0;cursor:pointer;flex-shrink:0;}
+.esm-radio.is-on{color:#0e7490;}
+[data-bs-theme="dark"] .esm-radio{color:#cbd5e1;}
+[data-bs-theme="dark"] .esm-radio.is-on{color:#67e8f9;}
 [data-bs-theme="dark"] .esm-radio{background:#0b2029;border-color:#173947;color:#cbd5e1;}
 [data-bs-theme="dark"] .esm-radio.is-on{background:#0e2730;border-color:#0891b2;color:#67e8f9;}
 .esm-hero{display:flex;flex-direction:column;gap:16px;padding:22px 28px;background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);color:#fff;}
@@ -641,6 +1012,8 @@ const CSS = `
    lines up under the "Settle…" text; right edge stops at the close (×) button's
    left edge (32px button + a small gap). */
 .esm-hpanel{display:grid;grid-template-columns:repeat(4,1fr);gap:14px 20px;margin-left:62px;margin-right:40px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:14px 18px;}
+/* Emphasised bottom divider + spacing only in the review popup. */
+.esm-modal--fit .esm-hpanel{border-bottom:2px solid rgba(255,255,255,.45);margin-bottom:16px;}
 .esm-hp{min-width:0;}
 .esm-hp label{display:block;font-size:9.5px;font-weight:800;letter-spacing:.08em;opacity:.8;text-transform:uppercase;margin-bottom:3px;}
 .esm-hp>div{font-size:14px;font-weight:800;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -685,20 +1058,22 @@ const CSS = `
 /* 12-column grid — row1: 3·3·3·3, row2: 3·3·6 (proof) */
 .esm-grid12{display:grid;grid-template-columns:repeat(12,1fr);gap:14px 20px;align-items:start;}
 .esm-grid12 .c3{grid-column:span 3;}
+.esm-grid12 .c4{grid-column:span 4;}
 .esm-grid12 .c6{grid-column:span 6;}
-@media (max-width:720px){.esm-grid12 .c3{grid-column:span 6;}.esm-grid12 .c6{grid-column:span 12;}}
-@media (max-width:480px){.esm-grid12 .c3,.esm-grid12 .c6{grid-column:span 12;}}
+.esm-grid12 .c12{grid-column:span 12;}
+@media (max-width:720px){.esm-grid12 .c3,.esm-grid12 .c4{grid-column:span 6;}.esm-grid12 .c6{grid-column:span 12;}}
+@media (max-width:480px){.esm-grid12 .c3,.esm-grid12 .c4,.esm-grid12 .c6{grid-column:span 12;}}
 .esm-divider{height:1px;background:#eef2f4;margin:4px 0 2px;}
 [data-bs-theme="dark"] .esm-divider{background:#173947;}
 .esm-col2{grid-column:1 / -1;}
 .esm-fld,.esm-ro{display:flex;flex-direction:column;gap:5px;min-width:0;}
-.esm-fld label,.esm-ro label,.esm-card>label,.esm-card-lbl,.esm-card-hd label{font-size:10.5px;font-weight:700;letter-spacing:.03em;color:#64748b;text-transform:uppercase;}
+.esm-fld>label,.esm-ro>label,.esm-card>label,.esm-card-lbl,.esm-card-hd label{font-size:10.5px;font-weight:700;letter-spacing:.03em;color:#64748b;text-transform:uppercase;}
 .esm-ro-sm{font-size:13px;font-weight:600;}
 .esm-req{color:#ef4444;}
 .esm-ro-v{font-size:14px;font-weight:700;color:#0f172a;}
 [data-bs-theme="dark"] .esm-ro-v{color:#e2e8f0;}
 .esm-ro-v.is-neg,.is-neg{color:#e11d48;}
-.esm-ro-v.is-pos{color:#059669;}
+.esm-ro-v.is-pos,.is-pos{color:#059669;}
 .esm-ro-v.is-warn{color:#b45309;}
 .esm-in{width:100%;border:1.5px solid #dbe7ec;border-radius:10px;padding:9px 12px;font-size:13px;font-family:inherit;color:#0f172a;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s;}
 .esm-in:focus{border-color:#22d3ee;box-shadow:0 0 0 3px rgba(34,211,238,.14);}
@@ -716,16 +1091,31 @@ textarea.esm-in{resize:vertical;}
 .esm-ro-static{width:100%;border:1.5px solid #dbe7ec;border-radius:10px;padding:9px 12px;font-size:14px;font-weight:800;color:#0891b2;background:#f0fdff;}
 [data-bs-theme="dark"] .esm-ro-static{background:#0b2029;border-color:#173947;color:#67e8f9;}
 /* Proof-of-payment file picker */
-.esm-file{display:flex;align-items:center;gap:8px;border:1.5px dashed #b6d9e2;border-radius:10px;padding:9px 12px;font-size:12.5px;font-weight:600;color:#0891b2;background:#f8feff;cursor:pointer;}
+.esm-file{display:flex;align-items:center;gap:8px;min-height:41px;border:1.5px dashed #b6d9e2;border-radius:10px;padding:0 12px;font-size:12.5px;font-weight:600;color:#0891b2;background:#f8feff;cursor:pointer;}
 .esm-file:hover{background:#ecfeff;border-color:#22d3ee;}
 .esm-file i{font-size:15px;}
 .esm-file input{display:none;}
 [data-bs-theme="dark"] .esm-file{background:#0b2029;border-color:#173947;color:#67e8f9;}
-.esm-file-chip{display:flex;align-items:center;gap:8px;border:1.5px solid #dbe7ec;border-radius:10px;padding:8px 10px;font-size:12.5px;font-weight:600;color:#0c4a6e;background:#f8fafc;}
+.esm-file-chip{display:flex;align-items:center;gap:8px;min-height:41px;border:1.5px solid #dbe7ec;border-radius:10px;padding:0 6px 0 12px;font-size:12.5px;font-weight:600;color:#0c4a6e;background:#f8fafc;}
+.esm-file-ic{color:#0891b2;flex-shrink:0;}
 .esm-file-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.esm-file-x{width:26px;height:26px;flex-shrink:0;border:1.5px solid #fecdd3;border-radius:8px;background:#fff1f2;color:#e11d48;font-size:11px;cursor:pointer;}
+.esm-file-act{width:30px;height:30px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid #cbeef4;border-radius:8px;background:#fff;color:#0891b2;font-size:15px;line-height:1;cursor:pointer;transition:background .15s,border-color .15s;}
+.esm-file-act:hover{background:#ecfeff;border-color:#22d3ee;}
+.esm-file-act input{display:none;}
+[data-bs-theme="dark"] .esm-file-act{background:#0b2029;border-color:#173947;color:#67e8f9;}
+.esm-file-act--danger{border-color:#fecdd3;background:#fff1f2;color:#e11d48;}
+.esm-file-act--danger:hover{background:#ffe4e6;border-color:#fda4af;}
+[data-bs-theme="dark"] .esm-file-act--danger{background:#2a0f16;border-color:#5b2130;color:#fca5a5;}
+/* Labeled file actions — View / Download / Reupload */
+.esm-file-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;height:30px;line-height:1;border:1.5px solid #cbeef4;border-radius:8px;background:#fff;color:#0891b2;font-size:12px;font-weight:700;padding:0 11px;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s;}
+.esm-file-btn i{font-size:14px;line-height:1;}
+.esm-file-btn:hover{background:#ecfeff;border-color:#22d3ee;}
+.esm-file-btn input{display:none;}
+[data-bs-theme="dark"] .esm-file-btn{background:#0b2029;border-color:#173947;color:#67e8f9;}
+.esm-file-x{width:28px;height:28px;flex-shrink:0;border:1.5px solid #fecdd3;border-radius:8px;background:#fff1f2;color:#e11d48;font-size:11px;cursor:pointer;}
 .esm-file-x:hover{background:#ffe4e6;}
 [data-bs-theme="dark"] .esm-file-chip{background:#0b2029;border-color:#173947;color:#cffafe;}
+[data-bs-theme="dark"] .esm-file-x{background:#2a0f16;border-color:#5b2130;color:#fca5a5;}
 /* Cards — each Step-1 section sits in its own bordered card for a clean layout */
 .esm-card{margin-top:16px;border:1.5px solid #e6eef2;border-left:4px solid #0891b2;border-radius:14px;padding:14px 16px;background:#fbfeff;display:flex;flex-direction:column;gap:10px;}
 .esm-card--top{margin-top:0;border-left:1.5px solid #e6eef2;}
@@ -765,26 +1155,47 @@ textarea.esm-in{resize:vertical;}
 .esm-sec-btn{border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;background:linear-gradient(135deg,#0c4a6e,#0e7490);box-shadow:0 3px 10px rgba(14,116,144,.3);white-space:nowrap;display:inline-flex;gap:6px;align-items:center;}
 .esm-sec-btn:hover:not(:disabled){filter:brightness(1.09);}
 .esm-sec-btn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none;}
+/* Collapse chevron */
+.esm-sec-chev{width:28px;height:28px;border-radius:50%;border:1px solid #cffafe;background:#fff;color:#0e7490;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 1px 3px rgba(6,182,212,.18);flex-shrink:0;}
+.esm-sec-chev:hover{background:#ecfeff;}
+.esm-sec-chev i{transition:transform .2s ease;}
+.esm-sec-chev.is-collapsed i{transform:rotate(-90deg);}
+[data-bs-theme="dark"] .esm-sec-chev{background:#0b2029;border-color:#173947;color:#67e8f9;}
 /* Deductions 2-col body: left rows, right net-payable summary */
 .esm-ded-split{display:flex;gap:16px;align-items:stretch;}
-.esm-ded-l{flex:7;min-width:0;display:flex;flex-direction:column;gap:10px;}
+.esm-ded-l{flex:7;min-width:0;display:flex;flex-direction:row;align-items:stretch;gap:16px;}
 .esm-ded-r{flex:3;min-width:0;display:flex;flex-direction:column;}
+/* Standing line between the additions & deductions columns */
+.esm-vline{width:1px;flex-shrink:0;background:#e2e8f0;align-self:stretch;}
+[data-bs-theme="dark"] .esm-vline{background:#173947;}
 .esm-ded-r .esm-sumbox{margin-top:0;height:100%;display:flex;flex-direction:column;}
 .esm-ded-r .esm-sumrow.is-grand{margin-top:auto;}
 @media (max-width:720px){.esm-ded-split{flex-direction:column;}.esm-ded-l,.esm-ded-r{flex:1 1 auto;width:100%;}}
 .esm-ded-hd{display:flex;align-items:center;justify-content:space-between;}
 .esm-ded-hd-lbl{font-size:10.5px;font-weight:700;letter-spacing:.03em;color:#64748b;text-transform:uppercase;}
+/* Additions / deductions boxes — side by side on the left */
+.esm-adj{flex:1;min-width:0;border:1px solid #eef2f7;border-radius:10px;padding:10px 12px;background:#fbfeff;display:flex;flex-direction:column;gap:8px;}
+.esm-adj--add{border-left:3px solid #10b981;}
+.esm-adj--ded{border-left:3px solid #f43f5e;}
+@media (max-width:820px){.esm-ded-l{flex-direction:column;}.esm-vline{display:none;}}
+[data-bs-theme="dark"] .esm-adj{background:#0c232c;border-color:#173947;border-left-color:#10b981;}
+[data-bs-theme="dark"] .esm-adj--ded{border-left-color:#f43f5e;}
+.esm-add-lbl{color:#059669;}
+.esm-add-btn{border-color:#86efac;background:#ecfdf5;color:#059669;}
+.esm-add-btn:hover{background:#d1fae5;}
 /* Submit-deduction action row under the 2-col body */
-.esm-sec-actions{display:flex;align-items:center;justify-content:flex-end;gap:14px;margin-top:14px;padding-top:14px;border-top:1px solid #eef4f6;}
+.esm-sec-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:8px;padding-top:8px;border-top:1px solid #eef4f6;}
 [data-bs-theme="dark"] .esm-sec-actions{border-color:#173947;}
-.esm-sec-actions-hint{font-size:11.5px;color:#94a3b8;}
+.esm-sec-actions-hint{font-size:11.5px;font-weight:700;color:#475569;text-align:left;}
+[data-bs-theme="dark"] .esm-sec-actions-hint{color:#cbd5e1;}
 /* Bold Submit (lock deduction) button */
-.esm-btn-submit{border:none;border-radius:10px;padding:11px 30px;font-size:14px;font-weight:800;letter-spacing:.02em;cursor:pointer;color:#fff;background:linear-gradient(120deg,#059669,#0891b2);box-shadow:0 6px 16px rgba(5,150,105,.35);}
+.esm-btn-submit{border:none;border-radius:9px;padding:8px 26px;font-size:13.5px;font-weight:800;letter-spacing:.02em;cursor:pointer;color:#fff;background:linear-gradient(120deg,#059669,#0891b2);box-shadow:0 4px 12px rgba(5,150,105,.32);}
 .esm-btn-submit:hover{filter:brightness(1.06);}
 .esm-btn-submit:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
 /* KPI strip — exact styling/colors from the PO "Payment Summary" modal */
-.esm-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
-.esm-kpi{background:#fff;border:1px solid #eef2f7;border-radius:14px;padding:6px 13px;display:flex;gap:10px;align-items:center;border-left:4px solid #94a3b8;box-shadow:0 4px 13px rgba(15,23,42,.06);}
+.esm-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
+.esm-kpis--4{grid-template-columns:repeat(4,1fr);}
+.esm-kpi{min-width:0;background:#fff;border:1px solid #eef2f7;border-radius:14px;padding:6px 13px;display:flex;gap:10px;align-items:center;border-left:4px solid #94a3b8;box-shadow:0 4px 13px rgba(15,23,42,.06);}
 [data-bs-theme="dark"] .esm-kpi{background:#0c232c;border-color:#173947;}
 .esm-kpi-txt{min-width:0;flex:1;}
 .esm-kpi-ico{width:38px;height:38px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;}
@@ -792,6 +1203,7 @@ textarea.esm-in{resize:vertical;}
 .esm-kpi-teal{border-left-color:#06b6d4;} .esm-kpi-teal .esm-kpi-ico{background:linear-gradient(135deg,#22d3ee,#0891b2);box-shadow:0 7px 16px rgba(8,145,178,.38);}
 .esm-kpi-green{border-left-color:#10b981;} .esm-kpi-green .esm-kpi-ico{background:linear-gradient(135deg,#34d399,#059669);box-shadow:0 7px 16px rgba(5,150,105,.34);}
 .esm-kpi-amber{border-left-color:#f59e0b;} .esm-kpi-amber .esm-kpi-ico{background:linear-gradient(135deg,#fbbf24,#d97706);box-shadow:0 7px 16px rgba(217,119,6,.34);}
+.esm-kpi-blue{border-left-color:#6366f1;} .esm-kpi-blue .esm-kpi-ico{background:linear-gradient(135deg,#818cf8,#4f46e5);box-shadow:0 7px 16px rgba(79,70,229,.34);}
 .esm-kpi-rose{border-left-color:#f43f5e;} .esm-kpi-rose .esm-kpi-ico{background:linear-gradient(135deg,#fb7185,#e11d48);box-shadow:0 7px 16px rgba(225,29,72,.32);}
 .esm-kpi-lab{font-size:9.5px;font-weight:700;letter-spacing:.05em;color:#5c7d9e;}
 .esm-kpi-val{font-size:18px;font-weight:800;color:#123a5e;margin:1px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -824,12 +1236,12 @@ textarea.esm-in{resize:vertical;}
 .esm-ded-list::-webkit-scrollbar{width:7px;}
 .esm-ded-list::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:7px;}
 [data-bs-theme="dark"] .esm-ded-list::-webkit-scrollbar-thumb{background:#334155;}
-.esm-ded{display:flex;gap:8px;align-items:center;}
-.esm-ded-amt{display:flex;align-items:center;position:relative;flex:0 0 150px;}
+.esm-ded{display:grid;grid-template-columns:4fr 7fr 1fr;gap:8px;align-items:center;}
+.esm-ded-amt{display:flex;align-items:center;position:relative;min-width:0;}
 .esm-ded-amt .esm-cur{position:absolute;left:11px;color:#64748b;font-size:13px;pointer-events:none;}
-.esm-ded-amt .esm-in{padding-left:24px;}
-.esm-ded-reason{flex:1;}
-.esm-ded-x{width:34px;height:34px;flex-shrink:0;border:1.5px solid #fecdd3;border-radius:9px;background:#fff1f2;color:#e11d48;font-size:12px;cursor:pointer;}
+.esm-ded-amt .esm-in{padding-left:22px;padding-right:6px;}
+.esm-ded-reason{min-width:0;}
+.esm-ded-x{width:100%;height:34px;border:1.5px solid #fecdd3;border-radius:9px;background:#fff1f2;color:#e11d48;font-size:12px;cursor:pointer;}
 .esm-ded-x:hover{background:#ffe4e6;}
 /* 70 / 30 split — deductions on the left, claimed/summary on the right */
 .esm-split{display:flex;gap:16px;margin-top:16px;align-items:stretch;}
@@ -840,10 +1252,13 @@ textarea.esm-in{resize:vertical;}
 /* Summary box */
 .esm-sumbox{margin-top:16px;border:1.5px solid #cffafe;border-radius:12px;overflow:hidden;}
 [data-bs-theme="dark"] .esm-sumbox{border-color:#173947;}
-.esm-sumrow{display:flex;justify-content:space-between;padding:9px 14px;font-size:12.5px;font-weight:600;color:#334155;background:#f8feff;}
+.esm-sumrow{display:flex;justify-content:space-between;gap:10px;padding:9px 14px;font-size:12.5px;font-weight:600;color:#334155;background:#f8feff;}
+.esm-sumrow>span:first-child{flex-shrink:0;}
+.esm-sumrow>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;}
 .esm-sumrow+.esm-sumrow{border-top:1px solid #e2eef2;}
 [data-bs-theme="dark"] .esm-sumrow{background:#0d2730;color:#cbd5e1;}
 .esm-sumrow.is-grand{background:linear-gradient(120deg,#0891b2,#06b6d4);color:#fff;font-weight:800;font-size:13.5px;}
+.esm-sumrow.is-grand.is-bad{background:linear-gradient(120deg,#e11d48,#f43f5e);}
 .esm-payrow{display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px dashed #e2e8f0;}
 /* Payment history table */
 /* History table — exact styling from the PO "Payment Summary" table (pop-tbl). */
@@ -859,6 +1274,19 @@ textarea.esm-in{resize:vertical;}
 .esm-tbl tbody tr:hover td{background:#f6fdff;}
 [data-bs-theme="dark"] .esm-tbl tbody tr:hover td{background:#0e2a34;}
 .esm-tbl-amt{font-weight:800;color:#0f172a;}
+/* Zoho Books status pill + sync button */
+.esm-zpill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;white-space:nowrap;}
+.esm-zpill.is-synced{background:#d6f4e3;color:#108548;}
+.esm-zpill.is-unsynced{background:#fde8c4;color:#a4661c;}
+[data-bs-theme="dark"] .esm-zpill.is-synced{background:#0c2e1d;color:#4ade80;}
+[data-bs-theme="dark"] .esm-zpill.is-unsynced{background:#3a2a08;color:#fbbf24;}
+.esm-zbtn{display:inline-flex;align-items:center;gap:6px;border:1.5px solid #0891b2;background:#fff;color:#0e7490;border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .15s;}
+.esm-zbtn:hover:not(:disabled){background:#ecfeff;}
+.esm-zbtn:disabled{opacity:.55;cursor:not-allowed;}
+[data-bs-theme="dark"] .esm-zbtn{background:#0b2029;border-color:#0891b2;color:#67e8f9;}
+.esm-zbtn--view{border-color:#86efac;color:#108548;text-decoration:none;}
+.esm-zbtn--view:hover{background:#ecfdf5;}
+[data-bs-theme="dark"] .esm-zbtn--view{background:#0b2029;border-color:#10b981;color:#4ade80;}
 [data-bs-theme="dark"] .esm-tbl-amt{color:#e2e8f0;}
 .esm-tbl-link{display:inline-flex;align-items:center;gap:5px;max-width:170px;overflow:hidden;text-overflow:ellipsis;color:#0891b2;text-decoration:none;font-weight:600;}
 .esm-tbl-link:hover{text-decoration:underline;}
@@ -873,5 +1301,25 @@ textarea.esm-in{resize:vertical;}
 .esm-btn-primary{border:none;border-radius:10px;padding:9px 22px;font-size:13px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(120deg,#0891b2,#06b6d4);box-shadow:0 4px 12px rgba(8,145,178,.28);}
 .esm-btn-primary:hover{filter:brightness(1.05);}
 .esm-btn-primary:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
+/* Review footer — approve / reject */
+.esm-btn-approve{border:none;border-radius:10px;padding:9px 24px;font-size:13px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(135deg,#0ab39c,#059669);box-shadow:0 4px 12px rgba(5,150,105,.3);}
+.esm-btn-approve:hover:not(:disabled){filter:brightness(1.05);}
+.esm-btn-approve:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
+.esm-btn-reject{border:none;border-radius:10px;padding:9px 22px;font-size:13px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(135deg,#f06548,#e11d48);box-shadow:0 4px 12px rgba(225,29,72,.28);}
+.esm-btn-reject:hover:not(:disabled){filter:brightness(1.05);}
+.esm-btn-reject:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
+.esm-reject-in{flex:1;min-width:0;}
+/* Approve / Reject confirmation dialog */
+.esm-confirm{width:100%;max-width:440px;background:#fff;border-radius:16px;padding:24px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;box-shadow:0 30px 80px rgba(15,23,42,.5);}
+[data-bs-theme="dark"] .esm-confirm{background:#0f172a;color:#e2e8f0;}
+.esm-confirm-ico{width:52px;height:52px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:28px;color:#fff;}
+.esm-confirm-ico.is-approve{background:linear-gradient(135deg,#0ab39c,#059669);box-shadow:0 8px 20px rgba(5,150,105,.35);}
+.esm-confirm-ico.is-reject{background:linear-gradient(135deg,#f06548,#e11d48);box-shadow:0 8px 20px rgba(225,29,72,.32);}
+.esm-confirm-title{font-size:17px;font-weight:800;color:#0f172a;}
+[data-bs-theme="dark"] .esm-confirm-title{color:#e2e8f0;}
+.esm-confirm-msg{font-size:13px;color:#475569;line-height:1.5;}
+[data-bs-theme="dark"] .esm-confirm-msg{color:#94a3b8;}
+.esm-confirm .esm-in{text-align:left;}
+.esm-confirm-actions{display:flex;gap:10px;justify-content:center;margin-top:4px;}
 @media (max-width:640px){.esm-grid,.esm-steps{grid-template-columns:1fr;}.esm-ded-amt{flex-basis:120px;}}
 `;

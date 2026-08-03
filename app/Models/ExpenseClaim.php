@@ -23,7 +23,8 @@ class ExpenseClaim extends Model
         'created_by',
         // Settlement (post-approval payment)
         'sanctioned_amount', 'deduction_amount', 'deduction_reason', 'deductions',
-        'total_paid', 'settlement_status', 'settled_at',
+        'additions', 'addition_amount',
+        'total_paid', 'settlement_status', 'settled_at', 'reimbursement_emailed_at',
     ];
 
     protected $casts = [
@@ -35,8 +36,11 @@ class ExpenseClaim extends Model
         'sanctioned_amount' => 'decimal:2',
         'deduction_amount'  => 'decimal:2',
         'deductions'        => 'array',
+        'additions'         => 'array',
+        'addition_amount'   => 'decimal:2',
         'total_paid'        => 'decimal:2',
         'settled_at'        => 'datetime',
+        'reimbursement_emailed_at' => 'datetime',
     ];
 
     public function payments(): HasMany
