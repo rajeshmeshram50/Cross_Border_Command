@@ -45,7 +45,9 @@ const WEEKLY_OFF_OPTIONS    = ['Week Off Policy','Saturday & Sunday','Sunday Onl
 const TIME_TRACKING_OPTIONS = ['Manual','Biometric'].map(v => ({ value: v, label: v }));
 const PENALIZATION_OPTIONS  = ['Tracking Policy','Strict Policy','Lenient Policy','No Penalty'].map(v => ({ value: v, label: v }));
 const OVERTIME_OPTIONS      = ['Not applicable','Hourly Pay','Compensation Off','Time and a Half'].map(v => ({ value: v, label: v }));
-const EXPENSE_POLICY_OPTIONS= [{ value: '', label: 'Select' }, { value: 'Applicable', label: 'Applicable' }, { value: 'Not Applicable', label: 'Not Applicable' }];
+// No blank "Select" row — the empty state is carried by the placeholder,
+// so the dropdown lists only the two real choices.
+const EXPENSE_POLICY_OPTIONS= [{ value: 'Applicable', label: 'Applicable' }, { value: 'Not Applicable', label: 'Not Applicable' }];
 
 const SALARY_FREQUENCY_OPTIONS  = ['Per annum','Per month','Per hour','Per day'].map(v => ({ value: v, label: v }));
 const SALARY_STRUCTURE_OPTIONS  = ['Range Based','Fixed','Component Based'].map(v => ({ value: v, label: v }));
@@ -3732,7 +3734,7 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Expense Policy<span className="req">*</span></label>
-                      <MasterSelect value={eExpensePolicy} onChange={(v) => { setEExpensePolicy(v); clearEErr('expense_policy'); }} options={EXPENSE_POLICY_OPTIONS} placeholder="Select" invalid={!!eErrors.expense_policy} />
+                      <MasterSelect value={eExpensePolicy} onChange={(v) => { setEExpensePolicy(v); clearEErr('expense_policy'); }} options={EXPENSE_POLICY_OPTIONS} placeholder="Select expense policy" invalid={!!eErrors.expense_policy} />
                       {eErrors.expense_policy && <small className="emp-err">{eErrors.expense_policy}</small>}
                     </Col>
                   </Row>
