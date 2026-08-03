@@ -117,11 +117,12 @@ const fmtMoney = (v: number | string | null | undefined, ccy: string | null | un
   return `${ccy ?? ''} ${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`.trim();
 };
 
-const fmtCcy = (v: number | string | null | undefined): string => {
+const fmtCcy = (v: number | string | null | undefined, ccy = '$'): string => {
   if (v == null) return '—';
   const num = Number(v);
   if (!Number.isFinite(num)) return '—';
-  return `$ ${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // Domestic shipping cost is in INR (₹); export freight cost in USD ($).
+  return `${ccy} ${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
 /* B28: persist "already celebrated" leads in localStorage so the
@@ -483,7 +484,7 @@ export default function Stage6VictoryStage({ header, onPrev }: StageProps) {
                      no Indian GST, so they're domestic-only. */
                   <>
                     <Cell label="PIN CODE"          value={shipment.pin_code ?? '—'} />
-                    <Cell label="SHIPPING COST"     value={fmtCcy(shipment.shipping_cost)} emerald />
+                    <Cell label="SHIPPING COST"     value={fmtCcy(shipment.shipping_cost, '₹')} emerald />
                     <Cell label="MODE OF TRANSPORT" value={shipment.shipping_mode ?? '—'} emerald />
                     <Cell label="STATE CODE"        value={latestPi?.state_code ?? '—'} emerald />
                     <Cell label="GST NUMBER"        value={lead?.customer?.gst_number ?? '—'} />

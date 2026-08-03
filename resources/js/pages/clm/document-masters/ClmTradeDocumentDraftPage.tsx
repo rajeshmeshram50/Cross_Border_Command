@@ -660,6 +660,17 @@ export default function ClmTradeDocumentDraftPage() {
 
       <ClmInsertPlaceholderModal
         open={pickerOpen}
+        allowedParties={(() => {
+          // Restrict placeholder party tabs to the document's applicable party:
+          // Customer/Consignee doc → Customer + Consignee tabs; Supplier doc →
+          // Supplier only. (Party values: "Buyer"/"Consignee"/"Supplier-…".)
+          const arr = Array.from(parties);
+          if (!arr.length) return undefined;
+          const s: string[] = [];
+          if (arr.some(p => !p.toLowerCase().startsWith('supplier'))) s.push('customer', 'consignee');
+          if (arr.some(p => p.toLowerCase().startsWith('supplier'))) s.push('supplier');
+          return s;
+        })()}
         onClose={() => setPickerOpen(false)}
         onInsert={(token) => { if (/^\s*</.test(token)) insertHtmlAtCaret(token); else insertAtCaret(token); setPickerOpen(false); }}
       />

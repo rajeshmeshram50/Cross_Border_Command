@@ -218,7 +218,7 @@ export default function TaskManagerPanel({ leadId, salespersonName, initial, onS
       {/* Form */}
       <div className="smd-deal-form">
         <div className="smd-deal-row">
-          <Field label="SALES PERSON NAME">
+          <Field label={<>SALES PERSON NAME <span className="smd-req">*</span></>}>
             <input className="smd-input" value={salespersonName} readOnly />
           </Field>
           <Field label="CHOOSE FILE">

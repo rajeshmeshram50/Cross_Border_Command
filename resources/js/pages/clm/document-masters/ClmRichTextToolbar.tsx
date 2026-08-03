@@ -223,12 +223,18 @@ export default function ClmRichTextToolbar({
 
 const RTB_CSS = `
 .rtb-bar {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+  display: flex; align-items: center; flex-wrap: nowrap; gap: 4px;
+  overflow-x: auto; overflow-y: hidden;
   padding: 8px 10px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
 }
+/* One aligned row — scroll instead of wrapping to a ragged second row. */
+.rtb-bar > * { flex-shrink: 0; }
+.rtb-bar::-webkit-scrollbar { height: 5px; }
+.rtb-bar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.rtb-bar::-webkit-scrollbar-track { background: transparent; }
 .rtb-sel {
   height: 28px; padding: 0 8px; font-size: 12px;
   background: #fff; border: 1px solid #cbd5e1; border-radius: 6px;

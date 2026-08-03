@@ -101,7 +101,9 @@ class SalesLeadController extends Controller
                 // the company or the lead's raw sender.
                 'customer'    => fn ($r) => $r->select('id', 'company_name', 'legal_name', 'customer_code', 'primary_email')
                     ->withTrashed()
-                    ->with(['primaryAddress' => fn ($a) => $a->select('id', 'customer_id', 'cp_name', 'cp_email', 'cp_contact')]),
+                    // country/state/city so the Sales-Matrix header COUNTRY shows
+                    // the mapped customer's OWN country (not the hardcoded 'IN').
+                    ->with(['primaryAddress' => fn ($a) => $a->select('id', 'customer_id', 'cp_name', 'cp_email', 'cp_contact', 'country', 'state', 'city')]),
                 'consignee'   => fn ($r) => $r->select('id', 'company_name')->withTrashed(),
             ])
             ->orderByDesc('id');

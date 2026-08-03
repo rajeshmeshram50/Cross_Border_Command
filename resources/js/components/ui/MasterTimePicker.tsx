@@ -22,6 +22,7 @@ export function MasterTimePicker({
   minuteStep = 5,
   showNow = true,
   minTime,
+  maxTime,
   accent,
   hour12 = false,
 }: {
@@ -40,6 +41,10 @@ export function MasterTimePicker({
    * on the boundary hour the earlier minutes are disabled too. Used to stop
    * picking a past time when a meeting is scheduled for today. */
   minTime?: string;
+  /* Latest selectable time as "HH:MM" — mirror of `minTime`. Hours after it are
+   * disabled, and on the boundary hour the later minutes are too. Pair the two
+   * to pin a field to a window, e.g. an attendance punch inside a shift. */
+  maxTime?: string;
   /* Accent colour of the popup (selected slot + Now/Done buttons). Defaults to
    * the app violet; pass 'teal' inside the teal-themed Meeting modal so the
    * dropdown matches its surroundings instead of clashing purple. */
@@ -97,11 +102,19 @@ export function MasterTimePicker({
   const [minHStr, minMStr] = (minTime ?? '').split(':');
   const minH = minTime ? parseInt(minHStr, 10) : null;
   const minM = minTime ? parseInt(minMStr, 10) : null;
-  const hourDisabled = (h: number) => minH != null && h < minH;
+  // Max-time ceiling — mirror image of the floor above. Used to pin a picker to
+  // a window (e.g. an attendance punch must land inside the employee's shift).
+  const [maxHStr, maxMStr] = (maxTime ?? '').split(':');
+  const maxH = maxTime ? parseInt(maxHStr, 10) : null;
+  const maxM = maxTime ? parseInt(maxMStr, 10) : null;
+  const hourDisabled = (h: number) =>
+    (minH != null && h < minH) || (maxH != null && h > maxH);
   const minuteDisabled = (m: number) => {
-    if (minH == null || minM == null) return false;
-    const h = selH != null ? selH : minH;   // no hour picked yet → assume the floor hour
-    return h === minH && m < minM;
+    const h = selH != null ? selH : (minH ?? maxH);   // no hour picked yet → assume the boundary hour
+    if (h == null) return false;
+    if (minH != null && minM != null && h === minH && m < minM) return true;
+    if (maxH != null && maxM != null && h === maxH && m > maxM) return true;
+    return false;
   };
 
   /* Single-open coordination: when this picker opens, broadcast so any other
@@ -201,11 +214,13 @@ export function MasterTimePicker({
     let m = selM != null ? selM : 0;
     // Landing on the floor hour with an earlier minute → snap up to the floor.
     if (minH != null && minM != null && h === minH && m < minM) m = minM;
+    // …and on the ceiling hour with a later minute → snap down to the ceiling.
+    if (maxH != null && maxM != null && h === maxH && m > maxM) m = maxM;
     commit(`${pad(h)}:${pad(m)}`);
   };
   const pickMinute = (m: number) => {
-    const h = selH != null ? selH : (minH != null ? minH : 0);
-    if (hourDisabled(h) || (minH != null && minM != null && h === minH && m < minM)) return;
+    const h = selH != null ? selH : (minH ?? 0);
+    if (hourDisabled(h) || minuteDisabled(m)) return;
     commit(`${pad(h)}:${pad(m)}`);
   };
 
