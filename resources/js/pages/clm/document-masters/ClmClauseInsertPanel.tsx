@@ -106,7 +106,12 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
     // Preserve library order; each clause = name heading + its body.
     const chosen = clauses.filter(c => selected.has(c.id));
     const html = chosen.map(c => {
-      const body = (c.content && c.content.trim()) ? c.content : '<p></p>';
+      const raw = (c.content && c.content.trim()) ? c.content : '<p></p>';
+      // Clauses are legal text, not quotes. A <blockquote> in the stored content
+      // (from a legacy indent / the Quote button) renders the editor's cyan
+      // quote border — a stray vertical line beside the inserted clause. Unwrap
+      // it (keep the inner paragraphs / lists) so no line appears.
+      const body = raw.replace(/<\/?blockquote\b[^>]*>/gi, '');
       return `<h3>${escapeHtml(c.name)}</h3>${body}`;
     }).join('');
     const count = chosen.length;
