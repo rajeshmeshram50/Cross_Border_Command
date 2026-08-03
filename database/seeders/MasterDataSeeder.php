@@ -108,6 +108,7 @@ class MasterDataSeeder extends Seeder
             // collide and update the same single row.
             $perSlugKey = [
                 'gst_percentage' => 'percentage',
+                'overtime_rates' => 'rate_name',
             ];
             $keyColumn = $perSlugKey[$slug] ?? $this->resolveNaturalKey($table, $rows[0]);
 
@@ -462,6 +463,19 @@ class MasterDataSeeder extends Seeder
                     ['percentage' => 18,   'status' => 'Active'],
                     ['percentage' => 28,   'status' => 'Active'],
                     ['percentage' => 40,   'status' => 'Active'],
+                ];
+
+            case 'overtime_rates':
+                // Standard overtime multipliers. `rate_name` is the natural key
+                // (see $perSlugKey override in run()). Seeded as global rows
+                // (client_id/branch_id NULL) so every tenant sees them in the
+                // Employee "Overtime" picker; tenants may add their own too.
+                return [
+                    ['rate_name' => 'Regular Time',            'multiplier' => 1,    'description' => 'Normal hourly rate',   'status' => 'Active'],
+                    ['rate_name' => 'Time and a Half',         'multiplier' => 1.5,  'description' => '150% of hourly rate',  'status' => 'Active'],
+                    ['rate_name' => 'Double Time',             'multiplier' => 2,    'description' => '200% of hourly rate',  'status' => 'Active'],
+                    ['rate_name' => 'Double Time and a Half',  'multiplier' => 2.5,  'description' => '250% of hourly rate',  'status' => 'Active'],
+                    ['rate_name' => 'Triple Time',             'multiplier' => 3,    'description' => '300% of hourly rate',  'status' => 'Active'],
                 ];
 
             case 'currencies':

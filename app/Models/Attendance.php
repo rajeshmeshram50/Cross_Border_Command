@@ -69,24 +69,29 @@ class Attendance extends Model
         return $this->hasMany(AttendancePunch::class)->orderBy('punched_at');
     }
 
-    /** Local timezone work is measured in, and the hour at which an unclosed
-     *  day is auto-checked-out. A forgotten clock-out is capped at 21:00 (9 PM)
-     *  local: time worked is counted up to 9 PM and nothing after. */
+    /** Local timezone work is measured in. */
     private const WORK_TZ = 'Asia/Kolkata';
+    /** Grace after the employee's shift ends before an unclosed day is
+     *  auto-checked-out. A morning shift of 08:00–14:00 auto-closes at 15:00. */
+    private const AUTO_CHECKOUT_GRACE_MINUTES = 60;
+    /** Fallback cut-off for an employee with no resolvable shift window (no
+     *  shift assigned, or a name that matches nothing in the branch's Shift
+     *  Details). Keeps the old fixed 9 PM behaviour for those rows. */
     private const AUTO_CHECKOUT_HOUR = '21:00:00';
 
     /**
      * Sum of (out_at − in_at) over every COMPLETED in→out pair, PLUS any open
-     * pair (clocked-in but never clocked-out) counted up to an automatic 9 PM
-     * check-out.
+     * pair (clocked-in but never clocked-out) counted up to an automatic
+     * check-out one hour after the employee's shift ends.
      *
      * Auto check-out rule for a trailing open 'in':
-     *   - boundary = 21:00 (9 PM) local on the row's own date.
-     *   - For TODAY the open pair runs to min(now, 21:00) so the live timer
-     *     ticks up to 9 PM and then freezes.
-     *   - For any PAST day it's just 21:00 — the employee forgot to clock out,
-     *     so the day is auto-closed at 9 PM (no phantom hours past 9 PM, and
-     *     none of the old "13h to midnight" inflation).
+     *   - boundary = shift end + 1h local on the row's own date (21:00 when the
+     *     employee has no resolvable shift).
+     *   - For TODAY the open pair runs to min(now, boundary) so the live timer
+     *     ticks up to the auto-checkout and then freezes.
+     *   - For any PAST day it's just the boundary — the employee forgot to
+     *     clock out, so the day is auto-closed there (no phantom hours after,
+     *     and none of the old "13h to midnight" inflation).
      *
      * Returned in SECONDS; the SPA formats to "9h 02m".
      */
@@ -136,19 +141,48 @@ class Attendance extends Model
         return null;
     }
 
-    /** Epoch boundary an open day is auto-closed at: 21:00 (9 PM) local on the
-     *  row's date, or the current moment when that's still before 9 PM today. */
+    /** Epoch boundary an open day is auto-closed at: the employee's SHIFT END
+     *  plus one hour on the row's date, or the current moment when that's still
+     *  in the future today. Falls back to 21:00 when no shift resolves. */
     public function autoCheckoutBoundaryTs(): int
     {
         $rowDate = $this->attendance_date instanceof \Carbon\Carbon
             ? $this->attendance_date->toDateString()
             : (string) $this->attendance_date;
-        $cutoffTs   = \Carbon\Carbon::parse($rowDate . ' ' . self::AUTO_CHECKOUT_HOUR, self::WORK_TZ)->getTimestamp();
+        $cutoffTs   = $this->autoCheckoutCutoffTs($rowDate);
         $todayLocal = now(self::WORK_TZ)->toDateString();
         if ($rowDate === $todayLocal) {
             return min(now()->getTimestamp(), $cutoffTs);
         }
         return $cutoffTs;
+    }
+
+    /**
+     * Cut-off instant for $rowDate: shift end + AUTO_CHECKOUT_GRACE_MINUTES.
+     *
+     * An employee who forgets to clock out shouldn't accrue hours to a blanket
+     * 9 PM — an 08:00–14:00 morning shift closes at 15:00, a 12:00–20:00 shift
+     * at 21:00. A shift whose end is at or before its start crosses midnight
+     * (e.g. 20:00–04:00), so the end lands on the FOLLOWING day before the
+     * grace is added.
+     */
+    public function autoCheckoutCutoffTs(string $rowDate): int
+    {
+        $emp = $this->relationLoaded('employee') ? $this->employee : $this->employee()->first();
+        [$start, $end] = $emp ? $emp->resolveShiftWindow() : [null, null];
+
+        if ($end) {
+            $endC = \Carbon\Carbon::parse($rowDate . ' ' . $end, self::WORK_TZ);
+            if ($start) {
+                $startC = \Carbon\Carbon::parse($rowDate . ' ' . $start, self::WORK_TZ);
+                if ($endC->lessThanOrEqualTo($startC)) {
+                    $endC->addDay();   // overnight shift — ends the next morning
+                }
+            }
+            return $endC->addMinutes(self::AUTO_CHECKOUT_GRACE_MINUTES)->getTimestamp();
+        }
+
+        return \Carbon\Carbon::parse($rowDate . ' ' . self::AUTO_CHECKOUT_HOUR, self::WORK_TZ)->getTimestamp();
     }
 
     /**

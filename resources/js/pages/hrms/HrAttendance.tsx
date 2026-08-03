@@ -112,6 +112,12 @@ interface AttendanceLog {
   worked: string;
   deviation: string;
   exception?: string;
+  /* Approved leave covering this day. `leavePortion` is 'full' for a whole-day
+     leave and 'first_half' / 'second_half' for a half-day one — a half-day
+     leave still has the employee working the other half, so the row stays a
+     working row and shows the leave as a pill instead of blanking the day. */
+  leaveKind?: 'Paid' | 'Unpaid' | null;
+  leavePortion?: 'full' | 'first_half' | 'second_half' | null;
   /* `open` = an in-punch with no matching out (still clocked in, or a forgotten
      check-out). The out time is unknown, so the popover prints MISSING for it. */
   workSegments?: Array<{ start: number; end: number; open?: boolean }>;
@@ -152,6 +158,18 @@ const fmtDurHm = (m: number) => m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 6
 // the shift start time (e.g. 9:30 start, arrive 9:47 → 17 min late).
 const LATE_GRACE_MINUTES = 10;
 
+/* Leave portion labels. A half-day leave is shown on an otherwise normal
+   working row (the employee worked the other half), so the label has to say
+   WHICH half rather than the row reading "Full day Paid Leave". */
+const LEAVE_PORTION_LABEL: Record<string, string> = {
+  full: 'Full day', first_half: 'First half', second_half: 'Second half',
+};
+const LEAVE_PORTION_PILL: Record<string, string> = {
+  first_half: '1ST HALF', second_half: '2ND HALF',
+};
+const isHalfLeave = (l: AttendanceLog) => l.leavePortion === 'first_half' || l.leavePortion === 'second_half';
+const leaveToneOf = (l: AttendanceLog) => STATUS_TONE[l.leaveKind === 'Unpaid' ? 'Unpaid Leave' : 'Paid Leave'];
+
 /* ── Calendar month summary tiles ──────────────────────────────────────────
    A day carries ONE status, but the KPI totals aren't mutually exclusive:
    turning up late is still turning up, so a Late day counts under BOTH Present
@@ -175,12 +193,35 @@ const CAL_KPIS: { key: DayStatus; label: string; icon: string }[] = [
   { key: 'Missing Out',    label: 'Missing Out', icon: 'ri-error-warning-line' },
   { key: 'Holiday',        label: 'Holiday',     icon: 'ri-flag-2-line' },
 ];
-const calCount = (summary: Record<DayStatus, number>, key: DayStatus): number => {
-  const sum = (keys: DayStatus[]) => keys.reduce((n, s) => n + (summary[s] || 0), 0);
-  if (key === 'Present') return sum(CAL_PRESENT_LIKE);
-  if (key === 'Leave')   return sum(CAL_LEAVE_LIKE);
-  return summary[key] || 0;
+export type AttLeavePortion = 'full' | 'first_half' | 'second_half';
+
+/* Month totals for the KPI tiles, from the calendar's own cells.
+   A half-day leave is the case a plain per-status tally gets wrong: the day's
+   status is whatever was WORKED (Present / Late), so it never lands on a Leave
+   status at all — Leave under-counted and Half Day sat permanently at 0.
+     · Present    — every day actually attended (see CAL_PRESENT_LIKE).
+     · Leave      — leave DAYS: a full day is 1, each half-day leave is 0.5.
+     · Half Day   — half-day leaves, plus any day whose own status is Half Day.
+   Future days and days outside the month are excluded, as before. */
+const calTotals = (cells: { inMonth: boolean; future: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion }[]): Record<string, number> => {
+  const raw: Record<string, number> = {};
+  let halfLeave = 0;
+  let fullLeave = 0;
+  for (const c of cells) {
+    if (!c.inMonth || !c.status || c.future) continue;
+    raw[c.status] = (raw[c.status] || 0) + 1;
+    if (c.leavePortion === 'first_half' || c.leavePortion === 'second_half') halfLeave += 1;
+    else if (CAL_LEAVE_LIKE.includes(c.status)) fullLeave += 1;
+  }
+  return {
+    ...raw,
+    Present:    CAL_PRESENT_LIKE.reduce((n, s) => n + (raw[s] || 0), 0),
+    Leave:      fullLeave + halfLeave * 0.5,
+    'Half Day': (raw['Half Day'] || 0) + halfLeave,
+  };
 };
+/** 5 → "5", 4.5 → "4.5" — half-day leaves make the Leave total fractional. */
+const calNum = (v: number): string => (Number.isInteger(v) ? String(v) : v.toFixed(1));
 
 /** "18:30" → "06:30 PM". Plain string (renderTime returns a ReactNode). */
 const fmt12h = (hhmm?: string | null): string => {
@@ -1094,7 +1135,7 @@ function LogsRequestsCard({
                           </td>
                           <td colSpan={6} className="text-center att-log-woff-text">
                             {isLeaveDay
-                              ? `Full day ${tone.label}`
+                              ? `${LEAVE_PORTION_LABEL[l.leavePortion || 'full']} ${tone.label}`
                               : isHolidayDay ? (l.holidayName ? `Holiday — ${l.holidayName}` : 'Holiday') : 'Full day Weekly-off'}
                           </td>
                           <td className="text-center">
@@ -1110,7 +1151,21 @@ function LogsRequestsCard({
 
                     return (
                       <tr key={pageStart + i} className={isOpen ? 'is-open' : ''}>
-                        <td className="att-log-datecell">{formattedDate}</td>
+                        <td className="att-log-datecell">
+                          {formattedDate}
+                          {/* Half-day leave on a day that was still (partly)
+                              worked — the row keeps its punches and hours, and
+                              the leave rides beside the date. */}
+                          {isHalfLeave(l) && (
+                            <span
+                              className="att-log-woff-pill"
+                              style={{ color: leaveToneOf(l).fg, background: leaveToneOf(l).bg }}
+                              title={`${LEAVE_PORTION_LABEL[l.leavePortion!]} ${leaveToneOf(l).label}`}
+                            >
+                              {LEAVE_PORTION_PILL[l.leavePortion!]} {leaveToneOf(l).label.toUpperCase()}
+                            </span>
+                          )}
+                        </td>
                         {noEntries ? (
                           /* No punches → hide the Attendance Visual bar entirely
                              and let the "No Time Entries Logged" note span the
@@ -1300,9 +1355,11 @@ function CalendarMonthGrid({
   const startWeekday = first.getDay();
   const daysInMonth  = last.getDate();
 
-  const logByIso = new Map<string, DayStatus>();
+  // Whole log per day, not just its status — the KPI tiles need `leavePortion`
+  // to tell a half-day leave from a full one.
+  const logByIso = new Map<string, AttendanceLog>();
   for (const lg of (employee.logs || [])) {
-    if (lg.iso) logByIso.set(lg.iso, lg.status);
+    if (lg.iso) logByIso.set(lg.iso, lg);
   }
   const weeklyOffDays = new Set<number>();
   for (const tok of (employee.weeklyOff || '').split(/[\s,]+/)) {
@@ -1313,38 +1370,34 @@ function CalendarMonthGrid({
   const statusFor = (iso: string): DayStatus | null => {
     if (iso > TODAY_ISO) return null;
     const fromLog = logByIso.get(iso);
-    if (fromLog) return fromLog;
+    if (fromLog) return fromLog.status;
     const d = parseISO(iso);
     if (weeklyOffDays.has(d.getDay())) return 'Weekly Off';
     return null;
   };
 
-  type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; status: DayStatus | null };
+  type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion };
   const cells: Cell[] = [];
   const prevMonthLast = new Date(y, m - 1, 0).getDate();
   for (let i = 0; i < startWeekday; i++) {
     const d = new Date(y, m - 2, prevMonthLast - startWeekday + i + 1);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, status: statusFor(iso) });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
   }
   for (let day = 1; day <= daysInMonth; day++) {
     const d = new Date(y, m - 1, day);
     const iso = toISO(d);
-    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, status: statusFor(iso) });
+    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
   }
   while (cells.length % 7 !== 0 || cells.length < 42) {
     const idx = cells.length - (startWeekday + daysInMonth) + 1;
     const d = new Date(y, m, idx);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, status: statusFor(iso) });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
     if (cells.length >= 42) break;
   }
 
-  const summary = cells.reduce<Record<DayStatus, number>>((acc, c) => {
-    if (!c.inMonth || !c.status || c.future) return acc;
-    acc[c.status] = (acc[c.status] || 0) + 1;
-    return acc;
-  }, { Present: 0, Late: 0, 'Half Day': 0, 'Missing In': 0, 'Missing Out': 0, 'Weekly Off': 0, Holiday: 0, 'On Duty': 0, 'Work From Home': 0, Absent: 0, Leave: 0, 'Paid Leave': 0, 'Unpaid Leave': 0, Corrected: 0 });
+  const summary = calTotals(cells);
 
   return (
     <div className="att-cal">
@@ -1362,7 +1415,7 @@ function CalendarMonthGrid({
               <span className="rec-kpi-strip" style={{ background: tone.dot }} />
               <div className="rec-kpi-text">
                 <span className="rec-kpi-label">{k.label}</span>
-                <span className="rec-kpi-num">{calCount(summary, k.key)}</span>
+                <span className="rec-kpi-num">{calNum(summary[k.key] || 0)}</span>
               </div>
               <span className="rec-kpi-icon" style={{ background: tone.dot }}>
                 <i className={k.icon} />
