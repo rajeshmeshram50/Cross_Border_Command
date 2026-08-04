@@ -723,6 +723,17 @@ export default function HrEmployees() {
   const [eOvertime, setEOvertime]                = useState('');
   // Yes/No toggle gating the Overtime Rate picker; derived from eOvertime on hydrate.
   const [eOvertimeApplicable, setEOvertimeApplicable] = useState('No');
+  const overtimeRateSelectOptions = useMemo(() => {
+    const active = overtimeRateOptions;
+    const saved  = eOvertime.trim();
+    if (!saved || active.some(o => o.value === saved)) return active;
+    return [...active, {
+      value: saved,
+      label: `${saved} (inactive)`,
+      disabled: true,
+      disabledReason: 'This rate is no longer Active in Master › Overtime (OT). Pick a current rate.',
+    }];
+  }, [overtimeRateOptions, eOvertime]);
   const [eExpensePolicy, setEExpensePolicy]      = useState('');
   const [eLaptopAssigned, setELaptopAssigned]    = useState('No');
   const [eLaptopAssetId, setELaptopAssetId]      = useState('');
@@ -3749,7 +3760,7 @@ export default function HrEmployees() {
                     {eOvertimeApplicable === 'Yes' && (
                       <Col md={4}>
                         <label className="emp-label">Overtime Rate</label>
-                        <MasterSelect value={eOvertime} onChange={setEOvertime} options={overtimeRateOptions} placeholder={overtimeRateOptions.length ? 'Select overtime rate' : 'No rates — add in Master › Overtime (OT)'} />
+                        <MasterSelect value={eOvertime} onChange={setEOvertime} options={overtimeRateSelectOptions} onOpen={() => reloadMasters()} placeholder={overtimeRateOptions.length ? 'Select overtime rate' : 'No rates — add in Master › Overtime (OT)'} />
                       </Col>
                     )}
                     <Col md={4}>
