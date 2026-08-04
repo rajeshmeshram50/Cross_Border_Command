@@ -330,6 +330,26 @@ $effectiveWorkingDays = round(period.working_days * proration, 2)
 2. Exit LWD before period start → excluded.
 3. Exit LWD inside the period → included but pro-rated (Rule 6) — then handled by FnF for the remainder.
 
+### RULE 7a — Early exit (within 15 days of joining) ✅
+
+**Rule:** An employee who leaves **within 15 days of joining** is not put through payroll at all — no payslip, not counted in the run.
+
+**Code:** `PayrollService::eligibleEmployees()` → `ProbationGuard::isEarlyExit()`; reported by `PayrollService::payrollExclusions()`.
+
+- Tenure counts the **joining day itself**: joined 1 Aug, LWD 15 Aug = **15 days → skipped**; LWD 16 Aug = 16 days → **paid normally**.
+- Threshold is `ProbationGuard::EARLY_EXIT_DAYS` (15).
+- No last working day on file, or an LWD *before* joining → rule does not apply.
+- The status filter does **not** hide them from `payrollExclusions()` — an early leaver is normally already stamped `Resigned`.
+- Skipped employees are surfaced on `GET /payroll/preflight` under `excluded[]` (employee, joining date, LWD, tenure, reason) so HR sees a deliberate skip rather than a missing person.
+
+| TC | Input | Expected | Result |
+|---|---|---|---|
+| G1 | Join 1 Aug, exit LWD 10 Aug | no payslip; listed in preflight `excluded[]` with "10 day(s)" | ☐ |
+| G2 | Join 1 Aug, exit LWD **15 Aug** (boundary) | **skipped** | ☐ |
+| G3 | Join 1 Aug, exit LWD **16 Aug** (boundary) | **paid** (pro-rated per Rule 6), not in `excluded[]` | ☐ |
+| G4 | Join 1 Aug, no exit record | paid normally | ☐ |
+| G5 | Exit LWD earlier than the joining date (bad data) | rule does not fire; employee still processed | ☐ |
+
 ---
 
 ## RULE 8 — Provident Fund (PF) ✅

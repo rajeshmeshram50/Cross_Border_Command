@@ -8,6 +8,7 @@ import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import Tooltip from '../../components/ui/Tooltip';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
+import { isOnProbation, probationEndLabel } from '../../utils/probation';
 import '../../../css/recruitment.css';
 
 type ExitStatus = 'Active' | 'Exit In Progress' | 'Exited' | 'Missing Details';
@@ -45,6 +46,9 @@ interface EmployeeRow {
   // auto-derive the Notice Period End Date in the exit form.
   noticePeriodDays: number | null;
   noticePeriodLabel: string;
+  // Probation end date. While it's in the future the notice period does NOT
+  // apply — the exit is immediate (see ProbationGuard on the backend).
+  probationEndIso: string | null;
   laptopAsset:  AssetMini | null;
   mobileAsset:  AssetMini | null;
   otherAssets:  AssetMini[];
@@ -635,17 +639,22 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   // "not in the past" rule only applies when HR newly picks/changes a date.
   const loadedNoticeRef = useRef<string>('');
   const loadedLwdRef     = useRef<string>('');
+  /* An employee still on probation serves NO notice period — the exit is
+     immediate. So the notice-period end date is not derived, and the last
+     working day is not pushed out past it (it may even be today). */
+  const onProbation = isOnProbation(employee?.probationEndIso);
   // Notice Period End Date — auto-derived from the notice start date + the
   // employee's notice period (set at hire). Read-only; the Last Working Day
   // stays a separate, manually-set field.
   const noticePeriodEnd = useMemo(() => {
+    if (onProbation) return '';   // notice period waived on probation
     const days = employee?.noticePeriodDays;
     if (!noticeDate || days == null || !Number.isFinite(days)) return '';
     const d = new Date(noticeDate + 'T00:00:00');
     if (isNaN(d.getTime())) return '';
     d.setDate(d.getDate() + Number(days));
     return d.toISOString().slice(0, 10);
-  }, [noticeDate, employee?.noticePeriodDays]);
+  }, [noticeDate, employee?.noticePeriodDays, onProbation]);
   const [reportingManagerId, setReportingManagerId] = useState<number | null>(null);
   const [reportingManagerName, setReportingManagerName] = useState('');
   // The assigned reporting manager is disabled/exited — exit can't proceed until
@@ -686,8 +695,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   // period END date (notice start + notice period). When no notice period is
   // set, fall back to "strictly after the notice start date". Same carve-out:
   // an already-saved value is accepted as-is.
-  const lwdMin = noticePeriodEnd || (noticeDate ? addDaysIso(noticeDate, 1) : tomorrowIso);
-  const lwdInvalid = !!lwd && lwd !== loadedLwdRef.current && (lwd <= todayIso || lwd < lwdMin);
+  // On probation the exit is immediate: the earliest last working day is the
+  // notice start itself (today, in practice) rather than notice-end / +1 day.
+  const lwdMin = onProbation
+    ? (noticeDate || todayIso)
+    : (noticePeriodEnd || (noticeDate ? addDaysIso(noticeDate, 1) : tomorrowIso));
+  // The "must be a future date" rule is part of serving notice, so it is
+  // waived too — a probationer can be exited with today as the last day.
+  const lwdInvalid = !!lwd && lwd !== loadedLwdRef.current
+    && (onProbation ? lwd < lwdMin : (lwd <= todayIso || lwd < lwdMin));
   // Picker `min`s must never exclude the value already saved on the exit — a
   // saved date earlier than today/lwdMin would otherwise get clamped forward to
   // the min on (re)mount, replacing the loaded value with "today".
@@ -1449,17 +1465,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     </EpField>
                   </Col>
                   <Col md={6}>
-                    <EpField label={`Notice Period End Date${employee?.noticePeriodLabel ? ` (${employee.noticePeriodLabel})` : ''}`}>
+                    <EpField label={`Notice Period End Date${!onProbation && employee?.noticePeriodLabel ? ` (${employee.noticePeriodLabel})` : ''}`}>
                       <EpInput
                         type="date"
                         value={noticePeriodEnd}
                         disabled
                         onChange={() => {}}
                       />
-                      <div className="ep-hint" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
-                        {employee?.noticePeriodDays != null
-                          ? 'Auto-calculated from the notice start date + the employee’s notice period.'
-                          : 'No notice period set on this employee — set it on the employee record to auto-fill.'}
+                      <div className="ep-hint" style={{ fontSize: 11, color: onProbation ? '#b45309' : 'var(--vz-secondary-color)', marginTop: 4 }}>
+                        {onProbation
+                          ? `Not applicable — employee is on probation until ${probationEndLabel(employee?.probationEndIso)}. No notice period is served; the exit can be effective immediately.`
+                          : (employee?.noticePeriodDays != null
+                              ? 'Auto-calculated from the notice start date + the employee’s notice period.'
+                              : 'No notice period set on this employee — set it on the employee record to auto-fill.')}
                       </div>
                     </EpField>
                   </Col>
@@ -1471,7 +1489,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         onChange={(v) => {
                           setLwd(v); clearS1Err('lwd');
                           if (v && v !== loadedLwdRef.current) {
-                            if (v <= todayIso) {
+                            if (onProbation) {
+                              // Notice period waived — only "not before the
+                              // notice start" still applies.
+                              if (v < lwdMin) {
+                                toast.warning('Invalid last working day', 'Last working day cannot be before the notice start date.');
+                              }
+                            } else if (v <= todayIso) {
                               toast.warning('Invalid last working day', 'Last working day cannot be today or a past date.');
                             } else if (v < lwdMin) {
                               toast.warning(
@@ -1490,11 +1514,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <i className="ri-error-warning-line" />
                           {lwdInvalid
-                            ? (lwd <= todayIso
-                                ? 'Last working day cannot be today or a past date.'
-                                : (noticePeriodEnd
-                                    ? `Last working day must be on or after the notice period end date (${fmtDateShort(noticePeriodEnd)}).`
-                                    : 'Last working day must be after the notice start date.'))
+                            ? (onProbation
+                                ? 'Last working day cannot be before the notice start date.'
+                                : (lwd <= todayIso
+                                    ? 'Last working day cannot be today or a past date.'
+                                    : (noticePeriodEnd
+                                        ? `Last working day must be on or after the notice period end date (${fmtDateShort(noticePeriodEnd)}).`
+                                        : 'Last working day must be after the notice start date.')))
                             : 'Last working day is required.'}
                         </div>
                       )}
@@ -2746,6 +2772,7 @@ function apiToExitRow(e: any): EmployeeRow {
       return m ? Number(m[1]) : null;
     })(),
     noticePeriodLabel: e.notice_period || '',
+    probationEndIso: e.probation_end_date ? String(e.probation_end_date).slice(0, 10) : null,
     laptopAsset: e.laptop_asset ? {
       id:           Number(e.laptop_asset.id),
       asset_name:   e.laptop_asset.asset_name,

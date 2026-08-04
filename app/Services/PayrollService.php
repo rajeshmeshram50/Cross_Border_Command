@@ -7,6 +7,7 @@ use App\Models\Payslip;
 use App\Models\PayrollPeriod;
 use App\Models\PayrollRun;
 use App\Models\SalaryStructure;
+use App\Support\ProbationGuard;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -421,12 +422,58 @@ class PayrollService
 
         $employees = $q->get();
 
-        // Drop anyone whose exit last-working-day is before this period starts.
+        // Drop anyone whose exit last-working-day is before this period starts,
+        // and anyone who left within 15 days of joining — an early exit is not
+        // put through payroll at all (ProbationGuard::EARLY_EXIT_DAYS).
         $exits = $this->exitMap($employees->pluck('id')->all());
         return $employees->reject(function (Employee $e) use ($exits, $period) {
             $lwd = $exits[$e->id] ?? null;
-            return $lwd && Carbon::parse($lwd)->lt($period->period_start);
+            if ($lwd && Carbon::parse($lwd)->lt($period->period_start)) {
+                return true;
+            }
+            return ProbationGuard::isEarlyExit($e, $lwd);
         })->values();
+    }
+
+    /**
+     * Employees held OUT of this period's payroll and why — so HR can see that
+     * someone was skipped deliberately rather than lost. Currently the
+     * early-exit rule (left within 15 days of joining); the pre-period-exit
+     * drop is not reported because those people simply belong to an earlier
+     * cycle.
+     */
+    public function payrollExclusions(PayrollPeriod $period): array
+    {
+        // No status filter here, unlike eligibleEmployees(): an early leaver is
+        // normally already stamped Resigned/Terminated by the exit flow, and
+        // filtering those out would hide exactly the people this reports on.
+        $q = Employee::query()->where('onboarding_stage_completed', '>=', 6);
+        if ($period->client_id) $q->where('client_id', $period->client_id);
+        if ($period->branch_id) $q->where('branch_id', $period->branch_id);
+
+        $employees = $q->get();
+        $exits     = $this->exitMap($employees->pluck('id')->all());
+        $out       = [];
+
+        foreach ($employees as $e) {
+            $lwd = $exits[$e->id] ?? null;
+            if (!ProbationGuard::isEarlyExit($e, $lwd)) {
+                continue;
+            }
+            $tenure = ProbationGuard::tenureDays($e, $lwd);
+            $out[] = [
+                'employee_id'      => $e->id,
+                'employee_code'    => $e->emp_code,
+                'employee_name'    => trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')) ?: $e->display_name,
+                'date_of_joining'  => Carbon::parse($e->date_of_joining)->toDateString(),
+                'last_working_day' => Carbon::parse($lwd)->toDateString(),
+                'tenure_days'      => $tenure,
+                'reason'           => "Exited within " . ProbationGuard::EARLY_EXIT_DAYS
+                    . " days of joining ({$tenure} day(s)) — payroll not processed.",
+            ];
+        }
+
+        return $out;
     }
 
     /** employee_id => last_working_day, for the given ids (empty if no table). */
