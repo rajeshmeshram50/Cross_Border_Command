@@ -785,23 +785,32 @@ export default function HrEmployees() {
     setAssignOpen(true);
   };
 
-  useEffect(() => {
-    if (!assignOpen) return;
+  /* Re-runnable so the pickers can refresh on open: the free-asset list goes
+     stale as soon as another user claims a device, and fetching it once when
+     the modal opened meant a taken asset kept showing. The server rejects a
+     double-booking on save, but offering it and failing afterwards is a poor
+     way to find out. */
+  const reloadAssignAssets = useCallback((isStale: () => boolean = () => false) => {
     const dbId = (assignEmp as any)?._dbId as number | undefined;
-    if (!dbId) return;
-    let cancelled = false;
+    if (!dbId) return Promise.resolve();
     const exclude = `&exclude_employee_id=${dbId}`;
     const fetchCat = (cat: string, setter: (opts: AssetOpt[]) => void) =>
       api.get(`/employees/available-assets?category=${cat}${exclude}`)
-        .then(r => { if (!cancelled) setter((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); })
-        .catch(() => { if (!cancelled) setter([]); });
-    Promise.allSettled([
+        .then(r => { if (!isStale()) setter((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); })
+        .catch(() => { if (!isStale()) setter([]); });
+    return Promise.allSettled([
       fetchCat('laptop', setALaptopOpts),
       fetchCat('mobile', setAMobileOpts),
       fetchCat('other',  setAOtherOpts),
     ]);
+  }, [assignEmp]);
+
+  useEffect(() => {
+    if (!assignOpen) return;
+    let cancelled = false;
+    reloadAssignAssets(() => cancelled);
     return () => { cancelled = true; };
-  }, [assignOpen, assignEmp]);
+  }, [assignOpen, reloadAssignAssets]);
 
   const handleSaveAssign = async () => {
     if (!assignEmp) return;
@@ -4470,6 +4479,7 @@ export default function HrEmployees() {
                     value={aLaptopMasterAssetId}
                     onChange={(v) => { setALaptopMasterAssetId(v); setAErrors(p => ({ ...p, laptop: '' })); }}
                     options={aLaptopOpts}
+                    onOpen={() => reloadAssignAssets()}
                     placeholder={aLaptopOpts.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                     disabled={aLaptopOpts.length === 0}
                     invalid={!!aErrors.laptop}
@@ -4497,6 +4507,7 @@ export default function HrEmployees() {
                     value={aMobileMasterAssetId}
                     onChange={(v) => { setAMobileMasterAssetId(v); setAErrors(p => ({ ...p, mobile: '' })); }}
                     options={aMobileOpts}
+                    onOpen={() => reloadAssignAssets()}
                     placeholder={aMobileOpts.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                     disabled={aMobileOpts.length === 0}
                     invalid={!!aErrors.mobile}
@@ -4511,6 +4522,7 @@ export default function HrEmployees() {
                   value={aOtherMasterAssetIds}
                   onChange={setAOtherMasterAssetIds}
                   options={aOtherOpts}
+                  onOpen={() => reloadAssignAssets()}
                   placeholder={aOtherOpts.length === 0 ? 'No other assets available' : 'Pick one or more'}
                   disabled={aOtherOpts.length === 0}
                 />
