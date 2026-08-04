@@ -5,7 +5,7 @@ import { Modal, ModalBody } from 'reactstrap';
 // modal + toaster, same as every other destructive action in the product.
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useToast } from '../../contexts/ToastContext';
-import WorklistPager from '../../components/ui/WorklistPager';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import {
   employeeBalancesApi,
   leaveRequestsApi,
@@ -117,16 +117,56 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
 
   const pending = useMemo(() => requests.filter(r => r.status === 'Pending'), [requests]);
   const history = useMemo(() => requests.filter(r => r.status !== 'Pending'), [requests]);
-  // Client-side pagination for the Leave History table so it carries the same
-  // WorklistPager footer as the Employee Onboarding list.
-  const [histPage, setHistPage] = useState(1);
-  const [histPageSize, setHistPageSize] = useState(5);
-  const histTotalPages = Math.max(1, Math.ceil(history.length / histPageSize));
-  const histSafePage = Math.min(histPage, histTotalPages);
-  const visibleHistory = useMemo(
-    () => history.slice((histSafePage - 1) * histPageSize, (histSafePage - 1) * histPageSize + histPageSize),
-    [history, histSafePage, histPageSize],
-  );
+  /* Leave History columns for the shared DataTable — paging, sorting and the
+     footer are the component's own, so there's no local page state here. */
+  const historyColumns: DataTableColumn<ApiLeaveRequest>[] = useMemo(() => [
+    {
+      header: 'Dates',
+      id: 'dates',
+      accessorFn: (r) => r.from_date ?? '',
+      meta: { width: '24%' },
+      cell: info => {
+        const r = info.row.original;
+        return <>{shortDate(r.from_date)} – {shortDate(r.to_date)}</>;
+      },
+    },
+    {
+      header: 'Leave Type',
+      id: 'leave_type',
+      accessorFn: (r) => r.leave_type?.name ?? '',
+      meta: { width: '20%' },
+      cell: info => <>{String(info.getValue() || '—')}</>,
+    },
+    {
+      header: 'Days',
+      accessorKey: 'days',
+      meta: { width: '10%' },
+      cell: info => <>{Number(info.getValue() ?? 0)}</>,
+    },
+    {
+      header: 'Status',
+      accessorKey: 'status',
+      meta: { width: '16%' },
+      cell: info => {
+        const s = String(info.getValue() ?? '');
+        return (
+          <span
+            className={`rec-pill leave-status-badge leave-status-badge--${
+              s === 'Approved' ? 'approved' : s === 'Rejected' ? 'rejected' : 'pending'
+            }`}
+            style={{ fontSize: 11 }}
+          >{s}</span>
+        );
+      },
+    },
+    {
+      header: 'Approved By',
+      id: 'approver',
+      accessorFn: (r) => r.approver?.name ?? '',
+      meta: { width: '30%', wrap: true },
+      cell: info => <span className="text-muted">{String(info.getValue() || '—')}</span>,
+    },
+  ], []);
 
   const openApprovers = async (requestId: number) => {
     setApproversFor(requestId);
@@ -413,66 +453,19 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
 
       <div>
         <h6 className="fw-bold mb-2" style={{ fontSize: 14 }}>Leave History</h6>
-        {loading ? (
-          <div style={{ background: '#ffffff', border: '1px solid var(--vz-border-color)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.08)' }}>
-            <div style={{ background: 'var(--vz-secondary-bg)', padding: '12px 14px', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
-              {[0, 1, 2, 3, 4].map(i => <Shimmer key={i} height={10} width="60%" />)}
-            </div>
-            {[0, 1, 2, 3].map(r => (
-              <div key={r} style={{ padding: '14px', borderTop: '1px solid var(--vz-border-color)', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 16 }}>
-                {[0, 1, 2, 3, 4].map(c => <Shimmer key={c} height={13} width={c === 3 ? '50%' : '80%'} />)}
-              </div>
-            ))}
-          </div>
-        ) : history.length === 0 ? (
-          <div className="text-muted text-center py-4" style={{ background: 'var(--vz-secondary-bg)', borderRadius: 12, fontSize: 13 }}>
-            No Leave history to show.
-          </div>
-        ) : (
-          <div style={{ background: '#ffffff', border: '1px solid var(--vz-border-color)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.08)' }}>
-            <table className="table mb-0" style={{ fontSize: 13 }}>
-              <thead style={{ background: '#f3f4f6', borderBottom: '2px solid var(--vz-border-color)' }}>
-                <tr>
-                  {['DATES', 'LEAVE TYPE', 'DAYS', 'STATUS', 'APPROVED BY'].map(h => (
-                    <th key={h} style={{ padding: '11px 14px', fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', color: 'var(--vz-secondary-color)', textTransform: 'uppercase' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {visibleHistory.map(r => (
-                  <tr
-                    key={r.id}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setDetailsRequestId(r.id)}
-                  >
-                    <td style={{ padding: '10px 14px' }}>{shortDate(r.from_date)} – {shortDate(r.to_date)}</td>
-                    <td style={{ padding: '10px 14px' }}>{r.leave_type?.name ?? '—'}</td>
-                    <td style={{ padding: '10px 14px' }}>{Number(r.days)}</td>
-                    <td style={{ padding: '10px 14px' }}>
-                      <span
-                        className={`rec-pill leave-status-badge leave-status-badge--${
-                          r.status === 'Approved' ? 'approved'
-                          : r.status === 'Rejected' ? 'rejected'
-                          : 'pending'
-                        }`}
-                        style={{ fontSize: 11 }}
-                      >{r.status}</span>
-                    </td>
-                    <td style={{ padding: '10px 14px' }} className="text-muted">{r.approver?.name ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <WorklistPager
-              total={history.length}
-              page={histSafePage}
-              pageSize={histPageSize}
-              onPage={setHistPage}
-              onPageSize={(n) => { setHistPageSize(n); setHistPage(1); }}
-              pageSizeOptions={[5, 10, 25, 50]}
-            />
-          </div>
-        )}
+        {/* Shared DataTable — same component as Holidays, Hiring Requests and
+            the rest of HRMS, so the header band, sortable columns and the
+            "Showing X–Y of Z / Rows per page" footer match everywhere. */}
+        <DataTable
+          data={history}
+          columns={historyColumns}
+          loading={loading}
+          accent="violet"
+          pageSize={5}
+          minWidth={720}
+          onRowClick={(r) => setDetailsRequestId(r.id)}
+          emptyMessage="No Leave history to show."
+        />
       </div>
 
       {/* Standard app modal chrome — same gradient header, rounded corners and

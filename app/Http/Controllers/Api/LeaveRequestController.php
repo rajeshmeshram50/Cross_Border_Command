@@ -604,7 +604,21 @@ class LeaveRequestController extends Controller
             $q->where('client_id', $user->client_id);
         }
 
-        if ($branchId = $request->integer('branch_id')) {
+        /* Branch scope. Every branch is an isolated peer, so a branch_user is
+         * PINNED to their own branch — the BranchSwitcher cannot widen it
+         * (same rule as PayrollController::effectiveBranchId). Previously the
+         * filter applied ONLY when the request happened to carry a branch_id,
+         * and the Axios interceptor omits it whenever the switcher is on
+         * "All branches" (or the stored value is missing/stale) — so a branch
+         * user saw every sibling branch's leave requests.
+         *
+         * Client-level roles keep honouring the switcher: an explicit
+         * branch_id narrows, no branch_id means the whole client. */
+        $branchId = $request->integer('branch_id') ?: null;
+        if ($user->user_type === 'branch_user' && $user->branch_id) {
+            $branchId = (int) $user->branch_id;
+        }
+        if ($branchId) {
             $q->where('branch_id', $branchId);
         }
         if ($search = trim((string) $request->input('search', ''))) {
@@ -1479,6 +1493,17 @@ class LeaveRequestController extends Controller
         if ($user->user_type !== 'super_admin'
             && $user->client_id
             && (int) $row->client_id !== (int) $user->client_id) {
+            abort(404);
+        }
+        // Branch isolation. This guard fronts show / hrView / approve / reject
+        // / approvers, so without it a branch user who knew (or guessed) an id
+        // could read AND decide a sibling branch's leave request — the listing
+        // leak with worse consequences. A NULL branch_id row is client-level
+        // and stays visible, matching the convention used elsewhere.
+        if (($user->user_type ?? null) === 'branch_user'
+            && $user->branch_id
+            && $row->branch_id
+            && (int) $row->branch_id !== (int) $user->branch_id) {
             abort(404);
         }
         return $row;
