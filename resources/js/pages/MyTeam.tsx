@@ -7,7 +7,7 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { ShimmerTableRows } from '../components/ui/Shimmer';
 import Tooltip from '../components/ui/Tooltip';
 import WorklistPager from '../components/ui/WorklistPager';
-import SignaturePad from '../components/ui/SignaturePad';
+import SignaturePad, { consentLabel } from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
@@ -82,6 +82,8 @@ export default function MyTeam() {
   // Single PNG data URL produced by the signature pad regardless of which
   // mode (Type/Draw/Upload) the user picked.
   const [drawnSignature, setDrawnSignature] = useState<string | null>(null);
+  // Informed-consent tick for Sign steps — per document, reset in openAction.
+  const [consent, setConsent] = useState(false);
 
   // View-only preview modal — opens the locked document without the
   // action form, so approvers can read first and decide later.
@@ -126,6 +128,7 @@ export default function MyTeam() {
     setActionName(user?.name || '');
     setActionNote('');
     setDrawnSignature(null);
+    setConsent(false);   // consent is per-document, never carried over
   };
 
   const submitAction = async () => {
@@ -182,6 +185,11 @@ export default function MyTeam() {
         return;
       }
     }
+    // Consent applies to every action, not just Sign.
+    if (!consent) {
+      toast.error('Consent required', 'Tick the box confirming you have read and understood the document.');
+      return;
+    }
     setActionSubmitting(true);
     try {
       await api.post(`/hr-document-signatures/${actionItem.id}/action`, {
@@ -189,6 +197,7 @@ export default function MyTeam() {
         signed_name:     apiAction === 'Sign' ? actionName.trim() : null,
         signature_image: apiAction === 'Sign' ? drawnSignature : null,
         note:            actionNote.trim() || null,
+        consent,
       });
       toast.success(
         apiAction === 'Sign' ? 'Signed' : apiAction === 'Approve' ? 'Approved' : 'Acknowledged',
@@ -404,6 +413,7 @@ export default function MyTeam() {
           actionName={actionName} setActionName={setActionName}
           actionNote={actionNote} setActionNote={setActionNote}
           drawnSignature={drawnSignature} setDrawnSignature={setDrawnSignature}
+          consent={consent} setConsent={setConsent}
           submitting={actionSubmitting}
           onSubmit={submitAction}
           onReject={submitReject}
@@ -663,12 +673,15 @@ function ActionModal({
   actionName, setActionName,
   actionNote, setActionNote,
   drawnSignature, setDrawnSignature,
+  consent, setConsent,
   submitting, onSubmit, onReject,
 }: {
   item: ApprovalItem; onClose: () => void;
   actionName: string; setActionName: (v: string) => void;
   actionNote: string; setActionNote: (v: string) => void;
   drawnSignature: string | null; setDrawnSignature: (v: string | null) => void;
+  /* Mandatory "I have read and understood…" tick on Sign steps. */
+  consent: boolean; setConsent: (v: boolean) => void;
   submitting: boolean; onSubmit: () => void; onReject: () => void;
 }) {
   const isSign = item.action === 'Sign';
@@ -733,6 +746,26 @@ function ActionModal({
                 />
               </>
             )}
+            {/* Informed consent — mandatory for EVERY action (Sign, Approve,
+                Acknowledge). The action button stays disabled until this is
+                ticked; the API rejects an unconsented action as well. */}
+            <label style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12,
+              padding: '10px 12px', background: consent ? '#eef2ff' : '#fff7ed',
+              border: `1px solid ${consent ? '#c7d2fe' : '#fed7aa'}`,
+              borderRadius: 8, fontSize: 12.5, color: '#374151', cursor: 'pointer',
+            }}>
+              <input
+                type="checkbox"
+                checked={consent}
+                onChange={e => setConsent(e.target.checked)}
+                style={{ marginTop: 2, width: 15, height: 15, flexShrink: 0, cursor: 'pointer' }}
+              />
+              <span>
+                {consentLabel(item.action)}
+                <span style={{ color: '#ef4444' }}> *</span>
+              </span>
+            </label>
             <label className="myteam-input-label" style={{ ...inputLabelStyle, marginTop: isSign ? 12 : 0 }}>Remark</label>
             <textarea value={actionNote} onChange={e => setActionNote(e.target.value)}
               placeholder="Add a remark — optional when approving, REQUIRED when rejecting (describe what should change)."
@@ -760,7 +793,8 @@ function ActionModal({
                 for Review & Acknowledge. Colour cues match the meaning of
                 the button so the decision is unambiguous. */}
             <button type="button" onClick={onSubmit}
-              disabled={submitting || (isSign && (!actionName.trim() || !drawnSignature))}
+              disabled={submitting || !consent || (isSign && (!actionName.trim() || !drawnSignature))}
+              title={!consent ? `Tick the consent box to enable ${item.action}` : undefined}
               style={{
                 padding: '7px 16px',
                 background: item.action === 'Approve'

@@ -370,6 +370,26 @@
 }
 .ib-input-hint { font-size: 11px; color: #9ca3af; margin-top: 4px; }
 
+/* Mandatory consent tick on a Sign step. Amber while unticked so it reads as
+   an outstanding action, indigo once given. The Sign button stays disabled
+   until it is checked. */
+.ib-consent {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin-top: 12px; padding: 10px 12px;
+  background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px;
+  font-size: 12.5px; color: #374151; cursor: pointer;
+}
+.ib-consent:has(.ib-consent-box:checked) { background: #eef2ff; border-color: #c7d2fe; }
+.ib-consent-box { margin-top: 2px; width: 15px; height: 15px; flex-shrink: 0; cursor: pointer; }
+[data-bs-theme="dark"] .ib-consent,
+[data-layout-mode="dark"] .ib-consent {
+  background: rgba(251, 146, 60, 0.12); border-color: rgba(251, 146, 60, 0.35); color: #e5e7eb;
+}
+[data-bs-theme="dark"] .ib-consent:has(.ib-consent-box:checked),
+[data-layout-mode="dark"] .ib-consent:has(.ib-consent-box:checked) {
+  background: rgba(99, 102, 241, 0.16); border-color: rgba(129, 140, 248, 0.45);
+}
+
 .ib-btn-ghost {
   padding: 7px 14px; background: #fff; border: 1px solid #d1d5db; border-radius: 8px;
   font-size: 13px; font-weight: 600; color: #374151; cursor: pointer;
