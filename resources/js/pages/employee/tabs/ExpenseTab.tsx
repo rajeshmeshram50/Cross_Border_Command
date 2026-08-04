@@ -16,7 +16,9 @@ export default function ExpenseTab() {
   const {
     employee, employeeId, initials, accent, authUser, isOwnProfile, canRaiseHrRequest,
     expenseModuleTab, setExpenseModuleTab, expenseSubTab, setExpenseSubTab,
-    advanceSubTab, setAdvanceSubTab, expenseFilter, setExpenseFilter,
+    advanceSubTab, setAdvanceSubTab,
+    advUsedForTab, setAdvUsedForTab, advUsedForCounts,
+    expenseFilter, setExpenseFilter,
     expenseSearch, setExpenseSearch,
     expenseCounts, advanceCounts, totalClaimed,
     activeClaimsSource, filteredExpenses, filteredAdvances, activeAdvancesSource,
@@ -25,6 +27,7 @@ export default function ExpenseTab() {
     actOnClaim, actOnAdvance, claimCategories, expenseDrafts, advanceDrafts,
     claimDraftKey, advanceDraftKey,
     setClaimOpen, setClaimMode, setEditingDraftId, setResumeFromDraft,
+    openReimbursement,
     exportOpen, setExportOpen, runProfileExport, readSavedDrafts,
   } = useEmployeeProfile();
 
@@ -38,7 +41,13 @@ export default function ExpenseTab() {
   const [viewClaimId, setViewClaimId] = useState<number | null>(null);
   // Claim open in the "Review & Approve" popup (reporting-manager stage).
   const [reviewClaimId, setReviewClaimId] = useState<number | null>(null);
-  useEffect(() => { setPage(1); }, [expenseModuleTab, expenseSubTab, advanceSubTab, expenseFilter, expenseSearch]);
+  // Advance equivalents — same modal, driven off the advance endpoints.
+  const [viewAdvId, setViewAdvId] = useState<number | null>(null);
+  const [reviewAdvId, setReviewAdvId] = useState<number | null>(null);
+  // When the advance detail modal is opened via "Settle Payment", the embedded
+  // Settlement section becomes an editable usage form for the owner.
+  const [viewAdvSettle, setViewAdvSettle] = useState(false);
+  useEffect(() => { setPage(1); }, [expenseModuleTab, expenseSubTab, advanceSubTab, advUsedForTab, expenseFilter, expenseSearch]);
 
   const isAdvance   = expenseModuleTab === 'advance';
   const pagedTotal  = isAdvance ? filteredAdvances.length : filteredExpenses.length;
@@ -316,6 +325,44 @@ export default function ExpenseTab() {
                 </div>
               )}
 
+              {/* Used-For tabs — Advance Requests only. Narrows the list by
+                  used_for (Self used / Company used) before the status pills. */}
+              {expenseModuleTab === 'advance' && (
+                <div className="d-flex gap-2 flex-wrap mb-3">
+                  {[
+                    { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: '#0ea5e9', shadow: 'rgba(14,165,233,0.32)' },
+                    { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: '#8b5cf6', shadow: 'rgba(139,92,246,0.32)' },
+                  ].map(f => {
+                    const on = advUsedForTab === f.key;
+                    return (
+                      <button
+                        key={f.key}
+                        type="button"
+                        onClick={() => { setAdvUsedForTab(f.key); setExpenseFilter('all'); }}
+                        className="btn d-inline-flex align-items-center gap-2 rounded-pill fw-semibold ext-filter-pill"
+                        style={{
+                          ['--ext-pill-bg' as any]: on ? f.active : 'var(--vz-card-bg)',
+                          ['--ext-pill-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
+                          ['--ext-pill-border' as any]: on ? f.active : 'var(--vz-border-color)',
+                          ['--ext-pill-shadow' as any]: on ? `0 4px 10px ${f.shadow}` : 'none',
+                        }}
+                      >
+                        {f.label}
+                        <span
+                          className="d-inline-flex align-items-center justify-content-center rounded-pill ext-filter-count"
+                          style={{
+                            ['--ext-pill-count-bg' as any]: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
+                            ['--ext-pill-count-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
+                          }}
+                        >
+                          {f.count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Filter pills — active = solid filled with colored shadow for
                   strong visibility; inactive = subtle white with border. When
                   the Advance Requests module is active the same pills drive
@@ -413,7 +460,11 @@ export default function ExpenseTab() {
                   fallbackName={employee?.name || employeeId}
                   mode={advanceSubTab === 'team' ? 'team' : 'mine'}
                   currentEmployeeId={authUser?.employee_id ?? null}
+                  usedFor={advUsedForTab}
                   onAct={actOnAdvance}
+                  onViewPayments={(a) => { setViewAdvSettle(false); setViewAdvId(a.id); }}
+                  onReview={(a) => setReviewAdvId(a.id)}
+                  onSettle={(a) => { setViewAdvSettle(true); setViewAdvId(a.id); }}
                 />
               ) : (
                 <ExpenseClaimsTable
@@ -469,6 +520,28 @@ export default function ExpenseTab() {
           review
           onClose={() => setReviewClaimId(null)}
           onDone={refreshClaims}
+        />
+
+        {/* Advance equivalents — SAME modal on the advance endpoints. The detail
+            modal carries the embedded Settlement section; `allowSettle` turns it
+            into the editable usage form when opened via "Settle Payment". */}
+        <ExpenseSettlementModal
+          claimId={viewAdvId}
+          basePath="/advance-requests"
+          kind="advance"
+          readOnly
+          allowSettle={viewAdvSettle}
+          onClose={() => { setViewAdvId(null); setViewAdvSettle(false); }}
+          onDone={refreshAdvances}
+          onRaiseReimbursement={(info) => { setViewAdvId(null); setViewAdvSettle(false); openReimbursement(info); }}
+        />
+        <ExpenseSettlementModal
+          claimId={reviewAdvId}
+          basePath="/advance-requests"
+          kind="advance"
+          review
+          onClose={() => setReviewAdvId(null)}
+          onDone={refreshAdvances}
         />
       </>
   );

@@ -141,11 +141,16 @@ class AdvanceRequestController extends Controller
             // column — matches the expense-claim guard so the SPA's input
             // sanitiser (12 whole digits + 2 fraction) can't overflow it.
             'amount'              => ['required', 'numeric', 'min:0', 'max:9999999999999.99'],
+            // Who the advance is for. 'self' = the existing recoverable-from-salary
+            // flow; 'company' = spent on the company's behalf, NOT recovered.
+            'used_for'            => ['required', 'string', 'in:self,company'],
             // Requested date IS the request creation date — it must be today.
             // No future-dating (the request is being created now) and no past.
             'requested_date'      => ['required', 'date', 'after_or_equal:today', 'before_or_equal:today'],
-            'recovery_start'      => ['required', 'date', 'after_or_equal:requested_date'],
-            'recovery_mode'       => ['required', 'string', 'in:' . implode(',', self::RECOVERY_MODES)],
+            // Recovery start / mode only apply to a SELF advance (salary recovery).
+            // A COMPANY advance has NO recovery and NO date at all.
+            'recovery_start'      => ['required_if:used_for,self', 'nullable', 'date', 'after_or_equal:requested_date'],
+            'recovery_mode'       => ['required_if:used_for,self', 'nullable', 'string', 'in:' . implode(',', self::RECOVERY_MODES)],
             // Months + monthly EMI only required when mode='emi'. The
             // validator below promotes them to required-when conditionally.
             'recovery_months'     => ['nullable', 'integer', 'min:1', 'max:120'],
@@ -162,7 +167,8 @@ class AdvanceRequestController extends Controller
             'reason.max'                     => 'Reason is too long — please keep it under 500 characters.',
         ]);
 
-        if ($data['recovery_mode'] === 'emi' && empty($data['recovery_months'])) {
+        $isCompany = ($data['used_for'] ?? 'self') === 'company';
+        if (!$isCompany && ($data['recovery_mode'] ?? null) === 'emi' && empty($data['recovery_months'])) {
             abort(422, 'Number of months is required when recovery mode is EMI.');
         }
         if ($data['advance_type'] === 'Other' && empty($data['advance_type_other'])) {
@@ -197,7 +203,7 @@ class AdvanceRequestController extends Controller
         $managerActedAt  = $hasManager ? null       : now();
         $managerComment  = $hasManager ? null       : 'Auto-approved · no reporting manager assigned';
 
-        $row = DB::transaction(function () use ($employee, $data, $attachments, $managerStatus, $managerActedAt, $managerComment, $user) {
+        $row = DB::transaction(function () use ($employee, $data, $attachments, $managerStatus, $managerActedAt, $managerComment, $user, $isCompany) {
             return AdvanceRequest::create([
                 'client_id'         => $employee->client_id,
                 'branch_id'         => $employee->branch_id,
@@ -207,11 +213,15 @@ class AdvanceRequestController extends Controller
                 'advance_type'      => $data['advance_type'],
                 'advance_type_other'=> $data['advance_type'] === 'Other' ? ($data['advance_type_other'] ?? null) : null,
                 'amount'            => $data['amount'],
+                'used_for'          => $data['used_for'],
                 'requested_date'    => $data['requested_date'],
-                'recovery_start'    => $data['recovery_start'],
-                'recovery_mode'     => $data['recovery_mode'],
-                'recovery_months'   => $data['recovery_mode'] === 'emi' ? ($data['recovery_months'] ?? null) : null,
-                'monthly_emi'       => $data['recovery_mode'] === 'emi' ? ($data['monthly_emi']     ?? null) : null,
+                // Self → salary recovery (recovery_start + mode). Company → no
+                // recovery and no date at all.
+                'recovery_start'    => $isCompany ? null : ($data['recovery_start'] ?? null),
+                'expected_use_date' => null,
+                'recovery_mode'     => $isCompany ? null : ($data['recovery_mode'] ?? null),
+                'recovery_months'   => (!$isCompany && ($data['recovery_mode'] ?? null) === 'emi') ? ($data['recovery_months'] ?? null) : null,
+                'monthly_emi'       => (!$isCompany && ($data['recovery_mode'] ?? null) === 'emi') ? ($data['monthly_emi'] ?? null) : null,
                 'reason'            => $data['reason'],
                 'attachments'       => $attachments ?: null,
                 'status'            => 'pending',
@@ -347,16 +357,57 @@ class AdvanceRequestController extends Controller
             abort(409, 'This advance request has already been actioned by HR / Finance.');
         }
 
+        // On APPROVAL, HR also locks the one-time settlement adjustments here
+        // (additions / deductions) — after this the advance is payment-only.
         $data = $request->validate([
-            'comment' => ['nullable', 'string', 'max:1000'],
+            'comment'             => [$verdict === 'rejected' ? 'required' : 'nullable', 'string', 'max:1000'],
+            'deductions'          => ['nullable', 'array'],
+            'deductions.*.amount' => ['required_with:deductions', 'numeric', 'min:0'],
+            'deductions.*.reason' => ['nullable', 'string', 'max:500'],
+            'additions'           => ['nullable', 'array'],
+            'additions.*.amount'  => ['required_with:additions', 'numeric', 'min:0', 'max:100000'],
+            'additions.*.reason'  => ['nullable', 'string', 'max:500'],
+        ], [
+            'comment.required' => 'A reason is required to reject this advance request.',
         ]);
 
-        $row->hr_status   = $verdict;
-        $row->hr_user_id  = $user->id;
-        $row->hr_acted_at = now();
-        $row->hr_comment  = $data['comment'] ?? null;
-        $row->status      = $verdict;
-        $row->save();
+        $applyAdjust   = $verdict === 'approved';
+        $deductionRows = []; $deduction = 0.0;
+        $additionRows  = []; $addition  = 0.0;
+        $sanctioned    = null;
+        if ($applyAdjust) {
+            [$deductionRows, $deduction, $dedErr] = $this->normaliseAdjustments($data['deductions'] ?? [], 'deduction');
+            if ($dedErr) return $dedErr;
+            [$additionRows, $addition, $addErr] = $this->normaliseAdjustments($data['additions'] ?? [], 'addition');
+            if ($addErr) return $addErr;
+            $sanctioned = round((float) $row->amount - $deduction + $addition, 2);
+            if ($sanctioned <= 0.005) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Deductions cannot exceed the requested amount plus additions — net payable must be greater than zero.',
+                    'errors'  => ['deductions' => ['Net payable must be greater than zero.']],
+                ], 422);
+            }
+        }
+
+        DB::transaction(function () use ($row, $user, $verdict, $data, $applyAdjust, $sanctioned, $deduction, $deductionRows, $addition, $additionRows) {
+            $row->hr_status   = $verdict;
+            $row->hr_user_id  = $user->id;
+            $row->hr_acted_at = now();
+            $row->hr_comment  = $data['comment'] ?? null;
+            $row->status      = $verdict;
+            if ($applyAdjust) {
+                $row->sanctioned_amount = $sanctioned;
+                $row->deduction_amount  = max(0, $deduction);
+                $row->deductions        = $deductionRows;
+                $row->addition_amount   = max(0, $addition);
+                $row->additions         = $additionRows;
+                $row->deduction_reason  = $deductionRows
+                    ? implode(' · ', array_map(fn ($d) => number_format($d['amount'], 2) . ': ' . $d['reason'], $deductionRows))
+                    : null;
+            }
+            $row->save();
+        });
 
         $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
         return response()->json($this->serialize($row));
@@ -561,8 +612,10 @@ class AdvanceRequestController extends Controller
             'advance_type'       => $row->advance_type,
             'advance_type_other' => $row->advance_type_other,
             'amount'             => (float) $row->amount,
+            'used_for'           => $row->used_for ?: 'self',
             'requested_date'     => optional($row->requested_date)->format('Y-m-d'),
             'recovery_start'     => optional($row->recovery_start)->format('Y-m-d'),
+            'expected_use_date'  => optional($row->expected_use_date)->format('Y-m-d'),
             'recovery_mode'      => $row->recovery_mode,
             'recovery_months'    => $row->recovery_months,
             'monthly_emi'        => $row->monthly_emi !== null ? (float) $row->monthly_emi : null,
@@ -586,7 +639,656 @@ class AdvanceRequestController extends Controller
             'created_by'         => $row->created_by,
             'creator_name'       => $row->creator?->name,
             'created_at'         => optional($row->created_at)->toIso8601String(),
+            // ── Settlement (post-approval payout) — mirrors ExpenseClaim ──
+            'sanctioned_amount'  => $row->sanctioned_amount !== null ? (float) $row->sanctioned_amount : null,
+            'deduction_amount'   => (float) $row->deduction_amount,
+            'deduction_reason'   => $row->deduction_reason,
+            'total_paid'         => (float) $row->total_paid,
+            'settlement_status'  => $row->settlement_status ?: 'unpaid',
+            'settled_at'         => optional($row->settled_at)->toIso8601String(),
+            'remaining_amount'   => $row->sanctioned_amount !== null
+                ? round((float) $row->sanctioned_amount - (float) $row->total_paid, 2)
+                : null,
+            // Employee "Settle Payment" — the employee reconciles a fully-paid
+            // COMPANY advance against the ACTUAL amount spent.
+            'employee_settled_at'  => optional($row->employee_settled_at)->toIso8601String(),
+            'employee_settle_note' => $row->employee_settle_note,
+            'settle_actual_amount' => $row->settle_actual_amount !== null ? (float) $row->settle_actual_amount : null,
+            'settle_type'          => $row->settle_type,          // equal | return | reimburse
+            'settle_balance'       => (float) $row->settle_balance,
+            'settle_declared_type' => $row->settle_declared_type, // equal | minimum | maximum
+            'settle_target_amount' => $row->settle_target_amount !== null ? (float) $row->settle_target_amount : null,
+            'settle_items'         => collect($row->settle_items ?? [])->values()->map(fn ($it, $i) => [
+                'amount'    => (float) ($it['amount'] ?? 0),
+                'reason'    => (string) ($it['reason'] ?? ''),
+                'method'    => (string) ($it['method'] ?? ''),
+                'proof_name'=> $it['proof_name'] ?? null,
+                'proof_url' => !empty($it['proof_path']) ? url("/api/advance-requests/{$row->id}/settle-proof/{$i}") : null,
+            ])->all(),
         ];
     }
-    
-} 
+
+    /**
+     * POST /advance-requests/{id}/employee-settle
+     * The employee who took a fully-paid COMPANY advance marks it as settled
+     * (a status — they've accounted for the company-paid amount). Only the owner
+     * employee may do this; only on a Company, approved, fully-paid advance.
+     */
+    public function employeeSettle(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+
+        // Only the employee who raised it may settle (super_admin may act too).
+        $myEmployeeId = $this->currentEmployeeId($user);
+        if ($user->user_type !== 'super_admin' && $row->employee_id !== $myEmployeeId) {
+            abort(403, 'Only the employee who took this advance can settle it.');
+        }
+        if (($row->used_for ?: 'self') !== 'company') {
+            abort(409, 'Only a company-used advance needs to be settled.');
+        }
+        if ($row->status !== 'approved' || ($row->settlement_status ?? 'unpaid') !== 'paid') {
+            abort(409, 'The advance must be fully paid before it can be settled.');
+        }
+        // Settlement is INCREMENTAL: bills can be added over several saves; the
+        // advance only locks when the employee explicitly finalises it. Once
+        // finalised, no further bills may be added and old ones can't be removed.
+        if ($row->employee_settled_at) {
+            abort(409, 'This advance is already finalised and locked.');
+        }
+
+        // New usage rows — one row per bill: amount + reason + proof (all required).
+        // Files arrive as proofs[] aligned by index to items[]. On a pure finalise
+        // (locking previously-saved bills) items/proofs may be empty.
+        $data = $request->validate([
+            'items'          => ['nullable', 'array'],
+            'items.*.amount' => ['required', 'numeric', 'min:0.01', 'max:9999999999999.99'],
+            'items.*.reason' => ['required', 'string', 'max:500'],
+            'items.*.method' => ['required', 'string', 'max:40'],
+            'proofs'         => ['nullable', 'array'],
+            'proofs.*'       => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+            'note'           => ['nullable', 'string', 'max:500'],
+            'finalize'       => ['nullable', 'boolean'],
+            'declared_type'  => ['nullable', 'in:equal,minimum,maximum'],
+            'target_amount'  => ['nullable', 'numeric', 'min:0.01', 'max:9999999999999.99'],
+        ]);
+
+        $finalize   = filter_var($request->input('finalize', false), FILTER_VALIDATE_BOOLEAN);
+        $sanctioned = (float) ($row->sanctioned_amount ?? $row->amount);
+
+        // Declared target — captured up front on the first save, then LOCKED.
+        //   equal   → target == advance
+        //   minimum → 0 < target < advance (employee returns the balance)
+        //   maximum → target > advance (company reimburses the extra)
+        if ($row->settle_declared_type === null) {
+            $declaredType = $data['declared_type'] ?? 'equal';
+            $target = $declaredType === 'equal'
+                ? $sanctioned
+                : round((float) ($data['target_amount'] ?? 0), 2);
+            $bad =
+                ($declaredType === 'equal'   && abs($target - $sanctioned) > 0.005) ||
+                ($declaredType === 'minimum' && !($target > 0 && $target < $sanctioned - 0.005)) ||
+                ($declaredType === 'maximum' && !($target > $sanctioned + 0.005));
+            if ($bad) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'The declared amount used does not match the chosen type.',
+                    'errors'  => ['target_amount' => ['Invalid amount for the chosen settlement type.']],
+                ], 422);
+            }
+            $row->settle_declared_type = $declaredType;
+            $row->settle_target_amount = $target;
+        }
+        $declaredType = $row->settle_declared_type;
+        $target       = (float) $row->settle_target_amount;
+
+        $items  = array_values($data['items'] ?? []);
+        $proofs   = $request->file('proofs') ?? [];
+        if (count($proofs) !== count($items)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Each usage row must have exactly one proof.',
+                'errors'  => ['proofs' => ['A proof is required for every usage row.']],
+            ], 422);
+        }
+
+        // Append the new rows to the existing (locked) ledger.
+        $settleItems = array_values($row->settle_items ?? []);
+        foreach ($items as $i => $it) {
+            $amt  = round((float) $it['amount'], 2);
+            $f    = $proofs[$i] ?? null;
+            $path = $f ? $f->store('advance_settlements/' . $row->id, 'public') : null;
+            $settleItems[] = [
+                'amount'     => $amt,
+                'reason'     => trim((string) $it['reason']),
+                'method'     => trim((string) ($it['method'] ?? '')),
+                'proof_path' => $path,
+                'proof_name' => $f ? $f->getClientOriginalName() : null,
+            ];
+        }
+
+        if (empty($settleItems)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Add at least one bill before saving.',
+                'errors'  => ['items' => ['Add at least one usage row.']],
+            ], 422);
+        }
+        if ($finalize && empty($items) && empty($row->settle_items)) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Add at least one bill before finalising.',
+                'errors'  => ['items' => ['Add at least one usage row.']],
+            ], 422);
+        }
+
+        // Cumulative usage vs the sanctioned (paid) amount:
+        //   equal     → 0 balance
+        //   return    → total < sanctioned → employee returns the unused part
+        //   reimburse → total > sanctioned → company reimburses the extra
+        $total      = round(array_sum(array_map(fn ($it) => (float) $it['amount'], $settleItems)), 2);
+        $diff       = round($total - $sanctioned, 2);
+        $settleType = $diff === 0.0 ? 'equal' : ($diff < 0 ? 'return' : 'reimburse');
+        $balance    = abs($diff);
+
+        // The bills may never exceed the declared "amount used"; finalising
+        // requires them to total it exactly.
+        if ($total > $target + 0.005) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Total used ₹' . number_format($total, 2) . ' exceeds the declared amount used ₹' . number_format($target, 2) . '.',
+                'errors'  => ['items' => ['Total exceeds the declared amount used.']],
+            ], 422);
+        }
+        if ($finalize && abs($total - $target) > 0.005) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'To finalise, the itemised bills must total the declared amount used ₹' . number_format($target, 2) . ' (currently ₹' . number_format($total, 2) . ').',
+                'errors'  => ['items' => ['Bills must total the declared amount used before finalising.']],
+            ], 422);
+        }
+
+        if ($request->filled('note')) {
+            $row->employee_settle_note = $data['note'];
+        }
+        $row->settle_items         = $settleItems;
+        $row->settle_actual_amount = $total;
+        $row->settle_type          = $settleType;
+        $row->settle_balance       = $balance;
+        if ($finalize) {
+            $row->employee_settled_at = now();
+        }
+        $row->save();
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        if (!$finalize) {
+            $msg = 'Bills saved — ₹' . number_format($total, 2) . ' itemised so far. Add more or finalise when done.';
+        } else {
+            $msg = $settleType === 'equal'
+                ? 'Advance settled — usage matched the advance.'
+                : ($settleType === 'return'
+                    ? 'Advance settled — ₹' . number_format($balance, 2) . ' to be returned to the company.'
+                    : 'Advance settled — ₹' . number_format($balance, 2) . ' to be reimbursed to the employee.');
+        }
+        return response()->json([
+            'status'  => true,
+            'message' => $msg,
+            'data'    => $this->serialize($row),
+        ]);
+    }
+
+    /**
+     * Stream a settlement usage-row proof (bill) by its index. Token-authed.
+     */
+    public function settleProof(Request $request, $id, $index)
+    {
+        $this->authenticateFromQueryToken($request);
+        $row = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $request->user());
+        $item = ($row->settle_items ?? [])[(int) $index] ?? null;
+        if (!$item || empty($item['proof_path'])) {
+            abort(404, 'No settlement proof was attached for this row.');
+        }
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (!$disk->exists($item['proof_path'])) {
+            abort(404, 'Settlement proof file is missing on the server.');
+        }
+        return $disk->response($item['proof_path'], $item['proof_name'] ?: basename($item['proof_path']));
+    }
+
+    /**
+     * POST /advance-requests/{id}/raise-reimbursement
+     * A finalised COMPANY advance that settled as "reimburse" (used more than the
+     * advance) owes the employee the extra. This raises a reimbursement Expense
+     * Claim for that balance so it flows through the normal expense payout, and
+     * links it back so the button can't be pressed twice.
+     */
+    public function raiseReimbursement(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+
+        // Owner employee, super_admin, or HR/Finance (approve rights) may raise it —
+        // HR often actions this from the management view after the employee settles.
+        $myEmployeeId = $this->currentEmployeeId($user);
+        if ($user->user_type !== 'super_admin' && $row->employee_id !== $myEmployeeId) {
+            $this->guardHrPermission($user, 'can_approve');
+        }
+        if (!$row->employee_settled_at || $row->settle_type !== 'reimburse') {
+            abort(409, 'A reimbursement can only be raised for a finalised, over-spent (reimburse) advance.');
+        }
+        $balance = round((float) $row->settle_balance, 2);
+        if ($balance <= 0) {
+            abort(409, 'There is nothing to reimburse.');
+        }
+        if ($row->settle_reimbursement_claim_id) {
+            abort(409, 'A reimbursement expense has already been raised for this advance.');
+        }
+
+        $employee = Employee::find($row->employee_id);
+        if (!$employee) {
+            abort(404, 'Employee not found.');
+        }
+
+        // Carry the settlement bills over as the claim's supporting documents.
+        $attachments = [];
+        foreach (($row->settle_items ?? []) as $it) {
+            if (!empty($it['proof_path'])) {
+                $attachments[] = [
+                    'name' => $it['proof_name'] ?? basename($it['proof_path']),
+                    'size' => null,
+                    'path' => $it['proof_path'],
+                ];
+            }
+        }
+
+        $hasManager     = !empty($employee->reporting_manager_id);
+        $managerStatus  = $hasManager ? 'pending' : 'approved';
+        $managerActedAt = $hasManager ? null : now();
+        $managerComment = $hasManager ? null : 'Auto-approved · no reporting manager assigned';
+
+        $claim = DB::transaction(function () use ($row, $employee, $balance, $attachments, $managerStatus, $managerActedAt, $managerComment, $user) {
+            $newClaim = \App\Models\ExpenseClaim::create([
+                'client_id'        => $employee->client_id,
+                'branch_id'        => $employee->branch_id,
+                'claim_no'         => $this->nextExpenseClaimNo($employee->client_id, $employee->branch_id),
+                'employee_id'      => $employee->id,
+                'employee_name'    => $employee->display_name
+                    ?: trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')) ?: null,
+                'manager_id'       => $employee->reporting_manager_id,
+                'currency'         => 'INR',
+                'title'            => 'Advance reimbursement — ' . ($row->advance_no ?: ('ADV-' . $row->id)),
+                'amount'           => $balance,
+                'expense_date'     => now()->toDateString(),
+                'purpose'          => 'Reimbursement of the amount spent over the company advance '
+                    . ($row->advance_no ?: ('ADV-' . $row->id)) . ' (used ₹' . number_format((float) $row->settle_actual_amount, 2)
+                    . ' against ₹' . number_format((float) ($row->sanctioned_amount ?? $row->amount), 2) . ').',
+                'attachments'      => $attachments ?: null,
+                'status'           => 'pending',
+                'manager_status'   => $managerStatus,
+                'manager_acted_at' => $managerActedAt,
+                'manager_comment'  => $managerComment,
+                'hr_status'        => 'pending',
+                'created_by'       => $user->id,
+            ]);
+
+            $row->settle_reimbursement_claim_id = $newClaim->id;
+            $row->settle_reimbursed_at = now();
+            $row->save();
+
+            return $newClaim;
+        });
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        return response()->json([
+            'status'  => true,
+            'message' => 'Reimbursement ' . $claim->claim_no . ' raised for ₹' . number_format($balance, 2) . '.',
+            'data'    => $this->serialize($row),
+        ]);
+    }
+
+    /**
+     * Next EXP-#### sequence for a tenant (mirrors ExpenseClaimController).
+     */
+    private function nextExpenseClaimNo(?int $clientId, ?int $branchId): string
+    {
+        $q = \App\Models\ExpenseClaim::query()->lockForUpdate();
+        $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
+        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
+        $max = 0;
+        foreach ($q->pluck('claim_no') as $c) {
+            if (preg_match('/^EXP-(\d+)$/i', (string) $c, $m)) {
+                $n = (int) $m[1];
+                if ($n > $max) $max = $n;
+            }
+        }
+        return 'EXP-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+    }
+
+    /* ============================================================ */
+    /*  SETTLEMENT — post-approval payout (partial payments)         */
+    /*  Mirrors ExpenseClaimController; no category / expense-type /  */
+    /*  Zoho — an advance payout only carries amount + method + note. */
+    /* ============================================================ */
+
+    /**
+     * GET /advance-requests/{id}/settlement
+     * State for the Record-Payment form: requested/sanctioned amounts, running
+     * total, adjustments and the list of installment payments made so far.
+     */
+    public function settlement(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = AdvanceRequest::with(['payments.payer', 'employee', 'manager'])->findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+
+        $employee     = $row->employee;
+        $employeeName = ($employee
+            ? ($employee->display_name ?: trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')))
+            : null);
+
+        return response()->json([
+            'id'                => $row->id,
+            'claim_no'          => $row->advance_no ?: ('#' . $row->id),
+            'title'             => $row->advance_type === 'Other' && $row->advance_type_other
+                ? $row->advance_type_other
+                : $row->advance_type,
+            'employee_name'     => $employeeName,
+            'expense_date'      => optional($row->requested_date)->format('Y-m-d'),
+            'currency'          => 'INR',
+            'claimed_amount'    => (float) $row->amount,
+            'purpose'           => $row->reason,
+            'vendor'            => null,
+            'project'           => null,
+            'category_id'       => null,
+            'category_name'     => $row->advance_type,
+            'sanctioned_amount' => $row->sanctioned_amount !== null ? (float) $row->sanctioned_amount : null,
+            'deduction_amount'  => (float) $row->deduction_amount,
+            'deduction_reason'  => $row->deduction_reason,
+            'deductions'        => collect($row->deductions ?? [])->map(fn ($d) => [
+                'amount' => (float) ($d['amount'] ?? 0),
+                'reason' => (string) ($d['reason'] ?? ''),
+            ])->values()->all(),
+            'addition_amount'   => (float) $row->addition_amount,
+            'additions'         => collect($row->additions ?? [])->map(fn ($d) => [
+                'amount' => (float) ($d['amount'] ?? 0),
+                'reason' => (string) ($d['reason'] ?? ''),
+            ])->values()->all(),
+            'total_paid'        => (float) $row->total_paid,
+            'remaining_amount'  => $row->sanctioned_amount !== null
+                ? round((float) $row->sanctioned_amount - (float) $row->total_paid, 2)
+                : null,
+            'settlement_status' => $row->settlement_status ?: 'unpaid',
+            'status'            => $row->status,
+            'manager_status'    => $row->manager_status,
+            'hr_status'         => $row->hr_status,
+            'attachments'       => collect($row->attachments ?? [])->values()->map(fn ($a, $i) => [
+                'name' => $a['name'] ?? ('Attachment ' . ($i + 1)),
+                'size' => $a['size'] ?? null,
+                'url'  => url("/api/advance-requests/{$row->id}/attachments/{$i}"),
+            ])->all(),
+            'payments'          => $row->payments->map(fn ($p) => [
+                'id'           => $p->id,
+                'amount'       => (float) $p->amount,
+                'category_name'=> null,
+                'payment_type' => $p->payment_type,
+                'expense_type' => null,
+                'note'         => $p->note,
+                'proof_name'   => $p->proof_name,
+                'proof_url'    => $p->proof_path ? url("/api/advance-requests/payments/{$p->id}/proof") : null,
+                'zoho_status'  => null,
+                'zoho_synced_at' => null,
+                'zoho_expense_url' => null,
+                'paid_by_name' => $p->payer?->name,
+                'paid_at'      => optional($p->paid_at)->toIso8601String(),
+            ])->all(),
+            // Advance-specific settle context so the modal can render the
+            // employee "Settlement" section (company advances only).
+            'employee_id'          => $row->employee_id,
+            'used_for'             => $row->used_for ?: 'self',
+            'employee_settled_at'  => optional($row->employee_settled_at)->toIso8601String(),
+            'employee_settle_note' => $row->employee_settle_note,
+            'settle_actual_amount' => $row->settle_actual_amount !== null ? (float) $row->settle_actual_amount : null,
+            'settle_type'          => $row->settle_type,
+            'settle_balance'       => (float) $row->settle_balance,
+            'settle_declared_type' => $row->settle_declared_type,
+            'settle_target_amount' => $row->settle_target_amount !== null ? (float) $row->settle_target_amount : null,
+            'settle_items'         => collect($row->settle_items ?? [])->values()->map(fn ($it, $i) => [
+                'amount'    => (float) ($it['amount'] ?? 0),
+                'reason'    => (string) ($it['reason'] ?? ''),
+                'method'    => (string) ($it['method'] ?? ''),
+                'proof_name'=> $it['proof_name'] ?? null,
+                'proof_url' => !empty($it['proof_path']) ? url("/api/advance-requests/{$row->id}/settle-proof/{$i}") : null,
+            ])->all(),
+            'settle_reimbursed_at' => optional($row->settle_reimbursed_at)->toIso8601String(),
+            'settle_reimbursement' => $row->settle_reimbursement_claim_id
+                ? (function () use ($row) {
+                    $c = \App\Models\ExpenseClaim::find($row->settle_reimbursement_claim_id);
+                    return $c ? ['id' => $c->id, 'claim_no' => $c->claim_no, 'status' => $c->status] : null;
+                })()
+                : null,
+        ]);
+    }
+
+    /**
+     * POST /advance-requests/{id}/set-deductions
+     * Lock the one-time deductions / additions WITHOUT recording a payment —
+     * fixes the net payable before the first payout. Mirrors ExpenseClaim.
+     */
+    public function setDeductions(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+        $this->guardHrPermission($user, 'can_approve');
+
+        if ($row->status !== 'approved') {
+            abort(409, 'Only an approved advance can be settled. Approve it first.');
+        }
+        if ($row->sanctioned_amount !== null) {
+            abort(409, 'The adjustments are already locked for this advance.');
+        }
+
+        $data = $request->validate([
+            'deductions'          => ['nullable', 'array'],
+            'deductions.*.amount' => ['required_with:deductions', 'numeric', 'min:0'],
+            'deductions.*.reason' => ['nullable', 'string', 'max:500'],
+            'additions'           => ['nullable', 'array'],
+            'additions.*.amount'  => ['required_with:additions', 'numeric', 'min:0', 'max:100000'],
+            'additions.*.reason'  => ['nullable', 'string', 'max:500'],
+        ]);
+
+        [$deductionRows, $deduction, $dedErr] = $this->normaliseAdjustments($data['deductions'] ?? [], 'deduction');
+        if ($dedErr) return $dedErr;
+        [$additionRows, $addition, $addErr] = $this->normaliseAdjustments($data['additions'] ?? [], 'addition');
+        if ($addErr) return $addErr;
+
+        $sanctioned = round((float) $row->amount - $deduction + $addition, 2);
+        if ($sanctioned <= 0.005) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Deductions cannot exceed the requested amount plus additions — net payable must be greater than zero.',
+                'errors'  => ['deductions' => ['Net payable must be greater than zero.']],
+            ], 422);
+        }
+
+        $row->sanctioned_amount = $sanctioned;
+        $row->deduction_amount  = max(0, $deduction);
+        $row->deductions        = $deductionRows;
+        $row->addition_amount   = max(0, $addition);
+        $row->additions         = $additionRows;
+        $row->deduction_reason  = $deductionRows
+            ? implode(' · ', array_map(fn ($d) => number_format($d['amount'], 2) . ': ' . $d['reason'], $deductionRows))
+            : null;
+        $row->save();
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        return response()->json([
+            'status'  => true,
+            'message' => 'Locked — net payable ₹' . number_format($sanctioned, 2) . '. Add a payment to disburse.',
+            'data'    => $this->serialize($row),
+        ]);
+    }
+
+    /**
+     * POST /advance-requests/{id}/settle
+     * Record ONE payout installment. The FIRST call also locks the sanctioned
+     * amount (requested − Σ deductions + Σ additions). Partial payments allowed
+     * until the sanctioned amount is met.
+     */
+    public function settle(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+        $this->guardHrPermission($user, 'can_approve');
+
+        if ($row->status !== 'approved') {
+            abort(409, 'Only an approved advance can be paid. Approve it first.');
+        }
+        if (($row->settlement_status ?? 'unpaid') === 'paid') {
+            abort(409, 'This advance is already fully paid.');
+        }
+
+        $firstPayment = $row->sanctioned_amount === null;
+
+        $data = $request->validate([
+            'deductions'          => ['nullable', 'array'],
+            'deductions.*.amount' => ['required_with:deductions', 'numeric', 'min:0'],
+            'deductions.*.reason' => ['nullable', 'string', 'max:500'],
+            'additions'           => ['nullable', 'array'],
+            'additions.*.amount'  => ['required_with:additions', 'numeric', 'min:0', 'max:100000'],
+            'additions.*.reason'  => ['nullable', 'string', 'max:500'],
+            'amount'              => ['required', 'numeric', 'min:0.01'],
+            'payment_type'        => ['required', 'string', 'in:Cheque,UPI,PhonePe,Bank Transfer'],
+            'note'                => ['required', 'string', 'max:500'],
+            'proof'               => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+        ]);
+
+        $deductionRows = []; $deduction = 0.0;
+        $additionRows  = []; $addition  = 0.0;
+        if ($firstPayment) {
+            [$deductionRows, $deduction, $dedErr] = $this->normaliseAdjustments($data['deductions'] ?? [], 'deduction');
+            if ($dedErr) return $dedErr;
+            [$additionRows, $addition, $addErr] = $this->normaliseAdjustments($data['additions'] ?? [], 'addition');
+            if ($addErr) return $addErr;
+            if (round((float) $row->amount - $deduction + $addition, 2) <= 0.005) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'Deductions cannot exceed the requested amount plus additions — net payable must be greater than zero.',
+                    'errors'  => ['deductions' => ['Net payable must be greater than zero.']],
+                ], 422);
+            }
+        }
+
+        $sanctioned = $firstPayment ? round((float) $row->amount - $deduction + $addition, 2) : (float) $row->sanctioned_amount;
+
+        $pay       = round((float) $data['amount'], 2);
+        $remaining = round($sanctioned - (float) $row->total_paid, 2);
+        if ($pay > $remaining + 0.005) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Payment (' . number_format($pay, 2) . ') exceeds the remaining amount (' . number_format($remaining, 2) . ').',
+                'errors'  => ['amount' => ['Cannot pay more than the remaining amount.']],
+            ], 422);
+        }
+
+        $proofPath = null;
+        $proofName = null;
+        if ($request->hasFile('proof')) {
+            $f = $request->file('proof');
+            $proofName = $f->getClientOriginalName();
+            $proofPath = $f->store('advance_request_payments/' . $row->id, 'public');
+        }
+
+        DB::transaction(function () use ($row, $user, $firstPayment, $sanctioned, $deduction, $deductionRows, $addition, $additionRows, $pay, $data, $proofPath, $proofName) {
+            if ($firstPayment) {
+                $row->sanctioned_amount = $sanctioned;
+                $row->deduction_amount  = max(0, $deduction);
+                $row->deductions        = $deductionRows;
+                $row->addition_amount   = max(0, $addition);
+                $row->additions         = $additionRows;
+                $row->deduction_reason  = $deductionRows
+                    ? implode(' · ', array_map(fn ($d) => number_format($d['amount'], 2) . ': ' . $d['reason'], $deductionRows))
+                    : null;
+            }
+
+            \App\Models\AdvanceRequestPayment::create([
+                'client_id'          => $row->client_id,
+                'branch_id'          => $row->branch_id,
+                'advance_request_id' => $row->id,
+                'amount'             => $pay,
+                'payment_type'       => $data['payment_type'],
+                'note'               => $data['note'] ?? null,
+                'proof_path'         => $proofPath,
+                'proof_name'         => $proofName,
+                'paid_by'            => $user->id,
+                'paid_at'            => now(),
+            ]);
+
+            $row->total_paid = round((float) $row->total_paid + $pay, 2);
+            $paidUp = $row->total_paid + 0.005 >= (float) $row->sanctioned_amount;
+            $row->settlement_status = $paidUp ? 'paid' : 'partial';
+            $row->settled_at = $paidUp ? now() : null;
+            $row->save();
+        });
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        return response()->json([
+            'status'  => true,
+            'message' => $row->settlement_status === 'paid'
+                ? 'Payment recorded — advance fully paid.'
+                : 'Payment recorded — ₹' . number_format((float) $row->total_paid, 2) . ' of ₹' . number_format((float) $row->sanctioned_amount, 2) . ' paid.',
+            'data'    => $this->serialize($row),
+        ]);
+    }
+
+    /**
+     * Stream the proof-of-payment file attached to one settlement installment.
+     * Auth via query token so a plain browser link works (mirrors attachments).
+     */
+    public function paymentProof(Request $request, $paymentId)
+    {
+        $this->authenticateFromQueryToken($request);
+        $payment = \App\Models\AdvanceRequestPayment::findOrFail($paymentId);
+        $row = AdvanceRequest::findOrFail($payment->advance_request_id);
+        $this->ensureTenantAccess($row, $request->user());
+
+        if (empty($payment->proof_path)) {
+            abort(404, 'No proof of payment was attached to this settlement.');
+        }
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (!$disk->exists($payment->proof_path)) {
+            abort(404, 'Proof file is missing on the server.');
+        }
+        return $disk->response($payment->proof_path, $payment->proof_name ?: basename($payment->proof_path));
+    }
+
+    /**
+     * Normalise an itemised adjustments array (deductions / additions): keep only
+     * rows with amount > 0, require a reason for each, return [rows, total, err].
+     */
+    private function normaliseAdjustments(array $items, string $kind): array
+    {
+        $rows  = [];
+        $total = 0.0;
+        $field = $kind === 'addition' ? 'additions' : 'deductions';
+        foreach ($items as $d) {
+            $amt = round((float) ($d['amount'] ?? 0), 2);
+            if ($amt <= 0.005) continue;
+            if (empty(trim((string) ($d['reason'] ?? '')))) {
+                return [[], 0.0, response()->json([
+                    'status'  => false,
+                    'message' => 'Each ' . $kind . ' needs a reason.',
+                    'errors'  => [$field => ['Every ' . $kind . ' must have a reason.']],
+                ], 422)];
+            }
+            $rows[] = ['amount' => $amt, 'reason' => trim((string) $d['reason'])];
+            $total += $amt;
+        }
+        return [$rows, round($total, 2), null];
+    }
+
+}

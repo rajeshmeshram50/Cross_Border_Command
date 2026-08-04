@@ -125,7 +125,7 @@ const Ico = {
 };
 
 /* Custom filter dropdown — master-style panel, kept in the page's teal palette */
-function FilterDd({ value, options, onChange }: { value: string; options: { v: string; label: string }[]; onChange: (v: string) => void }) {
+function FilterDd({ value, options, onChange, tooltip }: { value: string; options: { v: string; label: string }[]; onChange: (v: string) => void; tooltip?: string }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const btnRef = useRef<HTMLButtonElement | null>(null);
@@ -151,8 +151,13 @@ function FilterDd({ value, options, onChange }: { value: string; options: { v: s
   }, [open]);
   return (
     <div className="polist-filter" ref={wrapRef}>
-      <button type="button" ref={btnRef} className={`polist-filtersel ${open ? 'is-open' : ''}`} onClick={() => setOpen(o => !o)}><span className="polist-filtersel__ico">{Ico.filter(12)}</span>{cur.label}</button>
-      {Ico.chevron(11)}
+      <Tooltip label={tooltip || ''} disabled={!tooltip} themed>
+        <button type="button" ref={btnRef} className={`polist-filtersel ${open ? 'is-open' : ''}`} onClick={() => setOpen(o => !o)}>
+          <span className="polist-filtersel__ico">{Ico.filter(12)}</span>
+          <span className="polist-filtersel__txt">{cur.label}</span>
+          <span className="polist-filtersel__chev">{Ico.chevron(11)}</span>
+        </button>
+      </Tooltip>
       {open && (
         <div className="pof-dd-pop" style={{ left: pos.left, top: pos.top, width: pos.width }}>
           {options.map(o => (
@@ -582,11 +587,13 @@ export default function PurchaseOrder() {
           <div className="polist-tools">
             <FilterDd
               value={docFilter}
+              tooltip="Filter by document type"
               options={[{ v: 'all', label: 'All Document Types' }, ...DOC_TYPES.map(d => ({ v: d, label: d }))]}
               onChange={v => { setDocFilter(v); setPage(1); }}
             />
             <FilterDd
               value={typeFilter}
+              tooltip="Filter by PO type"
               options={[{ v: 'all', label: 'All PO Types' }, ...PO_TYPES.map(t => ({ v: t, label: t }))]}
               onChange={v => { setTypeFilter(v); setPage(1); }}
             />
