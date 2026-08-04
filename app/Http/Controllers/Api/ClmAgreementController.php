@@ -32,7 +32,12 @@ class ClmAgreementController extends Controller
 {
     use HandlesDocxHtmlRoundtrip;
 
-    private const DOCX_MAX_KB = 20 * 1024;
+    /* Draft-content Word upload cap: 1 MB. The agreement editor refuses an
+     * oversized file before it leaves the browser
+     * (ClmAgreementWizardModal's AGREEMENT_DOCX_MAX_BYTES) — this is the
+     * server-side half of that pair, so the limit still holds for anything that
+     * skips the UI. Keep the two values in step. */
+    private const DOCX_MAX_KB = 1024;
 
     /**
      * Max editor-HTML size we'll render synchronously to PDF/Word. dompdf and

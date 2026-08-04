@@ -90,9 +90,16 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
   // Clauses belonging to the chosen type (matched by the type's name, which
   // is what clause_library rows store in their clause_type column).
   const visible = typeName ? clauses.filter(c => c.clause_type === typeName) : [];
+  /* Only offer types that actually HAVE clauses. An empty type could be picked
+   * and then just reported "No clauses found for X" — a dead end the user had
+   * to back out of, with nothing to do about it from here (clauses are created
+   * in the Clause Library master, not in this panel).
+   * Compared exactly the way `visible` above matches, so the two can never
+   * disagree: a type is listed only when selecting it would show something. */
+  const typesWithClauses = types.filter(t => clauses.some(c => c.clause_type === t.name));
   const filteredTypes = ddSearch.trim()
-    ? types.filter(t => t.name.toLowerCase().includes(ddSearch.trim().toLowerCase()))
-    : types;
+    ? typesWithClauses.filter(t => t.name.toLowerCase().includes(ddSearch.trim().toLowerCase()))
+    : typesWithClauses;
 
   const toggle = (id: number) => setSelected(prev => {
     const next = new Set(prev);
@@ -181,8 +188,15 @@ export default function ClmClauseInsertPanel({ onClose, onInsert }: Props) {
                     />
                   </div>
                   <div className="clp-dd-list">
+                    {/* Three cases, not two — "No results" would be a lie when
+                        types exist but every one of them is empty, which is
+                        exactly the state the filter above now hides. */}
                     {filteredTypes.length === 0 ? (
-                      <div className="clp-dd-empty">{types.length === 0 ? 'No clause types' : 'No results'}</div>
+                      <div className="clp-dd-empty">{
+                        types.length === 0              ? 'No clause types'
+                        : typesWithClauses.length === 0 ? 'No clause type has any clauses yet — add them in the Clause Library master.'
+                        : 'No results'
+                      }</div>
                     ) : filteredTypes.map(t => (
                       <button
                         key={t.id}

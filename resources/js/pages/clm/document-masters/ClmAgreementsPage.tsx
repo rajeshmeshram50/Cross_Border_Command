@@ -490,8 +490,20 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
-                          <Tooltip label={r.in_use ? 'In-use — cannot edit' : `Edit — ${r.title}`}>
-                            <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { if (r.in_use) { toast.warning('Agreement in use', 'This agreement is In-use, you cannot edit it.'); return; } setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                          {/* An in-use agreement is frozen. The buttons must LOOK
+                              unavailable, not just refuse on click — they used to
+                              render fully enabled and only warn AFTER the click,
+                              which reads as a broken button (QA). Mirrors the
+                              Agreement Type table above, which already dims its
+                              in-use actions. The reason moves onto the tooltip:
+                              Tooltip renders for DISABLED children too (it wraps
+                              them in a pointer-events span), so a greyed-out
+                              button still explains itself on hover. */}
+                          <Tooltip label={r.in_use ? `${r.title} is in use by a live agreement, so it can no longer be edited.` : `Edit — ${r.title}`}>
+                            <button className="clm-act clm-act-edit" aria-label="Edit"
+                              disabled={!!r.in_use}
+                              style={r.in_use ? { opacity: .4, cursor: 'not-allowed' } : undefined}
+                              onClick={() => { if (r.in_use) return; setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                           </Tooltip>
                           <Tooltip label={downloadingId === r.id ? 'Downloading…' : `Download ${r.code} — Doc / PDF`}>
                             <button className="clm-act clm-act-dl" aria-label="Download" disabled={downloadingId === r.id}
@@ -500,8 +512,11 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                                 setDlMenuFor(prev => prev?.row.id === r.id ? null : { row: r, top: b.bottom + 4, right: window.innerWidth - b.right });
                               }}>{downloadingId === r.id ? (<svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>) : (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>)}</button>
                           </Tooltip>
-                          <Tooltip label={r.in_use ? 'In-use — cannot delete' : `Delete — ${r.title}`}>
-                            <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => { if (r.in_use) { toast.warning('Agreement in use', 'This agreement is In-use, you cannot delete it.'); return; } setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                          <Tooltip label={r.in_use ? `${r.title} is in use by a live agreement, so it can no longer be deleted.` : `Delete — ${r.title}`}>
+                            <button className="clm-act clm-act-del" aria-label="Delete"
+                              disabled={!!r.in_use}
+                              style={r.in_use ? { opacity: .4, cursor: 'not-allowed' } : undefined}
+                              onClick={() => { if (r.in_use) return; setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                           </Tooltip>
                         </div>
                       </td>

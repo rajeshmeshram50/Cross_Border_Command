@@ -60,6 +60,10 @@ export type AgrLib = {
  * checkbox grid (`PARTY_BUYER_CONSIGNEE` / `PARTY_SUPPLIER`) so the
  * Agreement and Trade Document forms read as a single visual family.
  * Selected values concatenate into the agreement_library.party CSV. */
+/* Draft-content Word upload cap. Mirrors ClmAgreementController::DOCX_MAX_KB —
+ * keep the two in step, or the UI will promise a limit the API doesn't hold. */
+const AGREEMENT_DOCX_MAX_BYTES = 1024 * 1024;   // 1 MB
+
 const PARTY_BUYER_CONSIGNEE = [
   { value: 'Buyer',     label: 'Customer',  icon: '👤' },
   { value: 'Consignee', label: 'Consignee', icon: '🚚' },
@@ -350,6 +354,25 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   };
   const uploadDocx = async (file: File) => {
     if (uploadingDocx) return;
+    /* 1 MB cap on the draft-content Word upload.
+     *
+     * Checked here FIRST so an oversized file is refused instantly instead of
+     * being uploaded, converted and only then bounced — and so the user is told
+     * the actual size. The server enforces the same limit
+     * (ClmAgreementController::DOCX_MAX_KB); this is the fast, friendly half of
+     * the pair, never the only line of defence.
+     *
+     * It also covers BOTH upload paths below: a saved agreement posts to
+     * /clm/agreement-library/{id}/upload-docx, while an unsaved draft posts to
+     * the shared /clm/docx-to-html — without this guard the unsaved path would
+     * still have accepted a large file. */
+    if (file.size > AGREEMENT_DOCX_MAX_BYTES) {
+      toast.error(
+        'File too large',
+        `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB. Word documents must be 1 MB or smaller.`,
+      );
+      return;
+    }
     setUploadingDocx(true);
     const fd = new FormData();
     fd.append('docx', file);
@@ -1096,7 +1119,9 @@ function AgrEditor({
                  onChange={e => { const f = e.target.files?.[0]; if (f) onUploadDocx(f); e.currentTarget.value = ''; }} />
           {/* Download DOCX moved OUT of the editor — the Agreement Library list's
               Action column now offers Download as Doc / Download as PDF. */}
-          <Tooltip label={uploadingDocx ? 'Converting the document…' : (editingId ? 'Upload a revised Word file' : 'Upload a Word file to draft from')}>
+          {/* The size cap is stated up-front — finding out only after picking a
+              file is the frustrating half of an upload limit. */}
+          <Tooltip label={uploadingDocx ? 'Converting the document…' : (editingId ? 'Upload a revised Word file (max 1 MB)' : 'Upload a Word file to draft from (max 1 MB)')}>
             <button type="button" className="agw-editor-btn" disabled={uploadingDocx} onClick={() => docxRef.current?.click()}>
               {uploadingDocx ? (
                 <>
