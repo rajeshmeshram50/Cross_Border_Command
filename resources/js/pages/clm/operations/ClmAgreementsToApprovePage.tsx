@@ -905,12 +905,20 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
 
           {/* Consent pill — FLOATS over the document (no white strip), pinned to
               the bottom-centre of the viewer. Appears once the PDF has loaded and
-              stays visible on EVERY page (including the last) until the reviewer
-              ticks it — ticking is the only thing that unlocks the actions. */}
-          {!loading && !error && numPages > 0 && !confirmedRead && (
-            <label style={{
+              stays visible on EVERY page (including the last) — ticking it is the
+              only thing that unlocks the actions.
+              It stays mounted AFTER ticking too. Unmounting on tick left the
+              reviewer with no confirmation that a LEGAL acknowledgement had
+              registered (and no way to undo a mis-click), and it made the pill's
+              own checked styling below dead code.
+              A <div>, not a <label>: wrapping the input in a label made the whole
+              pill a hit target, so a stray click anywhere near it flipped that
+              acknowledgement. Only the box itself toggles now — the text carries
+              an aria-label on the input instead, so screen readers keep it. */}
+          {!loading && !error && numPages > 0 && (
+            <div style={{
               position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', zIndex: 6,
-              display: 'inline-flex', alignItems: 'center', gap: 11, cursor: 'pointer', margin: 0,
+              display: 'inline-flex', alignItems: 'center', gap: 11, cursor: 'default', margin: 0,
               padding: '10px 20px', borderRadius: 10, transition: 'all .2s',
               boxShadow: confirmedRead ? '0 8px 24px rgba(5,150,105,.28)' : '0 8px 24px rgba(8,145,178,.22)',
               // The pill floats over the WHITE PDF paper (always white, even in
@@ -920,6 +928,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
               border: `1.5px solid ${confirmedRead ? '#a7f3d0' : '#a5f3fc'}`,
             }}>
               <input type="checkbox" checked={confirmedRead} onChange={e => setConfirmedRead(e.target.checked)}
+                aria-label="I confirm that I have read and understood the entire agreement"
                 style={{
                   appearance: 'none', WebkitAppearance: 'none', width: 18, height: 18, borderRadius: 3,
                   cursor: 'pointer', flexShrink: 0, margin: 0, transition: 'all .15s',
@@ -931,7 +940,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
               <span style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.3, whiteSpace: 'nowrap', color: '#0f172a' }}>
                 I confirm that I have <strong style={{ fontWeight: 800 }}>read and understood the entire agreement</strong>.
               </span>
-            </label>
+            </div>
           )}
         </div>
 
