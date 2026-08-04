@@ -749,6 +749,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/advance-requests/{id}/manager-reject',      [\App\Http\Controllers\Api\AdvanceRequestController::class, 'managerReject']);
     Route::post  ('/advance-requests/{id}/hr-approve',          [\App\Http\Controllers\Api\AdvanceRequestController::class, 'hrApprove']);
     Route::post  ('/advance-requests/{id}/hr-reject',           [\App\Http\Controllers\Api\AdvanceRequestController::class, 'hrReject']);
+    // Settlement (post-approval payout) — mirrors expense-claim settlement.
+    Route::get   ('/advance-requests/{id}/settlement',          [\App\Http\Controllers\Api\AdvanceRequestController::class, 'settlement']);
+    Route::post  ('/advance-requests/{id}/set-deductions',      [\App\Http\Controllers\Api\AdvanceRequestController::class, 'setDeductions']);
+    Route::post  ('/advance-requests/{id}/settle',              [\App\Http\Controllers\Api\AdvanceRequestController::class, 'settle']);
+    Route::post  ('/advance-requests/{id}/employee-settle',     [\App\Http\Controllers\Api\AdvanceRequestController::class, 'employeeSettle']);
+    Route::post  ('/advance-requests/{id}/raise-reimbursement', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'raiseReimbursement']);
 
 
     Route::get ('/payroll/cycles',              [\App\Http\Controllers\Api\PayrollController::class, 'cycles']);
@@ -986,6 +992,10 @@ Route::get('/expense-claims/payments/{paymentId}/proof', [ExpenseClaimController
 
 Route::get('/advance-requests/{id}/attachments/{index}', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'downloadAttachment'])
     ->name('advance-requests.attachment');
+Route::get('/advance-requests/payments/{paymentId}/proof', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'paymentProof'])
+    ->name('advance-requests.payment-proof');
+Route::get('/advance-requests/{id}/settle-proof/{index}', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'settleProof'])
+    ->name('advance-requests.settle-proof');
 
 // SECURITY: the public unauthenticated `dummy-items` CRUD scaffold was removed
 // (it exposed read/create/update/delete with no auth or tenant scope). It is not

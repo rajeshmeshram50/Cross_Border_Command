@@ -109,13 +109,16 @@
 .pom .polist-seg__tab.is-active .polist-seg__cnt{background:rgba(255,255,255,.24);color:#fff;}
 .pom .polist-tools{display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap;justify-content:flex-end;min-width:0;}
 .pom .polist-filter{position:relative;display:inline-flex;align-items:center;flex-shrink:0;}
-.pom .polist-filtersel{display:inline-flex;align-items:center;white-space:nowrap;min-width:160px;text-align:left;padding:11px 34px 11px 14px;border:1.5px solid #e3edf2;border-radius:12px;background:#fff;font-family:inherit;font-size:12.5px;font-weight:600;color:#0c4a6e;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+.pom .polist-filtersel{display:inline-flex;align-items:center;gap:8px;white-space:nowrap;min-width:170px;width:100%;text-align:left;padding:11px 12px 11px 14px;border:1.5px solid #e3edf2;border-radius:12px;background:#fff;font-family:inherit;font-size:12.5px;font-weight:600;color:#0c4a6e;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
 .pom .polist-filtersel:hover{border-color:#bfe5ee;}
-.pom .polist-filtersel__ico{display:inline-flex;align-items:center;margin-right:7px;color:#0891b2;flex-shrink:0;}
+.pom .polist-filtersel__ico{display:inline-flex;align-items:center;color:#0891b2;flex-shrink:0;}
 [data-bs-theme="dark"] .pom .polist-filtersel__ico{color:#22d3ee;}
+/* Label fills the middle; funnel pins left, chevron pins right. */
+.pom .polist-filtersel__txt{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;}
+.pom .polist-filtersel__chev{display:inline-flex;align-items:center;color:#0891b2;flex-shrink:0;transition:transform .2s ease;}
+[data-bs-theme="dark"] .pom .polist-filtersel__chev{color:#22d3ee;}
+.pom .polist-filtersel.is-open .polist-filtersel__chev{transform:rotate(180deg);}
 .pom .polist-filtersel.is-open{outline:none;border-color:#22d3ee;box-shadow:0 0 0 3px rgba(34,211,238,.12);}
-.pom .polist-filter svg{position:absolute;right:11px;pointer-events:none;color:#0891b2;transition:transform .2s ease;}
-.pom .polist-filtersel.is-open + svg{transform:rotate(180deg);}
 .pom .polist-search{position:relative;flex:1 1 240px;min-width:220px;max-width:460px;}
 .pom .polist-search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:#9fb2c0;}
 .pom .polist-search input{width:100%;padding:11px 14px 11px 38px;border:1.5px solid #e3edf2;border-radius:12px;font-family:inherit;font-size:13px;font-weight:600;color:#0c4a6e;background:#fff;box-sizing:border-box;transition:border-color .15s,box-shadow .15s;}
@@ -770,7 +773,10 @@
  * a portal on document.body (.pof-dd-pop--portal), outside the .pom wrapper. */
 .pof-dd__optlbl{display:inline-flex;align-items:center;gap:7px;min-width:0;overflow:hidden;flex:1;}
 .pof-dd__optcode{font-weight:800;color:#0e7490;font-variant-numeric:tabular-nums;flex-shrink:0;}
-.pof-dd__optname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* flex:1 + min-width:0 lets the name fill the space between the code and the
+   badge and ellipsis-truncate — without them a long segment badge squeezed the
+   name to zero width (QA #19: dropdown showed id + segment but not the name). */
+.pof-dd__optname{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .pof-dd__optbadge{flex-shrink:0;margin-left:auto;font-size:8.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:20px;padding:2px 8px;line-height:1.4;white-space:nowrap;}
 .pof-dd__optbadge--own{color:#0e7490;background:#e0f7fb;border:1px solid #c2ecf3;}
 .pof-dd__optbadge--third{color:#b45309;background:#fef3c7;border:1px solid #fde68a;}

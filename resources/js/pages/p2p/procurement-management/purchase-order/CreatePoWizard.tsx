@@ -296,9 +296,15 @@ function Dd({ label, value, options, onChange, onDisabledSelect, req, err, optMe
           {shown.length === 0
             ? <div className="pof-dd-pop__opt" style={{ opacity: .6, cursor: 'default' }}>No match</div>
             : shown.map(o => {
-              const dis = !!optMeta?.[o]?.disabled;
+              const m = optMeta?.[o];
+              const dis = !!m?.disabled;
+              // Full "code: name — segment" text so the untruncated name is
+              // always available on hover (QA #19).
+              const full = m
+                ? `${m.code ? m.code + ': ' : ''}${m.name ?? o}${m.badge ? ' — ' + m.badge : ''}`
+                : o;
               return (
-                <div key={o} className={`pof-dd-pop__opt ${o === value ? 'is-sel' : ''} ${dis ? 'is-disabled' : ''}`} aria-disabled={dis}
+                <div key={o} title={full} className={`pof-dd-pop__opt ${o === value ? 'is-sel' : ''} ${dis ? 'is-disabled' : ''}`} aria-disabled={dis}
                   onClick={() => { if (dis) { onDisabledSelect?.(o); return; } onChange(o); setOpen(false); }}>
                   <DdOptLabel o={o} meta={optMeta?.[o]} /><Check c="pof-dd-pop__ck" />
                 </div>
@@ -729,6 +735,11 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
         })));
         lineId.current = d.items.length;
       }
+      // Editing/viewing an existing PO — the products are already loaded, so the
+      // Missing Product Details are known up front. Reveal them immediately
+      // instead of waiting for a re-save (the `missing` memo recomputes from the
+      // rows we just set).
+      setShowMissing(true);
       if (d.vendor_id) {
         loadSupplierLegal(d.vendor_id);
         api.get(`/p2p/purchase-orders/suppliers/${d.vendor_id}`).then(sr => {
@@ -1719,8 +1730,8 @@ function PrevSummary(props: {
   todayDisp: string; legalText: string;
 }) {
   const { stage, po, sup, supName, rows, compute, summary, charges, terms, todayDisp, legalText } = props;
-  const F = ({ l, v, full }: { l: string; v: string; full?: boolean }) => (
-    <div className={`cposum-f ${full ? 'cposum-f--full' : ''}`}><div className="cposum-f__l">{l}</div><div className={`cposum-f__v ${!v ? 'is-empty' : ''}`}>{v || '— Not provided'}</div></div>
+  const F = ({ l, v, full, pre }: { l: string; v: string; full?: boolean; pre?: boolean }) => (
+    <div className={`cposum-f ${full ? 'cposum-f--full' : ''}`}><div className="cposum-f__l">{l}</div><div className={`cposum-f__v ${!v ? 'is-empty' : ''}`} style={pre ? { whiteSpace: 'pre-wrap', wordBreak: 'break-word' } : undefined}>{v || '— Not provided'}</div></div>
   );
   const stages: React.ReactNode[] = [];
 
@@ -1778,7 +1789,7 @@ function PrevSummary(props: {
   if (stage > 3) stages.push(
     <div className="cposum-stage" key="s3">
       <div className="cposum-stage__hd"><div className="cposum-stage__num">03</div><div className="cposum-stage__t">PO Terms &amp; Conditions</div><div className="cposum-stage__done"><Check /> Completed</div></div>
-      <div className="cposum-stage__bd"><div><div className="cposum-grp__t">Terms &amp; Conditions</div><div className="cposum-grid"><F l="Terms &amp; Condition" v={terms} full /></div></div></div>
+      <div className="cposum-stage__bd"><div><div className="cposum-grp__t">Terms &amp; Conditions</div><div className="cposum-grid"><F l="Terms &amp; Condition" v={terms} full pre /></div></div></div>
     </div>
   );
 

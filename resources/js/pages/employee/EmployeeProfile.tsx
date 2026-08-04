@@ -740,6 +740,26 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // than appending a new one. Null when the modal was opened via Raise
   // New Claim, so Save Draft always creates a fresh entry.
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+  // Reimbursement context — set when the claim modal is opened from a settled
+  // company advance ("Raise Expense"). The amount is capped at the balance and
+  // the created claim is linked back to the advance on submit.
+  const [reimburseCtx, setReimburseCtx] = useState<{ advanceId: number; balance: number; advanceNo: string } | null>(null);
+  const openReimbursement = (info: { advanceId: number; balance: number; advanceNo: string }) => {
+    setReimburseCtx(info);
+    setClaimMode('expense');
+    setEditingDraftId(null);
+    setResumeFromDraft(false);
+    setClaimDrafts([{
+      ...blankDraft(),
+      title: `Advance reimbursement — ${info.advanceNo}`,
+      amount: String(info.balance),
+      date: new Date().toISOString().slice(0, 10),
+      currency: 'INR',
+      purpose: `Reimbursement for the amount spent over company advance ${info.advanceNo}.`,
+    }]);
+    setActiveClaimIdx(0);
+    setClaimOpen(true);
+  };
   // Reader that pulls both saved-draft buckets out of localStorage. Each
   // bucket is a JSON-encoded array of entries. Back-compat: also accepts
   // the previous single-slot shapes — raw array or `{savedAt,data}` — and
@@ -795,7 +815,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // draft-meta cache when the modal closes (the user may have just hit
   // Save Draft, or submitted, which clears storage).
   useEffect(() => {
-    if (claimOpen) {
+    if (claimOpen && reimburseCtx) {
+      // Opened for a reimbursement — openReimbursement() already seeded the
+      // single pre-filled, amount-capped draft. Don't clobber it.
+    } else if (claimOpen) {
       // Only restore from localStorage when the user explicitly hit
       // Resume on a specific draft card. Look up the entry by id from
       // the in-memory `expenseDrafts` array; if no editing id is set
@@ -832,6 +855,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       readSavedDrafts();
       setResumeFromDraft(false);
       setEditingDraftId(null);
+      setReimburseCtx(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [claimOpen, employeeId]);
@@ -847,7 +871,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       const newId = `${claimMode === 'advance' ? 'adv' : 'exp'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       if (claimMode === 'advance') {
         const payload = {
-          advType, advTypeOther, advAmount,
+          advType, advTypeOther, advAmount, advUsedFor,
           advRequestedDate, advRecoveryStart,
           advRecoveryMode, advMonths, advMonthlyEmi, advReason,
         };
@@ -985,8 +1009,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     } else if (!(amt > 0)) {
       errs.amount = 'Amount must be greater than 0'; summary.push('Amount must be greater than 0');
     }
+    // Company advance = spent for the company, not recovered from salary — it has
+    // NO recovery mode and NO recovery/expected-use date at all.
+    const advIsCompany = advUsedFor === 'company';
     if (!advRequestedDate)     { errs.requested = 'Requested date is required';   summary.push('Requested date is required'); }
-    if (!advRecoveryStart)     { errs.recovery_start = 'Recovery start date is required'; summary.push('Recovery start date is required'); }
+    if (!advIsCompany && !advRecoveryStart) { errs.recovery_start = 'Recovery start date is required'; summary.push('Recovery start date is required'); }
     // Today (local, YYYY-MM-DD) — lexicographic compare works because the
     // MasterDatePicker emits ISO date strings, so today/past detection is
     // a plain string compare. Both dates must be today or later; recovery
@@ -998,22 +1025,25 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       errs.requested = 'Requested date must be today (the request creation date)';
       summary.push('Requested date must be today (the request creation date)');
     }
-    if (advRecoveryStart && advRecoveryStart < todayIso) {
+    if (!advIsCompany && advRecoveryStart && advRecoveryStart < todayIso) {
       errs.recovery_start = 'Recovery start cannot be in the past';
       summary.push('Recovery start cannot be in the past');
     }
     // Server enforces after_or_equal:requested_date too, but catch it
     // client-side so the user gets immediate feedback instead of a 422.
-    if (advRequestedDate && advRecoveryStart && advRecoveryStart < advRequestedDate) {
+    if (!advIsCompany && advRequestedDate && advRecoveryStart && advRecoveryStart < advRequestedDate) {
       errs.recovery_start = 'Recovery start must be on or after requested date';
       summary.push('Recovery start must be on or after requested date');
     }
-    if (!advRecoveryMode)      { errs.recovery_mode = 'Recovery mode is required'; summary.push('Recovery mode is required'); }
-    if (advRecoveryMode === 'emi') {
-      const months = Number(advMonths);
-      if (!advMonths || !Number.isFinite(months) || months <= 0) {
-        errs.months = 'Months must be greater than 0';
-        summary.push('Months must be greater than 0');
+    // Recovery mode / EMI only apply to a self (salary-recovered) advance.
+    if (!advIsCompany) {
+      if (!advRecoveryMode)      { errs.recovery_mode = 'Recovery mode is required'; summary.push('Recovery mode is required'); }
+      if (advRecoveryMode === 'emi') {
+        const months = Number(advMonths);
+        if (!advMonths || !Number.isFinite(months) || months <= 0) {
+          errs.months = 'Months must be greater than 0';
+          summary.push('Months must be greater than 0');
+        }
       }
     }
     if (!advReason.trim())     { errs.reason = 'Reason / purpose is required';    summary.push('Reason / purpose is required'); }
@@ -1028,14 +1058,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       fd.append('advance_type', advType);
       if (advType === 'Other') fd.append('advance_type_other', advTypeOther.trim());
       fd.append('amount', String(amt));
+      fd.append('used_for', advUsedFor);
       fd.append('requested_date', advRequestedDate);
-      fd.append('recovery_start', advRecoveryStart);
-      fd.append('recovery_mode', advRecoveryMode);
-      if (advRecoveryMode === 'emi') {
-        fd.append('recovery_months', String(Number(advMonths)));
-        if (advMonthlyEmi) {
-          const emi = Number(String(advMonthlyEmi).replace(/[^\d.]/g, ''));
-          if (Number.isFinite(emi) && emi > 0) fd.append('monthly_emi', String(emi));
+      // Company advance has NO recovery and NO date — only Self carries the
+      // recovery start + mode (and EMI schedule).
+      if (!advIsCompany) {
+        fd.append('recovery_start', advRecoveryStart);
+        fd.append('recovery_mode', advRecoveryMode);
+        if (advRecoveryMode === 'emi') {
+          fd.append('recovery_months', String(Number(advMonths)));
+          if (advMonthlyEmi) {
+            const emi = Number(String(advMonthlyEmi).replace(/[^\d.]/g, ''));
+            if (Number.isFinite(emi) && emi > 0) fd.append('monthly_emi', String(emi));
+          }
         }
       }
       fd.append('reason', advReason.trim());
@@ -1099,7 +1134,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [advType, setAdvType] = useState('');
   const [advTypeOther, setAdvTypeOther] = useState(''); // shown only when advType === 'Other'
   const [advAmount, setAdvAmount] = useState('');
+  // Who the advance is for: 'self' (recovered from salary — the default/current
+  // flow) or 'company' (spent for the company, NOT recovered). For 'company' the
+  // date field becomes an Expected Use Date and Recovery Mode is disabled.
+  const [advUsedFor, setAdvUsedFor] = useState('self');
   const [advRequestedDate, setAdvRequestedDate] = useState(new Date().toISOString().slice(0, 10));
+  // Shared date field — Recovery Start for self, Expected Use Date for company.
   const [advRecoveryStart, setAdvRecoveryStart] = useState('');
   const [advRecoveryMode, setAdvRecoveryMode] = useState('');
   const [advMonths, setAdvMonths] = useState('');
@@ -1159,6 +1199,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         setAdvType('');
         setAdvAmount('');
         setAdvRequestedDate(new Date().toISOString().slice(0, 10));
+        setAdvUsedFor('self');
         setAdvRecoveryStart('');
         setAdvRecoveryMode('');
         setAdvMonths('');
@@ -1174,7 +1215,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         const entry = advanceDrafts.find(e => e.id === editingDraftId);
         if (entry) {
           const d = entry.data as Partial<{
-            advType: string; advTypeOther: string; advAmount: string;
+            advType: string; advTypeOther: string; advAmount: string; advUsedFor: string;
             advRequestedDate: string; advRecoveryStart: string;
             advRecoveryMode: string; advMonths: string; advMonthlyEmi: string;
             advReason: string;
@@ -1183,6 +1224,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             if (typeof d.advType            === 'string') setAdvType(d.advType);
             if (typeof d.advTypeOther       === 'string') setAdvTypeOther(d.advTypeOther);
             if (typeof d.advAmount          === 'string') setAdvAmount(d.advAmount);
+            if (typeof d.advUsedFor         === 'string') setAdvUsedFor(d.advUsedFor);
             if (typeof d.advRequestedDate   === 'string') setAdvRequestedDate(d.advRequestedDate);
             if (typeof d.advRecoveryStart   === 'string') setAdvRecoveryStart(d.advRecoveryStart);
             if (typeof d.advRecoveryMode    === 'string') setAdvRecoveryMode(d.advRecoveryMode);
@@ -1522,6 +1564,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // user is viewing their own profile and is also a reporting manager,
   // they can switch between their own advances and pending team requests.
   const [advanceSubTab, setAdvanceSubTab] = useState<'mine' | 'team'>('mine');
+  // Advance Used-For filter — Self used / Company used (no "All"). Sits above the
+  // status pills (All/Approved/Rejected/Pending), narrowing by used_for first.
+  const [advUsedForTab, setAdvUsedForTab] = useState<'self' | 'company'>('self');
 
   const refreshAdvances = async () => {
     if (tab !== 'expense' || !profileEmpCode) return;
@@ -1672,6 +1717,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       toast.warning('Nothing to submit', 'Add at least one expense before submitting.');
       return;
     }
+    if (reimburseCtx) {
+      const over = valid.some(d => (Number(String(d.amount).replace(/[^\d.]/g, '')) || 0) > reimburseCtx.balance + 0.005);
+      if (over) {
+        toast.warning('Over the reimbursement', `The amount can't exceed the balance ₹${reimburseCtx.balance.toLocaleString('en-IN')}.`);
+        return;
+      }
+    }
     setClaimSubmitting(true);
     try {
       const created: ApiClaim[] = [];
@@ -1686,6 +1738,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         if (d.payment)        fd.append('payment_method', d.payment);
         if (d.vendor)         fd.append('vendor', d.vendor);
         if (d.purpose)        fd.append('purpose', d.purpose);
+        if (reimburseCtx)     fd.append('reimbursement_for_advance_id', String(reimburseCtx.advanceId));
         // Always file under the profile we're viewing. The backend resolves
         // either employee_id (numeric) or employee_code (EMP- string), and
         // falls back to the current user's linked Employee row if neither is
@@ -1719,6 +1772,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       }
       setEditingDraftId(null);
       setClaimOpen(false);
+      // A reimbursement submission linked back to an advance — refresh advances
+      // so the settled section flips to "Reimbursement raised", then clear ctx.
+      if (reimburseCtx) { setReimburseCtx(null); void refreshAdvances(); }
       // Show the new claim(s) in the All Claims list immediately — the POST
       // returns the fully-serialized row, so prepend it (newest first) without
       // waiting on the refetch. Fixes "claim not displayed until page refresh".
@@ -1895,8 +1951,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // of filter pills (All/Approved/Rejected/Pending) drives the advance
   // table. `activeAdvancesSource` follows the My/Team sub-tab selection
   // the same way `activeClaimsSource` does for expenses.
-  const activeAdvancesSource: AdvanceRequestRow[] =
+  const baseAdvancesSource: AdvanceRequestRow[] =
     advanceSubTab === 'team' ? teamAdvances : apiAdvances;
+  // Used-For tab counts (from the My/Team source, before the status filter).
+  const advUsedForCounts = {
+    self:    baseAdvancesSource.filter(a => (a.used_for || 'self') === 'self').length,
+    company: baseAdvancesSource.filter(a => (a.used_for || 'self') === 'company').length,
+  };
+  // Narrow by Used For first, then the status pills / search run on this.
+  const activeAdvancesSource: AdvanceRequestRow[] =
+    baseAdvancesSource.filter(a => (a.used_for || 'self') === advUsedForTab);
   const advanceCounts = {
     all:      activeAdvancesSource.length,
     approved: activeAdvancesSource.filter(a => a.status === 'approved').length,
@@ -2043,7 +2107,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // Expense tab
     authUser, isOwnProfile, canRaiseHrRequest,
     expenseModuleTab, setExpenseModuleTab, expenseSubTab, setExpenseSubTab,
-    advanceSubTab, setAdvanceSubTab, expenseFilter, setExpenseFilter,
+    advanceSubTab, setAdvanceSubTab,
+    advUsedForTab, setAdvUsedForTab, advUsedForCounts,
+    expenseFilter, setExpenseFilter,
     expenseSearch, setExpenseSearch,
     expenseCounts, advanceCounts, totalClaimed,
     activeClaimsSource, filteredExpenses, activeAdvancesSource,
@@ -2052,6 +2118,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     actOnClaim, actOnAdvance, claimCategories, expenseDrafts, advanceDrafts,
     claimDraftKey, advanceDraftKey,
     setClaimOpen, setClaimMode, setEditingDraftId, setResumeFromDraft,
+    openReimbursement,
     exportOpen, setExportOpen,
     // Hiring tab
     hiringRequests, hiringLoading, setRaiseHiringOpen, setHiringEditing, setHiringViewing, teamSize,
@@ -2639,7 +2706,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
             <small className="ep-claim-hero-hint">
               {claimMode === 'expense'
                 ? <>Expense → <strong>Reimbursement</strong></>
-                : <>Advance → <strong>Payroll Recovery</strong></>}
+                : advUsedFor === 'company'
+                  ? <>Advance → <strong>Company Expense</strong></>
+                  : <>Advance → <strong>Payroll Recovery</strong></>}
             </small>
           </div>
         </div>
@@ -2770,7 +2839,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </div>
                 <Row className="g-3 mb-3">
                   <Col md={6}>
-                    <div className="ep-claim-label">Amount ({claimCurrencySymbol}) <span className="ep-claim-req">*</span></div>
+                    <div className="ep-claim-label">Amount ({claimCurrencySymbol}) <span className="ep-claim-req">*</span>{reimburseCtx && <span style={{ fontWeight: 500, color: '#0e7490' }}> · max ₹{reimburseCtx.balance.toLocaleString('en-IN')} (reimbursement)</span>}</div>
                     <div className="position-relative">
                       <span className="ep-claim-amount-prefix">{claimCurrencySymbol}</span>
                       <input
@@ -2793,6 +2862,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                           const [whole, frac] = raw.split('.');
                           let capped = (whole || '').slice(0, 12);
                           if (frac !== undefined) capped += '.' + frac.slice(0, 2);
+                          // Reimbursement: never let the amount exceed the balance.
+                          if (reimburseCtx && (Number(capped) || 0) > reimburseCtx.balance) {
+                            capped = String(reimburseCtx.balance);
+                          }
                           setClaimAmount(capped);
                           clearClaimErr('amount');
                         }}
@@ -2951,21 +3024,45 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </span>
                   <div className="flex-grow-1">
                     <h6 className="mb-1 fw-bold ep-claim-banner-title">Advance Request — Recoverable Payout</h6>
-                    <small className="ep-claim-banner-sub">Amount will be recovered through payroll deduction · Approval flow required</small>
+                    <small className="ep-claim-banner-sub">{advUsedFor === 'company' ? 'Company-paid advance · not recovered from salary · Approval flow required' : 'Amount will be recovered through payroll deduction · Approval flow required'}</small>
                   </div>
                   <span className="ep-claim-flow-pill">APPROVAL FLOW</span>
                 </div>
 
-                <div className="mb-3">
-                  <div className="ep-claim-label">Employee <span className="ep-claim-req">*</span></div>
-                  <MasterSelect
-                    value={claimEmployee || employeeId}
-                    placeholder="Select employee"
-                    disabled
-                    options={[{ value: employeeId, label: `${employee?.name || 'Aarav Patel'} (${employeeId})` }]}
-                    onChange={setClaimEmployee}
-                  />
-                </div>
+                {/* Employee + Used For share one 50-50 row. Used For: Self is the
+                    recoverable-from-salary flow; Company is spent for the company
+                    and is NOT recovered (recovery mode hidden; the date becomes an
+                    Expected Use Date). */}
+                <Row className="g-3 mb-3">
+                  <Col md={6}>
+                    <div className="ep-claim-label">Employee <span className="ep-claim-req">*</span></div>
+                    <MasterSelect
+                      value={claimEmployee || employeeId}
+                      placeholder="Select employee"
+                      disabled
+                      options={[{ value: employeeId, label: `${employee?.name || 'Aarav Patel'} (${employeeId})` }]}
+                      onChange={setClaimEmployee}
+                    />
+                  </Col>
+                  <Col md={6}>
+                    <div className="ep-claim-label">Used For <span className="ep-claim-req">*</span></div>
+                    <MasterSelect
+                      value={advUsedFor}
+                      placeholder="Select..."
+                      options={[
+                        { value: 'self',    label: 'Self used' },
+                        { value: 'company', label: 'Company used' },
+                      ]}
+                      onChange={(v) => {
+                        setAdvUsedFor(v);
+                        // Switching to Company drops any recovery-mode selection so a
+                        // stale EMI schedule can't tag along.
+                        if (v === 'company') { setAdvRecoveryMode(''); setAdvMonths(''); setAdvMonthlyEmi(''); }
+                        clearAdvErr('recovery_mode'); clearAdvErr('recovery_start');
+                      }}
+                    />
+                  </Col>
+                </Row>
                 <Row className="g-3 mb-3">
                   <Col md={6}>
                     <div className="ep-claim-label">Advance Type <span className="ep-claim-req">*</span></div>
@@ -3018,7 +3115,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </div>
                 )}
                 <Row className="g-3 mb-3">
-                  <Col md={6}>
+                  <Col md={advUsedFor === 'company' ? 12 : 6}>
                     <div className="ep-claim-label">Requested Date <span className="ep-claim-req">*</span></div>
                     <MasterDatePicker
                       value={advRequestedDate}
@@ -3031,6 +3128,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     />
                     {advErrors.requested && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.requested}</div>}
                   </Col>
+                  {/* Recovery Start applies to a self advance only — a company
+                      advance has no recovery and no expected-use date. */}
+                  {advUsedFor !== 'company' && (
                   <Col md={6}>
                     <div className="ep-claim-label">Recovery Start <span className="ep-claim-req">*</span></div>
                     <MasterDatePicker
@@ -3041,7 +3141,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     />
                     {advErrors.recovery_start && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.recovery_start}</div>}
                   </Col>
+                  )}
                 </Row>
+                {/* Recovery Mode only applies to a self advance — a company
+                    advance isn't recovered from salary, so it's hidden entirely. */}
+                {advUsedFor !== 'company' && (
                 <div className="mb-3">
                   <div className="ep-claim-label">Recovery Mode <span className="ep-claim-req">*</span></div>
                   <MasterSelect
@@ -3057,6 +3161,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   />
                   {advErrors.recovery_mode && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.recovery_mode}</div>}
                 </div>
+                )}
                 {/* Months + computed EMI only make sense for EMI mode — hide
                     them for lump sum / bi-monthly so the form stays tight. */}
                 {advRecoveryMode === 'emi' && (
@@ -3207,7 +3312,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <div className="ep-claim-warn">
                   <i className="ri-error-warning-line" />
                   <div>
-                    This creates a recoverable liability entry. The advance will be deducted from your salary per the selected schedule. Original record is immutable after approval.
+                    {advUsedFor === 'company'
+                      ? 'This advance is spent on the company’s behalf and is not recovered from your salary. Original record is immutable after approval.'
+                      : 'This creates a recoverable liability entry. The advance will be deducted from your salary per the selected schedule. Original record is immutable after approval.'}
                   </div>
                 </div>
               </Col>
@@ -3222,10 +3329,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         <div className="ep-claim-footer">
           <button type="button" className="ep-claim-cancel" onClick={() => setClaimOpen(false)} disabled={claimSubmitting}>Cancel</button>
           <div className="d-flex gap-2 ms-auto">
-            <button type="button" className="ep-claim-secondary" onClick={handleSaveDraft} disabled={claimSubmitting}>
-              <i className="ri-save-line me-1" /> Save Draft
-            </button>
-            {claimMode === 'expense' && (
+            {!reimburseCtx && (
+              <button type="button" className="ep-claim-secondary" onClick={handleSaveDraft} disabled={claimSubmitting}>
+                <i className="ri-save-line me-1" /> Save Draft
+              </button>
+            )}
+            {claimMode === 'expense' && !reimburseCtx && (
               <button type="button" className="ep-claim-secondary" onClick={saveAndAddAnother} disabled={claimSubmitting}>
                 <i className="ri-add-line me-1" /> Save &amp; Add Another
               </button>

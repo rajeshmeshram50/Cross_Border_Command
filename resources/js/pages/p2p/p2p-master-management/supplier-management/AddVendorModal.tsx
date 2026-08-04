@@ -5017,7 +5017,13 @@ function SupplierSegmentRefTable(props: {
                 <tr key={r.code}>
                   <td><span className="avm-sr-badge">{String(i + 1).padStart(2, '0')}</span></td>
                   <td><span className="avm-auto-code">{r.code}</span></td>
-                  <td><strong>{r.name}</strong></td>
+                  {/* Truncate a long document name to one line with an ellipsis;
+                      the full name is available on hover (QA #91). */}
+                  <td>
+                    <Tooltip label={r.name} disabled={(r.name || '').length <= 40}>
+                      <strong style={{ display: 'block', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</strong>
+                    </Tooltip>
+                  </td>
                   <td><AuthorityBadges value={r.authority_list && r.authority_list.length ? r.authority_list : r.authority} /></td>
                   <td><span className={`avm-exp-pill ${isDate ? 'is-date' : 'is-na'} ${expTone}`}>{expiryText}</span></td>
                   <td>
@@ -5888,7 +5894,13 @@ function DocTable(props: {
                 <tr key={r.code}>
                   <td>{String(i + 1).padStart(2, '0')}</td>
                   <td><span className="avm-auto-code">{r.code}</span></td>
-                  <td><strong>{r.name}</strong></td>
+                  {/* Truncate a long document name to one line with an ellipsis;
+                      the full name is available on hover (QA #91). */}
+                  <td>
+                    <Tooltip label={r.name} disabled={(r.name || '').length <= 40}>
+                      <strong style={{ display: 'block', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</strong>
+                    </Tooltip>
+                  </td>
                   <td>{r.authority}</td>
                   <td>
                     <span className={`avm-pill ${expiryDanger ? 'avm-pill-danger' : 'avm-pill-muted'}`}>

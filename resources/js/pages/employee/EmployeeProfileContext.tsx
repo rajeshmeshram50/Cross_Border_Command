@@ -101,6 +101,7 @@ export interface EmployeeProfileCtx {
   setClaimMode: (v: 'expense' | 'advance') => void;
   setEditingDraftId: (id: string | null) => void;
   setResumeFromDraft: (v: boolean) => void;
+  openReimbursement: (info: { advanceId: number; balance: number; advanceNo: string }) => void;
   exportOpen: boolean;
   setExportOpen: (v: boolean | ((o: boolean) => boolean)) => void;
 

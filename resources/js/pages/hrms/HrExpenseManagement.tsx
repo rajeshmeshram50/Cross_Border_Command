@@ -136,6 +136,11 @@ export default function HrExpenseManagement() {
   const [settleClaimId, setSettleClaimId] = useState<number | null>(null);
   // Claim whose "Review & Approve" modal is open.
   const [reviewClaimId, setReviewClaimId] = useState<number | null>(null);
+  // Advance whose Record-Payment / Review modal is open (same flow as claims).
+  const [settleAdvId, setSettleAdvId] = useState<number | null>(null);
+  const [reviewAdvId, setReviewAdvId] = useState<number | null>(null);
+  // Advance Used-For view — Self used / Company used (Advance Requests only).
+  const [advUsedFor, setAdvUsedFor] = useState<'self' | 'company'>('self');
 
   const [rows, setRows] = useState<ExpenseClaimRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -259,11 +264,18 @@ export default function HrExpenseManagement() {
     approved: dateFilteredRows.filter(r => r.status === 'approved').length,
     rejected: dateFilteredRows.filter(r => r.status === 'rejected').length,
   };
+  // Used-For tab counts (from the date-filtered set, before the status filter).
+  const advUsedForCounts = {
+    self:    dateFilteredAdvances.filter(a => (a.used_for || 'self') === 'self').length,
+    company: dateFilteredAdvances.filter(a => (a.used_for || 'self') === 'company').length,
+  };
+  // Narrow by Used For first — the status tabs + table then run on this subset.
+  const usedForAdvances = dateFilteredAdvances.filter(a => (a.used_for || 'self') === advUsedFor);
   const advanceCounts = {
-    all:      dateFilteredAdvances.length,
-    pending:  dateFilteredAdvances.filter(a => a.status === 'pending').length,
-    approved: dateFilteredAdvances.filter(a => a.status === 'approved').length,
-    rejected: dateFilteredAdvances.filter(a => a.status === 'rejected').length,
+    all:      usedForAdvances.length,
+    pending:  usedForAdvances.filter(a => a.status === 'pending').length,
+    approved: usedForAdvances.filter(a => a.status === 'approved').length,
+    rejected: usedForAdvances.filter(a => a.status === 'rejected').length,
   };
   const totalAmount = dateFilteredRows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
   const approvedAmount = dateFilteredRows
@@ -359,7 +371,7 @@ export default function HrExpenseManagement() {
     return 'All time';
   }, [dateFilter]);
 
-  const filteredAdvances = dateFilteredAdvances.filter(a => {
+  const filteredAdvances = usedForAdvances.filter(a => {
     if (filter !== 'all' && a.status !== filter) return false;
     if (search.trim()) {
       const q = search.trim().toLowerCase();
@@ -588,9 +600,9 @@ export default function HrExpenseManagement() {
     [canHrApprove, user?.employee_id],
   );
   const advanceColumns = useMemo(
-    () => advanceRequestColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct: onActAdvance }),
+    () => advanceRequestColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, usedFor: advUsedFor, onAct: onActAdvance, onRecordPayment: (row) => setSettleAdvId(row.id), onReview: (row) => setReviewAdvId(row.id) }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [canHrApprove, user?.employee_id],
+    [canHrApprove, user?.employee_id, advUsedFor],
   );
 
   return (
@@ -890,6 +902,44 @@ export default function HrExpenseManagement() {
             in its toolbar. Advances and Claims are two different row shapes, so
             each gets its own instance with its own column set. */}
         {module === 'advance' ? (
+          <>
+          {/* Used-For tabs — Self used / Company used. Narrows by used_for before
+              the status tabs; Company drops the recovery columns (matches form). */}
+          <div className="d-flex gap-2 flex-wrap mb-3">
+            {[
+              { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: '#0ea5e9' },
+              { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: '#8b5cf6' },
+            ].map(t => {
+              const on = advUsedFor === t.key;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => { setAdvUsedFor(t.key); setFilter('all'); }}
+                  className="btn d-inline-flex align-items-center gap-2 rounded-pill fw-semibold"
+                  style={{
+                    fontSize: 13, padding: '6px 14px',
+                    border: `1px solid ${on ? t.active : 'var(--vz-border-color)'}`,
+                    background: on ? t.active : 'var(--vz-card-bg)',
+                    color: on ? '#fff' : 'var(--vz-secondary-color)',
+                    boxShadow: on ? `0 4px 10px ${t.active}55` : 'none',
+                  }}
+                >
+                  {t.label}
+                  <span
+                    className="d-inline-flex align-items-center justify-content-center rounded-pill"
+                    style={{
+                      minWidth: 22, height: 20, fontSize: 11, padding: '0 6px',
+                      background: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
+                      color: on ? '#fff' : 'var(--vz-secondary-color)',
+                    }}
+                  >
+                    {t.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
           <DataTable<AdvanceRequestRow>
             data={filteredAdvances}
             columns={advanceColumns}
@@ -916,6 +966,7 @@ export default function HrExpenseManagement() {
               </>
             }
           />
+          </>
         ) : (
           <DataTable<ExpenseClaimRow>
             data={filtered}
@@ -955,6 +1006,25 @@ export default function HrExpenseManagement() {
         review
         onClose={() => setReviewClaimId(null)}
         onDone={refresh}
+      />
+
+      {/* Advance settlement + review — SAME modal, driven off the advance endpoints.
+          These refresh the ADVANCE list (not claims), and also on close so the
+          row reflects a just-recorded payout instantly without a reload. */}
+      <ExpenseSettlementModal
+        claimId={settleAdvId}
+        basePath="/advance-requests"
+        kind="advance"
+        onClose={() => { setSettleAdvId(null); refreshAdvances(); }}
+        onDone={refreshAdvances}
+      />
+      <ExpenseSettlementModal
+        claimId={reviewAdvId}
+        basePath="/advance-requests"
+        kind="advance"
+        review
+        onClose={() => { setReviewAdvId(null); refreshAdvances(); }}
+        onDone={refreshAdvances}
       />
     </>
   );

@@ -218,6 +218,10 @@ class ExpenseClaimController extends Controller
             // requirement can't be bypassed by a direct API call.
             'files'          => ['required', 'array', 'min:1'],
             'files.*'        => ['file', 'max:5120', 'mimes:pdf,jpg,jpeg,png'],
+            // Optional: this claim is the reimbursement for an over-spent company
+            // advance. When set (and valid), the created claim is linked back to
+            // the advance and the amount is capped at the reimburse balance.
+            'reimbursement_for_advance_id' => ['nullable', 'integer'],
         ], [
             'files.required'             => 'At least one proof / receipt is required.',
             'files.min'                  => 'At least one proof / receipt is required.',
@@ -254,6 +258,29 @@ class ExpenseClaimController extends Controller
             $categoryName = $cat?->name;
             // Expense categories no longer carry monthly/yearly spending caps —
             // a claim of any amount is accepted (parity with advance requests).
+        }
+
+        // Reimbursement linkage — this claim closes an over-spent company
+        // advance. Validate the advance and cap the amount at its balance.
+        $reimbAdvance = null;
+        if (!empty($data['reimbursement_for_advance_id'])) {
+            $reimbAdvance = \App\Models\AdvanceRequest::find($data['reimbursement_for_advance_id']);
+            $valid = $reimbAdvance
+                && $reimbAdvance->employee_id === $employee->id
+                && $reimbAdvance->employee_settled_at
+                && $reimbAdvance->settle_type === 'reimburse'
+                && !$reimbAdvance->settle_reimbursement_claim_id;
+            if (!$valid) {
+                $reimbAdvance = null;   // ignore invalid linkage, create a normal claim
+            } else {
+                $bal = round((float) $reimbAdvance->settle_balance, 2);
+                if ((float) $data['amount'] > $bal + 0.005) {
+                    return response()->json([
+                        'message' => 'Reimbursement amount cannot exceed the balance ₹' . number_format($bal, 2) . '.',
+                        'errors'  => ['amount' => ['Cannot exceed ₹' . number_format($bal, 2) . '.']],
+                    ], 422);
+                }
+            }
         }
 
         // When the employee has no reporting manager assigned, auto-clear
@@ -302,6 +329,13 @@ class ExpenseClaimController extends Controller
                 'created_by'       => $user->id,
             ]);
         });
+
+        // Link the created claim back to the advance it reimburses.
+        if ($reimbAdvance && !$reimbAdvance->settle_reimbursement_claim_id) {
+            $reimbAdvance->settle_reimbursement_claim_id = $row->id;
+            $reimbAdvance->settle_reimbursed_at = now();
+            $reimbAdvance->save();
+        }
 
         $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
         return response()->json($this->serialize($row), 201);

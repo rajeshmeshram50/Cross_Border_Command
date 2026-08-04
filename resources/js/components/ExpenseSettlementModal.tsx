@@ -54,6 +54,18 @@ type Summary = {
     zoho_status: string | null; zoho_expense_url: string | null;
     paid_by_name: string | null; paid_at: string | null;
   }[];
+  // Advance-only settle context (company advances).
+  employee_id?: number | null;
+  used_for?: 'self' | 'company' | string;
+  employee_settled_at?: string | null;
+  settle_actual_amount?: number | null;
+  settle_type?: 'equal' | 'return' | 'reimburse' | null;
+  settle_balance?: number;
+  settle_declared_type?: 'equal' | 'minimum' | 'maximum' | null;
+  settle_target_amount?: number | null;
+  settle_items?: { amount: number; reason: string; method?: string | null; proof_name: string | null; proof_url: string | null }[];
+  settle_reimbursed_at?: string | null;
+  settle_reimbursement?: { id: number; claim_no: string; status: string } | null;
 };
 
 type Cat = { id: number; name: string; code?: string | null };
@@ -92,6 +104,8 @@ const IcoPlus = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none
 
 export default function ExpenseSettlementModal({
   claimId, onClose, onDone, readOnly = false, review = false,
+  basePath = '/expense-claims', kind = 'expense', allowSettle = false,
+  onRaiseReimbursement,
 }: {
   claimId: number | null;
   onClose: () => void;
@@ -102,9 +116,27 @@ export default function ExpenseSettlementModal({
   /** HR "Review & Approve" mode — header + KPIs + editable adjustments only;
    *  footer becomes Approve / Reject. Approving locks the adjustments. */
   review?: boolean;
+  /** API base for all settlement calls — '/expense-claims' (default) or
+   *  '/advance-requests'. Lets the SAME modal drive both flows. */
+  basePath?: string;
+  /** 'expense' (default) shows Category + Expense Type in the payment form and
+   *  the Zoho column in history. 'advance' hides those — an advance payout only
+   *  carries amount + method + note + proof. */
+  kind?: 'expense' | 'advance';
+  /** Employee viewing their OWN company advance — enables the "Settlement"
+   *  section's usage form (itemised amount + reason + proof) so they can settle. */
+  allowSettle?: boolean;
+  /** When set, "Raise Expense" for a reimburse settlement opens the real
+   *  Expense Claim form (pre-filled + amount-capped) instead of auto-creating.
+   *  Provided by the Employee Profile where that form lives. */
+  onRaiseReimbursement?: (info: { advanceId: number; balance: number; advanceNo: string }) => void;
 }) {
   const toast = useToast();
   const open = claimId != null;
+  const isAdvance = kind === 'advance';
+  // Noun for user-facing copy — an advance is a "advance"/"payout", an expense
+  // claim is a "claim"/"reimbursement".
+  const noun = isAdvance ? 'advance' : 'claim';
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -126,6 +158,25 @@ export default function ExpenseSettlementModal({
   const [showErrors, setShowErrors] = useState(false);
   // Collapsible Adjustments (deductions/additions) section.
   const [adjOpen, setAdjOpen] = useState(true);
+  // Collapsible Payment History / Advance Paid section.
+  const [payOpen, setPayOpen] = useState(true);
+  // Proof-of-payment list — collapse to the first few, expand on "+N more".
+  const [showAllProofs, setShowAllProofs] = useState(false);
+  // Employee "Settlement" (company advance) — itemised usage rows.
+  const [settleRows, setSettleRows] = useState<{ amount: string; reason: string; method: string; proof: File | null }[]>([{ amount: '', reason: '', method: '', proof: null }]);
+  const [settleNote, setSettleNote] = useState('');
+  const [settleErr, setSettleErr] = useState(false);
+  const [settleSaving, setSettleSaving] = useState(false);
+  const [settleOpen, setSettleOpen] = useState(true);
+  // Settle flow: 'idle' → "Add Settle Payment" button; 'choose' → type popup
+  // (Equal / Minimum / Maximum, locked once picked); 'form' → itemised rows.
+  const [settleMode, setSettleMode] = useState<'idle' | 'choose' | 'form'>('idle');
+  const [settleChosen, setSettleChosen] = useState<'' | 'equal' | 'minimum' | 'maximum'>('');
+  const [settleChosenTmp, setSettleChosenTmp] = useState<'' | 'equal' | 'minimum' | 'maximum'>('');
+  const [settleTarget, setSettleTarget] = useState('');       // declared "amount used" (min/max)
+  const [settleTargetTmp, setSettleTargetTmp] = useState(''); // in the choose popup
+  const [settleFinalizeAsk, setSettleFinalizeAsk] = useState(false);
+  const [raising, setRaising] = useState(false);
   // Payment row currently being synced to Zoho Books.
   const [syncingId, setSyncingId] = useState<number | null>(null);
   // Review mode: confirmation dialog ('approve' | 'reject') + reject reason.
@@ -134,19 +185,32 @@ export default function ExpenseSettlementModal({
 
   const firstPayment = !summary?.sanctioned_amount;
 
-  const loadCats = () =>
-    api.get('/expense-claims/categories')
+  const loadCats = () => {
+    // Advances have no category master — an advance payout isn't categorised.
+    if (isAdvance) { setCats([]); return Promise.resolve(); }
+    return api.get('/expense-claims/categories')
       .then(r => setCats(Array.isArray(r.data) ? r.data : (r.data?.data ?? [])))
       .catch(() => setCats([]));
+  };
 
   useEffect(() => {
     if (!open || claimId == null) { setSummary(null); return; }
     setShowForm(false);
     setConfirmKind(null);
     setRejectReason('');
+    setShowAllProofs(false);
+    setSettleRows([{ amount: '', reason: '', method: '', proof: null }]);
+    setSettleNote('');
+    setSettleErr(false);
+    setSettleMode('idle');
+    setSettleChosen('');
+    setSettleChosenTmp('');
+    setSettleTarget('');
+    setSettleTargetTmp('');
+    setSettleFinalizeAsk(false);
     setLoading(true);
     Promise.all([
-      api.get<Summary>(`/expense-claims/${claimId}/settlement`).then(r => r.data),
+      api.get<Summary>(`${basePath}/${claimId}/settlement`).then(r => r.data),
       loadCats(),
     ])
       .then(([s]) => {
@@ -166,7 +230,7 @@ export default function ExpenseSettlementModal({
         setProofFile(null);
         setNote(`Paid ${inr(remaining)} to ${s.employee_name || 'the employee'} towards "${s.title}".`);
       })
-      .catch(() => toast.error('Load failed', 'Could not load the claim settlement.'))
+      .catch(() => toast.error('Load failed', `Could not load the ${noun} settlement.`))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, claimId]);
@@ -232,12 +296,12 @@ export default function ExpenseSettlementModal({
     if (sanctioned <= 0) { toast.warning('Deductions too high', 'Deductions cannot exceed the claimed amount plus additions — net payable must be greater than zero.'); return; }
     setSaving(true);
     try {
-      const { data: r } = await api.post(`/expense-claims/${claimId}/set-deductions`, {
+      const { data: r } = await api.post(`${basePath}/${claimId}/set-deductions`, {
         deductions: deductions.filter(d => (Number(d.amount) || 0) > 0).map(d => ({ amount: Number(d.amount), reason: d.reason })),
         additions: additions.filter(a => (Number(a.amount) || 0) > 0).map(a => ({ amount: Number(a.amount), reason: a.reason })),
       });
       toast.success('Deduction locked', r?.message ?? 'The net payable is fixed. Use “+ Add Payment” to disburse.');
-      const s = (await api.get<Summary>(`/expense-claims/${claimId}/settlement`)).data;
+      const s = (await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data;
       setSummary(s);
       const rem = s.remaining_amount ?? s.sanctioned_amount ?? 0;
       setAmount(String(rem));
@@ -272,14 +336,14 @@ export default function ExpenseSettlementModal({
     setSaving(true);
     try {
       if (managerReview) {
-        await api.post(`/expense-claims/${claimId}/manager-approve`);
-        toast.success('Claim approved', 'Approved and forwarded to HR / Finance for settlement.');
+        await api.post(`${basePath}/${claimId}/manager-approve`);
+        toast.success('Request approved', 'Approved and forwarded to HR / Finance for settlement.');
       } else {
-        await api.post(`/expense-claims/${claimId}/hr-approve`, {
+        await api.post(`${basePath}/${claimId}/hr-approve`, {
           deductions: deductions.filter(d => (Number(d.amount) || 0) > 0).map(d => ({ amount: Number(d.amount), reason: d.reason })),
           additions: additions.filter(a => (Number(a.amount) || 0) > 0).map(a => ({ amount: Number(a.amount), reason: a.reason })),
         });
-        toast.success('Claim approved', 'The claim is approved and adjustments are locked. Record payments to disburse.');
+        toast.success(isAdvance ? 'Advance approved' : 'Claim approved', `The ${noun} is approved and adjustments are locked. Record payments to disburse.`);
       }
       onDone();
       onClose();
@@ -290,12 +354,12 @@ export default function ExpenseSettlementModal({
 
   const reviewReject = async () => {
     if (claimId == null) return;
-    if (!rejectReason.trim()) { toast.warning('Reason required', 'A reason is required to reject this claim.'); return; }
+    if (!rejectReason.trim()) { toast.warning('Reason required', `A reason is required to reject this ${noun}.`); return; }
     setSaving(true);
     try {
       const action = managerReview ? 'manager-reject' : 'hr-reject';
-      await api.post(`/expense-claims/${claimId}/${action}`, { comment: rejectReason.trim() });
-      toast.success('Claim rejected', 'The claim has been rejected.');
+      await api.post(`${basePath}/${claimId}/${action}`, { comment: rejectReason.trim() });
+      toast.success(isAdvance ? 'Advance rejected' : 'Claim rejected', `The ${noun} has been rejected.`);
       onDone();
       onClose();
     } catch (e: any) {
@@ -308,9 +372,9 @@ export default function ExpenseSettlementModal({
     if (claimId == null) return;
     setSyncingId(paymentId);
     try {
-      const { data: r } = await api.post(`/expense-claims/payments/${paymentId}/sync-zoho`);
+      const { data: r } = await api.post(`${basePath}/payments/${paymentId}/sync-zoho`);
       toast.success('Synced to Zoho', r?.message ?? 'Payment marked as synced to Zoho Books.');
-      const s = (await api.get<Summary>(`/expense-claims/${claimId}/settlement`)).data;
+      const s = (await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data;
       setSummary(s);
     } catch (e: any) {
       toast.error('Sync failed', e?.response?.data?.message ?? 'Could not sync this payment to Zoho Books.');
@@ -320,7 +384,9 @@ export default function ExpenseSettlementModal({
   const submit = async () => {
     if (claimId == null) return;
     // Inline validation — mark the offending fields red instead of a toast.
-    const invalid = !categoryId || !paymentType || !expenseType || !proofFile
+    // Category + Expense Type only apply to expense claims, not advance payouts.
+    const invalid = (!isAdvance && (!categoryId || !expenseType))
+      || !paymentType || !proofFile
       || !note.trim() || amountNum <= 0 || amountNum > remaining + 0.005;
     if (invalid) { setShowErrors(true); return; }
     setSaving(true);
@@ -337,12 +403,14 @@ export default function ExpenseSettlementModal({
         });
       }
       fd.append('amount', String(amountNum));
-      if (categoryId) fd.append('category_id', categoryId);
+      if (!isAdvance) {
+        if (categoryId) fd.append('category_id', categoryId);
+        fd.append('expense_type', expenseType);
+      }
       fd.append('payment_type', paymentType);
-      fd.append('expense_type', expenseType);
       if (note) fd.append('note', note);
       if (proofFile) fd.append('proof', proofFile);
-      const { data: r } = await api.post(`/expense-claims/${claimId}/settle`, fd, {
+      const { data: r } = await api.post(`${basePath}/${claimId}/settle`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       toast.success('Payment recorded', r?.message ?? 'The settlement was recorded.');
@@ -350,11 +418,144 @@ export default function ExpenseSettlementModal({
       // Close the Add-Payment popup and refresh the overview so the new payment
       // shows in the history; keep the main modal open.
       setShowForm(false);
-      const s = (await api.get<Summary>(`/expense-claims/${claimId}/settlement`)).data;
+      const s = (await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data;
       setSummary(s);
     } catch (e: any) {
       toast.error('Could not record payment', e?.response?.data?.message ?? 'Please try again.');
     } finally { setSaving(false); }
+  };
+
+  /* ── Employee "Settlement" (company advance) ─────────────────────────── */
+  // Only for a fully-paid COMPANY advance. The advance amount is the sanctioned
+  // (paid) figure; the usage rows' total drives equal / minimum / maximum.
+  const isCompanyAdvance = isAdvance && (summary?.used_for === 'company');
+  const advancePaidFully = (summary?.settlement_status ?? 'unpaid') === 'paid';
+  // Settlement is incremental: bills accumulate across saves; the advance is
+  // only LOCKED once finalised. `alreadySettled` = finalised (read-only).
+  const alreadySettled = !!summary?.employee_settled_at;
+  const existingSettleItems = summary?.settle_items ?? [];
+  const existingSettleTotal = +existingSettleItems.reduce((s, it) => s + (Number(it.amount) || 0), 0).toFixed(2);
+  const settleInProgress = !alreadySettled && existingSettleItems.length > 0;
+  const showSettleSection = isCompanyAdvance && advancePaidFully;
+  // Cumulative usage = already-saved bills + the new rows being entered.
+  const newSettleTotal = +settleRows.reduce((s, r) => s + (Number(r.amount) || 0), 0).toFixed(2);
+  const settleTotal = +(existingSettleTotal + newSettleTotal).toFixed(2);
+  const settleBase = summary?.sanctioned_amount ?? summary?.claimed_amount ?? 0;
+  const settleDiff = +(settleTotal - settleBase).toFixed(2);
+  const settleType: 'equal' | 'minimum' | 'maximum' = settleDiff === 0 ? 'equal' : (settleDiff < 0 ? 'minimum' : 'maximum');
+  const settleBalance = Math.abs(settleDiff);
+  // Declared type + target ("amount used"): from the persisted row (in-progress)
+  // or the in-memory choice (a fresh settlement). For 'equal' the target is the
+  // advance itself. Finalising requires bills to total the target exactly.
+  const effectiveType: '' | 'equal' | 'minimum' | 'maximum' = (summary?.settle_declared_type as any) || settleChosen;
+  const settleTarget2 = summary?.settle_target_amount != null
+    ? summary.settle_target_amount
+    : (settleChosen === 'equal' ? settleBase : (Number(settleTarget) || 0));
+  const settleGoal = settleTarget2 > 0 ? settleTarget2 : settleBase;
+  const targetMet = settleGoal > 0 && Math.abs(settleTotal - settleGoal) <= 0.005;
+  const overTarget = settleTotal > settleGoal + 0.005;
+  // The SAVED bills already cover the full used amount → no more rows to add;
+  // the form becomes read-only + the type-specific close action.
+  const settleSavedMet = settleGoal > 0 && Math.abs(existingSettleTotal - settleGoal) <= 0.005;
+  // How much of the target is still un-itemised (drives the KPI + progress bar).
+  const settlePending = alreadySettled ? 0 : +Math.max(0, settleGoal - settleTotal).toFixed(2);
+  const settleDone = +(settleGoal - settlePending).toFixed(2);
+  const settlePct = settleGoal > 0 ? Math.min(100, Math.round((settleDone / settleGoal) * 100)) : (alreadySettled ? 100 : 0);
+  const TYPE_LABEL: Record<'equal' | 'minimum' | 'maximum', string> = {
+    equal: 'Equal — used exactly the advance',
+    minimum: 'Minimum — used less (return balance)',
+    maximum: 'Maximum — used more (reimburse balance)',
+  };
+
+  const setSettleRow = (i: number, patch: Partial<{ amount: string; reason: string; method: string; proof: File | null }>) =>
+    setSettleRows(rs => rs.map((r, idx) => idx === i ? { ...r, ...patch } : r));
+  const addSettleRow = () => setSettleRows(rs => [...rs, { amount: '', reason: '', method: '', proof: null }]);
+  const removeSettleRow = (i: number) => setSettleRows(rs => rs.length > 1 ? rs.filter((_, idx) => idx !== i) : rs);
+
+  // A row is "touched" once any field is filled; it's "complete" only when all
+  // fields are. Empty rows are ignored so a stray blank row doesn't block saving.
+  const rowTouched = (r: { amount: string; reason: string; method: string; proof: File | null }) => Number(r.amount) > 0 || !!r.reason.trim() || !!r.method || !!r.proof;
+  const rowComplete = (r: { amount: string; reason: string; method: string; proof: File | null }) => Number(r.amount) > 0 && !!r.reason.trim() && !!r.method && !!r.proof;
+
+  // finalize=false → "Save bills" (append, advance stays open for more).
+  // finalize=true  → "Finalize settlement" (append remaining, then LOCK forever).
+  const submitSettle = async (finalize: boolean) => {
+    if (claimId == null) return;
+    const touched = settleRows.filter(rowTouched);
+    if (touched.some(r => !rowComplete(r))) { setSettleErr(true); return; }
+    if (!finalize && touched.length === 0) { setSettleErr(true); return; }
+    if (finalize && touched.length === 0 && existingSettleItems.length === 0) { setSettleErr(true); return; }
+    if (overTarget) {
+      toast.warning('Exceeds the used amount', `Total used ${inr(settleTotal)} exceeds your claimed / used amount ${inr(settleGoal)}. Reduce a bill.`);
+      return;
+    }
+    if (finalize && !targetMet) {
+      toast.warning('Doesn’t total the declared amount', `To finalise, the bills must total ${inr(settleGoal)}. Currently ${inr(settleTotal)}.`);
+      return;
+    }
+    setSettleErr(false);
+    setSettleSaving(true);
+    try {
+      const fd = new FormData();
+      touched.forEach((r, i) => {
+        fd.append(`items[${i}][amount]`, String(Number(r.amount)));
+        fd.append(`items[${i}][reason]`, r.reason.trim());
+        fd.append(`items[${i}][method]`, r.method);
+        if (r.proof) fd.append('proofs[]', r.proof);
+      });
+      if (settleNote.trim()) fd.append('note', settleNote.trim());
+      if (finalize) fd.append('finalize', '1');
+      // Declared type + target (backend stores these only on the first save).
+      if (effectiveType) fd.append('declared_type', effectiveType);
+      if (settleGoal > 0) fd.append('target_amount', String(settleGoal));
+      const { data: r } = await api.post(`${basePath}/${claimId}/employee-settle`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success(finalize ? 'Advance settled' : 'Bills saved', r?.message ?? 'Saved.');
+      setSettleMode('idle');
+      setSettleFinalizeAsk(false);
+      setSettleRows([{ amount: '', reason: '', method: '', proof: null }]);
+      onDone();
+      const s = (await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data;
+      setSummary(s);
+      // Finalising a reimburse settlement → jump straight into the Expense Claim
+      // form (pre-filled + amount-capped) when the host supplies the opener.
+      if (finalize && onRaiseReimbursement && s.settle_type === 'reimburse' && (s.settle_balance ?? 0) > 0 && !s.settle_reimbursement) {
+        onClose();
+        onRaiseReimbursement({ advanceId: Number(claimId), balance: Number(s.settle_balance || 0), advanceNo: s.claim_no || `ADV-${s.id}` });
+      }
+    } catch (e: any) {
+      toast.error(finalize ? 'Could not settle' : 'Could not save', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setSettleSaving(false); }
+  };
+
+  // Raise a reimbursement Expense Claim for the over-spent balance (reimburse case).
+  const raiseReimbursement = async () => {
+    if (claimId == null || raising) return;
+    setRaising(true);
+    try {
+      const { data: r } = await api.post(`${basePath}/${claimId}/raise-reimbursement`, {});
+      toast.success('Reimbursement raised', r?.message ?? 'A reimbursement expense has been raised.');
+      onDone();
+      const s = (await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data;
+      setSummary(s);
+    } catch (e: any) {
+      toast.error('Could not raise reimbursement', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setRaising(false); }
+  };
+
+  // Prefer opening the real Expense Claim form (profile) when available;
+  // otherwise fall back to the one-click auto-create.
+  const raiseOrOpenReimbursement = () => {
+    if (onRaiseReimbursement && summary) {
+      onRaiseReimbursement({
+        advanceId: Number(claimId),
+        balance: Number(summary.settle_balance || 0),
+        advanceNo: summary.claim_no || `ADV-${summary.id}`,
+      });
+    } else {
+      raiseReimbursement();
+    }
   };
 
   if (!open) return null;
@@ -373,7 +574,7 @@ export default function ExpenseSettlementModal({
               <div>
                 <div className="esm-hero-eyebrow">HRMS · EXPENSE MANAGEMENT</div>
                 <div className="esm-hero-title">{review ? 'Review & Approve' : readOnly ? 'Payment Details' : 'Record Payment'}{summary ? <span className="esm-hero-sub-inline"> · {summary.title}</span> : ''}</div>
-                <div className="esm-hero-sub">{review ? (managerReview ? 'Review the claim, then approve or reject.' : 'Review the claim, set adjustments, then approve or reject.') : readOnly ? 'Reimbursement details for this expense claim.' : 'Settle an approved expense claim and record the reimbursement.'}</div>
+                <div className="esm-hero-sub">{review ? (managerReview ? `Review the ${noun}, then approve or reject.` : `Review the ${noun}, set adjustments, then approve or reject.`) : readOnly ? (isAdvance ? 'Payout details for this advance.' : 'Reimbursement details for this expense claim.') : (isAdvance ? 'Settle an approved advance and record the payout.' : 'Settle an approved expense claim and record the reimbursement.')}</div>
               </div>
             </div>
             <button className="esm-x" onClick={onClose} aria-label="Close">✕</button>
@@ -392,13 +593,18 @@ export default function ExpenseSettlementModal({
                   <div className="esm-hp-none">No documents uploaded.</div>
                 ) : (
                   <div className="esm-hp-docs">
-                    {summary.attachments.map((a, i) => (
-                      <a key={i} className="esm-hp-doc" href={tokenUrl(a.url)} target="_blank" rel="noreferrer" title={a.name}>
+                    {(showAllProofs ? summary.attachments : summary.attachments.slice(0, 4)).map((a, i) => (
+                      <div key={i} className="esm-hp-doc">
                         <i className="ri-file-text-line" />
-                        <span className="esm-hp-doc-name">{a.name}</span>
-                        <i className="ri-external-link-line" />
-                      </a>
+                        <a className="esm-hp-doc-name" href={tokenUrl(a.url)} target="_blank" rel="noreferrer" title={`View ${a.name}`}>{a.name}</a>
+                        <a className="esm-hp-doc-act" href={tokenUrl(a.url)} download={a.name} title={`Download ${a.name}`} aria-label="Download"><i className="ri-download-2-line" /></a>
+                      </div>
                     ))}
+                    {summary.attachments.length > 4 && (
+                      <button type="button" className="esm-hp-doc esm-hp-more" onClick={() => setShowAllProofs(v => !v)}>
+                        {showAllProofs ? 'Show less' : `+${summary.attachments.length - 4} more`}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -421,24 +627,34 @@ export default function ExpenseSettlementModal({
                   <div className="esm-kpi-txt">
                     <div className="esm-kpi-lab">CLAIMED AMOUNT</div>
                     <div className="esm-kpi-val" title={inr(claimed)}>{inr(claimed)}</div>
-                    <div className="esm-kpi-sub">Original claim</div>
+                    <div className="esm-kpi-sub">{isAdvance ? 'Original advance' : 'Original claim'}</div>
                   </div>
                 </div>
                 <div className="esm-kpi esm-kpi-green">
                   <span className="esm-kpi-ico"><IcoCheck /></span>
                   <div className="esm-kpi-txt">
-                    <div className="esm-kpi-lab">AMOUNT PAID</div>
+                    <div className="esm-kpi-lab">{isAdvance ? 'ADVANCE PAID' : 'AMOUNT PAID'}</div>
                     <div className="esm-kpi-val" title={inr(paidSoFar)}>{inr(paidSoFar)}</div>
-                    <div className="esm-kpi-sub">{summary.payments.length} payment{summary.payments.length === 1 ? '' : 's'} recorded</div>
+                    <div className="esm-kpi-sub">{summary.payments.length} {isAdvance ? 'payout' : 'payment'}{summary.payments.length === 1 ? '' : 's'} recorded</div>
                   </div>
                 </div>
                 {!review && (
                 <div className="esm-kpi esm-kpi-amber">
                   <span className="esm-kpi-ico"><IcoWallet /></span>
                   <div className="esm-kpi-txt">
-                    <div className="esm-kpi-lab">BALANCE AMOUNT</div>
-                    <div className="esm-kpi-val" title={inr(remaining)}>{inr(remaining)}</div>
-                    <div className="esm-kpi-sub">{fullyPaid ? 'Fully paid' : 'Outstanding'}</div>
+                    {showSettleSection ? (
+                      <>
+                        <div className="esm-kpi-lab">SETTLE AMOUNT PENDING</div>
+                        <div className="esm-kpi-val" title={inr(settlePending)}>{inr(settlePending)}</div>
+                        <div className="esm-kpi-sub">{alreadySettled ? 'Settled' : 'Pending settle'}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="esm-kpi-lab">BALANCE AMOUNT</div>
+                        <div className="esm-kpi-val" title={inr(remaining)}>{inr(remaining)}</div>
+                        <div className="esm-kpi-sub">{fullyPaid ? 'Fully paid' : 'Outstanding'}</div>
+                      </>
+                    )}
                   </div>
                 </div>
                 )}
@@ -447,7 +663,7 @@ export default function ExpenseSettlementModal({
                   <div className="esm-kpi-txt">
                     <div className="esm-kpi-lab">TOTAL ADDITIONS</div>
                     <div className="esm-kpi-val" title={inr(firstPayment ? totalAddition : (summary.addition_amount || 0))}>{inr(firstPayment ? totalAddition : (summary.addition_amount || 0))}</div>
-                    <div className="esm-kpi-sub">Added to claim</div>
+                    <div className="esm-kpi-sub">Added to {noun}</div>
                   </div>
                 </div>
                 <div className="esm-kpi esm-kpi-rose">
@@ -455,7 +671,7 @@ export default function ExpenseSettlementModal({
                   <div className="esm-kpi-txt">
                     <div className="esm-kpi-lab">TOTAL DEDUCTED</div>
                     <div className="esm-kpi-val" title={inr(firstPayment ? totalDeduction : (summary.deduction_amount || 0))}>{inr(firstPayment ? totalDeduction : (summary.deduction_amount || 0))}</div>
-                    <div className="esm-kpi-sub">Deducted from claim</div>
+                    <div className="esm-kpi-sub">Deducted from {noun}</div>
                   </div>
                 </div>
               </div>
@@ -475,7 +691,7 @@ export default function ExpenseSettlementModal({
                           <span className="esm-sec-div">|</span>
                           <span className="esm-sec-title">Claim Details</span>
                         </div>
-                        <div className="esm-sec-sub">Review the claim before approving</div>
+                        <div className="esm-sec-sub">Review the {noun} before approving</div>
                       </div>
                     </div>
                   </div>
@@ -487,9 +703,10 @@ export default function ExpenseSettlementModal({
                     <div className="esm-ro c3"><label>CATEGORY</label><div className="esm-ro-v esm-ro-sm">{summary.category_name || '—'}</div></div>
                     <div className="esm-ro c3"><label>CLAIMED AMOUNT</label><div className="esm-ro-v">{inr(claimed)}</div></div>
                     <div className="esm-ro c6"><label>DESCRIPTION</label><div className="esm-ro-v esm-ro-sm">{summary.title || '—'}</div></div>
-                    <div className="esm-ro c4"><label>PURPOSE</label><div className="esm-ro-v esm-ro-sm">{summary.purpose || '—'}</div></div>
-                    <div className="esm-ro c4"><label>VENDOR</label><div className="esm-ro-v esm-ro-sm">{summary.vendor || '—'}</div></div>
-                    <div className="esm-ro c4"><label>PROJECT</label><div className="esm-ro-v esm-ro-sm">{summary.project || '—'}</div></div>
+                    {/* Vendor / Project are expense-only; an advance has neither. */}
+                    <div className={`esm-ro ${isAdvance ? 'c12' : 'c4'}`}><label>PURPOSE</label><div className="esm-ro-v esm-ro-sm">{summary.purpose || '—'}</div></div>
+                    {!isAdvance && <div className="esm-ro c4"><label>VENDOR</label><div className="esm-ro-v esm-ro-sm">{summary.vendor || '—'}</div></div>}
+                    {!isAdvance && <div className="esm-ro c4"><label>PROJECT</label><div className="esm-ro-v esm-ro-sm">{summary.project || '—'}</div></div>}
                     <div className="esm-ro c12">
                       <label>PROOF OF PAYMENT (BY EMPLOYEE)</label>
                       {summary.attachments.length === 0 ? (
@@ -513,13 +730,23 @@ export default function ExpenseSettlementModal({
               {/* Payment progress — sits above the deductions,
                   shown once the deduction is locked and payments can be recorded. */}
               {!firstPayment && (
-                <div className="esm-prog2 esm-prog2--band">
-                  <div className="esm-prog2-hd">
-                    <span className="esm-prog2-lbl">Payment Progress</span>
-                    <span className="esm-prog2-meta">{inr(paidSoFar)} of {inr(sanctioned)} net payable · {payPct}% paid</span>
+                showSettleSection ? (
+                  <div className="esm-prog2 esm-prog2--band">
+                    <div className="esm-prog2-hd">
+                      <span className="esm-prog2-lbl">Settlement Progress</span>
+                      <span className="esm-prog2-meta">{inr(settleDone)} of {inr(settleBase)} settled · {inr(settlePending)} pending · {settlePct}%</span>
+                    </div>
+                    <div className="esm-prog2-track"><div className="esm-prog2-fill" style={{ width: `${settlePct}%` }} /></div>
                   </div>
-                  <div className="esm-prog2-track"><div className="esm-prog2-fill" style={{ width: `${payPct}%` }} /></div>
-                </div>
+                ) : (
+                  <div className="esm-prog2 esm-prog2--band">
+                    <div className="esm-prog2-hd">
+                      <span className="esm-prog2-lbl">Payment Progress</span>
+                      <span className="esm-prog2-meta">{inr(paidSoFar)} of {inr(sanctioned)} net payable · {payPct}% paid</span>
+                    </div>
+                    <div className="esm-prog2-track"><div className="esm-prog2-fill" style={{ width: `${payPct}%` }} /></div>
+                  </div>
+                )
               )}
 
               {/* Deductions section — hidden in a MANAGER review (they only see the
@@ -531,7 +758,7 @@ export default function ExpenseSettlementModal({
                   <div
                     className="esm-sec-l"
                     style={!firstPayment ? { cursor: 'pointer' } : undefined}
-                    onClick={!firstPayment ? () => toast.info('Adjustments locked', 'Additions & deductions can only be applied once — they’re locked for this claim.') : undefined}
+                    onClick={!firstPayment ? () => toast.info('Adjustments locked', `Additions & deductions can only be applied once — they’re locked for this ${noun}.`) : undefined}
                   >
                     <span className="esm-sec-ico"><i className="ri-scissors-cut-line" /></span>
                     <div className="esm-sec-tt">
@@ -540,11 +767,11 @@ export default function ExpenseSettlementModal({
                         <span className="esm-sec-div">|</span>
                         <span className="esm-sec-title">Adjustments</span>
                       </div>
-                      <div className="esm-sec-sub">{editDeductions ? 'Apply one-time additions / deductions, then submit to lock the net payable' : 'Adjustments applied to this claim'}</div>
+                      <div className="esm-sec-sub">{editDeductions ? 'Apply one-time additions / deductions, then submit to lock the net payable' : `Adjustments applied to this ${noun}`}</div>
                     </div>
                   </div>
                   <div className="esm-sec-hd-actions">
-                    {!firstPayment && <span className="esm-sec-badge esm-sec-badge--lock" style={{ cursor: 'pointer' }} onClick={() => toast.info('Adjustments locked', 'Additions & deductions can only be applied once — they’re locked for this claim.')}><i className="ri-lock-2-line" /> Locked</span>}
+                    {!firstPayment && <span className="esm-sec-badge esm-sec-badge--lock" style={{ cursor: 'pointer' }} onClick={() => toast.info('Adjustments locked', `Additions & deductions can only be applied once — they’re locked for this ${noun}.`)}><i className="ri-lock-2-line" /> Locked</span>}
                     <button type="button" className={`esm-sec-chev ${adjOpen ? '' : 'is-collapsed'}`} onClick={() => setAdjOpen(o => !o)} aria-label={adjOpen ? 'Collapse' : 'Expand'}>
                       <i className="ri-arrow-down-s-line" />
                     </button>
@@ -654,9 +881,9 @@ export default function ExpenseSettlementModal({
                       <div className="esm-sec-title-row">
                         <span className="esm-sec-tag">Payment</span>
                         <span className="esm-sec-div">|</span>
-                        <span className="esm-sec-title">Payment History</span>
+                        <span className="esm-sec-title">{isAdvance ? 'Advance Paid' : 'Payment History'}</span>
                       </div>
-                      <div className="esm-sec-sub">Recorded reimbursements against this claim</div>
+                      <div className="esm-sec-sub">{isAdvance ? 'Recorded payouts against this advance' : 'Recorded reimbursements against this claim'}</div>
                     </div>
                   </div>
                   <div className="esm-sec-hd-actions">
@@ -672,17 +899,21 @@ export default function ExpenseSettlementModal({
                         + Add Payment
                       </button>
                     )}
+                    <button type="button" className={`esm-sec-chev ${payOpen ? '' : 'is-collapsed'}`} onClick={() => setPayOpen(o => !o)} aria-label={payOpen ? 'Collapse' : 'Expand'}>
+                      <i className="ri-arrow-down-s-line" />
+                    </button>
                   </div>
                 </div>
+                {payOpen && (
                 <div className="esm-sec-body">
                   {summary.payments.length === 0 ? (
-                    <div className="esm-hint">{readOnly ? 'No payments recorded yet against this claim.' : 'No payments recorded yet. Use “+ Add Payment” to record one.'}</div>
+                    <div className="esm-hint">{readOnly ? `No payments recorded yet against this ${noun}.` : 'No payments recorded yet. Use “+ Add Payment” to record one.'}</div>
                   ) : (
                     <div className="esm-tblwrap">
                       <table className="esm-tbl">
                         <thead>
                           <tr>
-                            <th>SR NO</th><th>AMOUNT PAID</th><th>METHOD</th><th>EXPENSE TYPE</th><th>PROOF</th><th>PAID BY</th><th>DATE</th><th>ZOHO BOOK STATUS</th>{!readOnly && <th>ACTION</th>}
+                            <th>SR NO</th><th>AMOUNT PAID</th><th>METHOD</th>{!isAdvance && <th>EXPENSE TYPE</th>}<th>PROOF</th><th>PAID BY</th><th>DATE</th>{!isAdvance && <th>ZOHO BOOK STATUS</th>}{!readOnly && !isAdvance && <th>ACTION</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -693,7 +924,7 @@ export default function ExpenseSettlementModal({
                               <td>{i + 1}</td>
                               <td className="esm-tbl-amt">{inr(p.amount)}</td>
                               <td>{p.payment_type || '—'}</td>
-                              <td>{p.expense_type || '—'}</td>
+                              {!isAdvance && <td>{p.expense_type || '—'}</td>}
                               <td>
                                 {p.proof_url ? (
                                   <a className="esm-tbl-link" href={tokenUrl(p.proof_url)} target="_blank" rel="noreferrer" title={p.proof_name || 'Proof'}>
@@ -703,12 +934,14 @@ export default function ExpenseSettlementModal({
                               </td>
                               <td>{p.paid_by_name || '—'}</td>
                               <td>{fmtDate(p.paid_at)}</td>
+                              {!isAdvance && (
                               <td>
                                 <span className={`esm-zpill ${synced ? 'is-synced' : 'is-unsynced'}`}>
                                   <i className={synced ? 'ri-checkbox-circle-line' : 'ri-time-line'} /> {synced ? 'Synced' : 'Not Synced'}
                                 </span>
                               </td>
-                              {!readOnly && (
+                              )}
+                              {!readOnly && !isAdvance && (
                                 <td>
                                   {synced ? (
                                     p.zoho_expense_url ? (
@@ -733,6 +966,91 @@ export default function ExpenseSettlementModal({
                     </div>
                   )}
                 </div>
+                )}
+              </div>
+              )}
+
+              {/* ── Settlement (employee, company advance) ── */}
+              {showSettleSection && (
+              <div className="esm-sec">
+                <div className="esm-sec-hd">
+                  <div className="esm-sec-l">
+                    <span className="esm-sec-ico"><i className="ri-check-double-line" /></span>
+                    <div className="esm-sec-tt">
+                      <div className="esm-sec-title-row">
+                        <span className="esm-sec-tag">Settlement</span>
+                        <span className="esm-sec-div">|</span>
+                        <span className="esm-sec-title">Settle Advance</span>
+                      </div>
+                      <div className="esm-sec-sub">Record where the company advance was used — one row per bill</div>
+                    </div>
+                  </div>
+                  <div className="esm-sec-hd-actions">
+                    {allowSettle && settleInProgress && (
+                      <button type="button" className="esm-sec-btn esm-sec-btn--sm" onClick={() => setSettleMode('form')}><i className="ri-add-line" /> Add more payment</button>
+                    )}
+                    {alreadySettled && <span className="esm-sec-badge esm-sec-badge--lock" style={{ background: '#d6f4e3', color: '#108548', borderColor: '#a7e3c2' }}><i className="ri-checkbox-circle-line" /> Settled</span>}
+                    {settleInProgress && <span className="esm-sec-badge esm-sec-badge--lock" style={{ background: '#fef3c7', color: '#a4661c', borderColor: '#fcd996' }}><i className="ri-time-line" /> In progress</span>}
+                    <button type="button" className={`esm-sec-chev ${settleOpen ? '' : 'is-collapsed'}`} onClick={() => setSettleOpen(o => !o)} aria-label={settleOpen ? 'Collapse' : 'Expand'}>
+                      <i className="ri-arrow-down-s-line" />
+                    </button>
+                  </div>
+                </div>
+                {settleOpen && (
+                <div className="esm-sec-body">
+                  {(alreadySettled || settleInProgress) ? (
+                    <>
+                      <div className="esm-tblwrap esm-tblwrap--settle">
+                        <table className="esm-tbl esm-tbl--settle">
+                          <thead><tr><th>SR NO</th><th>AMOUNT</th><th>REASON</th><th>PAYMENT METHOD</th><th>PROOF</th></tr></thead>
+                          <tbody>
+                            {existingSettleItems.map((it, i) => (
+                              <tr key={i}>
+                                <td>{i + 1}</td>
+                                <td className="esm-tbl-amt">{inr(it.amount)}</td>
+                                <td>{it.reason || '—'}</td>
+                                <td>{it.method || '—'}</td>
+                                <td>{it.proof_url ? <a className="esm-tbl-link" href={tokenUrl(it.proof_url)} target="_blank" rel="noreferrer" title={it.proof_name || 'Proof'}><i className="ri-attachment-2" /> {it.proof_name || 'View'}</a> : '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {alreadySettled && (
+                        <div className="esm-sumrow is-grand" style={{ marginTop: 12, borderRadius: 8, padding: '10px 14px', background: summary?.settle_type === 'reimburse' ? '#cffafe' : summary?.settle_type === 'return' ? '#fde8c4' : '#d6f4e3', color: summary?.settle_type === 'reimburse' ? '#0e7490' : summary?.settle_type === 'return' ? '#a4661c' : '#108548' }}>
+                          <span>{summary?.settle_type === 'reimburse' ? 'To reimburse (used more)' : summary?.settle_type === 'return' ? 'To return (used less)' : 'Fully settled (equal)'} · Total used {inr(summary?.settle_actual_amount ?? 0)}</span>
+                          <span>{inr(summary?.settle_balance ?? 0)}</span>
+                        </div>
+                      )}
+                      {/* Reimburse follow-through — raise an expense for the extra. */}
+                      {alreadySettled && summary?.settle_type === 'reimburse' && (summary?.settle_balance ?? 0) > 0 && (
+                        summary?.settle_reimbursement ? (
+                          <div className="esm-reimb-done">
+                            <i className="ri-checkbox-circle-fill" />
+                            <span>Reimbursement raised — <strong>{summary.settle_reimbursement.claim_no}</strong> ({inr(summary?.settle_balance ?? 0)})</span>
+                          </div>
+                        ) : (
+                          <button type="button" className="esm-settle-addmore esm-settle-addmore--reimb" onClick={raiseOrOpenReimbursement} disabled={raising}>
+                            <i className="ri-file-add-line" /> {raising ? 'Raising…' : `Raise Expense to reimburse ${inr(summary?.settle_balance ?? 0)}`}
+                          </button>
+                        )
+                      )}
+                    </>
+                  ) : allowSettle ? (
+                    <div className="esm-settle-start">
+                      <div className="esm-settle-start-txt">
+                        <div className="esm-settle-start-h">Settle this company advance</div>
+                        <div className="esm-settle-start-p">Record where the {inr(settleBase)} was used. You’ll first pick how the spend compares to the advance, then itemise each bill. You can add bills over time and finalise when done.</div>
+                      </div>
+                      <button type="button" className="esm-sec-btn" onClick={() => { setSettleChosenTmp(''); setSettleMode('choose'); }}>
+                        <i className="ri-add-line" /> Add Settle Payment
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="esm-hint">Not yet settled by the employee.</div>
+                  )}
+                </div>
+                )}
               </div>
               )}
             </>
@@ -742,7 +1060,7 @@ export default function ExpenseSettlementModal({
         {/* ── Footer ── */}
         {review ? (
           <div className="esm-foot">
-            <div className="esm-foot-hint"><i className="ri-information-line" /> {managerReview ? 'Review the claim, then approve or reject.' : `Set adjustments (if any), then approve — net payable ${inr(sanctioned)}.`}</div>
+            <div className="esm-foot-hint"><i className="ri-information-line" /> {managerReview ? `Review the ${noun}, then approve or reject.` : `Set adjustments (if any), then approve — net payable ${inr(sanctioned)}.`}</div>
             <div className="esm-foot-r">
               <button className="esm-btn-approve" onClick={requestApprove} disabled={saving || (!managerReview && sanctioned <= 0)}>Approve</button>
               <button className="esm-btn-reject" onClick={() => { setRejectReason(''); setConfirmKind('reject'); }} disabled={saving}>Reject</button>
@@ -797,7 +1115,10 @@ export default function ExpenseSettlementModal({
                 </div>
               </div>
               <div className="esm-fgrid">
-                {/* Row 1 — Category · Payment Method · Expense Type (4·4·4) */}
+                {/* Row 1 — Category · Payment Method · Expense Type (4·4·4).
+                    Advances have no Category / Expense Type — the payout only
+                    carries a Payment Method, so it spans the full row. */}
+                {!isAdvance && (
                 <div className="esm-fld s4">
                   <label>CATEGORY <span className="esm-req">*</span></label>
                   <MasterSelect
@@ -809,7 +1130,8 @@ export default function ExpenseSettlementModal({
                   />
                   {showErrors && !categoryId && <span className="esm-err">Select a category.</span>}
                 </div>
-                <div className="esm-fld s4">
+                )}
+                <div className={`esm-fld ${isAdvance ? 's12' : 's4'}`}>
                   <label>PAYMENT METHOD <span className="esm-req">*</span></label>
                   <MasterSelect
                     value={paymentType}
@@ -820,6 +1142,7 @@ export default function ExpenseSettlementModal({
                   />
                   {showErrors && !paymentType && <span className="esm-err">Select a payment method.</span>}
                 </div>
+                {!isAdvance && (
                 <div className="esm-fld s4">
                   <label>EXPENSE TYPE <span className="esm-req">*</span></label>
                   <div className="esm-radio-row">
@@ -832,6 +1155,7 @@ export default function ExpenseSettlementModal({
                   </div>
                   {showErrors && !expenseType && <span className="esm-err">Select an expense type.</span>}
                 </div>
+                )}
 
                 {/* Row 2 — Amount To Pay (4) · Proof of Payment (8) */}
                 <div className={`esm-fld s4 ${showErrors && (amountNum <= 0 || amountNum > remaining + 0.005) ? 'esm-fld--err' : ''}`}>
@@ -886,6 +1210,250 @@ export default function ExpenseSettlementModal({
         </div>
       )}
 
+      {/* ── Settle Advance — pick outcome type (locked once chosen) ── */}
+      {settleMode === 'choose' && summary && (
+        <div className="esm-sub-backdrop" onMouseDown={() => setSettleMode('idle')}>
+          <div className="esm-confirm esm-confirm--wide" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <span className="esm-confirm-ico is-approve"><i className="ri-check-double-line" /></span>
+            <div className="esm-confirm-title">Settle Advance</div>
+            <div className="esm-confirm-sub">Advance amount <strong>{inr(settleBase)}</strong>. Pick how your spend compares to the advance.</div>
+            <div className="esm-choose-fld">
+              <label>EXPENSE USED <span className="esm-req">*</span></label>
+              <MasterSelect
+                value={settleChosenTmp}
+                onChange={(v) => { setSettleChosenTmp(v as any); if (v === 'equal') setSettleTargetTmp(String(settleBase)); else setSettleTargetTmp(''); }}
+                options={[
+                  { value: 'equal', label: 'Equal — used exactly the advance' },
+                  { value: 'minimum', label: 'Minimum — used less (return balance)' },
+                  { value: 'maximum', label: 'Maximum — used more (reimburse balance)' },
+                ]}
+                placeholder="Select how the advance was used"
+              />
+            </div>
+            {settleChosenTmp && (
+              <div className="esm-choose-fld">
+                <label>AMOUNT USED <span className="esm-req">*</span> {settleChosenTmp === 'minimum' ? <span className="esm-muted">(less than {inr(settleBase)})</span> : settleChosenTmp === 'maximum' ? <span className="esm-muted">(more than {inr(settleBase)})</span> : <span className="esm-muted">(auto — equals the advance)</span>}</label>
+                <div className="esm-money"><span className="esm-cur">₹</span>
+                  <input className="esm-in" type="number" min={0} placeholder="0.00"
+                    value={settleChosenTmp === 'equal' ? String(settleBase) : settleTargetTmp}
+                    readOnly={settleChosenTmp === 'equal'}
+                    onChange={e => setSettleTargetTmp(e.target.value)} />
+                </div>
+                {settleChosenTmp === 'minimum' && !!settleTargetTmp && !(Number(settleTargetTmp) > 0 && Number(settleTargetTmp) < settleBase) && <span className="esm-err">Must be greater than 0 and less than {inr(settleBase)}.</span>}
+                {settleChosenTmp === 'maximum' && !!settleTargetTmp && !(Number(settleTargetTmp) > settleBase) && <span className="esm-err">Must be greater than {inr(settleBase)}.</span>}
+              </div>
+            )}
+            <div className="esm-choose-note">
+              <i className="ri-error-warning-line" />
+              <span>Once you continue, the settlement type and amount are <strong>locked and can’t be changed</strong>. Your bills must total this amount to finalise.</span>
+            </div>
+            {(() => {
+              const t = Number(settleTargetTmp) || 0;
+              const valid = settleChosenTmp === 'equal'
+                || (settleChosenTmp === 'minimum' && t > 0 && t < settleBase)
+                || (settleChosenTmp === 'maximum' && t > settleBase);
+              return (
+                <div className="esm-confirm-actions">
+                  <button type="button" className="esm-btn-approve" disabled={!valid} onClick={() => { setSettleChosen(settleChosenTmp); setSettleTarget(settleChosenTmp === 'equal' ? String(settleBase) : settleTargetTmp); setSettleMode('form'); }}>Continue</button>
+                  <button type="button" className="esm-btn-ghost" onClick={() => setSettleMode('idle')}>Cancel</button>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ── Settle Advance — itemised usage form (nested popup) ── */}
+      {settleMode === 'form' && summary && (
+        <div className="esm-sub-backdrop" onMouseDown={() => { if (!settleSaving) setSettleMode('idle'); }}>
+          <div className="esm-sub-modal esm-sub-modal--settle" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="esm-sub-head">
+              <div className="esm-sub-head-l">
+                <span className="esm-sub-head-ico"><i className="ri-check-double-line" /></span>
+                <div>
+                  <div className="esm-sub-title">Settle Advance</div>
+                  <div className="esm-sub-hsub">
+                    <span className="esm-sub-chip">{summary.claim_no || `#${summary.id}`}</span>
+                    <span className="esm-sub-dot">•</span>
+                    <span>{summary.employee_name || '—'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="esm-sub-body">
+              {/* Advance amount + locked type + declared "amount to account" */}
+              <div className="esm-settle-strip">
+                <div className="esm-settle-stat">
+                  <span className="esm-settle-stat-ic"><IcoWallet /></span>
+                  <div>
+                    <div className="esm-settle-stat-lab">ADVANCE AMOUNT</div>
+                    <div className="esm-settle-stat-val" title={inr(settleBase)}>{inr(settleBase)}</div>
+                  </div>
+                </div>
+                {effectiveType && (
+                  <div className="esm-settle-stat">
+                    <span className="esm-settle-stat-ic is-type"><i className="ri-lock-2-line" /></span>
+                    <div>
+                      <div className="esm-settle-stat-lab">SETTLEMENT TYPE</div>
+                      <div className="esm-settle-stat-val esm-settle-stat-val--sm">{effectiveType === 'equal' ? 'Equal — used exactly' : effectiveType === 'minimum' ? 'Minimum — used less' : 'Maximum — used more'}</div>
+                    </div>
+                  </div>
+                )}
+                {settleGoal > 0 && (
+                  <div className="esm-settle-stat">
+                    <span className="esm-settle-stat-ic is-goal"><i className="ri-focus-3-line" /></span>
+                    <div>
+                      <div className="esm-settle-stat-lab">USED AMOUNT</div>
+                      <div className="esm-settle-stat-val" title={inr(settleGoal)}>{inr(settleGoal)}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="esm-settle-rows">
+                <div className="esm-srow esm-srow-hd">
+                  <span>AMOUNT <span className="esm-req">*</span></span>
+                  <span>REASON / WHERE USED <span className="esm-req">*</span></span>
+                  <span>PAYMENT METHOD <span className="esm-req">*</span></span>
+                  <span>PROOF <span className="esm-req">*</span></span>
+                  <span />
+                </div>
+                <div className="esm-srow-scroll">
+                {/* Previously-saved bills — locked, can't be removed or edited. */}
+                {existingSettleItems.map((it, i) => (
+                  <div className="esm-srow esm-srow--locked" key={`ex-${i}`}>
+                    <div className="esm-ded-amt"><span className="esm-cur">₹</span>
+                      <input className="esm-in" value={inr(it.amount).replace('₹', '')} readOnly tabIndex={-1} />
+                    </div>
+                    <input className="esm-in" value={it.reason || ''} readOnly tabIndex={-1} />
+                    <input className="esm-in" value={it.method || '—'} readOnly tabIndex={-1} />
+                    {it.proof_url ? (
+                      <a className="esm-file-chip esm-srow-file" href={tokenUrl(it.proof_url)} target="_blank" rel="noreferrer" title={it.proof_name || 'Proof'} style={{ textDecoration: 'none' }}>
+                        <i className="ri-file-text-line esm-file-ic" />
+                        <span className="esm-file-name">{it.proof_name || 'View'}</span>
+                      </a>
+                    ) : <span className="esm-srow-file" />}
+                    <span className="esm-srow-lockic" title="Saved — locked"><i className="ri-lock-2-line" /></span>
+                  </div>
+                ))}
+                {!settleSavedMet && settleRows.map((r, i) => (
+                  <div className="esm-srow" key={i}>
+                    <div className="esm-ded-amt"><span className="esm-cur">₹</span>
+                      <input className="esm-in" type="number" min={0} placeholder="0.00" value={r.amount} onChange={e => { setSettleRow(i, { amount: e.target.value }); }} />
+                    </div>
+                    <input className="esm-in" placeholder="e.g. Hotel bill, cab fare…" maxLength={500} value={r.reason} onChange={e => setSettleRow(i, { reason: e.target.value })} />
+                    <div className="esm-srow-method">
+                      <MasterSelect
+                        value={r.method}
+                        onChange={(v) => setSettleRow(i, { method: v })}
+                        options={['UPI', 'PhonePe', 'Cheque', 'Bank Transfer'].map(v => ({ value: v, label: v }))}
+                        placeholder="Method"
+                      />
+                    </div>
+                    {!r.proof ? (
+                      <label className="esm-file esm-srow-file">
+                        <i className="ri-attachment-2" /> <span>Proof</span>
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setSettleRow(i, { proof: e.target.files?.[0] ?? null })} />
+                      </label>
+                    ) : (
+                      <div className="esm-file-chip esm-srow-file" title={r.proof.name}>
+                        <i className="ri-file-text-line esm-file-ic" />
+                        <span className="esm-file-name">{r.proof.name}</span>
+                        <label className="esm-file-btn" title="Replace"><i className="ri-refresh-line" /><input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setSettleRow(i, { proof: e.target.files?.[0] ?? null })} /></label>
+                      </div>
+                    )}
+                    <button type="button" className="esm-srow-x" onClick={() => removeSettleRow(i)} disabled={settleRows.length === 1} aria-label="Remove row"><i className="ri-delete-bin-6-line" /></button>
+                  </div>
+                ))}
+                </div>
+                {!settleSavedMet && (
+                  <button type="button" className="esm-ded-add esm-srow-add" onClick={addSettleRow}>+ Add row</button>
+                )}
+                {!settleSavedMet && settleErr && settleRows.some(r => (Number(r.amount) > 0 || r.reason.trim() || r.method || r.proof) && !(Number(r.amount) > 0 && r.reason.trim() && r.method && r.proof)) && (
+                  <div className="esm-err" style={{ marginTop: 6 }}>Each row needs an amount, a reason, a payment method and a proof.</div>
+                )}
+                {settleSavedMet && (
+                  <div className="esm-settle-donenote">
+                    <i className="ri-checkbox-circle-fill" />
+                    <span>You’ve accounted for the full used amount ({inr(settleGoal)}).{' '}
+                      {effectiveType === 'maximum' ? 'You can now raise your reimbursement expense.' : effectiveType === 'minimum' ? 'Record the return payment to close the advance.' : 'Finalise to lock the settlement.'}</span>
+                  </div>
+                )}
+              </div>
+              {/* Totals + outcome action, side by side */}
+              <div className="esm-settle-grid">
+                <div className="esm-settle-sum">
+                  <div className="esm-sumrow"><span>Advance amount</span><span>{inr(settleBase)}</span></div>
+                  <div className="esm-sumrow"><span>Used amount (declared)</span><span>{inr(settleGoal)}</span></div>
+                  {(() => { const nBills = existingSettleItems.length + settleRows.filter(r => Number(r.amount) > 0).length; return (
+                  <div className="esm-sumrow"><span>Total used ({nBills} {nBills === 1 ? 'bill' : 'bills'})</span><span>{inr(settleTotal)}</span></div>
+                  ); })()}
+                  <div className="esm-sumrow is-grand" style={{ background: overTarget ? 'linear-gradient(120deg,#e11d48,#f43f5e)' : targetMet ? 'linear-gradient(120deg,#059669,#10b981)' : 'linear-gradient(120deg,#64748b,#94a3b8)' }}>
+                    <span>{overTarget ? 'Over the used amount' : targetMet ? 'Accounted in full' : 'Remaining to account'}</span>
+                    <span>{overTarget ? '+' + inr(settleTotal - settleGoal) : targetMet ? inr(settleGoal) : inr(settlePending)}</span>
+                  </div>
+                </div>
+                {(() => {
+                  const bal = Math.abs(settleGoal - settleBase);
+                  // The action only depends on SAVED bills — unsaved rows must be
+                  // saved first. Live-typed rows never enable the button.
+                  const hasUnsaved = settleRows.some(rowTouched);
+                  const savedMet = settleGoal > 0 && Math.abs(existingSettleTotal - settleGoal) <= 0.005;
+                  const canAct = savedMet && !hasUnsaved;
+                  const lab = effectiveType === 'minimum' ? 'EMPLOYEE TO RETURN' : effectiveType === 'maximum' ? 'REIMBURSE EMPLOYEE' : 'NOTHING TO SETTLE';
+                  const amt = effectiveType === 'equal' ? '₹0.00' : inr(bal);
+                  const amtCls = effectiveType === 'minimum' ? 'is-return' : effectiveType === 'maximum' ? 'is-reimburse' : 'is-equal';
+                  const actLabel = effectiveType === 'minimum' ? 'Make Payment' : effectiveType === 'maximum' ? 'Raise Expense' : 'Finalize settlement';
+                  const actIcon  = effectiveType === 'minimum' ? 'ri-bank-card-line' : effectiveType === 'maximum' ? 'ri-file-add-line' : 'ri-lock-2-line';
+                  const helper = hasUnsaved
+                    ? 'Save the bills first — then you can ' + actLabel.toLowerCase() + '.'
+                    : !savedMet
+                      ? `${actLabel} unlocks once the saved bills total ${inr(settleGoal)}.`
+                      : effectiveType === 'minimum'
+                        ? 'Used less than the advance. Record the returned amount to close it.'
+                        : effectiveType === 'maximum'
+                          ? 'Spent more than the advance. Raise a reimbursement to close it.'
+                          : 'Usage matches the advance exactly. Finalise to lock it.';
+                  return (
+                    <div className={`esm-settle-action ${canAct ? 'is-ready' : ''}`}>
+                      <div className="esm-act-lab">{canAct ? lab : 'REMAINING TO ACCOUNT'}</div>
+                      <div className={`esm-act-amt ${canAct ? amtCls : 'is-pending'}`}>{canAct ? amt : inr(settlePending)}</div>
+                      <div className="esm-act-p">{helper}</div>
+                      <button type="button" className="esm-btn-primary esm-act-btn" onClick={() => setSettleFinalizeAsk(true)} disabled={!canAct || settleSaving} title={!canAct ? (hasUnsaved ? 'Save the bills first' : `Saved bills must total ${inr(settleGoal)}`) : ''}><i className={actIcon} /> {actLabel}</button>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+            <div className="esm-sub-foot">
+              <div className="esm-foot-hint"><i className="ri-information-line" /> Add bills any time — saved bills lock.</div>
+              <div className="esm-foot-r">
+                <button type="button" className="esm-btn-ghost" onClick={() => setSettleMode('idle')} disabled={settleSaving}>Cancel</button>
+                <button type="button" className="esm-btn-soft" onClick={() => submitSettle(false)} disabled={settleSaving}>{settleSaving ? 'Saving…' : 'Save bills'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Finalize settlement confirmation ── */}
+      {settleFinalizeAsk && summary && (
+        <div className="esm-sub-backdrop" onMouseDown={() => { if (!settleSaving) setSettleFinalizeAsk(false); }}>
+          <div className="esm-confirm" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <span className="esm-confirm-ico is-approve"><i className="ri-lock-2-line" /></span>
+            <div className="esm-confirm-title">Finalise this settlement?</div>
+            <div className="esm-confirm-msg">
+              Total used <b>{inr(settleTotal)}</b> of <b>{inr(settleBase)}</b>.{' '}
+              {settleType === 'minimum' ? <>Employee must <b>return {inr(settleBalance)}</b>.</> : settleType === 'maximum' ? <>Company must <b>reimburse {inr(settleBalance)}</b>.</> : <>Usage <b>matches</b> the advance.</>}
+              {' '}Once finalised, <b>no more bills can be added</b> and the advance is locked.
+            </div>
+            <div className="esm-confirm-actions">
+              <button type="button" className="esm-btn-approve" onClick={() => submitSettle(true)} disabled={settleSaving}>{settleSaving ? 'Finalising…' : 'Finalise & lock'}</button>
+              <button type="button" className="esm-btn-ghost" onClick={() => setSettleFinalizeAsk(false)} disabled={settleSaving}>Back</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Approve / Reject confirmation ── */}
       {confirmKind && summary && (
         <div className="esm-sub-backdrop" onMouseDown={() => { if (!saving) setConfirmKind(null); }}>
@@ -893,11 +1461,11 @@ export default function ExpenseSettlementModal({
             <span className={`esm-confirm-ico ${confirmKind === 'approve' ? 'is-approve' : 'is-reject'}`}>
               <i className={confirmKind === 'approve' ? 'ri-checkbox-circle-line' : 'ri-close-circle-line'} />
             </span>
-            <div className="esm-confirm-title">{confirmKind === 'approve' ? 'Approve this claim?' : 'Reject this claim?'}</div>
+            <div className="esm-confirm-title">{confirmKind === 'approve' ? `Approve this ${noun}?` : `Reject this ${noun}?`}</div>
             {confirmKind === 'approve' ? (
               managerReview ? (
                 <div className="esm-confirm-msg">
-                  This forwards the claim to <b>HR / Finance</b> for settlement. As the reporting manager you’re approving the claim only — deductions & payment happen at the next stage.
+                  This forwards the {noun} to <b>HR / Finance</b> for settlement. As the reporting manager you’re approving the {noun} only — deductions &amp; payment happen at the next stage.
                 </div>
               ) : (
                 <div className="esm-confirm-msg">
@@ -946,13 +1514,17 @@ const CSS = `
 /* Reporting-manager review popup only — give the Claim Details card more
    breathing room below the hero (scoped to esm-modal--fit-mgr, which is applied
    only when the claim is at the manager-approval stage). */
-.esm-modal--fit-mgr .esm-body{padding-top:24px;}
+.esm-modal--fit-mgr .esm-body{padding-top:6px;}
 .esm-modal--fit-mgr .esm-hero{border-bottom:4px solid rgba(255,255,255,.6);}
+/* Give the header title block room below its subtitle (the hero's own
+   bottom padding is zeroed by .esm-modal--fit). */
+.esm-modal--fit-mgr .esm-hero-top{padding-bottom:14px;}
 [data-bs-theme="dark"] .esm-modal{background:#0b1e27;color:#e2e8f0;}
 /* Nested Add-Payment popup (over the overview) — styled like the PO "Update PO
    Payment" dialog: teal header + outstanding-balance strip + form. */
 .esm-sub-backdrop{position:fixed;inset:0;z-index:9600;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:20px;}
 .esm-sub-modal{width:100%;max-width:1080px;max-height:92vh;display:flex;flex-direction:column;background:#fff;border:1.5px solid rgba(255,255,255,.5);border-radius:16px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.5);}
+.esm-sub-modal--settle{max-width:980px;}
 [data-bs-theme="dark"] .esm-sub-modal{background:#0f172a;color:#e2e8f0;}
 .esm-sub-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;background:linear-gradient(120deg,#0e7490,#06b6d4);color:#fff;}
 .esm-sub-head-l{display:flex;align-items:center;gap:12px;min-width:0;}
@@ -1023,9 +1595,14 @@ const CSS = `
 .esm-hp-proof{grid-column:span 2;}
 .esm-hp-none{font-size:12px;font-weight:600;opacity:.75;}
 .esm-hp-docs{display:flex;flex-wrap:wrap;gap:6px;}
-.esm-hp-doc{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:5px 10px;border-radius:8px;background:rgba(255,255,255,.16);color:#fff;text-decoration:none;font-size:12px;font-weight:600;}
+.esm-hp-doc{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:5px 10px;border-radius:8px;background:rgba(255,255,255,.16);color:#fff;text-decoration:none;font-size:12px;font-weight:600;border:none;font-family:inherit;}
 .esm-hp-doc:hover{background:rgba(255,255,255,.28);}
+.esm-hp-doc a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;}
 .esm-hp-doc-name{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.esm-hp-doc-act{opacity:.82;flex-shrink:0;}
+.esm-hp-doc-act:hover{opacity:1;}
+.esm-hp-more{cursor:pointer;background:rgba(255,255,255,.24);font-weight:700;}
+.esm-hp-more:hover{background:rgba(255,255,255,.36);}
 @media (max-width:820px){.esm-hpanel{grid-template-columns:repeat(2,1fr);margin-left:0;margin-right:0;}.esm-hp-proof{grid-column:span 2;}}
 @media (max-width:480px){.esm-hpanel{grid-template-columns:1fr;}.esm-hp-proof{grid-column:span 1;}}
 .esm-hero-ico{width:48px;height:48px;border-radius:12px;background:rgba(255,255,255,.18);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
@@ -1157,6 +1734,16 @@ textarea.esm-in{resize:vertical;}
 .esm-sec-hd-actions{position:relative;z-index:1;display:flex;align-items:center;gap:10px;flex-shrink:0;}
 .esm-sec-btn{border:none;border-radius:8px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;background:linear-gradient(135deg,#0c4a6e,#0e7490);box-shadow:0 3px 10px rgba(14,116,144,.3);white-space:nowrap;display:inline-flex;gap:6px;align-items:center;}
 .esm-sec-btn:hover:not(:disabled){filter:brightness(1.09);}
+.esm-sec-btn--sm{padding:6px 12px;font-size:11.5px;box-shadow:0 2px 6px rgba(14,116,144,.28);}
+.esm-settle-addmore{margin-top:10px;width:100%;display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1.5px dashed #22d3ee;background:#ecfeff;color:#0891b2;border-radius:9px;padding:9px 14px;font-size:12.5px;font-weight:700;cursor:pointer;}
+.esm-settle-addmore:hover{background:#cffafe;}
+[data-bs-theme="dark"] .esm-settle-addmore{background:rgba(8,145,178,.14);border-color:rgba(8,145,178,.5);color:#67e8f9;}
+.esm-settle-addmore--reimb{margin-top:12px;border-style:solid;border-color:#06b6d4;background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;}
+.esm-settle-addmore--reimb:hover:not(:disabled){filter:brightness(1.07);background:linear-gradient(135deg,#0891b2,#06b6d4);}
+.esm-settle-addmore--reimb:disabled{opacity:.6;cursor:not-allowed;}
+.esm-reimb-done{margin-top:12px;display:flex;align-items:center;gap:8px;background:#d6f4e3;border:1px solid #a7e3c2;color:#108548;border-radius:9px;padding:10px 14px;font-size:12.5px;font-weight:600;}
+.esm-reimb-done i{font-size:16px;}
+[data-bs-theme="dark"] .esm-reimb-done{background:rgba(16,133,72,.18);border-color:rgba(16,133,72,.5);color:#6ee7b7;}
 .esm-sec-btn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none;}
 /* Collapse chevron */
 .esm-sec-chev{width:28px;height:28px;border-radius:50%;border:1px solid #cffafe;background:#fff;color:#0e7490;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 1px 3px rgba(6,182,212,.18);flex-shrink:0;}
@@ -1298,7 +1885,7 @@ textarea.esm-in{resize:vertical;}
 [data-bs-theme="dark"] .esm-tbl-amt{color:#e2e8f0;}
 .esm-tbl-link{display:inline-flex;align-items:center;gap:5px;max-width:170px;overflow:hidden;text-overflow:ellipsis;color:#0891b2;text-decoration:none;font-weight:600;}
 .esm-tbl-link:hover{text-decoration:underline;}
-.esm-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 28px;border-top:1px solid #eef2f4;background:#f8fafc;}
+.esm-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 28px 22px;border-top:1px solid #eef2f4;background:#f8fafc;}
 [data-bs-theme="dark"] .esm-foot{background:#0b1a22;border-color:#173947;}
 .esm-foot-hint{display:flex;align-items:center;gap:7px;font-size:12px;color:#64748b;min-width:0;}
 .esm-foot-hint i{color:#0891b2;font-size:15px;flex-shrink:0;}
@@ -1329,5 +1916,102 @@ textarea.esm-in{resize:vertical;}
 [data-bs-theme="dark"] .esm-confirm-msg{color:#94a3b8;}
 .esm-confirm .esm-in{text-align:left;}
 .esm-confirm-actions{display:flex;gap:10px;justify-content:center;margin-top:4px;}
+.esm-confirm--wide{max-width:480px;align-items:stretch;text-align:left;}
+.esm-confirm--wide .esm-confirm-ico{align-self:center;}
+.esm-confirm--wide .esm-confirm-title{text-align:center;}
+.esm-confirm-sub{font-size:13px;color:#475569;line-height:1.5;text-align:center;}
+[data-bs-theme="dark"] .esm-confirm-sub{color:#94a3b8;}
+.esm-choose-fld{display:flex;flex-direction:column;gap:6px;}
+.esm-choose-fld>label{font-size:11px;font-weight:800;letter-spacing:.04em;color:#64748b;}
+[data-bs-theme="dark"] .esm-choose-fld>label{color:#94a3b8;}
+.esm-choose-note{display:flex;gap:8px;align-items:flex-start;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.5;}
+.esm-choose-note i{font-size:16px;flex:0 0 auto;margin-top:1px;}
+[data-bs-theme="dark"] .esm-choose-note{background:rgba(154,52,18,.18);border-color:rgba(154,52,18,.5);color:#fdba74;}
+/* Settle Advance — start card + locked-type chip */
+.esm-settle-start{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;background:#f0fbff;border:1px dashed #7dd3e8;border-radius:12px;padding:16px 18px;}
+[data-bs-theme="dark"] .esm-settle-start{background:rgba(14,116,144,.14);border-color:rgba(14,116,144,.5);}
+.esm-settle-start-h{font-size:14px;font-weight:800;color:#0f172a;}
+[data-bs-theme="dark"] .esm-settle-start-h{color:#e2e8f0;}
+.esm-settle-start-p{font-size:12.5px;color:#475569;line-height:1.5;margin-top:2px;max-width:520px;}
+[data-bs-theme="dark"] .esm-settle-start-p{color:#94a3b8;}
+.esm-settle-lock{display:inline-flex;align-items:center;gap:8px;background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;border-radius:999px;padding:6px 14px;font-size:12.5px;font-weight:600;margin-bottom:12px;}
+.esm-settle-lock i{font-size:15px;}
+[data-bs-theme="dark"] .esm-settle-lock{background:rgba(99,102,241,.18);border-color:rgba(99,102,241,.5);color:#c7d2fe;}
+/* Settle Advance popup — header strip with 3 stats */
+.esm-settle-strip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;background:#f0fbff;border:1px solid #cdeef6;border-radius:12px;padding:12px 14px;}
+[data-bs-theme="dark"] .esm-settle-strip{background:rgba(14,116,144,.12);border-color:rgba(14,116,144,.4);}
+.esm-settle-stat{display:flex;align-items:center;gap:10px;min-width:0;}
+.esm-settle-stat+.esm-settle-stat{border-left:1px solid #cdeef6;padding-left:12px;}
+[data-bs-theme="dark"] .esm-settle-stat+.esm-settle-stat{border-left-color:rgba(14,116,144,.4);}
+.esm-settle-stat-ic{width:38px;height:38px;flex:0 0 auto;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;color:#fff;background:linear-gradient(135deg,#f59e0b,#f97316);}
+.esm-settle-stat-ic.is-type{background:linear-gradient(135deg,#6366f1,#4f46e5);}
+.esm-settle-stat-ic.is-goal{background:linear-gradient(135deg,#0891b2,#06b6d4);}
+.esm-settle-stat-lab{font-size:10px;font-weight:800;letter-spacing:.05em;color:#64748b;}
+[data-bs-theme="dark"] .esm-settle-stat-lab{color:#94a3b8;}
+.esm-settle-stat-val{font-size:16px;font-weight:800;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.esm-settle-stat-val--sm{font-size:12.5px;font-weight:700;white-space:normal;line-height:1.25;}
+[data-bs-theme="dark"] .esm-settle-stat-val{color:#e2e8f0;}
+@media (max-width:640px){.esm-settle-strip{grid-template-columns:1fr;}.esm-settle-stat+.esm-settle-stat{border-left:none;padding-left:0;border-top:1px solid #cdeef6;padding-top:10px;}}
+/* Settle Advance popup — itemised usage rows */
+.esm-settle-rows{display:flex;flex-direction:column;gap:8px;}
+/* Scroll the row list after ~4 rows so the popup height stays fixed. */
+.esm-srow-scroll{display:flex;flex-direction:column;gap:8px;max-height:212px;overflow-y:auto;overflow-x:hidden;padding-right:4px;}
+.esm-srow{display:grid;grid-template-columns:minmax(110px,2.2fr) minmax(0,4fr) minmax(120px,1.7fr) 150px 40px;gap:10px;align-items:center;}
+.esm-srow-method{min-width:0;}
+.esm-srow-add{align-self:flex-end;width:auto;padding:7px 18px;font-size:12px;}
+.esm-settle-donenote{display:flex;align-items:flex-start;gap:8px;background:#d6f4e3;border:1px solid #a7e3c2;color:#108548;border-radius:9px;padding:10px 14px;font-size:12.5px;font-weight:600;line-height:1.45;}
+.esm-settle-donenote i{font-size:16px;flex:0 0 auto;margin-top:1px;}
+[data-bs-theme="dark"] .esm-settle-donenote{background:rgba(16,133,72,.18);border-color:rgba(16,133,72,.5);color:#6ee7b7;}
+/* Read-only settle table — give REASON the most room, never scroll sideways */
+.esm-tblwrap--settle{overflow-x:hidden;}
+.esm-tbl--settle{table-layout:fixed;width:100%;}
+.esm-tbl--settle th:nth-child(1),.esm-tbl--settle td:nth-child(1){width:50px;}
+.esm-tbl--settle th:nth-child(2),.esm-tbl--settle td:nth-child(2){width:100px;}
+.esm-tbl--settle th:nth-child(3),.esm-tbl--settle td:nth-child(3){width:auto;}
+.esm-tbl--settle th:nth-child(4),.esm-tbl--settle td:nth-child(4){width:120px;}
+.esm-tbl--settle th:nth-child(5),.esm-tbl--settle td:nth-child(5){width:200px;padding-right:16px;}
+.esm-tbl--settle td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.esm-tbl--settle td:nth-child(3){white-space:normal;word-break:break-word;}
+.esm-tbl--settle .esm-tbl-link{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.esm-tbl--settle .esm-tbl-link i{margin-right:5px;}
+.esm-srow-hd{padding:0 2px 2px;}
+.esm-srow-hd>span{font-size:10.5px;font-weight:800;letter-spacing:.04em;color:#64748b;}
+[data-bs-theme="dark"] .esm-srow-hd>span{color:#94a3b8;}
+.esm-srow .esm-in{height:41px;}
+.esm-srow-file{flex:0 0 auto;width:158px;height:41px;margin:0;}
+.esm-srow-x{width:40px;height:41px;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid #fecdd3;border-radius:9px;background:#fff1f2;color:#e11d48;font-size:16px;cursor:pointer;}
+.esm-srow-x:hover:not(:disabled){background:#ffe4e6;}
+.esm-srow-x:disabled{opacity:.4;cursor:not-allowed;}
+.esm-settle-sum{border:1px solid #e2eef2;border-radius:10px;overflow:hidden;align-self:start;}
+[data-bs-theme="dark"] .esm-settle-sum{border-color:#1e3a44;}
+.esm-settle-sum .esm-sumrow.is-grand{color:#fff;}
+/* Totals + outcome action, side by side */
+.esm-settle-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:4px;align-items:stretch;}
+.esm-settle-action{display:flex;flex-direction:column;align-items:flex-start;gap:6px;border:1px dashed #cbd5e1;border-radius:10px;padding:16px;background:#f8fafc;}
+[data-bs-theme="dark"] .esm-settle-action{background:#0d1b2a;border-color:#28405a;}
+.esm-settle-action.is-ready{border-style:solid;border-color:#7dd3e8;background:#f0fbff;}
+[data-bs-theme="dark"] .esm-settle-action.is-ready{background:rgba(14,116,144,.14);border-color:rgba(14,116,144,.5);}
+.esm-act-lab{font-size:10.5px;font-weight:800;letter-spacing:.05em;color:#64748b;}
+[data-bs-theme="dark"] .esm-act-lab{color:#94a3b8;}
+.esm-act-amt{font-size:24px;font-weight:800;line-height:1.1;color:#475569;}
+.esm-act-amt.is-return{color:#a4661c;}
+.esm-act-amt.is-reimburse{color:#0e7490;}
+.esm-act-amt.is-equal{color:#108548;}
+.esm-act-amt.is-pending{color:#64748b;}
+.esm-act-p{font-size:12px;color:#64748b;line-height:1.45;}
+[data-bs-theme="dark"] .esm-act-p{color:#94a3b8;}
+.esm-act-btn{margin-top:auto;width:100%;justify-content:center;padding:11px 16px;font-size:13.5px;}
+@media (max-width:720px){.esm-settle-grid{grid-template-columns:1fr;}}
+/* Locked (already-saved) settle rows */
+.esm-srow--locked{opacity:.9;}
+.esm-srow--locked .esm-in{background:#f1f5f9;color:#475569;cursor:default;border-color:#e2e8f0;}
+[data-bs-theme="dark"] .esm-srow--locked .esm-in{background:#0d2730;color:#94a3b8;border-color:#1e3a44;}
+.esm-srow--locked .esm-file-chip{background:#f1f5f9;}
+.esm-srow-lockic{width:40px;height:41px;display:inline-flex;align-items:center;justify-content:center;color:#94a3b8;font-size:15px;}
+.esm-btn-soft{border:1px solid #7dd3e8;background:#ecfeff;color:#0891b2;border-radius:9px;font-size:13px;font-weight:700;padding:9px 16px;cursor:pointer;}
+.esm-btn-soft:hover:not(:disabled){background:#cffafe;}
+.esm-btn-soft:disabled{opacity:.55;cursor:not-allowed;}
+[data-bs-theme="dark"] .esm-btn-soft{background:rgba(8,145,178,.16);border-color:rgba(8,145,178,.5);color:#67e8f9;}
+@media (max-width:720px){.esm-srow{grid-template-columns:1fr 1fr;}.esm-srow-hd{display:none;}.esm-srow-file{width:100%;}}
 @media (max-width:640px){.esm-grid,.esm-steps{grid-template-columns:1fr;}.esm-ded-amt{flex-basis:120px;}}
 `;

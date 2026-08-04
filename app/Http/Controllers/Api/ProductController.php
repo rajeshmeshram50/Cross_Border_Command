@@ -237,9 +237,12 @@ class ProductController extends Controller
         $query = Product::query()->with(
             $lite
                 ? [
-                    'hsn:id,hsn_code',
-                    'segment:id,title',
-                    'gstPercentage:id,percentage',
+                    // Full belongsTo loads (no column restriction) — the picker
+                    // only needs these three relations, but restricting columns
+                    // risks a wrong column name per table (e.g. clm_segments has
+                    // no `title`), so load them whole. The real win is dropping
+                    // the heavy hasMany relations below.
+                    'hsn', 'segment', 'gstPercentage',
                 ]
                 : [
                     'segment', 'hazClass', 'uom', 'hsn', 'condition',

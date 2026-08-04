@@ -396,6 +396,18 @@ export default function SalesCustomerSendForSignatureModal({
    * preview + nuke the user's drag positioning multiple times a second.
    * The primitive db_id is what genuinely identifies a "different
    * customer" worth re-initialising for. */
+  // Lock the background page while the modal is open — otherwise the page
+  // behind scrolls (QA #27). Locks BOTH <body> and <html> since either can own
+  // the viewport scroll.
+  useEffect(() => {
+    if (!open) return;
+    const b = document.body.style.overflow;
+    const h = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     if (isRaw && rawPdfContext) {
