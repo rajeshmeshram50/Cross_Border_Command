@@ -256,6 +256,10 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
   }, [segOpen, partyOpen]);
   // Row whose PDF is currently downloading — drives the per-row spinner.
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  // Open "Download as Doc / PDF" menu (anchored to the row's download button).
+  const [dlMenuFor, setDlMenuFor] = useState<{ row: AgrLib; top: number; right: number } | null>(null);
+  // Format currently downloading — drives the loader label (Doc vs PDF).
+  const [downloadingFmt, setDownloadingFmt] = useState<'pdf' | 'docx'>('pdf');
   // 0→100 progress for the "Generating PDF" popup. The server gives no real
   // progress, so it eases toward ~90 while generating and snaps to 100 on done.
   const [dlProgress, setDlProgress] = useState(0);
@@ -327,22 +331,26 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
     return Array.from(byName.values());
   }, [rows, segs]);
 
-  // Download the sample agreement as a PDF — rendered server-side with the
-  // saved page-shell header/footer (logo, name, footer text, pagination).
-  const onDownload = async (r: AgrLib) => {
+  // Download the sample agreement as a PDF or DOCX — rendered server-side with
+  // the saved page-shell header/footer (logo, name, footer text, pagination).
+  const onDownload = async (r: AgrLib, fmt: 'pdf' | 'docx' = 'pdf') => {
     if (downloadingId) return;
+    setDownloadingFmt(fmt);
     setDownloadingId(r.id);
     setDlProgress(6);
     let p = 6;
     const timer = window.setInterval(() => { p = Math.min(90, p + Math.random() * 7 + 2); setDlProgress(Math.round(p)); }, 300);
     try {
-      const resp = await api.get(`/clm/agreement-library/${r.id}/download-pdf`, { responseType: 'blob' });
+      const endpoint = fmt === 'docx'
+        ? `/clm/agreement-library/${r.id}/download`
+        : `/clm/agreement-library/${r.id}/download-pdf`;
+      const resp = await api.get(endpoint, { responseType: 'blob' });
       window.clearInterval(timer);
       setDlProgress(100);
       const url  = URL.createObjectURL(resp.data as Blob);
       const a    = document.createElement('a');
       a.href = url;
-      a.download = `${r.code}-${slugForFile(r.title)}.pdf`;
+      a.download = `${r.code}-${slugForFile(r.title)}.${fmt === 'docx' ? 'docx' : 'pdf'}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -482,14 +490,33 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div className="clm-actions">
-                          <Tooltip label={r.in_use ? 'In-use — cannot edit' : `Edit — ${r.title}`}>
-                            <button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { if (r.in_use) { toast.warning('Agreement in use', 'This agreement is In-use, you cannot edit it.'); return; } setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                          {/* An in-use agreement is frozen. The buttons must LOOK
+                              unavailable, not just refuse on click — they used to
+                              render fully enabled and only warn AFTER the click,
+                              which reads as a broken button (QA). Mirrors the
+                              Agreement Type table above, which already dims its
+                              in-use actions. The reason moves onto the tooltip:
+                              Tooltip renders for DISABLED children too (it wraps
+                              them in a pointer-events span), so a greyed-out
+                              button still explains itself on hover. */}
+                          <Tooltip label={r.in_use ? `${r.title} is in use by a live agreement, so it can no longer be edited.` : `Edit — ${r.title}`}>
+                            <button className="clm-act clm-act-edit" aria-label="Edit"
+                              disabled={!!r.in_use}
+                              style={r.in_use ? { opacity: .4, cursor: 'not-allowed' } : undefined}
+                              onClick={() => { if (r.in_use) return; setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
                           </Tooltip>
-                          <Tooltip label={downloadingId === r.id ? 'Generating the PDF…' : `Download ${r.code} as PDF`}>
-                            <button className="clm-act clm-act-dl" aria-label="Download" disabled={downloadingId === r.id} onClick={() => onDownload(r)}>{downloadingId === r.id ? (<svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>) : (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>)}</button>
+                          <Tooltip label={downloadingId === r.id ? 'Downloading…' : `Download ${r.code} — Doc / PDF`}>
+                            <button className="clm-act clm-act-dl" aria-label="Download" disabled={downloadingId === r.id}
+                              onClick={(e) => {
+                                const b = e.currentTarget.getBoundingClientRect();
+                                setDlMenuFor(prev => prev?.row.id === r.id ? null : { row: r, top: b.bottom + 4, right: window.innerWidth - b.right });
+                              }}>{downloadingId === r.id ? (<svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>) : (<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>)}</button>
                           </Tooltip>
-                          <Tooltip label={r.in_use ? 'In-use — cannot delete' : `Delete — ${r.title}`}>
-                            <button className="clm-act clm-act-del" aria-label="Delete" onClick={() => { if (r.in_use) { toast.warning('Agreement in use', 'This agreement is In-use, you cannot delete it.'); return; } setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                          <Tooltip label={r.in_use ? `${r.title} is in use by a live agreement, so it can no longer be deleted.` : `Delete — ${r.title}`}>
+                            <button className="clm-act clm-act-del" aria-label="Delete"
+                              disabled={!!r.in_use}
+                              style={r.in_use ? { opacity: .4, cursor: 'not-allowed' } : undefined}
+                              onClick={() => { if (r.in_use) return; setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
                           </Tooltip>
                         </div>
                       </td>
@@ -506,6 +533,24 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       </div>
 
       {pendingDelete && createPortal(<DeleteConf title="Delete agreement?" sub={`${pendingDelete.title} (${pendingDelete.code}) will be removed.`} onCancel={() => setPendingDelete(null)} onConfirm={onDelete} />, document.body)}
+
+      {/* Download-format menu — Doc / PDF (anchored to the row's download button). */}
+      {dlMenuFor && createPortal(
+        <>
+          <div onClick={() => setDlMenuFor(null)} style={{ position: 'fixed', inset: 0, zIndex: 3000 }} />
+          <div style={{ position: 'fixed', top: dlMenuFor.top, right: dlMenuFor.right, zIndex: 3001, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(15,23,42,.16)', padding: 4, minWidth: 172 }}>
+            {([['docx', 'Download as Doc'], ['pdf', 'Download as PDF']] as const).map(([fmt, label]) => (
+              <button key={fmt} type="button"
+                onClick={() => { const row = dlMenuFor.row; setDlMenuFor(null); void onDownload(row, fmt); }}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, color: '#0f172a', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                {label}
+              </button>
+            ))}
+          </div>
+        </>, document.body)}
 
       {/* All-segments popover (opened from the +N badge in the SEGMENT column) */}
       {segOpen && createPortal(
@@ -556,7 +601,7 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
         <div style={{ position: 'fixed', inset: 0, zIndex: 3000000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(8,30,42,.45)', backdropFilter: 'blur(3px)' }}>
           <div style={{ width: 300, background: '#fff', borderRadius: 18, padding: '26px 24px 22px', textAlign: 'center', boxShadow: '0 24px 60px rgba(8,40,60,.32)' }}>
             <ProgressRing value={dlProgress} />
-            <div style={{ fontSize: 16, fontWeight: 800, color: '#0c2c3a', marginTop: 14 }}>Generating PDF…</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: '#0c2c3a', marginTop: 14 }}>Generating {downloadingFmt === 'docx' ? 'Doc' : 'PDF'}…</div>
             <div style={{ fontSize: 12.5, fontWeight: 500, color: '#5e7888', marginTop: 6, lineHeight: 1.5 }}>Please wait — a large agreement can take a few seconds.</div>
           </div>
         </div>,

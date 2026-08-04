@@ -3,6 +3,14 @@ import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import type { OpsTokens } from './useOpsTheme';
+import Tooltip from '../../../components/ui/Tooltip';
+
+/* Header subtitle cap for the timeline modal. A long agreement name ran the
+ * full width of the purple header with no ellipsis; the full name stays on
+ * hover. TIMELINE_TIP_Z clears the modal overlay's zIndex (9999999) — the
+ * tooltip portals to <body>, so without the bump it renders behind the modal. */
+const TL_TITLE_MAX = 30;
+const TIMELINE_TIP_Z = 10000001;
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Shared CTC lifecycle modals — used by both the add/edit form (ClmCtcForm)
@@ -242,7 +250,15 @@ export function AgreementTimelineModal({ t, code, title, stage, versions, signer
         <div style={{ padding: '16px 18px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(118deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
             <div style={{ width: 38, height: 38, borderRadius: 11, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
-            <div><div style={{ fontSize: 8, fontWeight: 800, color: 'rgba(255,255,255,.62)', letterSpacing: '.12em', textTransform: 'uppercase' }}>{code} · Approval Workflow</div><div style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: '-.3px' }}>Agreement Timeline</div><div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.7)', marginTop: 1 }}>{title}</div></div>
+            <div><div style={{ fontSize: 8, fontWeight: 800, color: 'rgba(255,255,255,.62)', letterSpacing: '.12em', textTransform: 'uppercase' }}>{code} · Approval Workflow</div><div style={{ fontSize: 16, fontWeight: 800, color: '#fff', letterSpacing: '-.3px' }}>Agreement Timeline</div>{(() => {
+              const full = (title ?? '').trim();
+              const shown = full.length > TL_TITLE_MAX ? full.slice(0, TL_TITLE_MAX).trimEnd() + '…' : full;
+              return (
+                <Tooltip label={full} position="bottom" zIndex={TIMELINE_TIP_Z} disabled={full.length <= TL_TITLE_MAX}>
+                  <div style={{ fontSize: 9.5, color: 'rgba(255,255,255,.7)', marginTop: 1 }}>{shown}</div>
+                </Tooltip>
+              );
+            })()}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             {/* Download the Zoho completion certificate — always shown, but

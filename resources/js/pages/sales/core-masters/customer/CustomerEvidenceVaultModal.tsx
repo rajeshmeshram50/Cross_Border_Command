@@ -1421,11 +1421,11 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend, activeSend }: {
   const COLS = isAgreement ? 11 : 10;
   return (
     <>
-      {/* Trade Documents uses compact pills; Agreements uses the full-width
-          segmented bar with ✓ / ✕ markers — matches the figma per tab. */}
-      <div className={`cev-ship-filter ${isAgreement ? '' : 'cev-ship-filter-2'}`}>
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✓</span>}Customer = Consignee</button>
-        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>{isAgreement && <span aria-hidden style={{ marginRight: 6, fontWeight: 900 }}>✕</span>}Customer &ne; Consignee</button>
+      {/* Same compact pill toggle for BOTH Trade Documents and Agreements tabs
+          (they used to differ — Agreements had a full-width ✓/✕ bar). */}
+      <div className="cev-ship-filter cev-ship-filter-2">
+        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-eq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-eq-consignee'); setOpenId(null); }}>Customer = Consignee</button>
+        <button type="button" className={`cev-ship-fbtn ${filter === 'buyer-neq-consignee' ? 'is-active' : ''}`} onClick={() => { setFilter('buyer-neq-consignee'); setOpenId(null); }}>Customer &ne; Consignee</button>
       </div>
       <div className="cev-table-wrap">
         <div className="cev-table-scroll">

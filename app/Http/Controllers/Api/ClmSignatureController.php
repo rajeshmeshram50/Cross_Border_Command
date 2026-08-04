@@ -1290,7 +1290,10 @@ class ClmSignatureController extends Controller
 
         $sourceHtml = $contentOverride !== null ? $contentOverride : (string) $c->content;
         $sig = $this->ctcOrgSignatureDataUri($c);
-        $sigHtml = $sig ? '<img src="' . $sig . '" alt="Authorised Signatory" style="max-height:80px;max-width:210px;object-fit:contain;" />' : '';
+        // Block-level so the signature image sits on its own line and never
+        // overlaps the org-detail text that follows it (it is 80px tall and, when
+        // inline, bled over the address line in both the approval view and PDF).
+        $sigHtml = $sig ? '<img src="' . $sig . '" alt="Authorised Signatory" style="display:block;max-height:80px;max-width:210px;object-fit:contain;margin:8px 0 6px;" />' : '';
         $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', $sigHtml, $sourceHtml);
         $processedHtml = $this->resolveCtcContent($processedHtml, $c);
 
@@ -1836,6 +1839,9 @@ class ClmSignatureController extends Controller
         // The override path lets the workplace Send-for-Signature flow
         // tweak agreement copy without mutating the master.
         $sourceHtml    = $contentOverride !== null ? $contentOverride : (string) $agreement->content;
+        // Strip the wrong party family (supplier vs customer/consignee) per the
+        // agreement's applicable party BEFORE resolving tokens.
+        $sourceHtml    = $this->hideOtherPartyTokens($sourceHtml, $agreement->party ?? null);
         // $allParties carries every party the lead has mapped (Customer
         // + Consignee for a Buyer+Consignee agreement). Without it,
         // replacePlaceholders only substitutes the primary's tokens
@@ -2564,6 +2570,11 @@ class ClmSignatureController extends Controller
         // used by the Send-for-Signature modal when the user pastes in
         // a table via Insert Table or otherwise edits the body inline.
         $sourceHtml    = $contentOverride !== null ? $contentOverride : (string) $doc->content;
+        // Strip the wrong party family (supplier vs customer/consignee) per the
+        // trade document's applicable party BEFORE resolving tokens — otherwise
+        // the lead's customer/consignee (always in $allParties) resolve into a
+        // supplier document and can't be removed afterwards.
+        $sourceHtml    = $this->hideOtherPartyTokens($sourceHtml, $doc->party ?? null);
         // Resolve EVERY party the opportunity has mapped so BOTH {{customer.*}}
         // AND {{consignee.*}} tokens fill in. The trade-doc send flow only
         // loads a single primary party ($party), so a Buyer+Consignee document
@@ -2754,6 +2765,33 @@ class ClmSignatureController extends Controller
      * primary_email, primaryAddress with cp_*), so a single resolver
      * over the relevant party works for all three.
      */
+    /**
+     * Hide the OTHER party family so the two sides never mix on a document.
+     * A Buyer / Consignee document must not show {{supplier.*}} and a Supplier
+     * document must not show {{customer.*}} / {{consignee.*}} ({{buyer.*}} alias).
+     * The sides are mutually exclusive (enforced when authoring the doc), so the
+     * document's own applicable-party decides which family to strip. Runs on the
+     * RAW content BEFORE token resolution (for a supplier doc the lead's customer
+     * + consignee are otherwise resolved into real text and can't be stripped
+     * afterwards). Blank/legacy party ⇒ no stripping (keeps old behaviour).
+     */
+    private function hideOtherPartyTokens(string $html, ?string $applicableParty): string
+    {
+        $p = strtolower(trim((string) $applicableParty));
+        if ($p === '' || $html === '') return $html;
+        // Decode entity-encoded braces (Word / Docs paste) so the regex matches.
+        $html = str_replace(
+            ['&#123;', '&#x7B;', '&#125;', '&#x7D;', '&lcub;', '&rcub;'],
+            ['{',      '{',      '}',      '}',      '{',      '}'],
+            $html,
+        );
+        $drop = str_contains($p, 'supplier') ? ['customer', 'consignee', 'buyer'] : ['supplier'];
+        foreach ($drop as $ns) {
+            $html = preg_replace('/\{\{\s*' . $ns . '\s*\.[^{}]*\}\}/iu', '', $html);
+        }
+        return $html;
+    }
+
     private function replacePlaceholders(string $html, Model $party, string $modelName, array $extraParties = []): string
     {
         if ($html === '') return '<p></p>';
@@ -2800,7 +2838,80 @@ class ClmSignatureController extends Controller
             $html = preg_replace($pattern, $sigBox, $html);
         }
 
+        // OUR-ORGANISATION tokens last. These are un-namespaced, so they can't
+        // collide with the {{ns.field}} party tokens resolved above, and the
+        // bare {{signature}} is untouched by the alias loop (every alias there
+        // requires a dot).
+        $html = $this->replaceOrgBranchTokens($html);
+
         return $html;
+    }
+
+    /**
+     * Our-organisation tokens for Trade Documents + Agreements —
+     * {{company_name}} {{company_no}} {{email}} {{contact_no}} {{address}}
+     * {{signature}} — the same set the CTC editor offers.
+     *
+     * Resolved from the BRANCH of the user raising the send. A branch login
+     * gets its own branch, and an employee under it gets that same branch, so
+     * the document always carries the issuing office's details. (CTC picks its
+     * organisation explicitly; Trade Docs / Agreements have no such picker,
+     * hence the sender's branch.)
+     *
+     * A missing branch (or a blank column) resolves to an empty string rather
+     * than being left alone: a raw {{company_no}} leaking into a signed PDF is
+     * worse than a blank.
+     */
+    private function replaceOrgBranchTokens(string $html): string
+    {
+        if (strpos($html, '{{') === false) return $html;
+
+        $user   = request()->user();
+        $branch = $user && $user->branch_id ? Branch::find($user->branch_id) : null;
+
+        $address = $branch ? trim(implode(', ', array_filter([
+            trim((string) $branch->address),
+            trim((string) $branch->city),
+            trim((string) $branch->state),
+            trim(trim((string) $branch->pincode) . ' ' . trim((string) $branch->country)),
+        ], fn ($v) => $v !== '')), ', ') : '';
+
+        $values = [
+            'company_name' => e((string) ($branch->name  ?? '')),
+            'company_no'   => e((string) ($branch->cin   ?? '')),   // registered company number (CIN)
+            'email'        => e((string) ($branch->email ?? '')),
+            'contact_no'   => e((string) ($branch->phone ?? '')),
+            'address'      => e($address),
+        ];
+        foreach ($values as $token => $value) {
+            $html = preg_replace('/\{\{\s*' . $token . '\s*\}\}/iu', $value, $html);
+        }
+
+        // Authorised signatory + stamp. display:block for the same reason the
+        // CTC render carries it — an 80px image left inline overlaps the text
+        // above it in dompdf, which does not grow a line box to fit an image.
+        $sig = $this->branchSignatureDataUri($branch);
+        $sigHtml = $sig
+            ? '<img src="' . $sig . '" alt="Authorised Signatory" style="display:block;max-height:80px;max-width:210px;object-fit:contain;margin:8px 0 6px;" />'
+            : '';
+        return preg_replace('/\{\{\s*signature\s*\}\}/iu', $sigHtml, $html);
+    }
+
+    /** A branch's signature+stamp image as a data URI (dompdf can't fetch URLs). */
+    private function branchSignatureDataUri(?Branch $branch): ?string
+    {
+        $path = $branch?->signature_path;
+        if (!$path) return null;
+        if (preg_match('#/storage/(.+)$#', (string) $path, $m)) $path = $m[1];
+        try {
+            if (!Storage::disk('public')->exists($path)) return null;
+            $data = base64_encode(Storage::disk('public')->get($path));
+            $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION) ?: 'png');
+            $mime = in_array($ext, ['jpg', 'jpeg']) ? 'image/jpeg' : ($ext === 'webp' ? 'image/webp' : 'image/png');
+            return "data:$mime;base64,$data";
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**

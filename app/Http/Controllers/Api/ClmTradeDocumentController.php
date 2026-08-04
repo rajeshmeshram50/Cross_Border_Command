@@ -313,13 +313,15 @@ class ClmTradeDocumentController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Same lock as libraryUpdate — a signed trade document must stay on
-        // record, so block the delete once a `completed` signature request
-        // references this draft.
-        if (ClmSignatureRequest::hasSignedDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_TRADE)) {
+        // A trade document that has been used in a lead / sent for signature must
+        // stay on record. Block the delete once ANY signature request references
+        // this draft — draft (created), in-progress (out for signature) or
+        // completed (signed) — not only signed ones (the old check let a
+        // sent-but-unsigned trade document be deleted).
+        if (ClmSignatureRequest::hasReferencingDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_TRADE)) {
             return response()->json([
                 'status'  => false,
-                'message' => 'This trade document has already been signed by the customer/consignee and can no longer be deleted.',
+                'message' => 'This trade document is in use (used in a lead / sent for signature) and cannot be deleted.',
             ], 422);
         }
 

@@ -8,6 +8,7 @@ use App\Models\LeaveRequest;
 use App\Models\User;
 use App\Notifications\LeaveRequestNotification;
 use App\Support\OnboardingGuard;
+use App\Support\ProbationGuard;
 use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
@@ -140,6 +141,12 @@ class LeaveRequestController extends Controller
         // would be unroutable. Keyed on the TARGET employee, so it also stops an
         // admin filing on their behalf before HR has finished.
         OnboardingGuard::assertComplete($employee, 'raise a leave request', $isSelf);
+
+        // Probation gate — the leave policy does not apply until probation
+        // ends, so the request is refused rather than routed to an approver
+        // who has no quota to grant against. Keyed on the TARGET employee, so
+        // an admin filing on their behalf is blocked too.
+        ProbationGuard::assertCanRaiseLeave($employee, $isSelf);
 
         // Date guards. "Today" is resolved in the display timezone (IST): the
         // app runs in UTC, so now()->toDateString() reports YESTERDAY for the

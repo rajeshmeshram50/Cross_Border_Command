@@ -134,6 +134,16 @@ export const MASTER_GROUPS: MenuGroup[] = [
       { id: 'master.freezers', icon: 'Snowflake', label: 'Freezer Management' },
     ],
   },
+  {
+    id: 'master.attendance',
+    label: 'Attendance Master Management',
+    icon: 'CalendarCheck',
+    children: [
+      { id: 'master.leave_type', icon: 'CalendarOff', label: 'Leave Type Master' },
+      { id: 'master.leave_plan', icon: 'CalendarRange', label: 'Leave Plan Master' },
+      { id: 'master.overtime_rates', icon: 'Timer', label: 'Overtime (OT) Master' },
+    ],
+  },
 ];
 
 export const HR_GROUPS: MenuGroup[] = [

@@ -145,6 +145,7 @@ class ModuleSeeder extends Seeder
             'master.attendance' => [
                 ['name' => 'Leave Type Master', 'slug' => 'master.leave_type', 'icon' => 'CalendarOff',   'description' => 'Define leave categories (Regular, Incident Based, Unpaid) with short codes'],
                 ['name' => 'Leave Plan Master', 'slug' => 'master.leave_plan', 'icon' => 'CalendarRange', 'description' => 'Configure leave plans with calendar year & start-month rules'],
+                ['name' => 'Overtime (OT) Master', 'slug' => 'master.overtime_rates', 'icon' => 'Timer', 'description' => 'Define overtime rate names & multipliers (Regular, Time and a Half, Double Time…) used in employee setup'],
             ],
         ];
 
@@ -162,7 +163,36 @@ class ModuleSeeder extends Seeder
             }
         }
 
-        
+        // Back-fill grants for the newly-added Overtime (OT) Master by cloning
+        // whatever access each user already has to a sibling attendance master
+        // (Leave Type). This makes the OT master appear in the menu + be usable
+        // for exactly the same users/tiers who can already see the attendance
+        // masters, without anyone having to open the Permissions screen.
+        // Idempotent: updateOrCreate keys on (user_id, module_id).
+        $otModuleId   = Module::where('slug', 'master.overtime_rates')->value('id');
+        $sibModuleId  = Module::where('slug', 'master.leave_type')->value('id');
+        if ($otModuleId && $sibModuleId) {
+            $siblingGrants = \App\Models\Permission::where('module_id', $sibModuleId)->get();
+            foreach ($siblingGrants as $g) {
+                \App\Models\Permission::updateOrCreate(
+                    ['user_id' => $g->user_id, 'module_id' => $otModuleId],
+                    [
+                        'client_id'   => $g->client_id,
+                        'branch_id'   => $g->branch_id,
+                        'role'        => $g->role,
+                        'can_view'    => $g->can_view,
+                        'can_add'     => $g->can_add,
+                        'can_edit'    => $g->can_edit,
+                        'can_delete'  => $g->can_delete,
+                        'can_export'  => $g->can_export,
+                        'can_import'  => $g->can_import,
+                        'can_approve' => $g->can_approve,
+                        'granted_by'  => $g->granted_by,
+                    ]
+                );
+            }
+        }
+
         $hr = Module::where('slug', 'hr')->first();
 
         $hrCategories = [

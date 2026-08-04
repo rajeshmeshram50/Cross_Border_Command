@@ -55,6 +55,9 @@ interface Props {
   /** Shift window for the day, 24h "HH:MM" — shown as "Shift timings". */
   shiftStart?: string;
   shiftEnd?: string;
+  /** The employee's shift NAME (e.g. "Evening Shift"), shown above the window
+   *  so it's obvious which of the branch's configured shifts these times are. */
+  shiftName?: string | null;
   /** Existing punches for the day, used to prefill the adjustment rows. */
   initialPunches?: RegPrefillPunch[];
   onClose: () => void;
@@ -63,7 +66,7 @@ interface Props {
 }
 
 export default function RegularizationModal({
-  open, employeeId, managerName, dateIso, shiftStart, shiftEnd, initialPunches, onClose, onSubmitted,
+  open, employeeId, managerName, dateIso, shiftStart, shiftEnd, shiftName, initialPunches, onClose, onSubmitted,
 }: Props) {
   const toast = useToast();
 
@@ -79,6 +82,24 @@ export default function RegularizationModal({
       ? [{ action: 'add' as const, newIn: '', newOut: '' }]
       : inOuts.map(io => ({ action: 'keep' as const, oldIn: io.in, oldOut: io.out, newIn: io.in ?? '', newOut: io.out ?? '' }));
   }, [initialPunches]);
+
+  /* Punches may only be picked inside the employee's shift window, so the time
+     columns are clamped to it. Two cases are deliberately left UNCLAMPED:
+       · a shift that crosses midnight (end <= start, e.g. 20:00–04:00) — a
+         legitimate punch sits on either side of the boundary, which a simple
+         min/max range can't express, so restricting it would block valid times;
+       · no resolvable shift window at all.
+     Existing out-of-window punches are never rewritten — they stay visible and
+     submittable; the bounds only govern what the picker OFFERS. */
+  const shiftMinutes = (v?: string): number | null => {
+    const m = /^(\d{1,2}):(\d{2})/.exec((v || '').trim());
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  const startMin = shiftMinutes(shiftStart);
+  const endMin   = shiftMinutes(shiftEnd);
+  const clampable = startMin != null && endMin != null && endMin > startMin;
+  const windowMin = clampable ? shiftStart : undefined;
+  const windowMax = clampable ? shiftEnd   : undefined;
 
   const [punchEdits, setPunchEdits] = useState<PunchEdit[]>(initialEdits);
   const [reason, setReason]       = useState('');
@@ -198,7 +219,14 @@ export default function RegularizationModal({
               {shiftStart && shiftEnd && (
                 <div className="att-reg-keka-field flex-grow-1">
                   <label className="att-reg-keka-label">Shift Timings</label>
-                  <div className="att-reg-keka-readonly">{fmt12h(shiftStart)} - {fmt12h(shiftEnd)}</div>
+                  {/* Name + window together — the window alone ("06:00 AM -
+                      12:00 PM") looked wrong to anyone expecting office hours
+                      until they could see it's the Evening Shift the employee
+                      is actually assigned to in the branch's Shift Details. */}
+                  <div className="att-reg-keka-readonly">
+                    {shiftName ? <><strong>{shiftName}</strong> · </> : null}
+                    {fmt12h(shiftStart)} - {fmt12h(shiftEnd)}
+                  </div>
                 </div>
               )}
             </div>
@@ -211,6 +239,9 @@ export default function RegularizationModal({
               </label>
               <div className="att-reg-keka-hint">
                 Click and select time stamp box that you would like to adjust and make changes to the time
+                {clampable && (
+                  <> · Times outside <strong>{fmt12h(shiftStart!)} – {fmt12h(shiftEnd!)}</strong> are unavailable — a punch has to fall inside the shift.</>
+                )}
               </div>
             </div>
 
@@ -238,6 +269,10 @@ export default function RegularizationModal({
                           <MasterTimePicker
                             minuteStep={1}
                             showNow={false}
+                            hour12
+                            accent="teal"
+                            minTime={windowMin}
+                            maxTime={windowMax}
                             value={e.newIn}
                             onChange={v => updateEdit(realIdx, { newIn: v })}
                           />
@@ -247,6 +282,10 @@ export default function RegularizationModal({
                           <MasterTimePicker
                             minuteStep={1}
                             showNow={false}
+                            hour12
+                            accent="teal"
+                            minTime={windowMin}
+                            maxTime={windowMax}
                             value={e.newOut}
                             onChange={v => updateEdit(realIdx, { newOut: v })}
                           />

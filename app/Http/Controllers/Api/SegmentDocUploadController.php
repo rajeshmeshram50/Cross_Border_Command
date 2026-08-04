@@ -1014,17 +1014,42 @@ class SegmentDocUploadController extends Controller
             ClmSignatureRequest::DOC_TRADE     => ['Customer' => [], 'Consignee' => []],
             ClmSignatureRequest::DOC_AGREEMENT => ['Customer' => [], 'Consignee' => []],
         ];
+        /* …plus a PARTY-AGNOSTIC index of the same requests.
+         *
+         * A signature request belongs to the LEAD and the DOCUMENT, not to one
+         * side of the deal. `model_name` records the model the send was raised
+         * FROM, and a Sales-Matrix send is always raised from the lead's
+         * Customer — 'Consignee' is never written to that column. Bucketing
+         * strictly on it therefore filed every send under Customer, so the
+         * consignee's Evidence Vault reported its agreements as "Draft · 0/2"
+         * while the customer's vault reported "Signed · 2/2" for the very same
+         * documents on the very same shipment.
+         *
+         * The party-specific bucket still wins when one exists (so a genuine
+         * consignee-only send keeps its own status); this is only the fallback
+         * that stops an already-signed document reading as never sent. */
+        $sigAny = [
+            ClmSignatureRequest::DOC_TRADE     => [],
+            ClmSignatureRequest::DOC_AGREEMENT => [],
+        ];
         foreach ($reqs->sortByDesc('id') as $r) {
             $party = $r->model_name === 'Consignee' ? 'Consignee' : 'Customer';
             if (!isset($sigIndex[$r->document_type][$party])) continue;
             $ids = is_array($r->trade_doc_ids) && $r->trade_doc_ids ? $r->trade_doc_ids : [$r->trade_doc_id];
             foreach ((array) $ids as $id) {
                 $id = (int) $id;
-                if ($id && !isset($sigIndex[$r->document_type][$party][$id])) {
+                if (!$id) continue;
+                if (!isset($sigIndex[$r->document_type][$party][$id])) {
                     $sigIndex[$r->document_type][$party][$id] = $r;   // latest wins
+                }
+                if (!isset($sigAny[$r->document_type][$id])) {
+                    $sigAny[$r->document_type][$id] = $r;             // latest wins
                 }
             }
         }
+        /* Party bucket first, lead-level send as the fallback. */
+        $sigFor = fn (string $docType, string $party, int $libId) =>
+            $sigIndex[$docType][$party][$libId] ?? $sigAny[$docType][$libId] ?? null;
 
         $tdBuyer = []; $tdCons = []; $agrBuyer = []; $agrCons = [];
         $seen = ['td' => ['Customer' => [], 'Consignee' => []], 'agr' => ['Customer' => [], 'Consignee' => []]];
@@ -1038,12 +1063,12 @@ class SegmentDocUploadController extends Controller
                 $req  = 'REQ';
                 if ($forBuyer && !isset($seen['agr']['Customer'][$a->id])) {
                     $seen['agr']['Customer'][$a->id] = true;
-                    $sig = $sigIndex[ClmSignatureRequest::DOC_AGREEMENT]['Customer'][$a->id] ?? null;
+                    $sig = $sigFor(ClmSignatureRequest::DOC_AGREEMENT, 'Customer', (int) $a->id);
                     $agrBuyer[] = $this->shipmentDocRow($name, $req, $sig, $a->id, ClmSignatureRequest::DOC_AGREEMENT);
                 }
                 if ($forCons && !isset($seen['agr']['Consignee'][$a->id])) {
                     $seen['agr']['Consignee'][$a->id] = true;
-                    $sig = $sigIndex[ClmSignatureRequest::DOC_AGREEMENT]['Consignee'][$a->id] ?? null;
+                    $sig = $sigFor(ClmSignatureRequest::DOC_AGREEMENT, 'Consignee', (int) $a->id);
                     $agrCons[] = $this->shipmentDocRow($name, $req, $sig, $a->id, ClmSignatureRequest::DOC_AGREEMENT);
                 }
             }
@@ -1056,12 +1081,12 @@ class SegmentDocUploadController extends Controller
                 $req  = 'REQ';
                 if ($forBuyer && !isset($seen['td']['Customer'][$m->id])) {
                     $seen['td']['Customer'][$m->id] = true;
-                    $sig = $sigIndex[ClmSignatureRequest::DOC_TRADE]['Customer'][$m->id] ?? null;
+                    $sig = $sigFor(ClmSignatureRequest::DOC_TRADE, 'Customer', (int) $m->id);
                     $tdBuyer[] = $this->shipmentDocRow($name, $req, $sig, $m->id, ClmSignatureRequest::DOC_TRADE);
                 }
                 if ($forCons && !isset($seen['td']['Consignee'][$m->id])) {
                     $seen['td']['Consignee'][$m->id] = true;
-                    $sig = $sigIndex[ClmSignatureRequest::DOC_TRADE]['Consignee'][$m->id] ?? null;
+                    $sig = $sigFor(ClmSignatureRequest::DOC_TRADE, 'Consignee', (int) $m->id);
                     $tdCons[] = $this->shipmentDocRow($name, $req, $sig, $m->id, ClmSignatureRequest::DOC_TRADE);
                 }
             }

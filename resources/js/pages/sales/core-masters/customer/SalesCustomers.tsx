@@ -8,6 +8,7 @@ import { type EditCustomer } from './AddCustomerModal';
 import { type CustomerLite } from './CustomerConsigneesModal';
 import { type CustomerVaultTarget } from './CustomerEvidenceVaultModal';
 import { ShimmerTable } from '../../../../components/ui/Shimmer';
+import { useIsClipped } from '../../../../components/ui/DataTable';
 import api from '../../../../api';
 import TableContainer from '../../../../velzon/Components/Common/TableContainerReactTable';
 import { readCustomerMasterBundle, writeCustomerMasterBundle } from './customerBundleCache';
@@ -24,6 +25,21 @@ import PartyFilterModal, {
 const AddCustomerModal = lazy(() => import('./AddCustomerModal'));
 const CustomerConsigneesModal = lazy(() => import('./CustomerConsigneesModal'));
 const CustomerEvidenceVaultModal = lazy(() => import('./CustomerEvidenceVaultModal'));
+
+/* A segment pill that reveals its full name on hover — but ONLY when the label
+ * is actually cut by .smc-seg's 150px cap. The clip is measured from the DOM
+ * (scrollWidth vs clientWidth) instead of guessed from a character count: the
+ * old `length > 18` test both missed short-but-wide names and hung a pointless
+ * tooltip on names that fit. Used by the table cell AND the "+N" popover — the
+ * popover pills had no hover reveal at all, so a long name like
+ * "Travel & Luggagewww…" was unreadable there. */
+function SegChip({ name }: { name: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const clipped = useIsClipped(ref, name);
+  const chip = <span ref={ref} className="smc-seg">{name}</span>;
+  return clipped ? <Tooltip label={name}>{chip}</Tooltip> : chip;
+}
+
 type Customer = {
   id: string; db_id?: number;
   company: string; type: string; segment: string;
@@ -370,11 +386,9 @@ export default function SalesCustomers() {
         const rowId = (info.row.original as Customer).id;
         return (
           <span className="d-inline-flex align-items-center" style={{ gap: 4, maxWidth: '100%', minWidth: 0 }}>
-            {/* Pill truncates via CSS (.smc-seg); a long name shows the full
-                value on hover (QA #39 / #43). */}
-            {segList[0].length > 18
-              ? <Tooltip label={segList[0]}><span className="smc-seg">{segList[0]}</span></Tooltip>
-              : <span className="smc-seg">{segList[0]}</span>}
+            {/* Pill truncates via CSS (.smc-seg); SegChip hangs the hover
+                reveal on it when the name is really cut (QA #39 / #43). */}
+            <SegChip name={segList[0]} />
             {extra > 0 && (
               <Tooltip label={`View ${extra} more`}>
                 <button
@@ -739,7 +753,7 @@ export default function SalesCustomers() {
               <div style={{ maxHeight: ROWS_MAX_H, overflowY: 'auto' }}>
                 {segOpen.names.map((name, i) => (
                   <div key={i} className={`smc-seg-pop-row ${i % 2 ? 'alt' : ''}`}>
-                    <span className="smc-seg">{name}</span>
+                    <SegChip name={name} />
                   </div>
                 ))}
               </div>

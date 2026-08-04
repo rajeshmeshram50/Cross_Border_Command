@@ -2334,6 +2334,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           <LeaveSummaryPanel
             employeeId={empDetail?.id != null ? String(empDetail.id) : (profileEmpIdNum != null ? String(profileEmpIdNum) : '')}
             canRequest={canRaiseHrRequest}
+            probationEndDate={(empDetail as any)?.probation_end_date ?? null}
           />
         </div>
       )}

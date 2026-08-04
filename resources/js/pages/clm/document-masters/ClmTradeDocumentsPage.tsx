@@ -6,7 +6,7 @@ import { ShimmerClmMaster } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
-import { ClmSkeletonRows, DeleteConf, LockedConf, SimpleNameModal } from '../shared/clmCommon';
+import { ClmSkeletonRows, DeleteConf, SimpleNameModal } from '../shared/clmCommon';
 import Tooltip from '../../../components/ui/Tooltip';
 import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
 
@@ -279,9 +279,6 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
       window.removeEventListener('resize', close);
     };
   }, [segOpen, partyOpen]);
-  // Blocked-action popup state — set when the user clicks Edit/Delete on a
-  // draft that has already been signed.
-  const [locked, setLocked] = useState<{ mode: 'edit' | 'delete'; row: TdLib } | null>(null);
 
   /* Download a library row as PDF (full page-shell: branded header + content
    * + footer) or DOCX. The list exposes only the PDF preview. Errors arrive
@@ -289,6 +286,8 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
   // Row id currently generating a download, so its button can show a spinner
   // and disable to prevent duplicate clicks while the PDF/DOCX renders.
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  // Open "Download as Doc / PDF" menu (anchored to the row's download button).
+  const [dlMenuFor, setDlMenuFor] = useState<{ row: TdLib; top: number; right: number } | null>(null);
   // 0→100 progress + label for the "Generating…" popup. The server gives no real
   // progress, so it eases toward ~90 while rendering and snaps to 100 on done.
   const [dlProgress, setDlProgress] = useState(0);
@@ -495,8 +494,9 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                       {/* Draft PDF preview — the complete combined document
                           (branded header + content + footer), to see how the
                           finished trade document looks. */}
-                      <Tooltip label="Download the complete draft as PDF">
-                        <button type="button" className="tdl-dl-btn" disabled={downloadingId === r.id} onClick={() => void download(r, 'pdf')}>
+                      <Tooltip label="Download the complete draft as Doc or PDF">
+                        <button type="button" className="tdl-dl-btn" disabled={downloadingId === r.id}
+                          onClick={(e) => { const rect = e.currentTarget.getBoundingClientRect(); setDlMenuFor({ row: r, top: rect.bottom + 4, right: window.innerWidth - rect.right }); }}>
                           {downloadingId === r.id ? (
                             <>
                               <svg className="clm-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
@@ -505,7 +505,8 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                           ) : (
                             <>
                               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                              Download Draft PDF
+                              Download Draft
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 1 }}><polyline points="6 9 12 15 18 9" /></svg>
                             </>
                           )}
                         </button>
@@ -513,8 +514,36 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
-                        <Tooltip label={r.is_signed ? 'Signed — cannot edit' : 'Edit'}><button className="clm-act clm-act-edit" aria-label="Edit" onClick={() => { if (r.is_signed) { setLocked({ mode: 'edit', row: r }); return; } setEditing(r); setModalOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button></Tooltip>
-                        <Tooltip label={r.is_signed ? 'Signed — cannot delete' : 'Delete'}><button className="clm-act clm-act-del" aria-label="Delete" onClick={() => { if (r.is_signed) { setLocked({ mode: 'delete', row: r }); return; } setPendingDelete(r); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></Tooltip>
+                        {(() => {
+                          /* A signed draft is frozen. Edit / Delete must LOOK
+                             unavailable, not just fail on click — they used to
+                             render fully enabled and only explain the block in a
+                             popup AFTER the click, which reads as a broken button
+                             (QA #65). This mirrors the Trade Document Type table
+                             above, which already dims its in-use actions.
+                             The reason moves onto the tooltip: Tooltip renders for
+                             DISABLED children too (it wraps them in a
+                             pointer-events span), so hovering a greyed-out button
+                             still explains why it can't be used. */
+                          const signed = !!r.is_signed;
+                          const lockMsg = (verb: string) =>
+                            `${r.title} (${r.code}) has already been signed by the customer / consignee / supplier, so it can no longer be ${verb}.`;
+                          const dim = signed ? { opacity: .4, cursor: 'not-allowed' as const } : undefined;
+                          return (
+                            <>
+                              <Tooltip label={signed ? lockMsg('edited') : 'Edit'}>
+                                <button className="clm-act clm-act-edit" aria-label="Edit" disabled={signed} style={dim}
+                                  onClick={() => { if (signed) return; setEditing(r); setModalOpen(true); }}
+                                ><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                              </Tooltip>
+                              <Tooltip label={signed ? lockMsg('deleted') : 'Delete'}>
+                                <button className="clm-act clm-act-del" aria-label="Delete" disabled={signed} style={dim}
+                                  onClick={() => { if (signed) return; setPendingDelete(r); }}
+                                ><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                              </Tooltip>
+                            </>
+                          );
+                        })()}
                       </div>
                     </td>
                   </tr>
@@ -562,13 +591,9 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
         document.body
       )}
 
-      {locked && (
-        <LockedConf
-          title={locked.mode === 'edit' ? 'Cannot edit this draft' : 'Cannot delete this draft'}
-          sub={`${locked.row.title} (${locked.row.code}) has already been signed by the customer / consignee / supplier, so it can no longer be ${locked.mode === 'edit' ? 'edited' : 'deleted'}.`}
-          onClose={() => setLocked(null)}
-        />
-      )}
+      {/* The signed-draft LockedConf popup was removed with the click that
+          raised it: the Edit / Delete buttons are now genuinely disabled, so it
+          could never open again. Its wording lives on their tooltips. */}
 
       <ClmTradeDocumentDraftModal
         open={modalOpen}
@@ -579,6 +604,23 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}
       />
+
+      {/* "Download as Doc / PDF" menu, anchored under the row's download button. */}
+      {dlMenuFor && createPortal(
+        <>
+          <div className="tdl-dl-backdrop" onClick={() => setDlMenuFor(null)} />
+          <div className="tdl-dl-menu" style={{ position: 'fixed', top: dlMenuFor.top, right: dlMenuFor.right }}>
+            {([['docx', 'Download as Doc'], ['pdf', 'Download as PDF']] as const).map(([fmt, label]) => (
+              <button key={fmt} type="button" className="tdl-dl-item"
+                onClick={() => { const row = dlMenuFor.row; setDlMenuFor(null); void download(row, fmt); }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                {label}
+              </button>
+            ))}
+          </div>
+        </>,
+        document.body
+      )}
 
       {/* Popup loader while a PDF/DOCX is generated — a big/table-rich trade doc
           can take several seconds server-side. Shows a 0→100% ring. */}

@@ -32,7 +32,12 @@ class ClmAgreementController extends Controller
 {
     use HandlesDocxHtmlRoundtrip;
 
-    private const DOCX_MAX_KB = 20 * 1024;
+    /* Draft-content Word upload cap: 1 MB. The agreement editor refuses an
+     * oversized file before it leaves the browser
+     * (ClmAgreementWizardModal's AGREEMENT_DOCX_MAX_BYTES) — this is the
+     * server-side half of that pair, so the limit still holds for anything that
+     * skips the UI. Keep the two values in step. */
+    private const DOCX_MAX_KB = 1024;
 
     /**
      * Max editor-HTML size we'll render synchronously to PDF/Word. dompdf and
@@ -393,13 +398,15 @@ class ClmAgreementController extends Controller
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
-        // Same lock as libraryUpdate — an in-use agreement (sent for signature
-        // at least once) must stay on record, so block the delete once an
-        // in-progress or completed signature request references this draft.
-        if (ClmSignatureRequest::hasUsedDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_AGREEMENT)) {
+        // An agreement that has been used in a lead / sent for signature must
+        // stay on record. Block the delete once ANY signature request references
+        // this draft — including one still 'draft' (created but Zoho not yet
+        // confirmed), not only in-progress/completed (which the old check missed,
+        // so a sent-but-not-yet-in-progress agreement could still be deleted).
+        if (ClmSignatureRequest::hasReferencingDraft($user->client_id, (int) $row->id, ClmSignatureRequest::DOC_AGREEMENT)) {
             return response()->json([
                 'status'  => false,
-                'message' => 'This agreement is In-use, you cannot delete it.',
+                'message' => 'This agreement is in use (used in a lead / sent for signature) and cannot be deleted.',
             ], 422);
         }
 

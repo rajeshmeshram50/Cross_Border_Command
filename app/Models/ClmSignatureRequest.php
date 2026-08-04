@@ -208,6 +208,19 @@ class ClmSignatureRequest extends Model
         return static::hasDraftByStatus($clientId, $docId, $docType, ['inprogress', 'completed']);
     }
 
+    /**
+     * True when a draft is referenced by ANY signature request that isn't void —
+     * a send that is still 'draft' (created but Zoho not yet confirmed),
+     * 'inprogress' (out for signature) or 'completed' (signed). Used by the
+     * library DELETE guard: once a signature request exists for a draft the
+     * document is in use and must not be deleted, even before Zoho flips it to
+     * in-progress. (hasUsedDraft — edit lock — stays inprogress/completed only.)
+     */
+    public static function hasReferencingDraft(?int $clientId, int $docId, string $docType): bool
+    {
+        return static::hasDraftByStatus($clientId, $docId, $docType, ['draft', 'inprogress', 'completed']);
+    }
+
     private static function hasDraftByStatus(?int $clientId, int $docId, string $docType, array $statuses): bool
     {
         if (!$clientId) return false;

@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { ShimmerTableRows, Shimmer } from '../components/ui/Shimmer';
-import SignaturePad from '../components/ui/SignaturePad';
+import SignaturePad, { consentLabel } from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
@@ -190,6 +190,9 @@ export default function Inbox() {
   // mode (Type/Draw/Upload) the user picked. Reset every time the action
   // modal opens (see openAction).
   const [drawnSignature, setDrawnSignature] = useState<string | null>(null);
+  // Informed-consent tick for Sign steps. Deliberately NOT remembered between
+  // documents — it must be given per document, so openAction resets it.
+  const [consent, setConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const load = async () => {
@@ -369,6 +372,7 @@ export default function Inbox() {
     setActionName(user?.name || current?.name || '');
     setActionNote('');
     setDrawnSignature(null);
+    setConsent(false);   // consent is per-document, never carried over
   };
 
   const submitDecision = async (verdict: 'approve' | 'reject') => {
@@ -427,6 +431,11 @@ export default function Inbox() {
         return;
       }
     }
+    // Consent applies to every action, not just Sign.
+    if (!consent) {
+      toast.error('Consent required', 'Tick the box confirming you have read and understood the document.');
+      return;
+    }
     setSubmitting(true);
     try {
       await api.post(`/hr-document-signatures/${actionRun.id}/action`, {
@@ -437,6 +446,7 @@ export default function Inbox() {
         // cursive-rendered name when this is absent.
         signature_image: apiAction === 'Sign' ? drawnSignature : null,
         note:            actionNote.trim() || null,
+        consent,
       });
       toast.success(
         apiAction === 'Sign' ? 'Signed' : apiAction === 'Approve' ? 'Approved' : 'Acknowledged',
@@ -1239,6 +1249,22 @@ export default function Inbox() {
                     />
                   </>
                 )}
+                {/* Informed consent — mandatory for EVERY action (Sign,
+                    Approve, Acknowledge). The action button stays disabled
+                    until this is ticked, and the API rejects an unconsented
+                    action too. */}
+                <label className="ib-consent">
+                  <input
+                    type="checkbox"
+                    checked={consent}
+                    onChange={e => setConsent(e.target.checked)}
+                    className="ib-consent-box"
+                  />
+                  <span>
+                    {consentLabel(current?.action)}
+                    <span className="ib-req"> *</span>
+                  </span>
+                </label>
                 <label className={`inbox-input-label ib-input-label${isSign ? ' ib-input-label--mt' : ''}`}>Remark</label>
                 <textarea value={actionNote} onChange={e => setActionNote(e.target.value)}
                   placeholder="Add a remark — optional when approving, REQUIRED when rejecting (describe what should change)."
@@ -1266,7 +1292,8 @@ export default function Inbox() {
                   Cancel
                 </button>
                 <button type="button" onClick={() => submitDecision('approve')}
-                  disabled={submitting || (isSign && (!actionName.trim() || !drawnSignature))}
+                  disabled={submitting || !consent || (isSign && (!actionName.trim() || !drawnSignature))}
+                  title={!consent ? `Tick the consent box to enable ${current?.action}` : undefined}
                   className={`ib-btn-submit ${current?.action === 'Approve' ? 'ib-btn-submit--approve' : isSign ? 'ib-btn-submit--sign' : 'ib-btn-submit--ack'}`}>
                   <i className={`${isSign ? 'ri-quill-pen-line' : current?.action === 'Approve' ? 'ri-check-double-line' : 'ri-thumb-up-line'} ib-btn-submit-icon`} />
                   {submitting ? 'Submitting…' : current?.action}

@@ -783,6 +783,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get ('/payroll/payment/{id}/audit',      [\App\Http\Controllers\Api\PayrollPaymentController::class, 'auditTrail'])->whereNumber('id');
 
     Route::get   ('/payroll-adjustments',            [\App\Http\Controllers\Api\PayrollAdjustmentController::class, 'index']);
+    // Overtime detected from attendance (worked past the shift end) + the rate
+    // it would be paid at. Read-only preview — declared before the {id} routes.
+    Route::get   ('/payroll-adjustments/overtime-preview', [\App\Http\Controllers\Api\PayrollAdjustmentController::class, 'overtimePreview']);
     Route::post  ('/payroll-adjustments',            [\App\Http\Controllers\Api\PayrollAdjustmentController::class, 'store']);
     Route::post  ('/payroll-adjustments/{id}/approve', [\App\Http\Controllers\Api\PayrollAdjustmentController::class, 'approve'])->whereNumber('id');
     Route::post  ('/payroll-adjustments/{id}/reject',  [\App\Http\Controllers\Api\PayrollAdjustmentController::class, 'reject'])->whereNumber('id');

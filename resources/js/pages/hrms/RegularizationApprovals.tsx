@@ -115,11 +115,18 @@ export default function RegularizationApprovals() {
   return (
     <Card className="att-logs-card mt-2 mb-0">
       <CardBody>
-      <div className="border rounded overflow-hidden">
-      <div className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 flex-wrap border-bottom">
-        <div className="d-flex align-items-center gap-2">
-          <i className="ri-checkbox-multiple-line fs-5 text-primary" />
-          <h6 className="mb-0 fw-bold">Regularization Requests</h6>
+      {/* Same shell as the Logs & Requests card above: header strip straight in
+          the CardBody, then the bordered table box butted onto the pager. The
+          old inner `border rounded overflow-hidden` wrapper plus its px-3 py-3
+          padding put this table in a second, inset frame — which is what made
+          the two cards read as different components. */}
+      <div className="att-logs-headbar">
+        <div className="d-flex align-items-center gap-3 min-w-0">
+          <span className="att-logs-headbar-icon"><i className="ri-checkbox-multiple-line" /></span>
+          <div>
+            <div className="att-logs-headbar-title">Regularization Requests</div>
+            <div className="att-logs-headbar-sub">Approve or reject attendance correction requests</div>
+          </div>
         </div>
         <div className="d-flex align-items-center gap-2">
           <div className="att-logs-ranges att-seg-toggle" role="group">
@@ -156,14 +163,14 @@ export default function RegularizationApprovals() {
       </div>
 
       {open && (
-        <div className="px-3 py-3">
+        <div>
           {loading ? (
             <Shimmer height={120} radius={10} />
           ) : error ? (
             <div className="text-center text-muted ep-fs-13 py-3"><i className="ri-error-warning-line me-1" />{error}</div>
           ) : (
             <>
-            <div className="table-responsive">
+            <div className="table-responsive att-tablebox">
               {/* No .table-sm — its compressed cell padding is what made this
                   table read tighter than every other HRMS list. No .table-light
                   either: Bootstrap paints that band with an inset box-shadow
@@ -270,7 +277,6 @@ export default function RegularizationApprovals() {
           )}
         </div>
       )}
-      </div>
       </CardBody>
     </Card>
   );

@@ -77,6 +77,7 @@ class MasterController extends Controller
         'freezers' => \App\Models\Masters\Freezers::class,
         'leave_type' => \App\Models\Masters\LeaveTypes::class,
         'leave_plan' => \App\Models\Masters\LeavePlans::class,
+        'overtime_rates' => \App\Models\Masters\OvertimeRates::class,
         'trigger_point' => \App\Models\Masters\TriggerPoints::class,
     ];
 
@@ -172,6 +173,11 @@ class MasterController extends Controller
         'leave_type' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true, 'pattern' => '#^(?=.*[A-Za-z])[A-Za-z0-9 .,\-&()\'/]+$#', 'patternMessage' => 'Leave Type Name cannot contain special characters (only letters, numbers, spaces and . , - & ( ) / \' are allowed).'], ['n' => 'description', 't' => 'textarea'], ['n' => 'type', 't' => 'select', 'r' => true, 'opts' => ['Regular', 'Incident Based Leave', 'Unpaid Leave', 'Compoff']], ['n' => 'short_code', 't' => 'text', 'r' => true, 'normalize' => 'upper', 'pattern' => '/^[A-Za-z0-9]+$/', 'patternMessage' => 'Only letters and numbers are allowed (no spaces or special characters).'], ['n' => 'is_sick_medical', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'paid_unpaid', 't' => 'select', 'opts' => ['Paid', 'Unpaid']], ['n' => 'gender_restriction', 't' => 'select', 'opts' => ['None', 'Male', 'Female']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name', 'short_code'], 'tenantScoped' => true],
         'leave_plan' => ['fields' => [['n' => 'plan_name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'from_month_type', 't' => 'select', 'r' => true, 'opts' => ['Calendar', 'If Joining']], ['n' => 'from_month', 't' => 'select', 'opts' => ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']], ['n' => 'calendar_year', 't' => 'text'], ['n' => 'policy_explanation_mode', 't' => 'select', 'opts' => ['System', 'Custom']], ['n' => 'policy_doc_path', 't' => 'text'], ['n' => 'is_default', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['plan_name'], 'tenantScoped' => true],
         'trigger_point' => ['fields' => [['n' => 'module_name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['module_name'], 'tenantScoped' => true],
+        // Overtime (OT) rate master — feeds the Employee "Overtime" picker.
+        // `rate_name` is unique (case-insensitive) per tenant scope;
+        // `multiplier` is the factor applied to the base hourly rate
+        // (1 = normal, 1.5 = time-and-a-half, 2 = double time, …).
+        'overtime_rates' => ['fields' => [['n' => 'rate_name', 't' => 'text', 'r' => true], ['n' => 'multiplier', 't' => 'number', 'r' => true, 'min' => 0, 'max' => 100], ['n' => 'description', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['rate_name']],
     ];
 
     /**
@@ -880,7 +886,7 @@ class MasterController extends Controller
                 $rule = $applyTenantScope(Rule::unique($table, $f['n']));
                 if ($id) $rule = $rule->ignore($id);
                 $r[] = $rule;
-            }
+            } 
             // `uEach` (independent per-field uniqueness) is checked AFTER
             // this loop using a case-INSENSITIVE comparison, so "india" and
             // "India" are treated as the same value. Skip the standard

@@ -223,19 +223,26 @@ export default function ClmRichTextToolbar({
 
 const RTB_CSS = `
 .rtb-bar {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
-  padding: 8px 10px;
+  display: flex; align-items: center; flex-wrap: nowrap; gap: 3px;
+  overflow-x: auto; overflow-y: hidden;
+  padding: 6px 8px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
 }
+/* One aligned single row — buttons are compact so the full set fits without
+   wrapping to a second (up/down) row; scroll only kicks in on very narrow views. */
+.rtb-bar > * { flex-shrink: 0; }
+.rtb-bar::-webkit-scrollbar { height: 5px; }
+.rtb-bar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.rtb-bar::-webkit-scrollbar-track { background: transparent; }
 .rtb-sel {
-  height: 28px; padding: 0 8px; font-size: 12px;
+  height: 26px; padding: 0 6px; font-size: 12px;
   background: #fff; border: 1px solid #cbd5e1; border-radius: 6px;
   color: #1f2937; cursor: pointer;
 }
 .rtb-btn {
-  min-width: 28px; height: 28px; padding: 0 8px;
+  min-width: 26px; height: 26px; padding: 0 5px;
   background: #fff; color: #1f2937;
   border: 1px solid #cbd5e1; border-radius: 6px;
   font-size: 12px; font-weight: 600;
@@ -245,13 +252,19 @@ const RTB_CSS = `
 .rtb-btn:hover { background: #eef2ff; border-color: #c7d2fe; color: #4338ca; }
 .rtb-btn:active { transform: translateY(1px); }
 .rtb-color { font-weight: 800; }
+/* The colour pickers are <label>s (they wrap a hidden <input type="color">)
+   while every other control is a <button>. Velzon's reboot puts a
+   form-label margin-bottom on every label, and align-items centres the
+   MARGIN box — so that stray margin lifted T / highlight a few px above
+   the rest of the row. Zero it so labels sit on the same baseline. */
+.rtb-bar label { margin-bottom: 0; }
 .rtb-swatch {
-  width: 22px; height: 28px; padding: 0;
+  width: 20px; height: 26px; padding: 0;
   border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer;
 }
 .rtb-swatch:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(15,23,42,0.10); }
 .rtb-sep {
-  width: 1px; height: 18px; background: #e2e8f0; margin: 0 4px;
+  width: 1px; height: 18px; background: #e2e8f0; margin: 0 3px;
 }
 
 [data-bs-theme="dark"] .rtb-bar { background: var(--vz-secondary-bg); border-color: var(--vz-border-color); }

@@ -60,6 +60,13 @@ const STAGES = [
   { n: 4, label: 'Final Contract Repository',          sub: 'Store finalized signed agreement and history' },
 ];
 
+/* Agreement Title cap. Matches the backend's `title max:255` and the Agreement
+ * Wizard's own title field, so the form can't submit something the API will
+ * reject. The input already hard-stopped here; the live counter next to the
+ * label is what tells the user WHY typing stopped — same affordance the Trade
+ * Document Title carries. */
+const AG_TITLE_MAX = 255;
+
 type CP = { name: string; initials: string; country: string; phone: string; email: string; grad: string; badge: string; referred: string; sourceType?: string; sourceId?: string | number; sourceDbId?: number };
 
 /* Domestic = country is India; anything else (or blank-but-non-India) is
@@ -67,8 +74,6 @@ type CP = { name: string; initials: string; country: string; phone: string; emai
  * check stays consistent with Customer/Consignee validation elsewhere. */
 const isDomesticCountry = (country?: string | null): boolean =>
   (country ?? '').trim().toLowerCase() === 'india';
-const cpRole = (c: { sourceType?: string; badge?: string }): string =>
-  (c.sourceType || c.badge || '').toLowerCase();
 
 /* ── Counterparty compliance (mandatory-doc completeness) ──────────────────
  * Reads each counterparty's Evidence-Vault summary (GET /segment-uploads/
@@ -190,10 +195,13 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   const cp1 = cps[0] ?? null;
   const cp2 = cps[1] ?? null;
   // Category anchor for Customer↔Consignee: once EITHER a Customer or Consignee
-  // is added, its Domestic/International category is locked for the other one.
-  // null = neither added yet (both categories still open). Supplier ignores this.
+  // is added, its Domestic/International category is locked for EVERY other one.
+  // A domestic deal is domestic end-to-end — Customer, Consignee AND Supplier;
+  // an international one is international throughout. The FIRST counterparty
+  // added anchors the rest. null = none added yet, both categories still open.
+  // (Supplier used to be exempt from this; it no longer is.)
   const ctcRequiredDomestic = (() => {
-    const anchor = cps.find(c => cpRole(c) === 'buyer' || cpRole(c) === 'consignee');
+    const anchor = cps[0];
     return anchor ? isDomesticCountry(anchor.country) : null;
   })();
   const [org, setOrg] = useState<Org | null>(null);
@@ -233,9 +241,11 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   }, [authUser?.branch_logo, authUser?.client_logo, authUser?.branch_name, authUser?.client_name]);
   const [header, setHeader] = useState<HeaderConfig>(brandedDefaults);
   const [footer, setFooter] = useState<FooterConfig>(DEFAULT_FOOTER);
-  // Note: the selected organization is intentionally NOT injected into the
-  // document header title — the org name should not appear in the draft's
-  // top-right corner. The header title stays user-configurable (Stage 1).
+  // These are only the DEFAULTS, used until an organisation is picked in
+  // Stage 1. Selecting one overwrites the header's logo + title with THAT
+  // branch's (see onSelectOrg) so the draft is always branded as the
+  // organisation the agreement is actually being raised by; clearing it
+  // restores these. The header stays user-editable via Header Settings.
 
   const errMsg = (e: unknown) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
   const refreshRecord = async (id?: number | null) => {
@@ -304,6 +314,41 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       .catch(() => { if (alive) setOrgs([]); });
     return () => { alive = false; };
   }, []);
+
+  /* Reconcile a hydrated organisation against the live branch list.
+   *
+   * Opening a saved contract rebuilds `org` from the plain strings stored on
+   * the row (org_name / org_short_code / org_state / org_country) with id 0 —
+   * a SNAPSHOT taken when the draft was written. On drafts created before the
+   * panel moved from the Company master to branches those strings hold company
+   * data, and even on new ones they go stale the moment the branch is edited,
+   * so the panel showed company/stale values until something re-selected the
+   * branch. The snapshot also has no logo field at all.
+   *
+   * Once the branch options land, swap the snapshot for the REAL branch row so
+   * the panel is always live branch data. Matched on short code first, then
+   * name, case-insensitively (Postgres-stored values drift in casing). Rows
+   * that already came from the picker carry a real id and are left alone, as is
+   * a snapshot that matches no branch — better to show what was saved than to
+   * blank the panel. The saved header_config is deliberately NOT touched here:
+   * it may hold the user's own edits. Re-picking the branch refreshes it. */
+  useEffect(() => {
+    if (!orgs.length) return;
+    setOrg(prev => {
+      if (!prev || prev.id) return prev;         // null, or already a real branch
+      const key = (s: string) => (s || '').trim().toLowerCase();
+      const byCode = prev.shortCode && prev.shortCode !== '—'
+        ? orgs.find(o => key(o.shortCode) === key(prev.shortCode))
+        : undefined;
+      return byCode ?? orgs.find(o => key(o.name) === key(prev.name)) ?? prev;
+    });
+    /* Depends on the SNAPSHOT too, not just `orgs` — the two loads race. When
+     * the branch list wins, hydration lands afterwards and an `orgs`-only
+     * dependency would never re-run, which is exactly why the panel showed
+     * stale values on some opens and correct ones on others. Re-running is
+     * free: an already-resolved org returns the same reference, so React bails
+     * out of the re-render instead of looping. */
+  }, [orgs, org?.id, org?.name, org?.shortCode]);
 
   // Agreement Type options come from the CLM Agreement Type master.
   useEffect(() => {
@@ -585,12 +630,32 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               onAddCp={() => setPicker(true)} onRemoveCp={(idx) => setCps(cps.filter((_, j) => j !== idx))}
               onSelectOrg={(o) => {
                 setOrg(o); setOrgOpen(false);
-                // Sync the document-header logo to the picked organisation's
-                // branch logo so the preview shows THAT branch's brand, not the
-                // logged-in branch's default. Only when the branch has a logo —
-                // otherwise keep whatever logo the header already has.
-                if (o.logoUrl) setHeader(h => ({ ...h, logo_url: o.logoUrl!, logo_path: o.logoPath ?? h.logo_path }));
-              }} onResetOrg={() => setOrg(null)}
+                /* The document header follows the SELECTED organisation — its
+                 * branch logo AND its name. Both are set unconditionally.
+                 * Previously only the logo synced, and only `if (o.logoUrl)`:
+                 * picking a branch with no logo left the PREVIOUS branch's logo
+                 * sitting in the header, and the title never moved off the
+                 * logged-in branch at all — so a draft for "inorbvict Agrotech"
+                 * rendered "inorbvict healthcare"'s brand. A branch with no
+                 * logo must leave the slot EMPTY, never inherit another
+                 * branch's. The branch name is the company name here. */
+                setHeader(h => ({
+                  ...h,
+                  logo_url:  o.logoUrl  ?? null,
+                  logo_path: o.logoPath ?? null,
+                  title:     o.name?.trim() || brandedDefaults.title,
+                }));
+              }} onResetOrg={() => {
+                setOrg(null);
+                // No organisation picked ⇒ fall back to the tenant's own
+                // branding rather than stranding the cleared branch's brand.
+                setHeader(h => ({
+                  ...h,
+                  logo_url:  brandedDefaults.logo_url  ?? null,
+                  logo_path: brandedDefaults.logo_path ?? null,
+                  title:     brandedDefaults.title,
+                }));
+              }}
               agTitle={agTitle} setAgTitle={setAgTitle} agType={agType} setAgType={setAgType}
               effDate={effDate} setEffDate={setEffDate} endDate={endDate} setEndDate={setEndDate}
               draft={draft} setDraft={setDraft}
@@ -627,22 +692,20 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               toast.error('Already added', `Only one ${labelOf[type] ?? type} is allowed. Remove the existing one to change it.`);
               return;
             }
-            // Customer ↔ Consignee must share ONE category (both Domestic/India or
-            // both International); Supplier is exempt (can be either). Symmetric —
-            // whichever of the pair is already added anchors the other's category.
-            if (type === 'buyer' || type === 'consignee') {
-              const otherType = type === 'buyer' ? 'consignee' : 'buyer';
-              const other = cps.find(c => (c.sourceType || c.badge || '').toLowerCase() === otherType);
-              if (other && isDomesticCountry(other.country) !== isDomesticCountry(cp.country)) {
-                const anchorLabel = otherType === 'buyer' ? 'Customer' : 'Consignee';
-                const anchorCat   = isDomesticCountry(other.country) ? 'Domestic' : 'International';
-                const need        = isDomesticCountry(other.country) ? 'Domestic (India)' : 'International';
-                toast.error(
-                  'Domestic / International mismatch',
-                  `Customer and Consignee must be in the same category. The ${anchorLabel} is ${anchorCat}, so this ${type === 'buyer' ? 'Customer' : 'Consignee'} must also be ${need}.`,
-                );
-                return;
-              }
+            // EVERY counterparty on an agreement shares ONE category — Customer,
+            // Consignee AND Supplier. Domestic (India) deal ⇒ all three domestic;
+            // International ⇒ all three international. The first party added
+            // anchors the rest, so the check is symmetric whichever order they
+            // are picked in. (Supplier was previously exempt.)
+            if (ctcRequiredDomestic !== null && isDomesticCountry(cp.country) !== ctcRequiredDomestic) {
+              const titleOf: Record<string, string> = { buyer: 'Customer', consignee: 'Consignee', supplier: 'Supplier' };
+              const anchorCat = ctcRequiredDomestic ? 'Domestic' : 'International';
+              const need      = ctcRequiredDomestic ? 'Domestic (India)' : 'International';
+              toast.error(
+                'Domestic / International mismatch',
+                `All counterparties on an agreement must be in the same category. This agreement is ${anchorCat}, so the ${titleOf[type] ?? 'counterparty'} must also be ${need}.`,
+              );
+              return;
             }
             setCps([...cps, cp]);
             setPicker(false);
@@ -1121,7 +1184,19 @@ function Stage1(p: {
                         maxLength hard-stops entry and the inline message shows the
                         moment the cap is hit, instead of only failing at Submit for
                         Approval (backend title max:255). */}
-                    <Field t={t} label="Agreement Title *" error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : (p.agTitle.length >= 255 ? 'Agreement title cannot exceed 255 characters.' : undefined)}><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, 255))} maxLength={255} readOnly={prevLocked} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={{ ...ipt, ...(prevLocked ? { background: t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC', cursor: 'default' } : null) }} /></Field>
+                    <Field
+                      t={t}
+                      label="Agreement Title *"
+                      counter={
+                        <span style={{
+                          fontSize: 9, fontWeight: 800, letterSpacing: 0, textTransform: 'none',
+                          // Amber at the cap — the same "you've hit the limit" cue
+                          // the Trade Document / Agreement Wizard titles use.
+                          color: p.agTitle.length >= AG_TITLE_MAX ? '#b45309' : (t.dark ? 'rgba(255,255,255,.5)' : '#94a3b8'),
+                        }}>{p.agTitle.length}/{AG_TITLE_MAX}</span>
+                      }
+                      error={errors.title && !p.agTitle.trim() ? 'Agreement title is required' : (p.agTitle.length >= AG_TITLE_MAX ? `Agreement title cannot exceed ${AG_TITLE_MAX} characters.` : undefined)}
+                    ><input value={p.agTitle} onChange={e => p.setAgTitle(e.target.value.slice(0, AG_TITLE_MAX))} maxLength={AG_TITLE_MAX} readOnly={prevLocked} placeholder="e.g. Supply Agreement — GreenHarvest × AgroSource" style={{ ...ipt, ...(prevLocked ? { background: t.dark ? 'rgba(255,255,255,.02)' : '#F8F7FC', cursor: 'default' } : null) }} /></Field>
                     <Field t={t} label="Agreement Type *" error={errors.type && !p.agType ? 'Agreement type is required' : undefined}>
                       <MasterSelect value={p.agType} onChange={p.setAgType} options={p.agTypes} loading={p.agTypesLoading} disabled={prevLocked} placeholder={p.agTypesLoading ? 'Loading…' : (p.agTypes.length ? 'Select type…' : 'No agreement types in master')} />
                     </Field>
@@ -1370,7 +1445,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   const isSignedOff = approval === 'approved' || stage >= 3;
   const signedUrl = String((record?.signed_document_url as string) ?? '');
   const sigToken = isSignedOff && orgSig
-    ? `<img src="${orgSig}" alt="Authorised Signatory" style="max-height:78px;max-width:200px;object-fit:contain;display:inline-block;vertical-align:middle;" />`
+    ? `<img src="${orgSig}" alt="Authorised Signatory" style="max-height:78px;max-width:200px;object-fit:contain;display:block;margin:8px 0 6px;" />`
     : '<span style="color:#94a3b8;font-style:italic;">{{signature}}</span>';
   // Prefer the server-resolved preview (party {{customer.*}}/{{consignee.*}}/
   // {{supplier.*}} + org tokens filled with real data) so Stage 2+ shows actual
@@ -1835,6 +1910,15 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
     onSend(recipients, days ? Number(days) : null);
   };
 
+  /* Header title clipped at 30 chars. This modal is only 500px wide, so a long
+   * agreement name ran straight off the right edge of the purple header — no
+   * ellipsis, no way to read it. The untruncated name stays reachable on hover.
+   * TIP_Z: the overlay below sits at zIndex 9999999 and the tooltip portals to
+   * <body>, so without clearing that it would render BEHIND the modal. */
+  const TIP_Z = 10000001;
+  const fullTitle  = title || 'Agreement';
+  const shownTitle = fullTitle.length > 30 ? fullTitle.slice(0, 30).trimEnd() + '…' : fullTitle;
+
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(15,7,50,.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'var(--font-sans)' }}>
       <div onClick={e => e.stopPropagation()} style={{ width: 'min(500px,94vw)', maxHeight: '88vh', background: t.surface, borderRadius: 20, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.4)' : 'rgba(124,58,237,.25)'}`, boxShadow: '0 40px 80px rgba(109,40,217,.35)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -1842,7 +1926,7 @@ function SendForSigningModal({ t, cps, org, code, title, onClose, onSend }: { t:
         <div style={{ padding: '16px 20px', background: 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(120deg,#4C1D95,#6D28D9,#7C3AED,#8B5CF6)', backgroundSize: '14px 14px, auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg></div>
-            <div><div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Send for Signature &amp; Negotiation · {code}</div><div style={{ fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '-.3px', marginTop: 1 }}>{title || 'Agreement'}</div><div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg><span style={{ fontSize: 9, color: 'rgba(255,255,255,.72)', fontWeight: 500 }}>Sent via secure e-sign link · All parties notified</span></div></div>
+            <div><div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Send for Signature &amp; Negotiation · {code}</div><Tooltip label={fullTitle} position="bottom" zIndex={TIP_Z} disabled={fullTitle.length <= 30}><div style={{ fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '-.3px', marginTop: 1 }}>{shownTitle}</div></Tooltip><div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg><span style={{ fontSize: 9, color: 'rgba(255,255,255,.72)', fontWeight: 500 }}>Sent via secure e-sign link · All parties notified</span></div></div>
           </div>
           <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: 'rgba(255,255,255,.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
         </div>
@@ -2513,11 +2597,19 @@ function OrgDetail({ t, label, text }: { t: OpsTokens; label?: string; text: str
   return <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /></svg>{label && <span style={{ fontSize: 8, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</span>}<span style={{ fontSize: 9, color: t.textSub, fontWeight: 600 }}>{text}</span></div>;
 }
 
-function Field({ t, label, green, error, children }: { t: OpsTokens; label: string; green?: boolean; error?: string; children: React.ReactNode }) {
+function Field({ t, label, green, error, counter, children }: { t: OpsTokens; label: string; green?: boolean; error?: string; counter?: React.ReactNode; children: React.ReactNode }) {
   const labelColor = error ? '#ef4444' : (green ? (t.dark ? '#34d399' : '#059669') : (t.dark ? '#a78bfa' : '#7C3AED'));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <label style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: labelColor }}>{label}</label>
+      {/* The flex row is applied ONLY when a counter is passed, so the twenty-odd
+          other Field call sites keep their exact plain-label rendering. */}
+      <label style={{
+        fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: labelColor,
+        ...(counter ? { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 } : null),
+      }}>
+        {counter ? <span>{label}</span> : label}
+        {counter}
+      </label>
       {/* Red ring hugs whatever control sits inside (input / select / date) so a
           single wrapper validates every field type uniformly. */}
       <div style={{ borderRadius: 9, boxShadow: error ? '0 0 0 1.5px #ef4444' : 'none' }}>{children}</div>
@@ -2780,11 +2872,11 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
     if (!(p.name + p.id + p.email).toLowerCase().includes(search.toLowerCase())) return false;
     if (tab === 'consignee' && p.sameAsCustomer) return false;
     if (excludedName && norm(p.name) === norm(excludedName)) return false;
-    // Customer ↔ Consignee must share a category. Once one of the pair is added,
-    // the other's list is restricted to the same category (Domestic/India or
-    // International). Supplier is exempt, and no anchor means no restriction.
-    if ((tab === 'buyer' || tab === 'consignee') && requiredDomestic !== null
-        && isDomesticCountry(p.country) !== requiredDomestic) return false;
+    // Every counterparty shares ONE category. Once ANY of them is added, the
+    // remaining lists — Customer, Consignee AND Supplier — are restricted to
+    // that same category (Domestic/India or International), so a mismatched
+    // party can't even be picked. No anchor yet means no restriction.
+    if (requiredDomestic !== null && isDomesticCountry(p.country) !== requiredDomestic) return false;
     return true;
   });
   const tabBadge = tab === 'buyer'
@@ -2846,7 +2938,23 @@ function CpPicker({ t, slot, usedTypes = [], taken = {}, requiredDomestic = null
                   </div>
                 </div>
               ))}
-              {!list.length && <div style={{ textAlign: 'center', padding: '28px 0', fontSize: 12, color: t.textMuted }}>{loading ? 'Loading…' : `No ${tab === 'buyer' ? 'customer' : tab}s found`}</div>}
+              {/* An empty list is usually the category lock, not missing data —
+                  say so, otherwise "No suppliers found" reads as a bug when the
+                  suppliers exist but sit on the other side of the rule. */}
+              {!list.length && (
+                <div style={{ textAlign: 'center', padding: '28px 0', fontSize: 12, color: t.textMuted }}>
+                  {loading ? 'Loading…' : (
+                    <>
+                      No {tab === 'buyer' ? 'customer' : tab}s found
+                      {requiredDomestic !== null && (
+                        <div style={{ marginTop: 6, fontSize: 11 }}>
+                          This agreement is <strong>{requiredDomestic ? 'Domestic (India)' : 'International'}</strong> — only {requiredDomestic ? 'Domestic' : 'International'} parties can be added.
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ) : (

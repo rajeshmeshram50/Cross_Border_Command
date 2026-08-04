@@ -44,8 +44,12 @@ const NOTICE_PERIOD_OPTIONS = [
 const WEEKLY_OFF_OPTIONS    = ['Week Off Policy','Saturday & Sunday','Sunday Only','Rotational'].map(v => ({ value: v, label: v }));
 const TIME_TRACKING_OPTIONS = ['Manual','Biometric'].map(v => ({ value: v, label: v }));
 const PENALIZATION_OPTIONS  = ['Tracking Policy','Strict Policy','Lenient Policy','No Penalty'].map(v => ({ value: v, label: v }));
-const OVERTIME_OPTIONS      = ['Not applicable','Hourly Pay','Compensation Off','Time and a Half'].map(v => ({ value: v, label: v }));
-const EXPENSE_POLICY_OPTIONS= [{ value: '', label: 'Select' }, { value: 'Applicable', label: 'Applicable' }, { value: 'Not Applicable', label: 'Not Applicable' }];
+// Overtime rate options now come from the Overtime (OT) Master (fetched at
+// runtime into overtimeRateOptions), gated behind an Applicable Yes/No toggle.
+const YES_NO_OPTIONS        = ['No','Yes'].map(v => ({ value: v, label: v }));
+// No blank "Select" row — the empty state is carried by the placeholder,
+// so the dropdown lists only the two real choices.
+const EXPENSE_POLICY_OPTIONS= [{ value: 'Applicable', label: 'Applicable' }, { value: 'Not Applicable', label: 'Not Applicable' }];
 
 const SALARY_FREQUENCY_OPTIONS  = ['Per annum','Per month','Per hour','Per day'].map(v => ({ value: v, label: v }));
 const SALARY_STRUCTURE_OPTIONS  = ['Range Based','Fixed','Component Based'].map(v => ({ value: v, label: v }));
@@ -313,6 +317,14 @@ export default function HrEmployees() {
   const [mCountries, setMCountries] = useState<any[]>([]);
   const [mStates, setMStates] = useState<any[]>([]);
   const [mHolidayGroups, setMHolidayGroups] = useState<any[]>([]);
+  // Overtime rates sourced from the Overtime (OT) Master — active rates only.
+  const [mOvertimeRates, setMOvertimeRates] = useState<any[]>([]);
+  const overtimeRateOptions = useMemo(
+    () => mOvertimeRates
+      .filter(o => String(o.status ?? 'Active').toLowerCase() === 'active')
+      .map(o => ({ value: String(o.rate_name), label: String(o.rate_name) })),
+    [mOvertimeRates],
+  );
 
   const holidayGroupOptions = useMemo(
     () => mHolidayGroups
@@ -387,6 +399,7 @@ export default function HrEmployees() {
       api.get('/master/departments').then(r => setMDepts(Array.isArray(r.data) ? r.data : [])),
       api.get('/master/designations').then(r => setMDesignations(Array.isArray(r.data) ? r.data : [])),
       api.get('/master/roles').then(r => setMRoles(Array.isArray(r.data) ? r.data : [])),
+      api.get('/master/overtime_rates').then(r => setMOvertimeRates(Array.isArray(r.data) ? r.data : [])).catch(() => setMOvertimeRates([])),
       /* Legal entities = the client's BRANCHES (the branch carries the
          GST/PAN/CIN and bank accounts). /branch-legal-entities is a permission-
          free form lookup — HR staff who can add an employee often can't manage
@@ -708,6 +721,19 @@ export default function HrEmployees() {
   const [eWeeklyOff, setEWeeklyOff]              = useState('');
   const [eAttendanceNumber, setEAttendanceNumber]= useState('');
   const [eOvertime, setEOvertime]                = useState('');
+  // Yes/No toggle gating the Overtime Rate picker; derived from eOvertime on hydrate.
+  const [eOvertimeApplicable, setEOvertimeApplicable] = useState('No');
+  const overtimeRateSelectOptions = useMemo(() => {
+    const active = overtimeRateOptions;
+    const saved  = eOvertime.trim();
+    if (!saved || active.some(o => o.value === saved)) return active;
+    return [...active, {
+      value: saved,
+      label: `${saved} (inactive)`,
+      disabled: true,
+      disabledReason: 'This rate is no longer Active in Master › Overtime (OT). Pick a current rate.',
+    }];
+  }, [overtimeRateOptions, eOvertime]);
   const [eExpensePolicy, setEExpensePolicy]      = useState('');
   const [eLaptopAssigned, setELaptopAssigned]    = useState('No');
   const [eLaptopAssetId, setELaptopAssetId]      = useState('');
@@ -918,7 +944,7 @@ export default function HrEmployees() {
     setELeavePlan(''); setEHolidayList('');
     setEAttendanceTracking(true); setEShift('');
     setEWeeklyOff(''); setEAttendanceNumber('');
-    setEOvertime(''); setEExpensePolicy('');
+    setEOvertime(''); setEOvertimeApplicable('No'); setEExpensePolicy('');
     setELaptopAssigned('No'); setELaptopAssetId(''); setEMobileDevice(''); setEOtherAssets('');
     setELaptopMasterAssetId(''); setEMobileAssigned('No'); setEMobileMasterAssetId(''); setEOtherMasterAssetIds([]);
     setEAadharFile(null); setEPanFile(null); setEPhotoFile(null);
@@ -1493,6 +1519,7 @@ export default function HrEmployees() {
       if (raw.weekly_off !== undefined && raw.weekly_off !== null) setEWeeklyOff(raw.weekly_off);
       if (raw.attendance_number !== undefined && raw.attendance_number !== null) setEAttendanceNumber(raw.attendance_number);
       if (raw.overtime !== undefined && raw.overtime !== null) setEOvertime(raw.overtime);
+      { const otv = String(raw.overtime ?? '').trim(); setEOvertimeApplicable(otv && otv.toLowerCase() !== 'not applicable' ? 'Yes' : 'No'); }
       if (raw.expense_policy !== undefined && raw.expense_policy !== null) setEExpensePolicy(raw.expense_policy);
       if (raw.laptop_assigned !== undefined && raw.laptop_assigned !== null) setELaptopAssigned(raw.laptop_assigned);
       if (raw.laptop_asset_id !== undefined && raw.laptop_asset_id !== null) setELaptopAssetId(raw.laptop_asset_id);
@@ -3558,7 +3585,14 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Ancillary Role <span className="hint">(select multiple)</span></label>
-                      <MultiSelectChips
+                      {/* MasterMultiSelect, not MultiSelectChips: the latter
+                          rendered EVERY selected chip, so 10+ roles stacked
+                          into four rows and blew the field out of the form
+                          grid. This collapses to 3 chips + a "+N more" pill
+                          (click to expand/collapse) — the same treatment the
+                          segment pickers use. Same props, and it keeps the
+                          search box. */}
+                      <MasterMultiSelect
                         value={eAncillaryRole}
                         onChange={setEAncillaryRole}
                         options={ancillaryRoleOptionsX}
@@ -3727,12 +3761,18 @@ export default function HrEmployees() {
                       />
                     </Col>
                     <Col md={4}>
-                      <label className="emp-label">Overtime</label>
-                      <MasterSelect value={eOvertime} onChange={setEOvertime} options={OVERTIME_OPTIONS} placeholder="Select overtime policy" />
+                      <label className="emp-label">Overtime Applicable</label>
+                      <MasterSelect value={eOvertimeApplicable} onChange={(v) => { setEOvertimeApplicable(v); if (v !== 'Yes') setEOvertime(''); }} options={YES_NO_OPTIONS} placeholder="Select" />
                     </Col>
+                    {eOvertimeApplicable === 'Yes' && (
+                      <Col md={4}>
+                        <label className="emp-label">Overtime Rate</label>
+                        <MasterSelect value={eOvertime} onChange={setEOvertime} options={overtimeRateSelectOptions} onOpen={() => reloadMasters()} placeholder={overtimeRateOptions.length ? 'Select overtime rate' : 'No rates — add in Master › Overtime (OT)'} />
+                      </Col>
+                    )}
                     <Col md={4}>
                       <label className="emp-label">Expense Policy<span className="req">*</span></label>
-                      <MasterSelect value={eExpensePolicy} onChange={(v) => { setEExpensePolicy(v); clearEErr('expense_policy'); }} options={EXPENSE_POLICY_OPTIONS} placeholder="Select" invalid={!!eErrors.expense_policy} />
+                      <MasterSelect value={eExpensePolicy} onChange={(v) => { setEExpensePolicy(v); clearEErr('expense_policy'); }} options={EXPENSE_POLICY_OPTIONS} placeholder="Select expense policy" invalid={!!eErrors.expense_policy} />
                       {eErrors.expense_policy && <small className="emp-err">{eErrors.expense_policy}</small>}
                     </Col>
                   </Row>

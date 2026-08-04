@@ -54,3 +54,38 @@ export const resolveProbation = (policyText: string, joinDate: string) => {
   const { iso, display } = computeProbationEnd(joinDate, months);
   return { months, endIso: iso, endDisplay: display };
 };
+
+/* ── Probation status ─────────────────────────────────────────────────────
+   Mirrors app/Support/ProbationGuard.php — keep the two in step. An employee
+   is on probation while today is on or before `probation_end_date`; a NULL
+   end date means no probation at all ("No Probation" policy, or a legacy row
+   saved before the column existed). While on probation the leave policy and
+   the notice period both do not apply.                                      */
+
+/** Today in IST as YYYY-MM-DD — the backend compares in the same timezone. */
+const todayIstIso = (): string => {
+  const d = new Date();
+  // en-CA renders as YYYY-MM-DD, which sorts and compares as a plain string.
+  return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+};
+
+export const isOnProbation = (probationEndDate?: string | null): boolean => {
+  const end = String(probationEndDate ?? '').slice(0, 10);
+  if (!end) return false;
+  return todayIstIso() <= end;
+};
+
+/** "28 Aug 2026" for messages; empty when there's no end date. */
+export const probationEndLabel = (probationEndDate?: string | null): string => {
+  const end = String(probationEndDate ?? '').slice(0, 10);
+  if (!end) return '';
+  const d = new Date(end + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+};
+
+/** The toast shown when someone on probation tries to apply for leave. */
+export const probationLeaveMessage = (probationEndDate?: string | null): string => {
+  const until = probationEndLabel(probationEndDate);
+  return `You are on probation and cannot apply for leave.${until ? ` Leave can be applied from ${until}.` : ''}`;
+};

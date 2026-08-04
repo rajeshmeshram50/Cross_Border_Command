@@ -60,6 +60,10 @@ export type AgrLib = {
  * checkbox grid (`PARTY_BUYER_CONSIGNEE` / `PARTY_SUPPLIER`) so the
  * Agreement and Trade Document forms read as a single visual family.
  * Selected values concatenate into the agreement_library.party CSV. */
+/* Draft-content Word upload cap. Mirrors ClmAgreementController::DOCX_MAX_KB —
+ * keep the two in step, or the UI will promise a limit the API doesn't hold. */
+const AGREEMENT_DOCX_MAX_BYTES = 1024 * 1024;   // 1 MB
+
 const PARTY_BUYER_CONSIGNEE = [
   { value: 'Buyer',     label: 'Customer',  icon: '👤' },
   { value: 'Consignee', label: 'Consignee', icon: '🚚' },
@@ -350,6 +354,25 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   };
   const uploadDocx = async (file: File) => {
     if (uploadingDocx) return;
+    /* 1 MB cap on the draft-content Word upload.
+     *
+     * Checked here FIRST so an oversized file is refused instantly instead of
+     * being uploaded, converted and only then bounced — and so the user is told
+     * the actual size. The server enforces the same limit
+     * (ClmAgreementController::DOCX_MAX_KB); this is the fast, friendly half of
+     * the pair, never the only line of defence.
+     *
+     * It also covers BOTH upload paths below: a saved agreement posts to
+     * /clm/agreement-library/{id}/upload-docx, while an unsaved draft posts to
+     * the shared /clm/docx-to-html — without this guard the unsaved path would
+     * still have accepted a large file. */
+    if (file.size > AGREEMENT_DOCX_MAX_BYTES) {
+      toast.error(
+        'File too large',
+        `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB. Word documents must be 1 MB or smaller.`,
+      );
+      return;
+    }
     setUploadingDocx(true);
     const fd = new FormData();
     fd.append('docx', file);
@@ -509,7 +532,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
     const p = purpose.trim();
     if (!p)                  next.purpose = 'Purpose is required';
     else if (p.length < 10)  next.purpose = 'Purpose must be at least 10 characters';
-    else if (p.length > 1000) next.purpose = 'Purpose must not be greater than 1000 characters';
+    else if (p.length > 600) next.purpose = 'Purpose must not be greater than 600 characters';
 
     if (parties.size === 0)     next.party         = 'Select at least one applicable party';
     // Segment is mandatory (CBC-437): at least one for less-reg, exactly one for high-reg.
@@ -733,7 +756,9 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                 </div>
 
                 <div className="agw-field">
-                  <label className="agw-label">Agreement Title <span className="agw-req">*</span></label>
+                  <label className="agw-label">Agreement Title <span className="agw-req">*</span>
+                    <span className="agw-count" style={{ color: title.length >= 255 ? '#b45309' : undefined }}>{title.length}/255</span>
+                  </label>
                   <input
                     type="text"
                     className={`agw-input ${errors.title ? 'is-err' : ''}`}
@@ -808,11 +833,13 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
               </div>
 
               <div className="agw-field">
-                <label className="agw-label">Agreement Purpose <span className="agw-req">*</span></label>
+                <label className="agw-label">Agreement Purpose <span className="agw-req">*</span>
+                  <span className="agw-count" style={{ color: purpose.length >= 600 ? '#b45309' : undefined }}>{purpose.length}/600</span>
+                </label>
                 <textarea
                   className={`agw-input agw-textarea ${errors.purpose ? 'is-err' : ''}`}
                   placeholder="e.g. Governs supplier material sourcing terms for the FY2026 procurement cycle…"
-                  maxLength={1000}
+                  maxLength={600}
                   value={purpose}
                   onChange={(e) => { setPurpose(e.target.value); setErrors(p => ({ ...p, purpose: '' })); }}
                 />
@@ -963,6 +990,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
             names to the same values, so switching catalogs is safe. */}
         <ClmInsertPlaceholderModal
           open={placeholderOpen}
+          documentHtml={content}
           allowedParties={(() => {
             // Restrict placeholder party tabs to the agreement's applicable party:
             // a Customer/Consignee agreement → Customer + Consignee tabs; a
@@ -976,6 +1004,9 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
           })()}
           onClose={() => setPlaceholderOpen(false)}
           onInsert={(token) => { if (/^\s*</.test(token)) { toast.success('Inserted', 'Added to the agreement draft.'); insertHtmlAtCaret(token); } else insertPlaceholderToken(token); setPlaceholderOpen(false); }}
+          // Product Table rebuild — re-seed the whole TipTap doc from the body
+          // the picker returns (old table already swapped for the new one).
+          onReplaceDocumentHtml={(html) => { agr.setHTML(html); setContent(html); setDirty(true); toast.success('Product table updated'); setPlaceholderOpen(false); }}
         />
 
         {/* Insert Table picker — same component the Trade Doc draft uses
@@ -1086,49 +1117,11 @@ function AgrEditor({
         <div className="agw-editor-actions">
           <input ref={docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
                  onChange={e => { const f = e.target.files?.[0]; if (f) onUploadDocx(f); e.currentTarget.value = ''; }} />
-          <div style={{ position: 'relative', display: 'inline-flex' }}>
-            <Tooltip label={downloadingDocx ? 'Generating the DOCX…' : (editingId ? 'Download as DOCX — pick page size' : 'Save the agreement first')}>
-              <button type="button" className="agw-editor-btn" disabled={downloadingDocx}
-                onClick={e => {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  setDlAnchor({ top: r.bottom + 4, right: window.innerWidth - r.right });
-                  setDlMenuOpen(o => !o);
-                }}>
-                {downloadingDocx ? (
-                  <>
-                    <svg className="agw-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-                    Downloading…
-                  </>
-                ) : (
-                  <>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                    Download DOCX
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" style={{ marginLeft: 3 }}><polyline points="6 9 12 15 18 9" /></svg>
-                  </>
-                )}
-              </button>
-            </Tooltip>
-            {dlMenuOpen && !downloadingDocx && (
-              <>
-                <div onClick={() => setDlMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 3000 }} />
-                <div style={{ position: 'fixed', top: dlAnchor.top, right: dlAnchor.right, zIndex: 3001, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 8px 24px rgba(15,23,42,.16)', padding: 4, minWidth: 178 }}>
-                  {([
-                    ['a4', 'portrait', 'A4'],
-                    ['a3', 'portrait', 'A3 (wider)'],
-                  ] as const).map(([size, orient, label]) => (
-                    <button key={label} type="button"
-                      onClick={() => { setDlMenuOpen(false); onDownloadDocx(size, orient); }}
-                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', border: 'none', background: 'transparent', borderRadius: 6, cursor: 'pointer', fontSize: 12.5, color: '#0f172a', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-          <Tooltip label={uploadingDocx ? 'Converting the document…' : (editingId ? 'Upload a revised Word file' : 'Upload a Word file to draft from')}>
+          {/* Download DOCX moved OUT of the editor — the Agreement Library list's
+              Action column now offers Download as Doc / Download as PDF. */}
+          {/* The size cap is stated up-front — finding out only after picking a
+              file is the frustrating half of an upload limit. */}
+          <Tooltip label={uploadingDocx ? 'Converting the document…' : (editingId ? 'Upload a revised Word file (max 1 MB)' : 'Upload a Word file to draft from (max 1 MB)')}>
             <button type="button" className="agw-editor-btn" disabled={uploadingDocx} onClick={() => docxRef.current?.click()}>
               {uploadingDocx ? (
                 <>
@@ -1702,6 +1695,7 @@ const AGW_CSS = `
 .agw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
 .agw-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .agw-label { font-size: 10.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #0e7490; }
+.agw-count { float: right; font-weight: 700; letter-spacing: 0; text-transform: none; color: #94a3b8; }
 .agw-req { color: #ef4444; font-size: 12px; line-height: 1; }
 .agw-input {
   width: 100%; box-sizing: border-box;

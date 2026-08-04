@@ -1383,6 +1383,21 @@ export default function SalesQPI() {
     );
   };
 
+  /* Opportunities that ALREADY have a Proforma Invoice. Once an opp has a PI the
+   * deal is committed to it, so EVERY quotation on that opp is locked from
+   * editing — not just the one that was converted. Keyed by opp_code AND numeric
+   * lead id so either identifier on a quotation row resolves. */
+  const oppsWithPi = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of pis) {
+      if (p.oppId) s.add(p.oppId);
+      if (p.leadId != null) s.add(`lead:${p.leadId}`);
+    }
+    return s;
+  }, [pis]);
+  const oppHasPi = (r: { oppId?: string; leadId?: number | null }): boolean =>
+    !!(r.oppId && oppsWithPi.has(r.oppId)) || (r.leadId != null && oppsWithPi.has(`lead:${r.leadId}`));
+
   /* ── Quotation table columns ──────────────────────────────────── */
   const quotationColumns = useMemo<any[]>(() => [
     {
@@ -1464,12 +1479,14 @@ export default function SalesQPI() {
                 </button>
               </Tooltip>
             ) : (
-              <Tooltip label={readOnly ? readOnlyHint : (convertingId === r.id ? 'Converting…' : 'Convert this quotation into a PI')}>
+              /* Its opportunity already has a PI → the deal is committed, so NO
+                 further PIs can be created from ANY of the opp's quotations. */
+              <Tooltip label={readOnly ? readOnlyHint : oppHasPi(r) ? 'This opportunity already has a Proforma Invoice — its quotations can no longer be converted' : (convertingId === r.id ? 'Converting…' : 'Convert this quotation into a PI')}>
                 <button
                   type="button"
                   className="qpi-convert-btn"
-                  disabled={readOnly || convertingId === r.id}
-                  onClick={() => openConvert(r)}
+                  disabled={readOnly || convertingId === r.id || oppHasPi(r)}
+                  onClick={() => { if (oppHasPi(r)) { toast.error('Locked', 'This opportunity already has a Proforma Invoice. No more PIs can be created from its quotations.'); return; } openConvert(r); }}
                 >
                   <IconRepeatSm />
                   <span className="qpi-convert-btn-label">
@@ -1533,16 +1550,23 @@ export default function SalesQPI() {
               const qSigned = r.id ? sigByRow[`quotation:${r.id}`]?.status === 'completed' : false;
               // A quotation converted to a PI is locked — the PI is the live doc.
               const qConverted = r.status === 'converted_to_pi';
+              // Its opportunity already has a PI (via ANY quotation) → the deal is
+              // committed, so this (other) quotation is locked from editing too.
+              const oppLocked = !qConverted && oppHasPi(r);
               return (
             <ActionBtn
-              title={readOnly ? readOnlyHint : qConverted ? 'Converted to PI — editing locked' : qSigned ? 'Quotation signed — editing locked' : 'Edit Quotation'}
+              title={readOnly ? readOnlyHint : qConverted ? 'Converted to PI — editing locked' : oppLocked ? 'This opportunity already has a Proforma Invoice — its quotations are locked' : qSigned ? 'Quotation signed — editing locked' : 'Edit Quotation'}
               icon={<IconEdit />}
               color="#16a34a"
-              disabled={readOnly || qSigned || qConverted}
+              disabled={readOnly || qSigned || qConverted || oppLocked}
               onClick={() => {
                 if (!r.id) { toast.error('Cannot edit', 'This quotation has no server id yet.'); return; }
                 if (qConverted) {
                   toast.error('Locked', 'This quotation has been converted to a PI and cannot be edited. Edit the PI instead.');
+                  return;
+                }
+                if (oppLocked) {
+                  toast.error('Locked', 'This opportunity already has a Proforma Invoice. Its quotations can no longer be edited.');
                   return;
                 }
                 setEditingQuotationId(r.id);
@@ -1604,7 +1628,7 @@ export default function SalesQPI() {
         );
       },
     },
-  ], [convertingId, sigByRow, currentUser?.id, emailingKeys, emailCooldowns]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [convertingId, sigByRow, currentUser?.id, emailingKeys, emailCooldowns, oppsWithPi]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── PI table columns — header set differs by sub-tab (BT ID / BT Date
    *    only on With Shipment). Build both column sets memoised. */

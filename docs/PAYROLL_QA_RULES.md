@@ -160,25 +160,96 @@ $lopDays  = max(0, round($effectiveWorkingDays - $paidDays, 2));
 
 ---
 
-## RULE 4 — Overtime (Approved only) ✅
+## RULE 4 — Overtime (Approved only, priced from the OT Master) ✅
 
 **Rule:** Overtime tabhi add ho jab request **approved**. Pending/rejected exclude.
+Amount is **derived**, not typed:
+
+```
+Hourly Salary = Gross Salary ÷ Total Working Days in Payroll Month ÷ Shift Working Hours
+OT Amount     = Hourly Salary × Multiplier × Approved OT Hours
+```
 
 **Code:**
-- [PayrollService.php:1096-1099](../app/Services/PayrollService.php#L1096) → `approvedOvertimeAmount()` → `approvedAdjustments(..., ['overtime'])`.
-- Filter — [PayrollService.php:1119-1137](../app/Services/PayrollService.php#L1119): `->where('status','approved')->whereIn('type', $types)`.
-- Usage — [PayrollService.php:716](../app/Services/PayrollService.php#L716).
+- `overtimeForCycle()` — [PayrollService.php](../app/Services/PayrollService.php) — prices every approved OT row, returns hours + amount + earning lines + exceptions.
+- `overtimeRate()` — the breakdown (`hourly`, `multiplier`, `effective_rate`, `shift_hours`, `working_days`).
+- `overtimeMultiplier()` — resolves `employees.overtime` (a rate NAME) against `master_overtime_rates`.
+- `shiftHours()` — `Employee::resolveShiftWindow()` end − start.
+- Called from `computeForEmployee()` before the earnings JSON is built.
+
+**Inputs — where each term comes from:**
+
+| Term | Source | Notes |
+|---|---|---|
+| Gross Salary | active `SalaryStructure.monthly_gross`, else `annual_salary ÷ 12` | **FULL monthly gross** — never the join/exit pro-rated figure |
+| Total Working Days | `payroll_periods.working_days` | resolved per payroll month, **never a fixed 26**; month-level, not the pro-rated `effectiveWorkingDays`. See the caveat below |
+| Shift Working Hours | employee's shift window (end − start) | night shift wraps midnight; unparseable shift → **9h** default (09:30–18:30) |
+| Multiplier | `master_overtime_rates.multiplier` matched by name to `employees.overtime` | Active rows only; tenant row beats a same-named global; unassigned/unknown/Inactive → **1.0 + warning** |
+| Approved OT Hours | `payroll_adjustments.hours` where `type='overtime'` AND `status='approved'` | pending/rejected contribute 0 |
+
+An hour of OT is deliberately worth the same whether the employee joined on the 1st or the 20th — pro-ration and absence do not move the hourly rate.
+
+### ⚠️ Dynamic working days — partially met
+
+The divisor is read from `payroll_periods.working_days`, resolved **per payroll month** — so it is genuinely dynamic (26 in a 31-day month with 5 Sundays, 27 otherwise) and **no fixed 26 exists anywhere in the code**. That satisfies "shall not use a fixed value".
+
+**What it does NOT yet account for**, contrary to *"working days may vary … depending on weekends, holidays, and company configuration"*:
+
+| Factor | Status |
+|---|---|
+| Month length / number of Sundays | ✅ handled by `PayrollService::defaultWorkingDays()` |
+| **Saturdays** (companies on a Sat+Sun week-off) | ❌ only Sunday is excluded, regardless of the employee's `weekly_off` |
+| **Public holidays** (employee's holiday group) | ❌ not deducted from the divisor |
+| HR override of a month's working days | ❌ `working_days` is set at period creation and has no update endpoint |
+
+`working_days` is the divisor for **the whole payroll module**, not just overtime — changing how it is derived also moves LOP and paid-days for every employee. Deliberately **not** changed as part of the overtime work; it needs a decision on whether the divisor should be per-company or per-employee (an employee on a Sat+Sun week-off has fewer working days than a colleague on Sunday-only in the same month).
+
+### Where OT hours come from — the shift END
+
+**Overtime starts at the end of the employee's shift.** That end time comes from the **branch form → Work Shifts** (`branches.shifts` = `{name, start, end}`), matched by name via `Employee::resolveShiftWindow()`. No shift timing on file → the 18:30 office default.
+
+`overtimeHoursFromAttendance()` walks each attendance day in the window and measures the last punch-out against that shift end:
+
+| Situation | Result |
+|---|---|
+| Punched out at/before shift end | 0 OT |
+| Punched out after shift end | the difference, to the minute |
+| Punched out after midnight (out lands on the next date) | measured as a real instant, so 18:30 → 01:00 = **6.5h**, not a negative |
+| Overnight shift (`22:00–06:00`) | the shift END belongs to the next calendar day |
+| No punch-out (missing punch) | skipped — already flagged as a missing punch |
+| Day is Absent / Leave / Weekly Off / Holiday | ignored; a stray punch on an off day is a data issue, not automatic OT |
+| More than **12 h** past shift end | capped at 12h + a **warning** (assumed forgotten punch-out) |
+
+**Detection is not payment.** Rule 4 still pays only APPROVED hours. Detected-vs-approved is reported on the payslip as an `info` line (`"Attendance shows 6.5 OT hr past the 18:30 shift end across 3 day(s); 4 hr approved and paid."`) — `info` so a few minutes of late sitting can't push every payslip to *Pending Review*.
+
+**API:**
+- `GET /payroll-adjustments/overtime-preview?employee_id=&month=&year=` → detected hours, per-day detail, the rate breakdown and the amount. Read-only.
+- `POST /payroll-adjustments` with `type=overtime` + `from_attendance=true` and no `hours` → server fills the hours from detection (422s if attendance shows none).
+
+> ⚠️ **Open policy question to confirm with the business:** work on a **weekly off or holiday** currently yields OT only for time past the shift end, not for the whole day. If the intent is "any hours worked on an off day are overtime", that's a separate rule and is **not** implemented.
 
 **Small points:**
-- Overtime is a **`PayrollAdjustment`** with `type='overtime'`. Add via `POST /payroll-adjustments`, approve via `POST /payroll-adjustments/{id}/approve`.
-- Adjustment query is **tenant-scoped** (client_id, and branch_id for branch-scoped runs) — [:1127-1130](../app/Services/PayrollService.php#L1127).
+- Overtime is a **`PayrollAdjustment`** with `type='overtime'`. Add via `POST /payroll-adjustments` (send `hours`), approve via `POST /payroll-adjustments/{id}/approve`.
+- Adjustment query is **tenant-scoped** (client_id, and branch_id for branch-scoped runs).
 - Approving/rejecting an adjustment calls `recomputeEmployeePayslips()` (only draft/generated slips) so figures refresh without a full re-run.
-- Shows as a separate earning line in `earnings` JSON + `overtime_amount`.
+- Shows as a separate earning line in `earnings` JSON + `overtime_amount`; **`overtime_hours` now carries the real hours** (it was hardcoded 0 before this rule).
+- `hourly` is rounded to paise **before** the multiplier, so `hours × effective_rate` on the payslip reproduces the amount exactly.
+- Every priced row emits an **`info`** exception spelling out the arithmetic (info never changes slip status) — use it to verify without recomputing by hand.
+- **Manual override:** a `rate` on the adjustment row is treated as a final ₹/hour and wins over the derived rate. `POST` only persists `rate` when the caller sent one, so leaving it out is what lets a later salary revision reprice the hours.
+- **Legacy rows** with no `hours` keep paying their stored flat `amount` and add 0 hours.
 
 **QA cases:**
 1. Add OT, leave **Pending** → Run → `overtime_amount = 0`.
 2. Approve OT → recompute → OT appears as its own earning line.
 3. Reject a previously-approved OT → recompute removes it from draft/generated slips.
+4. **Spec worked example** — Gross ₹30,000 · 26 working days · 9h shift · "Time and a Half" (1.5) · **2 hrs**
+   → hourly `30000 ÷ 26 ÷ 9 = ₹128.21` → **amount `128.21 × 1.5 × 2 = ₹384.63`**.
+   ⚠️ Rounding: the amount is rounded **once, at the end**. Pricing off the rounded ₹192.32/hr rate would give ₹384.64 — one paisa out. The `effective_rate` field is display-only; `effective_rate_exact` is the math input.
+   Same inputs at **10 hrs** → `128.21 × 1.5 × 10 = ₹1,923.15`, `overtime_hours = 10`.
+5. Same employee with **no** OT rate assigned → paid at 1× (`₹1,282.10`) **plus a warning**, slip → Pending Review.
+6. Employee's rate set to an **Inactive** master row → same 1× fallback + warning.
+7. Change the shift to an 8h window → rate rises (`30000/26/8 = 144.23`); change working days on the period → rate moves inversely.
+8. Night shift `22:00–06:00` → 8h, not a negative/zero rate.
 
 ---
 
@@ -258,6 +329,26 @@ $effectiveWorkingDays = round(period.working_days * proration, 2)
 1. Mark employee `Inactive`/`Terminated` → Run → not in `total_employees`, no slip.
 2. Exit LWD before period start → excluded.
 3. Exit LWD inside the period → included but pro-rated (Rule 6) — then handled by FnF for the remainder.
+
+### RULE 7a — Early exit (within 15 days of joining) ✅
+
+**Rule:** An employee who leaves **within 15 days of joining** is not put through payroll at all — no payslip, not counted in the run.
+
+**Code:** `PayrollService::eligibleEmployees()` → `ProbationGuard::isEarlyExit()`; reported by `PayrollService::payrollExclusions()`.
+
+- Tenure counts the **joining day itself**: joined 1 Aug, LWD 15 Aug = **15 days → skipped**; LWD 16 Aug = 16 days → **paid normally**.
+- Threshold is `ProbationGuard::EARLY_EXIT_DAYS` (15).
+- No last working day on file, or an LWD *before* joining → rule does not apply.
+- The status filter does **not** hide them from `payrollExclusions()` — an early leaver is normally already stamped `Resigned`.
+- Skipped employees are surfaced on `GET /payroll/preflight` under `excluded[]` (employee, joining date, LWD, tenure, reason) so HR sees a deliberate skip rather than a missing person.
+
+| TC | Input | Expected | Result |
+|---|---|---|---|
+| G1 | Join 1 Aug, exit LWD 10 Aug | no payslip; listed in preflight `excluded[]` with "10 day(s)" | ☐ |
+| G2 | Join 1 Aug, exit LWD **15 Aug** (boundary) | **skipped** | ☐ |
+| G3 | Join 1 Aug, exit LWD **16 Aug** (boundary) | **paid** (pro-rated per Rule 6), not in `excluded[]` | ☐ |
+| G4 | Join 1 Aug, no exit record | paid normally | ☐ |
+| G5 | Exit LWD earlier than the joining date (bad data) | rule does not fire; employee still processed | ☐ |
 
 ---
 
@@ -631,7 +722,7 @@ SalaryStructure::create([... version, effective_from, status='active',
 | 1 | Attendance finalization | ✅ | PayrollService:427 |
 | 2 | Late mark deduction | ⚠️ warning, no auto-hold/waiver | PayrollService:634 |
 | 3 | Leave salary impact | ✅ | PayrollService:1012, 1005, 619 |
-| 4 | Overtime approved-only | ✅ | PayrollService:1096 |
+| 4 | Overtime approved-only, priced `hourly × multiplier × hours` | ✅ | `PayrollService::overtimeForCycle()` |
 | 5 | Salary structure mandatory | ✅ | PayrollService:571 |
 | 6 | Joining/exit pro-rata | ✅ | PayrollService:585 |
 | 7 | Inactive/terminated exclusion | ✅ | PayrollService:380 |
@@ -729,12 +820,55 @@ Clean full-month expected (no leave/LOP/OT):
 
 | TC | Input | Steps | Expected Result | Result |
 |---|---|---|---|---|
-| D1 | OT adjustment ₹2,000, **Pending** | Run | `overtime_amount=0` (excluded) | ☐ |
-| D2 | OT ₹2,000, **Approved** | Approve → recompute | OT line ₹2,000 added to earnings | ☐ |
+Baseline for D1–D2 and D7–D12: gross **₹30,000**, period **26 working days**, shift **09:30–18:30 (9h)** → hourly **₹128.21**.
+
+| TC | Input | Steps | Expected Result | Result |
+|---|---|---|---|---|
+| D1 | OT `hours=10`, **Pending** | Run | `overtime_amount=0`, `overtime_hours=0` (excluded) | ☐ |
+| D2 | Same OT, **Approved**, rate "Time and a Half" (1.5) | Approve → recompute | `128.21 × 1.5 × 10` → OT line **₹1,923.15**, `overtime_hours=10` | ☐ |
+| D2a | **Spec example** — 2 approved hrs, rate 1.5 | Run | **₹384.63** exactly (not ₹384.64 — rounded once at the end) | ☐ |
 | D3 | Bonus ₹5,000, **Pending** | Run | `bonus_amount=0` | ☐ |
 | D4 | Incentive ₹3,000, **Approved** | Approve | Added to `bonus_amount` line | ☐ |
 | D5 | Approved OT then **Rejected** | Reject → recompute | Removed from draft/generated slips | ☐ |
 | D6 | One-off **deduction** adjustment ₹1,000, approved | Run | Full ₹1,000 deducted (not pro-rated) | ☐ |
+| D7 | OT `hours=10`, employee has **no OT rate** assigned | Approve → Run | 1× fallback **₹1,282.10** + warning; slip **Pending Review** | ☐ |
+| D8 | Employee's OT rate row set to **Inactive** in the master | Run | Same 1× fallback + warning | ☐ |
+| D9 | Rate "Double Time" (2.0), `hours=10` | Run | rate ₹256.42/hr → **₹2,564.20** | ☐ |
+| D10 | Shift changed to **10:00–18:00** (8h), rate 1.5, `hours=10` | Run | hourly ₹144.23 → `144.23 × 1.5 × 10` = **₹2,163.45** | ☐ |
+| D10a | Same month in a 27-working-day calendar instead of 26 | Run | divisor follows the payroll month — rate drops, no fixed 26 anywhere | ☐ |
+| D11 | Adjustment posted with an explicit `rate=500`, `hours=2` | Run | Override honoured → **₹1,000** regardless of package/multiplier | ☐ |
+| D12 | Legacy row: `hours` **null**, `amount=1500`, approved | Run | Pays **₹1,500**, contributes **0** to `overtime_hours` | ☐ |
+| D13 | Approve OT, then **revise the salary** upward, re-run | Run | OT re-priced at the new gross (rate is not frozen at entry time) | ☐ |
+
+**Shift-end detection (shift 09:30–18:30 → OT starts 18:30):**
+
+| TC | Input | Expected Result | Result |
+|---|---|---|---|
+| D14 | Punch out **18:30** exactly | 0 detected OT | ☐ |
+| D15 | Punch out **20:30** | 2.0 h detected | ☐ |
+| D16 | Punch out **01:00 next day** | 6.5 h — not negative, and the preview shows the out-punch date-stamped | ☐ |
+| D17 | Punch out missing (no `check_out_at`) | day skipped, no OT | ☐ |
+| D18 | Punch out 21:00 on a **Weekly Off / Leave / Absent** day | ignored — 0 OT | ☐ |
+| D19 | Punch out on a **Late** day at 19:30 | 1.0 h — Late days still earn OT | ☐ |
+| D20 | Punch out ~23 h after shift end (forgotten punch) | capped at **12 h** + warning "likely a missed punch-out" | ☐ |
+| D21 | Change branch shift to **10:00–19:00**, same 19:00 punch-out | 0 OT — the boundary follows the branch form | ☐ |
+| D22 | Overnight shift **22:00–06:00**, punch out 07:30 next day | 1.5 h (shift end is next-day 06:00) | ☐ |
+| D23 | Employee's shift has no timing (e.g. "General Shift") | falls back to the 18:30 default | ☐ |
+| D24 | `GET /payroll-adjustments/overtime-preview` | detected hours + per-day detail + rate + amount; **writes nothing** | ☐ |
+| D25 | `POST /payroll-adjustments` with `from_attendance=true`, no `hours` | hours auto-filled from detection; 422 when attendance shows none | ☐ |
+| D26 | Detected 6.5 h but only 4 h approved | payslip carries an **info** line stating both; status **not** forced to Pending Review | ☐ |
+
+**Overtime Master + dropdown:**
+
+| TC | Input | Expected Result | Result |
+|---|---|---|---|
+| D27 | Master → Overtime (OT): add a rate | rate_name / multiplier / description / status all persist; unique name per tenant | ☐ |
+| D28 | Employee form → Overtime Applicable = Yes | Rate dropdown lists **only Active** master rows; no hardcoded entries anywhere | ☐ |
+| D29 | Add a new rate in the master, reopen the employee dropdown | new rate appears **without a page reload** (`onOpen` refetch) | ☐ |
+| D30 | Set a rate to **Inactive**, open the dropdown | it disappears from the list | ☐ |
+| D31 | Employee already saved on a rate that is then set Inactive | value stays **visible but disabled** ("… (inactive)") so save doesn't blank it; cannot be re-selected | ☐ |
+| D32 | Master is empty | placeholder reads "No rates — add in Master › Overtime (OT)" | ☐ |
+| D33 | Overtime Applicable = No | Rate picker hidden and `employees.overtime` cleared | ☐ |
 
 ---
 

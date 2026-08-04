@@ -13,6 +13,7 @@ import ClmInsertHrModal from '../../../clm/document-masters/ClmInsertHrModal';
 import ClmInsertPlaceholderModal from '../../../clm/document-masters/ClmInsertPlaceholderModal';
 import ClmClauseInsertPanel from '../../../clm/document-masters/ClmClauseInsertPanel';
 import ClmRichTextToolbar from '../../../clm/document-masters/ClmRichTextToolbar';
+import Tooltip from '../../../../components/ui/Tooltip';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
 
@@ -1906,8 +1907,27 @@ export default function SalesCustomerSendForSignatureModal({
         />
         <ClmInsertPlaceholderModal
           open={placeholderPickerOpen}
+          // Restrict placeholder party tabs to this document's side: a Supplier
+          // (Vendor) send shows only the Supplier tab; a Customer/Consignee send
+          // shows Customer + Consignee. Product tab stays for both. Mirrors the
+          // mutual exclusion enforced when authoring the doc.
+          allowedParties={modelName === 'Vendor' ? ['supplier'] : ['customer', 'consignee']}
+          // Same body resolution the editor seeds from (override first, saved
+          // draft otherwise) so the one-product-table guard sees live content.
+          documentHtml={activeDocId
+            ? (contentOverrides[activeDocId] ?? docs.find(d => d.id === activeDocId)?.content ?? '')
+            : ''}
           onClose={() => setPlaceholderPickerOpen(false)}
           onInsert={(token) => { insertIntoBody(token, /^\s*</.test(token) ? 'html' : 'text'); setPlaceholderPickerOpen(false); }}
+          /* Product Table rebuild. The editor is one-way bound (state never
+             pushed back into the DOM — see the seeding effect), so set the
+             innerHTML imperatively AND record the override the preview reads. */
+          onReplaceDocumentHtml={(html) => {
+            if (!activeDocId) return;
+            if (contentEditorRef.current) contentEditorRef.current.innerHTML = html;
+            setContentOverrides(prev => ({ ...prev, [activeDocId]: html }));
+            setPlaceholderPickerOpen(false);
+          }}
         />
 
         {clausePickerOpen && (
@@ -1944,6 +1964,13 @@ export default function SalesCustomerSendForSignatureModal({
           // contentOverrides was kept fresh on every keystroke via the
           // editor's onInput, so no extra commit needed for the body.
         };
+        // Head title clipped to 39 chars so a long document name can't push
+        // the Cancel / Save buttons off the header. The untruncated string
+        // stays available on hover via the title attribute.
+        const headTitleFull = `${activeDoc?.code ?? ''} · ${activeDoc?.name ?? 'Trade Document'}`;
+        const headTitle = headTitleFull.length > 39
+          ? headTitleFull.slice(0, 39).trimEnd() + '…'
+          : headTitleFull;
         return (
           <div className="ssf-edit-overlay" onMouseDown={e => { if (e.target === e.currentTarget) setEditingShell(false); }}>
             <style>{SSF_EDIT_CSS}</style>
@@ -1951,7 +1978,18 @@ export default function SalesCustomerSendForSignatureModal({
               <div className="ssf-edit-head">
                 <div>
                   <div className="ssf-edit-head-label">EDIT LAYOUT</div>
-                  <div className="ssf-edit-head-title">{activeDoc?.code} · {activeDoc?.name ?? 'Trade Document'}</div>
+                  {/* Only tooltip when the name actually got clipped — an
+                      untruncated title needs no hover reveal. zIndex must
+                      clear .ssf-edit-overlay (265000), otherwise the
+                      portalled pill renders behind this modal. */}
+                  <Tooltip
+                    label={headTitleFull}
+                    position="bottom"
+                    disabled={headTitleFull.length <= 39}
+                    zIndex={266000}
+                  >
+                    <div className="ssf-edit-head-title">{headTitle}</div>
+                  </Tooltip>
                 </div>
                 <div className="ssf-edit-head-actions">
                   <button type="button" className="ssf-edit-btn ssf-edit-btn-ghost" onClick={() => setEditingShell(false)}>Cancel</button>
@@ -2059,6 +2097,26 @@ const SSF_EDIT_CSS = `
   background: #f3f4f6;
   border-bottom: 1px solid #e5e7eb;
 }
+/* The Edit Layout modal is narrower than the draft editor, so the shared
+   toolbar's single-row scroll hid half the controls behind a scrollbar.
+   Here we let it wrap instead — no horizontal scroll in this modal. */
+.ssf-edit-toolbar-wrap .rtb-bar {
+  flex-wrap: wrap;
+  overflow-x: visible;
+  row-gap: 6px;
+}
+/* Force the break at the THIRD separator (the one before Link / HR / Insert)
+   so row 1 carries font + formatting + colour + alignment + lists, and row 2
+   only the insert and history groups. Pinning the break to a separator keeps
+   the split on a group boundary instead of wherever the width runs out.
+   The seps are the only <span>s in the bar, so nth-of-type indexes them. */
+.ssf-edit-toolbar-wrap .rtb-bar > span.rtb-sep:nth-of-type(3) {
+  flex-basis: 100%;
+  width: 100%;
+  height: 0;
+  margin: 0;
+  background: transparent;
+}
 .ssf-edit-canvas {
   flex: 1; min-height: 0; overflow-y: auto;
   padding: 22px;
@@ -2070,7 +2128,14 @@ const SSF_EDIT_CSS = `
   font-size: 12.5px;
   line-height: 1.55;
   color: #1f2937;
+  /* A wide product table (7 columns + the # column) is wider than the page
+     sheet, and without this the overflowing columns were simply clipped —
+     unreachable and un-editable. Scroll the body sideways instead. */
+  overflow-x: auto;
 }
+.ssf-edit-body::-webkit-scrollbar { height: 8px; }
+.ssf-edit-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.ssf-edit-body::-webkit-scrollbar-track { background: transparent; }
 .ssf-edit-body:focus { outline: 2px solid #14b8a6; outline-offset: 4px; border-radius: 4px; }
 [data-bs-theme="dark"] .ssf-edit-shell  { background: var(--vz-secondary-bg); }
 [data-bs-theme="dark"] .ssf-edit-canvas { background: var(--vz-body-bg); }

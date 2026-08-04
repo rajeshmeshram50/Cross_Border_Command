@@ -4016,6 +4016,11 @@
 .apm-sup-edit { width: 26px; height: 26px; padding: 0; border-radius: 7px; border: 1px solid #ddd6fe; background: #f5f1fe; color: #6d28d9; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .14s, color .14s, border-color .14s; }
 .apm-sup-edit:hover:not(:disabled) { background: #6d28d9; color: #fff; border-color: transparent; }
 .apm-sup-edit:disabled { opacity: .45; cursor: not-allowed; }
+.apm-sup-del { width: 26px; height: 26px; padding: 0; border-radius: 7px; border: 1px solid #fecaca; background: #fef2f2; color: #dc2626; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .14s, color .14s, border-color .14s; }
+.apm-sup-del:hover:not(:disabled) { background: #dc2626; color: #fff; border-color: transparent; }
+.apm-sup-del:disabled { opacity: .45; cursor: not-allowed; }
+[data-bs-theme="dark"] .apm-sup-del { background: rgba(220,38,38,.16); border-color: rgba(248,113,113,.35); color: #fca5a5; }
+[data-bs-theme="dark"] .apm-sup-del:hover { background: #dc2626; color: #fff; border-color: transparent; }
 .apm-sup-del { width: 26px; height: 26px; border-radius: 7px; border: 1px solid #fecaca; background: #fef2f2; color: #dc2626; font-size: 15px; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .14s, color .14s; }
 .apm-sup-del:hover:not(:disabled) { background: #dc2626; color: #fff; border-color: transparent; }
 .apm-sup-del:disabled { opacity: .45; cursor: not-allowed; }

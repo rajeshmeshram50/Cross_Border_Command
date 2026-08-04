@@ -17,10 +17,16 @@ import {
 import RequestLeaveModal from './RequestLeaveModal';
 import LeaveRequestDetailsModal from './LeaveRequestDetailsModal';
 import { Shimmer } from '../../components/ui/Shimmer';
+import { isOnProbation, probationEndLabel, probationLeaveMessage } from '../../utils/probation';
 
 interface Props {
   employeeId: string;
   canRequest?: boolean;
+  /* Probation end date off the employee record. While it is in the future the
+     leave policy does not apply, so "Request Leave" explains that instead of
+     opening the form. The backend refuses the POST too (ProbationGuard), this
+     just saves the round-trip. */
+  probationEndDate?: string | null;
 }
 
 const TYPE_PALETTE: Record<string, { ring: string; track: string; bg: string; fg: string }> = {
@@ -73,7 +79,8 @@ function shortDate(raw: string | null | undefined): string {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 }
 
-export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Props) {
+export default function LeaveSummaryPanel({ employeeId, canRequest = false, probationEndDate = null }: Props) {
+  const onProbation = isOnProbation(probationEndDate);
   const confirm = useConfirm();
   const toast   = useToast();
   const [requests, setRequests] = useState<ApiLeaveRequest[]>([]);
@@ -180,10 +187,20 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false }: Pr
       <div className="d-flex justify-content-between align-items-center mb-3">
         <h5 className="fw-bold mb-0" style={{ fontSize: 16 }}>Leave</h5>
         {canRequest && (
+          /* Still rendered (not hidden) while on probation — clicking it
+             explains WHY leave isn't available, which is more useful than a
+             button that silently vanishes. */
           <button
             type="button"
             className="rec-btn-primary"
-            onClick={() => setShowRequest(true)}
+            onClick={() => {
+              if (onProbation) {
+                toast.info('On probation', probationLeaveMessage(probationEndDate));
+                return;
+              }
+              setShowRequest(true);
+            }}
+            title={onProbation ? probationLeaveMessage(probationEndDate) : undefined}
           >
             <i className="ri-add-line" />Request Leave
           </button>

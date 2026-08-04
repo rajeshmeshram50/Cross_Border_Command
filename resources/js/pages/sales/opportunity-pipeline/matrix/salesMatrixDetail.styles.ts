@@ -1002,10 +1002,12 @@ export const SALES_MATRIX_DETAIL_CSS = `
 /* ── Stage card (middle column shell) — 4px rainbow accent on top ── */
 .smd-stage-card {
   position: relative;
-  /* No content-driven min-height here: the stage content lives in the
-     absolutely-positioned .smd-stg-scroll (out of flow), so the card takes
-     the shared viewport min-height as a floor and otherwise stretches to
-     the side panels' row height. */
+  /* Opt OUT of driving the grid row height (min-height:0): the stage content
+     lives in the absolutely-positioned .smd-stg-scroll (out of flow), so the row
+     height is set by the SIDE panels and the centre stretches to match, scrolling
+     tall content (e.g. Stage 6) INSIDE the card instead of growing the whole page
+     and pushing the ← Previous / Save buttons off-screen. */
+  min-height: 0;
   border: 1.5px solid #c4b5fd;
 }
 .smd-stage-card::before {
@@ -1025,24 +1027,49 @@ export const SALES_MATRIX_DETAIL_CSS = `
    tall centre content scrolling internally instead of growing the row.
    Stays a flex column so short stages fill the card the same as before. */
 .smd-stg-scroll {
-  /* In normal flow (not absolute) with NO internal scroll — the stage content
-     grows the card, and the page (the layout's main-content) is the single
-     scroll. The old absolute + overflow-auto gave the card its OWN scrollbar
-     nested inside the page scroll, which made scrolling shaky/laggy (two scroll
-     containers fighting). min-height:100% keeps a short stage filling the card
-     to the side panels' height. */
-  position: relative;
-  min-height: 100%;
-  overflow: visible;
+  /* Fill the card (absolute → out of flow) so the centre column contributes 0
+     intrinsic height to the grid row — the row height is driven by the side
+     panels and the centre matches them (all three cards equal height). This
+     wrapper itself does NOT scroll (overflow:hidden); its header + footer stay
+     pinned and the .smd-stg-body flex child scrolls internally instead. (Two
+     scrolling containers — this + .smd-stg-body — used to fight and let the card
+     grow past the side panels on Stage 6.) */
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
 /* Side widths are percentage-based now, so they scale down on their own —
    no per-breakpoint column overrides needed until the layout stacks. */
+/* Large laptops (~1440): give the data-heavy centre more room by shrinking the
+   side panels, and tighten the 6-step stepper so it stays on one clean row. */
+@media (max-width: 1440px) {
+  .smd-body { grid-template-columns: 18% 1fr 25%; gap: 10px; }
+  .smd-body-clm-collapsed  { grid-template-columns: 44px 1fr 25%; }
+  .smd-body-deal-collapsed { grid-template-columns: 18% 1fr 44px; }
+  .smd-body-clm-collapsed.smd-body-deal-collapsed { grid-template-columns: 44px 1fr 44px; }
+  .smd-stepper { gap: 8px; }
+  .smd-step { padding: 5px 6px 5px 8px; }
+}
 @media (max-width: 1280px) {
   .smd-stepper-card { padding: 8px 10px; }
   .smd-toolbar { padding: 8px 10px; }
+}
+/* Small laptops (~1200): the 6-step chevron row + the horizontally-scrolling
+   action toolbar cramp before the panels stack. Switch the stepper to a clean
+   3-col grid and let the toolbar WRAP onto multiple rows instead of scrolling. */
+@media (max-width: 1200px) {
+  .smd-stepper { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .smd-step { margin-right: 0; }
+  .smd-step, .smd-step:first-child, .smd-step:last-child {
+    clip-path: none; border-radius: 10px; border: 1px solid #e5e7eb; padding: 8px 12px;
+  }
+  .smd-step::after { display: none; }   /* no chevron arrows in grid mode */
+  .smd-toolbar { flex-wrap: wrap; overflow-x: visible; white-space: normal; row-gap: 7px; }
+  .smd-toolbar > .smd-act { flex: 0 1 auto; }
+  .smd-act-sep { display: none; }
 }
 @media (max-width: 1100px) {
   /* Stack the three panels into a single grid column; each takes its

@@ -13,6 +13,7 @@ import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import { ShimmerTable } from '../../../components/ui/Shimmer';
 import Tooltip from '../../../components/ui/Tooltip';
+import { useIsClipped } from '../../../components/ui/DataTable';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
 
@@ -690,6 +691,27 @@ function ClarificationThread({ contract, typingName, t }: { contract: AtaContrac
   );
 }
 
+/* This modal's overlay sits at zIndex 9999999 — far above Tooltip's 260000
+ * default. A tooltip inside it is portalled to <body>, so without an explicit
+ * bump it renders BEHIND the overlay and simply never appears. Every Tooltip
+ * used inside the modal must pass this. */
+const MODAL_TIP_Z = 10000001;
+
+/* Modal header title. It is CSS-clipped at 520px, so the full title is only
+ * reachable on hover — and the hover was missing entirely, leaving a long name
+ * unreadable. The tooltip attaches only when the text is ACTUALLY cut, measured
+ * from the DOM (scrollWidth vs clientWidth) rather than guessed from a length. */
+function ReviewModalTitle({ text }: { text: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const clipped = useIsClipped(ref, text);
+  const el = (
+    <div ref={ref} style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 520, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{text}</div>
+  );
+  // Bottom-anchored: the header is at the top of the viewport, so a top-side
+  // tooltip would be clamped against the screen edge.
+  return clipped ? <Tooltip label={text} position="bottom" zIndex={MODAL_TIP_Z}>{el}</Tooltip> : el;
+}
+
 /* ── Review & Approve modal — a page-by-page agreement reader. One page is
  *    shown at a time with prev/next navigation; the three action buttons stay
  *    locked until every page has been viewed (maxSeen reaches the last page). ── */
@@ -853,11 +875,11 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
               </div>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 8.5, fontWeight: 700, color: 'rgba(255,255,255,.65)', letterSpacing: '.14em', textTransform: 'uppercase', marginBottom: 2 }}>{contract.id} · Review &amp; Approve</div>
-                <div style={{ fontSize: 16, fontWeight: 900, color: '#fff', letterSpacing: '-.3px', maxWidth: 520, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{contract.title}</div>
+                <ReviewModalTitle text={contract.title} />
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <Tooltip label="Download PDF">
+              <Tooltip label="Download PDF" zIndex={MODAL_TIP_Z}>
                 <button onClick={downloadPdf} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 32, padding: '0 12px', borderRadius: 9, background: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.3)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                   Download
@@ -890,12 +912,12 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
           {/* Fixed prev / next — pinned to the viewer centre regardless of scroll. */}
           {!loading && !error && numPages > 1 && (
             <>
-              <Tooltip label="Previous page">
+              <Tooltip label="Previous page" zIndex={MODAL_TIP_Z}>
                 <button onClick={() => go(activePage - 1)} disabled={activePage <= 1} style={{ ...navBtn('prev'), position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', zIndex: 5 }}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
                 </button>
               </Tooltip>
-              <Tooltip label="Next page">
+              <Tooltip label="Next page" zIndex={MODAL_TIP_Z}>
                 <button onClick={() => go(activePage + 1)} disabled={activePage >= numPages} style={{ ...navBtn('next'), position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', zIndex: 5 }}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
                 </button>
@@ -905,12 +927,20 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
 
           {/* Consent pill — FLOATS over the document (no white strip), pinned to
               the bottom-centre of the viewer. Appears once the PDF has loaded and
-              stays visible on EVERY page (including the last) until the reviewer
-              ticks it — ticking is the only thing that unlocks the actions. */}
-          {!loading && !error && numPages > 0 && !confirmedRead && (
-            <label style={{
+              stays visible on EVERY page (including the last) — ticking it is the
+              only thing that unlocks the actions.
+              It stays mounted AFTER ticking too. Unmounting on tick left the
+              reviewer with no confirmation that a LEGAL acknowledgement had
+              registered (and no way to undo a mis-click), and it made the pill's
+              own checked styling below dead code.
+              A <div>, not a <label>: wrapping the input in a label made the whole
+              pill a hit target, so a stray click anywhere near it flipped that
+              acknowledgement. Only the box itself toggles now — the text carries
+              an aria-label on the input instead, so screen readers keep it. */}
+          {!loading && !error && numPages > 0 && (
+            <div style={{
               position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', zIndex: 6,
-              display: 'inline-flex', alignItems: 'center', gap: 11, cursor: 'pointer', margin: 0,
+              display: 'inline-flex', alignItems: 'center', gap: 11, cursor: 'default', margin: 0,
               padding: '10px 20px', borderRadius: 10, transition: 'all .2s',
               boxShadow: confirmedRead ? '0 8px 24px rgba(5,150,105,.28)' : '0 8px 24px rgba(8,145,178,.22)',
               // The pill floats over the WHITE PDF paper (always white, even in
@@ -920,6 +950,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
               border: `1.5px solid ${confirmedRead ? '#a7f3d0' : '#a5f3fc'}`,
             }}>
               <input type="checkbox" checked={confirmedRead} onChange={e => setConfirmedRead(e.target.checked)}
+                aria-label="I confirm that I have read and understood the entire agreement"
                 style={{
                   appearance: 'none', WebkitAppearance: 'none', width: 18, height: 18, borderRadius: 3,
                   cursor: 'pointer', flexShrink: 0, margin: 0, transition: 'all .15s',
@@ -931,7 +962,7 @@ function ReviewApproveModal({ contract, onClose, onApprove, onClarify, onReject,
               <span style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.3, whiteSpace: 'nowrap', color: '#0f172a' }}>
                 I confirm that I have <strong style={{ fontWeight: 800 }}>read and understood the entire agreement</strong>.
               </span>
-            </label>
+            </div>
           )}
         </div>
 

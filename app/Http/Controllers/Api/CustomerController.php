@@ -218,20 +218,31 @@ class CustomerController extends Controller
         // form disables only those chips' × up-front instead of only failing at
         // save. A segment with no such PI product removes freely.
         $data = $this->shape($row);
-        $data['locked_segments'] = array_values(array_unique(array_merge(
-            \App\Support\SegmentGuard::lockedSegmentNames(
-                \App\Models\Customer::class,
-                (int) $row->id,
-                (int) $row->client_id,
-            ),
-            // Also lock segments referenced by the customer's leads via a product
-            // (Product Directory dependency — blocks before any PI/Shipment).
-            \App\Support\SegmentGuard::productMappingSegmentNames(
-                \App\Models\Customer::class,
-                (int) $row->id,
-                (int) $row->client_id,
-            ),
-        )));
+        $piLocked = \App\Support\SegmentGuard::lockedSegmentNames(
+            \App\Models\Customer::class,
+            (int) $row->id,
+            (int) $row->client_id,
+        );
+        // Also lock segments referenced by the customer's leads via a product
+        // (Product Directory dependency — blocks before any PI/Shipment).
+        $productLocked = \App\Support\SegmentGuard::productMappingSegmentNames(
+            \App\Models\Customer::class,
+            (int) $row->id,
+            (int) $row->client_id,
+        );
+        $data['locked_segments'] = array_values(array_unique(array_merge($piLocked, $productLocked)));
+        /* WHY each segment is locked, so the edit form can name the real
+         * blocker. The two sources were merged into one flat list and the UI
+         * then reported every lock as "used in a Quotation / PI / Shipment" —
+         * wrong, and unactionable, for a customer whose product is merely mapped
+         * to an opportunity with no quotation raised yet. Keyed lowercase because
+         * the form matches segment names case-insensitively.
+         * 'pi' wins over 'product' when a segment hits both: it is the stronger
+         * lock, and the one the user must clear last. */
+        $reasons = [];
+        foreach ($productLocked as $n) $reasons[mb_strtolower(trim((string) $n))] = 'product';
+        foreach ($piLocked      as $n) $reasons[mb_strtolower(trim((string) $n))] = 'pi';
+        $data['locked_segment_reasons'] = $reasons;
         // Data for the removal guard's unique-document check (condition 2), so the
         // UI blocks exactly what the server does: each segment's required doc keys
         // (category|code) + the keys actually uploaded. Keyed by segment NAME.

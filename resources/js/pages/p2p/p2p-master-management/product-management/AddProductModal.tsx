@@ -519,6 +519,8 @@ export default function AddProductModal(props: {
   const removeQc = (id: number) =>
     setQcRecords(prev => prev.filter(q => q.id !== id));
  const [qcDeleteTarget, setQcDeleteTarget] = useState<QcRecord | null>(null);
+  // Supplier (vendor mapping) pending removal — drives the un-map confirm modal.
+  const [vendorDeleteTarget, setVendorDeleteTarget] = useState<VendorEntry | null>(null);
  const [qcEditingId, setQcEditingId] = useState<number | null>(null);
 
   const openQcViewer = (q: QcRecord) => {
@@ -2473,6 +2475,21 @@ export default function AddProductModal(props: {
         onConfirm={() => {
           if (qcDeleteTarget) removeQc(qcDeleteTarget.id);
           setQcDeleteTarget(null);
+        }}
+      />
+
+      <DeleteConfirmModal
+        open={vendorDeleteTarget !== null}
+        itemName={vendorDeleteTarget?.vendorName}
+        title="Remove Supplier"
+        subMessage={persistsImmediately
+          ? 'This unmaps the supplier from this product and saves immediately.'
+          : 'This removes the supplier from the list. The product must be saved (Save Product) for the change to persist.'}
+        onClose={() => setVendorDeleteTarget(null)}
+        onConfirm={() => {
+          const t = vendorDeleteTarget;
+          setVendorDeleteTarget(null);
+          if (t) void removeVendor(t);
         }}
       />
 

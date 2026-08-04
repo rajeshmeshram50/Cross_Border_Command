@@ -101,7 +101,9 @@ class SalesLeadController extends Controller
                 // the company or the lead's raw sender.
                 'customer'    => fn ($r) => $r->select('id', 'company_name', 'legal_name', 'customer_code', 'primary_email')
                     ->withTrashed()
-                    ->with(['primaryAddress' => fn ($a) => $a->select('id', 'customer_id', 'cp_name', 'cp_email', 'cp_contact')]),
+                    // country/state/city so the Sales-Matrix header COUNTRY shows
+                    // the mapped customer's OWN country (not the hardcoded 'IN').
+                    ->with(['primaryAddress' => fn ($a) => $a->select('id', 'customer_id', 'cp_name', 'cp_email', 'cp_contact', 'country', 'state', 'city')]),
                 'consignee'   => fn ($r) => $r->select('id', 'company_name')->withTrashed(),
             ])
             ->orderByDesc('id');
@@ -204,6 +206,36 @@ class SalesLeadController extends Controller
                 $user,
                 $lead->salesperson_id ? (int) $lead->salesperson_id : null,
             ));
+        }
+
+        /* Effective country for the worksheet's COUNTRY column. Once a customer
+         * is MAPPED, the row already shows that customer's name / email /
+         * company — but the country kept coming from the raw enquiry, so a lead
+         * mapped to a Pakistani customer still showed the sender's DZ and
+         * disagreed with the Sales-Matrix header (which resolves the customer's
+         * own country). Resolve the customer's address country to its ISO-2 via
+         * master_countries in ONE query, and fall back to the lead's own ISO
+         * when there's no customer / no match. */
+        $addrCountries = collect($paginator->items())
+            ->map(fn ($l) => $l->customer?->primaryAddress?->country)
+            ->filter(fn ($c) => is_string($c) && trim($c) !== '')
+            ->map(fn ($c) => mb_strtolower(trim($c)))
+            ->unique()->values();
+
+        $isoByCountry = $addrCountries->isEmpty()
+            ? collect()
+            : collect(DB::table('master_countries')
+                    ->whereIn(DB::raw('LOWER(name)'), $addrCountries->all())
+                    ->get(['name', 'iso_code']))
+                ->mapWithKeys(fn ($r) => [mb_strtolower(trim($r->name)) => $r->iso_code]);
+
+        foreach ($paginator->items() as $lead) {
+            $c   = $lead->customer?->primaryAddress?->country;
+            $key = is_string($c) && trim($c) !== '' ? mb_strtolower(trim($c)) : null;
+            $lead->setAttribute(
+                'effective_country_iso',
+                ($key ? $isoByCountry->get($key) : null) ?: $lead->sender_country_iso,
+            );
         }
 
         // ── Tab counters — single round-trip via conditional aggregation.

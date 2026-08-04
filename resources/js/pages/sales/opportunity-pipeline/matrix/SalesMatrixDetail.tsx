@@ -119,12 +119,19 @@ export type OppHeaderData = {
   whatsappScreenshot?: string | null;
 };
 
+/* Last-resort header shape. The name / code / date started life as prototype
+ * demo values and leaked into real pages: location.state is dropped on stage
+ * navigation, so an unmapped lead rendered "GreenHarvest Global · C-001 ·
+ * 10-Apr-2026" as if that were its data. They're placeholders now — a blank
+ * dash reads as "not known yet" instead of quietly inventing a customer.
+ * `country` stays 'IN' because it also feeds the domestic/export currency
+ * gate; the server value overrides it as soon as the lead loads. */
 const DEFAULT_HEADER: OppHeaderData = {
   oppId:        'OPP-001',
-  customer:     'GreenHarvest Global',
-  customerCode: 'C-001',
-  oppDate:      '10-Apr-2026',
-  country:      'IN',
+  customer:     '—',
+  customerCode: '',
+  oppDate:      '—',
+  country:      '—',
 };
 
 /* DD-Mon-YYYY (e.g. 04-Jul-2026) — the app-wide display date format. */
@@ -349,7 +356,14 @@ export default function SalesMatrixDetail() {
    * lead-pipeline fields (qualified/disqualified/taskManager). */
   const seedHeader: OppHeaderData = useMemo(() => {
     const fromState = (location.state as any)?.row;
-    if (fromState) {
+    // Only trust the router-state seed when it belongs to THIS opportunity.
+    // React Router keeps location.state across navigations, so opening a
+    // different opp (browser back/forward, or a link that didn't refresh state)
+    // can leave a STALE row from a previous opp. Using its leadId would fetch and
+    // display the WRONG opportunity's Customer / Country / Stage under the right
+    // Opportunity ID (QA: "same Opportunity ID opens with different details").
+    // On a mismatch we drop the seed and resolve the lead from the URL oppId.
+    if (fromState && fromState.oppId === oppId) {
       return {
         leadId:       typeof fromState.id === 'number' ? fromState.id : undefined,
         oppId:        fromState.oppId        || oppId,
@@ -386,6 +400,11 @@ export default function SalesMatrixDetail() {
     whatsappScreenshot?:  string | null;
     piSignedAt?:          string | null;
     oppDateIso?:          string | null;
+    /* The lead's own enquiry identity — header fallback when no customer is
+     * mapped yet, so we never fall through to the prototype DEFAULT. */
+    leadSenderName?:      string | null;
+    leadSenderCompany?:   string | null;
+    leadCountry?:         string | null;
   }>({});
 
   /* Resolved leadId — initially the one passed via router state. If that's
@@ -399,11 +418,19 @@ export default function SalesMatrixDetail() {
     setResolvedLeadId(seedHeader.leadId);
   }, [seedHeader.leadId]);
 
+  /* True once we KNOW whether this opportunity maps to a lead id — either the
+   * router seed carried one, or the by-opp_code lookup below has finished (hit
+   * or miss). The page must stay on the skeleton until then: rendering while
+   * the id is still unknown is exactly what let the placeholder header flash on
+   * screen for a moment on every stage navigation. */
+  const [leadIdResolved, setLeadIdResolved] = useState<boolean>(!!seedHeader.leadId);
+
   useEffect(() => {
-    if (resolvedLeadId || !oppId) return;
+    if (resolvedLeadId || !oppId) { setLeadIdResolved(true); return; }
     // Best-effort lookup by opp_code (the existing /sales/leads search
     // hits opp_code via LIKE). We pass status=all + with_counts=0 so the
     // lookup is fast and bucket-agnostic.
+    let cancelled = false;
     api.get<{ data: Array<{ id: number; opp_code: string }> }>('/sales/leads', {
       params: { search: oppId, status: 'all', per_page: 5, page: 1, with_counts: 0 },
     })
@@ -411,7 +438,11 @@ export default function SalesMatrixDetail() {
         const exact = (data.data ?? []).find(r => r.opp_code === oppId);
         if (exact) setResolvedLeadId(exact.id);
       })
-      .catch(() => { /* silent — Stage components show their own degraded state */ });
+      .catch(() => { /* silent — Stage components show their own degraded state */ })
+      // Flip even on failure, so an unresolvable opp code degrades to the
+      // read-only page instead of hanging on the skeleton forever.
+      .finally(() => { if (!cancelled) setLeadIdResolved(true); });
+    return () => { cancelled = true; };
   }, [resolvedLeadId, oppId]);
 
   // Page-level loading flag — drives the full-page shimmer until the lead
@@ -444,6 +475,13 @@ export default function SalesMatrixDetail() {
       /* Currency shared by the lead's mapped products; null until the first
        * product is mapped. Gates which customers may be picked. */
       locked_currency: string | null;
+      /* The lead's OWN enquiry identity. Used as the header fallback while no
+       * customer is mapped — before this the header dropped straight to the
+       * prototype DEFAULT and invented a company name + country. */
+      sender_name: string | null;
+      sender_company: string | null;
+      sender_country_iso: string | null;
+      sender_country_name: string | null;
     }}>(`/sales/leads/${resolvedLeadId}`)
       .then(({ data }) => {
         const d = data.data;
@@ -469,6 +507,9 @@ export default function SalesMatrixDetail() {
           whatsappScreenshot:  d.whatsapp_screenshot_url ?? d.whatsapp_screenshot,
           piSignedAt:          d.pi_signed_at,
           oppDateIso:          d.opportunity_date_iso,
+          leadSenderName:      d.sender_name,
+          leadSenderCompany:   d.sender_company,
+          leadCountry:         d.sender_country_iso || d.sender_country_name,
         });
       })
       .catch(() => toast.error('Load failed', 'Could not load this lead'))
@@ -771,15 +812,22 @@ export default function SalesMatrixDetail() {
      * same reason — the seed is lost on stage navigation and fell back to the
      * hardcoded DEFAULT ('GreenHarvest Global'). Stage 1's Opportunity Details
      * reads header.customer, so override it centrally (the top banner already
-     * did this inline). */
+     * did this inline).
+     * When NO customer is mapped the chain used to jump straight to the seed —
+     * and on stage navigation the seed IS the prototype DEFAULT, so an unmapped
+     * lead displayed the demo company 'GreenHarvest Global' as if it were real.
+     * The lead's own enquiry identity now sits in between, so an unmapped lead
+     * shows who actually sent the enquiry. */
     customer:           (serverHeader.customerRow?.company_name as string | undefined)?.trim()
+                          || serverHeader.leadSenderCompany?.trim()
+                          || serverHeader.leadSenderName?.trim()
                           || seedHeader.customer,
     /* Country from the SERVER too — the mapped customer's own address country
      * (customerCountry). The seed only carried the lead default ('IN'), so the
      * Opportunity Summary (and the Create Procurement modal) showed India for a
      * customer that is actually abroad, e.g. Antarctica (QA #118). Fall back to
      * the seed when no customer is mapped yet. */
-    country:            customerCountry || seedHeader.country,
+    country:            customerCountry || serverHeader.leadCountry?.trim() || seedHeader.country,
     leadId:             resolvedLeadId,
     leadStageId:        serverHeader.leadStageId,
     qualified:          serverHeader.qualified,
@@ -826,8 +874,19 @@ export default function SalesMatrixDetail() {
   // Stage tracker click → navigate to the same opportunity at a new stage.
   // No-op for locked (not-yet-reached) future steps: you can step back to
   // completed stages but can't skip ahead to one you haven't reached.
+  /* Sales Person Name is MANDATORY before the lead reaches Stage 3 (Product
+   * Sourcing). Stages 1 & 2 are open — the user can sit on Inquiry Received /
+   * Lead Acknowledgement without it — but moving forward to Stage 3 requires a
+   * salesperson to be assigned (via Change Owner). */
+  const requireSalespersonForSourcing = (): boolean => {
+    if ((serverHeader.salespersonName ?? '').trim()) return true;
+    toast.error('Sales Person Name required', 'Assign a salesperson (Change Owner) before moving to Product Sourcing.');
+    return false;
+  };
+
   const goToStage = (n: StageNum) => {
     if (n > furthestStage) return;
+    if (n === 3 && !requireSalespersonForSourcing()) return;
     navStage(n);
   };
 
@@ -835,6 +894,7 @@ export default function SalesMatrixDetail() {
   const goPrev = () => stage > 1 && navStage((stage - 1) as StageNum);
   const goNext = () => {
     if (stage >= 6) return;
+    if (stage === 2 && !requireSalespersonForSourcing()) return;
     // Crossing 5 → 6 via Save & Next is a "deal won" moment — drop a one-shot
     // session flag so the Victory stage celebrates EVERY time it's reached this
     // way (its localStorage gate otherwise only confetti's once per lead ever).
@@ -960,9 +1020,12 @@ export default function SalesMatrixDetail() {
                   Stage6VictoryStage
   );
 
-  // Full-page shimmer until the lead data arrives (only when there is a
-  // lead to load — never blocks if the id can't be resolved).
-  if (resolvedLeadId && !headerLoaded) return <MatrixPageSkeleton />;
+  /* Full-page shimmer until the lead data arrives. Two gates, not one:
+   *  1. the lead id is still being resolved from the opp code (this is the
+   *     window that used to render placeholder header values), and
+   *  2. the id is known but its row hasn't loaded yet.
+   * Neither can hang: the lookup flips its flag in `finally`. */
+  if (!leadIdResolved || (resolvedLeadId && !headerLoaded)) return <MatrixPageSkeleton />;
 
   return (
     <div className="smd-root">

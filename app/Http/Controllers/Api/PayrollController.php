@@ -421,6 +421,7 @@ class PayrollController extends Controller
                 'issues'         => $issues,
                 'blocked_amount' => round($blockedAmount, 2),
                 'at_risk_amount' => round($atRiskAmount, 2),
+                'excluded'       => $this->payroll->payrollExclusions($period),
             ],
         ]);
     }

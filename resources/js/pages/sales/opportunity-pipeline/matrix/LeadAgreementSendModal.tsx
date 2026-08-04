@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';import { resolveFileUrl } from '../../../../utils/resolveFileUrl';import { useToast } from '../../../../contexts/ToastContext';
 import Tooltip from '../../../../components/ui/Tooltip';
+import WorklistPager from '../../../../components/ui/WorklistPager';
 import { SigningTrackerModal } from '../SigningTrackerModal';
 import SalesCustomerSendForSignatureModal, {
   type AgreementSendRow,
@@ -174,6 +175,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
    * Agreements tables (matches the Evidence Vault pager). */
   const [tdPage, setTdPage] = useState(1);
   const [agrPage, setAgrPage] = useState(1);
+  // Rows-per-page (WorklistPager selector), same style as the customer / master
+  // lists. Default 5 (Evidence-Vault feel); user can bump it.
+  const [tdPerPage, setTdPerPage] = useState(5);
+  const [agrPerPage, setAgrPerPage] = useState(5);
   const [previewingId, setPreviewingId] = useState<number | null>(null);
   /* Applicable-party "+N" popover — click the badge to see the full list of
    * parties (mirrors the segment "+N" popovers on the customer/consignee
@@ -346,7 +351,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
 
   // Agreements table pagination — 5 rows per page (Evidence Vault style).
   // Header checkbox / bulk selection still span the full list; only display pages.
-  const AGR_PER_PAGE = 5;
+  const AGR_PER_PAGE = agrPerPage;
   const agrTotalPages = Math.max(1, Math.ceil(activeAgreements.length / AGR_PER_PAGE));
   const agrSafePage = Math.min(agrPage, agrTotalPages);
   const pagedAgreements = activeAgreements.slice((agrSafePage - 1) * AGR_PER_PAGE, agrSafePage * AGR_PER_PAGE);
@@ -901,7 +906,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
               const rows = tdBuckets[tdTab];
               // Paginate 5 per page (Evidence Vault style). Select-all still
               // operates on the full group, only the display is paged.
-              const TD_PER_PAGE = 5;
+              const TD_PER_PAGE = tdPerPage;
               const tdTotalPages = Math.max(1, Math.ceil(rows.length / TD_PER_PAGE));
               const tdSafePage = Math.min(tdPage, tdTotalPages);
               const pagedTd = rows.slice((tdSafePage - 1) * TD_PER_PAGE, tdSafePage * TD_PER_PAGE);
@@ -1122,25 +1127,18 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     </table>
                     </div>
 
-                    {/* Pagination footer — pinned to the panel bottom. */}
+                    {/* Pagination footer — same WorklistPager (Rows-per-page +
+                        page/total + arrows) used on the Customer / master lists. */}
                     {rows.length > 0 && (
-                      <div className="lasm-pager">
-                        <div className="lasm-pager-info">Showing {tdFirst}–{tdLast} of {rows.length}</div>
-                        <div className="lasm-pager-ctrls">
-                          <button type="button" className="lasm-pager-btn" disabled={tdSafePage <= 1} onClick={() => setTdPage(p => Math.max(1, p - 1))} aria-label="Previous page">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="15 18 9 12 15 6"/></svg>
-                          </button>
-                          {Array.from({ length: tdTotalPages }).map((_, idx) => {
-                            const n = idx + 1;
-                            return (
-                              <button key={n} type="button" className={`lasm-pager-num ${n === tdSafePage ? 'active' : ''}`} onClick={() => setTdPage(n)}>{n}</button>
-                            );
-                          })}
-                          <button type="button" className="lasm-pager-btn" disabled={tdSafePage >= tdTotalPages} onClick={() => setTdPage(p => Math.min(tdTotalPages, p + 1))} aria-label="Next page">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="9 18 15 12 9 6"/></svg>
-                          </button>
-                        </div>
-                      </div>
+                      <WorklistPager
+                        total={rows.length}
+                        page={tdSafePage}
+                        pageSize={tdPerPage}
+                        onPage={setTdPage}
+                        onPageSize={(n) => { setTdPerPage(n); setTdPage(1); }}
+                        pageSizeOptions={[5, 10, 25, 50]}
+                        className="lasm-pager"
+                      />
                     )}
 
                     {/* Bulk send bar — one Zoho request for every checked doc,
@@ -1476,25 +1474,18 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                   </tbody>
                 </table>
                 </div>
-                {/* Pagination footer — pinned to the panel bottom. */}
+                {/* Pagination footer — same WorklistPager (Rows-per-page +
+                    page/total + arrows) used on the Customer / master lists. */}
                 {activeAgreements.length > 0 && (
-                  <div className="lasm-pager">
-                    <div className="lasm-pager-info">Showing {agrFirst}–{agrLast} of {activeAgreements.length}</div>
-                    <div className="lasm-pager-ctrls">
-                      <button type="button" className="lasm-pager-btn" disabled={agrSafePage <= 1} onClick={() => setAgrPage(p => Math.max(1, p - 1))} aria-label="Previous page">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="15 18 9 12 15 6"/></svg>
-                      </button>
-                      {Array.from({ length: agrTotalPages }).map((_, idx) => {
-                        const n = idx + 1;
-                        return (
-                          <button key={n} type="button" className={`lasm-pager-num ${n === agrSafePage ? 'active' : ''}`} onClick={() => setAgrPage(n)}>{n}</button>
-                        );
-                      })}
-                      <button type="button" className="lasm-pager-btn" disabled={agrSafePage >= agrTotalPages} onClick={() => setAgrPage(p => Math.min(agrTotalPages, p + 1))} aria-label="Next page">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><polyline points="9 18 15 12 9 6"/></svg>
-                      </button>
-                    </div>
-                  </div>
+                  <WorklistPager
+                    total={activeAgreements.length}
+                    page={agrSafePage}
+                    pageSize={agrPerPage}
+                    onPage={setAgrPage}
+                    onPageSize={(n) => { setAgrPerPage(n); setAgrPage(1); }}
+                    pageSizeOptions={[5, 10, 25, 50]}
+                    className="lasm-pager"
+                  />
                 )}
               </div>
 
@@ -1824,7 +1815,9 @@ const LASM_CSS = `
 .lasm-td-head { display: flex; align-items: center; gap: 7px; padding: 9px 12px; background: #f5f3ff; color: #4c1d95; font-size: 11.5px; font-weight: 800; letter-spacing: .02em; border-bottom: 1px solid #e2e8f0; }
 .lasm-td-empty { padding: 14px 12px; color: #94a3b8; font-size: 11.5px; font-style: italic; }
 /* Table pager — mirrors the Evidence Vault's lev-pager look. */
-.lasm-pager { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 14px; border-top: 1px solid #ECEEF3; background: #FBFCFE; }
+/* Only pin the WorklistPager to the panel bottom — its own .wl-pager band
+   provides the padding / background / border (Customer-list reference style). */
+.lasm-pager { flex-shrink: 0; }
 .lasm-pager-info { font-size: 12px; font-weight: 600; color: #64748B; }
 .lasm-pager-ctrls { display: inline-flex; align-items: center; gap: 6px; }
 .lasm-pager-btn, .lasm-pager-num {

@@ -341,16 +341,21 @@ export default function HeaderFooterPanel({
               placeholder="Company Name"
               readOnly={readOnly}
               maxLength={HEADER_TEXT_MAX}
+              titleAttr={(header.title || '').length > 18 ? header.title : undefined}
               onChange={(v) => setHeader({ ...header, title: v.slice(0, HEADER_TEXT_MAX) })}
-              style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.3, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+              /* Single-line with an ellipsis instead of wrapping to 2–3 lines in
+                 the narrow title block; hover shows the full name. While editing,
+                 contentEditable scrolls horizontally so the caret stays visible. */
+              style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}
             />
             <EditableText
               value={header.subtitle}
               placeholder="Subtitle (optional)"
               readOnly={readOnly}
               maxLength={HEADER_TEXT_MAX}
+              titleAttr={(header.subtitle || '').length > 18 ? header.subtitle : undefined}
               onChange={(v) => setHeader({ ...header, subtitle: v.slice(0, HEADER_TEXT_MAX) })}
-              style={{ fontSize: 11.5, opacity: 0.7, marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+              style={{ fontSize: 11.5, opacity: 0.7, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}
             />
           </div>
         )}
@@ -704,13 +709,15 @@ function FooterEditor({
  * editing, so popover edits / external resets stay visible.
  */
 function EditableText({
-  value, placeholder, readOnly, onChange, style, maxLength,
+  value, placeholder, readOnly, onChange, style, maxLength, titleAttr,
 }: {
   value: string;
   placeholder?: string;
   readOnly?: boolean;
   onChange: (next: string) => void;
   style?: React.CSSProperties;
+  /* Native tooltip — shows the full text on hover when the field truncates. */
+  titleAttr?: string;
   /* Hard character cap. Enforced on three fronts: typing (beforeinput),
      pasting (onPaste truncates to the remaining room), and commit (blur
      slices as a backstop, which also trims any over-long value that was
@@ -740,6 +747,7 @@ function EditableText({
       suppressContentEditableWarning
       role={readOnly ? undefined : 'textbox'}
       aria-multiline="true"
+      title={titleAttr || undefined}
       data-placeholder={placeholder || ''}
       className={`tpl-editable${!value ? ' is-empty' : ''}`}
       onFocus={() => setFocused(true)}

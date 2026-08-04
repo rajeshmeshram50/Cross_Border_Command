@@ -64,6 +64,21 @@ const renderTypedToPng = (
   return canvas.toDataURL('image/png');
 };
 
+/**
+ * Wording for the mandatory informed-consent tick shown before any document
+ * action. Every action carries the same "I have read and understood this"
+ * claim, so the sentence is identical apart from the verb — saying "agree to
+ * sign it" on an Approve button would be plainly wrong. Shared by the Inbox,
+ * My Team and HR onboarding action modals so the three never drift.
+ * Mirrors the server-side gate in HrDocumentSignatureController::action.
+ */
+export const consentLabel = (action?: string | null): string => {
+  const a = String(action ?? '').toLowerCase();
+  if (a.includes('approve')) return 'I have read and understood the document and agree to approve it.';
+  if (a.includes('acknowledge')) return 'I have read and understood the document and acknowledge it.';
+  return 'I have read and understood the document and agree to sign it.';
+};
+
 export interface SignaturePadValue {
   dataUrl: string | null;
   isEmpty: boolean;
