@@ -3820,17 +3820,21 @@ const STAGE1_FIELD_ORDER = [
  *  exactly where attention is needed. Falls back gracefully if the node
  *  isn't mounted (e.g. user is on a different stage when validation
  *  fires from a Save Draft). */
-const scrollToFirstError = (errors: Record<string, string>) => {
-  const first = STAGE1_FIELD_ORDER.find(k => errors[k]);
-  if (!first) return;
+const scrollToField = (field: string) => {
+  if (!field) return;
   // Defer so the error nodes are in the DOM before we measure.
   setTimeout(() => {
-    const wrap = document.querySelector<HTMLElement>(`[data-field="${first}"]`);
+    const wrap = document.querySelector<HTMLElement>(`[data-field="${field}"]`);
     if (!wrap) return;
     wrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
     const focusable = wrap.querySelector<HTMLElement>('input, button, textarea, select');
     focusable?.focus({ preventScroll: true });
   }, 50);
+};
+
+const scrollToFirstError = (errors: Record<string, string>) => {
+  const first = STAGE1_FIELD_ORDER.find(k => errors[k]);
+  if (first) scrollToField(first);
 };
 
 /** Validate Stage 1 required fields before allowing navigation. */
@@ -4348,9 +4352,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       // Mirrors the readiness checks rendered inside Stage4Payroll —
       // bank block valid for the chosen payment mode + PAN + UAN
       // format + agreed CTC + PF deduction.
-      return (stage4Pass === stage4Total4 && stage4UanOk)
-        ? { ok: true }
-        : { ok: false, reason: 'Bank details, PAN, CTC and PF deduction must all be valid before moving on.' };
+      if (stage4Pass === stage4Total4 && stage4UanOk) return { ok: true };
+      // Name the blocking fields rather than reciting all four categories.
+      return {
+        ok: false,
+        reason: stage4Problems.length
+          ? `${stage4Problems.map(x => x.label).join(', ')} — ${stage4Problems[0].message}`
+          : 'Bank details, PAN, CTC and PF deduction must all be valid before moving on.',
+      };
     }
     // if (activeStage === 5) {
     //   return stage5IsDone
@@ -4550,6 +4559,74 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const stage4Checks = [stage4BankOk, stage4PanOk, stage4SalaryOk, stage4PfOk];
   const stage4Pass   = stage4Checks.filter(Boolean).length;
   const stage4Total4 = stage4Checks.length;
+
+  /* Exactly WHICH field is blocking Stage 4, and what to do about it.
+     The old toast just recited all four categories ("Bank details, PAN, CTC
+     and PF deduction…") while the offending field sat below the fold — so the
+     screen looked complete and there was nothing to act on. Two of these
+     (Agreed CTC, PF Type) are read-only mirrors of Stage 1, so their message
+     has to send the user back to Stage 1 rather than point at a field they
+     cannot type into. `field` matches the `data-field` anchor used to scroll.
+
+     Plain const, NOT useMemo: everything in this block sits after the
+     `if (!emp) return null` guard above, so a hook here renders a different
+     number of hooks on the null pass ("Rendered fewer hooks than expected").
+     It's a handful of regex tests per render — cheap. */
+  const stage4Problems = (() => {
+    const p: { field: string; label: string; message: string; onStage1?: boolean }[] = [];
+
+    if (s4.salary_payment_mode === 'bank') {
+      const acct = s4.bank_account_number.trim();
+      const ifsc = s4.ifsc_code.trim();
+      if (!s4.bank_name.trim()) {
+        p.push({ field: 'bank_name', label: 'Bank Name', message: 'Enter the bank name.' });
+      }
+      if (!/^\d{9,18}$/.test(acct)) {
+        p.push({ field: 'bank_account_number', label: 'Account Number',
+          message: acct ? 'Account number must be 9–18 digits.' : 'Enter the account number.' });
+      }
+      if (!IFSC_RE.test(ifsc)) {
+        p.push({ field: 'ifsc_code', label: 'IFSC Code',
+          message: ifsc ? 'IFSC format is 4 letters + 0 + 6 characters (e.g. HDFC0001234).' : 'Enter the IFSC code.' });
+      }
+      if (!s4.account_holder_name.trim()) {
+        p.push({ field: 'account_holder_name', label: 'Name on the Account', message: 'Enter the account holder name.' });
+      }
+      if (!s4.bank_branch.trim()) {
+        p.push({ field: 'bank_branch', label: 'Branch', message: 'Enter the bank branch.' });
+      }
+    }
+
+    if (!stage4PanOk) {
+      p.push({ field: 'pan_number', label: 'PAN Number',
+        message: s4.pan_number.trim()
+          ? 'PAN format is 5 letters + 4 digits + 1 letter (e.g. AAAZZ9999A).'
+          : 'Enter the PAN number.' });
+    }
+    if (!stage4UanOk) {
+      p.push({ field: 'uan_number', label: 'UAN Number', message: 'UAN must be exactly 12 digits, or leave it blank.' });
+    }
+    if (!stage4SalaryOk) {
+      /* Two very different causes, and telling them apart matters: an unset
+         salary needs a value, whereas a salary that IS set but is smaller
+         than ₹1,00,000 divides down to "0.00" LPA and reads as unset — the
+         real mistake there is entering the figure in lakhs (12) instead of
+         rupees (1200000). Saying "not set" for that case sends the user
+         looking for an empty field they already filled. */
+      const annual = Number(s1.annual_salary);
+      p.push({
+        field: 'agreed_ctc_lpa', label: 'Agreed CTC', onStage1: true,
+        message: annual > 0
+          ? `Stage 1 annual salary is ₹${annual.toLocaleString('en-IN')}, which works out to ${(annual / 100000).toFixed(2)} LPA. Annual Salary is entered in RUPEES per year — e.g. 1200000 for ₹12 LPA. Fix it on Stage 1 → Compensation.`
+          : 'Agreed CTC is read-only here — it mirrors the Stage 1 annual salary. Set Annual Salary on Stage 1 → Compensation.',
+      });
+    }
+    if (!stage4PfOk) {
+      p.push({ field: 'pf_deduction', label: 'PF Type', onStage1: true,
+        message: 'PF Type is read-only here — set it on Stage 1 → Compensation.' });
+    }
+    return p;
+  })();
   // Stage 4 is locked done once the row has been stamped. We *also* allow
   // an in-session completion when all four checks pass + UAN format is
   // valid, so the progress meter updates immediately after Save Draft.
@@ -4789,6 +4866,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 showErrors={s4ShowErrors}
                 pass={stage4Pass}
                 total={stage4Total4}
+                ctcProblem={stage4Problems.find(x => x.field === 'agreed_ctc_lpa')?.message}
               />
             )}
             {activeStage === 5 && <Stage5Policies emp={emp} />}
@@ -5552,10 +5630,22 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       if (activeStage === 4) {
         if (stage4Pass !== stage4Total4 || !stage4UanOk) {
           setS4ShowErrors(true);   // light up the missing/invalid fields
-          toast.error(
-            'Compensation — complete required fields',
-            'Bank details, PAN, CTC and PF deduction must all be filled before moving to policies.',
-          );
+          // Name the field(s) actually at fault and scroll to the first one —
+          // the offending input is usually below the fold, so a generic
+          // "complete required fields" left nothing visible to act on.
+          const probs = stage4Problems;
+          if (probs.length === 1) {
+            toast.error(probs[0].label, probs[0].message);
+          } else if (probs.length > 1) {
+            toast.error(
+              `${probs.length} fields need attention`,
+              `${probs.map(x => x.label).join(', ')}. ${probs[0].message}`,
+            );
+          } else {
+            // Defensive: readiness disagrees with the field-level check.
+            toast.error('Payroll & Finance Setup incomplete', 'Check the Payroll Readiness panel at the bottom of this stage.');
+          }
+          if (probs.length) scrollToField(probs[0].field);
           return;
         }
         setNextLoading(true);
@@ -7394,7 +7484,7 @@ type S4State = {
 };
 
 function Stage4Payroll({
-  s4, setS4, checks, showErrors, pass, total,
+  s4, setS4, checks, showErrors, pass, total, ctcProblem,
 }: {
   s4: S4State;
   setS4: React.Dispatch<React.SetStateAction<S4State>>;
@@ -7402,6 +7492,11 @@ function Stage4Payroll({
   showErrors: boolean;
   pass: number;
   total: number;
+  /* Why Agreed CTC is blocking, worded for the actual cause — "not entered"
+     and "entered but too small to register as 1 LPA" need different fixes.
+     Empty when CTC is fine. Resolved by the modal, which owns Stage 1's
+     annual salary. */
+  ctcProblem?: string;
 }) {
   const checkRows: { id: keyof typeof checks; name: string }[] = [
     { id: 'bank',   name: 'Bank details complete' },
@@ -7424,6 +7519,9 @@ function Stage4Payroll({
     pan_number:          showErrors && !/^[A-Z]{5}[0-9]{4}[A-Z]$/i.test(s4.pan_number.trim()),
     pf_deduction:        showErrors && !s4.pf_deduction.trim(),
     agreed_ctc_lpa:      showErrors && !(Number(s4.agreed_ctc_lpa) > 0),
+    // UAN is optional, but a partially-typed one blocks the advance — it was
+    // missing from this map, so the only clue was a small grey-area hint.
+    uan_number:          showErrors && !!s4.uan_number.trim() && !/^\d{12}$/.test(s4.uan_number.trim()),
   };
 
   return (
@@ -7470,11 +7568,11 @@ function Stage4Payroll({
         </div>
         <div className="onb-pay-section-body">
           <Row className="g-3">
-            <Col md={4}>
+            <Col data-field="bank_name" md={4}>
               <label className="onb-init-label">Bank Name <span className="req">*</span></label>
               <input className={`onb-init-input is-required${invalid.bank_name ? ' is-invalid' : ''}`} placeholder="e.g. HDFC Bank" value={s4.bank_name} onChange={e => setS4(p => ({ ...p, bank_name: e.target.value.replace(/[^A-Za-z0-9 .,&/'()\-]/g, '') }))} />
             </Col>
-            <Col md={4}>
+            <Col data-field="bank_account_number" md={4}>
               <label className="onb-init-label">Account Number <span className="req">*</span></label>
               <input
                 className={`onb-init-input is-required${invalid.bank_account_number ? ' is-invalid' : ''}`}
@@ -7498,7 +7596,7 @@ function Stage4Payroll({
                 </small>
               )}
             </Col>
-            <Col md={4}>
+            <Col data-field="ifsc_code" md={4}>
               <label className="onb-init-label">IFSC Code <span className="req">*</span></label>
               <input
                 className={`onb-init-input is-required${invalid.ifsc_code ? ' is-invalid' : ''}`}
@@ -7526,11 +7624,11 @@ function Stage4Payroll({
                 <small style={{ color: '#dc2626', fontSize: 11.5 }}>11 chars: 4 letters + 0 + 6 alphanum</small>
               )}
             </Col>
-            <Col md={4}>
+            <Col data-field="account_holder_name" md={4}>
               <label className="onb-init-label">Name on the Account <span className="req">*</span></label>
               <input className={`onb-init-input is-required${invalid.account_holder_name ? ' is-invalid' : ''}`} placeholder="Full legal name as per bank" value={s4.account_holder_name} onChange={e => setS4(p => ({ ...p, account_holder_name: e.target.value.replace(/[^A-Za-z .'-]/g, '') }))} />
             </Col>
-            <Col md={4}>
+            <Col data-field="bank_branch" md={4}>
               <label className="onb-init-label">Branch <span className="req">*</span></label>
               <input className={`onb-init-input is-required${invalid.bank_branch ? ' is-invalid' : ''}`} placeholder="e.g. Baner, Pune" value={s4.bank_branch} onChange={e => setS4(p => ({ ...p, bank_branch: e.target.value.replace(/[^A-Za-z0-9 .,&/'()\-]/g, '') }))} />
             </Col>
@@ -7538,10 +7636,10 @@ function Stage4Payroll({
               <label className="onb-init-label">Account Type</label>
               <MasterSelect options={ONB_ACCOUNT_TYPE} value={s4.bank_account_type} onChange={(v) => setS4(p => ({ ...p, bank_account_type: v }))} />
             </Col>
-            <Col md={4}>
+            <Col data-field="uan_number" md={4}>
               <label className="onb-init-label">UAN Number (PF)</label>
               <input
-                className="onb-init-input"
+                className={`onb-init-input${invalid.uan_number ? ' is-invalid' : ''}`}
                 placeholder="12-digit UAN"
                 maxLength={12}
                 value={s4.uan_number}
@@ -7564,7 +7662,7 @@ function Stage4Payroll({
         </div>
         <div className="onb-pay-section-body">
           <Row className="g-3">
-            <Col md={4}>
+            <Col data-field="pan_number" md={4}>
               <label className="onb-init-label">PAN Number <span className="req">*</span></label>
               <input
                 className={`onb-init-input is-required${invalid.pan_number ? ' is-invalid' : ''}`}
@@ -7581,10 +7679,17 @@ function Stage4Payroll({
               <label className="onb-init-label">Tax Regime</label>
               <MasterSelect options={ONB_TAX_REGIME} value={s4.tax_regime || 'New Regime (115BAC)'} onChange={(v) => setS4(p => ({ ...p, tax_regime: v }))} />
             </Col>
-            <Col md={4}>
+            <Col data-field="pf_deduction" md={4}>
               <label className="onb-init-label">PF Type</label>
               <MasterSelect options={ONB_PF_TYPE} value={s4.pf_deduction || 'Statutory'} onChange={() => { /* read-only — set in Stage 1 */ }} disabled />
-              <small style={{ display: 'block', marginTop: 3, fontSize: 10.5, color: '#9ca3af' }}>Set in Stage 1 (Compensation) — read-only here.</small>
+              {/* Read-only mirror of Stage 1. When it's blank the readiness
+                  check fails and there is nothing to type here — say where to
+                  go instead of leaving a dead required field. */}
+              <small style={{ display: 'block', marginTop: 3, fontSize: 10.5, color: invalid.pf_deduction ? '#dc2626' : '#9ca3af' }}>
+                {invalid.pf_deduction
+                  ? 'Not set — choose PF Type on Stage 1 (Compensation).'
+                  : 'Set in Stage 1 (Compensation) — read-only here.'}
+              </small>
             </Col>
             <Col md={4}>
               <label className="onb-init-label">ESI Applicable</label>
@@ -7594,16 +7699,23 @@ function Stage4Payroll({
               <label className="onb-init-label">Gratuity Nominee Name</label>
               <input className="onb-init-input" placeholder="Full legal name" value={s4.gratuity_nominee_name} onChange={e => setS4(p => ({ ...p, gratuity_nominee_name: e.target.value }))} />
             </Col>
-            <Col md={4}>
-              <label className="onb-init-label">Agreed CTC (LPA)</label>
+            <Col data-field="agreed_ctc_lpa" md={4}>
+              <label className="onb-init-label">Agreed CTC (LPA) <span className="req">*</span></label>
               <input
-                className="onb-init-input"
+                className={`onb-init-input${invalid.agreed_ctc_lpa ? ' is-invalid' : ''}`}
                 placeholder="—"
                 value={s4.agreed_ctc_lpa}
                 readOnly
                 style={{ background: 'var(--vz-light, #f3f3f9)', cursor: 'not-allowed' }}
               />
-              <small style={{ display: 'block', marginTop: 3, fontSize: 10.5, color: '#9ca3af' }}>From the Stage 1 salary — read-only here.</small>
+              {/* Read-only mirror of the Stage 1 annual salary. It's a required
+                  readiness check, so when it's blank point at Stage 1 rather
+                  than leaving a field the user cannot fill. */}
+              <small style={{ display: 'block', marginTop: 3, fontSize: 10.5, color: invalid.agreed_ctc_lpa ? '#dc2626' : '#9ca3af' }}>
+                {invalid.agreed_ctc_lpa
+                  ? (ctcProblem || 'Not set — enter Annual Salary on Stage 1 (Compensation) and it will fill in here.')
+                  : 'From the Stage 1 salary — read-only here.'}
+              </small>
             </Col>
           </Row>
         </div>
