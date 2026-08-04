@@ -1369,8 +1369,16 @@ class CtcContractController extends Controller
         // organisation) is filled with the branch's signature + stamp image.
         $approved = $row->approval_status === 'approved' || (int) $row->stage >= 3;
         $sigUri = $approved ? $this->orgSignatureDataUri($row) : null;
+        // display:block is load-bearing, not cosmetic. dompdf does NOT grow a
+        // line box to fit an INLINE image, so an 80px-tall signature dropped
+        // into a ~15px text line rendered straight over the lines above it —
+        // the approver PDF showed the stamp sitting on top of the paragraph.
+        // Block takes it out of the text flow onto its own line; the margin
+        // keeps it off the neighbouring paragraphs. Mirrors the identical
+        // injection in ClmSignatureController::resolveCtcContent(), which
+        // already carried this fix — this path had been left behind.
         $sigHtml = $sigUri
-            ? '<img src="' . $sigUri . '" alt="Authorised Signatory" style="max-height:80px;max-width:210px;object-fit:contain;" />'
+            ? '<img src="' . $sigUri . '" alt="Authorised Signatory" style="display:block;max-height:80px;max-width:210px;object-fit:contain;margin:8px 0 6px;" />'
             : '';
         $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', $sigHtml, $processedHtml);
 

@@ -337,55 +337,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
     let p = 6;
     return window.setInterval(() => { p = Math.min(90, p + Math.random() * 7 + 2); setDl(d => (d ? { ...d, progress: Math.round(p) } : d)); }, 300);
   };
-  const downloadDocx = async (size: 'a4' | 'a3' = 'a4', orient: 'portrait' | 'landscape' = 'portrait') => {
-    // Guard on `existing?.id`, NOT `editingId` — "Save & Next" sets editingId
-    // for a brand-new draft, which would otherwise let a never-really-saved new
-    // document download. A new doc must be fully saved (which closes the modal)
-    // and reopened before it can be downloaded — same as the Agreement editor.
-    if (!existing?.id) {
-      toast.error('Save draft first', 'Save the trade document draft before downloading as DOCX.');
-      return;
-    }
-    if (dirty) {
-      toast.warning('Save your changes', 'You have unsaved edits — save the trade document before downloading.');
-      return;
-    }
-    const timer = runDlProgress('docx');
-    try {
-      const resp = await api.get(`/clm/trade-doc-library/${editingId}/download`, { params: { size, orient }, responseType: 'blob' });
-      window.clearInterval(timer); setDl(d => (d ? { ...d, progress: 100 } : d));
-      const url  = URL.createObjectURL(new Blob([resp.data]));
-      const a    = document.createElement('a');
-      a.href = url;
-      a.download = `${existing?.code || 'trade-document'}.docx`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
-      await new Promise(res => setTimeout(res, 400)); // let 100% show briefly
-    } catch (e: any) {
-      window.clearInterval(timer);
-      // The response is a Blob (responseType: 'blob'), so a server error body
-      // arrives as a Blob too — read it back to surface the real message.
-      let raw = '';
-      try {
-        const blob = e?.response?.data;
-        if (blob instanceof Blob) {
-          const json = JSON.parse(await blob.text());
-          raw = typeof json?.message === 'string' ? json.message : '';
-        } else if (typeof e?.response?.data?.message === 'string') {
-          raw = e.response.data.message;
-        }
-      } catch { /* no readable message */ }
-      // Never surface a raw server error that leaks a file path — show a
-      // friendly, actionable message instead.
-      const leaksPath = /does not exist|no such file|[\\/](storage|var|www|home|app|tmp)[\\/]/i.test(raw);
-      const msg = raw && !leaksPath
-        ? raw
-        : 'The document file could not be found. Please re-save the trade document, then try downloading again.';
-      toast.error('Download failed', msg);
-    } finally {
-      setDl(null);
-    }
-  };
+  /* downloadDocx() lived here and was removed with its toolbar button — the
+   * Library list owns DOCX downloads now (see ClmTradeDocumentsPage's
+   * "Download as Doc / PDF" menu). runDlProgress/dl stay: downloadPdf below
+   * still drives the same progress overlay. */
 
   /* Download as PDF — rendered server-side with the FULL page-shell (branded
    * header + body content + footer), not just the editor body. */
@@ -953,10 +908,11 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     <input ref={docxRef} type="file" accept=".doc,.docx" style={{ display: 'none' }}
                            onChange={e => { const f = e.target.files?.[0]; if (f) void uploadDocx(f); e.currentTarget.value = ''; }} />
                     {/* In edit mode, surface the currently attached Word file so the
-                        user can see it exists — Download DOCX views it, Upload Word
-                        Doc replaces it. */}
+                        user can see it exists — Upload Word Doc replaces it, and the
+                        Library list downloads it. (The tooltip used to point at a
+                        Download DOCX button that no longer sits in this toolbar.) */}
                     {editingId && existing?.file_path && (
-                      <span className="tdw-editor-file" title="Currently attached Word file — Download DOCX to view, Upload Word Doc to replace"
+                      <span className="tdw-editor-file" title="Currently attached Word file — Upload Word Doc to replace it, or download it from the Trade Document Library list"
                             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 600, color: '#0e7490', background: '#ecfeff', border: '1px solid #a5f3fc', borderRadius: 8, padding: '5px 10px', maxWidth: 240 }}>
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(existing?.name || existing?.title || 'Trade document')}.docx</span>
@@ -965,12 +921,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     {/* DOCX only — Stage 2 exports the editable Word file. The
                         full combined PDF preview lives on the Library list as
                         "Download Draft PDF". */}
-                    {/* DOCX downloads as A4 (portrait). A wide table auto-fits the
-                        page, so a page-size picker is no longer needed here. */}
-                    <button type="button" className="tdw-editor-btn" onClick={() => void downloadDocx('a4', 'portrait')} title={existing?.id ? 'Download as DOCX (A4)' : 'Save the trade document draft first'}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                      Download DOCX
-                    </button>
+                    {/* Download DOCX moved OUT of the editor — the Trade Document
+                        Library list's Action column offers Download as Doc /
+                        Download as PDF. Mirrors the Agreement Wizard, which was
+                        cleared the same way. */}
                     <button type="button" className="tdw-editor-btn" disabled={docxUploading} onClick={() => docxRef.current?.click()} title={docxUploading ? 'Importing your Word file…' : (editingId ? 'Upload a revised Word file' : 'Import content from a Word file')}>
                       {docxUploading ? (
                         <>

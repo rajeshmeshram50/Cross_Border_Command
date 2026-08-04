@@ -650,6 +650,9 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
   // Segment NAMES locked against removal because a product on a PI / Shipment
   // belongs to them (server-driven, per-segment).
   const [lockedSegments, setLockedSegments] = useState<string[]>([]);
+  /** Segment name (lowercase) → why it's locked: 'pi' (on a Quotation/PI/
+   *  Shipment) or 'product' (a product in it is mapped to an opportunity). */
+  const [lockedSegmentReasons, setLockedSegmentReasons] = useState<Record<string, string>>({});
   // Server-provided data for the unique-document removal guard (condition 2):
   // required doc keys (category|code) per segment NAME, and the keys uploaded.
   const [segReqKeys, setSegReqKeys] = useState<Record<string, string[]>>({});
@@ -1247,6 +1250,11 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
         const pa = d.primary_address ?? {};
         setMapLeadLocked(d.isMapLead === 'Yes');
         setLockedSegments(Array.isArray(d.locked_segments) ? d.locked_segments : []);
+        // Why each segment is locked ('pi' | 'product'), keyed lowercase — lets
+        // the removal guard name the real blocker instead of always blaming a
+        // Quotation / PI / Shipment. Older API responses omit it; the guard then
+        // falls back to the previous wording.
+        setLockedSegmentReasons(d.locked_segment_reasons && typeof d.locked_segment_reasons === 'object' ? d.locked_segment_reasons : {});
         setSegReqKeys(d.segment_required_doc_keys && typeof d.segment_required_doc_keys === 'object' ? d.segment_required_doc_keys : {});
         setUploadedKeys(Array.isArray(d.uploaded_doc_keys) ? d.uploaded_doc_keys : []);
         setForm({
@@ -2251,8 +2259,28 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
               const keepKeys = new Set(vs.flatMap(s => segReqKeys[s] ?? []));
               const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
                 && (segReqKeys[s] ?? []).some(k => uploadedSet.has(k) && !keepKeys.has(k)));
+              /* Name the ACTUAL blocker. A segment is locked either because its
+               * product sits on a Quotation / PI / Shipment, or — earlier in the
+               * flow — because a product in it is merely mapped to an opportunity
+               * from the Product Directory. Both used to report the first
+               * reason, so a customer with only a mapped product was told about
+               * a quotation that had never been raised, and the message pointed
+               * at nothing the user could go and fix. */
               if (lockedRemoved.length) {
-                toast.error('Cannot remove segment', `${lockedRemoved.join(', ')} — used in a Quotation / PI / Shipment.`);
+                const reasonOf = (s: string) => lockedSegmentReasons[s.trim().toLowerCase()] ?? 'pi';
+                const piNames   = lockedRemoved.filter(s => reasonOf(s) !== 'product');
+                const prodNames = lockedRemoved.filter(s => reasonOf(s) === 'product');
+                if (piNames.length) {
+                  // Deliberately generic: the Quotation / PI / Shipment lock names
+                  // no document. Listing all three read as if all three existed
+                  // when only one did, and the internal document type isn't the
+                  // user's concern here. The Product-Directory case below stays
+                  // specific because there the user CAN go and act on it.
+                  toast.error('Cannot remove segment', `${piNames.join(', ')} — this segment is currently in use.`);
+                }
+                if (prodNames.length) {
+                  toast.error('Cannot remove segment', `${prodNames.join(', ')} — a product in this segment is mapped to an opportunity. Unmap it in Product Directory first.`);
+                }
               }
               if (docRemoved.length) {
                 toast.error('Cannot remove segment', `${docRemoved.join(', ')} — has its own uploaded document.`);
