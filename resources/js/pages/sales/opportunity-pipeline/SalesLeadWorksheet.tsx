@@ -29,6 +29,9 @@ type ServerLead = {
   sender_email:      string | null;
   sender_company:    string | null;
   sender_country_iso:string | null;
+  /* Server-resolved COUNTRY for the list: the mapped customer's own address
+     country (as ISO-2) once a customer exists, else sender_country_iso. */
+  effective_country_iso?: string | null;
   query_product_name:string | null;
   qualified:         boolean;
   disqualified:      boolean;
@@ -212,7 +215,10 @@ const mapServerToLead = (r: ServerLead): Lead => {
     product:  r.query_product_name || '—',
     // Company → linked customer.legal_name (falls back to raw sender_company).
     company:  r.customer?.legal_name || r.sender_company || '—',
-    country:  r.sender_country_iso || '—',
+    // Country → mapped customer's own country (server-resolved to ISO-2), so it
+    // agrees with the name/email/company beside it and with the Sales-Matrix
+    // header. Falls back to the raw enquiry country when nothing is mapped.
+    country:  r.effective_country_iso || r.sender_country_iso || '—',
     status:   r.disqualified ? 'disqualified' : 'qualified',
     whatsappStatus: r.whatsapp_status ?? null,
     leadStageId: Math.min(6, Math.max(1, Number(r.lead_stage_id) || 1)),

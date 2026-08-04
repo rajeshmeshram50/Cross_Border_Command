@@ -119,6 +119,56 @@ interface Props {
      omitted or empty, all party tabs show. Product is controlled by
      hideProductTab and is unaffected by this. */
   allowedParties?: string[];
+  /* Current body HTML of the document being edited. Used only to detect whether
+     a Product Table is already present, so we can block a second one — two
+     tables would each expand to one row per product at generation time, so the
+     document would list every product twice. Omit it and the guard is off. */
+  documentHtml?: string;
+  /* Replace the ENTIRE body with the given HTML. Supplied by editors that can
+     re-seed themselves; when present the Product Table builder offers "Update
+     Table" (rebuild the existing table with a new column set) instead of just
+     refusing a second insert. Omit it and the builder falls back to blocking. */
+  onReplaceDocumentHtml?: (html: string) => void;
+}
+
+/* {{product.sr}} is emitted ONLY by buildProductTableHtml (no field card offers
+   it), so its presence in the body is a reliable "a product table is already
+   here" marker. Tolerates whitespace inside the braces. */
+const PRODUCT_TABLE_MARKER = /\{\{\s*product\.sr\s*\}\}/;
+
+/* Swap the document's existing product table for a freshly built one, so the
+   user can change its columns without hand-deleting the table from the body.
+   Parsed as real DOM rather than regex-replaced: the body is user-edited HTML
+   and a greedy <table>…</table> match would happily swallow a neighbouring
+   table. Returns null when there's nothing to replace. */
+function replaceProductTableHtml(documentHtml: string, newTableHtml: string): string | null {
+  try {
+    const doc  = new DOMParser().parseFromString(`<div id="cbc-root">${documentHtml}</div>`, 'text/html');
+    const root = doc.getElementById('cbc-root');
+    if (!root) return null;
+    const target = Array.from(root.querySelectorAll('table'))
+      .find(t => PRODUCT_TABLE_MARKER.test(t.innerHTML));
+    if (!target) return null;
+    const holder = doc.createElement('div');
+    holder.innerHTML = newTableHtml;
+    const fresh = holder.firstElementChild;
+    if (!fresh) return null;
+    target.replaceWith(fresh);
+    return root.innerHTML;
+  } catch {
+    return null;   // malformed HTML — caller keeps the plain-insert path
+  }
+}
+
+/* Columns the document's existing product table already carries, read back from
+   its {{product.*}} cells, so re-opening the picker shows the REAL selection
+   instead of resetting to the defaults. */
+function columnsInExistingTable(documentHtml: string): string[] | null {
+  if (!PRODUCT_TABLE_MARKER.test(documentHtml)) return null;
+  const found = PRODUCT_COLUMNS
+    .filter(c => new RegExp(`\\{\\{\\s*product\\.${c.key}\\s*\\}\\}`).test(documentHtml))
+    .map(c => c.key);
+  return found.length ? found : null;
 }
 
 /* Map a counterparty role to the placeholder token group it should use. */
@@ -129,7 +179,7 @@ function roleGroup(role: string): Exclude<Tab, 'product'> {
   return 'customer';   // buyer / customer / anything else
 }
 
-export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hideProductTab = false, counterparties, allowedParties }: Props) {
+export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hideProductTab = false, counterparties, allowedParties, documentHtml, onReplaceDocumentHtml }: Props) {
   const toast = useToast();
   // Counterparty-driven mode (case-to-case): one tab per CP, role-based tokens.
   const cpMode = Array.isArray(counterparties) && counterparties.length > 0;
@@ -158,6 +208,15 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
     if (next.has(k)) next.delete(k); else next.add(k);
     return next;
   });
+  /* Seed the column ticks from the table already in the document, so "Update
+     Table" starts from what's actually there rather than the defaults. Keyed on
+     `open` ONLY — documentHtml changes on every keystroke in the parent editor,
+     and depending on it would wipe the user's ticks mid-session. */
+  useEffect(() => {
+    if (!open) return;
+    setTableCols(new Set(columnsInExistingTable(documentHtml ?? '') ?? DEFAULT_TABLE_COLS));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   // Resolved field→value map per counterparty (cached by type:id), so we can
   // show ONLY the fields that actually have data. `undefined` = not fetched yet.
   const [valuesCache, setValuesCache] = useState<Record<string, Record<string, string>>>({});
@@ -254,6 +313,18 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
     ? FIELDS[activeKey].filter(f => { const v = activeValues[fieldKeyOf(f.token)]; return v != null && String(v).trim() !== ''; })
     : FIELDS[activeKey];
   const tabHeader = groupMeta(activeKey);
+  /* Product is a table-only group. A document renders ONE ROW PER PRODUCT, so
+   * a bare {{product.code}} dropped into the body has no row to belong to and
+   * only ever resolves to the first product — misleading. The Product tab
+   * therefore shows just the Product Table builder: no per-field cards, and no
+   * bulk-select bar (it would offer to copy tokens that are no longer listed).
+   * Counterparty mode is unaffected — it never renders the table builder. */
+  const productTableOnly = !cpMode && tab === 'product';
+  // One product table per document — see PRODUCT_TABLE_MARKER.
+  const productTableInserted = PRODUCT_TABLE_MARKER.test(documentHtml ?? '');
+  // …but if the host editor can re-seed itself, offer an in-place rebuild
+  // instead of a dead end, so the remaining columns stay reachable.
+  const canUpdateTable = productTableInserted && typeof onReplaceDocumentHtml === 'function';
   const allInTabSelected = fields.length > 0 && fields.every(f => selected.has(f.token));
   const toggleSelectAllInTab = () => {
     setSelected(prev => {
@@ -313,7 +384,9 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
                   <span className="ipm-tab-ico" style={{ background: `${t.color}1f`, color: t.color }}>{t.icon}</span>
                   <span className="ipm-tab-text">
                     <span className="ipm-tab-label" style={{ color: t.color }}>{t.label}</span>
-                    <span className="ipm-tab-sub">{count} fields</span>
+                    {/* Product lists no individual fields any more, so a
+                        "7 fields" count would point at nothing. */}
+                    <span className="ipm-tab-sub">{t.key === 'product' ? 'Table only' : `${count} fields`}</span>
                   </span>
                 </button>
               );
@@ -328,11 +401,14 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
                 <div className="ipm-pane-sub">
                   {activeCp
                     ? `Referred as ${tabHeader.label}${activeCp.cp.code ? ` · ${activeCp.cp.code}` : ''} — inserts {{${activeKey}.*}} placeholders`
-                    : 'Select a field to insert its placeholder into the document'}
+                    : productTableOnly
+                      ? 'Products insert as a table — pick the columns you need below'
+                      : 'Select a field to insert its placeholder into the document'}
                 </div>
               </div>
             </header>
 
+            {!productTableOnly && (
             <div className="ipm-selbar">
               <label className="ipm-selall">
                 <input type="checkbox" checked={allInTabSelected} onChange={toggleSelectAllInTab} />
@@ -351,6 +427,7 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
                 </button>
               </div>
             </div>
+            )}
 
             <div className="ipm-grid">
               {!cpMode && tab === 'product' && (
@@ -359,22 +436,45 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 7 }}><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
                     Product Table
                   </span>
-                  <span className="ipm-card-tabledesc">Tick the columns to include, then insert — one row per product at generation time.</span>
-                  <div className="ipm-tablecols">
+                  <span className="ipm-card-tabledesc">
+                    {canUpdateTable
+                      ? 'This document already has a product table — tick or untick columns and update it in place.'
+                      : productTableInserted
+                        ? 'This document already has a product table. Delete it from the body first if you want different columns.'
+                        : 'Tick the columns to include, then insert — one row per product at generation time.'}
+                  </span>
+                  {/* Ticks stay live while an update is possible; they're only
+                      frozen on the dead-end path (no re-seed callback). */}
+                  <div className="ipm-tablecols" style={productTableInserted && !canUpdateTable ? { opacity: 0.5, pointerEvents: 'none' } : undefined}>
                     {PRODUCT_COLUMNS.map(c => (
                       <label key={c.key} className={`ipm-tablecol ${tableCols.has(c.key) ? 'on' : ''}`}>
-                        <input type="checkbox" checked={tableCols.has(c.key)} onChange={() => toggleCol(c.key)} />
+                        <input type="checkbox" checked={tableCols.has(c.key)} disabled={productTableInserted && !canUpdateTable} onChange={() => toggleCol(c.key)} />
                         {c.label}
                       </label>
                     ))}
                   </div>
-                  <button type="button" className="ipm-table-insert" disabled={tableCols.size === 0}
-                    onClick={() => onInsert(buildProductTableHtml([...tableCols]))}>
-                    Insert Table ({tableCols.size} column{tableCols.size === 1 ? '' : 's'})
+                  <button type="button" className="ipm-table-insert"
+                    disabled={tableCols.size === 0 || (productTableInserted && !canUpdateTable)}
+                    onClick={() => {
+                      const tableHtml = buildProductTableHtml([...tableCols]);
+                      if (canUpdateTable) {
+                        const next = replaceProductTableHtml(documentHtml ?? '', tableHtml);
+                        // Fall through to a plain insert if the swap couldn't
+                        // find its target — better a second table than a click
+                        // that silently does nothing.
+                        if (next != null) { onReplaceDocumentHtml!(next); return; }
+                      }
+                      onInsert(tableHtml);
+                    }}>
+                    {canUpdateTable
+                      ? `Update Table (${tableCols.size} column${tableCols.size === 1 ? '' : 's'})`
+                      : productTableInserted
+                        ? 'Table already inserted'
+                        : `Insert Table (${tableCols.size} column${tableCols.size === 1 ? '' : 's'})`}
                   </button>
                 </div>
               )}
-              {fields.map(f => {
+              {!productTableOnly && fields.map(f => {
                 const isChecked = selected.has(f.token);
                 return (
                 <div key={f.token} className={`ipm-card ${f.isSignature ? 'is-sig' : ''} ${isChecked ? 'is-checked' : ''}`} role="button" tabIndex={0}

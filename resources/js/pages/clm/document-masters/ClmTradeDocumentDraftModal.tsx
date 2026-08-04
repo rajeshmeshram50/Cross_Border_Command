@@ -1169,6 +1169,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
 
         <ClmInsertPlaceholderModal
           open={pickerOpen}
+          documentHtml={content}
           allowedParties={(() => {
             // Restrict placeholder party tabs to the document's applicable party:
             // a Customer/Consignee doc → Customer + Consignee tabs; a Supplier doc
@@ -1182,6 +1183,9 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
           })()}
           onClose={() => setPickerOpen(false)}
           onInsert={(token) => { const isHtml = /^\s*</.test(token); if (isHtml) insertHtmlAtCaret(token); else insertAtCaret(token); toast.success('Placeholder added', isHtml ? undefined : token); setPickerOpen(false); }}
+          // Product Table rebuild — re-seed the whole TipTap doc from the body
+          // the picker returns (old table already swapped for the new one).
+          onReplaceDocumentHtml={(html) => { ted.setHTML(html); setContent(html); setDirty(true); toast.success('Product table updated'); setPickerOpen(false); }}
         />
 
         <ClmInsertTableModal

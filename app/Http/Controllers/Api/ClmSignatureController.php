@@ -1290,7 +1290,10 @@ class ClmSignatureController extends Controller
 
         $sourceHtml = $contentOverride !== null ? $contentOverride : (string) $c->content;
         $sig = $this->ctcOrgSignatureDataUri($c);
-        $sigHtml = $sig ? '<img src="' . $sig . '" alt="Authorised Signatory" style="max-height:80px;max-width:210px;object-fit:contain;" />' : '';
+        // Block-level so the signature image sits on its own line and never
+        // overlaps the org-detail text that follows it (it is 80px tall and, when
+        // inline, bled over the address line in both the approval view and PDF).
+        $sigHtml = $sig ? '<img src="' . $sig . '" alt="Authorised Signatory" style="display:block;max-height:80px;max-width:210px;object-fit:contain;margin:8px 0 6px;" />' : '';
         $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', $sigHtml, $sourceHtml);
         $processedHtml = $this->resolveCtcContent($processedHtml, $c);
 

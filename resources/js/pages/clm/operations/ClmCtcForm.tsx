@@ -233,9 +233,11 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   }, [authUser?.branch_logo, authUser?.client_logo, authUser?.branch_name, authUser?.client_name]);
   const [header, setHeader] = useState<HeaderConfig>(brandedDefaults);
   const [footer, setFooter] = useState<FooterConfig>(DEFAULT_FOOTER);
-  // Note: the selected organization is intentionally NOT injected into the
-  // document header title — the org name should not appear in the draft's
-  // top-right corner. The header title stays user-configurable (Stage 1).
+  // These are only the DEFAULTS, used until an organisation is picked in
+  // Stage 1. Selecting one overwrites the header's logo + title with THAT
+  // branch's (see onSelectOrg) so the draft is always branded as the
+  // organisation the agreement is actually being raised by; clearing it
+  // restores these. The header stays user-editable via Header Settings.
 
   const errMsg = (e: unknown) => (e as { response?: { data?: { message?: string } } })?.response?.data?.message;
   const refreshRecord = async (id?: number | null) => {
@@ -304,6 +306,41 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       .catch(() => { if (alive) setOrgs([]); });
     return () => { alive = false; };
   }, []);
+
+  /* Reconcile a hydrated organisation against the live branch list.
+   *
+   * Opening a saved contract rebuilds `org` from the plain strings stored on
+   * the row (org_name / org_short_code / org_state / org_country) with id 0 —
+   * a SNAPSHOT taken when the draft was written. On drafts created before the
+   * panel moved from the Company master to branches those strings hold company
+   * data, and even on new ones they go stale the moment the branch is edited,
+   * so the panel showed company/stale values until something re-selected the
+   * branch. The snapshot also has no logo field at all.
+   *
+   * Once the branch options land, swap the snapshot for the REAL branch row so
+   * the panel is always live branch data. Matched on short code first, then
+   * name, case-insensitively (Postgres-stored values drift in casing). Rows
+   * that already came from the picker carry a real id and are left alone, as is
+   * a snapshot that matches no branch — better to show what was saved than to
+   * blank the panel. The saved header_config is deliberately NOT touched here:
+   * it may hold the user's own edits. Re-picking the branch refreshes it. */
+  useEffect(() => {
+    if (!orgs.length) return;
+    setOrg(prev => {
+      if (!prev || prev.id) return prev;         // null, or already a real branch
+      const key = (s: string) => (s || '').trim().toLowerCase();
+      const byCode = prev.shortCode && prev.shortCode !== '—'
+        ? orgs.find(o => key(o.shortCode) === key(prev.shortCode))
+        : undefined;
+      return byCode ?? orgs.find(o => key(o.name) === key(prev.name)) ?? prev;
+    });
+    /* Depends on the SNAPSHOT too, not just `orgs` — the two loads race. When
+     * the branch list wins, hydration lands afterwards and an `orgs`-only
+     * dependency would never re-run, which is exactly why the panel showed
+     * stale values on some opens and correct ones on others. Re-running is
+     * free: an already-resolved org returns the same reference, so React bails
+     * out of the re-render instead of looping. */
+  }, [orgs, org?.id, org?.name, org?.shortCode]);
 
   // Agreement Type options come from the CLM Agreement Type master.
   useEffect(() => {
@@ -585,12 +622,32 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               onAddCp={() => setPicker(true)} onRemoveCp={(idx) => setCps(cps.filter((_, j) => j !== idx))}
               onSelectOrg={(o) => {
                 setOrg(o); setOrgOpen(false);
-                // Sync the document-header logo to the picked organisation's
-                // branch logo so the preview shows THAT branch's brand, not the
-                // logged-in branch's default. Only when the branch has a logo —
-                // otherwise keep whatever logo the header already has.
-                if (o.logoUrl) setHeader(h => ({ ...h, logo_url: o.logoUrl!, logo_path: o.logoPath ?? h.logo_path }));
-              }} onResetOrg={() => setOrg(null)}
+                /* The document header follows the SELECTED organisation — its
+                 * branch logo AND its name. Both are set unconditionally.
+                 * Previously only the logo synced, and only `if (o.logoUrl)`:
+                 * picking a branch with no logo left the PREVIOUS branch's logo
+                 * sitting in the header, and the title never moved off the
+                 * logged-in branch at all — so a draft for "inorbvict Agrotech"
+                 * rendered "inorbvict healthcare"'s brand. A branch with no
+                 * logo must leave the slot EMPTY, never inherit another
+                 * branch's. The branch name is the company name here. */
+                setHeader(h => ({
+                  ...h,
+                  logo_url:  o.logoUrl  ?? null,
+                  logo_path: o.logoPath ?? null,
+                  title:     o.name?.trim() || brandedDefaults.title,
+                }));
+              }} onResetOrg={() => {
+                setOrg(null);
+                // No organisation picked ⇒ fall back to the tenant's own
+                // branding rather than stranding the cleared branch's brand.
+                setHeader(h => ({
+                  ...h,
+                  logo_url:  brandedDefaults.logo_url  ?? null,
+                  logo_path: brandedDefaults.logo_path ?? null,
+                  title:     brandedDefaults.title,
+                }));
+              }}
               agTitle={agTitle} setAgTitle={setAgTitle} agType={agType} setAgType={setAgType}
               effDate={effDate} setEffDate={setEffDate} endDate={endDate} setEndDate={setEndDate}
               draft={draft} setDraft={setDraft}
@@ -1370,7 +1427,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
   const isSignedOff = approval === 'approved' || stage >= 3;
   const signedUrl = String((record?.signed_document_url as string) ?? '');
   const sigToken = isSignedOff && orgSig
-    ? `<img src="${orgSig}" alt="Authorised Signatory" style="max-height:78px;max-width:200px;object-fit:contain;display:inline-block;vertical-align:middle;" />`
+    ? `<img src="${orgSig}" alt="Authorised Signatory" style="max-height:78px;max-width:200px;object-fit:contain;display:block;margin:8px 0 6px;" />`
     : '<span style="color:#94a3b8;font-style:italic;">{{signature}}</span>';
   // Prefer the server-resolved preview (party {{customer.*}}/{{consignee.*}}/
   // {{supplier.*}} + org tokens filled with real data) so Stage 2+ shows actual

@@ -660,6 +660,7 @@ export default function ClmTradeDocumentDraftPage() {
 
       <ClmInsertPlaceholderModal
         open={pickerOpen}
+        documentHtml={content}
         allowedParties={(() => {
           // Restrict placeholder party tabs to the document's applicable party:
           // Customer/Consignee doc → Customer + Consignee tabs; Supplier doc →
@@ -673,6 +674,9 @@ export default function ClmTradeDocumentDraftPage() {
         })()}
         onClose={() => setPickerOpen(false)}
         onInsert={(token) => { if (/^\s*</.test(token)) insertHtmlAtCaret(token); else insertAtCaret(token); setPickerOpen(false); }}
+        // Product Table rebuild — the picker hands back the whole body with the
+        // old table swapped out, so re-seed the editor from it.
+        onReplaceDocumentHtml={(html) => { if (editorRef.current) editorRef.current.innerHTML = html; setContent(html); setPickerOpen(false); }}
       />
     </div>
   );

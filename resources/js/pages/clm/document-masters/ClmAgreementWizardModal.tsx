@@ -967,6 +967,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
             names to the same values, so switching catalogs is safe. */}
         <ClmInsertPlaceholderModal
           open={placeholderOpen}
+          documentHtml={content}
           allowedParties={(() => {
             // Restrict placeholder party tabs to the agreement's applicable party:
             // a Customer/Consignee agreement → Customer + Consignee tabs; a
@@ -980,6 +981,9 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
           })()}
           onClose={() => setPlaceholderOpen(false)}
           onInsert={(token) => { if (/^\s*</.test(token)) { toast.success('Inserted', 'Added to the agreement draft.'); insertHtmlAtCaret(token); } else insertPlaceholderToken(token); setPlaceholderOpen(false); }}
+          // Product Table rebuild — re-seed the whole TipTap doc from the body
+          // the picker returns (old table already swapped for the new one).
+          onReplaceDocumentHtml={(html) => { agr.setHTML(html); setContent(html); setDirty(true); toast.success('Product table updated'); setPlaceholderOpen(false); }}
         />
 
         {/* Insert Table picker — same component the Trade Doc draft uses
