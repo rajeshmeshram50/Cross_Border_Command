@@ -3585,7 +3585,14 @@ export default function HrEmployees() {
                     </Col>
                     <Col md={4}>
                       <label className="emp-label">Ancillary Role <span className="hint">(select multiple)</span></label>
-                      <MultiSelectChips
+                      {/* MasterMultiSelect, not MultiSelectChips: the latter
+                          rendered EVERY selected chip, so 10+ roles stacked
+                          into four rows and blew the field out of the form
+                          grid. This collapses to 3 chips + a "+N more" pill
+                          (click to expand/collapse) — the same treatment the
+                          segment pickers use. Same props, and it keeps the
+                          search box. */}
+                      <MasterMultiSelect
                         value={eAncillaryRole}
                         onChange={setEAncillaryRole}
                         options={ancillaryRoleOptionsX}

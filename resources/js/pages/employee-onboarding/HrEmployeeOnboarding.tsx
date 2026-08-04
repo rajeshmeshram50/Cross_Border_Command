@@ -17,6 +17,7 @@ import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
+import { consentLabel } from '../../components/ui/SignaturePad';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { resolveProbation } from '../../utils/probation';
 import './HrEmployeeOnboarding.css';
@@ -1524,6 +1525,8 @@ export function VaultModal({
   const [actionSubmitting, setActionSubmitting] = useState(false);
   const [actionName, setActionName] = useState('');
   const [actionNote, setActionNote] = useState('');
+  // Informed-consent tick for Sign steps — per document, reset in openAction.
+  const [actionConsent, setActionConsent] = useState(false);
 
   // Generate modal — custom-field fill → preview → download / send for signature
   const [genTpl, setGenTpl] = useState<MatchedTemplate | null>(null);
@@ -1635,6 +1638,7 @@ export function VaultModal({
     setActionRun(run);
     setActionName(current?.name || '');
     setActionNote('');
+    setActionConsent(false);   // consent is per-document, never carried over
   };
   const submitAction = async () => {
     if (!actionRun) return;
@@ -1648,12 +1652,18 @@ export function VaultModal({
       toast.error('Signature required', 'Please type your name to sign.');
       return;
     }
+    // Consent applies to every action, not just Sign.
+    if (!actionConsent) {
+      toast.error('Consent required', 'Tick the box confirming you have read and understood the document.');
+      return;
+    }
     setActionSubmitting(true);
     try {
       const { data } = await api.post(`/hr-document-signatures/${actionRun.id}/action`, {
         action:      apiAction,
         signed_name: apiAction === 'Sign' ? actionName.trim() : null,
         note:        actionNote.trim() || null,
+        consent:     actionConsent,
       });
       toast.success(
         apiAction === 'Sign' ? 'Signed' : apiAction === 'Approve' ? 'Approved' : 'Acknowledged',
@@ -2881,6 +2891,26 @@ export function VaultModal({
                         )}
                       </>
                     )}
+                    {/* Informed consent — mandatory for EVERY action (Sign,
+                        Approve, Acknowledge). The action button stays disabled
+                        until ticked; the API rejects an unconsented action. */}
+                    <label style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12,
+                      padding: '10px 12px', background: actionConsent ? '#eef2ff' : '#fff7ed',
+                      border: `1px solid ${actionConsent ? '#c7d2fe' : '#fed7aa'}`,
+                      borderRadius: 8, fontSize: 12.5, color: '#374151', cursor: 'pointer',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={actionConsent}
+                        onChange={e => setActionConsent(e.target.checked)}
+                        style={{ marginTop: 2, width: 15, height: 15, flexShrink: 0, cursor: 'pointer' }}
+                      />
+                      <span>
+                        {consentLabel(current?.action)}
+                        <span style={{ color: '#ef4444' }}> *</span>
+                      </span>
+                    </label>
                     <label style={{ fontSize: 10.5, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', display: 'block', marginBottom: 4, marginTop: isSign ? 12 : 0 }}>
                       Note / Reason for rejection
                     </label>
@@ -2906,7 +2936,9 @@ export function VaultModal({
                       style={{ padding: '7px 14px', background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #d1d5db)', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'var(--vz-body-color, #374151)', cursor: 'pointer' }}>
                       Cancel
                     </button>
-                    <button type="button" onClick={submitAction} disabled={actionSubmitting || (isSign && !actionName.trim())}
+                    <button type="button" onClick={submitAction}
+                      disabled={actionSubmitting || !actionConsent || (isSign && !actionName.trim())}
+                      title={!actionConsent ? `Tick the consent box to enable ${current?.action}` : undefined}
                       style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
                       <i className={isSign ? 'ri-quill-pen-line' : current?.action === 'Approve' ? 'ri-check-double-line' : 'ri-thumb-up-line'} style={{ marginRight: 6 }} />
                       {actionSubmitting ? 'Submitting…' : `Confirm ${current?.action}`}
@@ -3499,7 +3531,12 @@ function InitiateOnboardingModal({
     department_id:    '',
     designation_id:   '',
     primary_role_id:  '',
-    ancillary_role_id: '',
+    /* Ancillary roles are MULTI-valued (`employees.ancillary_role_ids`); the
+       scalar `ancillary_role_id` is a legacy mirror of the first one. This
+       form used to bind the scalar, which both displayed one role and — on
+       save — made the backend collapse the array to that single id, wiping
+       the rest. Bind the array. */
+    ancillary_role_ids: [] as string[],
     legal_entity_id:  '',
     location:         '',
     // Composite "kind:id" — picker stores employee:{id} or {kind}:{id}.
@@ -3619,7 +3656,11 @@ useEffect(() => {
     department_id:    x.department_id    ? String(x.department_id)    : '',
     designation_id:   x.designation_id   ? String(x.designation_id)   : '',
     primary_role_id:  x.primary_role_id  ? String(x.primary_role_id)  : '',
-    ancillary_role_id: x.ancillary_role_id ? String(x.ancillary_role_id) : '',
+    // Prefer the array; fall back to the legacy scalar for rows saved before
+    // multi-role support (same precedence as the Add/Edit Employee form).
+    ancillary_role_ids: (Array.isArray(x.ancillary_role_ids) && x.ancillary_role_ids.length > 0)
+      ? x.ancillary_role_ids.map(String)
+      : (x.ancillary_role_id ? [String(x.ancillary_role_id)] : []),
     legal_entity_id:  x.legal_entity_id  ? String(x.legal_entity_id)  : '',
     location:         String(x.location ?? ''),
     /* Reporting manager picker stores "kind:id" — rebuild from whichever
@@ -3920,7 +3961,7 @@ const validateStage1 = (): boolean => {
   if (!s1.designation_id?.toString().trim())  errors.designation_id  = 'Designation is required';
   if (!s1.primary_role_id?.toString().trim()) errors.primary_role_id = 'Primary role is required';
   // A role can't be both Primary and Ancillary for the same employee.
-  else if (s1.ancillary_role_id && String(s1.ancillary_role_id) === String(s1.primary_role_id)) errors.primary_role_id = 'The Primary role cannot also be the Ancillary role.';
+  else if ((s1.ancillary_role_ids ?? []).some((id: string) => String(id) === String(s1.primary_role_id))) errors.primary_role_id = 'The Primary role cannot also be an Ancillary role.';
 
   // Organisational Details — Legal Entity + Reporting Manager are required.
   // Auto-fetched — empty only when no single branch resolved ("All Branches").
@@ -4001,7 +4042,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       department_id:    intOrNull(s1.department_id),
       designation_id:   intOrNull(s1.designation_id),
       primary_role_id:  intOrNull(s1.primary_role_id),
-      ancillary_role_id: intOrNull(s1.ancillary_role_id),
+      // Send the ARRAY — the controller normalises it and mirrors the first
+      // entry into the legacy `ancillary_role_id` column. Sending the scalar
+      // instead made it collapse the array to one id (data loss).
+      ancillary_role_ids: (s1.ancillary_role_ids ?? [])
+        .map((v: string) => Number(v))
+        .filter((n: number) => Number.isFinite(n)),
       legal_entity_id:  intOrNull(s1.legal_entity_id),
       reporting_manager_id:      rmIds.emp,
       reporting_manager_user_id: rmIds.user,
@@ -4334,13 +4380,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         : { ok: false, reason: 'Fill in every required field on Onboarding Setup before continuing.' };
     }
     if (activeStage === 2) {
-      // Stage 2's ref-exposed validate() returns false when Yes/No on
-      // previous employment hasn't been picked yet (and other doc-
-      // mandatory checks fail).
-      const stage2Ok = stage2Ref.current?.validate?.() ?? true;
-      return stage2Ok
+      // Stage 2's ref-exposed validate() reports WHY it failed — read `.ok`,
+      // never the object itself (it is always truthy) — and reuse its message
+      // so this tooltip matches the toast the user gets on Next Stage.
+      const v = stage2Ref.current?.validate?.() ?? { ok: true };
+      return v.ok
         ? { ok: true }
-        : { ok: false, reason: 'Pick Yes / No on Previous Employment and complete the mandatory documents.' };
+        : { ok: false, reason: v.message || 'Complete the previous employment section before continuing.' };
     }
     if (activeStage === 3) {
       const emailErr = validateOfficialEmail(s1.official_email);
@@ -4548,14 +4594,21 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       !!s4.bank_branch.trim()
     );
   const stage4PanOk = PAN_RE.test(s4.pan_number.trim());
-  const stage4UanOk = !s4.uan_number.trim() || UAN_RE.test(s4.uan_number.trim());
+  /* Does Provident Fund apply at all? Set on Stage 1 (Compensation). When it
+     doesn't, the PF-only fields are hidden on Stage 4 — so their readiness
+     checks must not be able to block the stage either (a stale UAN typed
+     before PF was switched off would otherwise gate an invisible field). */
+  const stage4PfApplicable = s1.enable_payroll !== false && !!s1.pf_eligible;
+  const stage4UanOk = !stage4PfApplicable || !s4.uan_number.trim() || UAN_RE.test(s4.uan_number.trim());
   // Salary structure check passes once Stage 4's Agreed CTC is set. We
   // don't couple this to Stage 1's annual_salary — admins often record
   // a negotiated CTC at Stage 4 that's distinct from the wizard's
   // initial salary input, and gating on both made the pill stay
   // Pending after a clean fill.
   const stage4SalaryOk = Number(s4.agreed_ctc_lpa) > 0;
-  const stage4PfOk = !!s4.pf_deduction.trim();
+  // PF not applicable → the PF readiness check auto-passes; there is nothing
+  // to configure and no field on screen to configure it with.
+  const stage4PfOk = !stage4PfApplicable || !!s4.pf_deduction.trim();
   const stage4Checks = [stage4BankOk, stage4PanOk, stage4SalaryOk, stage4PfOk];
   const stage4Pass   = stage4Checks.filter(Boolean).length;
   const stage4Total4 = stage4Checks.length;
@@ -4621,6 +4674,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
           : 'Agreed CTC is read-only here — it mirrors the Stage 1 annual salary. Set Annual Salary on Stage 1 → Compensation.',
       });
     }
+    // Only reachable while PF applies — stage4PfOk auto-passes otherwise, so
+    // this can never point the user at a field that isn't rendered.
     if (!stage4PfOk) {
       p.push({ field: 'pf_deduction', label: 'PF Type', onStage1: true,
         message: 'PF Type is read-only here — set it on Stage 1 → Compensation.' });
@@ -4867,6 +4922,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 pass={stage4Pass}
                 total={stage4Total4}
                 ctcProblem={stage4Problems.find(x => x.field === 'agreed_ctc_lpa')?.message}
+                pfApplicable={stage4PfApplicable}
               />
             )}
             {activeStage === 5 && <Stage5Policies emp={emp} />}
@@ -5027,7 +5083,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Employee ID <span className="auto">AUTO</span></label>
-                    <input className="onb-init-input is-autofilled" readOnly value={`${emp.empId} (auto-assigned)`} />
+                    {/* Value is the code ALONE. The "auto-assigned" note lives
+                        in the label badge above — having it inside the input
+                        too made the field read "EMP-011 (auto-assigned)", as
+                        if the suffix were part of the code. */}
+                    <input className="onb-init-input is-autofilled" readOnly value={emp.empId} />
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Employee Status</label>
@@ -5081,8 +5141,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   <Col md={4} data-field="designation_id"><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} loading={mastersLoading} placeholder="Select designation" value={s1.designation_id} invalid={!!s1Errors.designation_id} onChange={(v) => { const nowHod = !!hodDesignationId && String(v) === hodDesignationId; setS1(p => { const rmIsBranchUser = String(p.reporting_manager || '').startsWith('branch_user:'); const clearMgr = nowHod && !!p.reporting_manager && !rmIsBranchUser; return { ...p, designation_id: v, reporting_manager: clearMgr ? '' : p.reporting_manager }; }); setS1Errors(p => ({ ...p, designation_id: '', reporting_manager: '' })); }} />{s1Errors.designation_id && <div className="onb-error-msg">{s1Errors.designation_id}</div>}</Col>
                   {/* Primary & Ancillary share the same list, but a role can't be
                       both — exclude the other side's pick from each dropdown. */}
-                  <Col md={4} data-field="primary_role_id"><label className="onb-init-label">Primary Role<span className="req">*</span></label><MasterSelect options={roleOpts.filter(o => o.value !== String(s1.ancillary_role_id ?? ''))} loading={mastersLoading} placeholder="Select role" value={s1.primary_role_id} invalid={!!s1Errors.primary_role_id} onChange={(v) => { setS1(p => ({ ...p, primary_role_id: v, ancillary_role_id: String(p.ancillary_role_id ?? '') === v ? '' : p.ancillary_role_id })); setS1Errors(p => ({ ...p, primary_role_id: '' })); }} />{s1Errors.primary_role_id && <div className="onb-error-msg">{s1Errors.primary_role_id}</div>}</Col>
-                  <Col md={4}><label className="onb-init-label">Ancillary Role</label><MasterSelect options={roleOpts.filter(o => o.value !== String(s1.primary_role_id ?? ''))} loading={mastersLoading} placeholder="Select role" value={s1.ancillary_role_id} onChange={(v) => setS1(p => ({ ...p, ancillary_role_id: v }))} /></Col>
+                  <Col md={4} data-field="primary_role_id"><label className="onb-init-label">Primary Role<span className="req">*</span></label><MasterSelect options={roleOpts.filter(o => !(s1.ancillary_role_ids ?? []).includes(o.value))} loading={mastersLoading} placeholder="Select role" value={s1.primary_role_id} invalid={!!s1Errors.primary_role_id} onChange={(v) => { setS1(p => ({ ...p, primary_role_id: v, ancillary_role_ids: (p.ancillary_role_ids ?? []).filter((id: string) => id !== v) })); setS1Errors(p => ({ ...p, primary_role_id: '' })); }} />{s1Errors.primary_role_id && <div className="onb-error-msg">{s1Errors.primary_role_id}</div>}</Col>
+                  {/* Multi-select (was a single picker, so only the first of
+                      several assigned roles ever showed). Collapses to 3 chips
+                      + "+N more", same as the Add/Edit Employee form. */}
+                  <Col md={4}><label className="onb-init-label">Ancillary Role <span className="auto" style={{ textTransform: 'none', letterSpacing: 0 }}>select multiple</span></label><MasterMultiSelect options={roleOpts.filter(o => o.value !== String(s1.primary_role_id ?? ''))} value={s1.ancillary_role_ids ?? []} placeholder="Select one or more roles" onChange={(v) => setS1(p => ({ ...p, ancillary_role_ids: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Work Type <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="Full Time" /></Col>
                 </Row>
 
@@ -5699,12 +5762,17 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         // gate the advance here (not in flush) so the user gets a
         // clear "pick one" prompt + red highlight on the radio group
         // instead of silently progressing on a half-answered form.
-        if (activeStage === 2 && !stage2Ref.current?.validate()) {
-          toast.error(
-            'Previous employment — incomplete',
-            'Complete the highlighted fields & documents (or pick Yes / No) before moving to the next stage.',
-          );
-          return;
+        if (activeStage === 2) {
+          const v = stage2Ref.current?.validate() ?? { ok: true };
+          if (!v.ok) {
+            // Message comes from validate() — it knows which of the four
+            // blockers actually fired.
+            toast.error(
+              v.title   || 'Previous employment — incomplete',
+              v.message || 'Complete the previous employment section before moving to the next stage.',
+            );
+            return;
+          }
         }
         // Stage 5 — every policy must be acknowledged. Block the
         // advance to verification otherwise; the user would just hit
@@ -6053,10 +6121,11 @@ const DOC_ACCEPTED_MIME = new Set<string>(DOC_ACCEPTED_MIMES);
  *  still inside Company Name silently dropped the row. */
 export interface Stage2DocumentsHandle {
   flush: () => Promise<void>;
-  /** Returns true if Stage 2 is ready to advance. Currently gates on
-   *  the Yes/No previous-experience answer being explicitly chosen —
-   *  null means the HR hasn't picked yet and shouldn't move forward. */
-  validate: () => boolean;
+  /** Whether Stage 2 is ready to advance, plus a caller-ready toast title +
+   *  message naming the ACTUAL blocker (answer not picked / no record added /
+   *  fields incomplete / salary slips missing). The caller used to invent one
+   *  catch-all sentence for all four, which told the user nothing. */
+  validate: () => { ok: boolean; title?: string; message?: string };
 }
 const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   emp: OnboardRow;
@@ -6327,6 +6396,10 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         } catch { /* non-fatal — keep the in-memory state */ }
       }
     },
+    /* Returns WHY it failed, not just that it did. The caller used to show a
+       single catch-all toast ("Complete the highlighted fields & documents
+       (or pick Yes / No)…") for four different problems, so it never told the
+       user what to actually do. */
     validate: () => {
       if (hasExperience === null) {
         setHasExperienceError(true);
@@ -6337,7 +6410,11 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           const el = document.getElementById('onb-has-experience');
           el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 50);
-        return false;
+        return {
+          ok: false,
+          title: 'Previous employment — answer required',
+          message: 'Select whether this employee has previous employment (Yes or No) before moving to the next stage.',
+        };
       }
 
       // Yes path: at least one company, each fully filled, HR Email 1 set, and
@@ -6348,7 +6425,11 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         const companies = prevCompaniesRef.current;
         if (companies.length === 0) {
           setTimeout(() => document.getElementById('onb-has-experience')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
-          return false;
+          return {
+            ok: false,
+            title: 'Previous employment record required',
+            message: 'Please add at least one previous employment record, or select "No" if this is their first job.',
+          };
         }
         const errs: Record<string, string> = {};
         const isUp = (s?: string) => s === 'uploaded' || s === 'verified';
@@ -6379,11 +6460,37 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
             const firstKey = Object.keys(errs)[0].split(':')[0];
             document.querySelector(`[data-comp="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }, 50);
-          return false;
+          // Separate the two failure kinds — "fill this in" and "upload this"
+          // need different actions, and lumping them together is what made the
+          // old message useless.
+          const keys      = Object.keys(errs);
+          const docKeys   = keys.filter(k => k.endsWith(':doc'));
+          const fieldKeys = keys.filter(k => !k.endsWith(':doc'));
+          const n = (c: number, noun: string) => `${c} ${noun}${c === 1 ? '' : 's'}`;
+
+          if (fieldKeys.length && !docKeys.length) {
+            return {
+              ok: false,
+              title: 'Previous employment — incomplete details',
+              message: `Fill in the ${n(fieldKeys.length, 'highlighted field')} on the previous employment record${companies.length === 1 ? '' : 's'}.`,
+            };
+          }
+          if (docKeys.length && !fieldKeys.length) {
+            return {
+              ok: false,
+              title: 'Salary slips required',
+              message: `Upload the Last 3 Months Salary Slips for ${n(docKeys.length, 'previous employer')}.`,
+            };
+          }
+          return {
+            ok: false,
+            title: 'Previous employment — incomplete',
+            message: `Fill in the ${n(fieldKeys.length, 'highlighted field')} and upload the salary slips for ${n(docKeys.length, 'employer')}.`,
+          };
         }
         setCompErrors({});
       }
-      return true;
+      return { ok: true };
     },
   }), [emp?.dbId, hasExperience, docsByKey]);
 
@@ -7484,7 +7591,7 @@ type S4State = {
 };
 
 function Stage4Payroll({
-  s4, setS4, checks, showErrors, pass, total, ctcProblem,
+  s4, setS4, checks, showErrors, pass, total, ctcProblem, pfApplicable = true,
 }: {
   s4: S4State;
   setS4: React.Dispatch<React.SetStateAction<S4State>>;
@@ -7497,6 +7604,10 @@ function Stage4Payroll({
      Empty when CTC is fine. Resolved by the modal, which owns Stage 1's
      annual salary. */
   ctcProblem?: string;
+  /* Whether Provident Fund applies to this employee (Stage 1 → Compensation).
+     When false the PF-only fields (UAN, PF Type) are hidden — they have no
+     meaning, and offering them implies PF will be deducted. */
+  pfApplicable?: boolean;
 }) {
   const checkRows: { id: keyof typeof checks; name: string }[] = [
     { id: 'bank',   name: 'Bank details complete' },
@@ -7636,19 +7747,25 @@ function Stage4Payroll({
               <label className="onb-init-label">Account Type</label>
               <MasterSelect options={ONB_ACCOUNT_TYPE} value={s4.bank_account_type} onChange={(v) => setS4(p => ({ ...p, bank_account_type: v }))} />
             </Col>
-            <Col data-field="uan_number" md={4}>
-              <label className="onb-init-label">UAN Number (PF)</label>
-              <input
-                className={`onb-init-input${invalid.uan_number ? ' is-invalid' : ''}`}
-                placeholder="12-digit UAN"
-                maxLength={12}
-                value={s4.uan_number}
-                onChange={e => setS4(p => ({ ...p, uan_number: e.target.value.replace(/\D/g, '') }))}
-              />
-              {s4.uan_number && s4.uan_number.length !== 12 && (
-                <small style={{ color: '#dc2626', fontSize: 11.5 }}>UAN must be exactly 12 digits</small>
-              )}
-            </Col>
+            {/* UAN is a Provident Fund number — meaningless when PF doesn't
+                apply to this employee, so the field is hidden rather than
+                offered and then ignored. PF applicability is set on Stage 1
+                (Compensation). */}
+            {pfApplicable && (
+              <Col data-field="uan_number" md={4}>
+                <label className="onb-init-label">UAN Number (PF)</label>
+                <input
+                  className={`onb-init-input${invalid.uan_number ? ' is-invalid' : ''}`}
+                  placeholder="12-digit UAN"
+                  maxLength={12}
+                  value={s4.uan_number}
+                  onChange={e => setS4(p => ({ ...p, uan_number: e.target.value.replace(/\D/g, '') }))}
+                />
+                {s4.uan_number && s4.uan_number.length !== 12 && (
+                  <small style={{ color: '#dc2626', fontSize: 11.5 }}>UAN must be exactly 12 digits</small>
+                )}
+              </Col>
+            )}
           </Row>
         </div>
       </div>
@@ -7679,18 +7796,22 @@ function Stage4Payroll({
               <label className="onb-init-label">Tax Regime</label>
               <MasterSelect options={ONB_TAX_REGIME} value={s4.tax_regime || 'New Regime (115BAC)'} onChange={(v) => setS4(p => ({ ...p, tax_regime: v }))} />
             </Col>
-            <Col data-field="pf_deduction" md={4}>
-              <label className="onb-init-label">PF Type</label>
-              <MasterSelect options={ONB_PF_TYPE} value={s4.pf_deduction || 'Statutory'} onChange={() => { /* read-only — set in Stage 1 */ }} disabled />
-              {/* Read-only mirror of Stage 1. When it's blank the readiness
-                  check fails and there is nothing to type here — say where to
-                  go instead of leaving a dead required field. */}
-              <small style={{ display: 'block', marginTop: 3, fontSize: 10.5, color: invalid.pf_deduction ? '#dc2626' : '#9ca3af' }}>
-                {invalid.pf_deduction
-                  ? 'Not set — choose PF Type on Stage 1 (Compensation).'
-                  : 'Set in Stage 1 (Compensation) — read-only here.'}
-              </small>
-            </Col>
+            {/* Same rule as UAN — a PF Type reading "Statutory" under
+                PF Applicable = No is misleading, so hide it too. */}
+            {pfApplicable && (
+              <Col data-field="pf_deduction" md={4}>
+                <label className="onb-init-label">PF Type</label>
+                <MasterSelect options={ONB_PF_TYPE} value={s4.pf_deduction || 'Statutory'} onChange={() => { /* read-only — set in Stage 1 */ }} disabled />
+                {/* Read-only mirror of Stage 1. When it's blank the readiness
+                    check fails and there is nothing to type here — say where to
+                    go instead of leaving a dead required field. */}
+                <small style={{ display: 'block', marginTop: 3, fontSize: 10.5, color: invalid.pf_deduction ? '#dc2626' : '#9ca3af' }}>
+                  {invalid.pf_deduction
+                    ? 'Not set — choose PF Type on Stage 1 (Compensation).'
+                    : 'Set in Stage 1 (Compensation) — read-only here.'}
+                </small>
+              </Col>
+            )}
             <Col md={4}>
               <label className="onb-init-label">ESI Applicable</label>
               <MasterSelect options={ONB_YES_NO} value={s4.esi_applicable || 'No'} onChange={(v) => setS4(p => ({ ...p, esi_applicable: v }))} />

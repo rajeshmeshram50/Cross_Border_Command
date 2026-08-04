@@ -26,6 +26,12 @@ class HrDocumentSignatureController extends Controller
         'employee.department:id,name',
         'employee.designation:id,name,level',
         'creator:id,name',
+        // Needed by HrDocumentSignature::getHeaderConfigAttribute(), which
+        // falls back to the branch (then client) logo when the template
+        // carries none. Eager-loaded so the list endpoints don't fire one
+        // query per row resolving the header logo.
+        'branch:id,name,logo',
+        'client:id,org_name,logo',
     ];
 
     private const STATUSES = ['Pending', 'In Progress', 'Completed', 'Rejected', 'Cancelled'];
@@ -248,6 +254,10 @@ class HrDocumentSignatureController extends Controller
             // Anything larger is rejected here AND by persistSignatureImage().
             'signature_image' => 'nullable|string|max:5600000',
             'note'            => 'nullable|string|max:500',
+            // Explicit "I have read and understood this document" tick. Only
+            // meaningful on a Sign step, where it is MANDATORY (checked below
+            // so the message can name the action).
+            'consent'         => 'nullable|boolean',
         ]);
 
         return DB::transaction(function () use ($request, $data, $id) {
@@ -279,6 +289,18 @@ class HrDocumentSignatureController extends Controller
             }
             $current = $signers[$idx] ?? null;
             if (!$current) abort(404, 'No pending signer on this document.');
+
+            // Informed-consent gate — required for EVERY action (Sign, Approve
+            // and Acknowledge). The UI disables the action button until the box
+            // is ticked; this is the server-side backstop so a direct API call
+            // can't act without it. Recorded on the signer slot + audit trail:
+            // in an approval workflow, WHEN consent was given is part of the
+            // evidence, not just a UI nicety.
+            if (!filter_var($data['consent'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                $verb = strtolower((string) ($current['action'] ?? 'act on'));
+                abort(422, "You must confirm you have read and understood the document before you {$verb} it.");
+            }
+            $current['consent_at'] = now()->toIso8601String();
 
             // For Sign rows we require a typed name (always logged in the
             // audit trail) and fill the {{SignerNSign}} token. The signer
@@ -340,12 +362,20 @@ class HrDocumentSignatureController extends Controller
                 }
             }
 
-            $signSuffix = '';
+            // Audit detail. Consent is logged for EVERY action, not just Sign —
+            // an approval/acknowledgement carries the same "I have read and
+            // understood this" claim and needs the same evidence trail.
+            $auditParts = [];
             if (!empty($data['signed_name'])) {
-                $signSuffix = " (signed: {$data['signed_name']}"
-                    . (!empty($current['signature_url']) ? ' · drawn signature attached' : '')
-                    . ')';
+                $auditParts[] = "signed: {$data['signed_name']}";
             }
+            if (!empty($current['signature_url'])) {
+                $auditParts[] = 'drawn signature attached';
+            }
+            if (!empty($current['consent_at'])) {
+                $auditParts[] = 'consent confirmed';
+            }
+            $signSuffix = $auditParts ? ' (' . implode(' · ', $auditParts) . ')' : '';
             $row->audit_log = array_merge($row->audit_log ?? [], [
                 $this->event($user, strtolower(($current['action'] ?? 'action')), sprintf(
                     '%s by %s%s',

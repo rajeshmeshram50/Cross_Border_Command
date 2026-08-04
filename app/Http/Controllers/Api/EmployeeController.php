@@ -636,6 +636,14 @@ class EmployeeController extends Controller
         // so accidental double-counting is impossible.
         $catRows = \App\Models\Masters\AssetCategories::query()
             ->whereRaw('LOWER(name) IN (?, ?)', ['laptop', 'mobile'])
+            // Tenant-scoped: without this every client's "Laptop"/"Mobile"
+            // category id landed in the list. Harmless for the laptop/mobile
+            // branches (a foreign id never matches this tenant's assets) but
+            // it made `other` exclude ids that were never ours.
+            ->when($request->user() && !$request->user()->isSuperAdmin(), function ($q) use ($request) {
+                $cid = $request->user()->client_id;
+                $q->where(fn ($w) => $w->whereNull('client_id')->orWhere('client_id', $cid));
+            })
             ->get(['id', 'name']);
         $laptopCatIds = [];
         $mobileCatIds = [];
@@ -646,12 +654,45 @@ class EmployeeController extends Controller
         }
 
         $assetQ = \App\Models\Masters\Assets::query();
-        // Tenant scope — assets created by the same client/branch as the
-        // current user, plus globally-owned ones (client_id IS NULL).
+        // Tenant scope — assets owned by the same client, plus globally-owned
+        // ones (client_id IS NULL).
         $u = $request->user();
         if ($u && !$u->isSuperAdmin()) {
             $assetQ->where(function ($w) use ($u) {
                 $w->whereNull('client_id')->orWhere('client_id', $u->client_id);
+            });
+        }
+
+        // BRANCH scope. This filter was missing entirely (only client_id was
+        // applied, despite the comment claiming otherwise), so every branch of
+        // a client saw every sibling branch's devices in the Stage 3 asset
+        // pickers. An asset physically sits in one branch and cannot be handed
+        // to someone in another.
+        //
+        // Resolve the branch from the EMPLOYEE being assigned when we know them
+        // — the picker is always opened on a specific person, and that person's
+        // branch is what matters, not whatever the viewer happens to have
+        // selected in the switcher. Fall back to the caller's active branch for
+        // the Add-Employee case (no row yet). A branch_user is then pinned to
+        // their own branch so a hand-crafted request cannot widen the scope.
+        // Rows with a NULL branch_id are client-level and stay visible to all.
+        $branchId = null;
+        if ($excludeEmployeeId) {
+            $branchId = Employee::query()
+                ->when($u && !$u->isSuperAdmin() && $u->client_id,
+                    fn ($q) => $q->where('client_id', $u->client_id))
+                ->whereKey((int) $excludeEmployeeId)
+                ->value('branch_id');
+        }
+        if (!$branchId) {
+            $branchId = $request->integer('branch_id') ?: ($u?->branch_id ?: null);
+        }
+        if ($u && ($u->user_type ?? null) === 'branch_user' && $u->branch_id) {
+            $branchId = (int) $u->branch_id;   // pinned — every branch is an isolated peer
+        }
+        if ($branchId) {
+            $assetQ->where(function ($w) use ($branchId) {
+                $w->whereNull('branch_id')->orWhere('branch_id', $branchId);
             });
         }
 
@@ -689,7 +730,11 @@ class EmployeeController extends Controller
             // for the same reason.
             $bookingQ = Employee::query()
                 ->whereNull('deleted_at')
-                ->whereNotIn('status', ['Resigned', 'Terminated']);
+                ->whereNotIn('status', ['Resigned', 'Terminated'])
+                // Only this tenant's roster can hold this tenant's assets —
+                // scanning every client's employees was pure waste.
+                ->when($u && !$u->isSuperAdmin() && $u->client_id,
+                    fn ($q) => $q->where('client_id', $u->client_id));
             if ($excludeEmployeeId) {
                 $bookingQ->where('id', '!=', (int) $excludeEmployeeId);
             }
