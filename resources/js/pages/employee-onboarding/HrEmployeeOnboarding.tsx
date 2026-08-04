@@ -3323,6 +3323,19 @@ function InitiateOnboardingModal({
   // Overtime rate options sourced from the Overtime (OT) Master. Only Active
   // rates are offered; the picker appears once "Overtime Applicable" = Yes.
   const [overtimeRateOpts, setOvertimeRateOpts] = useState<{ value: string; label: string }[]>([]);
+  /* Re-readable so the picker's onOpen can refresh it — an edit in
+     Master › Overtime (OT) then shows up without a page reload. Only ACTIVE
+     rows are ever offered. `isStale` lets the mount-time effect abort. */
+  const reloadOvertimeRates = useCallback((isStale: () => boolean = () => false) =>
+    api.get('/master/overtime_rates').then(r => {
+      if (isStale()) return;
+      const rows = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
+      setOvertimeRateOpts(
+        rows
+          .filter((o: any) => String(o.status).toLowerCase() === 'active')
+          .map((o: any) => ({ value: String(o.rate_name), label: String(o.rate_name) })),
+      );
+    }).catch(() => { if (!isStale()) setOvertimeRateOpts([]); }), []);
   // Explicit Yes/No toggle. Derived from the saved `overtime` value on
   // hydrate (a stored rate ⇒ Yes) but kept as its own state so toggling to
   // Yes before a rate is picked still reveals the picker.
@@ -3387,15 +3400,7 @@ function InitiateOnboardingModal({
         );
       }).catch(() => { if (!cancelled) setLeavePlanOpts([]); }),
       // Overtime (OT) Master — active rate names for the Overtime picker.
-      api.get('/master/overtime_rates').then(r => {
-        if (cancelled) return;
-        const rows = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
-        setOvertimeRateOpts(
-          rows
-            .filter((o: any) => String(o.status).toLowerCase() === 'active')
-            .map((o: any) => ({ value: String(o.rate_name), label: String(o.rate_name) })),
-        );
-      }).catch(() => { if (!cancelled) setOvertimeRateOpts([]); }),
+      reloadOvertimeRates(() => cancelled),
       api.get('/holiday-groups')
         .then(r => { if (!cancelled) setMHolidayGroups(Array.isArray(r.data) ? r.data : []); })
         .catch(() => { if (!cancelled) setMHolidayGroups([]); }),
@@ -3560,6 +3565,22 @@ function InitiateOnboardingModal({
   const shiftPlaceholder = branchShiftOpts.length === 0
     ? 'No shifts configured for this branch'
     : 'Select shift';
+
+  /* Overtime rate options as rendered. Only ACTIVE rows from the Overtime (OT)
+     Master are offered — same rule as every other master-backed picker here.
+     An employee already saved against a rate that has since been deactivated
+     keeps it visible (flagged) so opening the form can't silently blank their
+     policy on the next save; it is never offered to anyone else. */
+  const overtimeRateSelectOpts = (() => {
+    const saved = String(s1.overtime ?? '').trim();
+    if (!saved || overtimeRateOpts.some(o => o.value === saved)) return overtimeRateOpts;
+    return [...overtimeRateOpts, {
+      value: saved,
+      label: `${saved} (inactive)`,
+      disabled: true,
+      disabledReason: 'This rate is no longer Active in Master › Overtime (OT). Pick a current rate.',
+    }];
+  })();
 
   // Snapshot of the name as last persisted on the server. Drives the
   // read-only "Employee Actual Name" field so the legal name stays
@@ -5048,7 +5069,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" value={s1.attendance_number} onChange={e => setS1(p => ({ ...p, attendance_number: e.target.value }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Overtime Applicable</label><MasterSelect options={ONB_YES_NO} value={overtimeApplicable} placeholder="Select" onChange={(v) => { setOvertimeApplicable(v); if (v !== 'Yes') setS1(p => ({ ...p, overtime: '' })); }} /></Col>
                   {overtimeApplicable === 'Yes' && (
-                    <Col md={4}><label className="onb-init-label">Overtime Rate</label><MasterSelect options={overtimeRateOpts} loading={mastersLoading} value={s1.overtime} placeholder={overtimeRateOpts.length ? 'Select overtime rate' : 'No rates — add in Master › Overtime (OT)'} onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
+                    <Col md={4}><label className="onb-init-label">Overtime Rate</label><MasterSelect options={overtimeRateSelectOpts} loading={mastersLoading} value={s1.overtime} onOpen={() => reloadOvertimeRates()} placeholder={overtimeRateOpts.length ? 'Select overtime rate' : 'No rates — add in Master › Overtime (OT)'} onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
                   )}
                   <Col md={4} data-field="expense_policy"><label className="onb-init-label">Expense Policy<span className="req">*</span></label><MasterSelect options={ONB_EXPENSE} placeholder="Select expense policy" value={s1.expense_policy} invalid={!!s1Errors.expense_policy} onChange={(v) => { setS1(p => ({ ...p, expense_policy: v })); setS1Errors(p => ({ ...p, expense_policy: '' })); }} />{s1Errors.expense_policy && <div className="onb-error-msg">{s1Errors.expense_policy}</div>}</Col>
                 </Row>

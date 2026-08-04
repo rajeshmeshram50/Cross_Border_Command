@@ -1739,7 +1739,10 @@ class EmployeeController extends Controller
             'attendance_number'    => $attNumRule,
             'time_tracking'        => 'nullable|string|max:50',
             'penalization_policy'  => 'nullable|string|max:100',
-            'overtime'             => 'nullable|string|max:50',
+            // Holds an Overtime (OT) Master rate_name — keep the ceiling in
+            // step with master_overtime_rates.rate_name (100) or a long rate
+            // name 422s on save.
+            'overtime'             => 'nullable|string|max:100',
             'expense_policy'       => 'nullable|string|max:100',
             'laptop_assigned'      => 'nullable|string|max:20',
             'laptop_asset_id'      => 'nullable|string|max:50',

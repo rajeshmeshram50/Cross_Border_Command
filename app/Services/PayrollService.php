@@ -43,6 +43,16 @@ class PayrollService
     // stored UTC and the shift-start comparison runs in local time (matches
     // AttendanceController::DISPLAY_TZ).
     private const DISPLAY_TZ = 'Asia/Kolkata';
+    // Office default used when the employee's shift carries no parseable
+    // window — the same 09:30–18:30 the attendance module falls back to
+    // (exactly 9 hours, the OT hourly-rate divisor).
+    private const DEFAULT_SHIFT_START = '09:30';
+    private const DEFAULT_SHIFT_END   = '18:30';
+    private const DEFAULT_SHIFT_HOURS = 9.0;
+    // A single day cannot legitimately produce more overtime than this. Past
+    // it we assume a forgotten / bad punch-out rather than a 21-hour day, cap
+    // the day and flag it, so one stray punch can't inflate a payslip.
+    private const MAX_OT_MINUTES_PER_DAY = 720; // 12h
 
     /** Resolve the period for a month/year, creating it open+unfinalized.
      *  Race-safe: the unique (client,branch,month,year) index means a
@@ -705,8 +715,42 @@ class PayrollService
                 'amount' => round(((float) ($c['amount'] ?? 0)) * $proration, 2),
             ];
         }
+        // Rule 4 — approved overtime, priced as
+        //   (gross ÷ working days ÷ shift hours) × OT multiplier × approved hours.
+        // Computed off the FULL monthly gross + the period's working days, so
+        // the hourly rate doesn't move with a mid-month join or with absence.
+        $ot = $this->overtimeForCycle($employee, $period, $gross, (float) $period->working_days);
+        foreach ($ot['exceptions'] as $otEx) {
+            $exceptions = $this->withException($exceptions, $otEx['type'], $otEx['reason']);
+        }
+
+        // Overtime the ATTENDANCE shows (time worked past the shift end from
+        // the branch's Shift Details) vs what was actually approved. Reported,
+        // never auto-paid — Rule 4 keeps payment approval-gated. 'info' does
+        // not change the payslip status, so a few minutes of late sitting
+        // can't push everyone to Pending Review.
+        $otDetected = $this->overtimeHoursFromAttendance($employee, $winStart, $winEnd);
+        if ($otDetected['hours'] > 0) {
+            $exceptions = $this->withException($exceptions, 'info', sprintf(
+                'Attendance shows %s OT hr past the %s shift end across %d day(s); %s hr approved and paid.',
+                $this->trimNum($otDetected['hours']),
+                $otDetected['shift_end'],
+                $otDetected['days'],
+                $this->trimNum($ot['hours']),
+            ));
+            if ($otDetected['capped_days'] > 0) {
+                $exceptions = $this->withException($exceptions, 'warning', sprintf(
+                    '%d day(s) show more than 12 hr past the shift end — likely a missed punch-out. Verify attendance before approving overtime.',
+                    $otDetected['capped_days'],
+                ));
+            }
+        }
+
         // Approved overtime / bonus / incentive show as separate earning lines.
-        foreach ($this->adjustmentLines($employee->id, $period, ['overtime', 'bonus', 'incentive']) as $line) {
+        foreach ($ot['lines'] as $line) {
+            $earnings[] = $line;
+        }
+        foreach ($this->adjustmentLines($employee->id, $period, ['bonus', 'incentive']) as $line) {
             $earnings[] = $line;
         }
 
@@ -775,7 +819,9 @@ class PayrollService
 
         // Overtime (Rule 4) + bonus/incentive (Rule 10) — only APPROVED
         // adjustments count (pending/rejected are ignored by the query).
-        $overtimeAmount = $this->approvedOvertimeAmount($employee->id, $period);
+        // Overtime was priced above (it feeds the earnings lines).
+        $overtimeAmount = $ot['amount'];
+        $overtimeHours  = $ot['hours'];
         $bonusAmount    = $this->approvedBonusAmount($employee->id, $period);
 
         $totalDeductions = round($pf + $esi + $pt + $tds + $lopAmount + $advanceRec + $other, 2);
@@ -836,6 +882,7 @@ class PayrollService
             'unpaid_leave_days' => $unpaidLeaveDays,
             'late_marks'     => $lateMarks,
             'missing_punches' => $missingPunch,
+            'overtime_hours' => $overtimeHours,
             'att_source'     => $attSource,
             'earnings'       => $earnings,
             'deductions'     => $deductions,
@@ -1195,10 +1242,338 @@ class PayrollService
         return round($total, 2);
     }
 
-    /** Rule 4 — sum of APPROVED overtime adjustments for the cycle. */
-    private function approvedOvertimeAmount(int $employeeId, PayrollPeriod $period): float
+    
+    private function shiftHours(Employee $employee): float
     {
-        return $this->approvedAdjustments($employeeId, $period, ['overtime']);
+        [$start, $end] = $employee->resolveShiftWindow();
+        if (!$start || !$end) {
+            return self::DEFAULT_SHIFT_HOURS;
+        }
+        $minutes = $this->minutesBetween($start, $end);
+        if ($minutes <= 0) {
+            $minutes += 24 * 60; // overnight shift, e.g. 22:00 → 06:00
+        }
+        return $minutes > 0 ? round($minutes / 60, 2) : self::DEFAULT_SHIFT_HOURS;
+    }
+
+   
+    private function overtimeMultiplier(Employee $employee): array
+    {
+        $name = trim((string) ($employee->overtime ?? ''));
+        // Blank, or the legacy "Not applicable" sentinel the field used to hold
+        // before the OT Master existed — both mean "no policy assigned", so
+        // report no name and let the caller use the friendlier warning.
+        $unset = $name === '' || strcasecmp($name, 'Not Applicable') === 0;
+        $none  = ['name' => $unset ? null : $name, 'multiplier' => 1.0, 'found' => false];
+
+        if ($unset || !Schema::hasTable('master_overtime_rates')) {
+            return $none;
+        }
+
+        $row = DB::table('master_overtime_rates')
+            ->whereRaw('LOWER(rate_name) = ?', [mb_strtolower($name)])
+            // Tenant scope mirrors MasterVisibility::applyReadScope — the
+            // client's own rows plus super-admin globals (NULL client/branch).
+            ->where(fn ($q) => $q->whereNull('client_id')->orWhere('client_id', $employee->client_id))
+            ->where(fn ($q) => $q->whereNull('branch_id')->orWhere('branch_id', $employee->branch_id))
+            ->whereRaw('LOWER(status) = ?', ['active'])
+            // Tenant-specific row first (client_id IS NULL sorts false→true).
+            ->orderByRaw('client_id IS NULL')
+            ->orderByRaw('branch_id IS NULL')
+            ->first(['rate_name', 'multiplier']);
+
+        if (!$row || (float) $row->multiplier <= 0) {
+            return $none;
+        }
+        return [
+            'name'       => (string) $row->rate_name,
+            'multiplier' => (float) $row->multiplier,
+            'found'      => true,
+        ];
+    }
+
+    /**
+     * The employee's overtime pricing for a cycle — the breakdown behind
+     * "OT Amount = Hourly Salary × Multiplier × Approved OT Hours".
+     *
+     * $gross is the FULL monthly gross and $workingDays the PERIOD's working
+     * days, deliberately NOT the join/exit pro-rated figures: an hour of
+     * overtime is worth the same whether the employee joined on the 1st or the
+     * 20th. `effective_rate` is rounded to paise so a payslip's
+     * hours × rate always reproduces the amount exactly.
+     */
+    public function overtimeRate(Employee $employee, float $gross, float $workingDays): array
+    {
+        $shiftHours = $this->shiftHours($employee);
+        $days       = $workingDays > 0 ? $workingDays : 1.0;
+        // Hourly Salary is rounded to paise — the spec's own worked example
+        // carries ₹128.21 forward, not the unrounded ₹128.2051.
+        $hourly     = round($shiftHours > 0 ? $gross / $days / $shiftHours : 0.0, 2);
+        $policy     = $this->overtimeMultiplier($employee);
+
+        return [
+            'rate_name'      => $policy['name'],
+            'multiplier'     => $policy['multiplier'],
+            'rate_found'     => $policy['found'],
+            'gross'          => round($gross, 2),
+            'working_days'   => $days,
+            'shift_hours'    => $shiftHours,
+            'hourly'         => $hourly,
+            // Per-hour figure for DISPLAY. The amount is rounded only once, at
+            // the end of `hourly × multiplier × hours` (spec: ₹128.21 × 1.5 × 2
+            // = ₹384.63), so never price off this rounded rate — ₹192.32 × 2
+            // would give ₹384.64. `effective_rate_exact` is the math input.
+            'effective_rate'       => round($hourly * $policy['multiplier'], 2),
+            'effective_rate_exact' => $hourly * $policy['multiplier'],
+        ];
+    }
+
+    /**
+     * Overtime hours DETECTED from attendance: the time an employee stayed
+     * past the END of their assigned shift.
+     *
+     * The shift end comes from the branch's configured Shift Details (Branch
+     * form → Work Shifts), matched by name through
+     * `Employee::resolveShiftWindow()`; an employee whose shift has no
+     * parseable timing falls back to the 18:30 office default. Punches are
+     * stored UTC and compared in local time, same as the late-mark heuristic.
+     *
+     * Detection is NOT payment — Rule 4 still pays only APPROVED hours. This
+     * feeds the preview HR approves from, and the informational line on the
+     * payslip that says how much overtime went unclaimed.
+     */
+    public function overtimeHoursFromAttendance(Employee $employee, Carbon $start, Carbon $end): array
+    {
+        [$shiftStart, $shiftEnd] = $employee->resolveShiftWindow();
+        $shiftStart = $shiftStart ?: self::DEFAULT_SHIFT_START;
+        $shiftEnd   = $shiftEnd   ?: self::DEFAULT_SHIFT_END;
+        // A shift whose end is at/before its start runs past midnight, so its
+        // end belongs to the NEXT calendar day (e.g. 22:00 → 06:00).
+        $overnight  = $this->minutesBetween($shiftStart, $shiftEnd) <= 0;
+
+        $blank = ['hours' => 0.0, 'days' => 0, 'capped_days' => 0, 'shift_end' => $shiftEnd, 'detail' => []];
+        if (!Schema::hasTable('attendances')) {
+            return $blank;
+        }
+
+        $rows = DB::table('attendances')
+            ->where('employee_id', $employee->id)
+            ->whereNull('deleted_at')
+            ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
+            ->whereNotNull('check_out_at')
+            ->orderBy('attendance_date')
+            ->get(['attendance_date', 'status', 'check_out_at']);
+
+        $minutes = 0;
+        $days    = 0;
+        $capped  = 0;
+        $detail  = [];
+
+        foreach ($rows as $r) {
+            // Only a day actually worked can carry overtime. A stray punch on
+            // an off day is a data issue for HR, not automatic overtime.
+            $status = strtolower(trim((string) ($r->status ?? '')));
+            if (in_array($status, ['absent', 'leave', 'weekly off', 'holiday'], true)) {
+                continue;
+            }
+
+            $date = substr((string) $r->attendance_date, 0, 10);
+            // Compare real instants, not wall-clock strings: a punch-out at
+            // 01:00 is 6.5h of overtime on an 18:30 shift, while one two days
+            // later must read as a huge (cappable) gap — not as "left early".
+            $endAt = Carbon::parse($date . ' ' . $shiftEnd, self::DISPLAY_TZ);
+            if ($overnight) {
+                $endAt->addDay();
+            }
+            $out  = Carbon::parse($r->check_out_at, 'UTC')->setTimezone(self::DISPLAY_TZ);
+            $mins = intdiv($out->getTimestamp() - $endAt->getTimestamp(), 60);
+
+            if ($mins <= 0) {
+                continue; // left at or before shift end — no overtime
+            }
+            if ($mins > self::MAX_OT_MINUTES_PER_DAY) {
+                $mins = self::MAX_OT_MINUTES_PER_DAY;
+                $capped++;
+            }
+
+            $minutes += $mins;
+            $days++;
+            $detail[] = [
+                'date'      => $date,
+                'shift_end' => $shiftEnd,
+                // Date-stamped when the punch landed on a later day, so a
+                // 01:00 out-punch isn't mistaken for an early morning one.
+                'punch_out' => $out->toDateString() === $date
+                    ? $out->format('H:i')
+                    : $out->format('d M H:i'),
+                'minutes'   => $mins,
+                'hours'     => round($mins / 60, 2),
+            ];
+        }
+
+        return [
+            'hours'       => round($minutes / 60, 2),
+            'days'        => $days,
+            'capped_days' => $capped,
+            'shift_end'   => $shiftEnd,
+            'detail'      => $detail,
+        ];
+    }
+
+    /**
+     * What HR sees before recording an overtime adjustment: the hours
+     * attendance detected past the shift end, the rate they would be paid at,
+     * and the resulting amount. Nothing is written.
+     */
+    public function overtimePreview(Employee $employee, int $month, int $year): array
+    {
+        $start = Carbon::create($year, $month, 1)->startOfDay();
+        $end   = (clone $start)->endOfMonth()->startOfDay();
+
+        $detected = $this->overtimeHoursFromAttendance($employee, $start, $end);
+        $rate     = $this->overtimeRateForMonth($employee, $month, $year);
+
+        return [
+            'month'          => $month,
+            'year'           => $year,
+            'shift_end'      => $detected['shift_end'],
+            'detected_hours' => $detected['hours'],
+            'days'           => $detected['days'],
+            'capped_days'    => $detected['capped_days'],
+            'detail'         => $detected['detail'],
+            'rate'           => $rate,
+            'amount'         => round($detected['hours'] * $rate['effective_rate_exact'], 2),
+        ];
+    }
+
+    /**
+     * The same OT rate resolved for a bare month/year — used when recording an
+     * adjustment, before a payroll period/run necessarily exists. Working days
+     * come from the period row when HR has already created (and possibly
+     * edited) one, otherwise from the standard non-Sunday count.
+     */
+    public function overtimeRateForMonth(Employee $employee, int $month, int $year): array
+    {
+        $start = Carbon::create($year, $month, 1)->startOfDay();
+        $end   = (clone $start)->endOfMonth()->startOfDay();
+
+        $workingDays = PayrollPeriod::query()
+            ->where('month', $month)
+            ->where('year', $year)
+            ->when($employee->client_id, fn ($q) => $q->where('client_id', $employee->client_id))
+            ->when($employee->branch_id, fn ($q) => $q->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $employee->branch_id)))
+            // A branch-scoped period beats a client-wide one for this employee.
+            ->orderByRaw('branch_id IS NULL')
+            ->value('working_days');
+
+        $exceptions = [];
+        $structure  = $this->activeStructure($employee, $end);
+        [$gross] = $this->resolveCompensation($employee, $structure, $exceptions);
+
+        return $this->overtimeRate(
+            $employee,
+            (float) $gross,
+            (float) ($workingDays ?: $this->defaultWorkingDays($start, $end)),
+        );
+    }
+
+    /**
+     * Rule 4 — approved overtime for the cycle, priced by the OT-rate formula.
+     * Returns the total hours, the payable amount, the payslip earning lines
+     * and any exceptions to surface to HR.
+     *
+     * Rows carrying `hours` are priced by the formula. A row with an explicit
+     * `rate` keeps it as a manual per-hour override. Legacy rows with no hours
+     * at all pay their stored flat `amount`, so adjustments recorded before
+     * this rule existed are never silently zeroed.
+     */
+    public function overtimeForCycle(Employee $employee, PayrollPeriod $period, float $gross, float $workingDays): array
+    {
+        $empty = ['hours' => 0.0, 'amount' => 0.0, 'lines' => [], 'exceptions' => []];
+        $rows  = $this->approvedOvertimeRows($employee->id, $period);
+        if (empty($rows)) {
+            return $empty;
+        }
+
+        $rate       = $this->overtimeRate($employee, $gross, $workingDays);
+        $exceptions = [];
+        $hours      = 0.0;
+        $amount     = 0.0;
+        $lines      = [];
+        $usedDerivedRate = false;
+
+        foreach ($rows as $r) {
+            $rowHours = (float) ($r->hours ?? 0);
+            $override = $r->rate !== null && (float) $r->rate > 0 ? (float) $r->rate : null;
+
+            if ($rowHours > 0) {
+                // Single rounding, at the end — see overtimeRate().
+                $rowRate   = $override ?? $rate['effective_rate_exact'];
+                $rowAmount = round($rowHours * $rowRate, 2);
+                $hours    += $rowHours;
+                if ($override === null) {
+                    $usedDerivedRate = true;
+                }
+            } else {
+                // No hours recorded — flat amount entered by HR.
+                $rowAmount = round((float) $r->amount, 2);
+            }
+
+            $amount += $rowAmount;
+            $lines[] = [
+                'code'   => 'overtime',
+                'label'  => $r->label ?: 'Overtime',
+                'amount' => $rowAmount,
+            ];
+        }
+
+        $amount = round($amount, 2);
+
+        if ($usedDerivedRate) {
+            // Spell the arithmetic out on the payslip so HR/QA can verify the
+            // figure without recomputing it by hand. 'info' never changes the
+            // payslip status.
+            $exceptions[] = ['type' => 'info', 'reason' => sprintf(
+                'Overtime: ₹%s gross ÷ %s working days ÷ %s shift hrs = ₹%s/hr × %s%s × %s hr = ₹%s.',
+                number_format($rate['gross'], 2),
+                $this->trimNum($rate['working_days']),
+                $this->trimNum($rate['shift_hours']),
+                number_format($rate['hourly'], 2),
+                $this->trimNum($rate['multiplier']),
+                $rate['rate_found'] ? ' (' . $rate['rate_name'] . ')' : '',
+                $this->trimNum($hours),
+                number_format($amount, 2),
+            )];
+
+            if (!$rate['rate_found']) {
+                $exceptions[] = ['type' => 'warning', 'reason' => $rate['rate_name']
+                    ? "Overtime rate \"{$rate['rate_name']}\" is not an Active rate in Master › Overtime (OT) — overtime paid at 1× hourly. Verify before approving."
+                    : 'Overtime hours recorded but no Overtime (OT) rate is assigned to this employee — paid at 1× hourly. Assign a rate in the employee\'s Leave & Attendance step.'];
+            }
+        }
+
+        return ['hours' => round($hours, 2), 'amount' => $amount, 'lines' => $lines, 'exceptions' => $exceptions];
+    }
+
+    /** Approved overtime adjustment rows for the cycle (tenant-scoped). */
+    private function approvedOvertimeRows(int $employeeId, PayrollPeriod $period): array
+    {
+        if (!Schema::hasTable('payroll_adjustments')) {
+            return [];
+        }
+        return DB::table('payroll_adjustments')
+            ->where('employee_id', $employeeId)
+            // P23: same tenant scoping as approvedAdjustments().
+            ->when($period->client_id, fn ($q) => $q->where('client_id', $period->client_id))
+            ->when($period->branch_id, fn ($q) => $q->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $period->branch_id)))
+            ->where('month', (int) $period->month)
+            ->where('year', (int) $period->year)
+            ->where('status', 'approved')
+            ->where('type', 'overtime')
+            ->whereNull('deleted_at')
+            ->orderBy('id')
+            ->get(['id', 'label', 'amount', 'hours', 'rate'])
+            ->all();
     }
 
     /** Rule 10 — sum of APPROVED bonus/incentive adjustments for the cycle. */
@@ -1280,5 +1655,12 @@ class PayrollService
     {
         $list[] = ['type' => $type, 'reason' => $reason];
         return $list;
+    }
+
+    /** Format for prose: 10.00 → "10", 1.50 → "1.5", 1234.5 → "1,234.5". */
+    private function trimNum(float $n): string
+    {
+        $s = number_format($n, 2);
+        return str_contains($s, '.') ? rtrim(rtrim($s, '0'), '.') : $s;
     }
 }
