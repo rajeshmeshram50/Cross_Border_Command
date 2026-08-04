@@ -2395,18 +2395,28 @@ export default function HrEmployees() {
     {
       header: 'Profile %',
       accessorKey: 'profile',
-      // wrap: the meter is a fixed 120px block with a badge floating above the
-      // bar, so the cell must not clip it.
-      meta: { width: '7%', wrap: true },
+      // wrap: the badge floats ABOVE the bar, so the cell must not clip it
+      // vertically. 9% (was 7%) gives the meter enough room that it no longer
+      // has to overflow sideways into the Onboarding column.
+      meta: { width: '9%', wrap: true },
       cell: info => {
         const p = info.row.original.profile;
         const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
                   : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
                   : p >= 60 ? { dark: '#f59e0b', light: '#fcd34d' }
                   :           { dark: '#f06548', light: '#fda192' };
-        const badgeLeft = Math.max(11, Math.min(89, p));
+        /* Keep the floating badge clear of BOTH edges. The circle is 26px and
+           centred on this percentage, so at 100% it used to sit half-outside
+           the meter and, with the block being a fixed 110px inside a narrower
+           column, bled into the Onboarding cell. */
+        const badgeLeft = Math.max(14, Math.min(86, p));
         return (
-          <div style={{ position: 'relative', width: 110, paddingTop: 30 }} title={`Profile ${p}% complete`}>
+          /* Fluid, not a fixed 110px: the column is a percentage, so a fixed
+             block wider than the cell overflowed into the next column — and by
+             a different amount per row, since the overflow depended on the
+             badge position. maxWidth caps it on wide screens so the meter
+             doesn't stretch oddly. */
+          <div style={{ position: 'relative', width: '100%', maxWidth: 120, minWidth: 72, paddingTop: 30 }} title={`Profile ${p}% complete`}>
             <div style={{ position: 'absolute', top: 0, left: `${badgeLeft}%`, transform: 'translateX(-50%)', textAlign: 'center' }}>
               <div
                 className="d-flex align-items-center justify-content-center fw-bold"
