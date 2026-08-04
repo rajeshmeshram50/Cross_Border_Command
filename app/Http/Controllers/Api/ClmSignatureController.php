@@ -2838,7 +2838,80 @@ class ClmSignatureController extends Controller
             $html = preg_replace($pattern, $sigBox, $html);
         }
 
+        // OUR-ORGANISATION tokens last. These are un-namespaced, so they can't
+        // collide with the {{ns.field}} party tokens resolved above, and the
+        // bare {{signature}} is untouched by the alias loop (every alias there
+        // requires a dot).
+        $html = $this->replaceOrgBranchTokens($html);
+
         return $html;
+    }
+
+    /**
+     * Our-organisation tokens for Trade Documents + Agreements —
+     * {{company_name}} {{company_no}} {{email}} {{contact_no}} {{address}}
+     * {{signature}} — the same set the CTC editor offers.
+     *
+     * Resolved from the BRANCH of the user raising the send. A branch login
+     * gets its own branch, and an employee under it gets that same branch, so
+     * the document always carries the issuing office's details. (CTC picks its
+     * organisation explicitly; Trade Docs / Agreements have no such picker,
+     * hence the sender's branch.)
+     *
+     * A missing branch (or a blank column) resolves to an empty string rather
+     * than being left alone: a raw {{company_no}} leaking into a signed PDF is
+     * worse than a blank.
+     */
+    private function replaceOrgBranchTokens(string $html): string
+    {
+        if (strpos($html, '{{') === false) return $html;
+
+        $user   = request()->user();
+        $branch = $user && $user->branch_id ? Branch::find($user->branch_id) : null;
+
+        $address = $branch ? trim(implode(', ', array_filter([
+            trim((string) $branch->address),
+            trim((string) $branch->city),
+            trim((string) $branch->state),
+            trim(trim((string) $branch->pincode) . ' ' . trim((string) $branch->country)),
+        ], fn ($v) => $v !== '')), ', ') : '';
+
+        $values = [
+            'company_name' => e((string) ($branch->name  ?? '')),
+            'company_no'   => e((string) ($branch->cin   ?? '')),   // registered company number (CIN)
+            'email'        => e((string) ($branch->email ?? '')),
+            'contact_no'   => e((string) ($branch->phone ?? '')),
+            'address'      => e($address),
+        ];
+        foreach ($values as $token => $value) {
+            $html = preg_replace('/\{\{\s*' . $token . '\s*\}\}/iu', $value, $html);
+        }
+
+        // Authorised signatory + stamp. display:block for the same reason the
+        // CTC render carries it — an 80px image left inline overlaps the text
+        // above it in dompdf, which does not grow a line box to fit an image.
+        $sig = $this->branchSignatureDataUri($branch);
+        $sigHtml = $sig
+            ? '<img src="' . $sig . '" alt="Authorised Signatory" style="display:block;max-height:80px;max-width:210px;object-fit:contain;margin:8px 0 6px;" />'
+            : '';
+        return preg_replace('/\{\{\s*signature\s*\}\}/iu', $sigHtml, $html);
+    }
+
+    /** A branch's signature+stamp image as a data URI (dompdf can't fetch URLs). */
+    private function branchSignatureDataUri(?Branch $branch): ?string
+    {
+        $path = $branch?->signature_path;
+        if (!$path) return null;
+        if (preg_match('#/storage/(.+)$#', (string) $path, $m)) $path = $m[1];
+        try {
+            if (!Storage::disk('public')->exists($path)) return null;
+            $data = base64_encode(Storage::disk('public')->get($path));
+            $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION) ?: 'png');
+            $mime = in_array($ext, ['jpg', 'jpeg']) ? 'image/jpeg' : ($ext === 'webp' ? 'image/webp' : 'image/png');
+            return "data:$mime;base64,$data";
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**

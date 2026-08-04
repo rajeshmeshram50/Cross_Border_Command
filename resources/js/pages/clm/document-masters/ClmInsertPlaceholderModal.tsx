@@ -14,7 +14,7 @@ import api from '../../../api';
  * party's saved e-signature image at generation time.
  * ─────────────────────────────────────────────────────────────────────── */
 
-type Tab = 'customer' | 'consignee' | 'supplier' | 'product';
+type Tab = 'customer' | 'consignee' | 'supplier' | 'product' | 'standard';
 type Field = { label: string; token: string; isSignature?: boolean };
 
 /* Every field the backend's replacePartyNamespaceTokens() resolves for a party
@@ -61,6 +61,20 @@ const FIELDS: Record<Tab, Field[]> = {
     { label: 'Product Description', token: '{{product.description}}' },
     { label: 'Haz / Non-Haz',       token: '{{product.haz}}' },
   ],
+  /* OUR ORGANISATION — the same set the CTC editor's "Standard Placeholder
+   * Fields" panel offers, now available to Trade Documents and Agreements too.
+   * Deliberately un-namespaced: these describe US, not a counterparty, so they
+   * can never collide with the {{customer.*}} / {{supplier.*}} tokens above.
+   * Resolved server-side from the BRANCH of whoever sends the document — see
+   * ClmSignatureController::replaceOrgBranchTokens(). */
+  standard: [
+    { label: 'Signature',    token: '{{signature}}', isSignature: true },
+    { label: 'Company Name', token: '{{company_name}}' },
+    { label: 'Company No',   token: '{{company_no}}' },
+    { label: 'Email',        token: '{{email}}' },
+    { label: 'Contact No',   token: '{{contact_no}}' },
+    { label: 'Address',      token: '{{address}}' },
+  ],
 };
 
 const TABS: { key: Tab; label: string; icon: string; color: string }[] = [
@@ -68,6 +82,8 @@ const TABS: { key: Tab; label: string; icon: string; color: string }[] = [
   { key: 'consignee', label: 'Consignee', icon: '🚚', color: '#f59e0b' },
   { key: 'supplier',  label: 'Supplier',  icon: '📦', color: '#10b981' },
   { key: 'product',   label: 'Product',   icon: '🛒', color: '#8b5cf6' },
+  // Our organisation — sits last, after the parties and Product.
+  { key: 'standard',  label: 'Standard',  icon: '🏢', color: '#0891b2' },
 ];
 
 /* The Product Table is column-configurable: the user ticks which columns to
@@ -172,7 +188,7 @@ function columnsInExistingTable(documentHtml: string): string[] | null {
 }
 
 /* Map a counterparty role to the placeholder token group it should use. */
-function roleGroup(role: string): Exclude<Tab, 'product'> {
+function roleGroup(role: string): Exclude<Tab, 'product' | 'standard'> {
   const r = (role || '').toLowerCase();
   if (r === 'supplier' || r === 'vendor') return 'supplier';
   if (r === 'consignee') return 'consignee';
@@ -188,8 +204,14 @@ export default function ClmInsertPlaceholderModal({ open, onClose, onInsert, hid
   // Tabs available in this context — Product is dropped for case-to-case, and
   // the party tabs are filtered to the document's applicable party.
   const partyFilter = Array.isArray(allowedParties) && allowedParties.length > 0 ? allowedParties : null;
+  /* Product and Standard are not parties, so the allowedParties filter doesn't
+   * apply to them. Both ride on hideProductTab, which flags the case-to-case
+   * context: a CTC has no PI products, and it already exposes the standard
+   * organisation fields in its own side panel. */
   const visibleTabs = TABS.filter(t =>
-    t.key === 'product' ? !hideProductTab : (!partyFilter || partyFilter.includes(t.key)));
+    (t.key === 'product' || t.key === 'standard')
+      ? !hideProductTab
+      : (!partyFilter || partyFilter.includes(t.key)));
   const [tab, setTab] = useState<Tab>('customer');
   // If the active tab isn't in the visible set (e.g. a Supplier-only document),
   // snap to the first visible tab whenever the modal opens or the filter changes.
