@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../api';
+import WorklistPager from '../../components/ui/WorklistPager';
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Assigned Holiday Calendar — surfaces the holidays from the employee's
@@ -49,12 +50,16 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
   const [year, setYear] = useState<number>(now.getFullYear());
   const [view, setView] = useState<'list' | 'calendar'>('list');
   const [calMonth, setCalMonth] = useState<number>(now.getMonth()); // 0-11
+  // List-view paging, surfaced by the WorklistPager footer.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [data, setData] = useState<Resp | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setPage(1);   // a shorter year must not leave the pager on a now-empty page
     api.get<Resp>(`/employees/${encodeURIComponent(employeeId)}/holidays`, { params: { year } })
       .then(r => { if (!cancelled) setData(r.data); })
       .catch(() => { if (!cancelled) setData(null); })
@@ -86,6 +91,12 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
   const isoFor = (d: number) => `${year}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   const monthHolidays = holidays.filter(h => Number(h.date.slice(5, 7)) === calMonth + 1);
 
+  // ── List paging (footer) — the calendar view is unpaged, it shows a month.
+  const totalPages = Math.max(1, Math.ceil(holidays.length / pageSize));
+  const safePage   = Math.min(page, totalPages);
+  const pageStart  = (safePage - 1) * pageSize;
+  const visibleHolidays = holidays.slice(pageStart, pageStart + pageSize);
+
   const css = `
     .hcp-wrap { padding: 2px; }
     .hcp-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -102,7 +113,13 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
     .hcp-count { font-size: 12px; color: #64748b; font-weight: 600; }
 
     .hcp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .hcp-table thead th { text-align: left; padding: 10px 12px; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: #64748b; font-weight: 700; border-bottom: 1.5px solid #e2e8f0; background: #f8fafc; }
+    /* Solid accent header band — matches the Attendance Logs table
+       (.att-logs-table--v2 thead), which uses a coloured band with white
+       uppercase labels. This table previously had a plain grey #f8fafc strip,
+       which read as unstyled next to every other tab. Pink accent to match the
+       Holidays tab colour in EmployeeProfile. */
+    .hcp-table thead tr { background: linear-gradient(110deg, #f472b6 0%, #ec4899 55%, #db2777 100%); }
+    .hcp-table thead th { text-align: left; padding: 10px 12px; font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase; color: #ffffff; font-weight: 800; border-bottom: 0; background: transparent; white-space: nowrap; }
     .hcp-table tbody td { padding: 11px 12px; border-bottom: 1px solid #f1f5f9; color: #1f2937; vertical-align: middle; }
     .hcp-table tbody tr:hover { background: #fcfdff; }
     .hcp-sr { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: #f1f5f9; color: #475569; font-size: 11px; font-weight: 800; }
@@ -155,7 +172,10 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
        dark mode (the old card-bg fill blended with the inactive button). */
     [data-bs-theme="dark"] .hcp-toggle button.on { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.5); }
 
-    [data-bs-theme="dark"] .hcp-table thead th { background: rgba(255,255,255,.04); color: #cbd5e1; border-color: rgba(255,255,255,.1); }
+    /* Dark mode keeps the accent band (deeper shade), same as the Attendance
+       table — NOT a translucent grey, which would undo the fix. */
+    [data-bs-theme="dark"] .hcp-table thead tr { background: linear-gradient(110deg, #db2777 0%, #be185d 55%, #9d174d 100%); }
+    [data-bs-theme="dark"] .hcp-table thead th { background: transparent; color: #ffffff; border-color: transparent; }
     [data-bs-theme="dark"] .hcp-table tbody td { color: #e2e8f0; border-color: rgba(255,255,255,.06); }
     [data-bs-theme="dark"] .hcp-table tbody tr:hover { background: rgba(255,255,255,.03); }
     [data-bs-theme="dark"] .hcp-sr { background: rgba(255,255,255,.08); color: #cbd5e1; }
@@ -247,11 +267,11 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
               </tr>
             </thead>
             <tbody>
-              {holidays.map((h, i) => {
+              {visibleHolidays.map((h, i) => {
                 const c = typeColor(h.type);
                 return (
                   <tr key={`${h.id}-${h.date}`}>
-                    <td><span className="hcp-sr">{i + 1}</span></td>
+                    <td><span className="hcp-sr">{pageStart + i + 1}</span></td>
                     <td>
                       <span className="hcp-name">{h.name}</span>
                       {h.is_recurring && <span className="hcp-recur">RECURRING</span>}
@@ -265,6 +285,18 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
             </tbody>
           </table>
         </div>
+      )}
+      {/* Footer — "Showing X–Y of Z", rows-per-page and page arrows, the same
+          WorklistPager the Attendance Logs table uses. The list previously
+          ended abruptly after the last row with no row count at all. */}
+      {!loading && hasGroup && holidays.length > 0 && view === 'list' && (
+        <WorklistPager
+          total={holidays.length}
+          page={safePage}
+          pageSize={pageSize}
+          onPage={setPage}
+          onPageSize={(n) => { setPageSize(n); setPage(1); }}
+        />
       )}
 
       {/* Calendar view */}

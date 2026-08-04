@@ -3283,7 +3283,11 @@ function InitiateOnboardingModal({
           api.get('/hr-document-signatures', { params: { employee_id: emp.dbId } }),
         ]);
         if (cancelled) return;
-        const tpls: any[] = Array.isArray(tplRes.data?.templates) ? tplRes.data.templates : [];
+        // Same list Stage5Policies renders — it drops leave/attendance
+        // templates, and counting a document here that the stage never shows
+        // made the sidebar % disagree with the rows on screen.
+        const tpls: any[] = (Array.isArray(tplRes.data?.templates) ? tplRes.data.templates : [])
+          .filter((t: any) => !/\b(leave|attendance)\b/i.test(t.name || ''));
         const runs: any[] = Array.isArray(runRes.data) ? runRes.data : [];
         // Latest run per template_id (highest id wins) — a 'Completed' run = signed.
         const latest = new Map<number, any>();
@@ -3294,6 +3298,16 @@ function InitiateOnboardingModal({
     })();
     return () => { cancelled = true; };
   }, [isOpen, emp?.dbId]);
+
+  /* Live override for the snapshot above. The effect only re-runs when the
+     modal opens, so signing a document mid-session left the sidebar at 0%
+     even though Stage 5 already showed the row as "Signed". Stage5Policies
+     refetches its runs after every send/sign, so let it drive these counts
+     while it's mounted. Stable identity — it's an onProgress dependency. */
+  const handleStage5Progress = useCallback((p: { signed: number; total: number }) => {
+    setStage5Signed(p.signed);
+    setStage5Total(p.total);
+  }, []);
 
   // The employee's SAVED salary structure (the exact components HR entered in
   // the employee form). The salary breakup prefers these real figures and only
@@ -4925,7 +4939,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 pfApplicable={stage4PfApplicable}
               />
             )}
-            {activeStage === 5 && <Stage5Policies emp={emp} />}
+            {activeStage === 5 && (
+              <Stage5Policies
+                emp={emp}
+                onProgress={handleStage5Progress}
+              />
+            )}
             {activeStage === 6 && <Stage6Verify emp={emp} stagesView={stagesView} onActivated={onSaved} />}
 
             {activeStage === 1 && (
@@ -7886,7 +7905,12 @@ function Stage4Payroll({
 }
 
 // ── Stage 5 — Policies & Agreements ────────────────────────────────────────
-function Stage5Policies({ emp }: { emp: OnboardRow }) {
+function Stage5Policies({ emp, onProgress }: {
+  emp: OnboardRow;
+  /* Fires whenever the signed/total counts change, so the wizard sidebar can
+     show live Stage 5 progress instead of a stale snapshot taken on open. */
+  onProgress?: (p: { signed: number; total: number }) => void;
+}) {
   type Tpl = {
     id: number;
     code: string;
@@ -8075,6 +8099,16 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
   }, [runs]);
 
   const signedCount = templates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
+
+  /* Report the LIVE counts up to the modal so the sidebar percentage tracks
+     them. The parent used to fetch its own copy of exactly this, once, keyed
+     on [isOpen, employee] — so signing a document while the wizard was open
+     left Stage 5 reading "0%" next to a row already showing "Signed". Two
+     sources of the same truth; now there is one, and this component already
+     refetches after every send / sign action. */
+  useEffect(() => {
+    onProgress?.({ signed: signedCount, total: templates.length });
+  }, [signedCount, templates.length, onProgress]);
 
   // Open the rich send modal; the actual POST happens in confirmSend.
   const handleSend = (tpl: Tpl) => { setSendForTpl(tpl); };

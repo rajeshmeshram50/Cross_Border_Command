@@ -763,6 +763,9 @@ export default function HrEmployees() {
   const [aMobileAssigned, setAMobileAssigned]           = useState('No');
   const [aMobileMasterAssetId, setAMobileMasterAssetId] = useState('');
   const [aOtherMasterAssetIds, setAOtherMasterAssetIds] = useState<string[]>([]);
+  // Per-field errors for the Assign Assets modal, keyed 'laptop' | 'mobile'.
+  // Set when Save is pressed with Assigned = Yes but no device chosen.
+  const [aErrors, setAErrors] = useState<Record<string, string>>({});
   const [aSaving, setASaving] = useState(false);
   const [aLaptopOpts, setALaptopOpts] = useState<AssetOpt[]>([]);
   const [aMobileOpts, setAMobileOpts] = useState<AssetOpt[]>([]);
@@ -778,6 +781,7 @@ export default function HrEmployees() {
     setAOtherMasterAssetIds(Array.isArray(raw.other_master_asset_ids)
       ? raw.other_master_asset_ids.map((n: any) => String(n))
       : []);
+    setAErrors({});
     setAssignOpen(true);
   };
 
@@ -806,6 +810,32 @@ export default function HrEmployees() {
       toast.error('Cannot save', 'Employee record not found.');
       return;
     }
+
+    /* "Assigned = Yes" with no device picked used to save silently: the empty
+       string parsed to NaN → null, so the record ended up with the toggle on
+       and nothing attached. Require the device. */
+    const missing: Record<string, string> = {};
+    if (aLaptopAssigned === 'Yes' && !aLaptopMasterAssetId) {
+      missing.laptop = aLaptopOpts.length === 0
+        ? 'No laptops are available in this branch — add one in Master › Assets, or set Assigned to No.'
+        : 'Please select a device.';
+    }
+    if (aMobileAssigned === 'Yes' && !aMobileMasterAssetId) {
+      missing.mobile = aMobileOpts.length === 0
+        ? 'No mobiles are available in this branch — add one in Master › Assets, or set Assigned to No.'
+        : 'Please select a device.';
+    }
+    if (Object.keys(missing).length) {
+      setAErrors(missing);
+      const which = Object.keys(missing).map(k => (k === 'laptop' ? 'Laptop' : 'Mobile'));
+      toast.error(
+        `${which.join(' and ')} device required`,
+        Object.values(missing)[0],
+      );
+      return;
+    }
+    setAErrors({});
+
     setASaving(true);
     const intOrNull = (s: string) => {
       const n = parseInt(s, 10);
@@ -832,6 +862,7 @@ export default function HrEmployees() {
   const closeAssign = () => {
     setAssignOpen(false);
     setAssignEmp(null);
+    setAErrors({});   // don't carry a stale "select a device" into the next employee
   };
 
   const navigate = useNavigate();
@@ -4417,20 +4448,23 @@ export default function HrEmployees() {
                   onChange={(v) => {
                     setALaptopAssigned(v);
                     if (v !== 'Yes') setALaptopMasterAssetId('');
+                    setAErrors(p => ({ ...p, laptop: '' }));
                   }}
                   options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
                 />
               </Col>
               {aLaptopAssigned === 'Yes' && (
                 <Col md={4}>
-                  <label>Laptop Device</label>
+                  <label>Laptop Device<span style={{ color: '#ef4444', marginLeft: 2 }}>*</span></label>
                   <MasterSelect
                     value={aLaptopMasterAssetId}
-                    onChange={setALaptopMasterAssetId}
+                    onChange={(v) => { setALaptopMasterAssetId(v); setAErrors(p => ({ ...p, laptop: '' })); }}
                     options={aLaptopOpts}
                     placeholder={aLaptopOpts.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                     disabled={aLaptopOpts.length === 0}
+                    invalid={!!aErrors.laptop}
                   />
+                  {aErrors.laptop && <small style={{ color: '#dc2626', fontSize: 11.5 }}>{aErrors.laptop}</small>}
                 </Col>
               )}
 
@@ -4441,20 +4475,23 @@ export default function HrEmployees() {
                   onChange={(v) => {
                     setAMobileAssigned(v);
                     if (v !== 'Yes') setAMobileMasterAssetId('');
+                    setAErrors(p => ({ ...p, mobile: '' }));
                   }}
                   options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
                 />
               </Col>
               {aMobileAssigned === 'Yes' && (
                 <Col md={4}>
-                  <label>Mobile Device</label>
+                  <label>Mobile Device<span style={{ color: '#ef4444', marginLeft: 2 }}>*</span></label>
                   <MasterSelect
                     value={aMobileMasterAssetId}
-                    onChange={setAMobileMasterAssetId}
+                    onChange={(v) => { setAMobileMasterAssetId(v); setAErrors(p => ({ ...p, mobile: '' })); }}
                     options={aMobileOpts}
                     placeholder={aMobileOpts.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                     disabled={aMobileOpts.length === 0}
+                    invalid={!!aErrors.mobile}
                   />
+                  {aErrors.mobile && <small style={{ color: '#dc2626', fontSize: 11.5 }}>{aErrors.mobile}</small>}
                 </Col>
               )}
 
