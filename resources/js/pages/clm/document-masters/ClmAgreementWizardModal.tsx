@@ -392,6 +392,24 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
         const { data } = await api.post('/clm/docx-to-html', fd, cfg);
         html = data?.html;
       }
+      /* Second gate: the CONVERTED LENGTH, not the file's bytes.
+       *
+       * A .docx is a ZIP, so a 300-page agreement compresses to a few hundred
+       * KB and sails past the 1 MB file check — then lands in the editor as
+       * 1.3 million characters, over the 1,000,000-char render cap, and its
+       * PDF / Word download is silently dead from that moment on. Refusing it
+       * here means the user finds out at UPLOAD time, when they still have the
+       * original file in hand, instead of at download time.
+       *
+       * The editor is deliberately left untouched on rejection — seeding it and
+       * then complaining would leave unusable content the user has to undo. */
+      if (html && html.length > RENDER_MAX_CHARS) {
+        toast.error(
+          'Document too long',
+          `${file.name} converts to ${html.length.toLocaleString()} characters — the limit is ${RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
+        );
+        return;
+      }
       if (html) {
         // setHTML re-seeds the TipTap document AND updates `content`.
         agr.setHTML(html);
