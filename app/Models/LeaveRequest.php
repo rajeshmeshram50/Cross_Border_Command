@@ -20,6 +20,9 @@ class LeaveRequest extends Model
         'from_date',
         'to_date',
         'days',
+        // Days this request pushed the exit's last working day out by, when
+        // taken unpaid during a notice period (see NoticePeriodGuard).
+        'notice_extension_days',
         'day_type',
         'reason',
         'attachment_path',
@@ -46,6 +49,7 @@ class LeaveRequest extends Model
         'from_date' => 'date',
         'to_date' => 'date',
         'days' => 'decimal:2',
+        'notice_extension_days' => 'integer',
         'notify' => 'array',
         'handover_required' => 'boolean',
         'avail_on_call' => 'boolean',
